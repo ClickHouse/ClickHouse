@@ -68,6 +68,9 @@ struct S3RequestSettings
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings = true);
     void updateIfChanged(const S3RequestSettings & settings);
+    /// Returns true if applying `settings` via `updateIfChanged` would change a setting marked with `AFFECTS_CLIENT`,
+    /// i.e. the S3 client has to be rebuilt to pick up the change.
+    bool hasChangesAffectingClient(const S3RequestSettings & settings) const;
     void validateUploadSettings();
 
     HTTPRequestThrottler request_throttler;

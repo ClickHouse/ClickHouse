@@ -14,7 +14,7 @@ INSERT INTO cs_l SELECT number, number FROM numbers(1000);
 INSERT INTO cs_r SELECT number, number * 2 FROM numbers(1000);   -- one match per k, v = k * 2
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET enable_parallel_replicas = 1;
 SET max_parallel_replicas = 3;
 SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';

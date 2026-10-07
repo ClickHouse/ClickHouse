@@ -1,4 +1,5 @@
 #include <limits>
+#include <map>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -155,7 +156,7 @@ static bool isCurrentManifestListAboveThreshold(
 {
     LoggerPtr log = getLogger("IcebergCompaction::isCurrentManifestListAboveThreshold");
 
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
         return false;
     Int64 current_snapshot_id = metadata_object->getValue<Int64>(Iceberg::f_current_snapshot_id);
     if (current_snapshot_id < 0)
@@ -257,7 +258,7 @@ static Plan getPlan(
 
             for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
             {
-                auto partition_index = plan.partition_encoder.encodePartition(data_file->parsed_entry->partition_key_value);
+                auto partition_index = plan.partition_encoder.encodePartition(data_file->normalized_partition_key_value);
                 if (plan.partitions.size() <= partition_index)
                     plan.partitions.push_back({});
 
@@ -294,7 +295,7 @@ static Plan getPlan(
 
     for (const auto & delete_file : all_positional_delete_files)
     {
-        auto partition_index = plan.partition_encoder.encodePartition(delete_file->parsed_entry->partition_key_value);
+        auto partition_index = plan.partition_encoder.encodePartition(delete_file->normalized_partition_key_value);
         if (partition_index >= plan.partitions.size())
             continue;
 
@@ -357,7 +358,12 @@ static void writeDataFiles(
                 context);
 
         RelativePathWithMetadata relative_path(data_file->data_object_info->getPath());
-        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"));
+        /// A data file may be Parquet/ORC/Avro; only the ones that will actually seek to a footer at
+        /// the tail should skip the generic from-start prefetch.
+        auto read_settings = context->getReadSettings();
+        read_settings.remote_fs_settings.random_access = FormatFactory::instance().checkIfFormatIsRandomAccessInput(
+            data_file->data_object_info->getFileFormat().value_or(write_format), context);
+        auto read_buffer = createReadBuffer(relative_path, object_storage, context, getLogger("IcebergCompaction"), read_settings);
 
         const Settings & settings = context->getSettingsRef();
         auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(
@@ -410,6 +416,7 @@ static void writeDataFiles(
         }
         output_format->flush();
         output_format->finalize();
+        data_file->manifest_list->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
         write_buffer->finalize();
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
@@ -437,7 +444,7 @@ static bool writeConsolidatedManifestFile(
     auto log = getLogger("IcebergManifestConsolidation");
 
     // Derive current snapshot info directly from the metadata file.
-    if (!metadata_object->has(Iceberg::f_current_snapshot_id) || metadata_object->isNull(Iceberg::f_current_snapshot_id))
+    if (!metadata_object->has(Iceberg::f_current_snapshot_id))
     {
         LOG_INFO(log, "No current snapshot found, skipping manifest consolidation");
         return true;
@@ -493,17 +500,19 @@ static bool writeConsolidatedManifestFile(
 
     auto partitions_specs = metadata_object->getArray(f_partition_specs);
 
-    /// After partition evolution each manifest must be rewritten under the spec its source files used; resolve and cache spec info per spec-id.
+    /// After partition evolution each manifest must be rewritten under the spec its source files used, and after schema evolution
+    /// (e.g. widening `decimal(P, S)`) its partition values must be encoded under the schema its source files were written with;
+    /// resolve and cache spec info per (spec-id, schema-id).
     struct ResolvedPartitionSpec
     {
         Poco::JSON::Object::Ptr spec;
         std::vector<String> partition_columns;
         DataTypes partition_types;
     };
-    std::unordered_map<Int32, ResolvedPartitionSpec> resolved_specs;
-    auto resolve_partition_spec = [&](Int32 spec_id) -> const ResolvedPartitionSpec &
+    std::map<std::pair<Int32, Int32>, ResolvedPartitionSpec> resolved_specs;
+    auto resolve_partition_spec = [&](Int32 spec_id, Int32 files_schema_id) -> const ResolvedPartitionSpec &
     {
-        if (auto it = resolved_specs.find(spec_id); it != resolved_specs.end())
+        if (auto it = resolved_specs.find({spec_id, files_schema_id}); it != resolved_specs.end())
             return it->second;
 
         Poco::JSON::Object::Ptr spec;
@@ -535,7 +544,8 @@ static bool writeConsolidatedManifestFile(
             source_ids.push_back(spec_field->getValue<Int32>(Iceberg::f_source_id));
         }
 
-        /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
+        /// Derive partition value types from a schema that defines every source column the spec references, preferring the schema
+        /// the source files were written with, then the current one, then any historical one; register all schemas first so they can be queried by id.
         for (UInt32 i = 0; i < schemas->size(); ++i)
             persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
 
@@ -552,14 +562,19 @@ static bool writeConsolidatedManifestFile(
             return block;
         };
 
-        Int32 schema_id_for_spec = static_cast<Int32>(current_schema_id);
+        Int32 schema_id_for_spec = files_schema_id;
         std::optional<Block> spec_sample_block = build_sample_block(schema_id_for_spec);
+        if (!spec_sample_block && files_schema_id != static_cast<Int32>(current_schema_id))
+        {
+            schema_id_for_spec = static_cast<Int32>(current_schema_id);
+            spec_sample_block = build_sample_block(schema_id_for_spec);
+        }
         if (!spec_sample_block)
         {
             for (UInt32 i = 0; i < schemas->size(); ++i)
             {
                 Int32 candidate_id = schemas->getObject(i)->getValue<Int32>(Iceberg::f_schema_id);
-                if (candidate_id == schema_id_for_spec)
+                if (candidate_id == files_schema_id || candidate_id == static_cast<Int32>(current_schema_id))
                     continue;
                 spec_sample_block = build_sample_block(candidate_id);
                 if (spec_sample_block)
@@ -580,7 +595,7 @@ static bool writeConsolidatedManifestFile(
         resolved.partition_types
             = ChunkPartitioner(spec_fields, schema_for_spec->getArray(Iceberg::f_fields), context, shared_sample_block).getResultTypes();
 
-        return resolved_specs.emplace(spec_id, std::move(resolved)).first->second;
+        return resolved_specs.emplace(std::make_pair(spec_id, files_schema_id), std::move(resolved)).first->second;
     };
 
     /// Return the raw metadata schema object for a given schema-id, used as the verbatim Avro `schema` header of a rewritten manifest so its data-file bounds resolve under the same schema the files were written with.
@@ -652,7 +667,7 @@ static bool writeConsolidatedManifestFile(
             const Int32 source_schema_id = data_file->resolved_schema_id;
             String partition_key = std::to_string(source_partition_spec_id) + "|" + std::to_string(source_schema_id) + "|";
             FieldVisitorDump dump_visitor;
-            for (const auto & val : data_file->parsed_entry->partition_key_value)
+            for (const auto & val : data_file->normalized_partition_key_value)
                 partition_key += applyVisitor(dump_visitor, val) + "|";
 
             if (!partitions_map.contains(partition_key))
@@ -661,7 +676,7 @@ static bool writeConsolidatedManifestFile(
             auto & pd = partitions_map.at(partition_key);
             pd.partition_spec_id = source_partition_spec_id;
             pd.schema_id = source_schema_id;
-            pd.partition_values = data_file->parsed_entry->partition_key_value;
+            pd.partition_values = data_file->normalized_partition_key_value;
             // A single manifest file should not list the same data file twice
             if (std::find(pd.file_paths.begin(), pd.file_paths.end(), data_file->parsed_entry->file_path_key) == pd.file_paths.end())
             {
@@ -844,8 +859,8 @@ static bool writeConsolidatedManifestFile(
             consolidated_counts.min_sequence_number = manifest_min_sequence_number;
             existing_entry_counts.push_back(consolidated_counts);
 
-            /// Rewrite this manifest under the partition spec its source files used, not the default.
-            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
+            /// Rewrite this manifest under the partition spec and the schema its source files used, not the default and the current ones.
+            const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id, pd.schema_id);
             entry_partition_spec_ids.push_back(pd.partition_spec_id);
 
             /// The manifest's partition tuple must match the resolved spec; a mismatch (corrupt or inconsistently-evolved

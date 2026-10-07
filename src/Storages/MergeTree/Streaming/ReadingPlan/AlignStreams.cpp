@@ -1,24 +1,29 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
-#include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 #include <Columns/IColumn.h>
 
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-#include <Processors/ISimpleTransform.h>
 #include <Processors/Port.h>
+#include <Processors/Streaming/CalculateWatermarksTransform.h>
 #include <Processors/Streaming/Markers.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Core/Block.h>
+#include <Core/Field.h>
 
 #include <Common/Exception.h>
 
+#include <algorithm>
+#include <deque>
+#include <iterator>
 #include <optional>
 #include <queue>
+#include <ranges>
 #include <utility>
 
 namespace DB
@@ -47,158 +52,171 @@ OutputPorts buildOutputPorts(SharedHeader header)
     return ports;
 }
 
-PartitionCursor chunkRowCursor(const Chunk & chunk, size_t row, size_t block_number_pos, size_t block_offset_pos)
+PartitionCursor cursorAt(const Chunk & chunk, size_t row, size_t block_number_pos, size_t block_offset_pos)
 {
     const auto & columns = chunk.getColumns();
     return {columns[block_number_pos]->getInt(row), columns[block_offset_pos]->getInt(row)};
 }
 
-bool isWatermarkChunk(const Chunk & chunk)
+Field watermarkAt(const Chunk & chunk, size_t row, size_t pos)
 {
-    return chunk.getChunkInfos().has<WatermarkMarker>()
-        || chunk.getChunkInfos().has<PartitionWatermarkInfo>();
+    Field value;
+    chunk.getColumns()[pos]->get(row, value);
+    return value;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-struct ChunkBoundaries : public ChunkInfoCloneable<ChunkBoundaries>
+std::shared_ptr<PartitionWatermarkInfo> makePartitionWatermarkInfo(const String & partition_id, const Field & watermark)
 {
-    PartitionCursor left_cursor;
-    PartitionCursor right_cursor;
-};
+    auto info = std::make_shared<PartitionWatermarkInfo>();
+    info->partition_id = partition_id;
+    info->watermark = watermark;
+    return info;
+}
 
-class ExtractBoundariesTransform final : public ISimpleTransform
-{
-public:
-    ExtractBoundariesTransform(SharedHeader header, bool drop_data_)
-        : ISimpleTransform(header, header, /*skip_empty_chunks=*/false)
-        , drop_data(drop_data_)
-        , block_number_pos(header->getPositionByName(BlockNumberColumn::name))
-        , block_offset_pos(header->getPositionByName(BlockOffsetColumn::name))
-    {
-    }
-
-    String getName() const override { return "ExtractBoundaries"; }
-
-protected:
-    void transform(Chunk & chunk) override
-    {
-        if (chunk.getNumRows() == 0)
-            return;
-
-        auto boundaries = std::make_shared<ChunkBoundaries>();
-        boundaries->left_cursor = chunkRowCursor(chunk, 0, block_number_pos, block_offset_pos);
-        boundaries->right_cursor = chunkRowCursor(chunk, chunk.getNumRows() - 1, block_number_pos, block_offset_pos);
-
-        if (drop_data)
-        {
-            Chunk boundaries_chunk(getOutputPort().getHeader().cloneEmptyColumns(), 0);
-            boundaries_chunk.setChunkInfos(std::move(chunk.getChunkInfos()));
-            chunk = std::move(boundaries_chunk);
-        }
-
-        chunk.getChunkInfos().add(std::move(boundaries));
-    }
-
-private:
-    const bool drop_data;
-    const size_t block_number_pos;
-    const size_t block_offset_pos;
-};
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
 class AlignStreamsProcessor final : public IProcessor
 {
-    struct HeldWatermark
+    struct HeldChunk
     {
         Chunk chunk;
-        PartitionCursor boundary;
+        PartitionCursor first;
+        PartitionCursor last;
     };
 
-    struct HeldData
+    std::optional<Field> lookupWatermark(const PartitionCursor & target) const
     {
-        Chunk chunk;
-        PartitionCursor left_cursor;
-        PartitionCursor right_cursor;
-    };
+        const auto chunk_it = std::ranges::upper_bound(held_metadata, target, {}, &HeldChunk::first);
+        if (chunk_it == held_metadata.begin())
+            return std::nullopt;
 
-    bool canReleaseWatermark(const HeldWatermark & watermark) const
-    {
-        if (data_input.isFinished() && !held_data.has_value())
-            return true;
+        const auto & chunk = std::prev(chunk_it)->chunk;
+        const auto rows = std::views::iota(size_t{0}, chunk.getNumRows());
+        const auto row_it = std::ranges::upper_bound(rows, target, {}, [&](size_t row)
+        {
+            return cursorAt(chunk, row, metadata_block_number_pos, metadata_block_offset_pos);
+        });
 
-        if (held_data.has_value())
-            return held_data->left_cursor > watermark.boundary;
-
-        return data_progress > watermark.boundary;
+        const auto rows_not_above = static_cast<size_t>(std::ranges::distance(rows.begin(), row_it));
+        return watermarkAt(chunk, rows_not_above - 1, metadata_watermark_pos);
     }
 
-    bool canReleaseData(const HeldData & data) const
+    bool canReleaseData() const
     {
-        if (metadata_input.isFinished())
-            return true;
+        return metadata_input.isFinished() || metadata_progress >= held_data->last;
+    }
 
-        return !held_watermarks.empty() && held_watermarks.back().boundary >= data.right_cursor;
+    bool canReleaseMetadata() const
+    {
+        const auto & front = held_metadata.front();
+        if (held_data.has_value())
+            return front.last < held_data->last;
+
+        return data_input.isFinished() || data_progress > front.last;
     }
 
     void releaseData()
     {
-        data_progress = held_data->right_cursor;
+        const auto watermark = lookupWatermark(held_data->last);
+        if (watermark)
+            held_data->chunk.getChunkInfos().add(makePartitionWatermarkInfo(partition_id, *watermark));
+
+        data_progress = held_data->last;
         ready_chunks.push(std::move(held_data->chunk));
         held_data.reset();
+
+        if (watermark && *watermark > last_watermark)
+        {
+            last_watermark = *watermark;
+            ready_chunks.push(WatermarkMarker::create(output.getHeader(), *watermark));
+        }
     }
 
-    void releaseWatermark()
+    void releaseMetadata()
     {
-        ready_chunks.push(std::move(held_watermarks.front().chunk));
-        held_watermarks.pop();
+        const auto front = std::move(held_metadata.front());
+        held_metadata.pop_front();
+
+        const bool overlaps_with_data = held_data.has_value() && held_data->first <= front.last;
+        if (overlaps_with_data)
+            return;
+
+        const auto watermark = watermarkAt(front.chunk, front.chunk.getNumRows() - 1, metadata_watermark_pos);
+        if (watermark <= last_watermark)
+            return;
+
+        Chunk info_chunk(output.getHeader().cloneEmptyColumns(), 0);
+        info_chunk.getChunkInfos().add(makePartitionWatermarkInfo(partition_id, watermark));
+        ready_chunks.push(std::move(info_chunk));
+
+        last_watermark = watermark;
+        ready_chunks.push(WatermarkMarker::create(output.getHeader(), watermark));
     }
 
-    void releaseChunks()
+    bool releaseChunks()
     {
+        bool released = false;
         while (true)
         {
-            if (!held_watermarks.empty() && canReleaseWatermark(held_watermarks.front()))
+            if (!held_metadata.empty() && canReleaseMetadata())
             {
-                releaseWatermark();
+                releaseMetadata();
+                released = true;
                 continue;
             }
 
-            if (held_data.has_value() && canReleaseData(*held_data))
+            if (held_data.has_value() && canReleaseData())
             {
                 releaseData();
+                released = true;
                 continue;
             }
 
-            break;
+            return released;
         }
+    }
+
+    bool needMetadata() const
+    {
+        if (held_metadata.empty())
+            return true;
+
+        if (held_data.has_value())
+            return metadata_progress < held_data->last;
+
+        return data_input.isFinished();
+    }
+
+    bool needData() const
+    {
+        return !held_data.has_value();
     }
 
     void consumeMetadataChunk(Chunk chunk)
     {
-        if (auto boundaries = chunk.getChunkInfos().extract<ChunkBoundaries>())
-            metadata_progress = boundaries->right_cursor;
-
-        if (isWatermarkChunk(chunk))
-        {
-            Chunk watermark_chunk(output.getHeader().cloneEmptyColumns(), 0);
-            watermark_chunk.setChunkInfos(std::move(chunk.getChunkInfos()));
-            held_watermarks.push(HeldWatermark{std::move(watermark_chunk), metadata_progress});
-        }
+        const auto cursor_info = chunk.getChunkInfos().getSafe<PartitionCursorInfo>();
+        metadata_progress = cursor_info->last;
+        held_metadata.push_back(HeldChunk{std::move(chunk), cursor_info->first, cursor_info->last});
     }
 
     void consumeDataChunk(Chunk chunk)
     {
-        if (auto boundaries = chunk.getChunkInfos().extract<ChunkBoundaries>())
-            held_data = HeldData{std::move(chunk), boundaries->left_cursor, boundaries->right_cursor};
+        const auto cursor_info = chunk.getChunkInfos().getSafe<PartitionCursorInfo>();
+        held_data = HeldChunk{std::move(chunk), cursor_info->first, cursor_info->last};
     }
 
 public:
-    AlignStreamsProcessor(SharedHeader metadata_header, SharedHeader data_header)
+    AlignStreamsProcessor(SharedHeader metadata_header, SharedHeader data_header, String partition_id_, Field initial_watermark_)
         : IProcessor(buildInputPorts(metadata_header, data_header), buildOutputPorts(data_header))
+        , partition_id(std::move(partition_id_))
+        , metadata_block_number_pos(metadata_header->getPositionByName(BlockNumberColumn::name))
+        , metadata_block_offset_pos(metadata_header->getPositionByName(BlockOffsetColumn::name))
+        , metadata_watermark_pos(metadata_header->getPositionByName(WatermarkColumn::name))
         , metadata_input(inputs.front())
         , data_input(inputs.back())
         , output(outputs.front())
+        , last_watermark(std::move(initial_watermark_))
     {
+        if (!last_watermark.isNull())
+            ready_chunks.push(WatermarkMarker::create(output.getHeader(), last_watermark));
     }
 
     String getName() const override { return "AlignStreams"; }
@@ -215,23 +233,35 @@ public:
         if (!output.canPush())
             return Status::PortFull;
 
-        if (ready_chunks.empty())
+        while (ready_chunks.empty())
         {
-            if (!metadata_input.isFinished())
+            bool progressed = false;
+
+            if (!metadata_input.isFinished() && needMetadata())
             {
                 metadata_input.setNeeded();
                 if (metadata_input.hasData())
+                {
                     consumeMetadataChunk(metadata_input.pull());
+                    progressed = true;
+                }
             }
 
-            if (!held_data.has_value() && !data_input.isFinished())
+            if (!data_input.isFinished() && needData())
             {
                 data_input.setNeeded();
                 if (data_input.hasData())
+                {
                     consumeDataChunk(data_input.pull());
+                    progressed = true;
+                }
             }
 
-            releaseChunks();
+            if (releaseChunks())
+                progressed = true;
+
+            if (!progressed)
+                break;
         }
 
         if (!ready_chunks.empty())
@@ -251,22 +281,30 @@ public:
     }
 
 private:
+    const String partition_id;
+    const size_t metadata_block_number_pos;
+    const size_t metadata_block_offset_pos;
+    const size_t metadata_watermark_pos;
+
     InputPort & metadata_input;
     InputPort & data_input;
     OutputPort & output;
 
     PartitionCursor metadata_progress;
-    std::queue<HeldWatermark> held_watermarks;
+    std::deque<HeldChunk> held_metadata;
 
     PartitionCursor data_progress;
-    std::optional<HeldData> held_data;
+    std::optional<HeldChunk> held_data;
 
+    Field last_watermark;
     std::queue<Chunk> ready_chunks;
 };
 
 }
 
-AlignStreamsStep::AlignStreamsStep(SharedHeader metadata_header_, SharedHeader data_header_)
+AlignStreamsStep::AlignStreamsStep(SharedHeader metadata_header_, SharedHeader data_header_, String partition_id_, Field initial_watermark_)
+    : partition_id(std::move(partition_id_))
+    , initial_watermark(std::move(initial_watermark_))
 {
     updateInputHeaders({std::move(metadata_header_), std::move(data_header_)});
 }
@@ -284,10 +322,7 @@ QueryPipelineBuilderPtr AlignStreamsStep::updatePipeline(QueryPipelineBuilders p
     if (pipelines[0]->getNumStreams() != 1 || pipelines[1]->getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AlignStreams requires single-stream inputs, got {} and {}", pipelines[0]->getNumStreams(), pipelines[1]->getNumStreams());
 
-    pipelines[0]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/true); });
-    pipelines[1]->addSimpleTransform([](const SharedHeader & header) { return std::make_shared<ExtractBoundariesTransform>(header, /*drop_data=*/false); });
-
-    auto processor = std::make_shared<AlignStreamsProcessor>(input_headers.front(), input_headers.back());
+    auto processor = std::make_shared<AlignStreamsProcessor>(input_headers.front(), input_headers.back(), partition_id, initial_watermark);
     return QueryPipelineBuilder::mergePipelines(std::move(pipelines[0]), std::move(pipelines[1]), std::move(processor), &processors);
 }
 

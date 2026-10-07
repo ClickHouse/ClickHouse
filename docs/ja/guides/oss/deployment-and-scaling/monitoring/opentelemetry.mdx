@@ -8,17 +8,13 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/) は、分散アプリケーションからトレースやメトリクスを収集するためのオープン標準です。ClickHouse は OpenTelemetry をある程度サポートしています。
 
-<div id="supplying-trace-context-to-clickhouse">
-  ## ClickHouse にトレースコンテキストを渡す
-</div>
+## ClickHouse にトレースコンテキストを渡す {#supplying-trace-context-to-clickhouse}
 
 ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明されているトレースコンテキストの HTTP ヘッダーを受け付けます。また、ClickHouse サーバー間、またはクライアントとサーバー間の通信に使用されるネイティブプロトコル経由でもトレースコンテキストを受け付けます。手動テストでは、Trace Context 勧告に準拠したトレースコンテキストのヘッダーを、`--opentelemetry-traceparent` および `--opentelemetry-tracestate` フラグを使用して `clickhouse-client` に渡せます。
 
 親トレースコンテキストが渡されていない場合、または渡されたトレースコンテキストが上記の W3C 標準に準拠していない場合、ClickHouse は新しいトレースを開始できます。このときの確率は、[opentelemetry&#95;start&#95;trace&#95;probability](/ja/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 設定で制御されます。
 
-<div id="propagating-the-trace-context">
-  ## トレースコンテキストの伝播
-</div>
+## トレースコンテキストの伝播 {#propagating-the-trace-context}
 
 トレースコンテキストは、次のケースでダウンストリームサービスに伝播されます。
 
@@ -26,15 +22,27 @@ ClickHouse は、[W3C 勧告](https://www.w3.org/TR/trace-context/)で説明さ�
 
 * [url](/ja/reference/functions/table-functions/url) テーブル関数。トレースコンテキスト情報は HTTP ヘッダーで送信されます。
 
-<div id="tracing-clickhouse-keeper-requests">
-  ## ClickHouse Keeper リクエストのトレーシング
-</div>
+## 分散クエリのスパン {#spans-of-distributed-queries}
+
+分散`SELECT`では、リモート分片からの読み取りはいずれも`RemoteQueryExecutor::execute`スパンで計測されます。これらのスパンには、クエリ fragmentを識別する次の属性が付与されます。
+
+* `clickhouse.cluster`と`clickhouse.shard_num` — executorが読み取るクラスターと分片
+* `clickhouse.query_id`と`clickhouse.initial_query_id` — イニシエーターから見たクエリ id
+* `clickhouse.target_host` — 確立されたconnectionのアドレス
+
+こうしたスパンの`status_code`は、fragmentがどのように終了したかを示します。
+
+* `OK` — 分片が完全な結果を返した。
+* `ERROR` — fragmentが失敗した。分片がexceptionを返した、イニシエーターがデータの読み取りに失敗した、または分片のキャンセルに失敗した場合。
+* `UNSET` — 成功でも失敗でもない。こうしたスパンには、状況をより詳しく示す属性が付与されます。
+
+`Distributed`テーブルへの`INSERT`クエリでも、同じ`clickhouse.cluster`および`clickhouse.shard_num`という属性 keyを持つ同様のスパンが`DistributedSink`で生成されます。
+
+## ClickHouse Keeper リクエストのトレーシング {#tracing-clickhouse-keeper-requests}
 
 ClickHouse は、[ClickHouse Keeper](/ja/guides/oss/deployment-and-scaling/keeper/index) へのリクエスト (ZooKeeper 互換の協調サービス) に対する OpenTelemetry トレーシングをサポートしています。この機能により、クライアントからのリクエスト送信からサーバー側での処理まで、Keeper 操作のライフサイクルを詳細に可視化できます。
 
-<div id="enabling-keeper-tracing">
-  ### Keeper のトレーシングを有効にする
-</div>
+### Keeper のトレーシングを有効にする {#enabling-keeper-tracing}
 
 Keeper リクエストのトレーシングを有効にするには、ZooKeeper/Keeper クライアントの設定で次の項目を設定します。
 
@@ -51,9 +59,7 @@ Keeper リクエストのトレーシングを有効にするには、ZooKeeper/
 </clickhouse>
 ```
 
-<div id="keeper-span-types">
-  ### Keeper スパンの種類
-</div>
+### Keeper スパンの種類 {#keeper-span-types}
 
 トレーシングが有効な場合、ClickHouse はクライアント側とサーバー側の両方の Keeper 操作に対してスパンを作成します。
 
@@ -74,20 +80,16 @@ Keeper リクエストのトレーシングを有効にするには、ZooKeeper/
 * `keeper.dispatcher.requests_queue` — ディスパッチャー内でのリクエストのキュー待ち
 * `keeper.write.pre_commit` — Raft commit 前の書き込みリクエストの前処理
 * `keeper.write.commit` — Raft commit 後の書き込みリクエストの処理
-* `keeper.read.wait_for_write` — 依存する書き込みの完了待ちとなっている読み取りリクエスト
+* `keeper.read.wait_for_write` — 転送中のリクエストバッチの完了を待ってキューに滞留している読み取りリクエスト
 * `keeper.read.process` — 読み取りリクエストの処理
 * `keeper.dispatcher.responses_queue` — ディスパッチャー内でのレスポンスのキュー待ち
 * `keeper.send_response` — クライアントへのレスポンスの送信
 
-<div id="sampling-and-performance">
-  ### サンプリングとパフォーマンス
-</div>
+### サンプリングとパフォーマンス {#sampling-and-performance}
 
 トレーシングのオーバーヘッドを抑えるため、Keeper は動的サンプリングを実装しています。サンプリング率は、リクエストサイズに応じて 1/10,000 から 1/10 の範囲で自動的に調整されます。パフォーマンス監視のため、すべてのリクエスト (サンプリングされたものとされていないものの両方) の所要時間がヒストグラムメトリクスに記録されます。
 
-<div id="tracing-the-clickhouse-itself">
-  ## ClickHouse 自体のトレーシング
-</div>
+## ClickHouse 自体のトレーシング {#tracing-the-clickhouse-itself}
 
 ClickHouse は、各クエリおよびクエリプランニングや分散クエリなどの一部のクエリ実行段階について、`trace spans` を作成します。
 
@@ -97,15 +99,11 @@ ClickHouse は、各クエリおよびクエリプランニングや分散クエ
 
 タグまたは属性は、キーと値を含む 2 つの並列 Array として保存されます。これらを扱うには [ARRAY JOIN](/ja/reference/statements/select/array-join) を使用してください。
 
-<div id="log-query-settings">
-  ## Log-query-settings
-</div>
+## Log-query-settings {#log-query-settings}
 
 設定 [log&#95;query&#95;settings](/ja/reference/settings/session-settings/log-query#log_query_settings) を使用すると、クエリ実行中にクエリ設定の変更を記録できます。有効にすると、クエリ設定に加えられた変更はすべて OpenTelemetry の スパン ログに記録されます。この機能は、クエリのパフォーマンスに影響する可能性がある設定変更を追跡する必要がある本番環境で特に役立ちます。
 
-<div id="integration-with-monitoring-systems">
-  ## 監視システムとのインテグレーション
-</div>
+## 監視システムとのインテグレーション {#integration-with-monitoring-systems}
 
 現時点では、ClickHouse から監視システムへトレースデータをエクスポートするための既成ツールはありません。
 
@@ -132,8 +130,6 @@ FROM system.opentelemetry_span_log
 
 何らかのエラーが発生した場合、エラーが発生したログデータの一部は、通知されることなく失われます。データが届かない場合は、エラーメッセージが記録されていないかサーバーログを確認してください。
 
-<div id="related-content">
-  ## 関連記事
-</div>
+## 関連記事 {#related-content}
 
 * ブログ: [ClickHouseでオブザーバビリティソリューションを構築する - パート2 - トレース](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

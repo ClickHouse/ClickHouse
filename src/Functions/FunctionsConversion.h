@@ -135,6 +135,9 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
+    /// `format_settings` has too many members to hash one by one; this hashes the session settings it
+    /// was derived from instead (see `getFormatSettingsHash`).
+    const UInt64 format_settings_hash;
 
     /// Note: context may be nullptr (i.e. via castColumn())
     explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
@@ -151,7 +154,33 @@ struct FunctionConvertSettings
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
+        , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
     {
+    }
+
+    /** The settings a conversion captured decide the values it produces, while its name and the
+      * types it was resolved for do not mention them, so whatever keys an expression by a hash has
+      * to see them: without this, two sessions that differ only in `precise_float_parsing` build the
+      * same key and one serves the other its granule-skip verdicts.
+      *
+      * Every member is hashed: the captured settings one by one, and `format_settings` through the hash
+      * of the session settings it was derived from, which covers each member the text (de)serialization
+      * of a converted value can read. A setting added to this struct has to be added here too.
+      */
+    void updateHash(SipHash & hash) const
+    {
+        hash.update(date_time_overflow_behavior);
+        hash.update(precise_float_parsing);
+        hash.update(cast_ipv4_ipv6_default_on_conversion_error);
+        hash.update(cast_string_to_variant_use_inference);
+        hash.update(cast_string_to_dynamic_use_inference);
+        hash.update(input_format_ipv4_default_on_conversion_error);
+        hash.update(input_format_ipv6_default_on_conversion_error);
+        hash.update(check_conversion_from_numbers_to_enum);
+        hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
+        hash.update(cast_keep_nullable);
+        hash.update(cast_string_to_date_time_mode);
+        hash.update(format_settings_hash);
     }
 };
 
@@ -1131,7 +1160,7 @@ inline void convertFromTime<DataTypeTime>(DataTypeTime::FieldType & x, time_t & 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
 template <typename DataType>
-void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
+void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing, bool)
 {
     if constexpr (is_floating_point<typename DataType::FieldType>)
     {
@@ -1145,33 +1174,33 @@ void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTI
 }
 
 template <>
-inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     DayNum tmp(0);
-    readDateText(tmp, rb, *time_zone);
+    readDateText(tmp, rb, *time_zone, saturate_on_overflow);
     x = tmp;
 }
 
 template <>
-inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     ExtendedDayNum tmp(0);
-    readDateText(tmp, rb, *time_zone);
+    readDateText(tmp, rb, *time_zone, saturate_on_overflow);
     x = tmp;
 }
 
 
 // NOTE: no need of extra overload of DateTime64, since readDateTimeText64 has different signature and that case is explicitly handled in the calling code.
 template <>
-inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     time_t time = 0;
-    readDateTimeText(time, rb, *time_zone);
+    readDateTimeText(time, rb, *time_zone, saturate_on_overflow);
     convertFromTime<DataTypeDateTime>(x, time);
 }
 
 template <>
-inline void parseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline void parseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool)
 {
     time_t time = 0;
     readTimeText(time, rb, *time_zone);
@@ -1179,7 +1208,7 @@ inline void parseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb
 }
 
 template <>
-inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool, bool)
 {
     UUID tmp;
     readUUIDText(tmp, rb);
@@ -1187,7 +1216,7 @@ inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb
 }
 
 template <>
-inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool, bool)
 {
     IPv4 tmp;
     readIPv4Text(tmp, rb);
@@ -1195,7 +1224,7 @@ inline void parseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb
 }
 
 template <>
-inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool, bool)
 {
     IPv6 tmp;
     readIPv6Text(tmp, rb);
@@ -1203,7 +1232,7 @@ inline void parseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb
 }
 
 template <typename DataType>
-bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing)
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool precise_float_parsing, bool)
 {
     if constexpr (is_floating_point<typename DataType::FieldType>)
     {
@@ -1217,37 +1246,37 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
 }
 
 template <>
-inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     DayNum tmp(0);
-    if (!tryReadDateText(tmp, rb, *time_zone))
+    if (!tryReadDateText(tmp, rb, *time_zone, nullptr, saturate_on_overflow))
         return false;
     x = tmp;
     return true;
 }
 
 template <>
-inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline bool tryParseImpl<DataTypeDate32>(DataTypeDate32::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     ExtendedDayNum tmp(0);
-    if (!tryReadDateText(tmp, rb, *time_zone))
+    if (!tryReadDateText(tmp, rb, *time_zone, nullptr, saturate_on_overflow))
         return false;
     x = tmp;
     return true;
 }
 
 template <>
-inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool saturate_on_overflow)
 {
     time_t time = 0;
-    if (!tryReadDateTimeText(time, rb, *time_zone))
+    if (!tryReadDateTimeText(time, rb, *time_zone, nullptr, nullptr, saturate_on_overflow))
         return false;
     convertFromTime<DataTypeDateTime>(x, time);
     return true;
 }
 
 template <>
-[[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool)
+[[maybe_unused]]inline bool tryParseImpl<DataTypeTime>(DataTypeTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone, bool, bool)
 {
     time_t time = 0;
     if (!tryReadTimeText(time, rb, *time_zone))
@@ -1257,7 +1286,7 @@ template <>
 }
 
 template <>
-inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool, bool)
 {
     UUID tmp;
     if (!tryReadUUIDText(tmp, rb))
@@ -1268,7 +1297,7 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
 }
 
 template <>
-inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool, bool)
 {
     IPv4 tmp;
     if (!tryReadIPv4Text(tmp, rb))
@@ -1279,7 +1308,7 @@ inline bool tryParseImpl<DataTypeIPv4>(DataTypeIPv4::FieldType & x, ReadBuffer &
 }
 
 template <>
-inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool)
+inline bool tryParseImpl<DataTypeIPv6>(DataTypeIPv6::FieldType & x, ReadBuffer & rb, const DateLUTImpl *, bool, bool)
 {
     IPv6 tmp;
     if (!tryReadIPv6Text(tmp, rb))
@@ -1412,6 +1441,11 @@ struct ConvertThroughParsing
             utc_time_zone = &DateLUT::instance("UTC");
         }
 
+        /// Nothing to wrap around when parsing text, so `ignore` behaves like `saturate`
+        const bool saturate_on_overflow [[maybe_unused]]
+            = settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw;
+        const auto overflow [[maybe_unused]] = saturate_on_overflow ? DateTimeOverflow::Saturate : DateTimeOverflow::Report;
+
         const IColumn * col_from = arguments[0].column.get();
         const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
         const ColumnFixedString * col_from_fixed_string = checkAndGetColumn<ColumnFixedString>(col_from);
@@ -1506,7 +1540,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
@@ -1533,7 +1567,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i], res);
                     }
                 }
@@ -1579,11 +1613,11 @@ struct ConvertThroughParsing
                             }
                             if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                             {
-                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing))
+                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing, saturate_on_overflow))
                                     throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
                             }
                             else
-                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing);
+                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing, saturate_on_overflow);
                         } while (false);
                     }
                 }
@@ -1618,7 +1652,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
@@ -1645,7 +1679,7 @@ struct ConvertThroughParsing
                     else
                     {
                         time_t res = 0;
-                        parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
+                        parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone, overflow);
                         convertFromTime<ToDataType>(vec_to[i],res);
                     }
                 }
@@ -1678,7 +1712,7 @@ struct ConvertThroughParsing
                     }
                     else
                     {
-                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing);
+                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, settings.precise_float_parsing, saturate_on_overflow);
                     }
                 }
 
@@ -2201,6 +2235,8 @@ struct ConvertImpl
             || std::is_same_v<FromDataType, DataTypeFloat32>
             || std::is_same_v<FromDataType, DataTypeFloat64>
             || std::is_same_v<FromDataType, DataTypeBFloat16>
+            || std::is_same_v<FromDataType, DataTypeEnum8>
+            || std::is_same_v<FromDataType, DataTypeEnum16>
             ) && std::is_same_v<ToDataType, DataTypeDate>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromSecondsOrDays<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -2247,10 +2283,13 @@ struct ConvertImpl
         /// convenience, Float32, Float64, BFloat16) to DateTime. Without the wide integers here the
         /// conversion would fall through to the generic numeric path, which narrows to `UInt32` modulo
         /// 2^32 instead of saturating - and the monotonicity `toDateTime` claims would not hold.
+        /// `Enum8`/`Enum16` are stored as `Int8`/`Int16`, so they take the same saturating transform.
         else if constexpr ((
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
-                || std::is_same_v<FromDataType, DataTypeInt32>)
+                || std::is_same_v<FromDataType, DataTypeInt32>
+                || std::is_same_v<FromDataType, DataTypeEnum8>
+                || std::is_same_v<FromDataType, DataTypeEnum16>)
             && std::is_same_v<ToDataType, DataTypeDateTime>)
         {
             return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTimeTransformSigned<typename FromDataType::FieldType, UInt32, default_date_time_overflow_behavior>, false>::template execute<Additions>(
@@ -2682,7 +2721,7 @@ struct ConvertImpl
                 /// For argument of Date or DateTime type, second argument with time zone could be specified.
                 if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
                 {
-                    if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
+                    if (time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()); time_zone_column)
                     {
                         auto non_null_args = createBlockWithNestedColumns(arguments);
                         time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
@@ -3405,9 +3444,14 @@ public:
         return name;
     }
 
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return std::is_same_v<Name, NameToString> && arguments.size() <= 1;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
@@ -3544,6 +3588,8 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A NULL input converts to NULL only when the target is Nullable.
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
@@ -3678,8 +3724,32 @@ public:
 
                 ColumnsWithTypeAndName temporary_columns = createBlockWithNestedColumns(arguments);
                 auto temporary_result_type = removeNullable(result_type);
-                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
 
+                /// The string behind a NULL row is arbitrary, and parsing it to DateTime64 or Time64 may throw.
+                WhichDataType which_result(temporary_result_type);
+                if (result_null_map && (which_result.isDateTime64() || which_result.isTime64())
+                    && isStringOrFixedString(removeNullable(arguments[0].type)))
+                {
+                    const auto & null_map_data = assert_cast<const ColumnUInt8 &>(*result_null_map).getData();
+                    size_t rows_without_nulls = input_rows_count - countBytesInFilter(null_map_data.data(), 0, input_rows_count);
+                    if (rows_without_nulls == 0)
+                        return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+
+                    if (rows_without_nulls < input_rows_count)
+                    {
+                        IColumn::Filter filter_mask(input_rows_count);
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                            filter_mask[i] = !null_map_data[i];
+                        for (auto & column : temporary_columns)
+                            column.column = column.column->filter(filter_mask, rows_without_nulls);
+
+                        auto res = IColumn::mutate(executeInternal(temporary_columns, temporary_result_type, rows_without_nulls, /*to_nullable=*/ true));
+                        res->expand(filter_mask, /*inverted=*/ false);
+                        return wrapInNullable(std::move(res), std::move(result_null_map));
+                    }
+                }
+
+                ColumnPtr res = executeInternal(temporary_columns, temporary_result_type, input_rows_count, /*to_nullable=*/ true);
                 return wrapInNullable(res, std::move(result_null_map));
             }
             else
@@ -4019,6 +4089,8 @@ public:
     {
         return name;
     }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -4719,7 +4791,7 @@ struct ToDateTimeMonotonicity
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field &, const Field &)
+    static IFunction::Monotonicity get(const IDataType & type_with_wrappers, const Field & left, const Field & right)
     {
         const IDataType * type_without_wrappers = &type_with_wrappers;
         if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_without_wrappers))
@@ -4730,7 +4802,42 @@ struct ToDateTimeMonotonicity
         if (type.isValueRepresentedByNumber())
         {
             auto which = WhichDataType(type);
-            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isDate() || which.isUInt8() || which.isUInt16()
+
+            /// Rescaling a day number to seconds wraps the `UInt32` result outside a bounded window, and
+            /// this trait cannot read `date_time_overflow_behavior`, so the window must hold for the
+            /// wrapping default. `Date32` also needs a floor: its raw day 0 is negative ahead of UTC.
+            if constexpr (std::is_same_v<T, DataTypeDateTime>)
+            {
+                if (which.isDateOrDate32())
+                {
+                    const Int64 min_day_num = which.isDate32() ? 1 : 0;
+
+                    /// An absent or non-integer bound is outside the window: the range may then hold any day.
+                    auto is_within_window = [&](const Field & bound)
+                    {
+                        if (bound.getType() == Field::Types::UInt64)
+                        {
+                            const UInt64 day_num = bound.safeGet<UInt64>();
+                            return day_num <= static_cast<UInt64>(MAX_DATETIME_DAY_NUM)
+                                && static_cast<Int64>(day_num) >= min_day_num;
+                        }
+                        if (bound.getType() == Field::Types::Int64)
+                        {
+                            const Int64 day_num = bound.safeGet<Int64>();
+                            return day_num >= min_day_num && day_num <= static_cast<Int64>(MAX_DATETIME_DAY_NUM);
+                        }
+                        return false;
+                    };
+
+                    if (!is_within_window(left) || !is_within_window(right))
+                        return {};
+
+                    /// Not strict: a timezone may skip a civil day, mapping two day numbers to one instant.
+                    return {.is_monotonic = true};
+                }
+            }
+
+            if (std::is_same_v<T, DataTypeDateTime> && (which.isDateTime() || which.isUInt8() || which.isUInt16()
                 || which.isUInt32()))
                 return {.is_monotonic = true, .is_always_monotonic = true, .is_strict = true};
 
@@ -5271,6 +5378,9 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A NULL input converts to NULL only when the target is Nullable; otherwise the conversion
+    /// throws rather than returning a NULL, so it must not be treated as propagating.
+    bool isNullPropagating(const DataTypePtr & result_type) const override { return isNullableOrLowCardinalityNullable(result_type); }
     /// CAST(Nothing, T) -> T
     bool useDefaultImplementationForNothing() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -5318,6 +5428,8 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override;
 
     String getName() const override { return cast_name; }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

@@ -50,7 +50,12 @@ DROP TABLE t_nan_minmax;
 
 SELECT 'a NaN-free set still prunes';
 DROP TABLE IF EXISTS t_no_nan;
-CREATE TABLE t_no_nan (k UInt64, f Float64, INDEX mm f TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1000;
+-- The `Granules: 1/100` checks below count granules, so adaptive granularity has to be off as well:
+-- `clickhouse-test` randomizes `index_granularity_bytes`, and a small value splits the 100 thousand
+-- rows into more than the 100 granules that `index_granularity = 1000` alone gives. Non-adaptive
+-- granularity requires Wide parts, so the part-format thresholds are pinned too (otherwise the
+-- server logs a warning to stderr and the test fails on it).
+CREATE TABLE t_no_nan (k UInt64, f Float64, INDEX mm f TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1000, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_no_nan SELECT number, number FROM numbers(100000);
 SELECT count() FROM t_no_nan WHERE f IN (5.0, 7.0) SETTINGS use_statistics_for_part_pruning = 0;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_no_nan WHERE f IN (5.0, 7.0) SETTINGS use_statistics_for_part_pruning = 0) WHERE explain LIKE '%Granules: 1/100%';
@@ -58,7 +63,7 @@ DROP TABLE t_no_nan;
 
 SELECT 'an integer key is unaffected';
 DROP TABLE IF EXISTS t_int_key;
-CREATE TABLE t_int_key (k UInt64, INDEX mm k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1000;
+CREATE TABLE t_int_key (k UInt64, INDEX mm k TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1000, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_int_key SELECT number FROM numbers(100000);
 SELECT count() FROM t_int_key WHERE k IN (5, 7);
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_int_key WHERE k IN (5, 7)) WHERE explain LIKE '%Granules: 1/100%';

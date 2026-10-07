@@ -236,6 +236,12 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
     /// For sorting steps which are created for full sorting merge algorithm,
     /// We need to change the sorting mode to sort partitions independently.
     std::list<SortingStep *> sorting_steps;
+    /// Merge-join sorting steps above this subtree whose join has not been reached yet. They move to
+    /// `sorting_steps` once that join is sharded. If it is not, they are left alone: such a sort then feeds
+    /// a single merge join, which needs one stream per side, so it must merge the shards of a sharded join
+    /// below it instead of keeping them (a `FinishSorting` above a `full_sorting_merge` join is normal - the
+    /// join emits its result in key order).
+    std::list<SortingStep *> pending_sorting_steps;
     /// Apply the minimum prefix in case of multiple joins.
     size_t common_prefix = std::numeric_limits<size_t>::max();
     /// Whether the common primary key prefix used for sharding is in reverse order.
@@ -447,12 +453,20 @@ void optimizeJoinByShards(QueryPlan::Node & root)
                 result->joins.joins.splice(result->joins.joins.end(), std::move(frame.results.back()->joins.joins));
                 result->joins.sources.splice(result->joins.sources.end(), std::move(frame.results.back()->joins.sources));
                 result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.sorting_steps));
+                /// The pre-sorts of both sides feed a sharded join now, so they sort each shard independently.
+                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(result->joins.pending_sorting_steps));
+                result->joins.sorting_steps.splice(result->joins.sorting_steps.end(), std::move(frame.results.back()->joins.pending_sorting_steps));
                 result->joins.joins_to_keep_in_order.splice(result->joins.joins_to_keep_in_order.end(), std::move(frame.results.back()->joins.joins_to_keep_in_order));
 
                 frame.results.back() = std::nullopt;
             }
-            else if (can_split_left_table)
+            else if (can_split_left_table && join->pipelineType() != JoinPipelineType::YShaped)
             {
+                /// A hash join probes each left stream independently, so the shards of the left table
+                /// survive it and a join above can still be sharded. A `full_sorting_merge` join that is
+                /// not sharded itself merges its left input into a single stream and spreads its result
+                /// over `max_streams` arbitrary streams, which are not the shards anymore: the chain stops
+                /// here, and the sharding found below is applied as it is (see the end of the loop).
                 /// TODO : check if any type conversion is needed for join_use_nulls.
                 result = std::move(frame.results.front());
                 result->joins.joins_to_keep_in_order.emplace_back(join_step);
@@ -471,14 +485,14 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         else if (auto * sorting = typeid_cast<SortingStep *>(frame.node->step.get());
             sorting && sorting->isSortingForMergeJoin() && sorting->getType() == SortingStep::Type::FinishSorting)
         {
-            /// Here we assume that read-in-order is applied for full sorting merge join.
-            /// The SortingStep can potentially appear from ORDER BY,
-            /// but it would be useless because JOIN does not enforce sorting by itself.
+            /// The input is already sorted: either a read in order, or a `full_sorting_merge` join below,
+            /// which emits its result in key order. Whether the sort keeps the streams (one per shard) or
+            /// merges them is decided at the join it feeds.
 
             if (frame.results.size() == 1 && frame.results[0])
             {
                 result = std::move(frame.results[0]);
-                result->joins.sorting_steps.push_back(sorting);
+                result->joins.pending_sorting_steps.push_back(sorting);
             }
         }
         else if (frame.results.size() == 1 && frame.results[0])
@@ -506,8 +520,8 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 /// `SortingStep` is switched to scatter the rows by the hash of the join keys into independent partitions
 /// and sort each partition (one sorted stream per shard), and the join is executed shard-by-shard
 /// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
-/// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
-/// in the same shard on both sides. The join output is unordered.
+/// on the join-key values (and equal values hash equally through `LowCardinality`/`Nullable` wrappers, per
+/// `IColumn::computeHashInto`), equal keys land in the same shard on both sides. The join output is unordered.
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards)
 {
     /// Need at least two shards to gain anything; with one shard this is a plain single merge join.
@@ -559,8 +573,8 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                 /// `MergingSortedTransform`s, per-shard `MergeJoinTransform`s) wait for a chunk of one
                 /// specific input each. Two such scatters then form a circular wait - A blocked pushing to
                 /// shard `i` whose merge waits on B, B blocked pushing to shard `j` whose merge waits on A
-                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune:
-                /// each `MergeSortingTransform` drains its whole input before emitting anything.
+                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune
+                /// while every shard lane is demanded: a sleeping lane never starts draining its input.
                 ///
                 /// A pre-sorted side therefore runs as a single merge join, exactly like
                 /// `full_sorting_merge`, keeping the in-order read and its virtual rows

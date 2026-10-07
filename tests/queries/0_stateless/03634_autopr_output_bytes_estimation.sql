@@ -2,10 +2,17 @@
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000;
+SET optimize_move_to_prewhere = 1, query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10000;
 
 -- External aggregation is not supported as of now
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
+
+-- Disable external sorting. When the randomized `max_bytes_before_external_sort` makes `query_43`
+-- spill, and the randomized `prefer_external_sort_block_bytes` is as low as 1, the merged sorted
+-- output comes out in blocks of 128 rows. The estimator samples those small blocks, which compress
+-- several times worse than full-size ones, so the `URL` output estimate grows from ~17 MB to ~60 MB,
+-- beyond the tolerance below.
+SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
 
 -- Override randomized max_threads to avoid timeout on slow builds (ASan)
 SET max_threads=0;
@@ -22,6 +29,13 @@ SET max_block_size=65409;
 -- randomization sets these thresholds as low as 1) shifts the estimate well away from the
 -- expected values calibrated under the default thresholds. Pin them to the defaults.
 SET group_by_two_level_threshold=100000, group_by_two_level_threshold_bytes=50000000;
+
+-- For the same reason, disable the adaptive aggregator. Its per-thread tables stay single-level
+-- until one of them reaches `adaptive_aggregator_freeze_threshold` keys and freezes, which converts
+-- the data to two-level. Whether a thread crosses the threshold depends on how the marks happen to be
+-- distributed between the reading threads, so `query_12` randomly took the two-level bucket merge,
+-- whose estimate (~6.6M) is 2.5x the single-level one the expected values are calibrated for.
+SET enable_adaptive_aggregator=0;
 
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 

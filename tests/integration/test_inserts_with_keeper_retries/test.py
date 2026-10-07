@@ -33,6 +33,18 @@ def started_cluster():
         cluster.shutdown()
 
 
+def assert_inserted_synchronously(query_id):
+    # An INSERT routed to the async insert queue counts `AsyncInsertQuery` on its own query.
+    node1.query("SYSTEM FLUSH LOGS query_log")
+    assert (
+        node1.query(
+            "SELECT count(), sum(ProfileEvents['AsyncInsertQuery']) FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'ExceptionWhileProcessing'"
+        )
+        == "1\t0\n"
+    )
+
+
 @pytest.mark.parametrize(
     "engine,storage_policy",
     [
@@ -136,13 +148,17 @@ def test_query_timeout_with_zk_down(started_cluster, engine, storage_policy):
 
         cluster.stop_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
 
+        query_id = str(uuid.uuid4())
         start_time = time.time()
-        with pytest.raises(QueryRuntimeException):
+        with pytest.raises(QueryRuntimeException, match="TIMEOUT_EXCEEDED"):
+            # async_insert=0: max_execution_time must stop this query's own Keeper retries.
             node1.query(
-                "INSERT INTO zk_down SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_max_backoff_ms=1000, max_execution_time=1"
+                "INSERT INTO zk_down SELECT number, toString(number) FROM numbers(10) SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_max_backoff_ms=1000, max_execution_time=1, async_insert=0",
+                query_id=query_id,
             )
         finish_time = time.time()
         assert finish_time - start_time < 10
+        assert_inserted_synchronously(query_id)
     finally:
         cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
         node1.query("DROP TABLE IF EXISTS zk_down SYNC")
@@ -209,12 +225,13 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
             "SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )
 
+        # async_insert=0: the timeout must interrupt this query's own commit recovery.
         job = pool.apply_async(
             node1.query_and_get_error,
             (
                 "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) ORDER BY ALL "
                 "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=50, "
-                "insert_keeper_retry_max_backoff_ms=100, max_execution_time=2",
+                "insert_keeper_retry_max_backoff_ms=100, max_execution_time=2, async_insert=0",
             ),
             {"query_id": query_id},
         )
@@ -233,6 +250,7 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
 
         error = job.get(timeout=60)
         assert "TIMEOUT_EXCEEDED" in error
+        assert_inserted_synchronously(query_id)
 
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
@@ -256,7 +274,10 @@ def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
         )
     finally:
         if job is not None and not job.ready():
-            node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+            node1.query(
+                f"KILL QUERY WHERE query_id = '{query_id}' ASYNC "
+                "SETTINGS kill_throw_if_noop = false"
+            )
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )
@@ -290,12 +311,13 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
             "SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )
 
+        # async_insert=0: KILL QUERY must interrupt this query's own commit recovery.
         job = pool.apply_async(
             node1.query_and_get_error,
             (
                 "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) ORDER BY ALL "
                 "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=100, "
-                "insert_keeper_retry_max_backoff_ms=200",
+                "insert_keeper_retry_max_backoff_ms=200, async_insert=0",
             ),
             {"query_id": query_id},
         )
@@ -313,6 +335,7 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
 
         error = job.get(timeout=60)
         assert "QUERY_WAS_CANCELLED" in error
+        assert_inserted_synchronously(query_id)
 
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
@@ -334,7 +357,10 @@ def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
         )
     finally:
         if job is not None and not job.ready():
-            node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+            node1.query(
+                f"KILL QUERY WHERE query_id = '{query_id}' ASYNC "
+                "SETTINGS kill_throw_if_noop = false"
+            )
         node1.query(
             "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
         )

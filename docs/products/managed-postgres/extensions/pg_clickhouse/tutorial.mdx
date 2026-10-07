@@ -101,6 +101,7 @@ And then import the data:
 INSERT INTO taxi.trips
 SELECT * FROM s3(
     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+    'NOSIGN',
     'TabSeparatedWithNames', "
     trip_id UInt32,
     vendor_id Enum8(
@@ -685,7 +686,7 @@ Generally, we avoid using `SELECT *` in PostgreSQL and ClickHouse. You
 should only retrieve the columns you actually need.
 </Note>
 
-  [ClickHouse tutorial]: /get-started/quickstarts/tutorial "ClickHouse Advanced Tutorial"
+  [ClickHouse tutorial]: /get-started/sample-datasets/nyc-taxi "New York taxi data"
   [psql]: https://www.postgresql.org/docs/current/app-psql.html
     "PostgreSQL Client Applications: psql"
   [EXPLAIN]: https://www.postgresql.org/docs/current/sql-explain.html
