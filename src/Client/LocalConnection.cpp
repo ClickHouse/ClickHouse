@@ -427,8 +427,16 @@ void LocalConnection::sendQuery(
         }
         else
         {
+            /// A plain `SET` is parsed by the ClickHouse parser in the `mongo` dialect, as in
+            /// `ClientBase::parseQuery`, so that it does not need the Mongo parser (which a build
+            /// without rapidjson does not have) to switch the session back to another dialect.
+            const bool is_mongo_set_escape = dialect == Dialect::mongo
+                && isClickHouseJSONSetEscape(begin, end, state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
+
             std::unique_ptr<IParserBase> parser;
-            if (dialect == Dialect::prql)
+            if (is_mongo_set_escape)
+                parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
+            else if (dialect == Dialect::prql)
                 parser = std::make_unique<ParserPRQLQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
             else if (dialect == Dialect::mongo)
 #if USE_RAPIDJSON
@@ -450,7 +458,7 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 
 #if USE_RAPIDJSON
-            if (dialect == Dialect::mongo)
+            if (dialect == Dialect::mongo && !is_mongo_set_escape)
                 parsed_query = Mongo::parseMongoQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
             else
 #endif

@@ -49,8 +49,15 @@ ASTPtr tryParseMongoQuery(
         IParser::Pos set_iterator(set_tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
         Expected set_expected;
         ASTPtr set_query;
+        /// The `SET` has to be the whole statement: `ParserSetQuery` succeeds on a prefix, and
+        /// `SET dialect = 'clickhouse' garbage` must not run the prefix and leave the rest behind.
         if (ParserSetQuery().parse(set_iterator, set_query, set_expected))
         {
+            if (set_iterator->type != TokenType::Semicolon && !set_iterator->isEnd())
+            {
+                out_error_message = "Cannot parse the `SET` query: there is text after it";
+                return nullptr;
+            }
             /// The terminator belongs to the statement that was just parsed, so that the next query
             /// starts after it rather than at it.
             ParserToken(TokenType::Semicolon).ignore(set_iterator, set_expected);
@@ -139,8 +146,15 @@ ASTPtr parseMongoQuery(
         IParser::Pos set_iterator(set_tokens, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
         Expected set_expected;
         ASTPtr set_query;
+        /// Only a single statement is expected here, so the `SET` may be followed by nothing but
+        /// its terminator: `ParserSetQuery` succeeds on a prefix and would drop the rest.
         if (ParserSetQuery().parse(set_iterator, set_query, set_expected))
+        {
+            ParserToken(TokenType::Semicolon).ignore(set_iterator, set_expected);
+            if (!set_iterator->isEnd())
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "Only a single `SET` statement is expected, but there is text after it");
             return set_query;
+        }
     }
 
     /// This path carries a single statement: a trailing `;` is tolerated, a second statement
