@@ -110,6 +110,17 @@ part_dir()
     "
 }
 
+# On a case-insensitive filesystem (macOS) the server stores every column file under the hash of its name.
+key_columns_file()
+{
+    local part_dir=$1
+    if [ -f "$part_dir/m.key_columns.txt" ]; then
+        echo "$part_dir/m.key_columns.txt"
+    else
+        echo "$part_dir/$(${CLICKHOUSE_CLIENT} -q "SELECT lower(hex(reverse(sipHash128('m.key_columns.txt'))))")"
+    fi
+}
+
 full_dir=$(part_dir t_wkc_paths_full)
 per_key_dir=$(part_dir t_wkc_paths_per_key)
 
@@ -118,9 +129,9 @@ map_substreams "$full_dir"
 echo "per_key_substreams"
 map_substreams "$per_key_dir"
 echo "full_manifest"
-cat "$full_dir/m.key_columns.txt"
+cat "$(key_columns_file "$full_dir")"
 echo "per_key_manifest"
-cat "$per_key_dir/m.key_columns.txt"
+cat "$(key_columns_file "$per_key_dir")"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
 echo "algorithms"
