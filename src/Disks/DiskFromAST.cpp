@@ -2,6 +2,7 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
+#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Parsers/ASTExpressionList.h>
@@ -118,11 +119,23 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
             " It is impossible to redefine it.",
             disk_name);
 
-    if (disk->getCustomDiskSettings() != disk_settings_hash && !attach)
-        throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
+    if (disk->getCustomDiskSettings() != disk_settings_hash)
+    {
+        if (!attach)
+            throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
+                    disk_name);
+
+        /// An existing definition is not rejected on attach, so that the server can start. But the disk with
+        /// this name was created from another definition, e.g. by a table created while this one was detached.
+        bool only_name = disk_settings_keys.size() == 1 && disk_settings_keys.front() == "name";
+        if (!only_name)
+            LOG_WARNING(getLogger("DiskFromAST"),
+                "The custom disk `{}` is attached with a definition that differs from the one the disk was created with, "
+                "the existing disk is used",
                 disk_name);
+    }
 
     return {disk_name, std::move(registration)};
 }
