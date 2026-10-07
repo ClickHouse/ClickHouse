@@ -534,16 +534,31 @@ bool MergeTreeReaderWide::canServeFirstRangeFromCache()
     return !servable.empty() && std::all_of(servable.begin(), servable.end(), [](bool s) { return s; });
 }
 
+bool MergeTreeReaderWide::admitStripeToColumnsCache(size_t stripe)
+{
+    if (!stripe_admission || stripe_admission->first != stripe)
+        stripe_admission.emplace(stripe, columns_cache->shouldAdmit());
+    return stripe_admission->second;
+}
+
 bool MergeTreeReaderWide::canReadWholeColumnsCacheStripe(size_t mark)
 {
     if (hasColumnsReadOnlyFromPart())
         return false;
-    if (columns_cache_writes_possible && canWriteToColumnsCache())
+
+    const size_t stripe = stripes.stripeOf(mark);
+    if (isColumnsCacheStripeServed(stripe))
         return true;
+
+    /// A stripe the cache would not admit is read as asked: a whole one would only be a larger block.
+    return columns_cache_writes_possible && canWriteToColumnsCache() && admitStripeToColumnsCache(stripe);
+}
+
+bool MergeTreeReaderWide::isColumnsCacheStripeServed(size_t stripe)
+{
     if (!columns_cache_reads_possible)
         return false;
 
-    const size_t stripe = stripes.stripeOf(mark);
     const size_t first_mark = stripes.firstMark(stripe);
     const size_t end_mark = stripes.endMark(stripe, data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal());
 
@@ -912,7 +927,7 @@ bool MergeTreeReaderWide::writeStripeToColumnsCache(
     }
 
     finishAccumulatedGranules();
-    if (!canWriteToColumnsCache() || !columns_cache->shouldAdmit())
+    if (!canWriteToColumnsCache() || !admitStripeToColumnsCache(stripe))
         return true;
 
     for (size_t pos = 0; pos < res_columns.size(); ++pos)
@@ -983,7 +998,7 @@ void MergeTreeReaderWide::accumulateRowsForColumnsCache(
     {
         finishAccumulatedGranules();
 
-        if (offset != 0 || !canWriteToColumnsCache() || !columns_cache->shouldAdmit())
+        if (offset != 0 || !canWriteToColumnsCache() || !admitStripeToColumnsCache(stripes.stripeOf(mark)))
             return;
 
         accumulating = true;

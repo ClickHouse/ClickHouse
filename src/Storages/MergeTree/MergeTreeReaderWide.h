@@ -331,6 +331,14 @@ private:
     /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
     bool canWriteToColumnsCache() const;
 
+    /// Whether the cache admits the stripe, see `ColumnsCache::shouldAdmit`: decided once per stripe, when the
+    /// block that reads it is sized (see `canReadWholeColumnsCacheStripe`), and the same decision when it is written.
+    bool admitStripeToColumnsCache(size_t stripe);
+    std::optional<std::pair<size_t, bool>> stripe_admission;
+
+    /// Whether every regular column of the stripe is served from the cache.
+    bool isColumnsCacheStripeServed(size_t stripe);
+
     void resetAccumulation();
 
     /// Copy the rows [offset, offset + rows) of granule `mark`, just read from the part, for the
