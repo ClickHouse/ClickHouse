@@ -1,8 +1,8 @@
 -- A relation whose row estimate is unknown is costed by the join order optimizer at the rows it
--- cannot exceed (the rows the read selects), or at the largest known relation when no bound
--- exists, so a missing estimate never makes a plan look cheap; without this it counted as one row
--- and was joined first. The hints stand in for column statistics of the known tables; `t_unk` has
--- no statistics and a filter the primary index cannot use, so its estimate is unknown.
+-- cannot exceed (the rows the read selects), so a missing estimate does not make a plan look cheap;
+-- without this it counted as one row and was joined first. The hints stand in for column
+-- statistics of the known tables; `t_unk` has no statistics and a filter the primary index cannot
+-- use, so its estimate is unknown.
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 -- The plan lines below show the filter moved to PREWHERE; the runner randomizes the move.

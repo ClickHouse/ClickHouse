@@ -37,6 +37,8 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
+    /// One over the largest key NDV of the join predicates, a key without an NDV counting its relation's
+    /// rows; reported by `EXPLAIN` as `estimated (NDV)`. See `JoinKeyEstimate::selectivity`.
     double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
     /// Rows the result cannot exceed; see `RelationStats::max_rows` and `estimateJoinRowsUpperBound`.
@@ -92,11 +94,6 @@ struct ConflictJoinOp
 struct QueryGraph
 {
     std::vector<RelationStats> relation_stats;
-
-    /// Search value for a relation whose row estimate and upper bound are both unknown: the
-    /// largest known row count among the relations of this graph. Unset when nothing is known,
-    /// in which case every such relation is costed as one row and they only tie with each other.
-    std::optional<UInt64> unknown_rows_fallback;
 
     std::vector<JoinActionRef> edges;
 

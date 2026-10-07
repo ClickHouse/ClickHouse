@@ -24,11 +24,13 @@ GroupCountEstimate estimateGroupCount(const std::vector<UInt64> & key_distinct_v
     return result;
 }
 
-UInt64 keyDistinctValuesOrRows(const RelationStats & relation, const String & column)
+KeyDistinctValues keyDistinctValues(const RelationStats & relation, const String & column)
 {
-    if (auto it = relation.column_stats.find(column); it != relation.column_stats.end() && it->second.num_distinct_values > 0)
-        return it->second.num_distinct_values;
-    return relation.estimated_rows.value_or(0);
+    KeyDistinctValues result;
+    if (auto it = relation.column_stats.find(column); it != relation.column_stats.end())
+        result.from_statistics = it->second.num_distinct_values;
+    result.rows = relation.estimated_rows.value_or(0);
+    return result;
 }
 
 UInt64 keyDomain(const RelationStats & relation, const String & column)
@@ -59,14 +61,6 @@ void addUnionColumnStats(
         if (other_column != other.end())
             stats.domain_distinct_values = std::max(stats.domain_distinct_values, other_column->second.domain_distinct_values);
     }
-}
-
-std::optional<double> equalitySelectivity(UInt64 left_distinct_values, UInt64 right_distinct_values)
-{
-    const UInt64 larger = std::max(left_distinct_values, right_distinct_values);
-    if (larger == 0)
-        return std::nullopt;
-    return 1.0 / static_cast<double>(larger);
 }
 
 UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UInt64 rows_after)
@@ -193,6 +187,15 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         }
         mapped[outputs[output_lineage.output_position]->result_name] = stats;
     }
+}
+
+UInt64 toUInt64Saturating(Float64 estimate)
+{
+    if (!(estimate > 0))
+        return 0;
+    if (estimate >= static_cast<Float64>(std::numeric_limits<UInt64>::max()))
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(estimate);
 }
 
 }

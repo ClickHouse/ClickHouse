@@ -1016,13 +1016,6 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
-    for (const auto & relation : query_graph.relation_stats)
-    {
-        /// The search value for relations without any estimate; see `QueryGraph::unknown_rows_fallback`.
-        std::optional<UInt64> known = relation.estimated_rows ? relation.estimated_rows : relation.max_rows;
-        if (known && (!query_graph.unknown_rows_fallback || *known > *query_graph.unknown_rows_fallback))
-            query_graph.unknown_rows_fallback = known;
-    }
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);

@@ -78,15 +78,19 @@ void addUnionColumnStats(
 /// key, zero for a key without one. No keys: one group.
 GroupCountEstimate estimateGroupCount(const std::vector<UInt64> & key_distinct_values, std::optional<UInt64> rows, std::optional<UInt64> max_rows);
 
-/// NDV of a key for a join selectivity: the column's NDV, else the relation's rows (the key counts
-/// as unique), else zero for unknown.
-UInt64 keyDistinctValuesOrRows(const RelationStats & relation, const String & column);
+/// Distinct values of a join key: the NDV its column statistics give, and the rows of its relation,
+/// which stand in for a key without an NDV (the key then counts as unique). Zero means unknown.
+struct KeyDistinctValues
+{
+    UInt64 from_statistics = 0;
+    UInt64 rows = 0;
+
+    UInt64 orRows() const { return from_statistics ? from_statistics : rows; }
+};
+
+KeyDistinctValues keyDistinctValues(const RelationStats & relation, const String & column);
 /// NDV of the whole base column the key comes from; zero when unknown.
 UInt64 keyDomain(const RelationStats & relation, const String & column);
-
-/// Selectivity of one equality predicate from the NDVs of its sides (zero = unknown): one over
-/// the larger known NDV, nothing when neither is known.
-std::optional<double> equalitySelectivity(UInt64 left_distinct_values, UInt64 right_distinct_values);
 
 /// Distinct values of a column left by a filter that keeps `rows_after` of `rows_before` rows, when
 /// the column's `distinct_values` are spread evenly over the rows: a value survives when any of its
@@ -108,6 +112,10 @@ void updateJoinKeyDistinctCounts(
     ColumnStats & right_stats,
     JoinKind kind,
     JoinStrictness strictness);
+
+/// Converts a row or distinct-value estimate to `UInt64`. Estimates can exceed the `UInt64` range (a cross
+/// product of large inputs), so the result saturates at the maximum; NaN and non-positive values give 0.
+UInt64 toUInt64Saturating(Float64 estimate);
 
 }
 

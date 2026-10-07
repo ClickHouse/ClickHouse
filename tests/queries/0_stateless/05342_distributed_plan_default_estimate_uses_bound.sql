@@ -27,16 +27,16 @@ CREATE TABLE t_db_dim (k UInt64, name String STATISTICS(uniq, basic), grp UInt64
 INSERT INTO t_db_big SELECT number % 1000, number FROM numbers(100000);
 INSERT INTO t_db_dim SELECT number, concat('name_', toString(number % 100)), number % 10 FROM numbers(1000);
 
--- The side filtered on `grp` ships `k` and `grp`, 16 bytes per row; the side filtered on `name`
--- ships `name` too, 72 bytes per row with the default `String` width. Each budget below fits the
--- estimate of 100 rows and not the bound of 1000 rows.
+-- The dimension side ships only the join key `k`, 8 bytes per row: the filter column is read and
+-- dropped below the join. Each budget below fits the estimate of 100 rows (800 bytes) and not the
+-- bound of 1000 rows (8000 bytes).
 SELECT '-- an equality estimated from statistics (100 of 1000 rows) fits the budget: broadcast';
 EXPLAIN SELECT count() FROM t_db_big AS b JOIN t_db_dim AS d ON b.k = d.k WHERE d.grp = 3
 SETTINGS distributed_plan_max_bytes_to_broadcast = 4000;
 
 SELECT '-- the LIKE default also says 100 rows, but it is a guess and the bound of 1000 rows does not fit: shuffle';
 EXPLAIN SELECT count() FROM t_db_big AS b JOIN t_db_dim AS d ON b.k = d.k WHERE d.name LIKE '%_3%'
-SETTINGS distributed_plan_max_bytes_to_broadcast = 10000;
+SETTINGS distributed_plan_max_bytes_to_broadcast = 4000;
 
 SELECT '-- with a budget the bound fits, the guess may broadcast';
 EXPLAIN SELECT count() FROM t_db_big AS b JOIN t_db_dim AS d ON b.k = d.k WHERE d.name LIKE '%_3%'

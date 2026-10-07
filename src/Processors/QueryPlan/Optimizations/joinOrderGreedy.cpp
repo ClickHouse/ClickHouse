@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 
 #include <Common/Exception.h>
 #include <IO/Operators.h>
@@ -60,6 +61,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
     while (components.size() > 1)
     {
         std::shared_ptr<DPJoinEntry> best_plan = nullptr;
+        bool best_plan_equi_connected = false;
         size_t best_i = 0;
         size_t best_j = 0;
 
@@ -76,16 +78,22 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     continue;
 
                 auto edges = getApplicableExpressions(query_graph, left->relations, right->relations);
-                bool connected = !edges.empty()
-                    || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                bool transitively_connected = query_graph.areTransitivelyConnected(left->relations, right->relations);
+                bool equi_connected = hasEquiConnection(edges, left->relations, right->relations) || transitively_connected;
+                bool connected = equi_connected
+                    || std::ranges::any_of(edges, [&](const auto * e) { return connects(e, left->relations, right->relations); });
                 if (!connected && best_plan)
                     continue;
 
                 auto keys = computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations);
-                auto current_cost = computeJoinCost(query_graph, left, right, keys.selectivity);
-                if (!best_plan || current_cost < best_plan->cost)
+                auto current_cost = computeJoinCost(query_graph, left, right, keys);
+                /// A pair joined on a key always supersedes one without a key equality, whatever
+                /// the cost: a join without one is a cross product, or a filter on the product, that
+                /// a later key join would have to undo.
+                if (!best_plan || (equi_connected && !best_plan_equi_connected)
+                    || (equi_connected == best_plan_equi_connected && current_cost < best_plan->cost))
                 {
-                    if (join_kind == JoinKind::Inner && !connected)
+                    if (join_kind == JoinKind::Inner && edges.empty() && !transitively_connected)
                         join_kind = JoinKind::Cross;
                     auto cardinality = estimateJoinCardinality(left, right, keys, join_kind.value(), query_graph.join_strictness);
                     JoinOperator join_operator(join_kind.value(), query_graph.join_strictness, JoinLocality::Unspecified);
@@ -103,6 +111,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     }
                     applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, keys.selectivity, cardinality, std::move(join_operator));
+                    best_plan_equi_connected = equi_connected;
                     best_i = i;
                     best_j = j;
                 }

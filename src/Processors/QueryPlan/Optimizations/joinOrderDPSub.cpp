@@ -494,8 +494,8 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            UInt64 left_distinct_values = 0;
-            UInt64 right_distinct_values = 0;
+            KeyDistinctValues left_distinct_values;
+            KeyDistinctValues right_distinct_values;
             UInt64 domain_distinct_values = 0;
             bool has_left = false;
             bool has_right = false;
@@ -505,20 +505,25 @@ JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 if (!relation)
                     continue;
                 const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
+                KeyDistinctValues * side = nullptr;
                 if (left_mask & relation_bit)
                 {
                     has_left = true;
-                    left_distinct_values = std::max(left_distinct_values, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-                    domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+                    side = &left_distinct_values;
                 }
                 else if (right_mask & relation_bit)
                 {
                     has_right = true;
-                    right_distinct_values = std::max(right_distinct_values, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
-                    domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+                    side = &right_distinct_values;
                 }
+                else
+                    continue;
+                const auto member_values = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
+                side->from_statistics = std::max(side->from_statistics, member_values.from_statistics);
+                side->rows = std::max(side->rows, member_values.rows);
+                domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
             }
-            if (has_left && has_right && std::max(left_distinct_values, right_distinct_values) > 0)
+            if (has_left && has_right)
                 keys.add(left_distinct_values, right_distinct_values, domain_distinct_values);
         }
     }

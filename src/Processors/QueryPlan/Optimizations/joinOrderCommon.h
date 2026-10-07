@@ -11,47 +11,62 @@ namespace DB
 {
 
 using PlanMemo = std::unordered_map<BitSet, DPJoinEntryPtr>;
-/// What one join edge contributes to the selectivity of a join, computed once per edge.
+using QueryPlanOptimizations::KeyDistinctValues;
+
+/// What one join edge contributes to the keys of a join, computed once per edge: the distinct
+/// values of its two sides, the key's domain, and the relations of the left side, to tell which
+/// side of a join split each belongs to. Nothing for a non-equality edge.
 struct EdgeSelectivity
 {
-    /// One over the larger key NDV; nothing for a non-equality edge, or when neither side has an
-    /// NDV nor a row count to stand in for it.
-    std::optional<double> selectivity;
-    /// The key NDVs of the two sides of the predicate (zero = unknown), the key's domain, and the
-    /// relations of the left side, to tell which side of a join split each belongs to.
-    UInt64 lhs_distinct_values = 0;
-    UInt64 rhs_distinct_values = 0;
+    bool is_equality = false;
+    KeyDistinctValues lhs_distinct_values;
+    KeyDistinctValues rhs_distinct_values;
     UInt64 domain_distinct_values = 0;
     BitSet lhs_relations;
 };
 using SelectivityCache = std::unordered_map<JoinActionRef, EdgeSelectivity>;
 
-/// The equality predicates of a join combined: the most selective key decides the selectivity,
-/// and the smallest fraction of each side's rows whose key values the other side also has decides
-/// what a semi join keeps and an anti join drops. No predicates: everything matches.
+/// The equality predicates of a join combined. `selectivity` is one over the largest key NDV, a
+/// key without an NDV counting its relation's rows; `EXPLAIN` reports it. `statistics_selectivity`
+/// takes only the NDVs the statistics give: it sizes the join when some key has one, see
+/// `estimateJoinedRows`. A side's match fraction is the smallest share of its key values the other
+/// side also has, known when the side's NDV comes from statistics, see `keyContainment`.
 struct JoinKeyEstimate
 {
     double selectivity = 1.0;
-    double left_match_fraction = 1.0;
-    double right_match_fraction = 1.0;
+    double statistics_selectivity = 1.0;
+    /// An equality connects the two sides.
+    bool has_equality = false;
+    /// Some key NDV comes from statistics.
+    bool from_statistics = false;
+    std::optional<double> left_match_fraction;
+    std::optional<double> right_match_fraction;
 
-    /// A key pair by its two NDVs (zero = unknown) and the key's domain; nothing when both are unknown.
-    void add(UInt64 left_distinct_values, UInt64 right_distinct_values, UInt64 domain_distinct_values)
+    void add(const KeyDistinctValues & left, const KeyDistinctValues & right, UInt64 domain_distinct_values)
     {
-        if (std::max(left_distinct_values, right_distinct_values) == 0)
+        has_equality = true;
+        const UInt64 largest = std::max(left.orRows(), right.orRows());
+        if (largest == 0)
             return;
-        selectivity = std::min(selectivity, 1.0 / static_cast<double>(std::max(left_distinct_values, right_distinct_values)));
-        left_match_fraction = std::min(left_match_fraction,
-            QueryPlanOptimizations::keyContainment(left_distinct_values, right_distinct_values, domain_distinct_values).value_or(1.0));
-        right_match_fraction = std::min(right_match_fraction,
-            QueryPlanOptimizations::keyContainment(right_distinct_values, left_distinct_values, domain_distinct_values).value_or(1.0));
+        selectivity = std::min(selectivity, 1.0 / static_cast<double>(largest));
+        if (const UInt64 largest_from_statistics = std::max(left.from_statistics, right.from_statistics))
+        {
+            statistics_selectivity = std::min(statistics_selectivity, 1.0 / static_cast<double>(largest_from_statistics));
+            from_statistics = true;
+        }
+        if (left.from_statistics)
+            left_match_fraction = std::min(left_match_fraction.value_or(1.0),
+                QueryPlanOptimizations::keyContainment(left.orRows(), right.orRows(), domain_distinct_values).value_or(1.0));
+        if (right.from_statistics)
+            right_match_fraction = std::min(right_match_fraction.value_or(1.0),
+                QueryPlanOptimizations::keyContainment(right.orRows(), left.orRows(), domain_distinct_values).value_or(1.0));
     }
 };
 
-/// NDV of a column as the join order optimizer knows it: from the relation's statistics, or from
-/// the DP entry of a joined relation set (narrowed through joins). A column without an NDV counts
-/// its relation's rows, see `keyDistinctValuesOrRows`. Zero when the rows are unknown as well.
-inline UInt64 getColumnStats(
+/// Distinct values of a column as the join order optimizer knows it: from the relation's
+/// statistics and rows, or from the DP entry of a joined relation set, whose column statistics
+/// the joins below narrowed.
+inline KeyDistinctValues getColumnStats(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
     const BitSet & rels,
@@ -60,16 +75,16 @@ inline UInt64 getColumnStats(
     auto rel_id = rels.getSingleBit();
     if (!rel_id.has_value())
     {
+        KeyDistinctValues result;
         if (auto it = dp_table.find(rels); it != dp_table.end())
         {
-            auto col_it = it->second->column_stats.find(column_name);
-            if (col_it != it->second->column_stats.end() && col_it->second.num_distinct_values > 0)
-                return col_it->second.num_distinct_values;
-            return it->second->estimated_rows.value_or(0);
+            if (auto col_it = it->second->column_stats.find(column_name); col_it != it->second->column_stats.end())
+                result.from_statistics = col_it->second.num_distinct_values;
+            result.rows = it->second->estimated_rows.value_or(0);
         }
-        return 0;
+        return result;
     }
-    return QueryPlanOptimizations::keyDistinctValuesOrRows(query_graph.relation_stats.at(rel_id.value()), column_name);
+    return QueryPlanOptimizations::keyDistinctValues(query_graph.relation_stats.at(rel_id.value()), column_name);
 }
 
 /// Domain of a column as the join order optimizer knows it; zero when unknown.
@@ -105,13 +120,13 @@ inline const EdgeSelectivity & computeEdgeSelectivity(
     if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
         return result;
 
+    result.is_equality = true;
     result.lhs_distinct_values = getColumnStats(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName());
     result.rhs_distinct_values = getColumnStats(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName());
     result.domain_distinct_values = std::max(
         getColumnDomain(query_graph, dp_table, lhs.getSourceRelations(), lhs.getColumnName()),
         getColumnDomain(query_graph, dp_table, rhs.getSourceRelations(), rhs.getColumnName()));
     result.lhs_relations = lhs.getSourceRelations();
-    result.selectivity = QueryPlanOptimizations::equalitySelectivity(result.lhs_distinct_values, result.rhs_distinct_values);
     return result;
 }
 
@@ -127,12 +142,13 @@ inline void collectEdgeKeys(
     for (const auto * edge : edges)
     {
         const auto & edge_selectivity = computeEdgeSelectivity(query_graph, dp_table, expression_selectivity, *edge);
-        if (!edge_selectivity.selectivity)
+        if (!edge_selectivity.is_equality)
             continue;
         const bool lhs_on_left = isSubsetOf(edge_selectivity.lhs_relations, left);
-        const UInt64 left_distinct_values = lhs_on_left ? edge_selectivity.lhs_distinct_values : edge_selectivity.rhs_distinct_values;
-        const UInt64 right_distinct_values = lhs_on_left ? edge_selectivity.rhs_distinct_values : edge_selectivity.lhs_distinct_values;
-        keys.add(left_distinct_values, right_distinct_values, edge_selectivity.domain_distinct_values);
+        keys.add(
+            lhs_on_left ? edge_selectivity.lhs_distinct_values : edge_selectivity.rhs_distinct_values,
+            lhs_on_left ? edge_selectivity.rhs_distinct_values : edge_selectivity.lhs_distinct_values,
+            edge_selectivity.domain_distinct_values);
     }
 }
 
@@ -215,46 +231,53 @@ inline std::optional<UInt64> estimateJoinRowsUpperBound(
     }
 }
 
-/// A relation read through a prepared join storage (a `Join` engine table, a dictionary). It is
-/// probed by its key instead of scanned, so its size does not multiply the join, and its physical
-/// join step accepts the key equalities only. One row as its search value joins it early, while
-/// the other side still relates to it through the key alone.
-inline bool isPreparedStorageRelation(const BitSet & relations, const QueryGraph & query_graph)
-{
-    auto relation = relations.getSingleBit();
-    return relation && query_graph.prepared_storage_relations.test(*relation);
-}
-
-/// Rows the cost of an entry counts: the estimate when there is one, otherwise the upper bound,
-/// otherwise the graph's fallback (the largest known relation). A missing estimate is never
-/// counted as one row, which would make the plan that contains it look cheap; the exception is a
-/// prepared storage relation, see `isPreparedStorageRelation`.
+/// Rows the cost of an entry counts: the estimate when there is one. A join without one counts
+/// the rows its own cost counted, its selectivity over the search values of its inputs; its row
+/// bound is the product of its inputs' bounds, which would grow with every join and push the
+/// relations with known sizes to the end of the order. A relation without one counts its upper
+/// bound, so that a filtered table without statistics is not joined first as if it had one row.
+/// A relation with neither counts as one row: which side of its join is the key cannot be told,
+/// and the key of a relation with a known size must keep the join with it cheap, its rows over the
+/// key NDV, as when hash table statistics give sizes to some relations only. A relation read
+/// through a prepared join storage (a `Join` engine table, a dictionary) has neither, and one row
+/// joins it by its key early, before the other side picks up a second equality to it.
 inline double searchRows(const DPJoinEntryPtr & entry, const QueryGraph & query_graph)
 {
     if (entry->estimated_rows)
         return static_cast<double>(*entry->estimated_rows);
+    if (!entry->isLeaf())
+        return entry->selectivity * searchRows(entry->left, query_graph) * searchRows(entry->right, query_graph);
     if (entry->max_rows)
         return static_cast<double>(*entry->max_rows);
-    if (isPreparedStorageRelation(entry->relations, query_graph))
-        return 1;
-    return static_cast<double>(query_graph.unknown_rows_fallback.value_or(1));
+    return 1;
 }
 
-/// Join cardinality for every planner. An inner join is `selectivity * left * right`, at least one
-/// row. An outer join is at least its preserved side(s): every preserved row is emitted, matched
-/// or padded. A semi or anti join is a filter on its preserved side: the fraction of its rows
-/// with a match, or without one; `preserved_match_fraction` gives that fraction from the key
-/// values, without it the other side's rows per preserved key stand in. A paste join pairs rows by
-/// position: the shorter side. An `ANY` or `ASOF` join emits each row of one side at most once:
-/// exactly that side for an outer join, at most that side for an inner join. An empty side
-/// decides the result alone, as the bound does.
+/// Rows an inner join of `lhs` and `rhs` rows keeps. With a key NDV from statistics it is the
+/// product over that NDV. Without one, an equality is taken as a foreign key meeting a primary key:
+/// every row of the larger side finds its one match, so the join keeps the larger side. The rows of
+/// a side do not stand in for its key NDV here: a key without an NDV would count as unique and the
+/// join as keeping the smaller side. Without an equality the join is the product.
+inline double estimateJoinedRows(const JoinKeyEstimate & keys, double lhs, double rhs)
+{
+    if (keys.from_statistics)
+        return keys.statistics_selectivity * lhs * rhs;
+    if (keys.has_equality)
+        return std::max(lhs, rhs);
+    return lhs * rhs;
+}
+
+/// Join cardinality for every planner. An inner join keeps `estimateJoinedRows`, at least one row.
+/// An outer join is at least its preserved side(s): every preserved row is emitted, matched or
+/// padded. A semi or anti join is a filter on its preserved side: the fraction of its rows with a
+/// match, or without one. A paste join pairs rows by position: the shorter side. An `ANY` or
+/// `ASOF` join emits each row of one side at most once: exactly that side for an outer join, at
+/// most that side for an inner join. An empty side decides the result alone, as the bound does.
 inline std::optional<UInt64> estimateJoinCardinality(
     std::optional<UInt64> left_rows,
     std::optional<UInt64> right_rows,
-    double selectivity,
+    const JoinKeyEstimate & keys,
     JoinKind join_kind,
-    JoinStrictness strictness = JoinStrictness::All,
-    std::optional<double> preserved_match_fraction = {})
+    JoinStrictness strictness = JoinStrictness::All)
 {
     const bool left_empty = left_rows && *left_rows == 0;
     const bool right_empty = right_rows && *right_rows == 0;
@@ -274,7 +297,7 @@ inline std::optional<UInt64> estimateJoinCardinality(
         /// An outer join emits every row of that side once; an inner join only the matched ones.
         if (join_kind != JoinKind::Inner)
             return roundToRowCount(single_side);
-        return roundToRowCount(std::max(std::min(selectivity * lhs * rhs, single_side), 1.0));
+        return roundToRowCount(std::max(std::min(estimateJoinedRows(keys, lhs, rhs), single_side), 1.0));
     }
 
     if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
@@ -284,16 +307,21 @@ inline std::optional<UInt64> estimateJoinCardinality(
         const bool preserve_left = !isRight(join_kind);
         const double preserved = preserve_left ? lhs : rhs;
         const double other = preserve_left ? rhs : lhs;
-        /// Expected fraction of preserved rows with at least one match. Without the key containment
-        /// `selectivity * other` approximates matches per preserved row; cap at 1.
-        const double match_fraction = preserved_match_fraction.value_or(std::min(1.0, selectivity * other));
+        /// The fraction of preserved rows with a match: the share of the preserved key values the
+        /// other side has, when the preserved key's NDV is known. Otherwise the other side's rows
+        /// per key value stand in, capped at 1: per NDV from statistics when there is one (the
+        /// preserved side then refers to the other side's keys, as a foreign key does), else per
+        /// row of the larger side.
+        const auto & known_fraction = preserve_left ? keys.left_match_fraction : keys.right_match_fraction;
+        const double rows_per_key = keys.from_statistics ? keys.statistics_selectivity : keys.selectivity;
+        const double match_fraction = known_fraction.value_or(std::min(1.0, rows_per_key * other));
         const double kept = (strictness == JoinStrictness::Semi)
             ? preserved * match_fraction
             : preserved * (1.0 - match_fraction);
         return roundToRowCount(std::max(kept, 1.0));
     }
 
-    double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
+    double joined_rows = std::max(estimateJoinedRows(keys, lhs, rhs), 1.0);
 
     if (join_kind == JoinKind::Left)
         joined_rows = std::max(joined_rows, lhs);
@@ -307,15 +335,24 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return roundToRowCount(std::max(joined_rows, 1.0));
 }
 
+/// A join whose selectivity is given as one number, taken as backed by statistics;
+/// `preserved_match_fraction` is the preserved side's share of matched key values, when known.
 inline std::optional<UInt64> estimateJoinCardinality(
     std::optional<UInt64> left_rows,
     std::optional<UInt64> right_rows,
-    const JoinKeyEstimate & keys,
+    double selectivity,
     JoinKind join_kind,
-    JoinStrictness strictness)
+    JoinStrictness strictness = JoinStrictness::All,
+    std::optional<double> preserved_match_fraction = {})
 {
-    const double preserved_match_fraction = isRight(join_kind) ? keys.right_match_fraction : keys.left_match_fraction;
-    return estimateJoinCardinality(left_rows, right_rows, keys.selectivity, join_kind, strictness, preserved_match_fraction);
+    JoinKeyEstimate keys;
+    keys.selectivity = selectivity;
+    keys.statistics_selectivity = selectivity;
+    keys.has_equality = true;
+    keys.from_statistics = true;
+    keys.left_match_fraction = preserved_match_fraction;
+    keys.right_match_fraction = preserved_match_fraction;
+    return estimateJoinCardinality(left_rows, right_rows, keys, join_kind, strictness);
 }
 
 inline std::optional<UInt64> estimateJoinCardinality(
@@ -328,9 +365,22 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, keys, join_kind, strictness);
 }
 
-inline double computeJoinCost(const QueryGraph & query_graph, const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, double selectivity)
+/// Rows a join emits for the cost model. Two estimated inputs give `estimateJoinedRows`. An input
+/// without an estimate is counted at its search value, and the join at the reported selectivity
+/// times both search values: which side is the key cannot be told then, and a key of a sized
+/// relation must keep the join with it cheap, so the unknown side's rows are not taken as the
+/// larger side of a foreign key join.
+inline double joinedRowsSearchValue(const QueryGraph & query_graph, const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const JoinKeyEstimate & keys)
 {
-    return left->cost + right->cost + selectivity * searchRows(left, query_graph) * searchRows(right, query_graph);
+    if (left->estimated_rows && right->estimated_rows)
+        return estimateJoinedRows(keys, static_cast<double>(*left->estimated_rows), static_cast<double>(*right->estimated_rows));
+    return keys.selectivity * searchRows(left, query_graph) * searchRows(right, query_graph);
+}
+
+/// The cost of a join: both inputs' costs plus the rows it emits.
+inline double computeJoinCost(const QueryGraph & query_graph, const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const JoinKeyEstimate & keys)
+{
+    return left->cost + right->cost + joinedRowsSearchValue(query_graph, left, right, keys);
 }
 
 /// The estimate of a join of two relations, by the shared formulas: the key selectivity and
@@ -360,8 +410,8 @@ inline JoinEstimate estimateJoin(const RelationStats & left, const RelationStats
         if (!lhs.fromLeft() || !rhs.fromRight())
             continue;
         keys.add(
-            QueryPlanOptimizations::keyDistinctValuesOrRows(left, lhs.getColumnName()),
-            QueryPlanOptimizations::keyDistinctValuesOrRows(right, rhs.getColumnName()),
+            QueryPlanOptimizations::keyDistinctValues(left, lhs.getColumnName()),
+            QueryPlanOptimizations::keyDistinctValues(right, rhs.getColumnName()),
             std::max(QueryPlanOptimizations::keyDomain(left, lhs.getColumnName()), QueryPlanOptimizations::keyDomain(right, rhs.getColumnName())));
     }
 

@@ -4,7 +4,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <Common/logger_useful.h>
 
-#include <bit>
+#include <functional>
 
 namespace DB
 {
@@ -45,7 +45,7 @@ class EnumeratorCheckerWithCosts
 public:
     EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_)
         : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_) {}
-    double computeJoinCost(UInt lhs, UInt rhs, double selectivity) const;
+    double computeJoinCost(UInt lhs, UInt rhs, const JoinKeyEstimate & keys) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
@@ -63,21 +63,29 @@ template <class TDPTable, class TOptimizer>
 double
 EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const UInt lhs,
                                                                   const UInt rhs,
-                                                                  const double selectivity) const
+                                                                  const JoinKeyEstimate & keys) const
 {
-    /// The same search value as `searchRows`: estimate, else upper bound, else one row for a
-    /// prepared storage relation, else the graph's fallback.
-    auto search_rows = [&](UInt relations, const auto & entry) -> double
+    /// The same rows as `joinedRowsSearchValue`: two estimated inputs give `estimateJoinedRows`,
+    /// otherwise the reported selectivity times the search values, as `searchRows` counts them
+    /// (estimate; a join's selectivity over its inputs' values; a relation's upper bound, else one
+    /// row).
+    std::function<double(UInt)> search_rows = [&](UInt relations) -> double
     {
+        const auto & entry = dp_table[relations];
         if (entry.estimated_rows)
             return static_cast<double>(*entry.estimated_rows);
+        if (entry.left != 0 || entry.right != 0)
+            return entry.sel * search_rows(entry.left) * search_rows(entry.right);
         if (entry.max_rows)
             return static_cast<double>(*entry.max_rows);
-        if (std::has_single_bit(relations) && optimizer.query_graph.prepared_storage_relations.test(static_cast<size_t>(std::countr_zero(relations))))
-            return 1;
-        return static_cast<double>(optimizer.query_graph.unknown_rows_fallback.value_or(1));
+        return 1;
     };
-    return dp_table[lhs].cost + dp_table[rhs].cost + selectivity * search_rows(lhs, dp_table[lhs]) * search_rows(rhs, dp_table[rhs]);
+    const auto & left_entry = dp_table[lhs];
+    const auto & right_entry = dp_table[rhs];
+    const double joined_rows = left_entry.estimated_rows && right_entry.estimated_rows
+        ? estimateJoinedRows(keys, static_cast<double>(*left_entry.estimated_rows), static_cast<double>(*right_entry.estimated_rows))
+        : keys.selectivity * search_rows(lhs) * search_rows(rhs);
+    return left_entry.cost + right_entry.cost + joined_rows;
 }
 
 
@@ -125,7 +133,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         kind = JoinKind::Inner;
 
     auto keys = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
-    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys.selectivity);
+    auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, keys);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
              keys.selectivity,

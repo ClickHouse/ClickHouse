@@ -40,14 +40,14 @@ SELECT '-- a budget of 50 bytes fits neither side: no replication, the join shuf
 EXPLAIN SELECT count(), any(name) FROM t_cb_fact AS f JOIN t_cb_dim AS d ON f.k = d.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_max_bytes_to_broadcast = 50;
 
-SELECT '-- a filter the primary key cannot prune leaves the rows unknown; the bound of 100 rows times 16 bytes fits a budget of 2000 bytes';
+SELECT '-- a filter the primary key cannot prune leaves the rows unknown; the bound of 100 rows times the 8 bytes of the key fits a budget of 2000 bytes';
 SET param__internal_join_table_stat_hints = '{"t_cb_fact": {"cardinality": 10000000, "avg_row_bytes": 16, "distinct_keys": {"k": 5}}}';
 EXPLAIN SELECT count() FROM t_cb_fact AS f JOIN t_cb_unk AS u ON f.k = u.k WHERE u.v < 5
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_max_bytes_to_broadcast = 2000;
 
-SELECT '-- and does not fit a budget of 1000 bytes: no replication of the unknown side';
+SELECT '-- and does not fit a budget of 500 bytes: no replication of the unknown side';
 EXPLAIN SELECT count() FROM t_cb_fact AS f JOIN t_cb_unk AS u ON f.k = u.k WHERE u.v < 5
-SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_max_bytes_to_broadcast = 1000;
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_max_bytes_to_broadcast = 500;
 
 SELECT '-- a small result over a large scan: the broadcast ships the result and fits, the scan is read once';
 -- 100000 rows are scanned for 5 hinted rows; a budget of 2000 bytes fits the 5 rows, not the scan.
@@ -68,7 +68,7 @@ SELECT '-- results do not depend on the shape';
 SELECT count(), any(name) FROM t_cb_fact AS f JOIN t_cb_dim AS d ON f.k = d.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1;
 SELECT count() FROM t_cb_fact AS f JOIN t_cb_unk AS u ON f.k = u.k WHERE u.v < 5
-SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1, distributed_plan_max_bytes_to_broadcast = 1000;
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1, distributed_plan_max_bytes_to_broadcast = 500;
 
 DROP TABLE t_cb_fact;
 DROP TABLE t_cb_dim;

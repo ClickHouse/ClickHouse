@@ -23,7 +23,7 @@ Expression ((Project names + Projection))
             Expression (Change column names to column identifiers)
               ShuffleExchange
                 ReadFromMergeTree (ParallelRead default.t_cb_dim)
--- a filter the primary key cannot prune leaves the rows unknown; the bound of 100 rows times 16 bytes fits a budget of 2000 bytes
+-- a filter the primary key cannot prune leaves the rows unknown; the bound of 100 rows times the 8 bytes of the key fits a budget of 2000 bytes
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -35,7 +35,7 @@ Expression ((Project names + Projection))
             Expression ((WHERE + Change column names to column identifiers))
               BroadcastExchange
                 ReadFromMergeTree (default.t_cb_unk)
--- and does not fit a budget of 1000 bytes: no replication of the unknown side
+-- and does not fit a budget of 500 bytes: no replication of the unknown side
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange

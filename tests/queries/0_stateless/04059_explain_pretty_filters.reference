@@ -53,7 +53,7 @@ Join (JOIN FillRightFirst)
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Cost: estimated no stats
 │  Selectivity: estimated (NDV) 0.001
-│  Output rows: estimated 100.00
+│  Output rows: estimated 1.00 thousand
 │  Left: rows estimated 1.00 thousand
 │  Right: rows estimated 100.00
 │  Join conditions: a = x
