@@ -154,6 +154,9 @@ void LimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, UInt64)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "LimitByTransform does not support void-mapped aggregation methods");
 }
 
+/// `isCancelled` is polled every this many rows of the row loops below.
+constexpr UInt64 cancellation_check_mask = 1023;
+
 template <typename Method>
 requires MapAggregationMethod<Method>
 void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count)
@@ -167,7 +170,10 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
     for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
     {
-        if (isCancelled())
+        /// Checking on every row costs an atomic load per row and, with clang-23, the registers the loop
+        /// needs for its hash lookup; a block of rows is processed in microseconds, so checking once per
+        /// block loses nothing noticeable.
+        if ((row_idx & cancellation_check_mask) == 0 && isCancelled())
         {
             LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
             stopReading();
