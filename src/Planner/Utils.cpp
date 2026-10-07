@@ -736,6 +736,13 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
     else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
     {
         storage_snapshot = table_function_node->getStorageSnapshot();
+        /// A parameterized view has a name of its own, the analyzer qualifies with it exactly like for a `TableNode`.
+        if (table_function_node->isParameterizedView())
+        {
+            const auto & storage_id = table_function_node->getStorageID();
+            table_names.insert(storage_id.getTableName());
+            table_names.insert(storage_id.getDatabaseName() + "." + storage_id.getTableName());
+        }
     }
 
     auto is_column_qualifier = makeTupleColumnQualifierCheck(

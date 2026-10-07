@@ -86,6 +86,13 @@ INSERT INTO same_05227 VALUES (1, (1, 2)), (2, (0, 0)), (3, (0, 3));
 SELECT 'tuple named as the table', groupArray(id) FROM same_05227 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0, additional_table_filters = {'same_05227': 'greatest(same_05227.*) > 0'};
 SELECT count() FROM same_05227 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1, additional_table_filters = {'same_05227': 'greatest(same_05227.*) > 0'}; -- { serverError BAD_ARGUMENTS }
 DROP TABLE same_05227;
+
+-- An unaliased parameterized view has a name of its own, a Tuple column can be qualified with it.
+CREATE VIEW pv_05227 AS SELECT * FROM tup_05227 WHERE id > {min_id:UInt32};
+SELECT 'view-qualified tuple matcher on a parameterized view', groupArray(id) FROM pv_05227(min_id = 0) SETTINGS additional_table_filters = {'pv_05227': 'greatest(pv_05227.tup.*) > 0'};
+SELECT 'database-qualified tuple matcher on a parameterized view', groupArray(id) FROM pv_05227(min_id = 0) SETTINGS additional_table_filters = {'pv_05227': 'greatest(${CLICKHOUSE_DATABASE}.pv_05227.tup.*) > 0'};
+SELECT count() FROM pv_05227(min_id = 0) SETTINGS additional_table_filters = {'pv_05227': 'not ignore(pv_05227.*)'}; -- { serverError BAD_ARGUMENTS }
+DROP VIEW pv_05227;
 DROP TABLE tup_05227;
 
 -- A matcher-free filter keeps working.
