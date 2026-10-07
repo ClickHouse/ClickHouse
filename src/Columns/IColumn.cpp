@@ -31,7 +31,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/RowDataStore.h>
-#include <Interpreters/RowRefs.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <base/types.h>
 #include <Common/Exception.h>
@@ -585,51 +584,6 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
         if (!self.isDefaultAt(i))
             indices.push_back(i);
     }
-}
-
-template <typename ColumnType, bool with_null_map>
-static void fillColumnFromRowRefsWithRowStore(ColumnType * col, const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map = nullptr)
-{
-    size_t value_offset = with_null_map ? source_field_offset + 1 : source_field_offset;
-    size_t value_size = with_null_map ? source_field_size - 1 : source_field_size;
-
-    for (const UInt64 * row_ref = row_refs_begin; row_ref != row_refs_end; ++row_ref)
-    {
-        if (*row_ref)
-        {
-            for (const UInt64 ref_word : refsOf(*row_ref))
-            {
-                const char * row_data = block_row_stores[refWordBlockNo(ref_word)]->getRowAt(refWordRowNo(ref_word));
-                if constexpr (with_null_map)
-                    null_map->push_back(*reinterpret_cast<const UInt8 *>(row_data + source_field_offset));
-                col->insertData(row_data + value_offset, value_size);
-            }
-        }
-        else
-        {
-            if constexpr (with_null_map)
-                null_map->push_back(static_cast<UInt8>(1));
-            type->insertDefaultInto(*col);
-        }
-    }
-}
-
-void IColumn::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map)
-{
-    if (null_map)
-        fillColumnFromRowRefsWithRowStore<IColumn, true>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, null_map);
-    else
-        fillColumnFromRowRefsWithRowStore<IColumn, false>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
-}
-
-template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map)
-{
-    auto & self = static_cast<Derived &>(*this);
-    if (null_map)
-        fillColumnFromRowRefsWithRowStore<Derived, true>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, null_map);
-    else
-        fillColumnFromRowRefsWithRowStore<Derived, false>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
 }
 
 /// Fills column from pre-resolved row data pointers. Devirtualized insertData.
