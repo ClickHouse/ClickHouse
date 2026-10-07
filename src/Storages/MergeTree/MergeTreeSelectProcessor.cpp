@@ -481,19 +481,14 @@ void MergeTreeSelectProcessor::updateQueryConditionCache(const MergeTreeReadTask
     }
 }
 
-static MergeTreeSliceTag sliceOf(const MergeTreeReadTask & task)
-{
-    return MergeTreeSliceTag{.part_index_in_query = task.getInfo().part_index_in_query, .first_mark = task.getFirstMark()};
-}
-
 void MergeTreeSelectProcessor::tagSlice(Chunk & chunk) const
 {
     auto info = std::make_shared<MergeTreeSliceInfo>();
-    info->slice = sliceOf(*task);
+    info->slice = task->getSlice();
     chunk.getChunkInfos().add(std::move(info));
 }
 
-ChunkAndProgress MergeTreeSelectProcessor::makeSliceMarker(std::optional<MergeTreeSliceTag> ended, size_t ended_bytes, bool idle) const
+ChunkAndProgress MergeTreeSelectProcessor::makeSliceMarker(std::optional<MergeTreeSliceTag> ended, bool idle) const
 {
     Columns empty_columns;
     empty_columns.reserve(result_header.columns());
@@ -503,7 +498,6 @@ ChunkAndProgress MergeTreeSelectProcessor::makeSliceMarker(std::optional<MergeTr
     Chunk chunk(std::move(empty_columns), 0);
     auto info = std::make_shared<MergeTreeSliceInfo>();
     info->ended = ended;
-    info->ended_bytes = ended_bytes;
     info->idle = idle;
     chunk.getChunkInfos().add(std::move(info));
     return {std::move(chunk), 0, 0, false, {}};
@@ -525,16 +519,11 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
             if (!task || algorithm->needNewTask(*task))
             {
                 std::optional<MergeTreeSliceTag> ended;
-                size_t ended_bytes = 0;
                 if (task && !current_task_finalized)
                 {
                     current_task_finalized = true;
                     updateQueryConditionCache(*task);
-                    if (sliced_reading)
-                    {
-                        ended = sliceOf(*task);
-                        ended_bytes = task->getNumReadBytes();
-                    }
+                    ended = task->getSlice();
                 }
 
                 auto new_task = algorithm->getNewTask(*pool, task.get());
@@ -548,12 +537,12 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     {
                         task = std::move(new_task);
                         current_task_finalized = false;
-                        return makeSliceMarker(ended, ended_bytes, /*idle=*/ false);
+                        return makeSliceMarker(ended, /*idle=*/ false);
                     }
                     /// Nothing to read right now; the router wakes the source up when there is. The finished
                     /// task is kept so that its readers can continue the lane.
                     if (pool->mayHaveMoreTasks())
-                        return makeSliceMarker(ended, ended_bytes, /*idle=*/ true);
+                        return makeSliceMarker(ended, /*idle=*/ true);
                     task = nullptr;
                 }
                 else

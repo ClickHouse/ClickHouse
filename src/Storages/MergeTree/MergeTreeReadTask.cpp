@@ -139,7 +139,6 @@ MergeTreeReadTask::MergeTreeReadTask(
     : info(std::move(info_))
     , readers(std::move(readers_))
     , mark_ranges(std::move(mark_ranges_))
-    , first_mark(mark_ranges.empty() ? 0 : mark_ranges.front().begin)
     , patches_mark_ranges(std::move(patches_mark_ranges_))
     , block_size_params(block_size_params_)
     , size_predictor(std::move(size_predictor_))

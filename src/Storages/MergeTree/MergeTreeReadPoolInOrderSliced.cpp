@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReadPoolInOrderSliced.h>
 
-#include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
@@ -133,7 +132,6 @@ MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
     RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
     size_t num_sources_,
     const Block & primary_key_header_,
-    ExpressionActionsPtr virtual_row_conversions_,
     bool read_in_reverse_order_)
     : MergeTreeReadPoolBase(
         std::move(parts_),
@@ -155,10 +153,9 @@ MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
     , max_slice_marks(std::max<size_t>(1, pool_settings.min_marks_for_concurrent_read))
     , min_slice_bytes_to_share(context_->getSettingsRef()[Setting::min_compress_block_size])
     , primary_key_header(primary_key_header_)
-    , virtual_row_conversions(std::move(virtual_row_conversions_))
     , reverse(read_in_reverse_order_)
     , queue(QueuedLaneLess{.reverse = read_in_reverse_order_})
-    , last_task_lane(num_sources_)
+    , sources(num_sources_)
 {
     std::lock_guard lock(mutex);
 
@@ -168,10 +165,6 @@ MergeTreeReadPoolInOrderSliced::MergeTreeReadPoolInOrderSliced(
     {
         lanes.push_back(Lane{.unread = parts_ranges[lane].ranges});
         enqueueLane(lane);
-
-        const size_t part_index = per_part_infos[lane]->part_index_in_query;
-        if (!lane_by_part_index.emplace(part_index, lane).second)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part index {} is read by two lanes of the sliced pool", part_index);
     }
 }
 
@@ -195,14 +188,6 @@ Block MergeTreeReadPoolInOrderSliced::keyAtMark(size_t lane, size_t mark) const
     return primary_key_header.cloneWithColumns(std::move(columns));
 }
 
-size_t MergeTreeReadPoolInOrderSliced::laneOf(const MergeTreeSliceTag & tag) const
-{
-    auto it = lane_by_part_index.find(tag.part_index_in_query);
-    if (it == lane_by_part_index.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part index {} is not read by the sliced pool", tag.part_index_in_query);
-    return it->second;
-}
-
 size_t MergeTreeReadPoolInOrderSliced::nextSliceMarks(size_t lane) const
 {
     const auto & lane_state = lanes[lane];
@@ -213,7 +198,7 @@ size_t MergeTreeReadPoolInOrderSliced::nextSliceMarks(size_t lane) const
 bool MergeTreeReadPoolInOrderSliced::canShare(size_t lane) const
 {
     const auto & lane_state = lanes[lane];
-    if (lane_state.slices.empty() || !is_part_on_remote_disk[lane] || read_marks == 0)
+    if (lane_state.slices_reading == 0 || !is_part_on_remote_disk[lane] || read_marks == 0)
         return true;
     /// On remote storage every slice read by another source is a request. A slice that reads less than
     /// a compressed block is not worth one: the source reading the lane gets it for nothing from the
@@ -243,13 +228,6 @@ void MergeTreeReadPoolInOrderSliced::dequeueLane(size_t lane)
     }
 }
 
-std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLane() const
-{
-    if (queue.empty())
-        return std::nullopt;
-    return queue.begin()->lane;
-}
-
 std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLaneBefore(size_t lane) const
 {
     const auto & position = queue_position[lane];
@@ -262,29 +240,15 @@ std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLaneBefore(size_t lane
     return head.lane;
 }
 
-bool MergeTreeReadPoolInOrderSliced::inFlightAfter(LaneQueue::const_iterator position) const
+bool MergeTreeReadPoolInOrderSliced::startedLaneAfter(LaneQueue::const_iterator position) const
 {
     for (auto it = std::next(position); it != queue.end(); ++it)
-        if (!lanes[it->lane].slices.empty())
+        if (lanes[it->lane].slices_cut > 0)
             return true;
     return false;
 }
 
-std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextUnreadMark(const Lane & lane) const
-{
-    if (lane.unread.empty())
-        return std::nullopt;
-    return reverse ? lane.unread.back().end : lane.unread.front().begin;
-}
-
-MergeTreeReadPoolInOrderSliced::Slices::iterator MergeTreeReadPoolInOrderSliced::headSlice(Lane & lane) const
-{
-    if (lane.slices.empty())
-        return lane.slices.end();
-    return reverse ? std::prev(lane.slices.end()) : lane.slices.begin();
-}
-
-void MergeTreeReadPoolInOrderSliced::cutSlice(size_t lane)
+MergeTreeReadPoolInOrderSliced::Cut MergeTreeReadPoolInOrderSliced::cutSlice(size_t lane)
 {
     auto & lane_state = lanes[lane];
     if (lane_state.unread.empty())
@@ -292,47 +256,16 @@ void MergeTreeReadPoolInOrderSliced::cutSlice(size_t lane)
 
     dequeueLane(lane);
     MarkRanges ranges = cutMarks(lane_state.unread, nextSliceMarks(lane), reverse);
-    ++lane_state.slices_cut;
     enqueueLane(lane);
 
-    const size_t first_mark = ranges.front().begin;
-    const size_t boundary_mark = reverse ? ranges.back().end : first_mark;
-    const size_t marks = ranges.getNumberOfMarks();
-    Slice slice{.ranges = std::move(ranges), .marks = marks, .boundary_mark = boundary_mark};
-
-    issued_marks += marks;
-    if (!lane_state.slices.try_emplace(first_mark, std::move(slice)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Slice starting at mark {} of lane {} was cut twice", first_mark, lane);
-    fifo.push_back(QueuedSlice{.lane = lane, .first_mark = first_mark});
-}
-
-void MergeTreeReadPoolInOrderSliced::completeSlice(const MergeTreeSliceTag & tag, size_t bytes_read)
-{
-    const size_t lane = laneOf(tag);
-    auto & lane_state = lanes[lane];
-    if (lane_state.finished)
-        return;
-
-    auto it = lane_state.slices.find(tag.first_mark);
-    if (it == lane_state.slices.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Slice starting at mark {} of part {} is not issued", tag.first_mark, tag.part_index_in_query);
-
-    auto & slice = it->second;
-    slice.complete = true;
-    read_bytes += bytes_read;
-    read_marks += slice.marks;
-    if (slice.chunks.empty())
-        dropSlice(lane, it);
-}
-
-void MergeTreeReadPoolInOrderSliced::dropSlice(size_t lane, Slices::iterator slice)
-{
-    issued_marks -= slice->second.marks;
-    if (slice->second.rows_received == 0)
-        empty_marks += slice->second.marks;
-    else
-        lanes[lane].taken_marks += slice->second.marks;
-    lanes[lane].slices.erase(slice);
+    Cut cut{
+        .slice = MergeTreeSliceTag{.lane = lane, .seq = lane_state.slices_cut},
+        .marks = ranges.getNumberOfMarks(),
+        .boundary_mark = reverse ? ranges.back().end : ranges.front().begin};
+    ++lane_state.slices_cut;
+    ++lane_state.slices_reading;
+    fifo.push_back(QueuedSlice{.slice = cut.slice, .ranges = std::move(ranges)});
+    return cut;
 }
 
 void MergeTreeReadPoolInOrderSliced::finishLaneUnlocked(size_t lane)
@@ -342,181 +275,138 @@ void MergeTreeReadPoolInOrderSliced::finishLaneUnlocked(size_t lane)
         return;
 
     lane_state.finished = true;
-    for (const auto & [first_mark, slice] : lane_state.slices)
-        issued_marks -= slice.marks;
-    lane_state.slices.clear();
-    std::erase_if(fifo, [lane](const QueuedSlice & queued) { return queued.lane == lane; });
+    lane_state.slices_reading = 0;
+    std::erase_if(fifo, [lane](const QueuedSlice & queued) { return queued.slice.lane == lane; });
     dequeueLane(lane);
     lane_state.unread.clear();
     lane_state.parked_readers.clear();
 }
 
-Chunk MergeTreeReadPoolInOrderSliced::announce(size_t lane, size_t mark, const Block & output_header)
-{
-    if (!virtual_row_conversions)
-        return {};
-
-    auto & lane_state = lanes[lane];
-    Block key = keyAtMark(lane, mark);
-    if (key.columns() == 0 || compareKeys(key, lane_state.announced_key) == 0)
-        return {};
-
-    Chunk chunk(output_header.cloneEmptyColumns(), 0);
-    chunk.getChunkInfos().add(std::make_shared<MergeTreeReadInfo>(/*part_level=*/ 0, key, virtual_row_conversions));
-    lane_state.announced_key = std::move(key);
-    return chunk;
-}
-
-size_t MergeTreeReadPoolInOrderSliced::readAheadMarks() const
-{
-    /// Nothing before the merge has gone through a slice and asked for more: a query answered by its
-    /// first slices reads nothing else. From there the depth follows the evidence. A slice the merge went
-    /// through buys four times its marks: the depth follows the merge's progress, which a LIMIT may end
-    /// any moment. A slice that came back without any rows buys sixteen times its marks: the query is
-    /// scanning for rows that are far away or not there, and on object storage every round of slices is
-    /// a round trip, so the rest of a lane's ramp is read in one round and every source is reading after
-    /// a few. At most a full slice per source.
-    return std::min(num_sources * max_slice_marks, 4 * consumed_marks + 16 * empty_marks);
-}
-
 MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, MergeTreeReadTask * previous_task)
 {
-    while (true)
+    MergeTreeReadTaskInfoPtr info;
+    MarkRanges ranges;
+    MergeTreeSliceTag slice;
+    std::optional<MarkRanges> lane_to_refine;
+
     {
-        MergeTreeReadTaskInfoPtr info;
-        MarkRanges ranges;
-        size_t lane = 0;
-        size_t first_mark = 0;
-        std::optional<MarkRanges> lane_to_refine;
+        std::lock_guard lock(mutex);
+        auto & source = sources[task_idx];
 
+        /// The task comes back read: what it cost is the evidence for canShare. A source that found
+        /// nothing hands the same task back again when it is woken up.
+        if (previous_task && source.reading && previous_task->getSlice() == source.reading)
         {
-            std::lock_guard lock(mutex);
-            if (fifo.empty())
-                return nullptr;
-
-            /// A slice of the lane the source read last continues with the readers the source holds.
-            auto queued = fifo.begin();
-            if (const auto & last_lane = last_task_lane[task_idx])
-            {
-                auto own = std::find_if(fifo.begin(), fifo.end(), [&](const QueuedSlice & slice) { return slice.lane == *last_lane; });
-                if (own != fifo.end())
-                    queued = own;
-            }
-            lane = queued->lane;
-            first_mark = queued->first_mark;
-            fifo.erase(queued);
-
-            auto & lane_state = lanes[lane];
-            ranges = std::move(lane_state.slices.at(first_mark).ranges);
-            info = per_part_infos[lane];
-            if (ranges_refiner && !lane_state.refined)
-            {
-                /// Everything the lane still has to read: its unread marks and the slices cut from them
-                /// that no source has taken yet. A slice left out here would be emptied below.
-                lane_to_refine = lane_state.unread;
-                for (const auto & [_, other] : lane_state.slices)
-                    *lane_to_refine = unionRanges(*lane_to_refine, other.ranges);
-            }
+            source.reading.reset();
+            read_bytes += previous_task->getNumReadBytes();
+            read_marks += source.reading_marks;
+            if (!lanes[*source.lane].finished)
+                --lanes[*source.lane].slices_reading;
         }
 
-        if (lane_to_refine)
-        {
-            /// The first slice of a lane refines the whole lane: the index result is built once per part
-            /// anyway, and the slices cut afterwards skip the granules the index drops instead of being
-            /// read to find nothing. May block, so it runs outside of the mutex.
-            MarkRanges refined = refineReadRanges(*info, unionRanges(ranges, *lane_to_refine));
+        if (fifo.empty())
+            return nullptr;
 
-            std::lock_guard lock(mutex);
-            auto & lane_state = lanes[lane];
-            if (!lane_state.refined && !lane_state.finished)
-            {
-                lane_state.refined = true;
-                dequeueLane(lane);
-                lane_state.unread = intersectRanges(lane_state.unread, refined);
-                enqueueLane(lane);
-                /// Slices still waiting in the FIFO hold their ranges; taken ones hold none.
-                for (auto & [_, other] : lane_state.slices)
-                    other.ranges = intersectRanges(other.ranges, refined);
-            }
-            ranges = intersectRanges(ranges, refined);
+        /// A slice of the lane the source read last continues with the readers the source holds.
+        auto queued = fifo.begin();
+        if (source.lane)
+        {
+            auto own = std::find_if(fifo.begin(), fifo.end(), [&](const QueuedSlice & other) { return other.slice.lane == *source.lane; });
+            if (own != fifo.end())
+                queued = own;
         }
+        slice = queued->slice;
+        ranges = std::move(queued->ranges);
+        fifo.erase(queued);
 
+        info = per_part_infos[slice.lane];
+        if (ranges_refiner && !lanes[slice.lane].refined)
+            lane_to_refine = lanes[slice.lane].unread;
+    }
+
+    if (lane_to_refine)
+    {
+        /// The first slice of a lane refines the whole lane: the index result is built once per part
+        /// anyway, and the slices cut afterwards skip the granules the index drops instead of being
+        /// read to find nothing. May block, so it runs outside of the mutex.
+        MarkRanges refined = refineReadRanges(*info, unionRanges(ranges, *lane_to_refine));
+
+        /// A slice the index leaves nothing of is read as cut: the router waits for every slice that was
+        /// cut, and the filter drops the rows.
+        auto refine = [&](MarkRanges & slice_ranges)
         {
-            std::lock_guard lock(mutex);
-            auto & lane_state = lanes[lane];
-            if (lane_state.finished)
-                continue;
+            MarkRanges result = intersectRanges(slice_ranges, refined);
+            if (!result.empty())
+                slice_ranges = std::move(result);
+        };
 
-            /// Nothing left to read: the slice is done without a task. The source's next marker runs the
-            /// router, which then serves the lane.
-            if (ranges.empty())
-            {
-                dropSlice(lane, lane_state.slices.find(first_mark));
-                continue;
-            }
-
-            /// Refinement may have dropped the first marks: the slice is identified by the first mark it
-            /// actually reads, and announced at its boundary.
-            const size_t read_first_mark = ranges.front().begin;
-            if (read_first_mark != first_mark)
-            {
-                auto node = lane_state.slices.extract(first_mark);
-                node.key() = read_first_mark;
-                lane_state.slices.insert(std::move(node));
-                first_mark = read_first_mark;
-            }
-            lane_state.slices.at(first_mark).boundary_mark = reverse ? ranges.back().end : first_mark;
+        std::lock_guard lock(mutex);
+        auto & lane_state = lanes[slice.lane];
+        if (!lane_state.refined && !lane_state.finished)
+        {
+            lane_state.refined = true;
+            dequeueLane(slice.lane);
+            lane_state.unread = intersectRanges(lane_state.unread, refined);
+            enqueueLane(slice.lane);
+            for (auto & queued : fifo)
+                if (queued.slice.lane == slice.lane)
+                    refine(queued.ranges);
         }
+        refine(ranges);
+    }
 
-        const auto & data_part = info->data_part_info->getDataPart();
-        auto patches_ranges = ranges_in_patch_parts.getRanges(data_part, info->patch_parts, ranges);
+    const auto & data_part = info->data_part_info->getDataPart();
+    auto patches_ranges = ranges_in_patch_parts.getRanges(data_part, info->patch_parts, ranges);
 
-        /// Readers follow the lane, not the source: a source that switches lanes leaves its readers in the
-        /// lane it read before and takes the readers another source left in the new lane, if there are any.
-        /// The size hints are taken before the readers may be given away.
-        auto extras = getExtras();
-        if (previous_task)
-            extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
+    /// Readers follow the lane, not the source: a source that switches lanes leaves its readers in the
+    /// lane it read before and takes the readers another source left in the new lane, if there are any.
+    /// The size hints are taken before the readers may be given away.
+    auto extras = getExtras();
+    if (previous_task)
+        extras.value_size_map = previous_task->getMainReader().getAvgValueSizeHints();
 
-        MergeTreeReadTask::Readers readers;
-        bool has_readers = false;
+    MergeTreeReadTask::Readers readers;
+    bool has_readers = false;
+    {
+        std::lock_guard lock(mutex);
+        auto & source = sources[task_idx];
+
+        if (previous_task && source.lane == slice.lane)
         {
-            std::lock_guard lock(mutex);
-
-            auto & last_lane = last_task_lane[task_idx];
-            if (previous_task && last_lane == lane)
+            readers = previous_task->releaseReaders();
+            has_readers = true;
+        }
+        else
+        {
+            if (previous_task && source.lane)
             {
-                readers = previous_task->releaseReaders();
+                auto & previous = lanes[*source.lane];
+                if (!previous.unread.empty() && previous.parked_readers.size() < max_parked_readers_per_lane)
+                    previous.parked_readers.push_back(previous_task->releaseReaders());
+            }
+
+            auto & parked = lanes[slice.lane].parked_readers;
+            if (!parked.empty())
+            {
+                readers = std::move(parked.back());
+                parked.pop_back();
                 has_readers = true;
             }
-            else
-            {
-                if (previous_task && last_lane)
-                {
-                    auto & previous = lanes[*last_lane];
-                    if (!previous.unread.empty() && previous.parked_readers.size() < max_parked_readers_per_lane)
-                        previous.parked_readers.push_back(previous_task->releaseReaders());
-                }
-
-                auto & parked = lanes[lane].parked_readers;
-                if (!parked.empty())
-                {
-                    readers = std::move(parked.back());
-                    parked.pop_back();
-                    has_readers = true;
-                }
-            }
-            last_lane = lane;
-
         }
 
-        if (has_readers)
-            readers.updateAllMarkRanges(ranges, patches_ranges);
-        else
-            readers = MergeTreeReadTask::createReaders(info, extras, ranges, patches_ranges);
-
-        return createTask(info, std::move(readers), std::move(ranges), std::move(patches_ranges), updater);
+        source.lane = slice.lane;
+        source.reading = slice;
+        source.reading_marks = ranges.getNumberOfMarks();
     }
+
+    if (has_readers)
+        readers.updateAllMarkRanges(ranges, patches_ranges);
+    else
+        readers = MergeTreeReadTask::createReaders(info, extras, ranges, patches_ranges);
+
+    auto task = createTask(info, std::move(readers), std::move(ranges), std::move(patches_ranges), updater);
+    task->setSlice(slice);
+    return task;
 }
 
 bool MergeTreeReadPoolInOrderSliced::mayHaveMoreTasks() const
@@ -525,128 +415,31 @@ bool MergeTreeReadPoolInOrderSliced::mayHaveMoreTasks() const
     return !finished;
 }
 
-void MergeTreeReadPoolInOrderSliced::receive(Chunk chunk)
-{
-    auto info = chunk.getChunkInfos().extract<MergeTreeSliceInfo>();
-    if (!info)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got a chunk without slice info from a source of the sliced pool");
-
-    std::lock_guard lock(mutex);
-
-    if (info->ended)
-        completeSlice(*info->ended, info->ended_bytes);
-
-    if (!info->slice)
-        return;
-
-    /// The merge finished the lane while the slice was being read: nothing waits for its rows.
-    auto & lane_state = lanes[laneOf(*info->slice)];
-    if (lane_state.finished)
-        return;
-
-    auto it = lane_state.slices.find(info->slice->first_mark);
-    if (it == lane_state.slices.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Slice starting at mark {} of part {} is not issued", info->slice->first_mark, info->slice->part_index_in_query);
-
-    auto & slice = it->second;
-    slice.rows_received += chunk.getNumRows();
-    /// A chunk without rows is progress, not data, unless it is a virtual row of the source.
-    if (chunk.getNumRows() == 0 && !isVirtualRow(chunk))
-        return;
-    slice.chunks.push_back(std::move(chunk));
-}
-
-MergeTreeReadPoolInOrderSliced::Served MergeTreeReadPoolInOrderSliced::serve(size_t lane, const Block & output_header)
+MergeTreeReadPoolInOrderSliced::Scheduled
+MergeTreeReadPoolInOrderSliced::schedule(const Demand & demand, const std::vector<size_t> & parked_sources)
 {
     std::lock_guard lock(mutex);
 
-    auto & lane_state = lanes[lane];
-    const bool was_waiting = lane_state.wants_data;
-    lane_state.wants_data = false;
-    if (lane_state.finished)
-        return Served{.finished = true};
-
-    /// The merge asks for the lane: whatever it took in full before this, it went through and wants more.
-    /// A merge that stops after a chunk (a LIMIT) never comes back, and its slices never count.
-    consumed_marks += std::exchange(lane_state.taken_marks, 0);
-
-    /// Rows leave a lane through its first issued slice only, so the lane stays in reading order.
-    auto head = headSlice(lane_state);
-    if (head != lane_state.slices.end() && !head->second.chunks.empty())
-    {
-        Chunk chunk = std::move(head->second.chunks.front());
-        head->second.chunks.pop_front();
-        if (head->second.complete && head->second.chunks.empty())
-            dropSlice(lane, head);
-        merge_asked |= !was_waiting;
-        return Served{.chunk = std::move(chunk)};
-    }
-
-    /// Nothing is ready: the rows of the slice in flight start at its boundary mark, else the lane's rows
-    /// start at its next unread mark.
-    std::optional<size_t> next_mark;
-    if (head != lane_state.slices.end())
-        next_mark = head->second.boundary_mark;
-    else
-        next_mark = nextUnreadMark(lane_state);
-
-    if (!next_mark)
-    {
-        query_spans_lanes = true;
-        finishLaneUnlocked(lane);
-        return Served{.finished = true};
-    }
-
-    Chunk announcement = announce(lane, *next_mark, output_header);
-    if (!announcement)
-        lane_state.wants_data = true;
-    merge_asked |= !was_waiting;
-    return Served{.chunk = std::move(announcement)};
-}
-
-std::vector<size_t> MergeTreeReadPoolInOrderSliced::schedule(const std::vector<size_t> & parked_sources)
-{
-    std::lock_guard lock(mutex);
-
-    const bool asked = std::exchange(merge_asked, false);
+    Scheduled result;
+    size_t marks_cut = 0;
 
     /// Slices are cut for the sources that can take them now; a source still reading takes the next one
     /// itself when it is done.
     auto can_cut = [&]() TSA_REQUIRES(mutex) { return fifo.size() < parked_sources.size(); };
-
-    /// The parked sources to wake, one per slice in the FIFO: the one holding the lane's readers if parked.
-    auto to_wake = [&]() TSA_REQUIRES(mutex)
+    auto cut = [&](size_t lane) TSA_REQUIRES(mutex)
     {
-        std::vector<size_t> chosen;
-        std::vector<size_t> rest = parked_sources;
-        for (const auto & queued : fifo)
-        {
-            if (rest.empty())
-                break;
-            auto pick = rest.begin();
-            for (auto it = rest.begin(); it != rest.end(); ++it)
-                if (last_task_lane[*it] == queued.lane)
-                    pick = it;
-            chosen.push_back(*pick);
-            rest.erase(pick);
-        }
-        return chosen;
+        result.cut.push_back(cutSlice(lane));
+        marks_cut += result.cut.back().marks;
     };
 
-    /// The lane the merge is blocked on is read whatever the read-ahead depth: those rows are never waste.
-    bool merge_waits = false;
-    for (size_t lane = 0; lane < lanes.size(); ++lane)
+    /// The lanes the merge is blocked on are read whatever the read-ahead: those rows are never waste.
+    for (size_t lane : demand.blocked_lanes)
     {
-        if (!lanes[lane].wants_data)
+        if (lanes[lane].unread.empty())
             continue;
-
-        merge_waits = true;
-        if (!lanes[lane].slices.empty() || lanes[lane].unread.empty())
-            continue;
-
         if (!can_cut())
-            return to_wake();
-        cutSlice(lane);
+            break;
+        cut(lane);
 
         /// Lanes whose next key lies within the slice just cut are consumed before that slice is done:
         /// reading them now costs no more rows than waiting for the merge to ask for each of them in turn.
@@ -654,44 +447,59 @@ std::vector<size_t> MergeTreeReadPoolInOrderSliced::schedule(const std::vector<s
         {
             if (!can_cut() || !canShare(*before))
                 break;
-            cutSlice(*before);
+            cut(*before);
         }
     }
 
-    /// Read-ahead only on the merge's demand: a merge that stops after the chunk it just took (a LIMIT)
-    /// must not trigger reads it never needs.
-    if (asked || merge_waits)
+    /// Read ahead in the order the merge is going to need the data, never past the allowance. A lane that
+    /// is being read and is too short to share is left to its reader; the next lane in key order is read
+    /// ahead instead. Lanes the merge has not started and that lie after every lane it has are left alone
+    /// until the query spans lanes: one that ends within the lanes it is on, as a LIMIT met in the first
+    /// part does, reads nothing else.
+    for (auto it = queue.begin(); it != queue.end() && can_cut();)
     {
-        /// Read ahead in the order the merge is going to need the data, never past the budget. A lane that
-        /// is being read and is too short to share is left to its reader; the next lane in key order is
-        /// read ahead instead. Lanes the merge has not started and that lie after everything in flight are
-        /// left alone until it went through a lane to its end: a query that ends within the lanes it is on,
-        /// as a LIMIT met in the first part does, reads nothing else; one that spans lanes reads them all.
-        const size_t budget = readAheadMarks();
-        for (auto it = queue.begin(); it != queue.end() && can_cut();)
+        const size_t lane = it->lane;
+        if (!canShare(lane))
         {
-            const size_t lane = it->lane;
-            if (!canShare(lane))
-            {
-                ++it;
-                continue;
-            }
-            if (!query_spans_lanes && lanes[lane].slices.empty() && !inFlightAfter(it))
-                break;
-            if (issued_marks + nextSliceMarks(lane) > budget)
-                break;
-            cutSlice(lane);
-            it = queue.begin();
+            ++it;
+            continue;
         }
+        if (!demand.spans_lanes && lanes[lane].slices_cut == 0 && !startedLaneAfter(it))
+            break;
+        if (marks_cut + nextSliceMarks(lane) > demand.read_ahead_marks)
+            break;
+        cut(lane);
+        it = queue.begin();
     }
 
-    return to_wake();
+    std::vector<size_t> rest = parked_sources;
+    for (const auto & queued : fifo)
+    {
+        if (rest.empty())
+            break;
+        auto pick = rest.begin();
+        for (auto it = rest.begin(); it != rest.end(); ++it)
+            if (sources[*it].lane == queued.slice.lane)
+                pick = it;
+        result.sources_to_wake.push_back(*pick);
+        rest.erase(pick);
+    }
+    return result;
 }
 
 size_t MergeTreeReadPoolInOrderSliced::fifoSize() const
 {
     std::lock_guard lock(mutex);
     return fifo.size();
+}
+
+std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextUnreadMark(size_t lane) const
+{
+    std::lock_guard lock(mutex);
+    const auto & unread = lanes[lane].unread;
+    if (unread.empty())
+        return std::nullopt;
+    return reverse ? unread.back().end : unread.front().begin;
 }
 
 void MergeTreeReadPoolInOrderSliced::finishLane(size_t lane)

@@ -1,4 +1,6 @@
 #pragma once
+
+#include <algorithm>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
@@ -136,8 +138,7 @@ public:
     /// `read_in_order_virtual_row_prefetch_window` asks for one explicitly.
     void readAheadOnReadingSide()
     {
-        if (sort_settings.virtual_row_prefetch_window < 0)
-            sort_settings.virtual_row_prefetch_window = 0;
+        sort_settings.virtual_row_prefetch_window = std::max<Int64>(sort_settings.virtual_row_prefetch_window, 0);
     }
     bool getUseBuffering() const { return use_buffering; }
 

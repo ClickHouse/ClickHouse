@@ -1150,7 +1150,6 @@ Pipe ReadFromMergeTree::readInOrderSliced(
         dataflow_cache_updater,
         num_sources,
         pk_header,
-        virtual_row_conversion,
         read_in_reverse_order);
 
     pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
@@ -1201,7 +1200,7 @@ Pipe ReadFromMergeTree::readInOrderSliced(
         });
     }
 
-    pipe.addTransform(std::make_shared<MergeTreeInOrderSliceRouter>(pipe.getSharedHeader(), pool));
+    pipe.addTransform(std::make_shared<MergeTreeInOrderSliceRouter>(pipe.getSharedHeader(), pool, virtual_row_conversion));
     return pipe;
 }
 

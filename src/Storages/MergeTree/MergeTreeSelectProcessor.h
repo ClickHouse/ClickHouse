@@ -231,7 +231,7 @@ private:
 
     void updateQueryConditionCache(const MergeTreeReadTask & finished_task) const;
     void tagSlice(Chunk & chunk) const;
-    ChunkAndProgress makeSliceMarker(std::optional<MergeTreeSliceTag> ended, size_t ended_bytes, bool idle) const;
+    ChunkAndProgress makeSliceMarker(std::optional<MergeTreeSliceTag> ended, bool idle) const;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};
