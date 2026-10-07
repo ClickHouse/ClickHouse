@@ -228,7 +228,15 @@ def _disabled_reason(cache_dir):
     the CI Logs cluster reachable, a transient failure in another worker must not
     disable the export for the rest of the job. The markers are only ever
     created, never removed, so the check does not race with a concurrent
-    worker."""
+    worker.
+
+    The `lost` marker overrides it: it is written when the CI Logs cluster
+    stops answering after the export is already running (see
+    _disable_after_transport_failure), so that one outage in the middle of the
+    job does not stall every later server stop for the flush timeout."""
+    lost = cache_dir / "lost"
+    if lost.exists():
+        return lost.read_text()
     if (cache_dir / "connected").exists():
         return None
     marker = cache_dir / "disabled"
@@ -826,19 +834,62 @@ def teardown_for_instance(instance):
     instance.ci_logs_export_hashes = {}
 
 
+# The errors of a flush that mean the CI Logs cluster does not answer, as
+# opposed to a failure of the local server: the client of the test runner timed
+# out, or a `SYSTEM FLUSH DISTRIBUTED` failed to reach the cluster.
+TRANSPORT_FAILURE_ERRORS = (
+    "Client timed out",
+    "ALL_CONNECTION_TRIES_FAILED",
+    "SOCKET_TIMEOUT",
+    "NETWORK_ERROR",
+    "TIMEOUT_EXCEEDED",
+)
+
+
+def _disable_after_transport_failure(instance, error):
+    """Disable the export for the rest of the job when a flush of a running
+    export failed because the CI Logs cluster does not answer. Every later
+    flush would wait for the same timeout, and integration tests stop and
+    restart many servers, so a single outage would otherwise add the timeout to
+    each of them. A failure is attributed to the CI Logs cluster only when the
+    local server still answers: a server that died or is being killed by the
+    test fails the flush too, but says nothing about the export."""
+    if not any(marker in str(error) for marker in TRANSPORT_FAILURE_ERRORS):
+        return
+    try:
+        instance.query("SELECT 1", timeout=10)
+    except Exception:
+        return
+    reason = f"the CI Logs cluster stopped answering, a flush on {instance.name} failed: {error}"
+    logging.warning("CI logs export: disabled for the rest of the job: %s", reason)
+    cache_dir = _cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / "lost").write_text(reason)
+
+
 def flush_before_shutdown(instance):
     """Flush the logs, the asynchronous insert queue and the pending Distributed
     sends, so that the data accumulated since the last flush is not lost with
-    the container. Best effort: never raises."""
+    the container. Skipped once the export was disabled for the job, see
+    _disable_after_transport_failure. Best effort: never raises."""
     tables = getattr(instance, "ci_logs_export_tables", None)
     if not tables:
+        return
+    reason = _disabled_reason(_cache_dir())
+    if reason is not None:
+        logging.info(
+            "CI logs export: not flushing the logs of %s, disabled earlier in this job: %s",
+            instance.name,
+            reason,
+        )
         return
     try:
         statements = "".join(f"{statement};\n" for statement in _shutdown_statements(tables))
         instance.query(statements, timeout=120)
-    except Exception:
+    except Exception as e:
         logging.warning(
             "CI logs export: failed to flush the logs on shutdown of %s",
             instance.name,
             exc_info=True,
         )
+        _disable_after_transport_failure(instance, e)

@@ -341,6 +341,45 @@ def test_flush_before_shutdown_runs_the_statements_in_order():
     HELPER.flush_before_shutdown(Idle())
 
 
+def test_a_lost_ci_logs_cluster_disables_later_flushes(monkeypatch, tmp_path):
+    """Once the export is running, a flush that times out because the CI Logs
+    cluster stopped answering must disable the export for the rest of the job,
+    overriding the `connected` marker, so that later server stops do not wait
+    for the same timeout again. A failure of the local server must not."""
+    monkeypatch.setenv("CLICKHOUSE_CI_LOGS_CACHE_DIR", str(tmp_path))
+    (tmp_path / "connected").touch()
+
+    class Dead:
+        name = "dead"
+        ci_logs_export_tables = ["query_log"]
+
+        def query(self, sql, timeout=None):
+            raise RuntimeError("Client timed out!")
+
+    HELPER.flush_before_shutdown(Dead())
+    assert HELPER._disabled_reason(tmp_path) is None
+
+    class Stuck:
+        name = "stuck"
+        ci_logs_export_tables = ["query_log"]
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+            if sql != "SELECT 1":
+                raise RuntimeError("Client timed out!")
+            return "1"
+
+    stuck = Stuck()
+    HELPER.flush_before_shutdown(stuck)
+    assert stuck.queries[-1] == "SELECT 1"
+    assert "stuck" in HELPER._disabled_reason(tmp_path)
+
+    stuck.queries.clear()
+    HELPER.flush_before_shutdown(stuck)
+    assert stuck.queries == []
+
+
 def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
     """A test may restart a server into another schema of a log table (e.g.
     `system.metric_log` switched to the transposed schema): the export of that
