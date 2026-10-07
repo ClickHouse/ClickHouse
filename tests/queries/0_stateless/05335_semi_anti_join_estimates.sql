@@ -19,9 +19,10 @@ DROP TABLE IF EXISTS t_sa_fact;
 DROP TABLE IF EXISTS t_sa_dim;
 DROP TABLE IF EXISTS t_sa_many;
 
-CREATE TABLE t_sa_fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE t_sa_dim (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE t_sa_many (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+-- Sparse serialization changes the bytes a read costs; the runner randomizes it.
+CREATE TABLE t_sa_fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE t_sa_dim (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE t_sa_many (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_sa_fact SELECT number % 10000, number FROM numbers(1000);
 INSERT INTO t_sa_dim SELECT number FROM numbers(1000);
 INSERT INTO t_sa_many SELECT number % 1000, number FROM numbers(1000);

@@ -5,6 +5,8 @@
 -- is unknown, and an any join emits each left row once. The cost token is stripped from the plan
 -- lines: this test is about rows, and every change of a cost constant would move it otherwise.
 SET enable_analyzer = 1;
+-- A filter and the equi-join filter propagated onto it print as one step; the runner randomizes the merge.
+SET query_plan_merge_filters = 1;
 -- Each filter stays a step of its own with its own estimate; moved into the read it would vanish
 -- from the plan lines, and the move depends on the storage and is randomized by the runner.
 SET optimize_move_to_prewhere = 0;

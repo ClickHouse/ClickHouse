@@ -21,9 +21,10 @@ DROP TABLE IF EXISTS t_a;
 DROP TABLE IF EXISTS t_b;
 DROP TABLE IF EXISTS t_c;
 
-CREATE TABLE t_a (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE t_b (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE t_c (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+-- Sparse serialization changes the bytes a read costs; the runner randomizes it.
+CREATE TABLE t_a (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE t_b (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE t_c (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_a SELECT number % 100, number % 50 FROM numbers(1000);
 INSERT INTO t_b SELECT number % 100 FROM numbers(100);
 INSERT INTO t_c SELECT number FROM numbers(100);

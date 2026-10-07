@@ -30,10 +30,11 @@ SET param__internal_cascades_cluster_node_count = 3;
 DROP TABLE IF EXISTS t_ae_fact;
 DROP TABLE IF EXISTS t_ae_keys;
 
+-- Sparse serialization changes the bytes a read costs; the runner randomizes it.
 CREATE TABLE t_ae_fact (k UInt64 STATISTICS(uniq, basic), v UInt64 STATISTICS(uniq, basic))
-    ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+    ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
 CREATE TABLE t_ae_keys (k UInt64 STATISTICS(uniq, basic))
-    ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+    ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_ae_fact SELECT number % 10000, cityHash64(number) % 1000 FROM numbers(40000);
 INSERT INTO t_ae_keys SELECT number FROM numbers(10000);
 

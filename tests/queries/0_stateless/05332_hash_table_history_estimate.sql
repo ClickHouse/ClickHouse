@@ -2,6 +2,8 @@
 -- input in the next plan and stays an imprecise estimate: it describes the past execution's input,
 -- not this one's. `EXPLAIN` shows the source.
 SET allow_experimental_statistics = 1;
+-- The plan lines below show the filter moved to PREWHERE; the runner randomizes the move.
+SET optimize_move_to_prewhere = 1;
 SET use_statistics = 1;
 -- The test runner may turn this off; the inserted parts need their statistics.
 SET materialize_statistics_on_insert = 1;

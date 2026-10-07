@@ -17,8 +17,9 @@ SET param__internal_join_table_stat_hints = '{"t_lb_known": {"cardinality": 1000
 
 DROP TABLE IF EXISTS t_lb_known;
 DROP TABLE IF EXISTS t_lb_unk;
-CREATE TABLE t_lb_known (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
-CREATE TABLE t_lb_unk (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
+-- Sparse serialization changes the bytes a read costs; the runner randomizes it.
+CREATE TABLE t_lb_known (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+CREATE TABLE t_lb_unk (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
 INSERT INTO t_lb_known SELECT number, number FROM numbers(1000);
 INSERT INTO t_lb_unk SELECT number, number FROM numbers(100);
 
