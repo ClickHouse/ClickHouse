@@ -918,6 +918,8 @@ public:
             /// COLUMNAR_V1 passes columns directly, split by the same limits as the buffered path.
             if (const auto * cv1 = dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()))
             {
+                checkModuleCanHoldInput(compartment_ptr, input_rows_count);
+
                 auto stop_token = interrupt_source.get_token();
                 auto expected_col = user_defined_function->getResultType()->createColumn();
                 MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
@@ -1270,16 +1272,21 @@ private:
             result_column->insertRangeFrom(*batch_column, 0, batch_column->size());
     }
 
-    ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    /// A module whose linear memory is bounded at zero bytes can hold no input at all, whatever
+    /// the batching is. This is reported before any measurement, because a function without
+    /// arguments has no row to attribute the failure to and would otherwise fail inside the
+    /// guest allocator.
+    void checkModuleCanHoldInput(const WebAssembly::WasmCompartment * compartment, size_t input_rows_count) const
     {
-        /// A module whose linear memory is bounded at zero bytes can hold no input at all, whatever
-        /// the batching is. This is reported before any measurement, because a function without
-        /// arguments has no row to attribute the failure to and would otherwise fail inside the
-        /// guest allocator.
         if (input_rows_count > 0 && user_defined_function->requiresGuestLinearMemory()
             && compartment->getMaxLinearMemorySize() == 0)
             throw Exception(ErrorCodes::WASM_ERROR,
                 "The maximum linear memory of the module is 0 bytes, so it cannot hold the input of the function");
+    }
+
+    ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    {
+        checkModuleCanHoldInput(compartment, input_rows_count);
 
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
 
