@@ -272,6 +272,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char check_table_inject_retryable_zk_error[];
+    extern const char check_table_inject_shutdown_abort[];
 }
 
 namespace ErrorCodes
@@ -5966,16 +5967,19 @@ void StorageReplicatedMergeTree::startup()
     /// logically shut-down table would keep doing periodic work until some later `shutdown()` stops it.
     /// Also stop right here: continuing into `attach_thread->start()` / `startupImpl` would pointlessly
     /// re-arm the attach/restarting threads that `flushAndPrepareForShutdown()` has already shut down.
-    /// `shutdown_called` is never reset, so this storage object is only going to be destroyed — there is
-    /// nothing to start up. This check is best-effort (the flag can flip right after it); whatever a
-    /// startup that slipped past it re-arms is torn down again by the `already_called` branch of
-    /// `shutdown`, either via the cleanup path of `startupImpl` or at the latest by the destructor.
-    if (shutdown_called.load())
+    /// The same applies when only `flushAndPrepareForShutdown()` has run so far (server or database
+    /// shutdown calls it for all tables before `shutdown()`): it has already stopped the attach and
+    /// restarting threads, and a late startup must not restart background work after that.
+    /// Neither `shutdown_called` nor `shutdown_prepared_called` is ever reset, so this storage object is
+    /// only going to be shut down and destroyed — there is nothing to start up. This check is best-effort
+    /// (the flags can flip right after it); whatever a startup that slipped past it re-arms is torn down
+    /// again by the `already_called` branch of `shutdown`, either via the cleanup path of `startupImpl` or
+    /// at the latest by the destructor.
+    if (shutdown_called.load() || shutdown_prepared_called.load())
     {
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        if (refresh_stats_task)
-            refresh_stats_task->deactivate();
+        stopStatisticsCache();
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         return;
     }
@@ -6005,19 +6009,26 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
     try
     {
         auto zookeeper = getZooKeeper();
-        InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
-        [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
-        chassert(prev_ptr == nullptr);
 
-        /// The endpoint id:
-        ///     old format: DataPartsExchange:/clickhouse/tables/default/t1/{shard}/{replica}
-        ///     new format: DataPartsExchange:{zookeeper_name}:/clickhouse/tables/default/t1/{shard}/{replica}
-        /// Notice:
-        ///     They are incompatible and the default is the old format.
-        ///     If you want to use the new format, please ensure that 'enable_the_endpoint_id_with_zookeeper_name_prefix' of all nodes is true .
-        ///
-        getContext()->getInterserverIOHandler().addEndpoint(
-            data_parts_exchange_ptr->getId(getEndpointName()), data_parts_exchange_ptr);
+        /// A failed previous attempt of the attach thread leaves the endpoint registered (see the cleanup below),
+        /// so a retry reuses it. The endpoint is published only after it has been registered successfully.
+        if (!std::atomic_load(&data_parts_exchange_endpoint))
+        {
+            InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
+
+            /// The endpoint id:
+            ///     old format: DataPartsExchange:/clickhouse/tables/default/t1/{shard}/{replica}
+            ///     new format: DataPartsExchange:{zookeeper_name}:/clickhouse/tables/default/t1/{shard}/{replica}
+            /// Notice:
+            ///     They are incompatible and the default is the old format.
+            ///     If you want to use the new format, please ensure that 'enable_the_endpoint_id_with_zookeeper_name_prefix' of all nodes is true .
+            ///
+            getContext()->getInterserverIOHandler().addEndpoint(
+                data_parts_exchange_ptr->getId(getEndpointName()), data_parts_exchange_ptr);
+
+            [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
+            chassert(prev_ptr == nullptr);
+        }
 
         startBeingLeader(zookeeper_retries_info);
 
@@ -6075,15 +6086,10 @@ void StorageReplicatedMergeTree::startupImpl(bool from_attach_thread, const ZooK
             {
                 restarting_thread.shutdown(/* part_of_full_shutdown */false);
 
-                auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
-                if (data_parts_exchange_ptr)
-                {
-                    getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
-                    /// Ask all parts exchange handlers to finish asap. New ones will fail to start
-                    data_parts_exchange_ptr->blocker.cancelForever();
-                    /// Wait for all of them
-                    std::lock_guard lock(data_parts_exchange_ptr->rwlock);
-                }
+                /// Leave the interserver parts exchange endpoint registered: its teardown belongs to `shutdown` only.
+                /// Removing it here would race with a concurrent full `shutdown`, which may already be waiting for this
+                /// thread in `flushAndPrepareForShutdown` and then still needs the endpoint to serve fetches from other
+                /// replicas in `waitForUniquePartsToBeFetchedByOtherReplicas`. A retry of the attach thread reuses it.
             }
             else
             {
@@ -6196,8 +6202,7 @@ void StorageReplicatedMergeTree::shutdown(bool)
     /// is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
+    stopStatisticsCache();
 
     if (already_called)
     {
@@ -10715,20 +10720,25 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
 {
-    /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown
-    if (shutdown_called || partial_shutdown_called)
-        throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
-
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::checkDataNext");
     if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
     {
+        /// We want to throw and exit as soon as possible to allow part_check_thread to shutdown.
+        /// Only when there is a part left to check: once every part has been checked, the final call that
+        /// reports the end of the list must not turn a completed check into a failure.
+        bool aborted_by_shutdown = shutdown_called || partial_shutdown_called;
+        fiu_do_on(FailPoints::check_table_inject_shutdown_abort, { aborted_by_shutdown = true; });
+        if (aborted_by_shutdown)
+            throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+
         try
         {
             fiu_do_on(FailPoints::check_table_inject_retryable_zk_error,
             {
                 throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Injected retryable ZooKeeper error for the check_table_inject_retryable_zk_error failpoint");
             });
-            return part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
+            return part_check_thread.checkPartAndFix(
+                part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true, /* throw_if_cancelled */true);
         }
         catch (const Exception & ex)
         {
