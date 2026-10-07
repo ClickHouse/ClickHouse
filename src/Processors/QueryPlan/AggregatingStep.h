@@ -76,6 +76,10 @@ public:
     const Aggregator::Params & getParams() const { return params; }
     bool isFinal() const { return final; }
 
+    /// Whether the aggregation is a single `uniqExact` of one argument without keys, which the radix partitioned
+    /// `uniqExact` may compute.
+    bool isSingleUniqExactWithoutKeys() const;
+
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
     void enableBucketTopK(size_t n, bool ascending, size_t count_index)
     {
@@ -168,7 +172,11 @@ private:
     void updateOutputHeader() override;
 
     /// Replaces the aggregation by the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) if it applies.
-    bool tryBuildRadixUniqExact(QueryPipelineBuilder & pipeline, const AggregatingTransformParamsPtr & transform_params, size_t max_threads) const;
+    bool tryBuildRadixUniqExact(
+        QueryPipelineBuilder & pipeline,
+        const AggregatingTransformParamsPtr & transform_params,
+        size_t max_threads,
+        const StatsCollectingParams & stats_collecting_params) const;
 
     Aggregator::Params params;
     GroupingSetsParamsList grouping_sets_params;

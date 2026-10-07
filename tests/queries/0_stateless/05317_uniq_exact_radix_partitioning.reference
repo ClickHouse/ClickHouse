@@ -21,6 +21,12 @@ repeated many UInt64	300000
 sparse	100001
 sparse String	100001
 sparse without defaults	100000
+statistics radix	600000
+statistics radix	600000
+statistics set	400000
+statistics set	400000
+statistics repeated	300000
+statistics repeated	300000
 empty	0
 only NULLs	0
 null for empty, empty	0	0	UInt64

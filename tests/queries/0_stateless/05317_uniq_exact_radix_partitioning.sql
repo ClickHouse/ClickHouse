@@ -38,6 +38,15 @@ SELECT 'sparse String', uniqExact(s) FROM t_radix_uniq_sparse;
 SELECT 'sparse without defaults', uniqExact(x) FROM t_radix_uniq_sparse WHERE x != 0;
 DROP TABLE t_radix_uniq_sparse;
 
+-- The second run of a query uses the statistics of the first one: the threads start in the radix mode, or in a set
+-- allocated for all their values, without deduplications if their values are distinct.
+SELECT 'statistics radix', uniqExact(toString(number)) FROM numbers_mt(600000) SETTINGS collect_hash_table_stats_during_aggregation = 1;
+SELECT 'statistics radix', uniqExact(toString(number)) FROM numbers_mt(600000) SETTINGS collect_hash_table_stats_during_aggregation = 1;
+SELECT 'statistics set', uniqExact(number) FROM numbers_mt(400000) SETTINGS collect_hash_table_stats_during_aggregation = 1;
+SELECT 'statistics set', uniqExact(number) FROM numbers_mt(400000) SETTINGS collect_hash_table_stats_during_aggregation = 1;
+SELECT 'statistics repeated', uniqExact(toUInt64(number % 300000)) FROM numbers_mt(2000000) SETTINGS collect_hash_table_stats_during_aggregation = 1;
+SELECT 'statistics repeated', uniqExact(toUInt64(number % 300000)) FROM numbers_mt(2000000) SETTINGS collect_hash_table_stats_during_aggregation = 1;
+
 SELECT 'empty', uniqExact(number) FROM numbers_mt(400000) WHERE number > 1e9;
 SELECT 'empty result for empty set', uniqExact(number) FROM numbers_mt(400000) WHERE number > 1e9 SETTINGS empty_result_for_aggregation_by_empty_set = 1;
 SELECT 'only NULLs', uniqExact(if(number % 4 = 0, NULL, toInt64(number))) FROM numbers_mt(400000) WHERE number % 4 = 0 SETTINGS empty_result_for_aggregation_by_empty_set = 1;

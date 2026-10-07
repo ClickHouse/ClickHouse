@@ -13,12 +13,15 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <base/getL2CacheSize.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <array>
 #include <bit>
 #include <cstring>
+#include <limits>
+#include <optional>
 
 
 namespace DB
@@ -240,6 +243,10 @@ constexpr size_t MAX_UNBOUNDED_SET_BYTES = 4 * 1024 * 1024;
 /// many distinct keys, and they balance the build between the threads.
 constexpr size_t PARTITIONS_PER_STREAM = 16;
 
+/// At least 256 partitions, and at most 4096, because every stream keeps a chain per partition.
+constexpr size_t MIN_PARTITION_BITS = 8;
+constexpr size_t MAX_PARTITION_BITS = 12;
+
 /// The blocks of a chain of buffered keys grow from `MIN_BLOCK_SIZE` to `MIN_BLOCK_SIZE << MAX_BLOCK_CLASS` keys,
 /// so that the chains of the partitions with few keys stay small.
 constexpr size_t MIN_BLOCK_SIZE = 16;
@@ -249,14 +256,21 @@ template <typename Key>
 class RadixUniqExactState final : public IRadixUniqExactState
 {
 public:
-    RadixUniqExactState(size_t num_streams_, size_t partition_bits_)
+    RadixUniqExactState(
+        size_t num_streams_, size_t partition_bits_, const StatsCollectingParams & stats_collecting_params_, std::optional<RadixUniqExactEntry> hint_)
         : partition_bits(partition_bits_)
         , num_partitions(1ULL << partition_bits_)
         , streams(num_streams_)
         , string_hash(randomKey())
+        , stats_collecting_params(stats_collecting_params_)
+        , hint(hint_)
     {
         for (auto & stream : streams)
+        {
             stream.local_set.reset(INITIAL_LOCAL_SET_CAPACITY);
+            if (hint)
+                startFromHint(stream);
+        }
     }
 
     /// Inserts the keys of the rows (after skipping NULLs and consecutive duplicates) of the column. `extract` maps
@@ -359,7 +373,14 @@ public:
         auto & stream = streams[stream_index];
         /// The local set holds distinct keys, so no chain needs a deduplication while it is moved.
         if (stream.mode != Mode::Radix)
+        {
+            stream.estimated_distinct = stream.local_set.size();
             switchToRadixMode(stream);
+        }
+        else
+        {
+            stream.estimated_distinct = static_cast<size_t>(static_cast<double>(stream.num_buffered) * stream.remaining_ratio);
+        }
 
         /// The build reads only the chains, so the set must not hold memory while the partition sets are built.
         stream.local_set = {};
@@ -378,17 +399,60 @@ public:
         if (total == 0)
             return 0;
 
-        /// The load factor is at most 0.5, the actual number of distinct keys can only be lower.
+        /// The load factor is at most 0.5, the actual number of distinct keys can only be lower. With the statistics, the
+        /// set is allocated for the expected number of distinct keys of a partition, with a margin for the variation
+        /// between the partitions, and it grows if there are more of them.
+        size_t expected = total;
+        if (hint)
+        {
+            const size_t partition_distinct = hint->num_distinct / num_partitions;
+            expected = std::min(total, partition_distinct + partition_distinct / 16 + MIN_BLOCK_SIZE);
+        }
+
         FlatSet<Key> set;
-        set.reset(std::bit_ceil(total * 2));
+        set.reset(std::bit_ceil(expected * 2));
 
         for (const auto & stream : streams)
         {
             for (const Block * block = stream.chains[partition].head; block; block = block->next)
+            {
+                while ((set.numCellsInUse() + block->size) * 2 > set.capacity())
+                    growLocalSet(set);
                 set.insertMany(block->keys(), block->size);
+            }
         }
 
+        num_built_partitions.fetch_add(1, std::memory_order_relaxed);
         return set.size();
+    }
+
+    void recordStatistics(size_t num_distinct) override
+    {
+        if (!stats_collecting_params.isCollectionAndUseEnabled() || num_built_partitions.load(std::memory_order_relaxed) != num_partitions)
+            return;
+
+        std::vector<size_t> stream_distinct;
+        std::vector<size_t> stream_keys;
+        for (const auto & stream : streams)
+        {
+            stream_distinct.push_back(stream.estimated_distinct);
+            stream_keys.push_back(stream.num_routed);
+        }
+
+        auto median = [](std::vector<size_t> & values)
+        {
+            auto middle = values.begin() + values.size() / 2;
+            std::nth_element(values.begin(), middle, values.end());
+            return *middle;
+        };
+
+        getHashTablesStatistics<RadixUniqExactEntry>().update(
+            RadixUniqExactEntry{
+                .num_distinct = num_distinct,
+                .stream_distinct = median(stream_distinct),
+                .stream_keys = median(stream_keys),
+                .num_streams = streams.size()},
+            stats_collecting_params);
     }
 
     size_t numPartitions() const override { return num_partitions; }
@@ -451,7 +515,34 @@ private:
         size_t compaction_budget = INITIAL_COMPACTION_BUDGET;
         /// The chain where the next sample for the deduplication starts.
         size_t next_sample_chain = 0;
+        /// The ratio of the keys that remained after the last deduplication in its sample.
+        double remaining_ratio = 1;
+
+        /// For the statistics: the number of keys passed to `insertBatch`, and the estimate of the number of distinct
+        /// keys of the stream when it is finished.
+        size_t num_routed = 0;
+        size_t estimated_distinct = 0;
     };
+
+    /// The statistics of a previous run of the query tell the number of distinct keys of a stream, so the stream
+    /// starts in the mode that suits it: in a local set allocated for all its keys if it fits into the CPU caches, and
+    /// in the radix mode otherwise, without deduplications if its keys are mostly distinct.
+    void startFromHint(Stream & stream)
+    {
+        const size_t stream_distinct = hint->stream_distinct;
+        if (stream_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
+        {
+            stream.mode = Mode::UnboundedSet;
+            stream.local_set.reset(std::bit_ceil(std::max<size_t>(stream_distinct * 2, INITIAL_LOCAL_SET_CAPACITY)));
+            return;
+        }
+
+        switchToRadixMode(stream);
+        if (hint->stream_keys * 3 <= stream_distinct * 4)
+            stream.compaction_budget = std::numeric_limits<size_t>::max() / 2;
+        else
+            stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream_distinct * COMPACTION_BUDGET_FACTOR);
+    }
 
     ALWAYS_INLINE void insert(Stream & stream, Key key)
     {
@@ -477,6 +568,7 @@ private:
     /// are done once for as many keys as possible.
     ALWAYS_INLINE void insertBatch(Stream & stream, const Key * keys, size_t num_keys)
     {
+        stream.num_routed += num_keys;
         size_t i = 0;
         while (i < num_keys)
         {
@@ -606,6 +698,7 @@ private:
             return *middle;
         };
         const double remaining_ratio = median(remaining_ratios, 1);
+        stream.remaining_ratio = remaining_ratio;
         const double new_distinct_ratio = median(new_distinct_ratios, 1);
 
         const size_t estimated_size = static_cast<size_t>(static_cast<double>(stream.num_buffered) * remaining_ratio) + 1;
@@ -697,6 +790,10 @@ private:
     const size_t num_partitions;
     std::vector<Stream> streams;
     const UniversalHash128 string_hash;
+
+    const StatsCollectingParams stats_collecting_params;
+    const std::optional<RadixUniqExactEntry> hint;
+    std::atomic<size_t> num_built_partitions{0};
 };
 
 /// The keys of up to 8 bytes are the values themselves, zero-extended to `UInt32` or `UInt64`. They are compared by
@@ -778,15 +875,35 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
     }
 }
 
-size_t partitionBits(size_t num_streams)
+/// With the statistics, there are enough partitions for each partition set to fit into half of the L2 cache.
+size_t partitionBits(size_t num_streams, size_t key_size, const std::optional<RadixUniqExactEntry> & hint)
 {
-    /// At most 4096 partitions, because every stream keeps a chain per partition.
-    return std::clamp<size_t>(std::bit_width(num_streams * PARTITIONS_PER_STREAM - 1), 8, 12);
+    size_t num_partitions = num_streams * PARTITIONS_PER_STREAM;
+    if (hint)
+        num_partitions = std::max(num_partitions, hint->num_distinct * 2 * key_size / std::max<size_t>(getL2CacheSize() / 2, 1));
+    return std::clamp<size_t>(std::bit_width(num_partitions - 1), MIN_PARTITION_BITS, MAX_PARTITION_BITS);
+}
+
+template <typename Key>
+RadixUniqExactStatePtr createState(size_t num_streams, const StatsCollectingParams & stats_collecting_params)
+{
+    std::optional<RadixUniqExactEntry> hint;
+    if (stats_collecting_params.isCollectionAndUseEnabled())
+    {
+        hint = getHashTablesStatistics<RadixUniqExactEntry>().getSizeHint(stats_collecting_params);
+        /// The numbers of a stream are not comparable with a different number of streams.
+        if (hint && hint->num_streams != num_streams)
+            hint.reset();
+    }
+
+    return std::make_shared<RadixUniqExactState<Key>>(
+        num_streams, partitionBits(num_streams, sizeof(Key), hint), stats_collecting_params, hint);
 }
 
 }
 
-RadixUniqExactStatePtr createRadixUniqExactState(const IDataType & argument_type, size_t num_streams)
+RadixUniqExactStatePtr createRadixUniqExactState(
+    const IDataType & argument_type, size_t num_streams, const StatsCollectingParams & stats_collecting_params)
 {
     const IDataType & type = *removeNullable(argument_type.shared_from_this());
     WhichDataType which(type);
@@ -796,14 +913,14 @@ RadixUniqExactStatePtr createRadixUniqExactState(const IDataType & argument_type
     {
         const size_t size = type.getSizeOfValueInMemory();
         if (size <= sizeof(UInt32))
-            return std::make_shared<RadixUniqExactState<UInt32>>(num_streams, partitionBits(num_streams));
+            return createState<UInt32>(num_streams, stats_collecting_params);
         if (size == sizeof(UInt64))
-            return std::make_shared<RadixUniqExactState<UInt64>>(num_streams, partitionBits(num_streams));
+            return createState<UInt64>(num_streams, stats_collecting_params);
         return nullptr;
     }
 
     if (which.isUInt128() || which.isInt128() || which.isUUID() || which.isString() || which.isFixedString() || which.isIPv6())
-        return std::make_shared<RadixUniqExactState<UInt128>>(num_streams, partitionBits(num_streams));
+        return createState<UInt128>(num_streams, stats_collecting_params);
 
     return nullptr;
 }
@@ -999,6 +1116,8 @@ Chunk RadixUniqExactSumTransform::generate()
     if (generated)
         return {};
     generated = true;
+
+    state->recordStatistics(total);
 
     /// Like the aggregation without keys, return a single row even for an empty input, unless asked otherwise.
     if (empty_result_for_empty_set && state->numRows() == 0)

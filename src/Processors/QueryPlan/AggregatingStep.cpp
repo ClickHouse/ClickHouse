@@ -392,18 +392,28 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     return nullptr;
 }
 
-bool AggregatingStep::tryBuildRadixUniqExact(QueryPipelineBuilder & pipeline, const AggregatingTransformParamsPtr & transform_params, size_t max_threads) const
+bool AggregatingStep::isSingleUniqExactWithoutKeys() const
+{
+    if (!params.keys.empty() || params.aggregates.size() != 1)
+        return false;
+
+    const auto & aggregate = params.aggregates[0];
+    return aggregate.function->getName() == "uniqExact" && aggregate.parameters.empty() && aggregate.argument_names.size() == 1;
+}
+
+bool AggregatingStep::tryBuildRadixUniqExact(
+    QueryPipelineBuilder & pipeline,
+    const AggregatingTransformParamsPtr & transform_params,
+    size_t max_threads,
+    const StatsCollectingParams & stats_collecting_params) const
 {
     const auto & aggregator_params = transform_params->params;
     if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging
-        || aggregator_params.only_merge || aggregator_params.keys_size != 0 || aggregator_params.aggregates_size != 1
-        || aggregator_params.overflow_row
+        || aggregator_params.only_merge || aggregator_params.overflow_row || !isSingleUniqExactWithoutKeys()
         || pipeline.getNumStreams() <= 1 || max_threads <= 1)
         return false;
 
     const auto & aggregate = aggregator_params.aggregates[0];
-    if (aggregate.function->getName() != "uniqExact" || !aggregate.parameters.empty() || aggregate.argument_names.size() != 1)
-        return false;
 
     const auto & output_header = transform_params->getHeader();
     if (output_header.columns() != 1 || !WhichDataType(output_header.getByPosition(0).type).isUInt64())
@@ -412,7 +422,7 @@ bool AggregatingStep::tryBuildRadixUniqExact(QueryPipelineBuilder & pipeline, co
     const auto & input_header = pipeline.getHeader();
     const auto & argument = input_header.getByName(aggregate.argument_names[0]);
     const size_t num_streams = pipeline.getNumStreams();
-    auto state = createRadixUniqExactState(*argument.type, num_streams);
+    auto state = createRadixUniqExactState(*argument.type, num_streams, stats_collecting_params);
     if (!state)
         return false;
 
@@ -511,10 +521,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (params.shared_kept_keys_for_overflow_any)
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
+    /// Of the aggregations without keys, only the radix partitioned `uniqExact` uses the statistics.
+    const StatsCollectingParams radix_uniq_exact_stats_params = params.stats_collecting_params;
+    if (params.keys.empty())
+        params.stats_collecting_params.disable();
+
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
-    if (settings.optimize_uniq_exact_radix_partitioning && tryBuildRadixUniqExact(pipeline, transform_params, max_threads))
+    if (settings.optimize_uniq_exact_radix_partitioning
+        && tryBuildRadixUniqExact(pipeline, transform_params, max_threads, radix_uniq_exact_stats_params))
     {
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
         return;

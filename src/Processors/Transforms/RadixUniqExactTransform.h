@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/HashTablesStatistics.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IProcessor.h>
 
@@ -27,6 +28,12 @@ class IDataType;
 /// repeated, and the distinct keys of the stream fit into a small set, the stream goes back to inserting its keys into
 /// a local set (now without a size limit), as the ordinary aggregation does.
 ///
+/// After a query, the number of distinct keys, and the numbers of keys and distinct keys of a stream, are kept in the
+/// statistics of hash tables (`RadixUniqExactEntry`). When the same query runs again with as many streams, they are
+/// used instead of the estimates of the first run: the number of partitions is selected so that each partition set
+/// fits into the L2 cache, the partition sets are allocated for the expected number of their keys, and the streams
+/// start in the mode that the first run ended in.
+///
 /// The pipeline is:
 ///     `RadixUniqExactRouteTransform` (per stream)
 ///     -> `RadixUniqExactBarrierTransform` (finishes its outputs once all streams are routed)
@@ -43,6 +50,8 @@ public:
     virtual void finishStream(size_t stream) = 0;
     /// Builds the set of the partition `partition` and returns the number of distinct keys in it.
     virtual size_t buildPartition(size_t partition) = 0;
+    /// Called once with the result, after all the partitions are built.
+    virtual void recordStatistics(size_t num_distinct) = 0;
 
     virtual size_t numPartitions() const = 0;
 
@@ -63,7 +72,8 @@ using RadixUniqExactStatePtr = std::shared_ptr<IRadixUniqExactState>;
 
 /// Returns nullptr if the argument type is not supported.
 /// `argument_type` may be `Nullable`, NULLs are skipped as `uniqExact` does.
-RadixUniqExactStatePtr createRadixUniqExactState(const IDataType & argument_type, size_t num_streams);
+RadixUniqExactStatePtr createRadixUniqExactState(
+    const IDataType & argument_type, size_t num_streams, const StatsCollectingParams & stats_collecting_params);
 
 
 class RadixUniqExactRouteTransform final : public IProcessor
