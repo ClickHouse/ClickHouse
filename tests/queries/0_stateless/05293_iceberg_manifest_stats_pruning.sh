@@ -4,7 +4,7 @@
 
 # Issue 120440: the manifest row count under a filter, as MergeTree without column statistics reports it:
 # the rows of the remaining files (imprecise), unknown if nothing is pruned, 0 if everything is.
-# - T1: partition pruning by the manifest list, with the setting off and on.
+# - T1: partition pruning by the manifest list, with the setting off and on; `PREWHERE` prunes as `WHERE` does.
 # - T2: min/max pruning.
 # - T3: partition pruning per data file (bucket transform).
 # - T4: every file pruned.
@@ -76,6 +76,8 @@ echo '--- T1: setting off'
 labels "${T1}" ${OFF}
 echo '--- T1: rows of the join'
 ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query "${T1}"
+echo "--- T1: PREWHERE p.r = 'us'"
+labels "SELECT count() FROM p JOIN mt AS m ON m.x = p.v PREWHERE p.r = 'us'" ${ON}
 
 T2="SELECT count() FROM mt AS m JOIN p ON m.x = p.v WHERE p.k >= 100"
 echo '--- T2: min/max pruning, WHERE p.k >= 100'
