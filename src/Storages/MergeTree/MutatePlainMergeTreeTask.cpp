@@ -44,6 +44,7 @@ void MutatePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context);
+    ThreadGroupSwitcher switcher((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     stopwatch = std::make_unique<Stopwatch>();
 
