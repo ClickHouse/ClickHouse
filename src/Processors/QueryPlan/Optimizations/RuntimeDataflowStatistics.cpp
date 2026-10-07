@@ -60,7 +60,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
+    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read, .table_rows_below_boundary = table_rows_below_boundary};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
