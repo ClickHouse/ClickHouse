@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateRewriteRuleQuery.h>
 #include <Parsers/parseQuery.h>
+#include <base/scope_guard.h>
 #include <base/sort.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -178,6 +179,18 @@ public:
 
         auto tmp_path = getPath(file_name + ".tmp");
         WriteBufferFromFile out(tmp_path, data.size(), O_WRONLY | O_CREAT | O_EXCL);
+
+        /// Remove the temporary file if any step below fails; otherwise every retry for the same rule
+        /// would fail on `O_EXCL` until the stale file is cleaned up at the next server start.
+        bool renamed = false;
+        SCOPE_EXIT({
+            if (!renamed)
+            {
+                std::error_code ec;
+                fs::remove(tmp_path, ec);
+            }
+        });
+
         writeString(data, out);
 
         out.next();
@@ -186,6 +199,7 @@ public:
         out.close();
 
         fs::rename(tmp_path, target_path);
+        renamed = true;
     }
 
     void remove(const std::string & file_name) override
