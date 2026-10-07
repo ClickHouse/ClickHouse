@@ -93,17 +93,35 @@ std::string PlainRewritableLayout::restoreLocalPathOfPendingRemoval(const std::s
     return (std::filesystem::path(original_local_path) / relative_path / "").string();
 }
 
-std::string PlainRewritableLayout::makePendingTombstoneContent(const std::string & original_local_path)
+std::string PlainRewritableLayout::makeCommittedTombstoneContent(const std::string & removed_name)
 {
-    return PENDING_TOMBSTONE_PREFIX + original_local_path;
+    return removed_name;
 }
 
-std::optional<std::string> PlainRewritableLayout::parsePendingTombstoneContent(std::string_view content)
+std::string PlainRewritableLayout::makePendingTombstoneContent(const std::string & removed_name, const std::string & original_local_path)
 {
-    if (!content.starts_with(PENDING_TOMBSTONE_PREFIX))
-        return std::nullopt;
+    return PENDING_TOMBSTONE_PREFIX + original_local_path + "\n" + removed_name;
+}
 
-    return std::string(content.substr(PENDING_TOMBSTONE_PREFIX.size()));
+PlainRewritableLayout::TombstoneMarkerContent PlainRewritableLayout::parseTombstoneContent(std::string_view removed_name, std::string_view content)
+{
+    if (content == removed_name)
+        return {TombstoneMarkerContent::State::Committed, {}};
+
+    /// A truncated pending marker cannot end with the removed name, because the original path never contains it.
+    const size_t suffix_size = removed_name.size() + 1;
+    if (content.size() > PENDING_TOMBSTONE_PREFIX.size() + suffix_size
+        && content.starts_with(PENDING_TOMBSTONE_PREFIX)
+        && content.ends_with(removed_name)
+        && content[content.size() - suffix_size] == '\n')
+    {
+        auto original_local_path = content.substr(PENDING_TOMBSTONE_PREFIX.size(), content.size() - PENDING_TOMBSTONE_PREFIX.size() - suffix_size);
+        /// `RemoveRecursive` always writes the path with a trailing slash.
+        if (original_local_path.ends_with('/'))
+            return {TombstoneMarkerContent::State::Pending, std::string(original_local_path)};
+    }
+
+    return {TombstoneMarkerContent::State::Malformed, {}};
 }
 
 std::string PlainRewritableLayout::constructTombstoneDirectoryKey() const

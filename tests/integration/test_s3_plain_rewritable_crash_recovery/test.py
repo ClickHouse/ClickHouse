@@ -353,7 +353,20 @@ def test_partially_moved_removal_is_rolled_back():
         put_key(data_key, b"a file of a directory")
         data_keys.append(data_key)
     marker_key = TOMBSTONE_KEY_PREFIX + removed_name
-    put_key(marker_key, (PENDING_TOMBSTONE_PREFIX + original_path).encode())
+    put_key(
+        marker_key,
+        (PENDING_TOMBSTONE_PREFIX + original_path + "\n" + removed_name).encode(),
+    )
+
+    # A marker truncated by a process that died while writing it says nothing reliable about its removal:
+    # nothing under its name is moved back or deleted, and the marker stays.
+    truncated_name = REMOVED_NAME_PREFIX + "truncatedmarkera"
+    truncated_marker_key = TOMBSTONE_KEY_PREFIX + truncated_name
+    truncated_directory_key = f"{KEY_PREFIX}__meta/zyxwvutsrqponmld/prefix.path"
+    put_key(truncated_directory_key, f"{truncated_name}/".encode())
+    truncated_data_key = f"{KEY_PREFIX}zyxwvutsrqponmld/data.bin"
+    put_key(truncated_data_key, b"a file of a directory")
+    put_key(truncated_marker_key, (PENDING_TOMBSTONE_PREFIX + "partially").encode())
 
     node.start_clickhouse()
     assert int(node.query("SELECT count() FROM t")) == 1
@@ -371,6 +384,11 @@ def test_partially_moved_removal_is_rolled_back():
         == f"{original_path}not_moved/"
     )
     assert node.contains_in_log("Rolled back 1 removals that were not committed")
+
+    assert key_exists(truncated_marker_key)
+    assert key_exists(truncated_data_key)
+    assert read_key(truncated_directory_key) == f"{truncated_name}/"
+    assert node.contains_in_log("is malformed")
 
     node.query("DROP TABLE t SYNC")
     node.stop_clickhouse()

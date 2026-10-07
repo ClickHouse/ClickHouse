@@ -12,6 +12,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -236,8 +237,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     /// and the writable load rewrites their `prefix.path` back. Nothing of it is deleted. A subsequent load skips
     /// them, because the removal may be running in this very process.
     ///
-    /// The value is the original path of the subtree for a pending removal, and empty for a committed one.
-    std::unordered_map<std::string, std::optional<std::string>> tombstones;
+    /// A malformed marker (see `PlainRewritableLayout::TombstoneMarkerContent`) leaves its removal in an unknown
+    /// state, so it fails closed: nothing under its name is loaded, moved back, or deleted, and the marker stays.
+    using TombstoneState = PlainRewritableLayout::TombstoneMarkerContent::State;
+    std::unordered_map<std::string, PlainRewritableLayout::TombstoneMarkerContent> tombstones;
     for (auto iterator = object_storage->iterate(layout->constructTombstoneDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
     {
         const auto marker = iterator->current();
@@ -273,7 +276,12 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             throw;
         }
 
-        tombstones.emplace(std::move(removed_name.value()), PlainRewritableLayout::parsePendingTombstoneContent(content));
+        auto marker_content = PlainRewritableLayout::parseTombstoneContent(removed_name.value(), content);
+        if (marker_content.state == TombstoneState::Malformed)
+            LOG_WARNING(log, "The tombstone marker '{}' is malformed, most likely because the process died while writing it. "
+                "The objects under the name '{}' are neither loaded nor removed", marker->getPath(), removed_name.value());
+
+        tombstones.emplace(std::move(removed_name.value()), std::move(marker_content));
     }
 
     if (!tombstones.empty())
@@ -299,6 +307,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     std::unordered_map<std::string, std::unordered_map<std::string, FileRemoteInfo>> prelisted_files;
     std::mutex prelisted_files_mutex;
     std::vector<DirectoryLoadResult> results;
+    /// Whether some directory object did not contain a logical path, see below.
+    std::atomic<bool> has_unreadable_directories = false;
 
     /// Record the files of every directory whose name starts with `name_prefix`. Listing by prefix makes
     /// one request cover many directories, and lets the listing of the disk be split into parallel parts.
@@ -466,7 +476,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             /// result: Same, and no two tasks are given the same slot
             /// In any case we have a try {} catch (...) around runner usage, so exceptions will call runner.waitForAllToFinish() first
             /// Thus the order of destruction of the variables is not important
-            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), read_snapshot, do_not_load_unchanged_directories, files_are_prelisted, skip_pending_removals, remove_orphaned_objects, &tombstones, &result = results[i], &log, &settings, this]
+            runner.enqueueAndKeepTrack([remote_path = std::move(directory.remote_path), object_path = std::move(directory.object_path), metadata = std::move(directory.metadata), read_snapshot, do_not_load_unchanged_directories, files_are_prelisted, skip_pending_removals, remove_orphaned_objects, &tombstones, &has_unreadable_directories, &result = results[i], &log, &settings, this]
             {
                 DB::setThreadName(ThreadName::PLAIN_REWRITABLE_META_LOAD);
 
@@ -517,12 +527,19 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                         /// or it is a leftover of a directory that has been removed. Loading it as the root would hide the real
                         /// root and send lookups under it to the prefix of this directory.
                         LOG_WARNING(log, "The object with the key '{}' does not contain the logical path of a directory, ignoring it", object_path);
+                        has_unreadable_directories = true;
                         return;
                     }
 
                     const auto removed_name = PlainRewritableLayout::getRemovedNameOfLocalPath(local_path);
                     const auto tombstone = removed_name ? tombstones.find(removed_name.value()) : tombstones.end();
-                    if (tombstone != tombstones.end() && tombstone->second)
+                    if (tombstone != tombstones.end() && tombstone->second.state == TombstoneState::Malformed)
+                    {
+                        LOG_TRACE(log, "The directory '{}' with the key '{}' belongs to a removal in an unknown state, skipping", local_path, object_path);
+                        return;
+                    }
+
+                    if (tombstone != tombstones.end() && tombstone->second.state == TombstoneState::Pending)
                     {
                         if (skip_pending_removals)
                         {
@@ -530,7 +547,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                             return;
                         }
 
-                        auto original_local_path = PlainRewritableLayout::restoreLocalPathOfPendingRemoval(local_path, tombstone->second.value());
+                        auto original_local_path = PlainRewritableLayout::restoreLocalPathOfPendingRemoval(local_path, tombstone->second.pending_original_path);
                         LOG_TRACE(log, "The directory '{}' with the key '{}' was moved by a removal that was not committed, moving it back to '{}'",
                             local_path, object_path, original_local_path);
 
@@ -547,7 +564,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                         local_path = std::move(original_local_path);
                     }
 
-                    is_orphaned = tombstone != tombstones.end() && !tombstone->second;
+                    is_orphaned = tombstone != tombstones.end() && tombstone->second.state == TombstoneState::Committed;
                     if (is_orphaned && !remove_orphaned_objects)
                     {
                         LOG_TRACE(log, "The directory '{}' with the key '{}' is being removed, skipping", local_path, object_path);
@@ -683,9 +700,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         {
             auto remote_file = iterator->current();
             /// Only a committed removal leaves a file in the root directory, a pending one is of a directory.
-            if (auto it = tombstones.find(remote_file->getFileName()); it != tombstones.end() && !it->second)
+            if (auto it = tombstones.find(remote_file->getFileName()); it != tombstones.end() && it->second.state != TombstoneState::Pending)
             {
-                if (remove_orphaned_objects)
+                if (remove_orphaned_objects && it->second.state == TombstoneState::Committed)
                     orphaned_data_objects.emplace_back(remote_file->getPath());
                 continue;
             }
@@ -731,13 +748,31 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 
     if (remove_orphaned_objects && !tombstones.empty())
     {
+        /// A directory object without a logical path may be a directory of a pending removal whose `prefix.path` was
+        /// being rewritten when the process died (`LocalObjectStorage` writes to the final key directly). It cannot be
+        /// moved back, so the pending markers stay: their removals are not known to be rolled back completely.
+        const bool keep_pending_markers = has_unreadable_directories.load();
+
         StoredObjects marker_objects;
         marker_objects.reserve(tombstones.size());
+        size_t committed_removals = 0;
         size_t pending_removals = 0;
-        for (const auto & [removed_name, pending_original_path] : tombstones)
+        for (const auto & [removed_name, marker_content] : tombstones)
         {
-            marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
-            pending_removals += pending_original_path.has_value();
+            switch (marker_content.state)
+            {
+                case TombstoneState::Committed:
+                    ++committed_removals;
+                    marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
+                    break;
+                case TombstoneState::Pending:
+                    ++pending_removals;
+                    if (!keep_pending_markers)
+                        marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
+                    break;
+                case TombstoneState::Malformed:
+                    break;
+            }
         }
 
         if (pending_removals)
@@ -746,11 +781,17 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 "Rolled back {} removals that were not committed, most likely because the process died in the middle of them",
                 pending_removals);
 
+        if (pending_removals && keep_pending_markers)
+            LOG_WARNING(
+                log,
+                "Some directory objects do not contain a logical path, so the rollback of {} removals may be incomplete, keeping their markers",
+                pending_removals);
+
         LOG_INFO(
             log,
             "Removing {} orphaned objects left by {} removals that were committed but not finished, most likely because the process died in the middle of them",
             orphaned_data_objects.size() + orphaned_metadata_objects.size(),
-            tombstones.size() - pending_removals);
+            committed_removals);
 
         /// The layout is already consistent and the leftovers stay hidden while their markers exist, so this
         /// cleanup is best-effort, like `RemoveRecursiveOperation::finalize`: a failure must not prevent the disk
@@ -761,7 +802,8 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             object_storage->removeObjectsIfExist(orphaned_metadata_objects);
             /// Only now, when nothing of these removals is left, the markers can go: a marker that outlives its
             /// objects only costs another pass, while an object that outlives its marker would look like data.
-            /// The same holds for a pending removal: its directories have all been moved back by now.
+            /// The same holds for a pending removal: its directories have all been moved back by now, unless some
+            /// directory object was unreadable, in which case its marker is not in the list.
             object_storage->removeObjectsIfExist(marker_objects);
 
             ProfileEvents::increment(

@@ -73,7 +73,10 @@ void writeTombstoneMarker(
         /*buf_size*/ 128,
         /*settings*/ getWriteSettingsForMetadata());
 
-    writeString(pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(*pending_original_path) : removed_name, *buf);
+    writeString(
+        pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(removed_name, *pending_original_path)
+                              : PlainRewritableLayout::makeCommittedTombstoneContent(removed_name),
+        *buf);
     buf->finalize();
 }
 

@@ -41,8 +41,26 @@ public:
     /// committed and has to be rolled back rather than reclaimed. So the marker is first written as pending, with
     /// the original path of the subtree, and rewritten as committed only once every directory has been moved.
     /// A pending marker never causes anything to be deleted: the directories under its name are moved back.
-    /// The content of any other marker is the removed name itself, and such a marker is committed.
+    /// The content of a committed marker is the removed name itself.
+    ///
+    /// `LocalObjectStorage` writes to the final key directly, so a process that dies while writing a marker can
+    /// leave it empty or truncated. That is why both forms end with the removed name, and a marker of any other
+    /// content is malformed: its removal is in an unknown state, so nothing of it is loaded, moved, or deleted.
     constexpr static std::string PENDING_TOMBSTONE_PREFIX = "pending\n";
+
+    struct TombstoneMarkerContent
+    {
+        enum class State : uint8_t
+        {
+            Committed,
+            Pending,
+            Malformed,
+        };
+
+        State state = State::Malformed;
+        /// The original path of the subtree, for a pending marker.
+        std::string pending_original_path;
+    };
 
     static std::string generateRemovedName();
     static bool isRemovedName(std::string_view name);
@@ -53,9 +71,9 @@ public:
     /// The local path the directory with `local_path` under the removed name had before a pending removal moved it.
     static std::string restoreLocalPathOfPendingRemoval(const std::string & local_path, const std::string & original_local_path);
 
-    static std::string makePendingTombstoneContent(const std::string & original_local_path);
-    /// The original path of the subtree if the content is the one of a pending marker.
-    static std::optional<std::string> parsePendingTombstoneContent(std::string_view content);
+    static std::string makeCommittedTombstoneContent(const std::string & removed_name);
+    static std::string makePendingTombstoneContent(const std::string & removed_name, const std::string & original_local_path);
+    static TombstoneMarkerContent parseTombstoneContent(std::string_view removed_name, std::string_view content);
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
