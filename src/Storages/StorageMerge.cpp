@@ -330,7 +330,7 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
                 storage_id.getNameForLogs());
 
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
-        auto structure = table_metadata->getColumns();
+        const auto & structure = table_metadata->getColumns();
         String prev_column_name;
         for (const ColumnDescription & column : structure)
         {
@@ -1649,7 +1649,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
         /// This happens when merge() is used over tables with different schemas and the processing
         /// stage is above FetchColumns (e.g., for distributed/remote tables where the full query
         /// is sent to the child for processing).
-        auto storage_columns = storage_snapshot_->metadata->getColumns();
+        const auto & storage_columns = storage_snapshot_->metadata->getColumns();
 
         std::unordered_map<std::string, QueryTreeNodePtr> column_name_to_node;
         for (const auto & column_name : required_column_names)
@@ -2532,11 +2532,9 @@ bool ReadFromMerge::canReadInOrder(size_t prefix_size, int direction)
 {
     filterTablesAndCreateChildrenPlans();
 
-    if (direction != 1 && InterpreterSelectQuery::isQueryWithFinal(query_info))
-        return false;
-
     /// Ask the reader itself, so that every condition under which its `requestReadingInOrder`
-    /// refuses (such as a prefix longer than its own sorting key) is covered.
+    /// refuses (such as a prefix longer than its own sorting key, or a reverse direction with
+    /// `FINAL`, see `ReadFromMergeTree::canReadInReverseOrder`) is covered.
     auto can_read_in_order = [prefix_size, direction](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.canReadInOrder(prefix_size, direction);
@@ -2563,6 +2561,46 @@ bool ReadFromMerge::canReadInOrder(size_t prefix_size, int direction)
             return false;
 
     return true;
+}
+
+bool ReadFromMerge::canReadInReverseOrder()
+{
+    filterTablesAndCreateChildrenPlans();
+
+    auto can_read_in_reverse_order = [](ReadFromMergeTree & read_from_merge_tree)
+    {
+        return read_from_merge_tree.canReadInReverseOrder();
+    };
+
+    auto can_read_in_reverse_order_nested = [](ReadFromMerge & nested_read_from_merge)
+    {
+        return nested_read_from_merge.canReadInReverseOrder();
+    };
+
+    /// Only the direction is asked here. An object storage child is rejected in any direction by
+    /// `requestReadingInOrder` (see `canReadInOrder`).
+    auto can_read_in_reverse_order_object_storage = [](ReadFromObjectStorageStep &)
+    {
+        return true;
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized() && !recursivelyApplyToReadingSteps(
+                child_plan.plan.getRootNode(),
+                can_read_in_reverse_order,
+                can_read_in_reverse_order_nested,
+                can_read_in_reverse_order_object_storage))
+            return false;
+
+    return true;
+}
+
+void ReadFromMerge::resetChildPlans()
+{
+    chassert(!order_info);
+    child_plans.reset();
+    selected_tables.clear();
+    expandable_reads.reset();
 }
 
 bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit)
@@ -2697,7 +2735,7 @@ std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
     return plans;
 }
 
-const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
+std::vector<StorageID> ReadFromMerge::computeExpandableReads(
     const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
 {
     /// The parallel-replicas plan transformation only understands `ReadFromMergeTree` reads and unions of
@@ -2708,13 +2746,10 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     /// `MergeTree` reads. This tells the caller whether that is possible, and which tables the union would
     /// read, without touching the plan - so that the decision to distribute can be taken before anything is
     /// rewritten.
-    if (expandable_reads)
-        return *expandable_reads;
-
     filterTablesAndCreateChildrenPlans();
 
     if (selected_tables.empty() || child_plans->empty())
-        return expandable_reads.emplace();
+        return {};
 
     /// Every child must be a `MergeTree` table read by a plain read step, and none of them may be `FINAL`.
     /// A child read through an interpreter (a `View`, a nested `Merge`) or a table of another engine has no
@@ -2742,13 +2777,13 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     for (const auto & child : *child_plans)
     {
         if (table_it == selected_tables.end())
-            return expandable_reads.emplace();
+            return {};
 
         const auto & storage = std::get<1>(*table_it);
         ++table_it;
 
         if (!storage->isMergeTree() || !child.plan.isInitialized())
-            return expandable_reads.emplace();
+            return {};
 
         const auto * node = child.plan.getRootNode();
 
@@ -2759,7 +2794,7 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
         /// whole `Merge` on a single replica, deliberately and not through the shape check below.
         if (node
             && (typeid_cast<const CreatingSetsStep *>(node->step.get()) || typeid_cast<const DelayedCreatingSetsStep *>(node->step.get())))
-            return expandable_reads.emplace();
+            return {};
 
         /// Descend the steps the child plan puts on top of the read - the converting expressions and the
         /// row policy filter of `convertAndFilterSourceStream`. Anything else means the child is not read
@@ -2770,12 +2805,34 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
 
         const auto * reading = node ? typeid_cast<const ReadFromMergeTree *>(node->step.get()) : nullptr;
         if (!reading || reading->isQueryWithFinal() || !can_ship_read(*reading))
-            return expandable_reads.emplace();
+            return {};
 
         storage_ids.push_back(reading->getMergeTreeData().getStorageID());
     }
 
-    return expandable_reads.emplace(std::move(storage_ids));
+    return storage_ids;
+}
+
+const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
+    const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
+{
+    if (!expandable_reads)
+        expandable_reads.emplace(computeExpandableReads(can_ship_read));
+    return *expandable_reads;
+}
+
+bool ReadFromMerge::mayBeExpandedForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read)
+{
+    /// A `FINAL` read is never expanded (`getExpandableReads` rejects a `FINAL` child), and neither is any
+    /// `Merge` read with `parallel_replicas_allow_merge_tables = 0` (`expandMergeReadsForParallelReplicas`).
+    /// Otherwise the verdict is the one of `getExpandableReads`, but computed afresh and not cached: the
+    /// child plans may still change before `applyParallelReplicas` asks (a filter pushed down later is
+    /// added to them and they are optimized again), and that later answer must not be pinned by this one.
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::parallel_replicas_plan_based]
+        && settings[Setting::parallel_replicas_allow_merge_tables]
+        && !InterpreterSelectQuery::isQueryWithFinal(query_info)
+        && !computeExpandableReads(can_ship_read).empty();
 }
 
 QueryPlan ReadFromMerge::expandForParallelReplicas()

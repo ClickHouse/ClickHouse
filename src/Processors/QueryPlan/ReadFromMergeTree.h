@@ -406,6 +406,10 @@ public:
     /// succeed, without changing anything.
     bool canReadInOrder(size_t prefix_size, int direction) const;
 
+    /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
+    /// does not depend on the direct order of rows can read in reverse order.
+    bool canReadInReverseOrder() const;
+
     /// Set when downstream aggregation-in-order benefits from multiple
     /// input streams (parallel aggregation + memory-bound merging).
     /// Disables per-part PrefetchingConcat that would collapse streams into one.
@@ -616,8 +620,7 @@ public:
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }

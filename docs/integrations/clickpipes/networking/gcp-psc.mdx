@@ -23,8 +23,8 @@ You can use GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/doc
 
 | Pattern | When it applies | Service attachment |
 | --- | --- | --- |
-| **Native PSC** | Managed services that automatically publish a PSC service attachment (_e.g._ Google Cloud SQL, AlloyDB, Google Cloud Managed Service for Apache Kafka). | Automatically created when you enable PSC on the instance. |
-| **Producer-owned PSC** | Data sources that don't publish a service attachment, such as Postgres on Compute Engine or a managed service reachable only by private IP. | Created and managed by you. |
+| **Native PSC** | Managed services that automatically publish a PSC service attachment and let you control its consumer accept list (_e.g._ Google Cloud SQL, AlloyDB). | Automatically created when you enable PSC on the instance. |
+| **Producer-owned PSC** | Data sources that don't publish a service attachment you can manage, such as Postgres on Compute Engine, Google Cloud Managed Service for Apache Kafka, or a managed service reachable only by private IP. | Created and managed by you. |
 
 ## Prerequisites {#prerequisites}
 
@@ -46,7 +46,7 @@ To create a RPE, you need the following information for your data source:
     2. Select the data source you want to ingest from.
     3. Under **Setup your ClickPipe connection**, toggle on **Use secure connection**, then click **\+ Reverse private endpoint** and pick **GCP PSC service attachment**.
     4. Fill in the **Service attachment URI**, the **Private DNS name**, and a **Description**.
-    5. Click **Create**. The endpoint moves through `Provisioning` → `Ready`. (Native PSC auto-accepts, so you will not see `PendingAcceptance`.)
+    5. Click **Create**. The endpoint moves through `Provisioning` → `Ready`. (Native PSC sources, such as Cloud SQL and AlloyDB, auto-accept once the ClickPipes consumer project is on their allow list, so you will not see `PendingAcceptance`. For producer-owned PSC, see [Approving producer-owned connections](#producer-owned).)
   </Tab>
   <Tab title="Terraform">
     Custom private DNS mappings are not an attribute of `clickhouse_clickpipes_reverse_private_endpoint` — they are managed by the separate `clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns` resource, which takes a full replacement list of mappings and references the endpoint by ID:
@@ -90,7 +90,7 @@ To create a RPE, you need the following information for your data source:
 
 Because GCP PSC does not propagate DNS, a custom private DNS mapping is required for every GCP PSC endpoint so ClickPipes can resolve it to the endpoint's static internal IP.
 
-The standard ClickPipes [custom private DNS naming rules](/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) apply: wildcard support, uniqueness across a service's reverse private endpoints, and reserved-suffix restrictions are enforced identically for every provider. Wildcards are especially useful, _e.g._ a single mapping such as `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` fronts every broker of a Managed Kafka cluster.
+The standard ClickPipes [custom private DNS naming rules](/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) apply: wildcard support, uniqueness across a service's reverse private endpoints, and reserved-suffix restrictions are enforced identically for every provider. For multi-broker sources such as Managed Kafka, repeat the setup above for every advertised broker: create one reverse private endpoint per broker service attachment, with a custom private DNS mapping for that broker's hostname, rather than using a single wildcard for the whole cluster. The bootstrap hostname doesn't need its own endpoint; add it as an extra mapping on one of the broker endpoints. See the [`gcp-managed-kafka` Terraform module](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/gcp-managed-kafka) for a complete example.
 
 For GCP PSC, only the mapping's `privateDnsName` is used. The `internalDNSName` field is not supported, because a PSC endpoint exposes a static IP with no DNS name to pin to — mappings always resolve to that IP.
 
