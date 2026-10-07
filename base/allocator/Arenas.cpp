@@ -257,6 +257,9 @@ Arena * arenaChooseHard(ThreadState & thread_state, bool internal)
             }
         }
 
+        /// Unlike jemalloc, select (and initialize) the arenas for both sides before binding any of them, so that
+        /// an arena initialization failure (out of memory) leaves the thread unbound and the thread counts intact.
+        bool init_failed = false;
         for (unsigned j = 0; j < 2; ++j)
         {
             if (arenaNumThreadsGet(arenaGet(thread_state_ptr, choose[j], false), !!j) == 0 || first_null == num_arenas_auto)
@@ -272,14 +275,20 @@ Arena * arenaChooseHard(ThreadState & thread_state, bool internal)
                 Arena * arena = arenaInitLocked(thread_state_ptr, choose[j], &arena_config_default);
                 if (arena == nullptr)
                 {
-                    arenas_lock.unlock(thread_state_ptr);
-                    return nullptr;
+                    init_failed = true;
+                    break;
                 }
                 is_new_arena[j] = true;
                 if (!!j == internal)
                     result = arena;
             }
-            arenaBind(thread_state, choose[j], !!j);
+        }
+        /// Binding one side only changes the thread count of that side, so it does not affect the choice for the
+        /// other side, and the result is the same as binding inside the loop above as jemalloc does.
+        if (!init_failed)
+        {
+            for (unsigned j = 0; j < 2; ++j)
+                arenaBind(thread_state, choose[j], !!j);
         }
         arenas_lock.unlock(thread_state_ptr);
 
@@ -291,6 +300,11 @@ Arena * arenaChooseHard(ThreadState & thread_state, bool internal)
                 arenaNewCreateBackgroundThread(thread_state_ptr, choose[j]);
             }
         }
+
+        /// An arena created for the other side stays initialized (and gets its background thread above) and can be
+        /// chosen by later threads.
+        if (init_failed)
+            return nullptr;
     }
     else
     {
