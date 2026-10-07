@@ -962,7 +962,7 @@ void Aggregator::captureDirectTimeDecayKeyMetadata(
 }
 
 void Aggregator::restoreDirectTimeDecayKeyMetadata(
-    AggregateDataPtr aggregate_data,
+    ConstAggregateDataPtr aggregate_data,
     MutableColumns & key_columns) const
 {
     if (!aggregate_data)
@@ -5571,9 +5571,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 aggregate_columns_data,
                 is_cancelled,
                 arena_for_keys);
+            refresh_direct_metadata(state);
         }
-
-        refresh_direct_metadata(state);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
@@ -5600,9 +5599,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
                 aggregate_columns_data,
                 is_cancelled,
                 arena_for_keys);
+            refresh_direct_metadata(state);
         }
-
-        refresh_direct_metadata(state);
     }
 }
 

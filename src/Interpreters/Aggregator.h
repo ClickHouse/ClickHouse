@@ -772,7 +772,7 @@ private:
         size_t row) const;
 
     void restoreDirectTimeDecayKeyMetadata(
-        AggregateDataPtr aggregate_data,
+        ConstAggregateDataPtr aggregate_data,
         MutableColumns & key_columns) const;
 
     /** Call `destroy` methods for states of aggregate functions.
