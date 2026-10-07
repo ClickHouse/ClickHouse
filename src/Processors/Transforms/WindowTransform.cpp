@@ -328,7 +328,7 @@ void WindowTransform::computeReadyRows()
         while (current.location < partition_end)
         {
             // We now know that the current row is valid, so its peer group can be settled.
-            current.peer_group_index_in_partition = partition.peerGroupIndex(blocks, current.location);
+            current.peer_group_index_in_partition = params.window_description.frame.type == WindowFrame::FrameType::ROWS ? current.row_index_in_partition : partition.peerGroupIndex(blocks, current.location);
             if (current.peer_group_index_in_partition != peer_group_start.peer_group_index_in_partition)
                 peer_group_start = current;
             checkInvariants();
@@ -556,7 +556,7 @@ void WindowTransform::work()
     }
     else if (!partition.bounds().fully_visible)
     {
-        partition.finish(blocks);
+        partition.finish();
     }
 
     computeReadyRows();

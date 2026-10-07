@@ -75,7 +75,7 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const Partition & partitio
     return advanceToPartitionEnd(partition, bound);
 }
 
-/// The first row whose ORDER BY key is at the offset from the current row's key, or past it when `past`; stepping as master did.
+/// The first row whose ORDER BY key is at the offset from the current row's key, or past it when `past`.
 bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBlocks & blocks, const Partition & partition, const RowPoint & current, const Field & offset, bool frame_preceding, bool past, RowPoint & bound)
 {
     const int direction = params.window_description.order_by[0].direction;
@@ -83,23 +83,21 @@ bool advanceToRangeBound(const WindowTransformParams & params, const SlidingBloc
     const size_t key_position = params.order_by_indices[0];
     const IColumn * current_key_column = blocks.blockAt(current.location.block).materialized_columns[key_position].get();
     const RowNumber partition_end = partition.bounds().end;
-    const RowNumber from = bound.location;
     while (bound.location != partition_end)
     {
-        const IColumn * key_column = blocks.blockAt(bound.location.block).materialized_columns[key_position].get();
+        const SlidingBlock & block = blocks.blockAt(bound.location.block);
+        const IColumn * key_column = block.materialized_columns[key_position].get();
         if (params.range_offset_comparator(key_column, bound.location.row, current_key_column, current.location.row, offset, offset_is_preceding) * direction >= past)
-            break;
+        {
+            bound.peer_group_index_in_partition = block.index.peer_group_indexes[bound.location.row];
+            return true;
+        }
 
         bound.location = blocks.next(bound.location);
         ++bound.row_index_in_partition;
     }
 
-    if (bound.location == partition_end)
-        return advanceToPartitionEnd(partition, bound);
-
-    if (bound.location != from)
-        bound.peer_group_index_in_partition = partition.peerGroupIndex(blocks, bound.location);
-    return true;
+    return advanceToPartitionEnd(partition, bound);
 }
 
 bool advanceFrameStart(const WindowTransformParams & params, const SlidingBlocks & blocks, const Partition & partition, const RowPoint & current, RowPoint & start)

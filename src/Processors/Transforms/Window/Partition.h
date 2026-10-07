@@ -20,7 +20,7 @@ public:
 
     void beginAt(const SlidingBlocks & blocks, RowNumber first_row);
     void advance(const SlidingBlocks & blocks);
-    void finish(const SlidingBlocks & blocks);
+    void finish();
 
     const PartitionBounds & bounds() const;
     const RowPoint & endPoint() const;
@@ -32,6 +32,7 @@ private:
     PartitionBounds partition_bounds;
     RowPoint end_point;
     int64_t rows_count = 0;
+    int64_t last_peer_group_index = 0;
 };
 
 }
