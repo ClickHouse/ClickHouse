@@ -4813,7 +4813,8 @@ Division by zero or a quotient outside the result type's range throws an excepti
 
 By default, division of two integers returns `Float64`. This setting does not change division involving `Decimal` or floating-point operands,
 or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
-)", 0) \
+)", 0, \
+        {"26.10", false, false, "New setting to enable exact integer division for `/` and `divide`."}) \
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations
 )", 0) \
