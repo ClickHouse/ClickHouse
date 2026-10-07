@@ -556,7 +556,7 @@ void WindowTransform::work()
     }
     else if (!partition.bounds().fully_visible)
     {
-        partition.finish(blocks, blocks.end());
+        partition.finish(blocks);
     }
 
     computeReadyRows();

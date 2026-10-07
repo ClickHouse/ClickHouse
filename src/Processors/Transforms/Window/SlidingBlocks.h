@@ -35,7 +35,6 @@ struct SlidingBlock
     /// Helper data
     const int64_t rows_count = 0;
     const int64_t block_number = 0;
-    const int64_t first_row_index_in_input = 0;
     const SlidingIndex index;
 
     /// Output
@@ -55,13 +54,10 @@ public:
     RowNumber prev(RowNumber row) const;
     RowNumber move(RowNumber row, int64_t offset) const;
 
-    int64_t rowIndex(RowNumber row) const;
-
 private:
     std::deque<SlidingBlock> blocks;
     int64_t first_block_number = 0;
     int64_t next_block_number = 0;
-    int64_t rows_total = 0;
 };
 
 }

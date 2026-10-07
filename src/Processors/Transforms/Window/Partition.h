@@ -20,20 +20,18 @@ public:
 
     void beginAt(const SlidingBlocks & blocks, RowNumber first_row);
     void advance(const SlidingBlocks & blocks);
-    void finish(const SlidingBlocks & blocks, RowNumber end);
+    void finish(const SlidingBlocks & blocks);
 
     const PartitionBounds & bounds() const;
     const RowPoint & endPoint() const;
 
     int64_t size() const;
-    int64_t rowIndex(const SlidingBlocks & blocks, RowNumber row) const;
     int64_t peerGroupIndex(const SlidingBlocks & blocks, RowNumber row) const;
 
 private:
     PartitionBounds partition_bounds;
     RowPoint end_point;
     int64_t rows_count = 0;
-    int64_t first_row_index_in_input = 0;
     int64_t first_peer_group_index_in_input = 0;
 };
 
