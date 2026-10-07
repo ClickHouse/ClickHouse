@@ -88,6 +88,7 @@ namespace Setting
     extern const SettingsBool query_plan_push_down_limit;
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
+    extern const SettingsBool query_plan_top_k_through_array_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
     extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_remove_redundant_distinct;
@@ -224,6 +225,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
+    top_k_through_array_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_array_join];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
     if (query_plan_optimize_join_order_limit > 64)

@@ -1,0 +1,44 @@
+<test>
+    <!-- Performance test for the `query_plan_top_k_through_array_join` optimization.
+         The optimization moves the bounded sort below an `ARRAY JOIN` when the sort key does not
+         reference any joined column, so both sorting and expansion process bounded input.
+         See issue #115157. -->
+
+    <create_query>
+        CREATE TABLE topk_array_join (id UInt64, k Int64, arr Array(UInt32), payload String)
+        ENGINE = MergeTree() ORDER BY id SETTINGS auto_statistics_types=''
+    </create_query>
+
+    <!-- `k` is uncorrelated with `id`, so the storage primary key cannot satisfy the `ORDER BY`
+         directly - this is the regime where the rewrite wins, because without it the sort has to
+         process every expanded row. Average array size is 16. -->
+    <fill_query>
+        INSERT INTO topk_array_join
+        SELECT number, sipHash64(number), range(number % 32), repeat('a', 16)
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>
+        SELECT k, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k DESC LIMIT 10 FORMAT Null
+    </query>
+
+    <query>
+        SELECT k, arr FROM topk_array_join LEFT ARRAY JOIN arr ORDER BY k DESC LIMIT 10 FORMAT Null
+    </query>
+
+    <query>
+        SELECT k, payload, arr FROM topk_array_join ARRAY JOIN arr ORDER BY k LIMIT 100 OFFSET 50 FORMAT Null
+    </query>
+
+    <query>
+        SELECT k, payload, arr FROM topk_array_join ARRAY JOIN arr LIMIT 100 FORMAT Null
+    </query>
+
+    <!-- Control: the sort key is the joined column itself, so the rewrite must not fire. Guards
+         against regressions in the safety check. -->
+    <query>
+        SELECT arr FROM topk_array_join ARRAY JOIN arr ORDER BY arr DESC LIMIT 10 FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS topk_array_join</drop_query>
+</test>
