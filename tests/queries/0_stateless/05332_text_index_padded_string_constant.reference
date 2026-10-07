@@ -22,6 +22,7 @@ text array answer, String constant	1	1
 String column, UTF-8 tail	1	1
 LowCardinality column, UTF-8 tail	1	1
 sparse_grams column, UTF-8 tail	1	1
+String column, UTF-8 tail, full width	1	1
 String column IN, UTF-8 tail	1	1
 FixedString column IN, UTF-8 tail	1	1
 FixedString column IN prunes exactly	1
