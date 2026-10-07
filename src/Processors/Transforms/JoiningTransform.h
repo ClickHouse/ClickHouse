@@ -77,7 +77,8 @@ public:
         bool default_totals_ = false,
         FinishCounterPtr finish_counter_ = nullptr,
         RightRowsMatchCounterPtr match_counter_ = nullptr,
-        bool emit_non_joined_ = true);
+        bool emit_non_joined_ = true,
+        size_t probe_lane_ = 0);
 
     ~JoiningTransform() override;
 
@@ -119,6 +120,7 @@ private:
     JoinResultPtr join_result;
 
     FinishCounterPtr finish_counter;
+    size_t probe_lane = 0;
     IBlocksStreamPtr non_joined_blocks;
     size_t max_block_size;
 
