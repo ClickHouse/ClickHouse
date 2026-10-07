@@ -170,10 +170,9 @@ Frame::Frame(const WindowTransformParams & params_)
 {
 }
 
-void Frame::enterPartition(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition)
+void Frame::enterPartition(const RowPoint & current)
 {
     frame_bounds = FrameBounds{.start = current, .end = current, .fully_visible = false};
-    advance(blocks, current, partition);
 }
 
 void Frame::advance(const SlidingBlocks & blocks, const RowPoint & current, const Partition & partition)

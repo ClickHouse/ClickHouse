@@ -13,9 +13,10 @@ Partition::Partition()
 void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
     partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .fully_visible = false};
-    first_row_index_in_input = blocks.rowIndex(first_row);
-    first_peer_group_index_in_input = blocks.blockAt(first_row.block).index.peer_group_indexes[first_row.row];
-    rows_count = rowIndex(blocks, partition_bounds.end);
+    const SlidingBlock & block = blocks.blockAt(first_row.block);
+    first_row_index_in_input = block.first_row_index_in_input + first_row.row;
+    first_peer_group_index_in_input = block.index.peer_group_indexes[first_row.row];
+    rows_count = 1;
 }
 
 void Partition::advance(const SlidingBlocks & blocks)

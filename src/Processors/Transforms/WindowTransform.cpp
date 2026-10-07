@@ -412,9 +412,9 @@ void WindowTransform::startNextPartition()
     // We have to reset the frame and other pointers when the new partition
     // starts.
     chassert(current.location == partition_start);
-    current = partition.pointAt(blocks, partition_start);
+    current = RowPoint{.location = partition_start};
     peer_group_start = current;
-    frame.enterPartition(blocks, current, partition);
+    frame.enterPartition(current);
     prev_frame = FrameBounds{.start = current, .end = current, .fully_visible = true};
 
     // Reinitialize the aggregate function states because the new partition
