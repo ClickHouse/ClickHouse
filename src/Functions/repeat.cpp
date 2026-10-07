@@ -30,7 +30,7 @@ struct RepeatImpl
     static void checkRepeatTime(T repeat_time)
     {
         static constexpr UInt64 max_repeat_times = 1'000'000;
-        bool too_many;
+        bool too_many = false;
         if constexpr (sizeof(T) > sizeof(UInt64))
             too_many = repeat_time > static_cast<T>(max_repeat_times);
         else
