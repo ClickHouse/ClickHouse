@@ -106,6 +106,8 @@ Field parseLiteralCastedTo(const Field & literal_value, std::string_view type_na
         return convertFieldTo<IPv4>(literal_value);
     if (type_name == "IPv6")
         return convertFieldTo<IPv6>(literal_value);
+    if (type_name == "MacAddress")
+        return convertFieldTo<MacAddress>(literal_value);
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type name '{}' in CAST", type_name);
 }

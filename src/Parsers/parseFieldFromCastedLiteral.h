@@ -18,7 +18,7 @@ namespace DB
 ///   - Bool, Float64, String
 ///   - Int64/UInt64, Int128/UInt128, Int256/UInt256
 ///   - Decimal{32,64,128,256}(<scale>)
-///   - UUID, IPv4, IPv6
+///   - UUID, IPv4, IPv6, MacAddress
 ///
 /// Throws BAD_ARGUMENTS if the AST shape doesn't match either form, or if the casted type
 /// name is not in the recognised set.
