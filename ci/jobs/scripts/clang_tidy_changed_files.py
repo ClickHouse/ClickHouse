@@ -92,9 +92,12 @@ TIDY_CONFIG_PATHS = (
 # becomes `Foo_generated.h`, a `configure_file` template `Foo.h.in` becomes
 # `Foo.h`. A change to such an input touches no C++ file, yet the code compiled
 # against the regenerated header can stop compiling or start triggering a check.
-# The generated headers live in the build directory and are not analyzed
-# themselves, so a change to an input is covered through the analyzed files that
-# include its generated headers, as if those had changed.
+# The generated headers live in the build directory, so a change to an input is
+# covered through the analyzed files that include its generated headers, as if
+# those had changed. The full check also reports diagnostics located in a
+# generated header whose path its `HeaderFilterRegex` matches (`config.h` is
+# generated into `src/Common` of the build directory), so those are reported
+# here as well, see `GeneratedHeaders`.
 #
 # Only generators the build runs belong here. The gperf tables
 # (`tldLookup.gperf`, `HTMLCharacterReference.gperf`) and the ANTLR grammars of
@@ -205,6 +208,40 @@ _SUMMARY_RE = re.compile(
     r"Error while processing .*)$"
 )
 _REGEX_SPECIAL_RE = re.compile(r"([.^$*+?()\[\]{}|\\])")
+
+
+def config_header_filter_regex(repo_dir):
+    """The `HeaderFilterRegex` of `.clang-tidy`, the one the full check applies."""
+    path = f"{repo_dir}/.clang-tidy"
+    with open(path, "r", encoding="utf-8") as config:
+        for line in config:
+            match = re.match(r"^HeaderFilterRegex:\s*'(.*)'\s*$", line)
+            if match:
+                return re.compile(match.group(1))
+    raise RuntimeError(f"No HeaderFilterRegex in {path}")
+
+
+class GeneratedHeaders:
+    """The headers regenerated from the change's generator inputs.
+
+    A diagnostic is located in one of them when it is under the build directory,
+    has one of their file names, and the full check would report it, i.e. its
+    path matches the `HeaderFilterRegex` of `.clang-tidy`. clang-tidy itself
+    applies `ExcludeHeaderFilterRegex` from the configuration, which drops the
+    ones generated under `contrib`.
+    """
+
+    def __init__(self, names, build_dir, full_filter):
+        self.names = frozenset(names)
+        self.build_dir = os.path.realpath(build_dir) + os.sep
+        self.full_filter = full_filter
+
+    def contains(self, path):
+        return (
+            os.path.basename(path) in self.names
+            and path.startswith(self.build_dir)
+            and self.full_filter.search(path) is not None
+        )
 
 
 def read_cmake_cache_value(build_dir, name):
@@ -684,22 +721,27 @@ def infrastructure_error(output, returncode):
     return ""
 
 
-def relevant_diagnostics(diagnostics, changed_real_paths, report_all=False):
+def relevant_diagnostics(
+    diagnostics, changed_real_paths, report_all=False, generated=None
+):
     """The diagnostics this check reports: those in the files the change touches.
 
-    A compile error is reported wherever it occurs - it means the translation
-    unit was never analyzed, so silence about it would be a false green. With
-    `report_all`, every diagnostic is reported (see `run_one`).
+    That includes the headers regenerated from the changed generator inputs
+    (`generated`, a `GeneratedHeaders`). A compile error is reported wherever it
+    occurs - it means the translation unit was never analyzed, so silence about
+    it would be a false green. With `report_all`, every diagnostic is reported
+    (see `run_one`).
     """
     relevant = []
     for diagnostic in diagnostics:
         if report_all or COMPILE_ERROR_CHECK in diagnostic["message"]:
             relevant.append(diagnostic)
-        elif (
-            diagnostic["file"]
-            and os.path.realpath(diagnostic["file"]) in changed_real_paths
-        ):
-            relevant.append(diagnostic)
+        elif diagnostic["file"]:
+            path = os.path.realpath(diagnostic["file"])
+            if path in changed_real_paths or (
+                generated is not None and generated.contains(path)
+            ):
+                relevant.append(diagnostic)
     return relevant
 
 
@@ -712,6 +754,7 @@ def run_one(
     changed_real_paths,
     repo_dir,
     is_canary=False,
+    generated=None,
 ):
     """Analyze one translation unit and turn the outcome into a `Result`.
 
@@ -762,7 +805,10 @@ def run_one(
         status, info = Result.Status.ERROR, error
     else:
         relevant = relevant_diagnostics(
-            parse_diagnostics(output), changed_real_paths, report_all=is_canary
+            parse_diagnostics(output),
+            changed_real_paths,
+            report_all=is_canary,
+            generated=generated,
         )
         if relevant:
             status = Result.Status.FAIL
@@ -905,8 +951,19 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
         )
 
     tidy = clang_tidy_binary(build_dir)
+    # The headers regenerated from the changed inputs are filtered in by name,
+    # like the changed headers: a diagnostic in a regenerated header is one the
+    # change introduced, and the full check reports it.
+    generated = GeneratedHeaders(
+        names={
+            header for path in generator_inputs for header in generated_headers(path)
+        },
+        build_dir=build_dir,
+        full_filter=config_header_filter_regex(repo_dir),
+    )
     filter_regex = header_filter_regex(
         [path for path in changed if path.endswith(HEADER_SUFFIXES)]
+        + sorted(generated.names)
     )
     changed_real_paths = {os.path.realpath(f"{repo_dir}/{path}") for path in changed}
     canary_units = (
@@ -935,6 +992,7 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
                     changed_real_paths,
                     repo_dir,
                     unit in canary_units,
+                    generated,
                 ),
                 translation_units,
             )
