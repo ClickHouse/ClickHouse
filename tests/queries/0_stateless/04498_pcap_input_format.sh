@@ -176,3 +176,9 @@ for f in packets.pcap packets.pcapng; do
     $CLICKHOUSE_LOCAL -q "SELECT '$f', count(), countIf(ip_protocol = 'TCP') FROM file('$DATA_DIR/$f') FORMAT TSV"
 done
 $CLICKHOUSE_LOCAL -q "DESCRIBE file('$DATA_DIR/packets.pcapng') FORMAT TSV" | cut -f1 | head -n 2
+
+echo "--- payload covers only TCP and UDP: an ICMP packet has an empty payload ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, ip_protocol, payload_length, payload
+FROM file('$DATA_DIR/packets.pcap', PCAP)
+WHERE ip_protocol = 'ICMP' FORMAT TSV"

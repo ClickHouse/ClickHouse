@@ -62,23 +62,23 @@ The `PCAP` format produces the following columns:
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
 | `link_type` | `LowCardinality(String)` | Link-layer type of the outermost layer, for example `ETHERNET_II` |
-| `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']` |
-| `eth_src` | `Nullable(String)` | Source MAC address, or `NULL` for non-Ethernet packets |
-| `eth_dst` | `Nullable(String)` | Destination MAC address |
-| `eth_type` | `LowCardinality(String)` | Protocol carried by the Ethernet frame, for example `IP`; empty for non-Ethernet packets. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id` |
-| `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier, if present |
-| `ip_version` | `Nullable(UInt8)` | `4` or `6`, or `NULL` for non-IP packets |
-| `src_addr` | `Nullable(IPv6)` | Source IP address; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
-| `dst_addr` | `Nullable(IPv6)` | Destination IP address |
-| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the outer IP packet, taken from the IPv4 `protocol` field or from the IPv6 `next header` field after any extension headers (Hop-by-Hop options, Routing, Fragment and so on), for example `TCP`, `UDP` or `ICMP`; empty for non-IP packets. It is filled even when the transport header itself was not captured or is not decodable, in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal |
-| `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit |
-| `src_port` | `Nullable(UInt16)` | TCP/UDP source port |
-| `dst_port` | `Nullable(UInt16)` | TCP/UDP destination port |
-| `tcp_flags` | `Nullable(String)` | Comma-separated TCP flags, for example `ACK,PSH` |
+| `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6` |
+| `eth_src` | `Nullable(String)` | Source MAC address of the outermost Ethernet header, or `NULL` when the link layer is not Ethernet |
+| `eth_dst` | `Nullable(String)` | Destination MAC address of the outermost Ethernet header |
+| `eth_type` | `LowCardinality(String)` | Protocol carried by the outermost Ethernet frame, for example `IP`; empty when the link layer is not Ethernet. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id` |
+| `vlan_id` | `Nullable(UInt16)` | 802.1Q VLAN identifier of the tag right after the outermost Ethernet header, if present |
+| `ip_version` | `Nullable(UInt8)` | Version of the outermost IP header, `4` or `6`, or `NULL` for non-IP packets |
+| `src_addr` | `Nullable(IPv6)` | Source address of the outermost IP header; IPv4 addresses are mapped to IPv6 (`::ffff:a.b.c.d`) |
+| `dst_addr` | `Nullable(IPv6)` | Destination address of the outermost IP header |
+| `ip_protocol` | `LowCardinality(String)` | Protocol carried by the outermost IP packet, taken from the IPv4 `protocol` field or from the IPv6 `next header` field after any extension headers (Hop-by-Hop options, Routing, Fragment and so on), for example `TCP`, `UDP` or `ICMP`. It is filled even when the transport header itself was not captured or is not decodable, in which case `src_port`, `dst_port` and the TCP columns stay `NULL`. Numbers without a well-known name are rendered in decimal. Empty for non-IP packets |
+| `ip_ttl` | `Nullable(UInt16)` | IPv4 TTL or IPv6 hop limit of the outermost IP header |
+| `src_port` | `Nullable(UInt16)` | Source port of the TCP or UDP header directly inside the outermost IP header |
+| `dst_port` | `Nullable(UInt16)` | Destination port of the TCP or UDP header directly inside the outermost IP header |
+| `tcp_flags` | `Nullable(String)` | Comma-separated flags of that TCP header, for example `ACK,PSH` |
 | `tcp_seq` | `Nullable(UInt32)` | TCP sequence number |
 | `tcp_ack` | `Nullable(UInt32)` | TCP acknowledgement number |
-| `payload_length` | `UInt32` | Number of bytes in the transport-layer payload |
-| `payload` | `String` | Transport-layer payload bytes |
+| `payload_length` | `UInt32` | Number of bytes in `payload` |
+| `payload` | `String` | Bytes carried by that TCP or UDP header. Empty for other transport protocols, for example `ICMP`, and for non-IP packets |
 | `raw` | `String` | The full captured frame, starting at the link layer |
 
 Layer-specific columns are `Nullable`, except `eth_type` and `ip_protocol`.
@@ -86,7 +86,7 @@ Those two low-cardinality string columns use an empty string when their layer
 is absent. Packets that do not contain a given layer (for example a non-IP
 packet, or a UDP packet that has no TCP fields) still produce a row.
 
-The transport-layer payload is a contiguous range of the raw frame. It only
+The TCP or UDP payload is a contiguous range of the raw frame. It only
 covers the bytes within the IP length, so bytes after the IP packet, such as the
 padding of short Ethernet frames or a link-layer trailer, are part of `raw` but
 not of `payload`. When a frame has no such trailing bytes, the payload is a

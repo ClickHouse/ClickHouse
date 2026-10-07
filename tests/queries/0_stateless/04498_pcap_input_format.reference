@@ -122,3 +122,5 @@ packets.pcap	11	6
 packets.pcapng	11	6
 number
 timestamp
+--- payload covers only TCP and UDP: an ICMP packet has an empty payload ---
+3	ICMP	0	
