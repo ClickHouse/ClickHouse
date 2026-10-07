@@ -1,7 +1,5 @@
 #include <Processors/Transforms/Window/SlidingBlocks.h>
 
-#include <base/arithmeticOverflow.h>
-
 namespace DB
 {
 
@@ -54,14 +52,11 @@ RowNumber SlidingBlocks::prev(RowNumber row) const
         return {row.block, row.row - 1};
 }
 
-std::optional<RowNumber> SlidingBlocks::move(RowNumber row, int64_t offset) const
+RowNumber SlidingBlocks::move(RowNumber row, int64_t offset) const
 {
     /// The target row counted from the start of the row's block
-    int64_t target = 0;
-    if (common::addOverflow(row.row, offset, target))
-        return std::nullopt;
-
-    while (target < 0 && row.block > begin().block)
+    int64_t target = row.row + offset;
+    while (target < 0)
     {
         --row.block;
         target += blockAt(row.block).rows_count;
@@ -73,12 +68,7 @@ std::optional<RowNumber> SlidingBlocks::move(RowNumber row, int64_t offset) cons
         ++row.block;
     }
 
-    if (target < 0)
-        return std::nullopt;
-
-    if (target > 0 && row.block == end().block)
-        return std::nullopt;
-
+    chassert(row.block < end().block || target == 0);
     return RowNumber{row.block, target};
 }
 

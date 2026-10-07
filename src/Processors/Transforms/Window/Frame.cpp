@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <numeric>
-#include <optional>
 
 namespace DB
 {
@@ -51,11 +50,8 @@ bool findRowsBound(const SlidingBlocks & blocks, const Partition & partition, in
 
     const int64_t index = std::max<int64_t>(row_index, 0);
     chassert(bound.row_index_in_partition <= index);
-    while (bound.row_index_in_partition < index)
-    {
-        bound.location = blocks.next(bound.location);
-        ++bound.row_index_in_partition;
-    }
+    bound.location = blocks.move(bound.location, index - bound.row_index_in_partition);
+    bound.row_index_in_partition = index;
     bound.peer_group_index_in_partition = index;
     return true;
 }
@@ -71,7 +67,7 @@ NO_INLINE bool findBound(const SlidingBlocks & blocks, const Partition & partiti
         return partition.bounds().fully_visible;
     }
 
-    const auto is_bound_at = [&](int64_t distance) { return is_bound(*blocks.move(from.location, distance)); };
+    const auto is_bound_at = [&](int64_t distance) { return is_bound(blocks.move(from.location, distance)); };
     int64_t missed = -1;
     int64_t found = rows_left;
     for (int64_t probe = 0; probe < rows_left; probe = std::max<int64_t>(1, 2 * probe))
@@ -96,7 +92,7 @@ NO_INLINE bool findBound(const SlidingBlocks & blocks, const Partition & partiti
     if (found == rows_left)
         return findPartitionEnd(blocks, partition, bound);
 
-    bound = partition.pointAt(blocks, *blocks.move(from.location, found));
+    bound = partition.pointAt(blocks, blocks.move(from.location, found));
     return true;
 }
 
