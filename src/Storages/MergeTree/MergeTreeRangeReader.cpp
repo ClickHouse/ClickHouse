@@ -1217,6 +1217,9 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 ranges.pop_front();
                 current_mark = stream.current_mark;
                 ++result.debug_num_ranges_processed;
+
+                /// The new range starts anywhere in a stripe: its blocks are aligned anew.
+                aligned_to_stripes = stripe_marks <= 1;
             }
 
             if (merge_tree_reader->canSkipMark(currentMark()))
