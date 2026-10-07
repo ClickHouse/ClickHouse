@@ -100,6 +100,10 @@ ANCHOR_ID_RE = re.compile(r'\{#([A-Za-z0-9_-]+)\}|<a\s+id=["\']([A-Za-z0-9_-]+)[
 # Any element id, e.g. `<div id="mcp-setup">`. Browsers and Mintlify treat these
 # as valid fragment targets, but lychee only recognizes headings and `<a id>`.
 ELEMENT_ID_RE = re.compile(r'\bid=["\']([A-Za-z0-9_-]+)["\']')
+FRONTMATTER_SLUG_RE = re.compile(
+    r"\A---\s*\n.*?^slug:\s*(?P<slug>/\S+)\s*$.*?^---\s*$",
+    re.DOTALL | re.MULTILINE,
+)
 
 
 def collect_snippet_anchors(text, docs_root, page_dir, seen):
@@ -125,6 +129,12 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
         ids.update(m.group(1) for m in ELEMENT_ID_RE.finditer(snip))
         ids |= collect_snippet_anchors(snip, docs_root, os.path.dirname(sp), seen)
     return ids
+
+
+def page_slug(text):
+    """Return the absolute Mintlify slug declared in one MDX page, if any."""
+    match = FRONTMATTER_SLUG_RE.match(text)
+    return match.group("slug") if match else None
 
 
 def collect_generated_setting_anchors(page_path):
@@ -315,6 +325,7 @@ def build_tree(docs_root, dest):
     # tests that the target file exists, not its contents. This also avoids
     # copying the hundreds of MB of images and generated translations.
     checked = set(dump_inputs(docs_root))
+    slug_pages = {}
     for root, _dirs, files in os.walk(docs_root):
         rel_dir = os.path.relpath(root, docs_root)
         out_dir = dest if rel_dir == "." else os.path.join(dest, rel_dir)
@@ -366,6 +377,33 @@ def build_tree(docs_root, dest):
             else:
                 # Empty placeholder: only its existence matters to lychee.
                 open(dst, "w").close()
+            if (
+                name.endswith((".md", ".mdx"))
+                and rel.split(os.sep)[0] not in LOCALE_DIRS
+            ):
+                with open(
+                    os.path.join(root, name), encoding="utf-8", errors="replace"
+                ) as f:
+                    slug = page_slug(f.read())
+                if slug:
+                    slug_pages.setdefault(slug, dst)
+    # Mintlify serves a page at its frontmatter `slug`, but a nested `index.mdx`
+    # has no matching filesystem path for lychee. Add an anchor-only route alias
+    # in the throwaway tree so canonical URLs validate against the page's anchors.
+    for slug, page in slug_pages.items():
+        alias = os.path.join(dest, slug.lstrip("/") + ".mdx")
+        if os.path.normpath(alias) == os.path.normpath(page) or os.path.exists(alias):
+            continue
+        with open(page, encoding="utf-8", errors="replace") as f:
+            anchors = {
+                match.group(1) or match.group(2)
+                for match in ANCHOR_ID_RE.finditer(f.read())
+            }
+        os.makedirs(os.path.dirname(alias) or ".", exist_ok=True)
+        with open(alias, "w", encoding="utf-8") as f:
+            f.write(
+                "".join(f'<a id="{anchor}"></a>\n' for anchor in sorted(anchors))
+            )
     # Placeholders for redirect sources so links to redirected paths resolve.
     materialize_redirects(docs_root, dest)
     # lychee reads its configuration from the working directory.
