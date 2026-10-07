@@ -287,6 +287,11 @@ private:
                 {
                     arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{database_name, identifier->name()});
                 }
+                else if (identifier->compound() && !identifier->isParam())
+                {
+                    if (auto bound = tryBindQualifiedTableName(identifier->name()))
+                        arguments[0] = make_intrusive<ASTIdentifier>(std::vector<String>{bound->database_name, bound->table_name});
+                }
             }
             else if (auto * literal = arguments[0]->as<ASTLiteral>())
             {
@@ -298,6 +303,10 @@ private:
                     {
                         qualified_table_name->database = database_name;
                         literal_value = qualified_table_name->getFullName();
+                    }
+                    else if (auto bound = tryBindQualifiedTableName(literal_value.safeGet<String>()))
+                    {
+                        literal_value = bound->getFullNameNotQuoted();
                     }
                 }
             }
@@ -317,14 +326,26 @@ private:
                     auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
                     arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());
                 }
+                else if (identifier->compound() && !identifier->isParam())
+                {
+                    if (auto bound = tryBindQualifiedDictionaryName(identifier->name(), database_name))
+                        arguments[0] = make_intrusive<ASTIdentifier>(bound->getParts());
+                }
             }
             else if (auto * literal = arguments[0]->as<ASTLiteral>())
             {
                 auto & literal_value = literal->value;
                 if (literal_value.getType() == Field::Types::String)
                 {
-                    auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
-                    literal_value = qualified_dictionary_name.getFullName();
+                    if (auto bound = tryBindQualifiedDictionaryName(literal_value.safeGet<String>(), database_name))
+                    {
+                        literal_value = bound->getFullName();
+                    }
+                    else
+                    {
+                        auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(literal_value.safeGet<String>(), database_name);
+                        literal_value = qualified_dictionary_name.getFullName();
+                    }
                 }
             }
         }
@@ -679,6 +700,33 @@ private:
         ast = qualified_identifier;
     }
 
+    /// A qualified table name carried by a function argument (`joinGet`), bound like in `visitCompound`. Returns nothing
+    /// when the name is not qualified or is already bound.
+    std::optional<StorageID> tryBindQualifiedTableName(const String & name) const
+    {
+        if (!bind_qualified_names || database_name.empty() || name.empty())
+            return {};
+
+        StorageID as_written = DatabaseCatalog::parseHierarchicalName(name);
+        if (as_written.database_name.empty())
+            return {};
+
+        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(
+            StorageID(as_written.database_name, as_written.table_name), database_name, context);
+        if (resolved.database_name == as_written.database_name && resolved.table_name == as_written.table_name)
+            return {};
+        return StorageID(resolved.database_name, resolved.table_name);
+    }
+
+    /// A qualified dictionary name is bound to the dictionary it denotes now, see
+    /// `ExternalDictionariesLoader::tryBindQualifiedDictionaryName`.
+    std::optional<QualifiedTableName> tryBindQualifiedDictionaryName(const String & name, const String & current_database) const
+    {
+        if (!bind_qualified_names || current_database.empty())
+            return {};
+        return context->getExternalDictionariesLoader().tryBindQualifiedDictionaryName(name, current_database);
+    }
+
     /// A qualified name is hierarchical as well (see `DatabaseCatalog`): `ns.t` may be the table `ns.t` of the default
     /// database when there is no database `ns`. It is bound to the table it denotes now, so that a stored or shipped
     /// query (a view, `ON CLUSTER`) is not silently retargeted when a database `ns` is created later.
@@ -714,9 +762,14 @@ private:
                     {
                         if (auto * identifier = child->children[i]->as<ASTIdentifier>())
                         {
-                            /// Identifier already qualified
+                            /// A qualified name is bound to the dictionary it denotes now (see `tryBindQualifiedDictionaryName`).
                             if (identifier->compound())
+                            {
+                                if (!identifier->isParam())
+                                    if (auto bound = tryBindQualifiedDictionaryName(identifier->name(), context->getCurrentDatabase()))
+                                        child->children[i] = make_intrusive<ASTIdentifier>(bound->getParts());
                                 continue;
+                            }
 
                             /// A parameterized name is only known when the view is called, and it
                             /// has no resolvable name to qualify here.
@@ -734,6 +787,11 @@ private:
                                 continue;
 
                             auto dictionary_name = literal_value.safeGet<String>();
+                            if (auto bound = tryBindQualifiedDictionaryName(dictionary_name, context->getCurrentDatabase()))
+                            {
+                                literal_value = bound->getFullName();
+                                continue;
+                            }
                             auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dictionary_name, context);
                             literal_value = qualified_dictionary_name.getFullName();
                         }

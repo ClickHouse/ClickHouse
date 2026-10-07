@@ -265,6 +265,22 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     return *qualified_name;
 }
 
+std::optional<QualifiedTableName> ExternalDictionariesLoader::tryBindQualifiedDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
+{
+    if (dictionary_name.empty() || has(dictionary_name))
+        return {};
+
+    StorageID dictionary_id = DatabaseCatalog::parseHierarchicalName(dictionary_name);
+    if (dictionary_id.database_name.empty())
+        return {};
+
+    auto resolved = resolveDictionaryNameFromDatabaseCatalog(QualifiedTableName{.database = dictionary_id.database_name, .table = dictionary_id.table_name}, current_database_name);
+    if (!has(resolved.key))
+        return {};
+
+    return resolved.qualified_name;
+}
+
 ExternalDictionariesLoader::ResolvedDictionaryName ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
     if (has(dictionary_name))
