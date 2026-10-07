@@ -13,4 +13,7 @@ SELECT extract(s, '(1).*$.*$') AS x, x AS y FROM t_regexp_shared GROUP BY y ORDE
 SELECT extract(ns, '(1).*$.*$') AS r FROM t_regexp_shared GROUP BY r ORDER BY r;
 SELECT extract(s, '(1)\\.*$.*$') AS r FROM t_regexp_shared GROUP BY r ORDER BY r;
 
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '(abc).*$.*$');
+EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '(abc)\\.*$.*$');
+
 DROP TABLE t_regexp_shared;
