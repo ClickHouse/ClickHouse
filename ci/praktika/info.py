@@ -140,6 +140,10 @@ class Info:
         return self.env.RUN_ID
 
     @property
+    def run_attempt(self):
+        return self.env.RUN_ATTEMPT
+
+    @property
     def pr_labels(self):
         return self.env.PR_LABELS
 

@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: `CREATE ... POPULATE` is not supported
+
 DROP TABLE IF EXISTS t_replicated_right;
 DROP TABLE IF EXISTS mv_left;
 

@@ -1,0 +1,765 @@
+---
+sidebarTitle: 'chdb_hook'
+description: 'وثائق مرجعية كاملة لوحدة chdb_hook في Postgres'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb_hook'
+title: 'الوثائق المرجعية لوحدة chdb_hook'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb_hook', 'Parquet', 'CSV', 'TSV']
+---
+
+## ملخص {#synopsis}
+
+```psql
+# LOAD 'chdb_hook';
+LOAD
+
+# CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+CREATE TABLE
+
+# COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+COPY 18
+```
+
+## الوصف {#description}
+
+تربط الوحدة chdb&#95;hook نفسها بأمر [COPY](#copy-overloading) في PostgreSQL لاستخدام [chDB] في نسخ البيانات `TO` أو `FROM` أي من [تنسيقات البيانات المدعومة التي يوفرها chDB][formats] في ملفات محلية، أو buckets [AWS S3]، أو [Google Cloud Storage]، وغيرها. كما تربط نفسها بأمر [CREATE TABLE]، بحيث يمكن لأي table أن يشتق أعمدة الخاصة به وأن يُحمّل rows الخاصة به من أي من تلك الأهداف نفسها.
+
+## التحميل {#loading}
+
+حمّل chdb&#95;hook بإحدى الطرق التالية بصفتك مستخدماً فائق الصلاحيات، واختر الطريقة
+الأنسب لحالة الاستخدام لديك:
+
+* بشكل صريح عبر أمر [LOAD]؛ ويظل سارياً طوال مدة الجلسة:
+
+  ```sql
+  LOAD 'chdb_hook';
+  ```
+
+  <Note>
+    لا يدعم SQL Console في ClickHouse Cloud حتى الآن الأمر `LOAD 'chdb_hook'`،
+    لكن يمكن تنفيذه عبر psql أو أي اتصال قاعدة بيانات آخر.
+    وبخلاف ذلك، تواصل مع ممثل الدعم لديك لإضافته إلى إعدادات خدمة Postgres
+    الخاصة بك، ليصبح بعدها قابلاً للاستخدام في SQL Console.
+  </Note>
+
+* لجميع الجلسات، عبر الإعداد [session&#95;preload&#95;libraries] في ملف
+  `postgresql.conf`:
+
+  ```ini
+  session_preload_libraries = chdb_hook
+  ```
+
+  أو عبر [ALTER SYSTEM]:
+
+  ```sql
+  ALTER SYSTEM SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  ويمكن أيضاً ضبط هذا الإعداد لكل قاعدة بيانات على حدة عبر [ALTER DATABASE]:
+
+  ```sql
+  ALTER DATABASE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  أو لمستخدمين ومجموعات محددة عبر [ALTER ROLE]:
+
+  ```sql
+  ALTER ROLE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+* عند بدء تشغيل الخادم عبر الإعداد [shared&#95;preload&#95;libraries]، بحيث يكون متاحاً
+  دائماً لجميع الجلسات وقواعد البيانات:
+
+  ```ini
+  shared_preload_libraries = chdb_hook
+  ```
+
+<Warning>
+  انتبه إلى أن تحميل chdb&#95;hook يتيح للمستخدمين المنتمين إلى دوري `pg_read_server_files`
+  أو `pg_write_server_files` تنفيذ `COPY` لنقل البيانات من وإلى ملفات على
+  خادم Postgres، وكذلك من وإلى التخزين السحابي.
+</Warning>
+
+## التحميل الزائد لأمر COPY {#copy-overloading}
+
+عند [التحميل](#loading)، يرتبط chdb&#95;hook بأمر [COPY] في Postgres لنسخ البيانات
+`TO` أو `FROM` أي من [تنسيقات البيانات المدعومة التي يوفرها chDB][formats] في
+الملفات المحلية، وحاويات [AWS S3]، و[Google Cloud Storage]، وغيرها. فلتحميل جدول
+من ملف CSV في S3، على سبيل المثال، أنشئ الجدول ثم استدعِ `COPY` مع عنوان URL
+بالصيغة `s3://`:
+
+```sql
+CREATE TABLE times (
+    id     INT PRIMARY KEY,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv';
+```
+
+### الصلاحيات {#privileges}
+
+يتطلب `COPY` الخاص بـ chdb&#95;hook نفس صلاحيات [COPY] الذي يحلّ مكانه:
+صلاحية `SELECT` على العلاقة أو على كل عمود يُنسخ في حالة `COPY TO`، وصلاحية `INSERT`
+في حالة `COPY FROM`. أما عنوان URL من النوع `file://` فهو يقرأ ملفاً على الخادم أو يكتب إليه، ولذلك
+يتطلب أيضاً العضوية في `pg_read_server_files` أو `pg_write_server_files`.
+ويتطلب `COPY FROM` معاملة قراءة وكتابة.
+
+### مخططات URL {#url-schemes}
+
+لا يُنفَّذ chdb&#95;hook إلا لأهداف `COPY` من نوع URL التي تستخدم أحد المخططات
+التالية:
+
+| المخططات                       | الهدف                                | دالة chDB              |
+| ------------------------------ | ------------------------------------ | ---------------------- |
+| `file`                         | مسار مطلق على خادم Postgres          | [`file()`]             |
+| `http`, `https`                | عنوان URL عبر HTTP                   | [`url()`]              |
+| `s3`                           | [AWS S3]                             | [`s3()`]               |
+| `gs`, `gcs`, `oss`             | [Google Cloud Storage]               | [`gcs()`]              |
+| `az`, `azure`, `abfss`, `abfs` | [Azure Blob Storage] أو [Azure ABFS] | [`azureBlobStorage()`] |
+| `hdfs`                         | [Hadoop Distributed File System]     | [`hdfs()`]             |
+
+### تنسيقات URL {#url-formats}
+
+يختلف تنسيق عناوين URL حسب الهدف.
+
+#### File {#file}
+
+يجب أن يكون مساراً مطلقاً على خادم Postgres، أما المسار النسبي فيؤدي إلى
+خطأ. يجب أن يكون مستخدم Postgres عضواً في الدور `pg_read_server_files` أو
+`pg_write_server_files`، حسب الحالة. كما يجب أن يمتلك مستخدم نظام Postgres
+صلاحية القراءة أو الكتابة على الملف، حسب الحالة. وبالنسبة إلى `COPY TO`، إذا كان
+المسار غير موجود، فسيُنشئ chdb&#95;hook أي أدلة أب مفقودة؛ ويجب
+أن يمتلك صلاحية نظام الملفات اللازمة للقيام بذلك. مثال:
+
+```
+file:///tmp/users.parquet
+```
+
+#### HTTP {#http}
+
+أي عنوان URL عادي عبر HTTP، بما في ذلك عناوين التخزين السحابي العام. في حالة `COPY TO`،
+سيحاول chdb&#95;hook إرسال البيانات إلى العنوان باستخدام `POST`. مثال:
+
+```
+https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv
+```
+
+#### S3 {#s3}
+
+قد تأتي عناوين URL الخاصة بـ S3 على شكل عنوان URI لـ S3
+
+```
+s3://{bucket}/{path}
+```
+
+أو عنوان URL لكائن:
+
+```
+s3://{bucket}.s3.{region}.amazonaws.com/{path}
+```
+
+#### GCS {#GCS}
+
+تأتي عناوين URL الخاصة بـ GCS على هيئة URL عام:
+
+```
+gs://storage.googleapis.com/{bucket}/{path}
+```
+
+أو عنوان URI لـ Cloud Storage، الذي يحوّله chdb&#95;hook إلى عنوان URL عام:
+
+```
+gs://{bucket}/{path}
+```
+
+#### Azure Blob Storage {#azure-blob-storage}
+
+استخدم عنوان URL بالصيغة `blob.windows.net` مع اسم الحساب كنطاق فرعي:
+
+```
+az://{account}.blob.core.windows.net/{container}/{blob}
+```
+
+أو استخدم اسم مضيف آخر:
+
+```
+az://{host}/{container}/{blob}
+```
+
+#### Azure ABFS {#azure-abfs}
+
+يجب أن تتّبع عناوين URL الخاصة بـ ABFS التنسيق التالي:
+
+```
+abfs://{container}@{account}.dfs.core.windows.net/{blob}
+```
+
+#### عناوين HDFS URL {#hdfs-urls}
+
+يمكن أن تأخذ عناوين HDFS شكل عناوين URL المعتادة بنمط HTTP مع منفذ اختياري:
+
+```
+hdfs://{host}/{path}
+hdfs://{host}:{port}/{path}
+```
+
+### أنماط المسار (Path Wildcards) {#path-wildcards}
+
+قد تحتوي مسارات URL على globs في أوامر `COPY FROM`. ويجب أن تطابق الملفات
+نمط المسار بالكامل، لا الـ suffix أو الـ prefix فقط. والاستثناء الوحيد هو: عندما
+يشير المسار إلى directory موجود دون استخدام globs، تُضاف `*` ضمنيًا
+إلى المسار لتحديد جميع الملفات الموجودة في الـ directory.
+
+الـ wildcards المدعومة:
+
+* `*`: تطابق أي عدد من المحارف عدا `/`، بما في ذلك السلسلة الفارغة.
+* `?`: تطابق محرفًا واحدًا أيًا كان.
+* `{groucho,harpo,chico}`: تستبدل أي من السلاسل &quot;groucho&quot; و&quot;harpo&quot; و
+  &quot;chico&quot;. وقد تحتوي هذه السلاسل على `/`.
+* `{N..M}`: تطابق أي رقم `>= N` و`<= M`.
+* `**`: تطابق تعاوديًا جميع الملفات في الـ directory.
+
+على سبيل المثال، لتحميل البيانات من هذه الملفات بأمر واحد:
+
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv
+
+استخدم `{some,another}_prefix` لمطابقة اسمَي الـ directory و
+`some_file_{1..3}.csv'` لمطابقة الملفات، على هذا النحو:
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+```
+
+### الخيارات {#options}
+
+يدعم أمر `COPY` في chdb&#95;hook الخيارات التالية:
+
+#### `format`: {#format}
+
+التنسيق المستخدم للقراءة أو الكتابة. يجب أن يكون أحد [formats] التي يوفرها [chDB]،
+ومنها TSV وCSV وParquet وIceberg وJSON وغيرها. أهمل هذا الخيار أو اضبطه على
+`auto` ليحدد chDB التنسيق من امتداد اسم الملف في نهاية
+عنوان URL.
+
+#### `structure` {#structure}
+
+بنية بيانات [chDB] الخاصة بالصف. تتكوّن من قائمة بأسماء الأعمدة و[أنواع بيانات ClickHouse] والمُعدِّلات. إذا أُغفلت، فإن chdb&#95;hook يربط أنواع بيانات Postgres بأنواع ClickHouse المناسبة عمومًا؛ راجع [Postgres إلى chDB](#postgres-to-chdb) للتفاصيل. وإذا ضُبطت على `auto`، فسيحاول chDB استنتاج الأنواع.
+
+مثال:
+
+```sql
+COPY users TO 'file:///tmp/users.parquet' (
+    structure 'id Int64, name String, age Nullable(UInt8), attributes JSON'
+);
+```
+
+#### `access_key` و `access_secret` {#access_key-and-access_secret}
+
+بيانات الاعتماد طويلة الأمد لمستخدم AWS account لمصادقة الـ requests.
+
+* **S3:** [access key ID and access secret] خاص بـ AWS، ويُعرَّفان غالبًا عبر environment variables `AWS_ACCESS_KEY_ID` و`AWS_SECRET_ACCESS_KEY`
+* **GCS:** [HMAC key and secret] خاص بـ GCP
+* **Azure:** اسم Azure Storage account و[access key]
+
+#### `session_token` {#session_token}
+
+رمز جلسة AWS الذي يُستخدم مع `access_key` و`access_secret`، ويُحدَّد غالبًا عبر
+متغير البيئة `AWS_SESSION_TOKEN`. يُستخدم فقط مع عناوين URL الخاصة بـ S3.
+
+#### `compression` {#compression}
+
+صيغة ضغط الملف. استخدم هذا الخيار إذا لم يكن من الممكن استنتاج نوع الضغط من اسم الملف. القيم المدعومة:
+
+* `auto` (الافتراضي)
+* `none`
+* `gzip` أو `gz`
+* `brotli` أو `br`
+* `xz` أو `LZMA`
+* `zstd` أو `zst`
+* `lz4`
+* `bz2`
+* `snappy`
+
+#### `timeout` {#timeout}
+
+مهلة الطلب بالميلي ثانية. تنطبق على عناوين URL لكل من HTTP وS3 وGCS وAzure.
+القيمة الافتراضية `30000` (30 ثانية).
+
+### Debugging {#debugging}
+
+عند حدوث خطأ، يُضمّن أمر `COPY` الخاص بـ chdb&#95;hook استعلام [chDB] الذي حاول تنفيذه في سياق الخطأ:
+
+```
+ERROR:  chdb: error executing chDB query
+DETAIL:  Code: 53. DB::Exception: Requested type of column p doesn't match parquet schema
+CONTEXT:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+يستخدم chdb&#95;hook عناصر نائبة بنمط `{name:Type}` لمعاملات الاستعلام
+للحماية من ثغرات حقن SQL وللتقليل من مخاطر
+تسجيل البيانات الحساسة مثل بيانات الاعتماد.
+
+أما إذا احتجت إلى الاطلاع على محتوى تلك المعاملات لتشخيص
+مشكلة ما، فاضبط مؤقتًا معامل Postgres العام [log&#95;min&#95;messages] على `DEBUG1` أو
+أعلى، ليرسل chdb&#95;hook الاستعلام والمعاملات إلى سجل Postgres
+(وليس إلى العميل مطلقًا)، حيث ستظهر على النحو التالي:
+
+```
+2026-08-08 09:41:06.842 EDT [59940] LOG:  executing chDB query
+2026-08-08 09:41:06.842 EDT [59940] DETAIL:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+2026-08-08 09:41:06.842 EDT [59940] CONTEXT:  params: { path: "/tmp/users.data", format: "Parquet", structure: "user_id Nullable(Int64), username Nullable(String), password Nullable(String)" }
+2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+<Warning>
+  لا تترك &#91;log&#95;min&#95;messages&#93; مضبوطًا على مستوى تنقيح لمدة تتجاوز جلسة
+  تنقيح واحدة، تجنّبًا لتسجيل معلومات حسّاسة مثل بيانات الاعتماد، ولأنّ
+  PostgreSQL نفسه يسجّل كذلك معلومات التنقيح وقد يملأ السجل بسرعة.
+</Warning>
+
+## التحميل الزائد لـ CREATE TABLE {#create-table-overloading}
+
+يستخدم chdb&#95;hook خطافًا أيضًا مع [CREATE TABLE]، بحيث يمكن للجدول أن يشتق
+أعمدته وأن يحمّل صفوفه من عنوان URL.
+
+لإنشاء جدول ببنية مشتقة من عنوان URL، مرّر عنوان URL في
+الخيار `structure_from` واترك قائمة الأعمدة فارغة:
+
+```sql
+CREATE TABLE reviews () WITH (
+    structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+استخدم `copy_from` لتحميل الصفوف بالإضافة إلى الأعمدة:
+
+```sql
+CREATE TABLE reviews () WITH (
+    copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+يستنتج `copy_from` الأعمدة فقط عندما لا يُحدّد الـ statement أيًّا منها بنفسه.
+فقائمة الأعمدة، أو الـ clause `INHERITS`، أو النوع `OF`، أو الـ partition، كلٌّ منها يُعرّف
+أعمدةً، وعندها لا ينسخ `copy_from` سوى ما يلي:
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
+```
+
+يدعم كلا الخيارين نفس [URL schemes](#url-schemes) و[options](#options) التي يدعمها `COPY`؛ فجميعها ينطبق هنا: بيانات الاعتماد وformat وcompression وtimeout وحتى تحديد [structure](#structure) بشكل صريح. أما Postgres فيحتفظ بما تبقّى من storage parameters:
+
+```sql
+CREATE TABLE users () WITH (
+    copy_from     = 's3://my-bucket/users.csv',
+    access_key    = 'AKIAIOSFODNN7EXAMPLE',
+    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+    format        = 'CSVWithNames',
+    fillfactor    = 90
+);
+```
+
+لا يعمل أي من `structure_from` أو `copy_from` مع `IF NOT EXISTS`. استخدم
+[COPY] لتحميل علاقة موجودة.
+
+## القيود {#limitations}
+
+نظراً لبعض المشكلات المعروفة والاختلافات في سلوك أنواع البيانات
+بين Postgres و chDB، فإن chdb&#95;hook تنطبق عليه القيود التالية:
+
+* لا يمكن تنفيذ `COPY` على العلاقات التي تنطبق عليها سياسات [row-level security]
+  الخاصة بالدور الذي يقوم بالنسخ. إذ يطبّق Postgres هذه السياسات عن طريق إعادة كتابة `COPY TO`
+  في صورة استعلام، وهو ما لا يدعمه chdb&#95;hook.
+* لا يوجد في ClickHouse مصفوفة NULL، لذا يخزّن `COPY TO` مصفوفة فارغة (`[]`) بدلاً من
+  قيمة `NULL`.
+* يمثّل ClickHouse ما يعادل `lseg` أو `path` أو `polygon` على هيئة
+  مصفوفات؛ وبالتالي فإن قيم NULL من هذه الأنواع يَنسخها `COPY TO` أيضاً كمصفوفة فارغة
+  (`[]`).
+* قيم NULL المُخرَجة وفق [structure](#structure) محددة لا تُعرِّف
+  العمود على أنه Nullable ستُخرَج بقيمها الافتراضية. لذا عرّف دائماً
+  الأعمدة القابلة لقيم NULL بشكل صريح في [structure](#structure) لتجنّب
+  هذا التحويل.
+* المسار `path` المفتوح الذي تتساوى نقطته الأخيرة مع نقطته الأولى يُخرَج كمسار مغلق.
+* لا يوجد في Protobuf قيمة null داخل حقل متكرر، لذا فإنه يحذف قيم NULL من المصفوفات.
+* يدعم [JSON type] في chDB كائنات JSON فقط؛ فلا تستبدل التعيين الافتراضي
+  `String` لـ `json` و`jsonb` بـ `JSON` إلا إذا كانت جميع القيم
+  كائنات JSON. (ClickHouse/ClickHouse#68428)
+* يتجاهل [JSON type] في chDB قيم `null`؛ فمفاتيح الكائن التي قيمتها NULL ستُحذف
+  عند الإخراج. لا تستبدل التعيين الافتراضي `String` لـ `json` و
+  `jsonb` بـ `JSON` إلا إذا لم تكن قيم الكائن `null` أو كان فقدانها
+  مقبولاً. (ClickHouse/ClickHouse#68428)
+* تتحقق تنسيقات JSON وJSONCompact وJSONColumnsWithMetadata دائماً من صحة
+  UTF-8، لذا تُخرِج قيم bytea مع محارف استبدال.
+* يقرأ `COPY FROM` حقل Protobuf من نوع `Nullable` يحتوي على سلسلة فارغة أو
+  صفراً كأنه `NULL`. (chdb-io/chdb-core#152)
+* يُسقِط `COPY TO` إلى Parquet قيم `NULL` من null map الخاص بـ Nullable Tuple.
+  (ClickHouse/ClickHouse#112427)
+* لا يوجد في تنسيقات Parquet وArrow وArrowStream وORC وAvro وProtobuf وProtobufList وMsgPack
+  وBSONEachRow أي نوع يقابل `time` في Postgres أو
+  `Time64` في chDB. لذا هيّئ أعمدة `time` كـ `String` في [structure](#structure)
+  صريحة للحفاظ على قيمها.
+* يقتطع إخراج Protobuf قيم timestamp إلى مستوى الثانية.
+* لا يدعم إخراج Protobuf التواريخ السابقة لـ 1970-01-01. هيّئ أعمدة `time`
+  كـ `String` في [structure](#structure) صريحة للحفاظ
+  على قيمها. (ClickHouse/ClickHouse#111860)
+* لا يستطيع تنسيقا CSVWithNames وCSVWithNamesAndTypes حالياً استيراد
+  قيم `NULL` من نوع box أو circle. (ClickHouse/ClickHouse#115523)
+
+## أنواع البيانات {#data-types}
+
+يعمل [COPY](#copy-overloading) على تعيين أنواع Postgres الخاصة بـ علاقة إلى أنواع chDB،
+بينما يعيّن [CREATE TABLE](#create-table-overloading) أنواع chDB الخاصة بـ URL
+إلى أنواع Postgres.
+
+### Postgres إلى chDB {#postgres-to-chdb}
+
+في حال عدم تحديد خيار [structure](#structure) صريح، يعيّن chdb&#95;hook أنواع
+Postgres إلى مكافئات معقولة في chDB. وإذا لم تكن ملائمة لحالة الاستخدام الخاصة بك،
+فحدّد [structure](#structure) لتجاوز الأنواع المُولَّدة بالأنواع التي تحتاجها.
+
+| Postgres    | chDB                                     | ملاحظات                                                            |
+| ----------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| boolean     | Bool                                     |                                                                    |
+| name        | String                                   |                                                                    |
+| text        | String                                   |                                                                    |
+| inet        | String                                   | تجاوزه بـ `IPv4` أو `IPv6` إذا كانت البيانات تحتوي على أحدهما فقط. |
+| cidr        | String                                   |                                                                    |
+| macaddr     | String                                   |                                                                    |
+| macaddr8    | String                                   |                                                                    |
+| interval    | String                                   | تجاوزه بوحدة `Interval` مثل `IntervalDay`.                         |
+| tsvector    | String                                   |                                                                    |
+| tsquery     | String                                   |                                                                    |
+| jsonpath    | String                                   |                                                                    |
+| money       | String                                   |                                                                    |
+| enum        | String                                   |                                                                    |
+| varchar     | String                                   |                                                                    |
+| varbit      | String                                   |                                                                    |
+| char        | FixedString                              |                                                                    |
+| bit         | FixedString                              |                                                                    |
+| bpchar      | String                                   |                                                                    |
+| int2        | Int16                                    |                                                                    |
+| int4        | Int32                                    |                                                                    |
+| int8        | Int64                                    |                                                                    |
+| oid         | UInt32                                   |                                                                    |
+| oid8        | UInt64                                   |                                                                    |
+| xid8        | UInt64                                   |                                                                    |
+| json        | String                                   | تجاوزه بـ `JSON` إذا كانت البيانات تحتوي على كائنات فقط.           |
+| jsonb       | String                                   | تجاوزه بـ `JSON` إذا كانت البيانات تحتوي على كائنات فقط.           |
+| float4      | Float32                                  |                                                                    |
+| float8      | Float64                                  |                                                                    |
+| date        | Date32                                   |                                                                    |
+| time        | Time64(6)                                | تجاوزه بـ `String` للتنسيقات التي لا تدعم الأوقات.                 |
+| timetz      | String                                   |                                                                    |
+| timestamp   | DateTime64(6)                            | مُعلَن بالمنطقة الزمنية `UTC`، ومُحوَّل من المنطقة الزمنية للجلسة. |
+| timestamptz | DateTime64(6)                            | مُعلَن بالمنطقة الزمنية `UTC`.                                     |
+| numeric     | Decimal                                  |                                                                    |
+| uuid        | UUID                                     |                                                                    |
+| point       | `Point`                                  | الإحداثيان نفسهما المستخدمان في Postgres.                          |
+| lseg        | `LineString`                             | خط مكوّن من نقطتين بالضبط.                                         |
+| path        | `LineString`                             | المسار المغلق يكرّر نقطته الأولى.                                  |
+| polygon     | `Ring`                                   | تُغلق الحلقة ضمنيًا، كما يفعل المضلّع.                             |
+| box         | `Tuple(high Point, low Point)`           | الزاويتان، مرتّبتان بترتيب Postgres نفسه.                          |
+| circle      | `Tuple(center Point, radius Float64)`    |                                                                    |
+| line        | `Tuple(a Float64, b Float64, c Float64)` | المعادلة `Ax + By + C = 0`.                                        |
+
+تُعيَّن أنواع المصفوفات إلى `Array` من نوع العنصر المقابل. تفرض ClickHouse
+قابلية القيم الفارغة على مستوى العمود، بينما يفرضها Postgres على مستوى المصفوفة، لذا تكون العناصر
+دائمًا `Nullable`.
+
+لا يُعيَّن أي نوع في Postgres إلى `Map` أو `Tuple`، لكن يمكن تحديد أحدهما عبر
+[structure](#structure). يمكن تحويل `Map` إلى مصفوفة من أزواج المفتاح والقيمة، ويُحوَّل `Tuple`
+إلى مصفوفة. استخدم `text[]` لدعم الأنواع غير المتجانسة.
+
+### تحويل الطابع الزمني {#timestamp-conversion}
+
+في التنسيقات النصية العادية (TSV وCSV وغيرها)، يُخرج الخطاف `COPY` قيم DateTime
+وDateTime64 بصيغة ISO-8601، `YYYY-MM-DDThh:mm:ssZ`، بصرف النظر
+عن الإعداد `datestyle` الحالي. ويضمن ذلك بقاء قيم timestamptz
+متسقة، حتى إذا كان المصدر الذي يستورد القيم يستخدم منطقة زمنية
+مختلفة. أما استخدام نوع مختلف في مخرجات `structure`، مثل `Datetime64(3,
+'America/Los_Angeles')`، فلا يؤثر في إزاحة المخرجات، لكنه
+يغيّر الدقة.
+
+أمثلة على Timestamp TZ:
+
+| timestamptz                               | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| ----------------------------------------- | ----------------------------- | -------------------------- |
+| `2026-08-28T12:00:00Z`                    | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `2026-08-28T11:00:00 America/Los_Angeles` | `2026-08-28T18:00:00.000000Z` | `2026-08-28T18:00:00.000Z` |
+| `2026-08-28T10:00:00.723923 Asia/Tokyo`   | `2026-08-28T01:00:00.723923Z` | `2026-08-28T01:00:00.723Z` |
+
+كما يحوّل الخطاف `COPY` قيم الطابع الزمني من المنطقة الزمنية للجلسة إلى
+التوقيت العالمي المنسق (UTC)، مما يضمن إخراجها نسبةً إلى تلك المنطقة الزمنية. وعند تحميلها
+في نظام جديد، من المفترض أن يحوّلها إلى منطقته الزمنية المحلية. وبالتالي
+ستختلف القيم إذا اختلفت المنطقة الزمنية، لكنها ستبقى متكافئة بحسب
+فارق المنطقة الزمنية.
+
+مثال على تأثير الإعداد `timezone` في الطابع الزمني
+`2026-08-28T12:00:00`:
+
+| إعداد timezone        | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| --------------------- | ----------------------------- | -------------------------- |
+| `UTC`                 | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `America/Los_Angeles` | `2026-08-28T19:00:00.000000Z` | `2026-08-28T19:00:00.000Z` |
+| `America/New_York`    | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
+| `Japan`               | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
+
+### من chDB إلى Postgres {#chdb-to-postgres}
+
+يعيّن chdb&#95;hook أنواع ClickHouse التي يُبلّغ عنها [`DESCRIBE`] إلى أنواع
+Postgres التالية:
+
+{/* TYPE-TABLE-BEGIN تم إنشاؤه باستخدام `make type-table` */}
+
+| chDB                | Postgres                    | ملاحظات                                   |
+| ------------------- | --------------------------- | ----------------------------------------- |
+| Array(T)            | T[]                         | نوع مصفوفة PG واحد لكل مستوى عمق          |
+| BFloat16            | real                        | الكتابة تُسقط البتات المنخفضة من mantissa |
+| Bool                | boolean                     |                                           |
+| Date                | date                        |                                           |
+| Date32              | date                        |                                           |
+| DateTime            | timestamp with time zone    |                                           |
+| DateTime64(P)       | timestamp(P) with time zone | قيم P التي تتجاوز 6 تُحدَّد عند 6         |
+| Decimal(P,S)        | numeric(P,S)                |                                           |
+| Decimal32(S)        | numeric(9,S)                |                                           |
+| Decimal64(S)        | numeric(18,S)               |                                           |
+| Decimal128(S)       | numeric(38,S)               |                                           |
+| Decimal256(S)       | numeric(76,S)               |                                           |
+| Enum8               | text                        |                                           |
+| Enum16              | text                        |                                           |
+| FixedString(N)      | text                        | N تُعدّ بايتات في CH ومحارف في PG         |
+| Float32             | real                        |                                           |
+| Float64             | double precision            |                                           |
+| IPv4                | inet                        |                                           |
+| IPv6                | inet                        |                                           |
+| Int8                | smallint                    |                                           |
+| Int16               | smallint                    |                                           |
+| Int32               | integer                     |                                           |
+| Int64               | bigint                      |                                           |
+| Int128              | numeric(39,0)               |                                           |
+| Int256              | numeric(77,0)               |                                           |
+| IntervalDay         | interval                    |                                           |
+| IntervalHour        | interval                    |                                           |
+| IntervalMicrosecond | interval                    |                                           |
+| IntervalMillisecond | interval                    |                                           |
+| IntervalMinute      | interval                    |                                           |
+| IntervalMonth       | interval                    |                                           |
+| IntervalNanosecond  | interval                    | يُقتطع إلى الميكروثانية                   |
+| IntervalQuarter     | interval                    |                                           |
+| IntervalSecond      | interval                    |                                           |
+| IntervalWeek        | interval                    |                                           |
+| IntervalYear        | interval                    |                                           |
+| JSON                | jsonb                       |                                           |
+| LineString          | path                        |                                           |
+| LowCardinality(T)   | T                           |                                           |
+| Map(K,V)            | text[][]                    | صف واحد من العناصر النصية لكل زوج         |
+| MultiLineString     | path[]                      |                                           |
+| MultiPolygon        | polygon[][]                 |                                           |
+| Nullable(T)         | T                           | يجعل العمود قابلاً لقيمة NULL             |
+| Point               | point                       |                                           |
+| Polygon             | polygon[]                   |                                           |
+| Ring                | polygon                     |                                           |
+| String              | text                        |                                           |
+| Time                | time without time zone      |                                           |
+| Time64(P)           | time(P) without time zone   | قيم P التي تتجاوز 6 تُحدَّد عند 6         |
+| Tuple(...)          | text[]                      | تصبح الحقول عناصر نصية                    |
+| UInt8               | smallint                    |                                           |
+| UInt16              | integer                     |                                           |
+| UInt32              | bigint                      |                                           |
+| UInt64              | numeric(20,0)               |                                           |
+| UInt128             | numeric(39,0)               |                                           |
+| UInt256             | numeric(78,0)               |                                           |
+| UUID                | uuid                        |                                           |
+
+{/* TYPE-TABLE-END */}
+
+كل نوع من أنواع chDB غير مذكور في هذا الجدول يثير خطأً، ومنها `Nested`
+و`Variant` و`Dynamic`. استخدم [structure](#structure) يربطها بالنوع
+`String` لقراءتها كنص.
+
+يدعم Postgres نطاقًا أضيق من chDB في بعض هذه الأنواع؛ ولذلك يثير النسخ خطأً عند
+وجود `Time` أو `Time64` يتجاوز 24 ساعة، وكذلك عند وجود `Date32`
+خارج نطاق التواريخ الذي يدعمه Postgres.
+
+### ترميز النص {#text-encoding}
+
+يقرأ chDB الأنواع `String` و`FixedString` و`Enum` و`JSON` كبايتات، دون أي
+ضمان بشأن الترميز. وعند نسخ عمود من هذا النوع إلى `text` أو إلى أي نوع آخر
+غير ثنائي، يتم التحقق من البايتات وفق ترميز قاعدة البيانات، ويُثار خطأ
+للبيانات التي يتعذّر تمثيلها:
+
+```
+ERROR:  invalid byte sequence for encoding "UTF8": 0x00
+```
+
+يرفض كل ترميز محارف NUL، التي لا يستطيع Postgres تخزينها في `text`.
+
+انسخ البيانات إلى `bytea` للحفاظ على البايتات كما كتبها chDB. وسمِّ هذه الأعمدة على هذا النحو، إذ إن
+[CREATE TABLE](#create-table-overloading) يستنتج النوع `text` لهذه الأنواع:
+
+```sql
+CREATE TABLE logs (id bigint, payload bytea) WITH (
+    copy_from = 's3://my-bucket/logs.parquet'
+);
+```
+
+يحشو `FixedString(N)` القيم الأقصر ببايتات NUL. والنسخ إلى `text` يُسقِط
+بايتات NUL اللاحقة، بينما يحتفظ `bytea` بالبايتات الـ N جميعها.
+
+## الإعدادات {#settings}
+
+### `chdb_hook.max_memory` {#chdb_hookmax_memory}
+
+```sql
+SET chdb_hook.max_memory = '1 GB';
+```
+
+يُحدِّد الحد الأقصى لمقدار الذاكرة المتاح لاستعلام chDB، ويُستخدم لضبط إعداد
+[`max_memory_usage`] في chDB. يتطلب صلاحية المستخدم فائق الصلاحيات. استخدم عددًا صحيحًا
+للتعبير عن عدد الميغابايت أو إحدى وحدات الذاكرة التالية:
+
+* `B` (بايت)
+* `kB` (كيلوبايت)
+* `MB` (ميغابايت)
+* `GB` (غيغابايت)
+* `TB` (تيرابايت)
+
+القيمة الافتراضية هي `0`، أي عدم فرض أي حد على الذاكرة.
+
+### `chdb_hook.max_threads` {#chdb_hookmax_threads}
+
+```sql
+SET chdb_hook.max_threads = 4;
+```
+
+الحد الأقصى لعدد خيوط معالجة الاستعلام في استعلام chDB، ويُستخدم لتعيين إعداد
+[`max_threads`] في chDB. يتطلب صلاحية المستخدم فائق الصلاحيات. القيمة الافتراضية هي
+`0`، مما يتيح لـ chDB تحديد القيمة بنفسه.
+
+نوصي بشدة بتعيين `chdb_hook.max_threads` قبل تنفيذ عملية `COPY` كبيرة،
+لمنع chDB من استنفاد استخدام وحدة المعالجة المركزية بالكامل على حساب
+PostgreSQL.
+
+### `chdb_hook.max_parsing_threads` {#chdb_hookmax_parsing_threads}
+
+```sql
+SET chdb_hook.max_parsing_threads = 2;
+```
+
+الحد الأقصى لعدد الخيوط (threads) التي يمكن أن يستخدمها chDB لتحليل البيانات في تنسيقات الإدخال التي تدعم التحليل المتوازي، ويُستخدم لتعيين إعداد [`max_parsing_threads`] في chDB. يتطلب صلاحيات المستخدم الفائق. القيمة الافتراضية هي `0`، مما يترك تحديد القيمة إلى chDB.
+
+نوصي بتعيين `chdb_hook.max_parsing_threads` قبل تنفيذ `COPY` لكمية كبيرة من البيانات، لمنع chDB من استهلاك كامل طاقة المعالج (CPU) على حساب PostgreSQL.
+
+## سياسة الإصدارات {#versioning-policy}
+
+يتبع chdb&#95;hook [Semantic Versioning] في إصداراته العامة.
+
+* يزيد رقم الإصدار الرئيسي (major version) عند حدوث تغييرات في واجهة برمجة التطبيقات
+* يزيد رقم الإصدار الفرعي (minor version) عند حدوث تغييرات SQL متوافقة مع الإصدارات السابقة
+* يزيد رقم إصدار التصحيح (patch) عند التغييرات التي تمسّ الملف الثنائي (binary) وحده
+
+بعد التثبيت، يمكن الاستعلام عن الإصدار في PostgreSQL باستخدام دالة
+[`pg_get_loaded_modules()`] المتوفرة في Postgres 18.
+
+```sql
+SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
+```
+
+## المؤلفون {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## حقوق النشر {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB - قاعدة بيانات سريعة وموثوقة وقابلة للتوسع تعمل داخل العملية"
+
+[Semantic Versioning]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"
+
+[COPY]: https://www.postgresql.org/docs/current/sql-copy.html "وثائق Postgres: COPY"
+
+[CREATE TABLE]: https://www.postgresql.org/docs/current/sql-createtable.html "وثائق Postgres: CREATE TABLE"
+
+[`DESCRIBE`]: https://clickhouse.com/docs/sql-reference/statements/describe-table "ClickHouse Docs: DESCRIBE TABLE"
+
+[formats]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "وثائق chDB: الجدول الكامل لأسماء الصيغ"
+
+[access key ID and access secret]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management: إدارة مفاتيح الوصول لمستخدمي IAM"
+
+[HMAC key and secret]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud Storage: مفاتيح HMAC"
+
+[access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: إدارة مفاتيح الوصول لحساب التخزين"
+
+[row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "وثائق Postgres: سياسات أمان الصفوف"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: نوع البيانات JSON"
+
+[LOAD]: https://www.postgresql.org/docs/current/sql-load.html "وثائق Postgres: LOAD"
+
+[session_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "وثائق Postgres: `session_preload_libraries`"
+
+[shared_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "وثائق Postgres: `shared_preload_libraries`"
+
+[ALTER SYSTEM]: https://www.postgresql.org/docs/18/sql-altersystem.html "وثائق Postgres: ALTER SYSTEM"
+
+[ALTER DATABASE]: https://www.postgresql.org/docs/current/sql-alterdatabase.html "وثائق Postgres: ALTER DATABASE"
+
+[ALTER ROLE]: https://www.postgresql.org/docs/18/sql-alterrole.html "وثائق Postgres: ALTER ROLE"
+
+[AWS S3]: https://aws.amazon.com/s3/ "Cloud Object Storage - Amazon S3 - Amazon Web Services"
+
+[Google Cloud Storage]: https://cloud.google.com/storage "Cloud Storage - Google Cloud"
+
+[`file()`]: https://clickhouse.com/docs/sql-reference/table-functions/file "ClickHouse Docs: دالة الجدول file"
+
+[`url()`]: https://clickhouse.com/docs/sql-reference/table-functions/url "ClickHouse Docs: دالة الجدول url"
+
+[`s3()`]: https://clickhouse.com/docs/sql-reference/table-functions/s3 "ClickHouse Docs: دالة الجدول s3"
+
+[`gcs()`]: https://clickhouse.com/docs/sql-reference/table-functions/gcs "ClickHouse Docs: دالة الجدول gcs"
+
+[Azure Blob Storage]: https://azure.microsoft.com/en-us/products/storage/blobs/
+
+[Azure ABFS]: https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri "استخدام عنوان URI الخاص بـ Azure Data Lake Storage (ABFS) - Azure Storage"
+
+[`azureBlobStorage()`]: https://clickhouse.com/docs/sql-reference/table-functions/azureBlobStorage "ClickHouse Docs: دالة الجدول azureBlobStorage"
+
+[Hadoop Distributed File System]: https://en.wikipedia.org/wiki/Apache_Hadoop#Overview "Wikipedia: نظرة عامة على Apache Hadoop"
+
+[`hdfs()`]: https://clickhouse.com/docs/sql-reference/table-functions/hdfs "ClickHouse Docs: دالة الجدول hdfs"
+
+[ClickHouse data types]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: أنواع البيانات في ClickHouse"
+
+[log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "وثائق PostgreSQL: log_min_messages"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: إعدادات الجلسة max_memory_usage_*"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: إعدادات الجلسة max_threads_*"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: إعداد الجلسة max_parsing_threads"

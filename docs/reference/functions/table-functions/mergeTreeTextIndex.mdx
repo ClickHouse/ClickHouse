@@ -30,6 +30,8 @@ mergeTreeTextIndex(database, table, index_name)
 
 A table object with tokens and their posting list metadata.
 
+If the index uses the `keyValuePairs` tokenizer, each token is a `(key, value)` pair of a `Map` column, and the result has two additional columns `token_key` and `token_value` with the decoded parts of the token.
+
 ## Usage Example {#usage-example}
 
 ```sql title="Query"
