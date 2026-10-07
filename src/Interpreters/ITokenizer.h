@@ -120,10 +120,8 @@ private:
 
 using TokenizerPtr = const ITokenizer *;
 
-/// Whether every token of `value` is also a token of `value` followed by NUL bytes, which is what makes trimming
-/// those bytes off a constant token preserving. The n-gram tokenizers clamp their last token to the buffer end, so
-/// for them this holds only while every sequence declared by a lead byte ends within `value`; a tokenizer whose
-/// tokens can span the end of `value` answers false.
+/// Whether every token of `value` is also a token of `value` followed by NUL bytes. The n-gram tokenizers clamp their
+/// last token to the buffer end, so for them it needs every UTF-8 sequence started in `value` to end within it.
 bool tokensSurviveTrailingNuls(ITokenizer::Type type, std::string_view value);
 
 template <typename Derived>
