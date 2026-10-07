@@ -708,14 +708,16 @@ inline size_t valueBytes(const GenericValueSlice & slice) { return rangeBytes(*s
 template <typename Slice>
 size_t valueBytes(const NullableSlice<Slice> & slice) { return valueBytes(static_cast<const Slice &>(slice)) + 1; }
 
-/// `units_per_value` is 0 until the first priced value; a constant extender is priced only once.
+template <typename Source>
+constexpr bool is_const_source = false;
+
+template <typename Base>
+constexpr bool is_const_source<ConstSource<Base>> = true;
+
 template <typename ValueSource, typename Sink>
-void writeValueRepeatedly(ValueSource && value_source, Sink && sink, size_t count, size_t & units_per_value, CancellationBudget & budget)
+NO_INLINE void writeValueRepeatedlyChunked(
+    ValueSource && value_source, Sink && sink, size_t count, size_t units_per_value, CancellationBudget & budget)
 {
-    if (count == 0)
-        return;
-    if (units_per_value == 0 || !value_source.isConst())
-        units_per_value = 1 + valueBytes(value_source.getWhole()) / CancellationBudget::bytes_per_unit;
     const size_t max_chunk = std::max<size_t>(1, CancellationBudget::units_per_check / units_per_value);
     while (count > 0)
     {
@@ -725,6 +727,25 @@ void writeValueRepeatedly(ValueSource && value_source, Sink && sink, size_t coun
         budget.chargeUnits(chunk * units_per_value);
         count -= chunk;
     }
+}
+
+/// `units_per_value` is 0 until the first priced value; a constant extender is priced only once.
+template <typename ValueSource, typename Sink>
+ALWAYS_INLINE void writeValueRepeatedly(
+    ValueSource && value_source, Sink && sink, size_t count, size_t & units_per_value, CancellationBudget & budget)
+{
+    if (count == 0)
+        return;
+    if (units_per_value == 0 || !is_const_source<std::remove_cvref_t<ValueSource>>)
+        units_per_value = 1 + valueBytes(value_source.getWhole()) / CancellationBudget::bytes_per_unit;
+    if (count * units_per_value > CancellationBudget::units_per_check)
+    {
+        writeValueRepeatedlyChunked(value_source, sink, count, units_per_value, budget);
+        return;
+    }
+    for (size_t i = 0; i < count; ++i)
+        writeSlice(value_source.getWhole(), sink);
+    budget.chargeUnits(count * units_per_value);
 }
 
 template <typename ArraySource, typename ValueSource, typename Sink>
