@@ -66,12 +66,14 @@ public:
         /// The first argument is always needed. Every other argument is needed only for the rows
         /// where all the preceding arguments are NULL, so it is evaluated lazily.
         settings.arguments_with_disabled_lazy_execution.insert(0);
-        /// A node that is a common descendant of several arguments is evaluated once for all the rows,
-        /// so that it is not evaluated repeatedly under the different masks of every argument.
-        /// The number of arguments does not tell which of them are live: leading constant NULL arguments
-        /// are removed only in `executeImpl`, so e.g. in `coalesce(NULL, a, b)` the argument `a` is
-        /// fully evaluated and a node shared by `a` and `b` would be evaluated twice if it were lazy.
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+        /// As in `and`, the masks of the arguments are nested: the rows needed by an argument are a subset
+        /// of the rows needed by every preceding argument. So a node that is a common descendant of several
+        /// arguments can be lazily executed as well, it is evaluated under the mask of each argument it belongs to.
+        /// E.g. in `coalesce(a, f(x), g(x))` the node `x` must not be evaluated for the rows where `a` is not NULL.
+        /// The cost is that such a node can be evaluated more than once for the same rows, e.g. in
+        /// `coalesce(NULL, f(x), g(x))`, where the leading constant NULL is removed only in `executeImpl`
+        /// and `f(x)` is evaluated for all the rows.
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
         settings.force_enable_lazy_execution = false;
         return true;
     }
