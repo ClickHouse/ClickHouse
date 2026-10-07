@@ -40,6 +40,10 @@ SELECT k FROM t_alias_agg GROUP BY k HAVING EXISTS (SELECT 1 WHERE n_plus != 101
 SELECT k FROM t_alias_agg GROUP BY k HAVING EXISTS (SELECT 1 WHERE const_alias = 42) ORDER BY k;
 SELECT k, (SELECT const_alias) FROM t_alias_agg GROUP BY k ORDER BY k;
 SELECT k, (SELECT shard_alias) FROM t_alias_agg GROUP BY k; -- { serverError NOT_AN_AGGREGATE }
+-- `TotalsHavingStep` evaluates HAVING itself, and its correlated subqueries are planned before it.
+SELECT k FROM t_alias_agg GROUP BY k WITH TOTALS HAVING EXISTS (SELECT 1 WHERE k_excl != 'b!') ORDER BY k;
+SELECT k, k_excl, concat(k, '!'), sum(v) FROM t_alias_agg GROUP BY k WITH TOTALS HAVING EXISTS (SELECT 1 WHERE k_excl != 'b!') ORDER BY k;
+SELECT sum(v) FROM t_alias_agg GROUP BY k WITH TOTALS HAVING EXISTS (SELECT 1 WHERE k_excl != 'b!');
 
 SELECT '-- remote';
 SELECT k, k_excl, sum(v) FROM remote('127.0.0.{1,2}', currentDatabase(), t_alias_agg) GROUP BY k WITH TOTALS ORDER BY k;
