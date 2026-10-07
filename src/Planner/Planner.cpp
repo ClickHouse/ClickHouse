@@ -3081,7 +3081,8 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                /// Computes ALIAS columns together with HAVING, see `addTotalsHavingStep`.
+                /// Computes ALIAS columns together with HAVING, see `addTotalsHavingStep`. ROLLUP and CUBE, which would
+                /// drop them, cannot follow: the analyzer rejects WITH TOTALS together with them in presence of HAVING.
                 alias_columns_computed = expression_analysis_result.hasHaving();
                 addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
                 having_executed = true;
