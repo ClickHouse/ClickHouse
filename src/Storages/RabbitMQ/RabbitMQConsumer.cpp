@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <limits>
 #include <utility>
 #include <chrono>
 #include <thread>
@@ -30,8 +32,10 @@ RabbitMQConsumer::RabbitMQConsumer(
         , queues(queues_)
         , channel_base(channel_base_)
         , channel_id_base(channel_id_base_)
+        , prefetch_count(static_cast<UInt16>(std::clamp<size_t>(
+              queue_size_ / std::max<size_t>(queues_.size(), 1), 1, std::numeric_limits<UInt16>::max())))
         , log(log_)
-        , received(queue_size_)
+        , received(std::numeric_limits<size_t>::max())
 {
 }
 
@@ -89,23 +93,19 @@ void RabbitMQConsumer::subscribe()
         })
         .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
-            if (message.bodySize())
-            {
-                String message_received = std::string(message.body(), message.body() + message.bodySize());
+            /// Empty messages are queued too: they hold a prefetch slot until acked.
+            MessageData result{
+                .message = std::string(message.body(), message.body() + message.bodySize()),
+                .message_id = message.hasMessageID() ? message.messageID() : "",
+                .timestamp = message.hasTimestamp() ? message.timestamp() : 0,
+                .redelivered = redelivered,
+                .delivery_tag = delivery_tag,
+                .channel_id = channel_id};
 
-                MessageData result{
-                    .message = message_received,
-                    .message_id = message.hasMessageID() ? message.messageID() : "",
-                    .timestamp = message.hasTimestamp() ? message.timestamp() : 0,
-                    .redelivered = redelivered,
-                    .delivery_tag = delivery_tag,
-                    .channel_id = channel_id};
+            if (!received.push(std::move(result)))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
 
-                if (!received.push(std::move(result)))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to received queue");
-
-                cv.notify_one();
-            }
+            cv.notify_one();
         })
         .onError([&](const char * message)
         {
@@ -249,6 +249,7 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
             LOG_TRACE(log, "Channel {} is successfully created", channel_id);
 
             subscriptions_num = 0;
+            consumer_channel->setQos(prefetch_count);
             subscribe();
 
             state = State::OK;
