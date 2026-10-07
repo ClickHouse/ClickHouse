@@ -1104,6 +1104,12 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
+    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
+    /// recursively, so the files that the engine keeps there (besides the parts and the directories it removes by
+    /// name) would survive the drop and get loaded by the next table created on the same disk. Called for each
+    /// writable disk after the parts are removed, so that a failed drop can still be retried or undone with them.
+    virtual void removeOwnFilesInDiskRootOnDrop(const DiskPtr & /*disk*/) {}
+
     /// This flag is for hardening and assertions.
     bool all_data_dropped = false;
 
@@ -2219,12 +2225,17 @@ protected:
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
 
+    /// Protects `refresh_stats_task` itself: `startStatisticsCache` re-assigns the holder (on startup and
+    /// on `ALTER` of `refresh_statistics_interval`), which may race with `stopStatisticsCache` called from
+    /// a concurrent `shutdown`. Declared before the holder, so it outlives it.
+    std::mutex refresh_stats_task_mutex;
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
+    void stopStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);

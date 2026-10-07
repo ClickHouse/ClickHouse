@@ -1,5 +1,5 @@
 a	Array(String)	NO		\N	
-agg	AggregateFunction(uniq, UInt64)	NO		\N	
+agg	AggregateFunction(1, uniq, UInt64)	NO		\N	
 b	Bool	NO		\N	
 d	Date	NO		\N	
 d32	Date32	NO		\N	

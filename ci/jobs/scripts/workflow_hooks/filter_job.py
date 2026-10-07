@@ -352,7 +352,7 @@ def _has_arch_sensitive_changes(changed_files):
     )
 
 
-# `Build (amd_fuzzers)` builds the libFuzzer targets. No job of the PR workflow uses its output
+# `Build (arm_fuzzers)` builds the libFuzzer targets. No job of the PR workflow uses its output
 # (the targets run in `NightlyFuzzers`), so in a PR it only checks that they still compile. A PR
 # below `SMALL_PR_CHANGED_LINES` skips it with the stress tests, unless it touches the fuzz
 # targets or their build: over 2026-08-20 to 2026-10-02 the build failed alone (all other builds
@@ -360,7 +360,7 @@ def _has_arch_sensitive_changes(changed_files):
 # in the linker). Master builds it on every commit. `Build (wasm64)` has no consumer either, but
 # keeps running: it compiles with the Emscripten clang, and in the same period it alone found
 # compile errors in 4 PRs below the threshold.
-SMALL_PR_SKIPPED_BUILDS = (f"{JobNames.BUILD} ({BuildTypes.AMD_FUZZERS})",)
+SMALL_PR_SKIPPED_BUILDS = (f"{JobNames.BUILD} ({BuildTypes.ARM_FUZZERS})",)
 
 assert set(SMALL_PR_SKIPPED_BUILDS) <= {
     j.name for j in JobConfigs.special_build_jobs

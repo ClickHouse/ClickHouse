@@ -53,6 +53,7 @@
         "pt-BR/products/bring-your-own-cloud/reference/faq",
         {
           "group": "Modo de conector",
+          "hidden": true,
           "pages": [
             "pt-BR/products/bring-your-own-cloud/connector/overview",
             "pt-BR/products/bring-your-own-cloud/connector/onboarding",

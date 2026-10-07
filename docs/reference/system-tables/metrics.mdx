@@ -310,6 +310,18 @@ Number of existing cache file segments
 
 Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.
 
+### ColumnsCacheBytes {#columnscachebytes}
+
+Total size of columns cache in bytes. The columns cache stores deserialized columns from MergeTree tables to avoid repeated decompression and deserialization.
+
+### ColumnsCacheEntries {#columnscacheentries}
+
+Total number of entries in the columns cache.
+
+### ColumnsCacheSizeLimit {#columnscachesizelimit}
+
+The size limit of the columns cache in bytes currently in effect. It is lowered below the configured `columns_cache_size` while the rest of the server is short of memory, and raised back towards it once that usage subsides, see `columns_cache_free_memory_ratio`.
+
 ### ColumnsDescriptionsCacheSize {#columnsdescriptionscachesize}
 
 Size of ColumnsDescriptions cache (per-table cache)
