@@ -18,6 +18,7 @@ namespace DB
 {
 
 class UncompressedCache;
+class ColumnsCache;
 class MarkCache;
 
 struct MergeTreeBlockSizePredictor;
@@ -149,6 +150,7 @@ public:
     struct Extras
     {
         UncompressedCache * uncompressed_cache = nullptr;
+        ColumnsCache * columns_cache = nullptr;
         MarkCache * mark_cache = nullptr;
         PatchJoinCache * patch_join_cache = nullptr;
         MergeTreeReaderSettings reader_settings;

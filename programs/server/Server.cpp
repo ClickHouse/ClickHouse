@@ -103,6 +103,8 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/ColumnsCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
@@ -236,6 +238,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+    extern const ServerSettingsString columns_cache_policy;
+    extern const ServerSettingsUInt64 columns_cache_size;
+    extern const ServerSettingsDouble columns_cache_size_ratio;
+    extern const ServerSettingsDouble columns_cache_size_to_ram_ratio;
+    extern const ServerSettingsDouble columns_cache_free_memory_ratio;
+    extern const ServerSettingsUInt64 columns_cache_history_window_ms;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
     extern const ServerSettingsUInt64 cgroups_memory_usage_observer_wait_time;
     extern const ServerSettingsUInt64 compiled_expression_cache_elements_size;
@@ -1612,6 +1620,10 @@ try
           */
         LOG_INFO(log, "Shutting down storages.");
 
+        /// The columns cache goes away with the context; stop resizing it.
+        setMemoryReleasableCache(nullptr);
+        memory_worker.setReleasableCache(nullptr);
+
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
@@ -2295,6 +2307,29 @@ try
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
+    String columns_cache_policy = server_settings[ServerSetting::columns_cache_policy];
+    /// Unless configured explicitly, the columns cache is sized relative to the memory of the server.
+    size_t columns_cache_size = config().getUInt64("columns_cache_size",
+        getDefaultColumnsCacheSize(physical_server_memory, server_settings[ServerSetting::columns_cache_size_to_ram_ratio]));
+    double columns_cache_size_ratio = server_settings[ServerSetting::columns_cache_size_ratio];
+    if (columns_cache_size > max_cache_size)
+    {
+        columns_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(columns_cache_size));
+    }
+    global_context->setColumnsCache(columns_cache_policy, columns_cache_size, columns_cache_size_ratio);
+    /// The columns cache gives its memory back to the queries when the server is short of it, see
+    /// `ColumnsCache::autoResize`: on every tick of the memory worker, and when an allocation is
+    /// about to exceed the memory limit.
+    if (auto columns_cache = global_context->getColumnsCache())
+    {
+        columns_cache->setAutoResizeSettings(
+            server_settings[ServerSetting::columns_cache_free_memory_ratio],
+            server_settings[ServerSetting::columns_cache_history_window_ms]);
+        setMemoryReleasableCache(columns_cache.get());
+        memory_worker.setReleasableCache(columns_cache);
+    }
+
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
     double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
@@ -2932,6 +2967,14 @@ try
                     static_cast<double>(current_physical_server_memory) * new_server_settings[ServerSetting::cache_size_to_ram_max_ratio]);
 
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateColumnsCacheConfiguration(
+                    config(),
+                    getDefaultColumnsCacheSize(current_physical_server_memory, new_server_settings[ServerSetting::columns_cache_size_to_ram_ratio]),
+                    max_cache_size_in_bytes);
+                if (auto columns_cache = global_context->getColumnsCache())
+                    columns_cache->setAutoResizeSettings(
+                        new_server_settings[ServerSetting::columns_cache_free_memory_ratio],
+                        new_server_settings[ServerSetting::columns_cache_history_window_ms]);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -4174,6 +4217,25 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             }
             if (type == "interserver")
                 has_interserver = true;
+
+            if ((type == "tls" || type == "postgres") && !Poco::trim(config.getString(prefix + "cipherSuites", "")).empty())
+            {
+                const auto private_key_file = config.getString(prefix + "privateKeyFile", "");
+                if (private_key_file.empty() || config.getString(prefix + "certificateFile", private_key_file).empty())
+                {
+                    ///  builds a context of its own for an ACME certificate too, but it reads the
+                    /// layer-local TLS options only together with a key pair, so the value would be dropped.
+                    if (type == "tls" && config.has("acme"))
+                        throw Exception(
+                            ErrorCodes::INVALID_CONFIG_PARAMETER,
+                            "Protocol '{}': 'cipherSuites' in '{}' is not applied to a layer served with an ACME certificate; "
+                            "set it in the 'openSSL.server' section or give the layer its own 'privateKeyFile'", protocol, conf_name);
+                    throw Exception(
+                        ErrorCodes::INVALID_CONFIG_PARAMETER,
+                        "Protocol '{}': 'cipherSuites' in '{}' requires a 'privateKeyFile' (and 'certificateFile', if separate) "
+                        "in the same section, without them it cannot be applied", protocol, conf_name);
+                }
+            }
 
             if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
                 throw Exception(

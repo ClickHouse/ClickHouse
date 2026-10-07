@@ -55,7 +55,12 @@ public:
 
     static void visit(ASTPtr & node, Block & block_with_constants)
     {
-        if (!node->as<ASTFunction>())
+        const auto * function = node->as<ASTFunction>();
+        if (!function)
+            return;
+
+        /// A constant row value or `IN` list keeps its structure, its elements are folded one by one.
+        if (function->name == "tuple")
             return;
 
         std::string name = node->getColumnName();
@@ -68,6 +73,11 @@ public:
             if (result.column->isNullAt(0))
             {
                 node = make_intrusive<ASTLiteral>(Field());
+            }
+            else if (holdsEnumValue(assert_cast<const ColumnConst &>(*result.column).getDataColumnPtr(), result.type))
+            {
+                /// Left as is, so the condition is not pushed down: an `Enum` compares by name or by value depending on the other operand.
+                return;
             }
             else if (isNumber(result.type))
             {
@@ -277,6 +287,111 @@ bool fieldContainsArrayOrMap(const Field & field)
         default:
             return false;
     }
+}
+
+bool fieldContainsNull(const Field & field)
+{
+    checkStackSize();
+
+    if (field.isNull())
+        return true;
+    if (field.getType() == Field::Types::Tuple)
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldContainsNull(element))
+                return true;
+    return false;
+}
+
+bool astContainsNullLiteral(const ASTPtr & node)
+{
+    checkStackSize();
+
+    if (const auto * literal = node->as<ASTLiteral>())
+        return fieldContainsNull(literal->value);
+    for (const auto & child : node->children)
+        if (astContainsNullLiteral(child))
+            return true;
+    return false;
+}
+
+/// The value of a literal or of a `tuple(...)` of literals at any depth.
+std::optional<Field> tryGetLiteralTupleValue(const ASTPtr & node)
+{
+    checkStackSize();
+
+    if (const auto * literal = node->as<ASTLiteral>())
+        return literal->value;
+
+    const auto * function = node->as<ASTFunction>();
+    if (!function || function->name != "tuple" || !function->arguments)
+        return {};
+
+    Tuple elements;
+    for (const auto & argument : function->arguments->children)
+    {
+        auto element = tryGetLiteralTupleValue(argument);
+        if (!element)
+            return {};
+        elements.push_back(std::move(*element));
+    }
+    return Field(std::move(elements));
+}
+
+/// ClickHouse leaves the `NULL` members of an `IN` set (and the rows with a `NULL` element of a multi-column set) out of
+/// the set, while the three-valued logic does not. Returns false if the set has no `NULL`-free form to push down.
+bool removeNullMembersFromINSet(ASTFunction & function)
+{
+    auto & arguments = function.arguments->children;
+    auto & rhs = arguments[1];
+
+    std::optional<Field> function_set;
+    const auto * rhs_literal = rhs->as<ASTLiteral>();
+    if (!rhs_literal && !(function_set = tryGetLiteralTupleValue(rhs)))
+        return !astContainsNullLiteral(rhs);
+    const Field & set = rhs_literal ? rhs_literal->value : *function_set;
+
+    if (!fieldContainsNull(set))
+        return true;
+
+    bool multi_column = false;
+    const auto * lhs_function = arguments[0]->as<ASTFunction>();
+    if (lhs_function && (lhs_function->name == "tuple" || lhs_function->name.empty()))
+    {
+        if (lhs_function->name.empty() || !lhs_function->arguments || lhs_function->arguments->children.size() < 2)
+            return false;
+        multi_column = true;
+    }
+
+    if (set.getType() != Field::Types::Tuple)
+        return false;
+
+    const auto & members = set.safeGet<Tuple>();
+    if (multi_column && !members.empty() && members[0].getType() != Field::Types::Tuple)
+        return false;
+
+    Tuple kept;
+    for (const auto & member : members)
+    {
+        bool skip = false;
+        if (!multi_column)
+            skip = member.isNull();
+        else if (member.getType() == Field::Types::Tuple)
+            for (const auto & element : member.safeGet<Tuple>())
+                skip |= element.isNull();
+
+        if (skip)
+            continue;
+        if (fieldContainsNull(member))
+            return false;
+        kept.push_back(member);
+    }
+
+    if (kept.empty())
+        return false;
+
+    Field new_set = kept.size() == 1 ? Field(kept.front()) : Field(std::move(kept));
+    rhs = make_intrusive<ASTLiteral>(std::move(new_set));
+    return true;
 }
 
 /// Returns true if the field can only be written back in ClickHouse-specific syntax that an
@@ -549,6 +664,9 @@ bool isCompatible(
         /// If the right hand side of IN is a table identifier (example: x IN table), then it's not compatible.
         if ((name == "in" || name == "notIn")
             && (function->arguments->children.size() != 2 || function->arguments->children[1]->as<ASTTableIdentifier>()))
+            return false;
+
+        if ((name == "in" || name == "notIn") && !removeNullMembersFromINSet(*function))
             return false;
 
         auto & arguments = function->arguments->children;

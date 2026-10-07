@@ -33,6 +33,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageExecutable.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
@@ -41,6 +42,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -106,6 +108,7 @@
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinsLogical.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -194,6 +197,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int NOT_IMPLEMENTED;
     extern const int ACCESS_DENIED;
 }
 
@@ -256,6 +260,50 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
     for (const auto & child : node->getChildren())
     {
         if (containsNonDeterministicFunction(child))
+            return true;
+    }
+    return false;
+}
+
+/// Whether the `LATERAL` subquery contains a function whose value may differ between two evaluations
+/// within one query (`rand`, `generateUUIDv4`, `rowNumberInAllBlocks`, ...). Decorrelation evaluates the
+/// subquery once per distinct value of the correlated columns, not once per outer row, so two outer rows
+/// with the same correlated values would share one result. Unlike `containsNonDeterministicFunction`, this
+/// uses `isDeterministicInScopeOfQuery`, so `now` and server constants such as `hostName` are accepted.
+/// Table functions that generate random rows (`generateRandom`, `fuzzJSON`, `fuzzQuery`) count as well, and
+/// so do tables with their engines (`GenerateRandom`, `FuzzQuery`, `FuzzJSON`) and script-backed reads
+/// (the `executable` table function, `Executable` and `ExecutablePool` tables).
+bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (auto function = function_node->getFunction();
+            function && (!function->isDeterministicInScopeOfQuery() || function->isStateful()))
+            return true;
+    }
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+    {
+        if (const auto & table_function = table_function_node->getTableFunction();
+            table_function && !table_function->isDeterministicInScopeOfQuery())
+            return true;
+    }
+    else if (const auto * table_node = node->as<TableNode>())
+    {
+        /// Tables backed by the engines of the volatile table functions sample new rows on every read.
+        const auto & storage = table_node->getStorage();
+        if (typeid_cast<const StorageExecutable *>(storage.get()))
+            return true;
+        const auto storage_name = storage->getName();
+        if (storage_name == "GenerateRandom" || storage_name == "FuzzQuery" || storage_name == "FuzzJSON")
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (containsFunctionVolatileInScopeOfQuery(child))
             return true;
     }
     return false;
@@ -1056,6 +1104,96 @@ void parseAdditionalFilterAstIfNeeded(const StoragePtr & storage,
             return;
         }
     }
+}
+
+/// AST-level counterpart of `containsFunctionVolatileInScopeOfQuery`, for filters that are not part of the
+/// query tree. A function that is not found in `FunctionFactory` is treated as volatile (fail-close).
+bool astContainsFunctionVolatileInScopeOfQuery(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (!function->name.empty() && function->name != "lambda")
+        {
+            auto builder = FunctionFactory::instance().tryGet(function->name, context);
+            if (!builder || !builder->isDeterministicInScopeOfQuery() || builder->isStateful())
+                return true;
+        }
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (astContainsFunctionVolatileInScopeOfQuery(child, context))
+            return true;
+    }
+    return false;
+}
+
+/// Whether a table read inside the `LATERAL` subquery gets a hidden filter (a row policy or
+/// `additional_table_filters`) with a function volatile within the query. These filters are attached at
+/// table-read planning time, so `containsFunctionVolatileInScopeOfQuery` on the query tree does not see them,
+/// but they are subject to the same problem: the subquery is evaluated once per distinct value of the
+/// correlated columns, so left rows with the same correlated values would share one evaluation of the filter.
+bool lateralSubqueryHasVolatileHiddenFilter(const QueryTreeNodePtr & node, const ContextPtr & query_context)
+{
+    if (!node)
+        return false;
+
+    /// Mirror the read-planning path, which attaches both kinds of hidden filters to table functions too,
+    /// and matches `additional_table_filters` by the original alias of the table expression.
+    StoragePtr storage;
+    if (const auto * table_node = node->as<TableNode>())
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
+
+    if (storage)
+    {
+        if (auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
+            row_policy_filter && astContainsFunctionVolatileInScopeOfQuery(row_policy_filter->expression, query_context))
+            return true;
+
+        SelectQueryInfo additional_filter_query_info;
+        parseAdditionalFilterAstIfNeeded(storage, node->getOriginalAlias(), additional_filter_query_info, query_context);
+        if (astContainsFunctionVolatileInScopeOfQuery(additional_filter_query_info.additional_filter_ast, query_context))
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (lateralSubqueryHasVolatileHiddenFilter(child, query_context))
+            return true;
+    }
+    return false;
+}
+
+/// Whether the `LATERAL` subquery reads a view that the analyzer did not inline (`analyzer_inline_views`
+/// is disabled or the view cannot be inlined), including a parameterized view. The view body is planned
+/// only when `StorageView::read` runs, so neither `containsFunctionVolatileInScopeOfQuery` nor
+/// `lateralSubqueryHasVolatileHiddenFilter` can see a volatile function inside it, or a volatile row policy
+/// or `additional_table_filters` on the tables it reads. Such a view is rejected conservatively.
+bool lateralSubqueryReadsOpaqueView(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    StoragePtr storage;
+    if (const auto * table_node = node->as<TableNode>())
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = node->as<TableFunctionNode>())
+        storage = table_function_node->getStorage();
+
+    if (storage && typeid_cast<const StorageView *>(storage.get()))
+        return true;
+
+    for (const auto & child : node->getChildren())
+    {
+        if (lateralSubqueryReadsOpaqueView(child))
+            return true;
+    }
+    return false;
 }
 
 /// Apply filters from additional_table_filters setting. Expects
@@ -3664,7 +3802,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// The distributed table on the right side would be wrapped into a subquery,
             /// causing parallel replicas to incorrectly choose the left table for parallel reading.
             /// Each replica would then independently read the full distributed table, resulting in duplicate data.
-            if (join_kind == JoinKind::Right)
+            if (join_kind == JoinKind::Right && !join_node.isLateral())
             {
                 const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpressionNode());
                 is_right_join_with_remote_table = right_expression_data.isRemote();
@@ -3810,6 +3948,15 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     std::vector<JoinTreeQueryPlan> query_plans_stack;
 
+    /// Right-side table expressions of LATERAL JOINs are not planned directly:
+    /// they are rebuilt by decorrelation when the JOIN node itself is processed.
+    std::unordered_set<const IQueryTreeNode *> lateral_right_table_expressions;
+    for (const auto & node : table_expressions_stack)
+    {
+        if (const auto * join = node->as<JoinNode>(); join && join->isLateral())
+            lateral_right_table_expressions.insert(join->getRightTableExpressionNode().get());
+    }
+
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
@@ -3830,23 +3977,159 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
         else if (table_expression_node_type == QueryTreeNodeType::JOIN)
         {
-            if (query_plans_stack.size() < 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least 2 query plans on stack before JOIN processing. Actual {}",
-                    query_plans_stack.size());
+            const auto & join_node = table_expression->as<JoinNode &>();
 
-            auto right_query_plan = std::move(query_plans_stack.back());
-            query_plans_stack.pop_back();
+            if (join_node.isLateral())
+            {
+                /// For LATERAL JOIN, both sides are on the stack (the right side was built
+                /// from the table expressions stack for analyzer compatibility, e.g. SELECT * expansion).
+                /// Pop and discard the right side plan — it will be rebuilt via decorrelation.
+                if (query_plans_stack.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expected at least 2 query plans on stack before LATERAL JOIN processing. Actual {}",
+                        query_plans_stack.size());
 
-            auto left_query_plan = std::move(query_plans_stack.back());
-            query_plans_stack.pop_back();
+                query_plans_stack.pop_back(); /// discard right side plan
 
-            query_plans_stack.push_back(buildQueryPlanForJoinNode(
-                table_expression,
-                std::move(left_query_plan),
-                std::move(right_query_plan),
-                table_expressions_outer_scope_columns[i],
-                planner_context));
+                auto left_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                /// Extract correlated column identifiers from the right-side subquery
+                const auto & right_table_expression = join_node.getRightTableExpressionNode();
+                auto * query_node_right = right_table_expression->as<QueryNode>();
+                auto * union_node_right = right_table_expression->as<UnionNode>();
+
+                if (!query_node_right && !union_node_right)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN right side must be a subquery");
+
+                /// Reject NATURAL JOIN LATERAL — the analyzer synthesizes USING for NATURAL joins,
+                /// but LATERAL JOIN joins on correlated-column equality, not column name matching.
+                if (join_node.isNaturalJoin())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "NATURAL JOIN is not supported with LATERAL");
+
+                /// Reject USING expressions — LATERAL JOIN only supports ON true or no ON clause
+                if (join_node.isUsingJoinExpression())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN does not support USING clause");
+
+                /// Reject non-trivial ON predicates — only ON true (constant true) is allowed.
+                /// The LATERAL planning path joins on correlated-column equality only;
+                /// an arbitrary ON predicate would be silently ignored.
+                if (join_node.isOnJoinExpression())
+                {
+                    const auto * constant_node = join_node.getJoinExpression()->as<ConstantNode>();
+                    bool is_constant_true = false;
+                    if (constant_node)
+                    {
+                        const auto & value = constant_node->getValue();
+                        /// Accept any numeric/boolean constant that is truthy (e.g. ON true, ON 1)
+                        is_constant_true = !value.isNull() && value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() != 0;
+                    }
+                    if (!is_constant_true)
+                    {
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "LATERAL JOIN does not support non-trivial ON conditions. Use ON true and move "
+                            "filter predicates into the lateral subquery's WHERE clause");
+                    }
+                }
+
+                /// Reject unsupported join kinds: only INNER and LEFT are supported
+                auto lateral_kind = join_node.getKind();
+                if (lateral_kind != JoinKind::Inner && lateral_kind != JoinKind::Left)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN only supports INNER and LEFT join kinds. "
+                        "{} JOIN LATERAL is not supported", toString(lateral_kind));
+
+                /// Reject an explicit `GLOBAL` or `LOCAL` locality: the decorrelated plan is built by
+                /// `buildLogicalJoinForLateral`, which does not carry the locality over, so the modifier
+                /// would be silently dropped and the join would run with the unspecified locality.
+                if (join_node.getLocality() != JoinLocality::Unspecified)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "{} is not supported with LATERAL JOIN", toString(join_node.getLocality()));
+
+                /// Reject unsupported strictness: only ALL (default) is supported
+                auto lateral_strictness = join_node.getStrictness();
+                if (lateral_strictness != JoinStrictness::Unspecified && lateral_strictness != JoinStrictness::All)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN does not support {} strictness",
+                        toString(lateral_strictness));
+
+                const QueryTreeNodes & correlated_columns = query_node_right
+                    ? query_node_right->getCorrelatedColumns().getNodes()
+                    : union_node_right->getCorrelatedColumns().getNodes();
+
+                if (correlated_columns.empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must reference at least one column from the left side. "
+                        "Use a regular JOIN for non-correlated subqueries");
+
+                /// The subquery is evaluated once per distinct value of the correlated columns, not once
+                /// per left row, so a function that is volatile within the query would silently share
+                /// one result between left rows with the same correlated values.
+                if (containsFunctionVolatileInScopeOfQuery(right_table_expression))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must not contain functions or table functions that are non-deterministic "
+                        "within a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks, generateRandom), tables with the GenerateRandom, "
+                        "FuzzQuery or FuzzJSON engine, or read the output of a script "
+                        "(the executable table function, Executable and ExecutablePool tables), because it is not "
+                        "evaluated separately for every row of the left side");
+
+                if (lateralSubqueryReadsOpaqueView(right_table_expression))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must not read a view that is not inlined into the query, because functions "
+                        "non-deterministic within a query inside it cannot be detected, and the subquery is not evaluated "
+                        "separately for every row of the left side. Use the view's query directly or enable `analyzer_inline_views`");
+
+                if (lateralSubqueryHasVolatileHiddenFilter(right_table_expression, planner_context->getQueryContext()))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must not read a table with a row policy or `additional_table_filters` "
+                        "that contain functions non-deterministic within a query (e.g. rand), because the subquery is not "
+                        "evaluated separately for every row of the left side");
+
+                ColumnIdentifiers correlated_column_identifiers;
+                correlated_column_identifiers.reserve(correlated_columns.size());
+                for (const auto & column : correlated_columns)
+                {
+                    correlated_column_identifiers.push_back(
+                        calculateActionNodeName(column, *planner_context));
+                }
+
+                /// Build the LATERAL JOIN using correlated subquery decorrelation
+                String action_node_name = fmt::format("__lateral_join_{}", i);
+                CorrelatedSubquery correlated_subquery(
+                    right_table_expression,
+                    CorrelatedSubqueryKind::LATERAL_JOIN,
+                    action_node_name,
+                    std::move(correlated_column_identifiers));
+                correlated_subquery.lateral_join_kind = join_node.getKind();
+
+                buildQueryPlanForCorrelatedSubquery(
+                    planner_context, left_query_plan.query_plan, correlated_subquery, select_query_options);
+
+                query_plans_stack.push_back(std::move(left_query_plan));
+            }
+            else
+            {
+                if (query_plans_stack.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expected at least 2 query plans on stack before JOIN processing. Actual {}",
+                        query_plans_stack.size());
+
+                auto right_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                auto left_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                query_plans_stack.push_back(buildQueryPlanForJoinNode(
+                    table_expression,
+                    std::move(left_query_plan),
+                    std::move(right_query_plan),
+                    table_expressions_outer_scope_columns[i],
+                    planner_context));
+            }
         }
         else if (table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
         {
@@ -3879,19 +4162,29 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 continue;
             }
 
-            /** If table expression is remote and it is not left most table expression, we wrap read columns from such
-              * table expression in subquery.
-              */
-            bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
-            query_plans_stack.push_back(buildQueryPlanForTableExpression(
-                table_expression,
-                nullptr /*parent_join_tree*/,
-                select_query_info,
-                select_query_options,
-                planner_context,
-                is_single_table_expression,
-                is_remote /*wrap_read_columns_in_subquery*/,
-                query_node_typed.getPrewhere()));
+            /// For LATERAL JOINs, skip building a plan for the right side — it will be
+            /// rebuilt via decorrelation. Push an empty plan as a placeholder that will be
+            /// discarded when the LATERAL JOIN node is processed.
+            if (lateral_right_table_expressions.contains(table_expression.get()))
+            {
+                query_plans_stack.emplace_back();
+            }
+            else
+            {
+                /** If table expression is remote and it is not left most table expression, we wrap read columns from such
+                  * table expression in subquery.
+                  */
+                bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
+                query_plans_stack.push_back(buildQueryPlanForTableExpression(
+                    table_expression,
+                    nullptr /*parent_join_tree*/,
+                    select_query_info,
+                    select_query_options,
+                    planner_context,
+                    is_single_table_expression,
+                    is_remote /*wrap_read_columns_in_subquery*/,
+                    query_node_typed.getPrewhere()));
+            }
         }
     }
 

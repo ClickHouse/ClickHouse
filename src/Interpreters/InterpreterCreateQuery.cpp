@@ -633,7 +633,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -644,14 +644,21 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
-    if (LoadingStrictnessLevel::ATTACH <= mode)
-        setVersionToAggregateFunctions(column_type, true);
-    else
+    if (pin_current_state_version)
         /// Spell the state version the column is going to be written with out in the type, so that
         /// it gets into the table metadata and the data stays readable when a newer server changes
         /// the default: an unversioned name in stored metadata denotes the layout from before the
-        /// function became versioned (the ATTACH branch above pins it to 0).
+        /// function became versioned (the branch below pins it to 0).
         pinCurrentStateVersionToAggregateFunctions(column_type);
+    else
+        /// The query replays formatted metadata rather than a user-written definition: an `ATTACH`
+        /// reads the stored `.sql` file, a DDL worker (`ON CLUSTER` / `Replicated` database -
+        /// including the initiator, which re-executes the entry it wrote to the log) replays a
+        /// query normalized on the initiator (so a version the initiator pinned is spelled out in
+        /// the type), and a restore replays the `CREATE` query saved in the backup. In all of these
+        /// an unversioned name denotes the layout from before the function became versioned, and
+        /// the data that goes with it is written in that layout - pin it to version 0.
+        setVersionToAggregateFunctions(column_type, true);
 
     if (col_decl.null_modifier)
     {
@@ -702,6 +709,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
+    /// The current aggregate-function state version is pinned into the type only for a definition
+    /// the user wrote. A normalized query already spells any pinned version out in the type name,
+    /// so in it (and in stored metadata, and in a backup) an unversioned name denotes the layout
+    /// from before the function became versioned and must stay version 0 - see `getColumnType`.
+    bool pin_current_state_version = mode == LoadingStrictnessLevel::CREATE
+        && !already_normalized_on_initiator
+        && !is_restore_from_backup;
+
     for (const auto & ast : columns_ast.children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
@@ -713,7 +728,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, make_columns_nullable, pin_current_state_version));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -1501,6 +1516,19 @@ namespace
 
 }
 
+String InterpreterCreateQuery::getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context)
+{
+    if (!create.as_table.empty() || create.is_materialized_view)
+        return {};
+    if (create.storage && create.storage->engine)
+        return {};
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(local_context->resolveDatabase(create.getDatabase()));
+    if (!database)
+        return {};
+    return database->getDefaultTableEngineName(create.getTable());
+}
+
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
@@ -1567,6 +1595,18 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             return;
         }
+    }
+
+    if (auto engine_name = getDatabaseDefaultTableEngineName(create, getContext()); !engine_name.empty())
+    {
+        if (!create.storage)
+            create.set(create.storage, make_intrusive<ASTStorage>());
+
+        auto engine_ast = make_intrusive<ASTFunction>();
+        engine_ast->name = std::move(engine_name);
+        engine_ast->setNoEmptyArgs(true);
+        create.storage->set(create.storage->engine, engine_ast);
+        return;
     }
 
     /// We'll try to extract a storage definition from clause `AS`:
@@ -3262,7 +3302,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
             /// own check on the temporary name. A `CREATE TABLE ... CLONE AS` that populates the final table
             /// directly requires exactly these grants, so the contract is the same either way.
             getContext()->checkAccess(InterpreterAlterQuery::getRequiredAccessForCommand(
-                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular));
+                *command, create.getDatabase(), published_table_name, InterpreterAlterQuery::RowExistsColumnKind::Regular, getContext()));
             interpreter_alter.setSkipAccessCheck(true);
         }
         return interpreter_alter.execute();
@@ -3446,8 +3486,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
         /// removing it from the catalog and renaming away its metadata, so that the name is free again for a
         /// retry - happens synchronously inside `DatabaseAtomic::dropTable`; only the removal of the (empty)
         /// data is deferred to the background drop task, exactly as for a plain `DROP TABLE`. Waiting for
-        /// that here would buy nothing and can hang the failed `CREATE` indefinitely: `clickhouse-local`
-        /// never finishes `waitTableFinallyDropped`, so a synchronous drop turns a rollback into a hang.
+        /// that here would buy nothing.
         ///
         /// In a `Replicated` database the view would not be ours to drop - the entry's metadata transaction
         /// is already committed and a unilateral drop would diverge this replica - which is why
