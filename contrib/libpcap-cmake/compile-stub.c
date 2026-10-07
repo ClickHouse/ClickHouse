@@ -45,20 +45,20 @@ pcap_compile_nopcap(int snaplen_arg, int linktype_arg,
 }
 
 /*
- * Not part of the compiler: frees a (possibly loaded) filter program. The read
- * path (savefile.c, pcap.c, optimize.c) needs this, and it is independent of
- * the grammar, so we provide the genuine implementation here. Kept identical to
- * upstream gencode.c.
+ * Not part of the compiler: releases the instructions of a filter program. The
+ * read path (savefile.c, pcap.c, optimize.c) calls it, and it does not depend
+ * on the grammar. This is an independent implementation of the documented
+ * contract: the instruction array is released and the program is left empty,
+ * so calling it again on the same program is harmless.
  */
 void
 pcap_freecode(struct bpf_program *program)
 {
+	struct bpf_insn *insns = program->bf_insns;
+
+	program->bf_insns = NULL;
 	program->bf_len = 0;
-	if (program->bf_insns != NULL)
-	{
-		free((char *)program->bf_insns);
-		program->bf_insns = NULL;
-	}
+	free(insns);
 }
 
 /*
