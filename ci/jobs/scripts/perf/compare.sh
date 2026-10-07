@@ -321,6 +321,14 @@ function restart
     local pinning_prefix
     pinning_prefix=$(cpu_pinning_prefix)
 
+    # Same stack placement for the threads of both servers: neither is started if
+    # their static TLS sizes cannot be compared (explicit return: errexit may be
+    # off). Unquoted below, like pinning_prefix. Must match performance_tests.py.
+    local static_tls left_tls_prefix right_tls_prefix
+    static_tls=$(python3 "$script_dir/static_tls.py" left/clickhouse-server right/clickhouse-server) || return 1
+    left_tls_prefix=$(sed -n 1p <<< "$static_tls")
+    right_tls_prefix=$(sed -n 2p <<< "$static_tls")
+
     set -m # Spawn servers in their own process groups
 
     local left_server_opts=(
@@ -343,7 +351,7 @@ function restart
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
+    $left_tls_prefix $pinning_prefix left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -365,7 +373,7 @@ function restart
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
         --jemalloc_profiler_sampling_rate $JEMALLOC_PROFILER_SAMPLING_RATE
     )
-    $pinning_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
+    $right_tls_prefix $pinning_prefix right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid

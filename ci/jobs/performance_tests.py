@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -27,6 +28,7 @@ from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf.static_tls import static_tls_tunables
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -1229,6 +1231,8 @@ class CHServer:
         self.server_path = serever_path
         self.is_left = is_left
         self.name = "Reference" if is_left else "Patched"
+        # Set by equalize_static_tls() before the start.
+        self.glibc_tunables = ""
 
         # On x86_64 pin both servers to one hyperthread per physical core (the
         # same list for both: they are measured alternately, not concurrently).
@@ -1262,10 +1266,13 @@ class CHServer:
         # computed at construction time - the override must match it.
         # Idempotent; compare.sh::restart does the same for its flows.
         write_max_threads_override()
-        print("Command: ", self.start_cmd)
+        start_cmd = self.start_cmd
+        if self.glibc_tunables:
+            start_cmd = f"GLIBC_TUNABLES={shlex.quote(self.glibc_tunables)} {start_cmd}"
+        print("Command: ", start_cmd)
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
-            self.start_cmd,
+            start_cmd,
             stderr=subprocess.STDOUT,
             stdout=self.log_fd,
             shell=True,
@@ -2587,6 +2594,19 @@ def main():
 
         match_reference_debug_info()
 
+        def equalize_static_tls():
+            # Both servers must start their threads at the same stack placement,
+            # so neither is started if their static TLS sizes cannot be compared.
+            # Must match compare.sh::restart.
+            try:
+                leftCH.glibc_tunables, rightCH.glibc_tunables = static_tls_tunables(
+                    f"{perf_left}/clickhouse-server", f"{perf_right}/clickhouse-server"
+                )
+            except (OSError, ValueError) as e:
+                print(f"Cannot compare the static TLS size of the servers: {e}")
+                return False
+            return True
+
         def restart_ch1():
             res_ = leftCH.start()
             return res_
@@ -2596,6 +2616,7 @@ def main():
             return res_
 
         commands = [
+            equalize_static_tls,
             restart_ch1,
             restart_ch2,
         ]
