@@ -353,13 +353,14 @@ void LazyMaterializingTransform::prepareMainChunk()
         /// Deduplicate indexes.
         if (offsets.size() != rows)
         {
+            /// The i-th distinct index starts where the previous one ends, at `offsets[i - 1]`, which is never before `i`.
             size_t prev_offset = 0;
             for (size_t i = 0; i < offsets.size(); ++i)
             {
-                sorted_indexes[prev_offset] = sorted_indexes[i];
+                sorted_indexes[i] = sorted_indexes[prev_offset];
                 prev_offset = offsets[i];
             }
-            sorted_indexes.resize(prev_offset);
+            sorted_indexes.resize(offsets.size());
         }
         prepare_offsets_ms = prepare_offsets_watch.elapsedMilliseconds();
     }
