@@ -61,8 +61,7 @@ void forEachSecretArgumentNode(
             continue;
         }
 
-        const bool in_span = secret_arguments.start <= n && n < secret_arguments.start + secret_arguments.count;
-        if (in_span || secret_arguments.masked_arguments.contains(n) || secret_arguments.replaced_arguments.contains(n))
+        if (secret_arguments.isSecretArgument(n))
             on_secret(n, secretValueSlot(arguments[n]));
     }
 }

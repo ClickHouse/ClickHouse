@@ -51,7 +51,7 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
         if (hasCorrelatedExpressions(child))
             return true;
 
-    for (auto * child_plan : node->step->getChildPlans())
+    for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ false))
         if (child_plan && hasCorrelatedExpressions(child_plan->getRootNode()))
             return true;
 

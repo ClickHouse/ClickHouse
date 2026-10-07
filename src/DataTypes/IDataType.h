@@ -100,6 +100,9 @@ public:
     DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
     DataTypePtr getSubcolumnType(std::string_view subcolumn_name) const;
 
+    /// The same, resolved against the given serialization of this type instead of the default one.
+    DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
+
     ColumnPtr tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
     ColumnPtr getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const;
 
@@ -119,6 +122,8 @@ public:
     };
 
     std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name) const;
+    /// Resolved against the given serialization of this type.
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const;
 
     using SubcolumnCallback = std::function<void(
         const SubstreamPath &,
@@ -129,9 +134,30 @@ public:
         const SubcolumnCallback & callback,
         const SubstreamData & data);
 
-    /// Call callback for each nested type recursively.
-    using ChildCallback = std::function<void(const IDataType &)>;
-    virtual void forEachChild(const ChildCallback &) const {}
+    /// The number of types nested directly in this one. Zero for a type that has none.
+    virtual size_t getNumberOfChildren() const { return 0; }
+
+    /// The `index`-th type nested directly in this one, `index < getNumberOfChildren()`, in a canonical
+    /// order that `cloneWithChildren` accepts back.
+    /// The order is part of the contract - a walker may zip the children of two types of the same kind
+    /// positionally - so an implementation must never derive it from the iteration order of a hash
+    /// table. It returns a reference to a member the type already holds, so enumerating the children
+    /// allocates nothing and touches no reference count: the walks in `DataTypes/TypeTree.h` run once
+    /// per block header and per query-analysis check, and are written on top of these two methods.
+    virtual const DataTypePtr & getChild(size_t index) const;
+
+    /// All the children in one container, for a caller that needs them as a whole. This allocates, so
+    /// a walk over the tree should enumerate them with `getNumberOfChildren` and `getChild` instead.
+    DataTypes getChildren() const;
+
+    /// Rebuild this type with `new_children`, given in the same order and number as `getChild`,
+    /// in place of its current children. Everything about the type that is not a child is kept:
+    /// `Tuple` element names and explicit-name mode, `Variant` discriminator order, `Object` path names
+    /// and limits.
+    /// The result carries no customization even when this type has one, because a custom name is not
+    /// generally still correct for different children; re-deriving it is the caller's decision, see
+    /// `IDataTypeCustomName::rederiveFor` and `CustomizationPolicy` in `DataTypes/TypeTree.h`.
+    DataTypePtr cloneWithChildren(const DataTypes & new_children) const;
 
     Names getSubcolumnNames() const;
 
@@ -166,6 +192,7 @@ public:
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
+    virtual DataTypePtr doCloneWithChildren(const DataTypes & new_children) const;
     virtual SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const = 0;
 
     virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }

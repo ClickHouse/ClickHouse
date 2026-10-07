@@ -53,6 +53,7 @@
         "ja/products/bring-your-own-cloud/reference/faq",
         {
           "group": "コネクターモード",
+          "hidden": true,
           "pages": [
             "ja/products/bring-your-own-cloud/connector/overview",
             "ja/products/bring-your-own-cloud/connector/onboarding",
