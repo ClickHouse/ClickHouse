@@ -3134,13 +3134,18 @@ class TestCase:
                 if max_value != None and random_settings[setting] > max_value:
                     random_settings[setting] = max_value
 
-        # A declared limit is a requirement, not only a clamp on a value that happens to be there.
-        # `--autopr` drops the settings its server profile pins, so a test that declares a bound on
-        # one of them would otherwise get the profile's value and silently stop testing what it
-        # asked for - `04731_pr_nested_cluster_read_in_subquery` declares
-        # `automatic_parallel_replicas_mode=(0, 0)` because it asserts that a plan IS built with
-        # parallel replicas, which any non-zero mode turns into a cost-based decision that says no.
-        # Send the bound explicitly so it overrides the profile.
+        # An exact pin - one where the minimum and the maximum are the same value - is a requirement,
+        # not only a clamp on a value that happens to be there. `--autopr` drops the settings its
+        # server profile pins, so a test that pins one of them would otherwise get the profile's
+        # value and silently stop testing what it asked for -
+        # `04731_pr_nested_cluster_read_in_subquery` pins `automatic_parallel_replicas_mode=(0, 0)`
+        # because it asserts that a plan IS built with parallel replicas, which any non-zero mode
+        # turns into a cost-based decision that says no. Send the pinned value explicitly so it
+        # overrides the profile.
+        #
+        # An open range stays clamp-only. It says how far randomization may go, not what to run with,
+        # so synthesizing its bound would make every `--no-random-settings` lane run at the bound
+        # instead of at the default, testing different semantics than before.
         #
         # Only settings this randomizer owns: the same limits are declared for server and MergeTree
         # settings together, and sending one as the other would be rejected by the client.
@@ -3149,9 +3154,8 @@ class TestCase:
         for setting, (min_value, max_value) in self.random_settings_limits.items():
             if setting in random_settings or setting not in randomizer_settings:
                 continue
-            required = min_value if min_value is not None else max_value
-            if required is not None:
-                random_settings[setting] = required
+            if min_value is not None and min_value == max_value:
+                random_settings[setting] = min_value
 
     def __init__(self, suite: "TestSuite", case: str, args, is_concurrent: bool):
         self.suite = suite
