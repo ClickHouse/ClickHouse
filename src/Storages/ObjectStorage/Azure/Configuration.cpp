@@ -92,13 +92,13 @@ StorageObjectStorageQuerySettings StorageAzureConfiguration::getQuerySettings(co
 ObjectStoragePtr StorageAzureConfiguration::createObjectStorage(ContextPtr context, bool is_readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) /// NOLINT
 {
     assertInitialized();
+    check(context);
 
     auto settings = AzureBlobStorage::getRequestSettings(context->getSettingsRef());
     auto client = AzureBlobStorage::getContainerClient(connection_params, is_readonly);
 
     return std::make_unique<AzureObjectStorage>(
         "AzureBlobStorage",
-        connection_params.auth_method,
         std::move(client),
         std::move(settings),
         connection_params,
@@ -678,9 +678,10 @@ static void addStructureAndFormatToArgsIfNeededAzure(
     const String & structure_,
     const String & format_,
     ContextPtr context,
-    bool with_structure)
+    bool with_structure,
+    bool is_replayed_definition)
 {
-    if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
+    if (auto collection = tryGetNamedCollectionWithOverrides(args, context, true, nullptr, nullptr, nullptr, is_replayed_definition))
     {
         /// In case of named collection, just add key-value pairs "format='...', structure='...'"
         /// at the end of arguments to override existed format and structure with "auto" values.
@@ -852,9 +853,30 @@ void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorage
     connection_params = parsed_arguments.connection_params;
 }
 
+std::string StorageAzureConfiguration::getMetadataLocationURI() const
+{
+    /// `abfss://` is served by the Data Lake Storage endpoint of the same account, both for
+    /// Fabric (`onelake.dfs.fabric.microsoft.com`) and for regular storage accounts
+    /// (`account.dfs.core.windows.net`), so the Blob label of the configured endpoint is rewritten.
+    static constexpr std::string_view blob_label = ".blob.";
+    static constexpr std::string_view dfs_label = ".dfs.";
+
+    std::string host = Poco::URI(connection_params.endpoint.storage_account_url).getHost();
+    if (const auto blob_label_pos = host.find(blob_label); blob_label_pos != std::string::npos)
+        host.replace(blob_label_pos, blob_label.size(), dfs_label);
+
+    return fmt::format("abfss://{}@{}/{}", getNamespace(), host, getRawPath().path);
+}
+
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
+    /// The OneLake signature is a single storage URL: the account and the container are
+    /// derived from it, and the format is dictated by the data lake metadata, so the
+    /// `azureBlobStorage` signatures do not apply and there is nothing to add.
+    if (is_onelake)
+        return;
+
     if (disk)
     {
         if (format == "auto")
@@ -871,7 +893,7 @@ void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
         }
         return;
     }
-    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure);
+    addStructureAndFormatToArgsIfNeededAzure(args, structure_, format_, context, with_structure, is_replayed_definition);
 }
 
 void StorageAzureConfiguration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)

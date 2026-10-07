@@ -235,6 +235,11 @@ parser.add_argument(
     help="Test no more than this number of queries, chosen at random.",
 )
 parser.add_argument(
+    "--soft-max-queries",
+    action="store_true",
+    help='Let tests marked <test run_all_queries="1"> ignore --max-queries.',
+)
+parser.add_argument(
     "--queries-to-run",
     nargs="*",
     type=int,
@@ -260,6 +265,13 @@ parser.add_argument(
     help="For how many seconds to profile a query for which the performance has changed.",
 )
 parser.add_argument(
+    "--profile-all-queries",
+    action="store_true",
+    help="Profile every query of every test, not only the ones whose performance has "
+    "changed. Costs --profile-seconds per query per server. A single test can ask for "
+    'the same with <test profile_all_queries="1">.',
+)
+parser.add_argument(
     "--long", action="store_true", help="Do not skip the tests tagged as long."
 )
 parser.add_argument(
@@ -277,6 +289,14 @@ parser.add_argument(
     "--use-existing-tables",
     action="store_true",
     help="Don't create or drop the tables, use the existing ones instead.",
+)
+parser.add_argument(
+    "--stop-merges",
+    action="store_true",
+    help="Stop background merges on all servers after the setup queries of a "
+    "read-only test and start them again after it. Every test also starts "
+    "merges first, because the servers are shared by the tests of a run. "
+    "Needs the SYSTEM MERGES privilege.",
 )
 parser.add_argument(
     "--jemalloc-purge",
@@ -347,17 +367,29 @@ def substitute_parameters(query_templates, other_templates=[]):
     query_results = []
     other_results = [[]] * (len(other_templates))
     for i, q in enumerate(query_templates):
-        # We need stable order of keys here, so that the order of substitutions
-        # is always the same, and the query indexes are consistent across test
-        # runs.
-        keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
-        values = [available_parameters[k] for k in keys]
-        combos = itertools.product(*values)
-        for c in combos:
-            with_keys = dict(zip(keys, c))
-            query_results.append(q.format(**with_keys))
-            for j, t in enumerate(other_templates):
-                other_results[j].append(t[i].format(**with_keys))
+        try:
+            # We need stable order of keys here, so that the order of substitutions
+            # is always the same, and the query indexes are consistent across test
+            # runs.
+            keys = sorted(set(n for _, n, _, _ in string.Formatter().parse(q) if n))
+            values = [available_parameters[k] for k in keys]
+            combos = itertools.product(*values)
+            for c in combos:
+                with_keys = dict(zip(keys, c))
+                query_results.append(q.format(**with_keys))
+                for j, t in enumerate(other_templates):
+                    other_results[j].append(t[i].format(**with_keys))
+        except (KeyError, ValueError, IndexError) as e:
+            raise Exception(
+                f"Failed to substitute parameters ({type(e).__name__}: {e}) "
+                f"in the template:\n{q}\n"
+                f"Parameters available from <substitutions>: "
+                f"{sorted(available_parameters)}. Every {{name}} in a "
+                "performance test is expanded as a substitution placeholder; "
+                "if the braces are literal SQL syntax (e.g. a parameterized "
+                "view parameter like {ts:DateTime64(3)}), escape them by "
+                "doubling: {{...}}."
+            ) from e
     if len(other_templates):
         return query_results, other_results
     else:
@@ -625,6 +657,34 @@ if "max_ignored_relative_change" in root.attrib:
     ignored_relative_change = float(root.attrib["max_ignored_relative_change"])
     print(f"report-threshold\t{ignored_relative_change}")
 
+# Opt-in per run or per test: profile every query, not only those whose timings changed.
+profile_all_queries = args.profile_all_queries or root.attrib.get(
+    "profile_all_queries", "0"
+) not in ("0", "false", "")
+
+# Opt-in per test: run every query. Honored only with --soft-max-queries.
+run_all_queries = root.attrib.get("run_all_queries", "0") not in ("0", "false", "")
+
+# With --stop-merges, background merges are stopped on every server after the
+# setup queries, so the measured queries of both servers see the part layout the
+# setup left, and no merge competes with them for the CPU. A test whose measured
+# queries write or run shell scripts needs merges, so they keep running for it;
+# `keep_merges_running="1"` on <test> opts out explicitly.
+WRITE_KEYWORDS = {
+    "INSERT", "ALTER", "OPTIMIZE", "SYSTEM", "DELETE", "UPDATE", "TRUNCATE",
+    "CREATE", "DROP", "RENAME", "EXCHANGE", "ATTACH", "DETACH", "KILL",
+    "BACKUP", "RESTORE",
+}
+stop_merges = (
+    args.stop_merges
+    and root.attrib.get("keep_merges_running", "0") in ("0", "false", "")
+    and all(
+        q["kind"] == "sql"
+        and not any(first_keyword(s) in WRITE_KEYWORDS for s in q["statements"])
+        for q in test_queries
+    )
+)
+
 reportStageEnd("before-connect")
 
 # Open connections
@@ -737,6 +797,12 @@ for i, s in enumerate(servers):
 
 reportStageEnd("connect")
 
+# The servers are shared by all tests of the run, so undo a `SYSTEM STOP MERGES`
+# left by a previous test that did not reach its teardown.
+if args.stop_merges:
+    for c in all_connections:
+        c.execute("SYSTEM START MERGES")
+
 if not args.use_existing_tables:
     # Run drop queries, ignoring errors. Do this before all other activity,
     # because clickhouse_driver disconnects on error (this is not configurable),
@@ -770,8 +836,14 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
-# One-line summary per connection whose tolerated setup query failed there (the traceback goes to stderr).
+# One-line summary per connection whose tolerated setup query failed there.
 setup_error_on_connection = [None] * len(all_connections)
+
+# Diagnostics of setup queries tolerated on the reference server, reported
+# from the main thread below. They must not reach this test's stderr: a
+# persisted stderr becomes Run Errors rows, which are documented as requiring
+# action, and these rows would hide the error that actually failed the run.
+tolerated_setup_diagnostics = []
 
 if not args.use_existing_tables:
     # Run create and fill queries. We will run them simultaneously for both servers, to save time.
@@ -804,7 +876,7 @@ if not args.use_existing_tables:
                     f"by do_not_check_in_pr matching --pr-number {args.pr_number}, "
                     f"running the test on the new server only: {tsv_escape(q)[:200]}"
                 )
-                print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
+                tolerated_setup_diagnostics.append(f"{message}\n{traceback.format_exc()}")
                 setup_error_on_connection[index] = message
                 break
 
@@ -816,8 +888,26 @@ if not args.use_existing_tables:
     for t in threads:
         t.start()
 
+    # SafeThread.join() re-raises the worker's exception, so join every thread
+    # before reporting: a diagnostic queued by one thread must not be lost to
+    # another thread's failure, and the list must not be read while a thread
+    # can still append to it.
+    setup_exception = None
     for t in threads:
-        t.join()
+        try:
+            t.join()
+        except BaseException as e:
+            if setup_exception is None:
+                setup_exception = e
+
+    for diagnostic in tolerated_setup_diagnostics:
+        print(f"tolerated-setup-error\t{tsv_escape(diagnostic)}")
+
+    if setup_exception is not None:
+        # Flush before raising so the diagnostics reach the raw .tsv even though
+        # we are about to exit through an unhandled exception.
+        sys.stdout.flush()
+        raise setup_exception
 
     reportStageEnd("create")
 
@@ -840,6 +930,19 @@ def purge_jemalloc_on_all_connections(reason):
 if args.jemalloc_purge != "disabled":
     purge_jemalloc_on_all_connections("after-fill")
 
+if stop_merges:
+    for c in all_connections:
+        c.execute("SYSTEM STOP MERGES")
+    # The stop only cancels the running merges, each of them notices it at its
+    # next check, so wait until none is left before measuring anything.
+    for c in all_connections:
+        deadline = time.monotonic() + 300
+        while c.execute("SELECT count() FROM system.merges")[0][0]:
+            if time.monotonic() >= deadline:
+                raise Exception("Merges are still running 300 s after SYSTEM STOP MERGES")
+            time.sleep(0.1)
+    reportStageEnd("stop-merges")
+
 
 # Let's sync the data to avoid writeback affects performance
 os.system("sync")
@@ -848,7 +951,7 @@ reportStageEnd("sync")
 # By default, test all queries.
 queries_to_run = range(0, len(test_queries))
 
-if args.max_queries:
+if args.max_queries and not (args.soft_max_queries and run_all_queries):
     # If specified, test a limited number of queries chosen at random.
     queries_to_run = random.sample(
         range(0, len(test_queries)), min(len(test_queries), args.max_queries)
@@ -942,7 +1045,13 @@ for query_index in queries_to_run:
     no_errors = []
     for i, e in enumerate(query_error_on_connection):
         if e:
-            print(e, file=sys.stderr)
+            # A tolerated (do_not_check_in_pr) setup failure is inherited by
+            # every query of the test and was already reported once, above. It
+            # must not be repeated on this test's stderr, which the report stage
+            # turns into Run Errors rows. An error the query produced itself is
+            # still reported there.
+            if setup_error_on_connection[i] is None:
+                print(e, file=sys.stderr)
         else:
             no_errors.append(i)
 
@@ -1107,7 +1216,7 @@ for query_index in queries_to_run:
     median = [statistics.median(t) for t in all_server_times]
     print(f"median\t{query_index}\t{median[0]}")
 
-    # Run additional profiling queries to collect profile data, but only if test times appeared to be different.
+    # Run additional profiling queries to collect profile data, by default only if test times appeared to be different.
     # We have to do it after normal runs because otherwise it will affect test statistics too much
     if len(all_server_times) != 2:
         continue
@@ -1124,7 +1233,9 @@ for query_index in queries_to_run:
     # difference we use in report (max(median) / min(median)).
     relative_diff = (median[1] - median[0]) / median[0]
     print(f"diff\t{query_index}\t{median[0]}\t{median[1]}\t{relative_diff}\t{pvalue}")
-    if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
+    if not profile_all_queries and (
+        abs(relative_diff) < ignored_relative_change or pvalue > 0.05
+    ):
         continue
 
     if q_item["kind"] == "shell":
@@ -1191,6 +1302,12 @@ for query_index in queries_to_run:
 print(f"profile-total\t{profile_total_seconds}")
 
 reportStageEnd("run")
+
+# Start merges before the teardown: a drop query such as `ALTER TABLE ... DROP INDEX`
+# creates a mutation and waits for it, and mutations do not run while merges are stopped.
+if stop_merges:
+    for c in all_connections:
+        c.execute("SYSTEM START MERGES")
 
 # Run drop queries
 if not args.keep_created_tables and not args.use_existing_tables:

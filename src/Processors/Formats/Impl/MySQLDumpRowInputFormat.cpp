@@ -581,9 +581,9 @@ ClickHouse supports reading MySQL [dumps](https://dev.mysql.com/doc/refman/8.0/e
 It reads all the data from `INSERT` queries belonging to a single table in the dump. 
 If there is more than one table, by default it reads data from the first one.
 
-:::note
+<Note>
 This format supports schema inference: if the dump contains a `CREATE` query for the specified table, the structure is inferred from it, otherwise the schema is inferred from the data of `INSERT` queries.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

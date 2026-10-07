@@ -24,7 +24,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 
-#if defined(__AVX2__)
+#if defined(__SSSE3__)
 #include <immintrin.h>
 #endif
 
@@ -46,6 +46,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+LoggerPtr getMergeTreeRangeReaderLogger()
+{
+    static LoggerPtr log = getLogger("MergeTreeRangeReader");
+    return log;
 }
 
 static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
@@ -166,8 +172,10 @@ void MergeTreeRangeReader::filterBlock(Block & block, const FilterWithCachedCoun
 
 MergeTreeRangeReader::DelayedStream::DelayedStream(
     size_t from_mark,
+    size_t current_range_last_mark_,
     IMergeTreeReader * merge_tree_reader_)
         : current_mark(from_mark), current_offset(0), num_delayed_rows(0)
+        , current_range_last_mark(current_range_last_mark_)
         , merge_tree_reader(merge_tree_reader_)
         , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
         , continue_reading(false), is_finished(false)
@@ -185,7 +193,7 @@ size_t MergeTreeRangeReader::DelayedStream::readRows(MutableColumns & columns, s
     if (num_rows)
     {
         size_t rows_read = merge_tree_reader->readRows(
-            current_mark, continue_reading, num_rows, columns);
+            current_mark, current_range_last_mark, continue_reading, num_rows, columns);
         continue_reading = true;
 
         /// Zero rows_read maybe either because reading has finished
@@ -263,7 +271,7 @@ size_t MergeTreeRangeReader::DelayedStream::finalize(MutableColumns & columns)
 MergeTreeRangeReader::Stream::Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part_info_for_read->getIndexGranularity()))
-    , stream(from_mark, merge_tree_reader)
+    , stream(from_mark, to_mark, merge_tree_reader)
     , current_mark(from_mark)
     , current_mark_index_granularity(index_granularity->getMarkRows(from_mark))
     , offset_after_current_mark(0)
@@ -1218,11 +1226,14 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    /// When no columns were physically read (e.g., constant PREWHERE expression),
-    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
-    /// from the index granularity. Use it so the reading chain can continue
-    /// to subsequent readers that read actual data columns.
-    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
+
+    /// A step that materializes no on-disk column (constant PREWHERE, or a filter over a column
+    /// absent from the part) reports no rows read, though the granule sizes taken from the index
+    /// are correct and those rows flow on through the chain. Only this front step accumulates it.
+    if (result.numReadRows() == 0)
+        result.addRows(result.total_rows_per_granule);
+
+    result.num_rows = result.numReadRows();
 
     updatePerformanceCounters(result.numReadRows());
 
@@ -1573,68 +1584,59 @@ inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, con
 }
 )
 
-/* The BMI2 intrinsic, _pdep_u64 (unsigned __int64 a, unsigned __int64 mask), works
- * by copying contiguous low-order bits from unsigned 64-bit integer a to destination
- * at the corresponding bit locations specified by mask. To implement the column
- * combination with the intrinsic, 8 contiguous bytes would be loaded from second_begin
- * as a UInt64 and act the first operand, meanwhile the mask should be constructed from
- * first_begin so that the bytes to be replaced (non-zero elements) are mapped to 0xFF
- * at the exact bit locations and 0x00 otherwise.
+/* For each 8-bit mask of non-zero bytes of the first filter, `combine_filters_expand_table` holds a byte shuffle control
+ * that moves the next bytes of the second filter to the set positions. The control byte 0x80 yields zero for both
+ * `pshufb` (high bit set) and `tbl` (index out of range), also after adding up to 8 to it.
  *
- * The construction of mask employs the SSE intrinsic, mm_cmpeq_epi8(__m128i a, __m128i
- * b), which compares packed 8-bit integers in first_begin and packed 0s and outputs
- * 0xFF for equality and 0x00 for inequality. The result's negation then creates the
- * desired bit masks for _pdep_u64.
+ * Do not replace this with `_pdep_u64`: it is microcoded on AMD Zen 1 and Zen 2, where it is slower than the scalar loop.
  *
- * The below example visualizes how this optimization applies to the combination of
- * two quadwords from first_begin and second_begin.
+ * The shuffle has no portable spelling: `__builtin_shufflevector` needs constant indices, and a per-lane
+ * `source[control[i]]` loop becomes `pshufb` only in isolation, never `tbl`. As a fallback, that loop is ~2x slower
+ * than the scalar loop (the table layout also assumes little-endian).
  *
- *                                      Addr  high                           low
- *                                      <----------------------------------------
- * first_begin............................0x00 0x11 0x12 0x00 0x00 0x13 0x14 0x15
- *     |      mm_cmpeq_epi8(src, 0)        |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *  inv_mask..............................0xFF 0x00 0x00 0xFF 0xFF 0x00 0x00 0x00
- *     |      (negation)                   |    |    |    |    |    |    |    |
- *     v                                   v    v    v    v    v    v    v    v
- *    mask-------------------------+......0x00 0xFF 0xFF 0x00 0x00 0xFF 0xFF 0xFF
- *                                 |            |    |              |    |    |
- *                                 v            v    v              v    v    v
- *    dst = pdep_u64(second_begin, mask)..0x00 0x05 0x04 0x00 0x00 0x03 0x02 0x01
- *                        ^                     ^    ^              ^    ^    ^
- *                        |                     |    |              |    |    |
- *                        |                     |    +---------+    |    |    |
- *     +------------------+                     +---------+    |    |    |    |
- *     |                                                  |    |    |    |    |
- * second_begin...........................0x00 0x00 0x00 0x05 0x04 0x03 0x02 0x01
- *
- * References:
- * 1. https://www.felixcloutier.com/x86/pdep
- * 2. https://www.felixcloutier.com/x86/pcmpeqb:pcmpeqw:pcmpeqd
+ * Both filters are `PaddedPODArray`, so loading 16 bytes at `second_begin` is safe near the end.
  */
-#if defined(__BMI2__)
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
+static constexpr auto combine_filters_expand_table = []
+{
+    std::array<UInt64, 256> table{};
+    for (size_t mask = 0; mask < 256; ++mask)
+    {
+        UInt64 source_index = 0;
+        for (size_t i = 0; i < 8; ++i)
+            table[mask] |= ((mask >> i) & 1 ? source_index++ : 0x80) << (8 * i);
+    }
+    return table;
+}();
+
 inline void combineFiltersImpl(UInt8 * first_begin, const UInt8 * first_end, const UInt8 * second_begin)
 {
-    constexpr size_t XMM_VEC_SIZE_IN_BYTES = 16;
-    const __m128i zero16 = _mm_setzero_si128();
+    using UInt8x16 = UInt8 __attribute__((vector_size(16)));
+    using UInt64x2 = UInt64 __attribute__((vector_size(16)));
 
-    while (first_begin + XMM_VEC_SIZE_IN_BYTES <= first_end)
+    while (first_begin + 64 <= first_end)
     {
-        __m128i src = _mm_loadu_si128(reinterpret_cast<__m128i *>(first_begin));
-        __m128i inv_mask = _mm_cmpeq_epi8(src, zero16);
-
-        UInt64 masks[] = {
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 0)),
-            ~static_cast<UInt64>(_mm_extract_epi64(inv_mask, 1)),
-        };
-
-        for (const auto & mask: masks)
+        UInt64 mask = bytes64MaskToBits64Mask(first_begin);
+        for (size_t i = 0; i < 4; ++i, mask >>= 16)
         {
-            UInt64 dst = _pdep_u64(unalignedLoad<UInt64>(second_begin), mask);
-            unalignedStore<UInt64>(first_begin, dst);
+            UInt64 low = mask & 0xFF;
+            UInt64 high = (mask >> 8) & 0xFF;
+            /// The second half takes its bytes after the ones taken by the first half.
+            UInt64x2 control = {
+                combine_filters_expand_table[low],
+                combine_filters_expand_table[high] + static_cast<UInt64>(std::popcount(low)) * 0x0101010101010101ULL};
 
-            first_begin += sizeof(UInt64);
-            second_begin += std::popcount(mask) / 8;
+            UInt8x16 source;
+            memcpy(&source, second_begin, sizeof(source));
+#if defined(__SSSE3__)
+            auto result = _mm_shuffle_epi8(std::bit_cast<__m128i>(source), std::bit_cast<__m128i>(control));
+#else
+            auto result = vqtbl1q_u8(std::bit_cast<uint8x16_t>(source), std::bit_cast<uint8x16_t>(control));
+#endif
+            memcpy(first_begin, &result, sizeof(result));
+
+            first_begin += 16;
+            second_begin += std::popcount(mask & 0xFFFF);
         }
     }
 
@@ -1698,7 +1700,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     else
 #endif
     {
-#if defined(__BMI2__)
+#if defined(__SSSE3__) || (defined(__aarch64__) && defined(__ARM_NEON))
         combineFiltersImpl(first_data.begin(), first_data.end(), second_data);
 #else
         for (auto & val : first_data)

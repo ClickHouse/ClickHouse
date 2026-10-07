@@ -672,15 +672,25 @@ if __name__ == "__main__":
 
             _sw = Utils.Stopwatch()
             try:
+                # Extra older master baselines downloaded by the diff script in
+                # this outcome; a transition must hold in all of them, filtering
+                # out lines that fire only occasionally on master.
+                _extra_baselines = tuple(
+                    sorted(
+                        str(p) for p in Path(TEMP_DIR).glob("base_llvm_coverage_*.info")
+                    )
+                )
                 _newly_covered_stats = generate_report(
                     current_info=str(_current_info_file),
                     baseline_info=str(_baseline_info_file),
                     output_path=_newly_covered_log,
+                    extra_baseline_infos=_extra_baselines,
                 )
                 _newly_info = (
                     f"{_newly_covered_stats['newly_covered']} newly covered lines in "
                     f"{_newly_covered_stats['newly_covered_files']} files, "
-                    f"{_newly_covered_stats['lost_coverage']} lines lost coverage"
+                    f"{_newly_covered_stats['lost_coverage']} lines lost coverage "
+                    f"(agreed by {_newly_covered_stats['baselines_used']} master baselines)"
                 )
                 print(f"Newly covered lines analysis: {_newly_info}")
                 newly_res = Result.create_from(

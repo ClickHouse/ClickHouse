@@ -235,7 +235,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 ## Implementation Details {#implementation-details}
 
-Less RAM is used if a small enough [LIMIT](/reference/statements/select/limit) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if [GROUP BY](/reference/statements/select/group-by) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
+Less RAM is used if a small enough [LIMIT](/reference/statements/select/limit) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. A [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range does not reduce it, because the size of the range is unknown until the data is sorted. For distributed query processing, if [GROUP BY](/reference/statements/select/group-by) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
 If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting `max_bytes_before_external_sort` for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the `/var/lib/clickhouse/tmp/` directory in the config (by default, but you can use the `tmp_path` parameter to change this setting). You can also use spilling to disk only if query exceeds memory limits, i.e. `max_bytes_ratio_before_external_sort=0.6` will enable spilling to disk only once the query hits `60%` memory limit (user/sever).
 
@@ -247,7 +247,7 @@ External sorting works much less effectively than sorting in RAM.
 
  If `ORDER BY` expression has a prefix that coincides with the table sorting key, you can optimize the query by using the [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order) setting.
 
- When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](/reference/statements/select/limit). So queries on big data with small limit are processed faster.
+ When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](/reference/statements/select/limit). The same holds for a [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range without `ALL`, which stops reading once its range has ended. So queries on big data with small limit are processed faster.
 
 Optimization works with both `ASC` and `DESC` and does not work together with the [GROUP BY](/reference/statements/select/group-by) clause. With the [FINAL](/reference/statements/select/from#final-modifier) modifier, the optimization works in the direct order of the sorting key, and for [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables also in the reverse order, controlled by the `optimize_read_in_reverse_order_final` setting.
 
@@ -265,7 +265,7 @@ In `MaterializedView`-engine tables the optimization works with views like `SELE
 
 ## ORDER BY Expr WITH FILL Modifier {#order-by-expr-with-fill-modifier}
 
-This modifier also can be combined with [LIMIT ... WITH TIES modifier](/reference/statements/select/limit#limit--with-ties-modifier).
+This modifier also can be combined with [LIMIT ... WITH TIES modifier](/reference/statements/select/limit#limit--with-ties-modifier) and with the [LIMIT ... AFTER ... UNTIL](/reference/statements/select/limit#limit-after-until) range form.
 
 `WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters.
 All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.

@@ -186,6 +186,9 @@ class _TeeStream:
         return getattr(self._terminal, name)
 
 class Runner:
+    # The reason for a failed pre-run, reported instead of the generic error when set.
+    _pre_run_error = None
+
     @staticmethod
     def generate_local_run_environment(workflow, job, pr=None, sha=None, branch=None):
         print("WARNING: Generate dummy env for local test")
@@ -239,8 +242,7 @@ class Runner:
             INSTANCE_TYPE="",
             INSTANCE_LIFE_CYCLE="",
             LOCAL_RUN=True,
-            # A local run has no workflow run behind it, so it starts here.
-            WORKFLOW_START_TIME=Utils.timestamp_to_gh_str(Utils.timestamp()),
+            WORKFLOW_START_TIME=Utils.timestamp(),
             PR_BODY="",
             PR_TITLE="",
             USER_LOGIN="",
@@ -254,12 +256,21 @@ class Runner:
         ).dump()
 
         if pr and pr > 0:
-            changed_files = GH.get_changed_files()
-            if changed_files is not None:
+            changed_file_statuses = GH.get_changed_file_statuses()
+            if changed_file_statuses is not None:
+                info = Info()
+                changed_files = GH.changed_files_from_statuses(changed_file_statuses)
+                added_files = GH.added_files_from_statuses(changed_file_statuses)
+                print(
+                    f"Storing {len(changed_file_statuses)} changed file statuses in JOB_KV_DATA"
+                )
+                info.store_kv_data("changed_file_statuses", changed_file_statuses)
                 print(f"Storing {len(changed_files)} changed files in JOB_KV_DATA")
-                Info().store_kv_data("changed_files", changed_files)
+                info.store_kv_data("changed_files", changed_files)
+                print(f"Storing {len(added_files)} added files in JOB_KV_DATA")
+                info.store_kv_data("added_files", added_files)
             else:
-                print("WARNING: Failed to fetch changed files for PR")
+                print("WARNING: Failed to fetch changed file metadata for PR")
 
         Result.create_from(name=job.name, status=Result.Status.PENDING).dump()
 
@@ -362,6 +373,7 @@ class Runner:
                 )
             else:
                 prefixes = [env.get_s3_prefix()] * len(required_artifacts)
+            missing_artifacts = []
             for artifact, prefix in zip(required_artifacts, prefixes):
                 if artifact.compress_zst:
                     assert not isinstance(
@@ -384,15 +396,34 @@ class Runner:
                         assert "*" in include_pattern
                     else:
                         s3_path = f"{Settings.S3_ARTIFACT_BUCKET}/{prefix}/{Utils.normalize_string(artifact._provided_by)}/{Path(artifact_path).name}"
-                    S3.copy_file_from_s3(
+                    downloaded = S3.copy_file_from_s3(
                         s3_path=s3_path,
                         local_path=Settings.INPUT_DIR,
                         recursive=recursive,
                         include_pattern=include_pattern,
                     )
+                    if not downloaded:
+                        # A missing artifact report is tolerated: its consumers check
+                        # whether the file exists. A missing build artifact means the
+                        # providing job did not finish (e.g. its runner was lost), and
+                        # running the job without it only fails later with a misleading
+                        # error, so fail the pre-run right away.
+                        if artifact.type == Artifact.Type.S3 and not artifact.optional:
+                            missing_artifacts.append(
+                                f"[{artifact.name}] from [{artifact._provided_by}] at [{s3_path}]"
+                            )
+                        continue
 
                     if artifact.compress_zst:
                         Utils.decompress_file(Path(Settings.INPUT_DIR) / artifact_path)
+
+            if missing_artifacts:
+                self._pre_run_error = (
+                    "Required artifacts are not found in S3, the job that provides them"
+                    " probably did not finish: " + ", ".join(missing_artifacts)
+                )
+                print(f"ERROR: {self._pre_run_error}")
+                return 1
 
         if not local_job_run and job.needs_submodules and Settings.ENABLE_SUBMODULE_CACHE:
             self._restore_submodule_cache()
@@ -486,7 +517,16 @@ class Runner:
                     result.set_label(label, hint=hint)
         if exit_code != 0:
             if not result.is_completed():
-                if not process.timeout_exceeded and enable_exit_code_result:
+                # Read the tail up front so a docker daemon death (exit 125 +
+                # torn-down-connection signatures) is classified as infra BEFORE
+                # the simple exit-code path. Otherwise enable_exit_code_result
+                # workflows record it as a plain FAIL and never auto-retry.
+                latest_log = process.get_latest_log(max_lines=20)
+                if (
+                    not process.timeout_exceeded
+                    and enable_exit_code_result
+                    and not cls._is_docker_daemon_death(exit_code, latest_log)
+                ):
                     # Simple mode: the workflow opted out of an explicit Result,
                     # so a clean non-zero exit is a job-level FAIL, not an
                     # infra-level ERROR/KILLED. Timeouts still classify as ERROR.
@@ -510,7 +550,6 @@ class Runner:
                         print(f"ERROR: {info}")
                         result.add_error(info)
                     result.set_status(Result.Status.ERROR)
-                    latest_log = process.get_latest_log(max_lines=20)
                     result.set_info(latest_log)
                     # Must run before the dump below, or the label never reaches the
                     # result JSON that retry_infra_failures.yml reads.
@@ -799,7 +838,7 @@ class Runner:
                 status=Result.Status.ERROR,
                 start_time=Utils.timestamp(),
                 duration=0.0,
-            ).add_error(ResultInfo.PRE_JOB_FAILED).dump()
+            ).add_error(self._pre_run_error or ResultInfo.PRE_JOB_FAILED).dump()
         elif not result_exist:
             if enable_exit_code_result:
                 status = Result.Status.OK if run_exit_code == 0 else Result.Status.FAIL
@@ -1015,6 +1054,11 @@ class Runner:
                     file=f,
                 )
 
+        # Before the CIDB insert: it serializes result.info eagerly, so a
+        # traceback lifted afterwards lands in the report but not in CIDB.
+        if env.TRACEBACKS:
+            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
+
         ci_db = None
         if workflow.enable_cidb and not Settings.SECRET_CI_DB_CONNECTION:
             # Clear, non-fatal message instead of a cryptic
@@ -1066,14 +1110,12 @@ class Runner:
                 print(f"ERROR: {error}")
                 env.add_workflow_error(error)
 
-        if env.TRACEBACKS:
-            result.set_info("===\n" + "---\n".join(env.TRACEBACKS))
         result.dump()
 
         # always in the end
         if workflow.enable_cache:
             print("Run CI cache hook")
-            if result.is_ok():
+            if result.is_ok() and not result.do_not_cache():
                 CacheRunnerHooks.post_run(workflow, job)
 
         if workflow.enable_open_issues_check:
@@ -1132,6 +1174,17 @@ class Runner:
                 # has up-to-date storage/compute/pipeline-utilization data. All
                 # three are written as a single workflow-level summary row into
                 # the `attributes` JSON column.
+                # Highest per-job re-run count in the pipeline (0 = no job was
+                # re-run). Marks a usage row whose storage/compute totals reflect
+                # re-run attempts rather than a single clean pass — the
+                # orchestrator stamps each job's re-run count into its result ext.
+                max_rerun_count = max(
+                    (
+                        int((r.ext or {}).get("rerun_count") or 0)
+                        for r in workflow_result.results
+                    ),
+                    default=0,
+                )
                 ci_db.insert_workflow_usage(
                     pipeline_utilization=PipelineUtilization.from_dict(
                         workflow_result.ext.get("pipeline_utilization", {})
@@ -1146,6 +1199,7 @@ class Runner:
                     start_time=workflow_result.start_time,
                     duration_s=workflow_result.update_duration().duration,
                     workflow_status=workflow_result.status,
+                    rerun_count=max_rerun_count,
                 )
 
         if workflow.enable_gh_summary_comment and (

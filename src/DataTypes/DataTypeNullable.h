@@ -46,16 +46,22 @@ public:
     MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
     bool hasDynamicSubcolumnsData() const override { return nested_data_type->hasDynamicSubcolumns(); }
     bool hasDynamicStructure() const override { return nested_data_type->hasDynamicStructure(); }
-    std::unique_ptr<SubstreamData>
-    getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
+    std::unique_ptr<SubcolumnInfo>
+    getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
     bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }
     bool canBeInsideSparseColumns() const override { return nested_data_type->canBeInsideSparseColumns(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return 1; }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index == 0);
+        return nested_data_type;
+    }
 
 private:
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     DataTypePtr nested_data_type;

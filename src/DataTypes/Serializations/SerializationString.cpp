@@ -19,10 +19,6 @@
 #include <base/unit.h>
 #include <Common/assert_cast.h>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
-#endif
-
 
 namespace DB
 {
@@ -68,6 +64,11 @@ UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version
 SerializationPtr SerializationString::create(MergeTreeStringSerializationVersion version_)
 {
     return ISerialization::pooled(getHash(version_), [=] { return new SerializationString(version_); });
+}
+
+bool SerializationString::isStringSizesSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && (path.back().type == Substream::StringSizes || path.back().type == Substream::InlinedStringSizes);
 }
 
 void SerializationString::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

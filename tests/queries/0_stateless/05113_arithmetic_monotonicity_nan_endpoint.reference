@@ -1,0 +1,17 @@
+a stored -inf endpoint mapped to NaN by the transform
+3
+3
+3
+3
+3
+each pruning layer on its own
+3
+3
+a constant that maps a stored 0 to NaN
+3
+3
+pruning still applies where no endpoint becomes NaN
+19
+59
+19
+1

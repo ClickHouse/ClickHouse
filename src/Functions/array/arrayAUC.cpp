@@ -524,13 +524,13 @@ For more details, please see [here](https://developers.google.com/machine-learni
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-:::note
+<Note>
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-:::
+</Note>
 )"}
     };
     FunctionDocumentation::ReturnedValue returned_value_roc = {"Returns area under the receiver operating characteristic (ROC) curve. Returns `NaN` if a score is `NaN`, and, when `scale` is true, also when the ROC AUC is undefined because there are no positive or no negative labels.", {"Float64"}};
@@ -560,13 +560,13 @@ For more details, please see [here](https://developers.google.com/machine-learni
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-:::note
+<Note>
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-:::
+</Note>
 )"}
     };
     FunctionDocumentation::ReturnedValue returned_value_pr = {"Returns area under the precision-recall (PR) curve, or `NaN` if any score is `NaN`.", {"Float64"}};

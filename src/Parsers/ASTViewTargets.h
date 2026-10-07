@@ -4,6 +4,8 @@
 #include <Interpreters/StorageID.h>
 #include <Core/UUID.h>
 
+#include <optional>
+
 namespace Poco::JSON { class Object; }
 
 namespace DB
@@ -39,8 +41,9 @@ struct ViewTarget
         /// The "tags" table for a TimeSeries table, contains identifiers for each combination of a metric name and tags (labels).
         Tags,
 
-        /// The "metrics" table for a TimeSeries table, contains general information (metadata) about metrics.
-        Metrics,
+        /// The "metric families" table for a TimeSeries table, contains general information (metadata) about metric families.
+        /// The keyword `METRICS` is an old name of this target, it's kept for compatibility.
+        MetricFamilies,
     };
 
     explicit ViewTarget(Kind kind_);
@@ -131,9 +134,14 @@ public:
     void writeJSON(WriteBuffer & out) const override;
     void readJSON(const Poco::JSON::Object & json) override;
 
+    /// Writes the JSON representation. `time_series_version` may be set for a TimeSeries table (see TimeSeriesVersion.h),
+    /// it affects the names of the target kinds.
+    void writeJSON(WriteBuffer & out, std::optional<UInt64> time_series_version) const;
+
     /// Formats information only about a specific target table.
-    void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const;
-    static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame);
+    /// `time_series_version` may be set for a TimeSeries table (see TimeSeriesVersion.h), it affects the keywords.
+    void formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version = {}) const;
+    static void formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version = {});
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;

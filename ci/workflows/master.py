@@ -2,11 +2,12 @@ from praktika import Workflow
 
 from ci.defs.defs import (
     BASE_BRANCH,
-    BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
     GH_AUTH_TRUSTED_LAMBDA_NAME,
+    LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
+    with_long_retention_tags,
 )
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
@@ -21,12 +22,9 @@ MASTER_FUNCTIONAL_TESTS_JOBS = [
     job for job in JobConfigs.functional_tests_jobs if "arm_binary" not in job.name
 ] + JobConfigs.functional_tests_master_release_jobs
 
-# Add long retention tags to subset of artifacts
-clickhouse_binaries_with_tags = []
-for artifact in ArtifactConfigs.clickhouse_binaries:
-    if artifact.name in BINARIES_WITH_LONG_RETENTION:
-        artifact = artifact.add_tags({"retention": "long"})
-    clickhouse_binaries_with_tags.append(artifact)
+clickhouse_binaries_with_tags = with_long_retention_tags(
+    ArtifactConfigs.clickhouse_binaries
+)
 
 workflow = Workflow.Config(
     name="MasterCI",
@@ -41,7 +39,7 @@ workflow = Workflow.Config(
         *JobConfigs.sccache_warmup_build_jobs,
         *[
             job.set_run_after(
-                REGULAR_BUILD_NAMES + [JobConfigs.tidy_build_arm_jobs[0].name]
+                REGULAR_BUILD_NAMES + [j.name for j in JobConfigs.tidy_build_arm_jobs]
             )
             for job in JobConfigs.special_build_jobs
         ],
@@ -64,7 +62,6 @@ workflow = Workflow.Config(
         *JobConfigs.ast_fuzzer_jobs,
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_with_master_head_jobs,
-        *JobConfigs.performance_comparison_with_release_base_jobs,
         *JobConfigs.clickbench_jobs,
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
@@ -90,7 +87,7 @@ workflow = Workflow.Config(
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
     set_latest_for_docker_merged_manifest=True,
-    secrets=SECRETS,
+    secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
@@ -101,6 +98,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/merge_sync_pr.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/loom_code_refresh.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

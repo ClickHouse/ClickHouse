@@ -1,6 +1,6 @@
 -- { echoOn }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET enable_analyzer = 1;
 SELECT CAST(NULL AS Nullable(Tuple(UInt32, UInt32))) IN (materialize(NULL), materialize(NULL)), CAST(NULL AS Nullable(Tuple(UInt32, UInt32))) NOT IN (materialize(NULL), materialize(NULL)) SETTINGS transform_null_in = 1;
 1	0

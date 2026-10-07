@@ -9,6 +9,7 @@
 
 #include <Core/Field.h>
 #include <Core/Types.h>
+#include <DataTypes/IDataType.h>
 
 namespace DB::Iceberg
 {
@@ -24,6 +25,19 @@ Int64 fieldToPeriodMs(const Field & value, std::string_view context, std::string
 
 /// Convert a Field containing an Array to vector<Int64>, validating each element.
 std::vector<Int64> fieldToInt64Array(const Field & value, std::string_view context, std::string_view arg_name);
+
+/// Iceberg stores lower_bounds and upper_bounds serialized with some custom deserialization as bytes array
+/// https://iceberg.apache.org/spec/#appendix-d-single-value-serialization
+/// `compensate_rounding` widens a decimal bound, because Iceberg writes it rounded to the integral
+/// part; pass false to read the value exactly as the manifest declares it.
+std::optional<Field> deserializeFieldFromBinaryRepr(
+    const String & str, const DataTypePtr & expected_type, bool lower_bound, bool compensate_rounding = true);
+
+/// The decimal part of the serialization above: the unscaled value in two's-complement big-endian
+/// form, using the minimum number of bytes. Returns nothing for a non-decimal type and for bytes
+/// that do not fit the type.
+std::optional<Field> deserializeDecimalFromBinaryRepr(
+    const String & str, const IDataType & decimal_type, bool lower_bound = false, bool compensate_rounding = false);
 
 }
 

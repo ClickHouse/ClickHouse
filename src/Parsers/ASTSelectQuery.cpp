@@ -73,6 +73,7 @@ void ASTSelectQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliase
     hash_state.update(group_by_all);
     hash_state.update(order_by_all);
     hash_state.update(limit_by_all);
+    hash_state.update(limit_after_all);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -275,17 +276,40 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
-    if (limitLength())
+    if (limitLength() || limitAfter() || limitUntil())
     {
-        ostr << s.nl_or_ws << indent_str << "LIMIT ";
+        ostr << s.nl_or_ws << indent_str << "LIMIT";
         if (limitOffset())
         {
+            ostr << " ";
             limitOffset()->format(ostr, s, state, frame);
             ostr << ", ";
         }
-        limitLength()->format(ostr, s, state, frame);
+        else if (limitLength())
+        {
+            ostr << " ";
+        }
+        if (limitLength())
+            limitLength()->format(ostr, s, state, frame);
         if (limit_with_ties)
             ostr << s.nl_or_ws << indent_str << " WITH TIES";
+        if (limitAfter())
+        {
+            ostr << s.nl_or_ws << indent_str << " AFTER ";
+            limitAfter()->format(ostr, s, state, frame);
+            if (limit_after_all)
+                ostr << " ALL";
+            if (limitUntil())
+            {
+                ostr << s.nl_or_ws << indent_str << " UNTIL ";
+                limitUntil()->format(ostr, s, state, frame);
+            }
+        }
+        else if (limitUntil())
+        {
+            ostr << s.nl_or_ws << indent_str << " UNTIL ";
+            limitUntil()->format(ostr, s, state, frame);
+        }
     }
     else if (limitOffset())
     {
@@ -595,6 +619,8 @@ void ASTSelectQuery::normalizeChildrenOrder()
         Expression::LIMIT_BY,
         Expression::LIMIT_OFFSET,
         Expression::LIMIT_LENGTH,
+        Expression::LIMIT_AFTER,
+        Expression::LIMIT_UNTIL,
         Expression::SETTINGS,
         Expression::INTERPOLATE,
     };
@@ -678,6 +704,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("limit_with_ties", true);
     if (limit_by_all)
         w.writeBool("limit_by_all", true);
+    if (limit_after_all)
+        w.writeBool("limit_after_all", true);
 
     w.writeChild("with", with());
     w.writeChild("select", select());
@@ -696,6 +724,8 @@ void ASTSelectQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("limit_by", limitBy());
     w.writeChild("limit_offset", limitOffset());
     w.writeChild("limit_length", limitLength());
+    w.writeChild("limit_after", limitAfter());
+    w.writeChild("limit_until", limitUntil());
     w.writeChild("settings", settings());
     w.writeChild("interpolate", interpolate());
 }
@@ -717,10 +747,11 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     order_by_all = r.getBool("order_by_all");
     limit_with_ties = r.getBool("limit_with_ties");
     limit_by_all = r.getBool("limit_by_all");
+    limit_after_all = r.getBool("limit_after_all");
 
     auto setExpr = [&](const char * key, ASTSelectQuery::Expression expr)
     {
-        auto child = r.readChild(key);
+        auto child = r.readExpressionChild(key);
         if (child)
             this->setExpression(expr, std::move(child));
     };
@@ -730,7 +761,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// node from malformed `clickhouse_json` would reach an internal cast. Restore them with a typed read.
     auto setExprList = [&](const char * key, ASTSelectQuery::Expression expr)
     {
-        if (auto child = r.readChildOfType<ASTExpressionList>(key))
+        if (auto child = r.readScreenedChildOfType<ASTExpressionList>(key))
             this->setExpression(expr, std::move(child));
     };
 
@@ -741,7 +772,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// (`QueryTreeBuilder`, `getFirstTableExpression`, INSERT ... SELECT handling, etc.) downcast
     /// `tables()` unconditionally, so a different node type from malformed `clickhouse_json` must be
     /// rejected here with `BAD_ARGUMENTS` instead of reaching an internal downcast path later.
-    if (auto tables_child = r.readChildOfType<ASTTablesInSelectQuery>("tables"))
+    if (auto tables_child = r.readScreenedChildOfType<ASTTablesInSelectQuery>("tables"))
         this->setExpression(Expression::TABLES, std::move(tables_child));
 
     /// Both column `aliases` (`SELECT ... (a, b)`) and `cte_aliases` (`WITH (a, b) AS (...)`) are
@@ -773,6 +804,8 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     setExprList("limit_by", Expression::LIMIT_BY);
     setExpr("limit_offset", Expression::LIMIT_OFFSET);
     setExpr("limit_length", Expression::LIMIT_LENGTH);
+    setExpr("limit_after", Expression::LIMIT_AFTER);
+    setExpr("limit_until", Expression::LIMIT_UNTIL);
     /// `settings` (`SELECT ... SETTINGS`) is parser-produced as an `ASTSetQuery`; `QueryTreeBuilder`
     /// does `select_settings->as<ASTSetQuery &>()`, so reject any other node type here.
     if (auto settings_child = r.readChildOfType<ASTSetQuery>("settings"))
@@ -799,7 +832,7 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// `orderBy()` branch. Restore it with a typed read, validate every child, and reject it unless the
     /// ORDER BY list carries a `WITH FILL` element (the parser cannot produce it otherwise, and
     /// `formatImpl` would silently drop it). An empty list is the valid `INTERPOLATE`-all form.
-    if (auto interpolate_child = r.readChildOfType<ASTExpressionList>("interpolate"))
+    if (auto interpolate_child = r.readScreenedChildOfType<ASTExpressionList>("interpolate"))
     {
         for (const auto & elem : interpolate_child->children)
             if (!elem || !elem->as<ASTInterpolateElement>())
@@ -877,6 +910,15 @@ void ASTSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// Reject the parser-impossible shape at the JSON boundary.
     if (limit_with_ties && !orderBy())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_with_ties requires an ORDER BY clause during AST JSON deserialization");
+
+    /// `ALL` is a modifier of `LIMIT AFTER`; `formatImpl` only emits it after the `AFTER` expression.
+    if (limit_after_all && !limitAfter())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_after_all requires a LIMIT AFTER expression during AST JSON deserialization");
+
+    /// `ParserSelectQuery` never produces an offset without a length next to a range, and `formatImpl`
+    /// has no syntax for that shape.
+    if (limitOffset() && !limitLength() && (limitAfter() || limitUntil()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "limit_offset requires a LIMIT length clause together with LIMIT AFTER/UNTIL during AST JSON deserialization");
 }
 
 }
