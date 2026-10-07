@@ -66,10 +66,8 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     CREATE TABLE brk (k Int32, w Int64) ENGINE = IcebergLocal('${LAKE}/brk');
     INSERT INTO brk SELECT number, number FROM numbers(10);
 "
-MANIFESTS=$(find "${LAKE}/brk/metadata" -name '*.avro' ! -name 'snap-*')
 echo "--- fixture brk: manifest files deleted"
-echo "${MANIFESTS}" | grep -c '\.avro$'
-rm -f ${MANIFESTS}
+find "${LAKE}/brk/metadata" -name '*.avro' ! -name 'snap-*' -print -delete | grep -c '\.avro$'
 
 QUERY="SELECT count() FROM mt AS m JOIN brk AS s ON m.k = s.k"
 echo '--- T2: missing manifest file, EXPLAIN of the join'
