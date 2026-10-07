@@ -90,6 +90,9 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool validate_new_create_query) override;
 
+    bool canAlterTableDefinition() const override { return !isReadOnly(); }
+    void alterTableDefinition(ContextPtr context, const StorageID & table_id, const CreateQueryModifier & modifier) override;
+
     Strings getNamesOfPermanentlyDetachedTables() const override
     {
         std::lock_guard lock(mutex);
@@ -130,6 +133,21 @@ protected:
         const String & table_metadata_path,
         const String & statement,
         ContextPtr query_context);
+
+    /// Commits the change of `alterTableDefinition`, which is not a part of a DDL query of the table itself.
+    virtual void commitAlterTableDefinition(
+        const StorageID & table_id,
+        const String & table_metadata_tmp_path,
+        const String & table_metadata_path,
+        const String & statement,
+        ContextPtr query_context);
+
+    void alterTableImpl(
+        ContextPtr local_context,
+        const StorageID & table_id,
+        const CreateQueryModifier & modifier,
+        bool validate_new_create_query,
+        bool rewrite_definition);
 
     Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
 

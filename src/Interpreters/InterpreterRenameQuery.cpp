@@ -1,17 +1,26 @@
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Databases/DatabaseOnDisk.h>
+#include <Databases/DDLRenamingVisitor.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
+
+#include <algorithm>
+#include <map>
+#include <set>
 
 
 namespace DB
@@ -20,12 +29,214 @@ namespace Setting
 {
     extern const SettingsBool check_table_dependencies;
     extern const SettingsBool check_referential_table_dependencies;
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_query_size;
 }
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_IS_TOO_LARGE;
+}
+
+namespace
+{
+
+/// Rewrites the definitions of the views and TimeSeries tables of all databases that refer to tables of a renamed
+/// database by its name. Every refusal happens in `prepare`, before anything is changed.
+class ViewDefinitionsRenaming
+{
+public:
+    ViewDefinitionsRenaming(String old_database_name_, String new_database_name_, ContextPtr context_)
+        : old_database_name(std::move(old_database_name_)), new_database_name(std::move(new_database_name_)), context(std::move(context_))
+    {
+    }
+
+    /// Takes the locks and stages the new definitions. Called before the database is renamed.
+    void prepare();
+
+    /// Publishes the new definitions in memory, then persists them. Called after the database is renamed.
+    void commit();
+
+private:
+    struct View
+    {
+        DatabasePtr owner;
+        /// The name before the rename.
+        QualifiedTableName name;
+        StoragePtr table;
+        ASTPtr definition;
+    };
+
+    /// Returns the renamed copy of `definition`, or null if the rename does not change it.
+    ASTPtr rename(const ASTPtr & definition, const QualifiedTableName & name, std::set<QualifiedTableName> * tables_to_check) const;
+
+    std::vector<View> scan(std::set<QualifiedTableName> & tables_to_check) const;
+    void checkDetachedTables() const;
+    void stage();
+
+    const String old_database_name;
+    const String new_database_name;
+    const ContextPtr context;
+
+    std::vector<std::unique_lock<SharedMutex>> database_guards;
+    std::map<QualifiedTableName, DDLGuardPtr> table_guards;
+    std::vector<IStorage::AlterLockHolder> alter_locks;
+    std::vector<View> views;
+};
+
+ASTPtr ViewDefinitionsRenaming::rename(
+    const ASTPtr & definition, const QualifiedTableName & name, std::set<QualifiedTableName> * tables_to_check) const
+{
+    auto renamed = definition->clone();
+    DatabaseRenamingInViewDefinition renaming(renamed, old_database_name, new_database_name, name);
+    renaming.apply(context->getGlobalContext());
+    if (getObjectDefinitionFromCreateQuery(renamed) == getObjectDefinitionFromCreateQuery(definition))
+        return nullptr;
+    if (tables_to_check)
+    {
+        auto tables = renaming.getTablesToCheck();
+        tables_to_check->insert(tables.begin(), tables.end());
+    }
+    return renamed;
+}
+
+std::vector<ViewDefinitionsRenaming::View> ViewDefinitionsRenaming::scan(std::set<QualifiedTableName> & tables_to_check) const
+{
+    std::vector<View> res;
+    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
+    {
+        for (auto it = database->getTablesIterator(context); it->isValid(); it->next())
+        {
+            const auto & table = it->table();
+            if (!table || !(table->isView() || table->getName() == "TimeSeries"))
+                continue;
+
+            QualifiedTableName name{database_name, it->name()};
+            auto definition = database->tryGetCreateTableQuery(name.table, context);
+            if (definition && rename(definition, name, &tables_to_check))
+                res.push_back({database, name, table, nullptr});
+        }
+    }
+    return res;
+}
+
+void ViewDefinitionsRenaming::checkDetachedTables() const
+{
+    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
+    {
+        if (!dynamic_cast<const DatabaseOnDisk *>(database.get()))
+            continue;
+
+        for (auto it = database->getDetachedTablesIterator(context, {}, false); it->isValid(); it->next())
+        {
+            auto definition = DatabaseOnDisk::parseQueryFromMetadata(
+                getLogger("InterpreterRenameQuery"), context, database->getDisk(), it->metadataPath(), /*throw_on_error=*/ false);
+            if (!definition)
+                continue;
+
+            const auto & create = definition->as<ASTCreateQuery &>();
+            if ((create.isView() || create.is_time_series_table) && rename(definition, {database_name, it->table()}, nullptr))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot rename database {} to {}, because the detached table {}.{} refers to it. Attach or drop it before renaming",
+                    backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), backQuoteIfNeed(database_name), backQuoteIfNeed(it->table()));
+        }
+    }
+}
+
+void ViewDefinitionsRenaming::prepare()
+{
+    auto & catalog = DatabaseCatalog::instance();
+    const auto & settings = context->getSettingsRef();
+
+    /// Guards are keyed by name, so both names are guarded until the end.
+    for (const auto & database_name : std::set<String>{old_database_name, new_database_name})
+        database_guards.push_back(catalog.getExclusiveDDLGuardForDatabase(database_name));
+
+    checkDetachedTables();
+
+    /// The tables of other databases are guarded one by one, so scan again until no new table is found.
+    while (true)
+    {
+        std::set<QualifiedTableName> tables_to_check;
+        views = scan(tables_to_check);
+
+        bool guarded_new_table = false;
+        auto guard = [&](const StoragePtr & table)
+        {
+            auto name = table->getStorageID().getQualifiedName();
+            if (name.database == old_database_name || table_guards.contains(name))
+                return;
+            table_guards.emplace(name, catalog.getDDLGuardForStorage(table, settings[Setting::lock_acquire_timeout]));
+            guarded_new_table = true;
+        };
+
+        for (const auto & view : views)
+            guard(view.table);
+        for (const auto & name : tables_to_check)
+            if (auto table = catalog.tryGetTable(StorageID{name.database, name.table}, context))
+                guard(table);
+
+        if (!guarded_new_table)
+            break;
+    }
+
+    std::sort(views.begin(), views.end(), [](const View & lhs, const View & rhs) { return lhs.name < rhs.name; });
+    for (const auto & view : views)
+        alter_locks.push_back(view.table->lockForAlter(settings[Setting::lock_acquire_timeout]));
+
+    stage();
+}
+
+void ViewDefinitionsRenaming::stage()
+{
+    std::vector<View> staged;
+    for (auto & view : views)
+    {
+        /// Read again: the scan may have read it before it was guarded.
+        auto definition = view.owner->getCreateTableQuery(view.name.table, context);
+        view.definition = rename(definition, view.name, nullptr);
+        if (!view.definition)
+            continue;
+
+        auto metadata = view.table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
+        DatabaseRenamingInViewDefinition(definition->clone(), old_database_name, new_database_name, view.name)
+            .check(metadata->getColumns(), context);
+
+        size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
+        size_t statement_size = getObjectDefinitionFromCreateQuery(view.definition).size();
+        if (max_query_size && statement_size > max_query_size)
+            throw Exception(ErrorCodes::QUERY_IS_TOO_LARGE,
+                "Cannot rename database {} to {}, because the definition of {} would exceed max_query_size ({} > {})",
+                backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), view.name.getFullName(), statement_size, max_query_size);
+
+        if (!view.owner->canAlterTableDefinition())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot rename database {} to {}, because {} refers to it and database engine {} cannot rewrite its definition. "
+                "Drop it or rewrite it before renaming",
+                backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), view.name.getFullName(), view.owner->getEngineName());
+
+        staged.push_back(view);
+    }
+    views = std::move(staged);
+}
+
+void ViewDefinitionsRenaming::commit()
+{
+    for (const auto & view : views)
+        view.table->updateReferencedTables(view.definition->as<ASTCreateQuery &>(), context);
+
+    for (const auto & view : views)
+    {
+        auto modifier = [&](const ASTPtr & create_query)
+        {
+            DatabaseRenamingInViewDefinition(create_query, old_database_name, new_database_name, view.name).apply(context->getGlobalContext());
+        };
+        view.owner->alterTableDefinition(context, view.table->getStorageID(), modifier);
+    }
+}
+
 }
 
 InterpreterRenameQuery::InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_)
@@ -250,7 +461,11 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
+        ViewDefinitionsRenaming view_definitions(old_name, new_name, getContext());
+        view_definitions.prepare();
+        catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(getContext(), new_name);
+        view_definitions.commit();
     }
 
     return {};

@@ -2778,6 +2778,26 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
     assertDigest(query_context);
 }
 
+void DatabaseReplicated::commitAlterTableDefinition(const StorageID & table_id,
+                                                    const String & table_metadata_tmp_path, const String & table_metadata_path,
+                                                    const String & statement, ContextPtr query_context)
+{
+    /// Not a part of a DDL log entry, so there is no metadata transaction to add the requests to.
+    std::lock_guard lock{metadata_mutex};
+    UInt64 new_digest = tables_metadata_digest;
+    new_digest -= getMetadataHash(table_id.table_name);
+    new_digest += DB::getMetadataHash(table_id.table_name, statement);
+
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name), statement, -1));
+    ops.emplace_back(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+    getZooKeeper()->multi(ops);
+
+    DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
+    tables_metadata_digest = new_digest;
+    assertDigest(query_context);
+}
+
 
 bool DatabaseReplicated::canExecuteReplicatedMetadataAlter() const
 {

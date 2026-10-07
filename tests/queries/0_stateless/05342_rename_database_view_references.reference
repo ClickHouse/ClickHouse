@@ -1,0 +1,56 @@
+-- after the rename
+_dst.inline_mv: 5
+_dst.tgt: 5
+_dst.pv: 5
+_dst.not_in_v: 5
+_dst.tgt2: 5
+_dst.qualified_v: 5
+_dst.join_v: 3
+_ext.tgt: 5
+_dst.tgt3: 2
+_ext.v: 5
+_mem.v: 5
+_dst.samples: 1
+_dst.samples2: 1
+occurrences of the old name: 0
+_dst.rt: 5
+_ext.rt: 2
+unchanged: _dst.unrelated_v
+unchanged: _ext.unrelated_v
+-- after a reload
+_dst.inline_mv: 10
+_dst.tgt: 10
+_dst.pv: 10
+_dst.not_in_v: 10
+_dst.tgt2: 10
+_dst.qualified_v: 10
+_dst.join_v: 6
+_ext.tgt: 10
+_dst.tgt3: 4
+_ext.v: 10
+_mem.v: 10
+_dst.samples: 2
+_dst.samples2: 2
+['_dst.inline_mv','_dst.qualified_mv','_dst.to_mv','_ext.mv']
+-- the qualified names that the rename cannot rewrite unambiguously
+alias_v: AMBIGUOUS_IDENTIFIER
+nothing changed
+dotted_alias_v: AMBIGUOUS_IDENTIFIER
+nothing changed
+header_v: AMBIGUOUS_IDENTIFIER
+nothing changed
+subquery_v: AMBIGUOUS_IDENTIFIER
+nothing changed
+1
+a database name contains a dot
+1
+-- a table and a column named like the database, with no qualified name to rewrite
+7
+-- column expressions and the dictionary() table function
+one
+one
+occurrences of the old name: 0
+-- a detached view
+NOT_IMPLEMENTED
+1
+1

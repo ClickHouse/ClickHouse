@@ -233,6 +233,11 @@ void IDatabase::alterTable(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
 }
 
+void IDatabase::alterTableDefinition(ContextPtr /*context*/, const StorageID & /*table_id*/, const CreateQueryModifier & /*modifier*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTableDefinition() is not supported", getEngineName());
+}
+
 void IDatabase::renameDatabase(ContextPtr, const String & /*new_name*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", getEngineName());
