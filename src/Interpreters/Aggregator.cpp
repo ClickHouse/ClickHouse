@@ -4641,7 +4641,8 @@ template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataNullKey(
     Table & table_dst,
     Table & table_src,
-    Arena * arena) const
+    Arena * arena,
+    DeferredMerges * deferred) const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
     {
@@ -4654,15 +4655,8 @@ void NO_INLINE Aggregator::mergeDataNullKey(
             }
             else
             {
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->merge(
-                            table_dst.getNullKeyData() + offsets_of_aggregate_states[i],
-                            table_src.getNullKeyData() + offsets_of_aggregate_states[i],
-                            arena);
-
-                for (size_t i = 0; i < params.aggregates_size; ++i)
-                    aggregate_functions[i]->destroy(
-                            table_src.getNullKeyData() + offsets_of_aggregate_states[i]);
+                /// The NULL group can be the dominant one, so its large states are deferred like those of the cells.
+                mergeAndDestroyRowOrDefer(table_dst.getNullKeyData(), table_src.getNullKeyData(), arena, deferred);
             }
 
             table_src.hasNullKeyData() = false;
@@ -4746,7 +4740,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
     }
 
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena, deferred);
 
     PaddedPODArray<AggregateDataPtr> dst_places;
     PaddedPODArray<AggregateDataPtr> src_places;
@@ -4987,7 +4981,7 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 
     /// Note : will create data for NULL key if not exist
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena, deferred);
 
     table_src.mergeToViaFind(table_dst, [&](AggregateDataPtr dst, AggregateDataPtr & src, bool found)
     {
@@ -5037,7 +5031,7 @@ void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
 
     /// Note : will create data for NULL key if not exist
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
-        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena, deferred);
 
     table_src.mergeToViaFind(table_dst,
         [&](AggregateDataPtr dst, AggregateDataPtr & src, bool found)

@@ -1092,11 +1092,13 @@ private:
     void destroyDeferredMergeSources(DeferredMerges & deferred) const noexcept;
 
     /// Merge NULL key data from hash table `src` into `dst`.
+    /// `deferred` is the same as for `mergeDataImpl`.
     template <typename Method, typename Table>
     void mergeDataNullKey(
             Table & table_dst,
             Table & table_src,
-            Arena * arena) const;
+            Arena * arena,
+            DeferredMerges * deferred = nullptr) const;
 
     /// Merge data from hash table `src` into `dst`.
     /// If `deferred` is not null, pairs of states too large to merge serially are recorded there

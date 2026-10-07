@@ -144,3 +144,21 @@ SELECT k, uniqExact(n) AS u
 FROM (SELECT if(number % 8 = 0 AND number % 8192 != 0, number % 64 + 1, 0) AS k, number AS n FROM numbers_mt(320000))
 GROUP BY k HAVING k = 0 ORDER BY k
 SETTINGS max_threads = 4, max_block_size = 8192, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_parallel_single_level_merge = 0, max_rows_to_group_by = 4, group_by_overflow_mode = 'any';
+
+-- A nullable grouping key keeps its NULL group in a dedicated slot outside the hash table cells.
+-- Its large states are deferred like the others: with a dominant NULL group, on the serial single-level merge,
+-- the two-level merge and with a `LowCardinality` key.
+SELECT k, uniqExact(n) AS u
+FROM (SELECT if(number < 200000, NULL, number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_parallel_single_level_merge = 0;
+
+SELECT k, uniqExact(n) AS u
+FROM (SELECT if(number < 200000, NULL, number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8;
+
+SELECT k, uniqExact(n) AS u
+FROM (SELECT toLowCardinality(if(number < 200000, NULL, toString(number % 4))) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_parallel_single_level_merge = 0;
