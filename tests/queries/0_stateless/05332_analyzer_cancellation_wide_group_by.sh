@@ -21,3 +21,5 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
     SELECT type, ProfileEvents['QueryPlanBuildMicroseconds'] = 0 FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id = '$QUERY_ID' AND type != 'QueryStart'"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE wide"
