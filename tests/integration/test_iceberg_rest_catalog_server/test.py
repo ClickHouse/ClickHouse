@@ -222,6 +222,30 @@ def assert_main_at(snapshot_id):
     return [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": snapshot_id}]
 
 
+def stage_create_table(ns, name, schema=DEFAULT_SCHEMA, expected_code=200, **extra):
+    return create_table(ns, name, schema=schema, expected_code=expected_code, **{"stage-create": True, **extra})
+
+
+# The updates a client sends to finish a staged create, built from the staged metadata like Java's `createChanges`.
+# `-1` means "the one added just before".
+def create_updates_from_metadata(metadata):
+    return [
+        {"action": "assign-uuid", "uuid": metadata["table-uuid"]},
+        {"action": "upgrade-format-version", "format-version": metadata["format-version"]},
+        {"action": "add-schema", "schema": metadata["schemas"][0]},
+        {"action": "set-current-schema", "schema-id": -1},
+        {"action": "add-spec", "spec": metadata["partition-specs"][0]},
+        {"action": "set-default-spec", "spec-id": -1},
+        {"action": "add-sort-order", "sort-order": metadata["sort-orders"][0]},
+        {"action": "set-default-sort-order", "sort-order-id": -1},
+        {"action": "set-location", "location": metadata["location"]},
+        {"action": "set-properties", "updates": metadata["properties"]},
+    ]
+
+
+ASSERT_CREATE = [{"type": "assert-create"}]
+
+
 def load_pyiceberg_catalog():
     return load_catalog(
         "ch",
@@ -874,7 +898,6 @@ def test_malformed_create_table(started_cluster):
         {"name": "t", "schema": unknown_type},
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
-        {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": bad_spec},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": {"fields": [{"source-id": 1}]}},
         {"name": "t", "schema": DEFAULT_SCHEMA, "write-order": {"fields": [{"source-id": 1}]}},
@@ -1208,5 +1231,144 @@ def test_clickhouse_insert(started_cluster):
         # pyiceberg reads what ClickHouse wrote.
         pyiceberg_table = load_pyiceberg_catalog().load_table(f"{ns}.events")
         assert pyiceberg_table.scan().to_arrow().num_rows == 12
+    finally:
+        node.query("DROP DATABASE IF EXISTS rest_tables_db")
+
+
+def test_stage_create(started_cluster):
+    ns = f"staged_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    spec = {"fields": [{"source-id": 1, "name": "id_bucket", "transform": "bucket[16]"}]}
+
+    # Staging stores nothing. The client gets the metadata to write data files against.
+    staged = stage_create_table(ns, "events", **{"partition-spec": spec, "properties": {"owner": "alice"}}).json()
+    assert "metadata-location" not in staged
+    metadata = staged["metadata"]
+    table_uuid = metadata["table-uuid"]
+    location = metadata["location"]
+    assert location.startswith(f"{BASE_LOCATION}/{ns}/events-{table_uuid}")
+    assert metadata["partition-specs"][0]["fields"][0]["field-id"] == 1000
+    assert not table_exists(ns, "events")
+    assert list_tables(ns) == []
+    assert list_metadata_files(location) == []
+    assert get_keeper().get_children(f"{KEEPER_ROOT}/namespaces/{ns}/tables") == []
+
+    # The first commit describes the whole table and creates it.
+    snapshot = fake_snapshot(1001, 1)
+    committed = commit_table(
+        ns, "events", ASSERT_CREATE, create_updates_from_metadata(metadata) + append_updates(snapshot)
+    ).json()
+    assert committed["metadata-location"] == f"{location}/metadata/v1-{table_uuid}.metadata.json"
+    created = committed["metadata"]
+    assert created["table-uuid"] == table_uuid
+    assert created["location"] == location
+    assert created["schemas"] == metadata["schemas"]
+    assert created["current-schema-id"] == 0
+    assert created["partition-specs"] == metadata["partition-specs"]
+    assert created["default-spec-id"] == 0
+    assert created["last-partition-id"] == 1000
+    assert created["sort-orders"] == metadata["sort-orders"]
+    assert created["default-sort-order-id"] == 0
+    assert created["properties"] == {"owner": "alice"}
+    assert created["current-snapshot-id"] == 1001
+    assert created["refs"]["main"]["snapshot-id"] == 1001
+    assert created["metadata-log"] == []
+
+    assert table_exists(ns, "events")
+    loaded = catalog_request("GET", tables_url(ns, "events")).json()
+    assert loaded["metadata-location"] == committed["metadata-location"]
+    assert loaded["metadata"] == created
+    assert len(list_metadata_files(location)) == 1
+
+    # Later commits continue from v1.
+    second = fake_snapshot(1002, 2)
+    committed = commit_table(ns, "events", assert_main_at(1001), append_updates(second)).json()
+    assert f"{location}/metadata/v2-" in committed["metadata-location"]
+    assert committed["metadata"]["current-snapshot-id"] == 1002
+    assert len(list_metadata_files(location)) == 2
+
+
+def test_stage_create_conflicts(started_cluster):
+    ns = f"staged_conflicts_{uuid.uuid4().hex[:8]}"
+    create_namespace([ns])
+    create_table(ns, "existing")
+    staged = stage_create_table(ns, "t").json()["metadata"]
+    create_updates = create_updates_from_metadata(staged)
+
+    # Staging a name that is taken fails early.
+    response = stage_create_table(ns, "existing", expected_code=409)
+    assert_error_shape(response, "TableAlreadyExistsException")
+
+    # Someone created the table between staging and the commit.
+    response = commit_table(ns, "existing", ASSERT_CREATE, create_updates, expected_code=409)
+    assert_error_shape(response, "CommitFailedException")
+    assert list_metadata_files(staged["location"]) == []
+
+    # Without `assert-create` a missing table is simply missing.
+    response = commit_table(ns, "t", [], create_updates, expected_code=404)
+    assert_error_shape(response, "NoSuchTableException")
+
+    # Other requirements have nothing to compare against.
+    response = commit_table(
+        ns, "t", ASSERT_CREATE + [{"type": "assert-table-uuid", "uuid": staged["table-uuid"]}], create_updates, expected_code=409
+    )
+    assert_error_shape(response, "CommitFailedException")
+
+    bad_updates = [
+        create_updates[2:],  # no assign-uuid
+        create_updates + [{"action": "set-location", "location": "s3://other-bucket/t"}],
+        create_updates + [{"action": "assign-uuid", "uuid": "not-a-uuid"}],
+    ]
+    for updates in bad_updates:
+        response = commit_table(ns, "t", ASSERT_CREATE, updates, expected_code=400)
+        assert_error_shape(response, "BadRequestException")
+
+    unsupported_updates = [
+        create_updates + [{"action": "upgrade-format-version", "format-version": 3}],
+        create_updates + [{"action": "set-default-spec", "spec-id": 0}],
+        create_updates + create_updates[2:3],  # a second add-schema
+    ]
+    for updates in unsupported_updates:
+        response = commit_table(ns, "t", ASSERT_CREATE, updates, expected_code=400)
+        assert_error_shape(response, "UnsupportedOperationException")
+
+    # The structural updates still apply only to a create.
+    response = commit_table(ns, "existing", [], create_updates[2:4], expected_code=400)
+    assert_error_shape(response, "UnsupportedOperationException")
+
+    # A create commit is DDL.
+    response = commit_table(ns, "t", ASSERT_CREATE, create_updates, auth=("no_ddl_user", ""), expected_code=403)
+    assert_error_shape(response, "ForbiddenException")
+
+    assert not table_exists(ns, "t")
+    assert list_metadata_files(staged["location"]) == []
+
+
+def test_pyiceberg_create_table_transaction(started_cluster):
+    ns = f"pyiceberg_ctas_{uuid.uuid4().hex[:8]}"
+    catalog = load_pyiceberg_catalog()
+    catalog.create_namespace(ns)
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=LongType(), required=True),
+        NestedField(field_id=2, name="name", field_type=StringType(), required=False),
+    )
+    rows = pa.Table.from_pylist(
+        [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}],
+        schema=pa.schema([pa.field("id", pa.int64(), nullable=False), pa.field("name", pa.string())]),
+    )
+
+    # CTAS: the table appears together with its first data.
+    transaction = catalog.create_table_transaction(f"{ns}.events", schema=schema)
+    assert not table_exists(ns, "events")
+    transaction.append(rows)
+    transaction.commit_transaction()
+
+    table = catalog.load_table(f"{ns}.events")
+    assert len(table.metadata.snapshots) == 1
+    assert table.scan().to_arrow().num_rows == 2
+
+    node.query(create_database_query("ZGVmYXVsdDo="))  # default:
+    try:
+        assert node.query(f"SELECT id, name FROM rest_tables_db.`{ns}.events` ORDER BY id") == "1\ta\n2\tb\n"
     finally:
         node.query("DROP DATABASE IF EXISTS rest_tables_db")
