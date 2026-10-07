@@ -1,12 +1,12 @@
 {
   "icon": "/images/icons/icon-reference.svg",
-  "item": "参考",
+  "item": "参考文档",
   "pages": [
     "zh/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQL 参考",
+      "group": "SQL 参考文档",
       "pages": [
         "zh/reference/syntax",
         {
@@ -108,6 +108,7 @@
                 },
                 "zh/reference/statements/create/masking-policy",
                 "zh/reference/statements/create/function",
+                "zh/reference/statements/create/handler",
                 "zh/reference/statements/create/named-collection",
                 "zh/reference/statements/create/quota",
                 "zh/reference/statements/create/role",
@@ -115,7 +116,7 @@
                 "zh/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "表",
+                  "group": "TABLE",
                   "pages": [
                     "zh/reference/statements/create/table",
                     "zh/reference/statements/create/table/codec",
@@ -123,6 +124,7 @@
                     "zh/reference/statements/create/table/replace-table"
                   ]
                 },
+                "zh/reference/statements/create/token",
                 "zh/reference/statements/create/user",
                 "zh/reference/statements/create/view"
               ]
@@ -138,6 +140,7 @@
             "zh/reference/statements/explain",
             "zh/reference/statements/grant",
             "zh/reference/statements/hypothetical-index",
+            "zh/reference/statements/hypothetical-projection",
             "zh/reference/statements/in",
             "zh/reference/statements/insert-into",
             "zh/reference/statements/kill",
@@ -265,7 +268,7 @@
         },
         {
           "expanded": false,
-          "group": "Nullable 和可选类型",
+          "group": "可空类型和可选类型",
           "pages": [
             "zh/reference/data-types/nullable",
             "zh/reference/data-types/lowcardinality"
@@ -356,7 +359,7 @@
             },
             {
               "expanded": false,
-              "group": "日志家族",
+              "group": "Log 家族",
               "pages": [
                 "zh/reference/engines/table-engines/log-family/index",
                 "zh/reference/engines/table-engines/log-family/log",
@@ -385,7 +388,7 @@
             },
             {
               "expanded": false,
-              "group": "特殊",
+              "group": "特殊引擎",
               "pages": [
                 "zh/reference/engines/table-engines/special/index",
                 "zh/reference/engines/table-engines/special/alias",
@@ -418,13 +421,20 @@
             "zh/reference/engines/database-engines/atomic",
             "zh/reference/engines/database-engines/backup",
             "zh/reference/engines/database-engines/datalake",
+            "zh/reference/engines/database-engines/dictionary",
+            "zh/reference/engines/database-engines/filesystem",
+            "zh/reference/engines/database-engines/hdfs",
             "zh/reference/engines/database-engines/materialized-postgresql",
+            "zh/reference/engines/database-engines/memory",
             "zh/reference/engines/database-engines/mysql",
+            "zh/reference/engines/database-engines/ordinary",
             "zh/reference/engines/database-engines/postgresql",
             "zh/reference/engines/database-engines/remote",
             "zh/reference/engines/database-engines/replicated",
+            "zh/reference/engines/database-engines/s3",
             "zh/reference/engines/database-engines/shared",
-            "zh/reference/engines/database-engines/sqlite"
+            "zh/reference/engines/database-engines/sqlite",
+            "zh/reference/engines/database-engines/url"
           ]
         }
       ]
@@ -437,7 +447,7 @@
         "zh/reference/functions/index",
         {
           "expanded": false,
-          "group": "普通函数",
+          "group": "常规函数",
           "pages": [
             "zh/reference/functions/regular-functions/overview",
             "zh/reference/functions/regular-functions/ai-functions",
@@ -459,7 +469,7 @@
             "zh/reference/functions/regular-functions/functions-for-nulls",
             {
               "expanded": false,
-              "group": "Geo",
+              "group": "地理空间",
               "pages": [
                 "zh/reference/functions/regular-functions/geo/index",
                 "zh/reference/functions/regular-functions/geo/coordinates",
@@ -511,7 +521,7 @@
             "zh/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "参考",
+              "group": "参考文档",
               "pages": [
                 "zh/reference/functions/aggregate-functions/reference-index",
                 "zh/reference/functions/aggregate-functions/aggThrow",
@@ -556,6 +566,7 @@
                 "zh/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "zh/reference/functions/aggregate-functions/first_value",
                 "zh/reference/functions/aggregate-functions/flame_graph",
+                "zh/reference/functions/aggregate-functions/gini",
                 "zh/reference/functions/aggregate-functions/groupArray",
                 "zh/reference/functions/aggregate-functions/groupArrayArray",
                 "zh/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -731,7 +742,7 @@
             "zh/reference/functions/table-functions/s3Cluster",
             "zh/reference/functions/table-functions/sqlite",
             "zh/reference/functions/table-functions/timeSeriesData",
-            "zh/reference/functions/table-functions/timeSeriesMetrics",
+            "zh/reference/functions/table-functions/timeSeriesMetricFamilies",
             "zh/reference/functions/table-functions/timeSeriesSamples",
             "zh/reference/functions/table-functions/timeSeriesSelector",
             "zh/reference/functions/table-functions/timeSeriesTags",
@@ -963,15 +974,6 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "接口",
-      "pages": [
-        "zh/reference/interfaces/specs/NativeProtocol",
-        "zh/reference/interfaces/specs/NativeFormat"
-      ]
-    },
-    {
-      "expandable": true,
-      "expanded": false,
       "group": "设置",
       "pages": [
         "zh/reference/settings/index",
@@ -1064,14 +1066,17 @@
         "zh/reference/system-tables/histogram_metric_log",
         "zh/reference/system-tables/histogram_metrics",
         "zh/reference/system-tables/hypothetical_indexes",
+        "zh/reference/system-tables/hypothetical_projections",
         "zh/reference/system-tables/iceberg_files",
         "zh/reference/system-tables/iceberg_history",
         "zh/reference/system-tables/iceberg_metadata_log",
         "zh/reference/system-tables/information_schema",
         "zh/reference/system-tables/instrumentation",
+        "zh/reference/system-tables/jemalloc_arena_bins",
         "zh/reference/system-tables/jemalloc_bins",
-        "zh/reference/system-tables/jemalloc_stats",
         "zh/reference/system-tables/jemalloc_profile_text",
+        "zh/reference/system-tables/jemalloc_sampled_allocations",
+        "zh/reference/system-tables/jemalloc_stats",
         "zh/reference/system-tables/kafka_consumers",
         "zh/reference/system-tables/keeper_changelogs",
         "zh/reference/system-tables/keeper_cluster",
@@ -1133,11 +1138,13 @@
         "zh/reference/system-tables/schema_inference_cache",
         "zh/reference/system-tables/server_settings",
         "zh/reference/system-tables/session_log",
+        "zh/reference/system-tables/session_query_ids",
         "zh/reference/system-tables/settings",
         "zh/reference/system-tables/settings_changes",
         "zh/reference/system-tables/settings_profile_elements",
         "zh/reference/system-tables/settings_profiles",
         "zh/reference/system-tables/stack_trace",
+        "zh/reference/system-tables/statements",
         "zh/reference/system-tables/stemmers",
         "zh/reference/system-tables/storage_policies",
         "zh/reference/system-tables/symbols",

@@ -4,6 +4,7 @@
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/CurrentMetrics.h>
 
+#include <chrono>
 #include <memory>
 #include <mutex>
 
@@ -48,8 +49,12 @@ namespace DB
 struct MemoryReservation : public ResourceAllocation
 {
 public:
-    // Blocks until reservation is admitted iff reserved_size > 0
-    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size);
+    // Blocks until the reservation is admitted iff reserved_size > 0. `admission_deadline_` is an absolute
+    // steady_clock deadline shared with the query slot so the whole admission phase uses one budget; on
+    // expiry the still-pending allocation is canceled and a `MEMORY_RESERVATION_ACQUISITION_TIMEOUT`
+    // exception is thrown. `time_point::max()` means no timeout.
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size,
+                      std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
@@ -80,12 +85,11 @@ private:
 
     std::exception_ptr kill_reason;
     std::exception_ptr fail_reason;
-    bool increase_enqueued = false;
-    bool decrease_enqueued = false;
     bool removed = false;
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost actual_size = 0; // real size of the resource used by the allocation
-    ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued (for accurate rollback)
+    ResourceCost enqueued_demand = 0; // amount added to demand_increment when increase was enqueued
+    ResourceCost enqueued_decrease = 0; // size of the in-flight decrease request
 
     /// Helper struct. Holds postponed ProfileEvents increments to be executed from a query thread.
     struct Metrics

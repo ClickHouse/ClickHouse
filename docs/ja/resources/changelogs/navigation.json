@@ -17,12 +17,13 @@
         },
         "ja/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloudデータベースのリリース changelog",
+          "group": "Cloud データベースのリリース変更履歴",
           "pages": [
             "ja/resources/changelogs/cloud/release-notes-index",
             {
               "group": "2026",
               "pages": [
+                "ja/resources/changelogs/cloud/release-notes/26_6",
                 "ja/resources/changelogs/cloud/release-notes/26_4",
                 "ja/resources/changelogs/cloud/release-notes/26_02"
               ]

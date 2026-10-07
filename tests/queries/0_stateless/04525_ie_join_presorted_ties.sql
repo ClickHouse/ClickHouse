@@ -1,4 +1,4 @@
--- Tags: long, no-old-analyzer
+-- Tags: long
 
 -- Long runs of equal first-condition keys crossing block boundaries: pins the tie policy of
 -- the merge that builds the L1 order from pre-sorted inputs (a loose first condition pulls the

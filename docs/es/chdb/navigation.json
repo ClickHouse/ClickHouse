@@ -8,7 +8,7 @@
       ]
     },
     {
-      "group": "Integraciones de lenguajes",
+      "group": "Integraciones con lenguajes",
       "pages": [
         "es/chdb/install/index",
         "es/chdb/install/python",

@@ -1,3 +1,5 @@
+#include <base/defines.h>
+
 #include <Functions/array/arrayFilter.h>
 #include <Functions/FunctionFactory.h>
 
@@ -7,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
@@ -26,9 +29,17 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
     }
 
     const IColumn::Filter & filter = column_filter->getData();
-    ColumnPtr filtered = array.getData().filter(filter, -1);
-
     const IColumn::Offsets & in_offsets = array.getOffsets();
+
+    if (filter.size() != array.getData().size())
+        throw Exception(
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of filter ({}) doesn't match size of column ({})",
+            filter.size(),
+            array.getData().size());
+
+    chassert(filter.size() == array.getData().size());
+
     auto column_offsets = ColumnArray::ColumnOffsets::create(in_offsets.size());
     IColumn::Offsets & out_offsets = column_offsets->getData();
 
@@ -44,6 +55,13 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
         out_offsets[i] = out_pos;
     }
 
+    if (out_pos == filter.size())
+        return array.clone();
+
+    if (out_pos == 0)
+        return ColumnArray::create(array.getDataPtr()->cloneEmpty(), std::move(column_offsets));
+
+    ColumnPtr filtered = array.getData().filter(filter, -1);
     return ColumnArray::create(filtered, std::move(column_offsets));
 }
 

@@ -170,6 +170,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         || (subquery.with() && (!optimize_with || hasNonRewritableFunction(subquery.with(), getContext())))
         || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength() || subquery.limitByLength() || subquery.limitByOffset()
+        || subquery.limitAfter() || subquery.limitUntil()
         || hasNonRewritableFunction(subquery.select(), getContext())
         || (subquery.orderBy() && subquery.limitOffset()))
         return false;

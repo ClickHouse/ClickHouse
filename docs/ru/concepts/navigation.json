@@ -19,11 +19,11 @@
     },
     {
       "expanded": true,
-      "group": "Концепции ClickHouse",
+      "group": "Основные понятия ClickHouse",
       "pages": [
         "ru/concepts/features/index",
         {
-          "group": "Materialized views",
+          "group": "Материализованные представления",
           "pages": [
             "ru/concepts/features/materialized-views/index",
             "ru/concepts/features/materialized-views/incremental-materialized-view",
@@ -53,7 +53,7 @@
             "ru/concepts/features/performance/allocation-profiling",
             "ru/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "Кэши",
+              "group": "Кеши",
               "pages": [
                 "ru/concepts/features/performance/caches/caches",
                 "ru/concepts/features/performance/caches/query-cache",
@@ -81,8 +81,9 @@
           ]
         },
         {
-          "group": "Operations",
+          "group": "Операции",
           "pages": [
+            "ru/concepts/features/operations/background-queries",
             {
               "group": "Вставка",
               "pages": [
@@ -149,7 +150,8 @@
                 "ru/concepts/features/configuration/server-config/workload-scheduling",
                 "ru/concepts/features/configuration/server-config/quotas",
                 "ru/concepts/features/configuration/server-config/composable-protocols",
-                "ru/concepts/features/configuration/server-config/startup-scripts"
+                "ru/concepts/features/configuration/server-config/startup-scripts",
+                "ru/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
@@ -169,7 +171,7 @@
               ]
             },
             {
-              "group": "Внешние аутентификаторы",
+              "group": "Внешние средства аутентификации",
               "pages": [
                 "ru/concepts/features/security/external-authenticators/index",
                 {
@@ -211,30 +213,34 @@
             "ru/concepts/features/interfaces/native-clients-interfaces-index",
             "ru/concepts/features/interfaces/cli",
             "ru/concepts/features/interfaces/client",
+            "ru/concepts/features/interfaces/mcp",
             {
               "group": "Драйверы и интерфейсы",
               "pages": [
                 "ru/concepts/features/interfaces/overview",
                 "ru/concepts/features/interfaces/http",
+                "ru/concepts/features/interfaces/framing-formats",
                 "ru/concepts/features/interfaces/tcp",
-                "ru/concepts/features/interfaces/jdbc",
+                "ru/concepts/features/interfaces/adbc",
                 "ru/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
                 },
                 "ru/concepts/features/interfaces/postgresql",
                 "ru/concepts/features/interfaces/prometheus",
+                "ru/concepts/features/interfaces/prometheus-metrics",
                 "ru/concepts/features/interfaces/ssh",
                 "ru/concepts/features/interfaces/grpc",
                 "ru/concepts/features/interfaces/arrowflight"
               ]
             },
-            "ru/concepts/features/interfaces/cpp",
             "ru/concepts/features/interfaces/schema-inference",
             "ru/concepts/features/interfaces/documentation-search",
             "ru/concepts/features/interfaces/web-sql",
+            "ru/concepts/features/interfaces/sql-console",
             "ru/concepts/features/interfaces/web-ui-color-coding",
             "ru/concepts/features/interfaces/web-ui-pinned-columns",
+            "ru/concepts/features/interfaces/web-ui-result-shaping",
             "ru/concepts/features/interfaces/web-terminal",
             {
               "group": "Сторонние клиенты",
@@ -265,7 +271,7 @@
     },
     {
       "expanded": true,
-      "group": "Лучшие практики",
+      "group": "Рекомендации",
       "pages": [
         "ru/concepts/best-practices/index",
         "ru/concepts/best-practices/choosing-a-primary-key",

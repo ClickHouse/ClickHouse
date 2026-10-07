@@ -7,16 +7,18 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extension', 'tutorial', 'taxi']
 ---
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 Este tutorial segue o [tutorial do ClickHouse], mas executa todas as consultas via
 pg&#95;clickhouse.
 
-<div id="start-clickhouse">
-  ## Inicie o ClickHouse
-</div>
+Escolha como deseja configurar o `pg_clickhouse`:
+
+* [Pelo Console](#from-console) se você estiver usando o ClickHouse Managed Postgres.
+* [Pelo PSQL](#from-psql) se estiver instalando e configurando a extensão
+  por conta própria.
+
+## Inicie o ClickHouse {#start-clickhouse}
 
 Primeiro, crie um banco de dados no ClickHouse, caso ainda não tenha um. Uma forma rápida
 de começar é usar a imagem Docker:
@@ -26,9 +28,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-<div id="create-a-table">
-  ## Criar uma tabela
-</div>
+## Criar uma tabela {#create-a-table}
 
 Vamos usar o [tutorial do ClickHouse] como base para criar um banco de dados simples com o conjunto de dados de táxis da cidade de
 Nova York:
@@ -93,9 +93,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-<div id="add-the-data-set">
-  ## Adicione o conjunto de dados
-</div>
+## Adicione o conjunto de dados {#add-the-data-set}
 
 Depois, importe os dados:
 
@@ -164,9 +162,40 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-<div id="install-pg_clickhouse">
-  ### Instale o pg_clickhouse
-</div>
+## Pelo console {#from-console}
+
+Se você usa o ClickHouse Managed Postgres, pode configurar o
+`pg_clickhouse` e conectar-se a um serviço ClickHouse pelo console do ClickHouse Cloud.
+Abra seu serviço Managed Postgres, selecione **Settings** e localize a seção
+**ClickHouse integration**. Clique em **Enable pg&#95;clickhouse**.
+
+No formulário de configuração, informe um nome para o servidor externo. Selecione o
+serviço ClickHouse, o banco de dados e o usuário a serem usados na conexão. Informe a
+senha do ClickHouse e selecione o banco de dados Postgres e o schema de destino para o qual as
+tabelas do ClickHouse deverão ser importadas. Clique em **Connect** para criar o servidor externo
+e importar o schema.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp" alt="Formulário de configuração do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud" size="lg" border />
+
+Quando a configuração for concluída, o console exibirá uma confirmação, e o servidor externo
+aparecerá na lista de servidores.
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp" alt="Configuração concluída do pg_clickhouse para o banco de dados de táxis no console do ClickHouse Cloud" size="lg" border />
+
+<Image img="/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp" alt="Lista de servidores externos mostrando a conexão pg_clickhouse de táxis" size="lg" border />
+
+Agora você pode abrir o **SQL console** do Postgres e consultar as tabelas importadas:
+
+```sql
+SELECT * FROM <schema>.<table>;
+```
+
+Para acompanhar os exemplos de táxi deste tutorial, selecione o banco de dados `taxi` no ClickHouse
+e importe-o para um schema de destino chamado `taxi`.
+
+## A partir do PSQL {#from-psql}
+
+### Instale o pg_clickhouse {#install-pg_clickhouse}
 
 Faça a compilação e instale o pg&#95;clickhouse a partir do [PGXN] ou do [GitHub]. Ou inicie um
 container Docker usando a [imagem do pg&#95;clickhouse], que simplesmente adiciona
@@ -177,9 +206,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-<div id="connect-pg_clickhouse">
-  ### Conectar pg_clickhouse
-</div>
+### Conectar pg_clickhouse {#connect-pg_clickhouse}
 
 Agora conecte-se ao Postgres:
 
@@ -321,9 +348,7 @@ retorne apenas uma única linha ao Postgres. Use [EXPLAIN] para ver isso:
 Observe que &quot;Foreign Scan&quot; aparece na raiz do plano, o que significa que a
 consulta inteira foi executada no ClickHouse.
 
-<div id="analyze-the-data">
-  ## Analise os dados
-</div>
+## Analise os dados {#analyze-the-data}
 
 Execute algumas consultas para analisar os dados. Explore os exemplos a seguir ou experimente
 sua própria consulta SQL.
@@ -479,9 +504,7 @@ sua própria consulta SQL.
   Time: 17.450 ms
   ```
 
-<div id="create-a-dictionary">
-  ## Crie um dicionário
-</div>
+## Crie um dicionário {#create-a-dictionary}
 
 Crie um dicionário associado a uma tabela no seu serviço ClickHouse. A
 tabela e o dicionário se baseiam em um arquivo CSV que contém uma linha para cada
@@ -581,9 +604,7 @@ coluna `LocationID` no arquivo é mapeada para as colunas `pickup_nyct2010_gid` 
    um dos aeroportos, LaGuardia ou JFK. Observe que há várias corridas em que o
    bairro de origem é desconhecido.
 
-<div id="perform-a-join">
-  ## Faça um JOIN
-</div>
+## Faça um JOIN {#perform-a-join}
 
 Escreva algumas consultas que façam um JOIN entre `taxi_zone_dictionary` e sua
 tabela `trips`.
@@ -660,7 +681,7 @@ tabela `trips`.
   deve recuperar apenas as colunas de que realmente precisa.
 </Note>
 
-[tutorial do ClickHouse]: /get-started/quickstarts/tutorial "Tutorial avançado do ClickHouse"
+[ClickHouse tutorial]: /get-started/sample-datasets/nyc-taxi "Dados de táxi de Nova York"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "Aplicativos cliente do PostgreSQL: psql"
 
@@ -676,4 +697,4 @@ tabela `trips`.
 
 [Postgres image]: https://hub.docker.com/_/postgres "Imagem OCI do Postgres no Docker Hub"
 
-[Atualização de dados de dicionário usando LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentação do ClickHouse: Atualização de dados de dicionário usando LIFETIME"
+[Refreshing dictionary data using LIFETIME]: /reference/statements/create/dictionary/lifetime "Documentação do ClickHouse: Atualização de dados de dicionário usando LIFETIME"

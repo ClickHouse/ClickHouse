@@ -1106,11 +1106,6 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
                 configuration.request_throttler,
                 Aws::Http::SchemeMapper::ToString(Aws::Http::Scheme::HTTP));
 
-            /// See MakeDefaultHTTPResourceClientConfiguration().
-            /// This is part of EC2 metadata client, but unfortunately it can't be accessed from outside
-            /// of contrib/aws/aws-cpp-sdk-core/source/internal/AWSHttpResourceClient.cpp
-            aws_client_configuration.maxConnections = 2;
-
             /// Explicitly set the proxy settings to empty/zero to avoid relying on defaults that could potentially change
             /// in the future.
             aws_client_configuration.proxyHost = "";

@@ -12,8 +12,6 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 #include <base/range.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -408,14 +406,12 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateQuotaQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementQuota(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE QUOTA",
+    documentation["CREATE QUOTA"] =
     {
         .description = R"DOCS_MD(
 Creates a [quota](/concepts/features/security/access-rights#quotas-management) that can be assigned to a user or a role.
@@ -441,6 +437,8 @@ Keys `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_ke
 Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `execution_time`, `failed_sequential_authentications`, `queries_per_normalized_hash` correspond to the fields in the [system.quotas_usage](/reference/system-tables/quotas_usage) table.
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
+
+`CREATE QUOTA` requires the [CREATE QUOTA](/reference/statements/grant#access-management) privilege. `OR REPLACE` throws away an existing quota of the same name, including which roles it applies to, so it additionally requires the [DROP QUOTA](/reference/statements/grant#access-management) privilege. The `DROP QUOTA` privilege is required whether or not the quota already exists, so the statement cannot be used to find out which quotas exist.
 
 **Examples**
 
@@ -486,9 +484,9 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 )",
         .parent = "CREATE",
         .related = {"ALTER QUOTA", "CREATE SETTINGS PROFILE", "CREATE USER", "DROP", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER QUOTA",
+    documentation["ALTER QUOTA"] =
     {
         .description = R"DOCS_MD(
 Changes quotas.
@@ -540,7 +538,9 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
 )",
         .parent = "ALTER",
         .related = {"CREATE QUOTA", "ALTER", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

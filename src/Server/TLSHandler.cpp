@@ -59,6 +59,7 @@ DB::TLSHandler::TLSHandler(
     params.loadDefaultCAs = config.getBool(prefix + SSLManager::CFG_ENABLE_DEFAULT_CA, SSLManager::VAL_ENABLE_DEFAULT_CA);
     params.cipherList = config.getString(prefix + SSLManager::CFG_CIPHER_LIST, SSLManager::VAL_CIPHER_LIST);
     params.cipherList = config.getString(prefix + SSLManager::CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
+    params.cipherSuites = config.getString(prefix + SSLManager::CFG_CIPHER_SUITES, "");
 
     bool require_tlsv1 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1, false);
     bool require_tlsv1_1 = config.getBool(prefix + SSLManager::CFG_REQUIRE_TLSV1_1, false);

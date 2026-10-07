@@ -451,8 +451,8 @@ Parquet tiene un conjunto mínimo de tipos, que ClickHouse debe respetar, y esta
 La inferencia de tipos a partir de un archivo Parquet conducirá invariablemente a un esquema ligeramente distinto del archivo CSV.
 
 <Steps>
-  <Step title="Insertar los datos" id="insert-the-data">
-    Ejecuta la siguiente consulta para leer los mismos datos en formato Parquet, de nuevo con la función url para leer los datos remotos:
+  <Step title="Inserte los datos" id="insert-the-data">
+    Ejecute la siguiente consulta para leer los mismos datos en formato Parquet, utilizando de nuevo la función `url` para leer los datos remotos:
 
     ```sql
     DROP TABLE IF EXISTS hackernews;
@@ -462,26 +462,31 @@ La inferencia de tipos a partir de un archivo Parquet conducirá invariablemente
     ORDER BY id
     SETTINGS allow_nullable_key = 1 EMPTY AS
     SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 
     INSERT INTO hackernews SELECT *
-    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
     ```
 
     <Info>
       **Claves nulas en Parquet**
 
-      Como requisito del formato Parquet, tenemos que aceptar que las claves puedan ser `NULL`,
-      aunque no lo sean en los datos.
+      El esquema inferido define las columnas como `Nullable`, por lo que se requiere `allow_nullable_key`, aunque este conjunto de datos no contiene
+      ID nulos.
     </Info>
 
-    Ejecuta el siguiente comando para ver el esquema inferido:
+    Ejecute el siguiente comando para ver el esquema inferido:
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews;
+    ```
 
     ```response title="Response"
     ┌─name────────┬─type───────────────────┬
     │ id          │ Nullable(Int64)        │
     │ deleted     │ Nullable(UInt8)        │
     │ type        │ Nullable(String)       │
+    │ by          │ Nullable(String)       │
     │ time        │ Nullable(Int64)        │
     │ text        │ Nullable(String)       │
     │ dead        │ Nullable(UInt8)        │
@@ -496,10 +501,12 @@ La inferencia de tipos a partir de un archivo Parquet conducirá invariablemente
     └─────────────┴────────────────────────┴
     ```
 
-    Al igual que con el archivo CSV, puede especificar manualmente el esquema para tener un mayor control sobre los tipos elegidos e insertar los
-    datos directamente desde S3:
+    Los pasos restantes usan nombres de columna más claros, como `author` y `comment`, por lo que debe continuar con un esquema especificado manualmente.
+    Primero, elimine la tabla inferida; a continuación, cree la tabla e inserte los datos directamente desde el bucket público de S3:
 
     ```sql
+    DROP TABLE IF EXISTS hackernews;
+
     CREATE TABLE hackernews
     (
         `id` UInt64,
@@ -524,6 +531,7 @@ La inferencia de tipos a partir de un archivo Parquet conducirá invariablemente
     INSERT INTO hackernews
     SELECT * FROM s3(
             'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            NOSIGN,
             'Parquet',
             'id UInt64,
              deleted UInt8,
@@ -543,103 +551,121 @@ La inferencia de tipos a partir de un archivo Parquet conducirá invariablemente
     ```
   </Step>
 
-  <Step title="Añade un índice de descarte para acelerar las consultas" id="add-skipping-index">
-    Para averiguar cuántos comentarios mencionan &quot;ClickHouse&quot;, ejecuta la siguiente consulta:
+  <Step title="Añada un índice de texto para agilizar las búsquedas" id="add-skipping-index">
+    Para saber cuántos comentarios mencionan &quot;ClickHouse&quot;, ejecuta la siguiente consulta:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'ClickHouse');
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
     ```
 
     ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
-    ┌─count()─┐
-    │     516 │
-    └─────────┘
-    ```
-
-    A continuación, crearás un [índice](/es/reference/engines/table-engines/mergetree-family/textindexes) invertido en la columna &quot;comment&quot;
-    para acelerar esta consulta.
-    Ten en cuenta que se indexarán los comentarios en minúsculas para encontrar términos sin distinguir entre mayúsculas y minúsculas.
-
-    Ejecuta los siguientes comandos para crear el índice:
-
-    ```sql
-    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
-    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
-    ```
-
-    La materialización del índice tarda un poco (para comprobar si el índice se ha creado, usa la tabla del sistema `system.data_skipping_indices`).
-
-    Vuelve a ejecutar la consulta una vez que se haya creado el índice:
-
-    ```sql title="Query"
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse');
-    ```
-
-    Observa cómo la consulta ahora tarda solo 0.248 segundos con el índice, frente a los 0.843 segundos anteriores sin él:
-
-    ```response title="Response" highlight={1}
-    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
     ┌─count()─┐
     │    1145 │
     └─────────┘
+
+    1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
     ```
 
-    La cláusula [`EXPLAIN`](/es/reference/statements/explain) puede usarse para entender por qué la incorporación de este índice
-    mejoró la consulta aproximadamente 3,4 veces.
+    A continuación, cree un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) en la columna `comment`
+    para acelerar esta consulta. Un índice de texto utiliza un índice invertido que asigna los tokens a las filas que los contienen.
+    El tokenizador `splitByNonAlpha` divide el texto por caracteres no alfanuméricos. El índice y las consultas usan `lower(comment)`
+    con términos de búsqueda en minúsculas, por lo que las coincidencias no distinguen entre mayúsculas y minúsculas. La expresión de la consulta debe coincidir con la expresión indexada.
 
-    ```response text="Query"
-    EXPLAIN indexes = 1
-    SELECT count(*)
-    FROM hackernews
-    WHERE hasToken(lower(comment), 'clickhouse')
+    Ejecute los siguientes comandos para crear el índice:
+
+    ```sql
+    ALTER TABLE hackernews
+        ADD INDEX comment_idx lower(comment)
+        TYPE text(tokenizer = splitByNonAlpha);
+
+    ALTER TABLE hackernews
+        MATERIALIZE INDEX comment_idx
+        SETTINGS mutations_sync = 2;
     ```
 
-    ```response title="Response"
-    ┌─explain─────────────────────────────────────────┐
-    │ Expression ((Projection + Before ORDER BY))     │
-    │   Aggregating                                   │
-    │     Expression (Before GROUP BY)                │
-    │       Filter (WHERE)                            │
-    │         ReadFromMergeTree (default.hackernews)  │
-    │         Indexes:                                │
-    │           PrimaryKey                            │
-    │             Condition: true                     │
-    │             Parts: 4/4                          │
-    │             Granules: 3528/3528                 │
-    │           Skip                                  │
-    │             Name: comment_idx                   │
-    │             Description: inverted GRANULARITY 1 │
-    │             Parts: 4/4                          │
-    │             Granules: 554/3528                  │
-    └─────────────────────────────────────────────────┘
-    ```
+    La materialización crea el índice para los datos existentes. La configuración `mutations_sync` espera a que finalice la materialización.
+    Puede consultar la definición del índice en la tabla `system.data_skipping_indices`.
 
-    Observa cómo el índice permitió omitir una cantidad considerable de gránulos
-    para acelerar la consulta.
-
-    Ahora también es posible buscar de forma eficiente uno o varios términos, o todos ellos:
+    Ejecute de nuevo la misma consulta una vez materializado el índice:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+
+    1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
+    ```
+
+    El resultado sigue siendo el mismo porque el índice cambia la forma en que ClickHouse encuentra las filas coincidentes, no cuáles coinciden. La consulta indexada
+    procesa considerablemente menos datos y se completa mucho más rápido.
+    Use [`EXPLAIN`](/es/reference/statements/explain) para confirmar que ClickHouse tiene previsto aplicar el índice:
+
+    ```sql title="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'clickhouse');
+    ```
+
+    ```response title="Response"
+    Output: count()
+
+    Aggregating
+    │  Keys:
+    │  Aggregates: count()
+    │  Skip merging: 0
+    └──Filter
+       │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+       └──ReadFromMergeTree (default.hackernews)
+             Read type: Default
+             Parts: 4 | Granules: 547
+             Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+             Indexes:
+               PrimaryKey
+                 Condition: true
+                 Parts: 4/4
+                 Granules: 3527/3527
+               Skip
+                 Name: comment_idx
+                 Description: text GRANULARITY 100000000
+                 Condition: (mode: Any; tokens: ["clickhouse"])
+                 Parts: 4/4
+                 Granules: 547/3527
+               Ranges: 437
+    ```
+
+    La entrada `comment_idx` muestra que ClickHouse prevé aplicar el índice de texto. En este ejemplo, el plan selecciona 547 de 3527
+    gránulos, lo que reduce considerablemente la cantidad de datos examinados.
+
+    También puede buscar uno o varios tokens. Estas funciones buscan coincidencias con tokens completos generados por el tokenizador del índice.
+    Use `hasAnyTokens` cuando deba coincidir al menos un token:
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasAnyTokens(lower(comment), 'oltp olap');
     ```
 
     ```response title="Response"
     ┌─count()─┐
-    │    2177 │
+    │    2020 │
     └─────────┘
     ```
+
+    Use `hasAllTokens` cuando todos los tokens deban coincidir, en cualquier orden:
 
     ```sql title="Query"
     SELECT count(*)
     FROM hackernews
-    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    WHERE hasAllTokens(lower(comment), 'avx sve');
     ```
 
     ```response title="Response"

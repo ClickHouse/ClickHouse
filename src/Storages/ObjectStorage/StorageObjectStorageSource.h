@@ -270,7 +270,12 @@ public:
         bool ignore_non_existent_files_,
         bool skip_object_metadata_,
         bool with_tags_,
-        std::function<void(FileProgress)> file_progress_callback = {});
+        std::function<void(FileProgress)> file_progress_callback = {},
+        ExpressionActionsPtr deferred_filter_actions_ = {},
+        NamesAndTypesList hive_columns_ = {},
+        String object_namespace_ = {},
+        ContextPtr context_ = {},
+        String archive_member_path_ = {});
 
     ~KeysIterator() override = default;
 
@@ -287,6 +292,17 @@ private:
     const bool ignore_non_existent_files;
     const bool skip_object_metadata;
     const bool with_tags;
+
+    /// A `_path` / `_file` filter that could not be applied when the iterator was created, because a set
+    /// in it was not ready yet (see `createFileIterator`). It is applied in `next`, when the pipeline
+    /// already runs and the set is ready, before the object metadata is fetched.
+    const ExpressionActionsPtr deferred_filter_actions;
+    const NamesAndTypesList hive_columns;
+    const String object_namespace;
+    const ContextPtr context;
+    /// A known archive member is part of the user-visible `_path` / `_file` value, although the
+    /// iterator itself must fetch the outer archive object.
+    const String archive_member_path;
 };
 
 /*

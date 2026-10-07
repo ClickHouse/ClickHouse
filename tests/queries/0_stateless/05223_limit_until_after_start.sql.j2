@@ -1,0 +1,69 @@
+-- Boundary matches in the same chunk and in different chunks select the same rows.
+{% for block_size in [1, 3, 65536] %}
+SET max_block_size = {{ block_size }};
+SELECT 'max_block_size = {{ block_size }}';
+
+-- End matches before the start are ignored, and the first end at or after the start closes the range.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6));
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 ALL UNTIL number IN (1, 6));
+
+-- The end can be separated from the start by a long run of rows without boundary matches.
+SELECT count(), min(number), max(number) FROM
+    (SELECT number FROM numbers(200) ORDER BY number LIMIT AFTER number = 67 UNTIL number IN (1, 135));
+
+-- Without a later end match, the range continues to the stream end or its row count.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number = 2);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number = 6 UNTIL number = 2);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number = 3 UNTIL number IN (1, 6));
+
+-- The end condition applies on the starting row, including when it was already true before the start.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 3, 6));
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 6 UNTIL number >= 2);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT 1 AFTER number = 3 UNTIL number = 3);
+
+-- A range with no start match emits no rows, even if the end condition matches.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 10 UNTIL number = 1);
+
+-- Constant boundaries can start the range immediately, keep it closed, or leave it open.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER 1 UNTIL number = 3);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER 0 UNTIL number = 1);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL 1);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number = 3 UNTIL 0);
+
+-- Nullable boundaries treat null rows as false both before and after the start.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number
+     LIMIT AFTER if(number = 1, NULL, number = 3) UNTIL if(number = 4, NULL, number IN (1, 6)));
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER NULL UNTIL number = 1);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT 2 AFTER number = 3 UNTIL NULL);
+
+-- Low-cardinality boundaries use the same start-relative end condition.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number
+     LIMIT AFTER toLowCardinality(number = 3) UNTIL toLowCardinality(number IN (1, 6)));
+
+-- Only `ALL` can open another range after the first one ends.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (3, 7) UNTIL number IN (1, 5, 9));
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (3, 7) ALL UNTIL number IN (1, 5, 9));
+
+-- Without `AFTER`, the range starts at the beginning of the stream.
+SELECT groupArray(number) FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number = 3);
+SELECT groupArray(number) FROM (SELECT number FROM numbers(10) ORDER BY number LIMIT UNTIL number = 0);
+{% endfor %}

@@ -1,0 +1,91 @@
+-- { echo }
+
+-- numbers_mt(1M), LIMIT 3 AFTER >= 999990
+SELECT number FROM numbers_mt(1000000) ORDER BY number LIMIT 3 AFTER number >= 999990;
+999990
+999991
+999992
+-- numbers_mt(1M), LIMIT AFTER >= 999990 UNTIL >= 999995
+SELECT number FROM numbers_mt(1000000) ORDER BY number LIMIT 100 AFTER number >= 999990 UNTIL number >= 999995;
+999990
+999991
+999992
+999993
+999994
+-- numbers_mt(1M), LIMIT AFTER (no count) >= 999995
+SELECT number FROM numbers_mt(1000000) ORDER BY number LIMIT AFTER number >= 999995;
+999995
+999996
+999997
+999998
+999999
+-- numbers_mt(1M), LIMIT 2 AFTER IN (...) ALL
+SELECT number FROM numbers_mt(1000000) ORDER BY number LIMIT 2 AFTER number IN (999990, 999995) ALL;
+999990
+999991
+999995
+999996
+-- LIMIT 0 should return empty
+SELECT number FROM numbers_mt(1000000) ORDER BY number LIMIT 0 AFTER number >= 0;
+-- max_block_size=2, numbers(1000), LIMIT 3 AFTER >= 990
+SET max_block_size = 2;
+SELECT number FROM numbers(1000) ORDER BY number LIMIT 3 AFTER number >= 990;
+990
+991
+992
+-- max_block_size=2, numbers(1000), LIMIT AFTER >= 990 UNTIL >= 995
+SELECT number FROM numbers(1000) ORDER BY number LIMIT 100 AFTER number >= 990 UNTIL number >= 995;
+990
+991
+992
+993
+994
+-- max_block_size=2, numbers(1000), LIMIT 2 AFTER IN (...) ALL
+SELECT number FROM numbers(1000) ORDER BY number LIMIT 2 AFTER number IN (990, 995) ALL;
+990
+991
+995
+996
+SET max_block_size = 65536;
+DROP TABLE IF EXISTS test_src;
+CREATE TABLE test_src ENGINE=MergeTree ORDER BY number AS SELECT number FROM numbers(1000000);
+-- LIMIT 5 AFTER number >= 999990
+DROP TABLE IF EXISTS test_dst;
+CREATE TABLE test_dst ENGINE=MergeTree ORDER BY number AS SELECT number FROM (SELECT number FROM test_src ORDER BY number LIMIT 5 AFTER number >= 999990);
+SELECT number FROM test_dst ORDER BY number;
+999990
+999991
+999992
+999993
+999994
+DROP TABLE test_dst;
+-- LIMIT 100 AFTER number >= 999990 UNTIL number >= 999995
+DROP TABLE IF EXISTS test_dst;
+CREATE TABLE test_dst ENGINE=MergeTree ORDER BY number AS SELECT number FROM (SELECT number FROM test_src ORDER BY number LIMIT 100 AFTER number >= 999990 UNTIL number >= 999995);
+SELECT number FROM test_dst ORDER BY number;
+999990
+999991
+999992
+999993
+999994
+DROP TABLE test_dst;
+-- LIMIT 2 AFTER number IN (999990, 999995) ALL
+DROP TABLE IF EXISTS test_dst;
+CREATE TABLE test_dst ENGINE=MergeTree ORDER BY number AS SELECT number FROM (SELECT number FROM test_src ORDER BY number LIMIT 2 AFTER number IN (999990, 999995) ALL);
+SELECT number FROM test_dst ORDER BY number;
+999990
+999991
+999995
+999996
+DROP TABLE test_dst;
+-- LIMIT AFTER number >= 999995
+DROP TABLE IF EXISTS test_dst;
+CREATE TABLE test_dst ENGINE=MergeTree ORDER BY number AS SELECT number FROM (SELECT number FROM test_src ORDER BY number LIMIT AFTER number >= 999995);
+SELECT number FROM test_dst ORDER BY number;
+999995
+999996
+999997
+999998
+999999
+DROP TABLE test_dst;
+DROP TABLE test_src;

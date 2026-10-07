@@ -61,7 +61,7 @@ Enabled cleanup of Keeper entries of empty partition.
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "Enable coordinated merges by default"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Enables coordinated merges strategy
+Enables coordinator-driven merge assignment for `SharedMergeTree`. The merge coordinator prepares merge entries and distributes them among active merge workers instead of relying only on independent merge selection.
 
 ## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data}
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -73,7 +73,7 @@ Enables writing attributes into virtual parts and committing blocks in keeper
 <SettingsInfoBlock type="Bool" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]}/>
 
-Enable outdated parts check. Only available in ClickHouse Cloud
+Enables the `SharedMergeTree` background check that detects data parts which are no longer current and passes them to the parts-update process. Only available in ClickHouse Cloud.
 
 ## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds}
 <SettingsInfoBlock type="UInt64" default_value="3600" />
@@ -96,7 +96,7 @@ Only in ClickHouse Cloud
 <SettingsInfoBlock type="UInt64" default_value="50" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "New setting"}]}]}/>
 
-Initial backoff for parts update. Only available in ClickHouse Cloud
+Initial delay, in milliseconds, before retrying a `SharedMergeTree` parts-update operation. Repeated retries increase the delay up to `shared_merge_tree_max_parts_update_backoff_ms`. Only available in ClickHouse Cloud.
 
 ## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms}
 <SettingsInfoBlock type="UInt64" default_value="100" />
@@ -137,19 +137,19 @@ one HTTP request. Only available in ClickHouse Cloud.
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "New setting"}]}]}/>
 
-Max backoff for parts update. Only available in ClickHouse Cloud
+Maximum delay, in milliseconds, between retries of a `SharedMergeTree` parts-update operation. Only available in ClickHouse Cloud.
 
 ## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total}
 <SettingsInfoBlock type="UInt64" default_value="6" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Cloud sync"}]}]}/>
 
-Maximum number of parts update leaders. Only available in ClickHouse Cloud
+Maximum number of replicas across the service that may concurrently hold the parts-update leader role. Only available in ClickHouse Cloud.
 
 ## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az}
 <SettingsInfoBlock type="UInt64" default_value="2" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Cloud sync"}]}]}/>
 
-Maximum number of parts update leaders. Only available in ClickHouse Cloud
+Maximum number of replicas within one availability zone that may concurrently hold the parts-update leader role. Both this limit and `shared_merge_tree_max_parts_update_leaders_in_total` apply. Only available in ClickHouse Cloud.
 
 ## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion}
 <SettingsInfoBlock type="UInt64" default_value="10" />
@@ -187,7 +187,7 @@ insert retries. Only available in ClickHouse Cloud
 
 ## shared_merge_tree_merge_coordinator_distribution_algorithm {#shared_merge_tree_merge_coordinator_distribution_algorithm}
 <SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="sainte_lague" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Enable Sainte-Lague distribution by default."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "sainte_lague"},{"label": "Keep Sainte-Lague distribution regardless of `compatibility`."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "Enable Sainte-Lague distribution by default."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "New setting which controls what algorithm is used by the merge coordinator to distribute merges between replicas"}]}]}/>
 
 The algorithm used by the merge coordinator thread to distribute merges between replicas.
 

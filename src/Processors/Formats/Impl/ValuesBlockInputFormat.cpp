@@ -343,7 +343,8 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     {
         /// Do not consider decimal overflow as parse error to avoid attempts to parse it as expression with float literal
         bool decimal_overflow = e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
-        if (!isParseError(e.code()) || decimal_overflow)
+        /// A throwing read cancels its buffer for good, and the recovery below reads it again.
+        if (!isParseError(e.code()) || decimal_overflow || buf->isCanceled())
         {
             e.recordToSystemErrors();
             throw;
@@ -549,8 +550,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     if (parser_type_for_column[column_idx] != ParserType::Streaming && dynamic_cast<const ASTLiteral *>(ast.get()))
     {
-        /// It's possible that streaming parsing has failed on some row (e.g. because of '+' sign before integer),
-        /// but it still can parse the following rows
+        /// It's possible that streaming parsing has failed on some row (e.g. because of an exponent
+        /// such as `1e3` in an integer column), but it still can parse the following rows
         /// Check if we can use fast streaming parser instead if using templates
         bool rollback_on_exception = false;
         bool ok = false;

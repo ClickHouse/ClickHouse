@@ -6,8 +6,6 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserPartition.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -107,14 +105,11 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserUpdateQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementUpdate(StatementFactory & factory)
-{
-    factory.registerStatement("UPDATE",
+    documentation["UPDATE"] =
     {
         .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
@@ -147,16 +142,19 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-## Lightweight updates do not update data immediately {#lightweight-update-does-not-update-data-immediately}
+## Lightweight updates are immediately visible in queries {#lightweight-update-does-not-update-data-immediately}
 
-Lightweight `UPDATE` is implemented using **patch parts** - a special kind of data part that contains only the updated columns and rows.
-A lightweight `UPDATE` creates patch parts but does not immediately modify the original data physically in storage.
-The process of updating is similar to a `INSERT ... SELECT ...` query but the `UPDATE` query waits until the patch part creation is completed before returning.
+Lightweight `UPDATE` makes updated values immediately visible in `SELECT` queries by applying **patch parts**. Queries do not need to wait for a merge to read the updated values.
+Patch parts are a special kind of data part that contains only the updated columns and rows. Creating them does not immediately modify the original data physically in storage.
+The update process is similar to an `INSERT ... SELECT ...` query, and the `UPDATE` query waits until patch part creation is completed before returning.
 
-The updated values are:
-- **Immediately visible** in `SELECT` queries through patches application
-- **Physically materialized** only during subsequent merges and mutations
-- **Automatically cleaned up** once all active parts have the patches materialized
+Query visibility and physical materialization are separate:
+
+- **Query visibility:** `SELECT` queries apply patches to read the updated values before those patches are materialized into the original data parts.
+- **Physical materialization:** subsequent merges and mutations incorporate the updated values into the data parts.
+- **Cleanup:** patch parts are automatically removed once all active parts have the patches materialized.
+
+For the consistency of concurrent updates, see [Concurrent operations](#concurrent-operations).
 
 ## Lightweight updates requirements {#lightweight-update-requirements}
 
@@ -240,7 +238,9 @@ The join mode is slower and requires more memory than the merge mode, but it is 
 UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 )",
         .related = {"ALTER TABLE ... UPDATE", "ALTER TABLE ... APPLY PATCHES", "DELETE", "INSERT INTO"},
-    });
+    };
+
+    return documentation;
 }
 
 }

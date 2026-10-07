@@ -4,7 +4,7 @@
 -- The `product` method of the `Quantized(...)` codec uses the syntax `Quantized('product', dimensions, nbits, m)` and validates its
 -- parameters at DDL time: it requires exactly four arguments, `dimensions` a multiple of `m`, and `nbits` in [1, 16].
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 DROP TABLE IF EXISTS quantize_pq_bad;
 

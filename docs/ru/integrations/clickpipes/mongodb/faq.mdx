@@ -108,4 +108,4 @@ SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
 
 Для подключения к Replica Set вы можете настроить PrivateLink для MongoDB либо с помощью ресурса VPC, либо с помощью VPC endpoint service. Если вы выбираете ресурс VPC, потребуется создать конфигурацию ресурса `GROUP`, а также конфигурацию ресурса `CHILD` для каждого узла в кластере. Если вы выбираете VPC endpoint service, потребуется создать отдельный Endpoint Service (и отдельный NLB) для каждого узла в кластере.
 
-Подробности см. в документации [AWS PrivateLink for ClickPipes](/ru/integrations/clickpipes/networking/aws-privatelink). Если вам нужна помощь, обратитесь в ClickHouse Support.
+Подробности см. в документации [AWS PrivateLink](/ru/integrations/clickpipes/networking/aws-privatelink). Если вам нужна помощь, обратитесь в ClickHouse Support.

@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
@@ -9,11 +10,13 @@
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -64,6 +67,7 @@ struct TextIndexReadInfo
     MergeTreeIndexPtr index_helper = nullptr;
     bool is_materialized = false;
     bool is_fully_materialized = false;
+    bool has_patched_parts = false;
 };
 
 using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
@@ -213,6 +217,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
     /// the queried parts have no on-the-fly updates for the index columns.
     NameSet all_updated_columns;
+    bool has_patched_parts = false;
     for (const auto & part : unique_parts)
     {
         auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context
@@ -222,7 +227,11 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         );
         const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
         all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
+        has_patched_parts |= alter_conversions->hasPatches();
     }
+
+    if (has_patched_parts)
+        LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: a part has a pending patch");
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
@@ -246,7 +255,8 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
             .condition = index.condition_template->generateUnsubstituted(),
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
-            .is_fully_materialized = num_materialized_parts == unique_parts.size()
+            .is_fully_materialized = num_materialized_parts == unique_parts.size(),
+            .has_patched_parts = has_patched_parts
         };
     }
 }
@@ -287,9 +297,50 @@ void collectTextIndexInjectInfos(const ReadFromMergeTree * read_from_merge_tree_
     }
 }
 
+ASTPtr convertSetColumnToAST(const IColumn & column)
+{
+    const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(&column);
+    if (!column_set)
+        column_set = checkAndGetColumn<const ColumnSet>(&column);
+    if (!column_set)
+        return nullptr;
+
+    auto future_set = column_set->getData();
+    const auto * set_from_tuple = dynamic_cast<const FutureSetFromTuple *>(future_set.get());
+    if (!set_from_tuple)
+        return nullptr;
+
+    const Columns key_columns = set_from_tuple->getKeyColumns();
+    if (key_columns.empty() || key_columns.front()->empty())
+        return nullptr;
+
+    const size_t num_elements = key_columns.front()->size();
+    auto elements = makeASTFunction("tuple");
+    elements->arguments->children.reserve(num_elements);
+
+    for (size_t i = 0; i < num_elements; ++i)
+    {
+        if (key_columns.size() == 1)
+        {
+            elements->arguments->children.push_back(make_intrusive<ASTLiteral>((*key_columns.front())[i]));
+            continue;
+        }
+
+        /// A set over a tuple left-hand side, e.g. `(a, b) IN ((1, 2), (3, 4))`.
+        Tuple key;
+        key.reserve(key_columns.size());
+        for (const auto & key_column : key_columns)
+            key.push_back((*key_column)[i]);
+        elements->arguments->children.push_back(make_intrusive<ASTLiteral>(Field(std::move(key))));
+    }
+
+    return elements;
+}
+
 /// Converts an ActionsDAG node to an AST node.
 /// It is not correct in the general case, but is
 /// sufficient for expressions that can be used with a text index.
+/// Returns `nullptr` if any part has no AST representation: a partial conversion would change the meaning.
 /// `captured` maps a lambda's captured-column names to the nodes that supply their values in the
 /// outer DAG, so references to them inside the lambda body are inlined (typically as literals)
 /// instead of being emitted as bare, unresolvable identifiers.
@@ -321,7 +372,12 @@ ASTPtr convertCapturedLambdaToAST(const FunctionCapture & function_capture, cons
     lambda->arguments = make_intrusive<ASTExpressionList>();
     lambda->children.push_back(lambda->arguments);
     lambda->arguments->children.push_back(std::move(arguments));
-    lambda->arguments->children.push_back(convertNodeToAST(*capture_dag.getOutputs().front(), body_captured));
+
+    auto body = convertNodeToAST(*capture_dag.getOutputs().front(), body_captured);
+    if (!body)
+        return nullptr;
+
+    lambda->arguments->children.push_back(std::move(body));
     return lambda;
 }
 
@@ -335,7 +391,16 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             return make_intrusive<ASTIdentifier>(node.result_name);
 
         case ActionsDAG::ActionType::COLUMN:
-            return node.column ? make_intrusive<ASTLiteral>((*node.column)[0]) : make_intrusive<ASTLiteral>(Field{});
+        {
+            if (!node.column)
+                return nullptr;
+
+            /// A `Set` column has no `Field`, so emitting it as a literal would give `x IN NULL`.
+            if (WhichDataType(node.result_type).isSet())
+                return convertSetColumnToAST(*node.column);
+
+            return make_intrusive<ASTLiteral>((*node.column)[0]);
+        }
 
         case ActionsDAG::ActionType::ALIAS:
             return node.children.empty() ? nullptr : convertNodeToAST(*node.children[0], captured);
@@ -354,8 +419,11 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
             function->name = node.function_base->getName();
             for (const auto * child : node.children)
             {
-                if (auto arg_ast = convertNodeToAST(*child, captured))
-                    function->arguments->children.push_back(arg_ast);
+                auto arg_ast = convertNodeToAST(*child, captured);
+                if (!arg_ast)
+                    return nullptr;
+
+                function->arguments->children.push_back(std::move(arg_ast));
             }
 
             return function;
@@ -591,9 +659,11 @@ private:
             const bool is_index_analyzed
                 = !require_index_analyzed_predicate || isIndexAnalyzedPredicate(index_name, info, canonical_node);
 
-            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise
-            /// just inject the tokenizer/preprocessor/postprocessor (no virtual column), same as None mode.
-            if (!direct_read_from_text_index || !info.index || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`) and has no
+            /// patched parts. Otherwise just inject the tokenizer/preprocessor/postprocessor (no virtual column),
+            /// same as None mode.
+            if (!direct_read_from_text_index || !info.index || info.has_patched_parts
+                || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info, is_index_analyzed);
                 used_index_columns.insert(index_header.begin()->name);
@@ -699,11 +769,15 @@ private:
             const auto & preprocessor_dag = preprocessor->getOriginalActionsDAG();
             chassert(preprocessor_dag.getOutputs().size() == 1);
             const auto & preprocessor_output = preprocessor_dag.getOutputs().front();
-            auto haystack_name = getNameWithoutAliases(arg_haystack);
+            /// The index was analyzed on the expression under lossless conversions, e.g. `s` in `hasToken(toNullable(s), 'Foo')`.
+            const auto * haystack = unwrapLosslessConversion(arg_haystack);
+            auto haystack_name = getNameWithoutAliases(haystack);
 
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
             {
+                new_children[0] = haystack;
+
                 if (apply_postprocessor)
                 {
                     preprocessor_source_ast = preprocessor->getExpressionAST(new_children[0]->result_name);
@@ -749,9 +823,7 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                /// Skip tokenizer-specific compaction when a postprocessor is applied: these needle tokens
-                /// are postprocessed and deduplicated below instead, because sparseGrams containment
-                /// compaction is unsound after a postprocessor (it can drop a required token).
+                /// Skip compaction when a postprocessor is applied: it is unsound afterwards and can drop a token.
                 if (!apply_postprocessor)
                     needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
@@ -775,11 +847,9 @@ private:
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
 
-            /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
-            /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,
-            /// re-splitting tokens the index stores whole (e.g. a postprocessor that emits separators like
-            /// concat(val, ' x')). Match the elements verbatim by switching the tokenizer argument to 'array'.
-            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
+            /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
+            /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
+            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
             {
                 chassert(new_children.size() == 3);
                 DataTypePtr arg_type = std::make_shared<DataTypeString>();
@@ -788,11 +858,10 @@ private:
                 new_children[2] = &actions_dag.addColumn(std::move(arg_column), arg_type, quoteString(array_tokenizer_desc));
             }
 
-            /// hasToken and hasPhrase take a String haystack, so rejoin the postprocessed tokens with a
-            /// separator; the function re-tokenizes them. Tokens the postprocessor dropped are empty array
-            /// elements that become adjacent separators and produce no token on re-split, reproducing the
-            /// index's dense position sequence. hasAnyTokens/hasAllTokens accept the Array(String) directly.
-            if (function_name == "hasToken" || function_name == "hasPhrase")
+            /// hasToken takes a String haystack, so rejoin the tokens for it to re-tokenize; dropped tokens are
+            /// empty elements that collapse into adjacent separators, keeping positions dense. Its index
+            /// tokenizer is always splitByNonAlpha, which splits on this space.
+            if (function_name == "hasToken")
             {
                 DataTypePtr separator_type = std::make_shared<DataTypeString>();
                 MutableColumnConstPtr separator_column = separator_type->createColumnConst(0, Field(String(" ")));
@@ -803,24 +872,15 @@ private:
 
             if (function_name == "hasPhrase" && needles_field.getType() == Field::Types::String)
             {
-                /// The needle is a phrase: tokenize it, postprocess each token (dropping empties), and rejoin
-                /// with a space so hasPhrase re-tokenizes it into the same dense postprocessed token sequence
-                /// the index stored.
+                /// Compare token sequences: rejoining into strings assumed the index tokenizer splits on the
+                /// separator used, which is false for e.g. splitByString(['()']). An emptied phrase never matches.
                 const auto & phrase = needles_field.safeGet<String>();
                 VectorWithMemoryTracking<String> tokens;
                 tokenizer->stringToTokens(phrase.data(), phrase.size(), tokens);
                 tokens = postprocessor->processTokens(std::move(tokens));
 
-                String joined;
-                for (const auto & token : tokens)
-                {
-                    if (std::ranges::any_of(token, isTokenSeparator))
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", token);
-                    if (!joined.empty())
-                        joined += ' ';
-                    joined += token;
-                }
-                needles_field = joined;
+                needles_field = Array(tokens.begin(), tokens.end());
+                needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
             else if (needles_field.getType() == Field::Types::String)
             {
@@ -842,15 +902,20 @@ private:
             {
                 const auto & src_array = needles_field.safeGet<Array>();
                 VectorWithMemoryTracking<String> tokens;
+                /// `hasPhrase` ignores an empty element, the set predicates keep it as a token that never matches.
+                const bool drop_empty_needles = function_name == "hasPhrase";
                 for (const Field & element : src_array)
-                    if (element.getType() == Field::Types::String)
-                        tokens.push_back(element.safeGet<String>());
-                /// Postprocess, then deduplicate. Do not run tokenizer-specific compaction: sparseGrams
-                /// containment compaction is unsound after a postprocessor (see stringToTokens) and could
-                /// drop a required token, disagreeing with the materialized index.
+                {
+                    if (element.getType() != Field::Types::String)
+                        continue;
+
+                    const auto & element_value = element.safeGet<String>();
+                    if (!drop_empty_needles || !element_value.empty())
+                        tokens.push_back(element_value);
+                }
+                /// Compaction is unsound after a postprocessor, and `hasPhrase` needs every duplicate, in order.
                 tokens = postprocessor->processTokens(std::move(tokens));
-                std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
-                needles_field = Array(unique_tokens.begin(), unique_tokens.end());
+                needles_field = Array(tokens.begin(), tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
         }
@@ -901,6 +966,21 @@ private:
         if (!has_materialized_index)
             return;
 
+        /// Convert up front: without an AST the optimization must be skipped, not registered with a different meaning.
+        ASTPtr exact_default_expression;
+        if (has_exact_search)
+        {
+            exact_default_expression = convertNodeToAST(function_node);
+            if (!exact_default_expression)
+            {
+                LOG_TRACE(
+                    getLogger("optimizeDirectReadFromTextIndex"),
+                    "Cannot use direct reading from text index. Predicate '{}' has no AST representation",
+                    function_node.result_name);
+                return;
+            }
+        }
+
         auto add_condition_to_input = [&](const SelectedCondition & condition)
         {
             auto [it, inserted] = virtual_column_to_node.try_emplace(condition.virtual_column_name);
@@ -911,8 +991,9 @@ private:
                 /// It will be executed by merge tree reader when index is not materialized in the data part.
                 ASTPtr default_expression;
 
+                /// Shared, not cloned: a stored default expression is immutable, `addDefaultRequiredExpressionsRecursively` clones it before use.
                 if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
-                    default_expression = convertNodeToAST(function_node);
+                    default_expression = exact_default_expression;
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
@@ -1084,7 +1165,8 @@ static bool isRowScanPassThroughStep(const IQueryPlanStep * step)
 /// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
 ///
 /// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index)
+void processAndOptimizeTextIndexFunctions(
+    const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -1123,13 +1205,13 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
     }
 
-    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the filter, e.g. the
-    /// header-converting step of `tryOptimizeTopK`. Merge it into the filter above so direct read stays possible.
+    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
+    /// filter. Merge it into the filter above so direct read stays possible.
     auto walk_begin = stack.rbegin() + 1;
     if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(walk_begin->node->step.get()))
     {
         QueryPlan::Node * node_above = (stack.rbegin() + 2)->node;
-        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, {}))
+        if (typeid_cast<FilterStep *>(node_above->step.get()) && tryMergeExpressions(node_above, nodes, settings))
             ++walk_begin; /// the merged-away step is detached now, the filter sits directly above the scan
     }
 

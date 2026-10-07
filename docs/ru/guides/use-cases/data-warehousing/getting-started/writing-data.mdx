@@ -107,7 +107,7 @@ Peak memory usage: 485.15 MiB.
   ### Создайте таблицу Iceberg
 </div>
 
-Чтобы записывать данные в Iceberg, создайте таблицу с помощью [движка таблицы `IcebergS3`](/ru/reference/engines/table-engines/integrations/iceberg).
+Для прямого чтения из существующей таблицы Iceberg рекомендуется использовать [табличную функцию `icebergS3`](/ru/reference/functions/table-functions/iceberg). В этом руководстве показано создание и заполнение автономных таблиц Iceberg, поэтому используется [движок таблицы `IcebergS3`](/ru/reference/engines/table-engines/integrations/iceberg) с явно заданной схемой. Указанные в примере расположения S3 уже содержат готовые таблицы; чтобы выполнить команды `CREATE` и `INSERT`, замените оба расположения на пустые префиксы S3 с правом записи и используйте учётные данные, которыми вы управляете.
 
 Обратите внимание, что по сравнению с исходной таблицей MergeTree схему нужно упростить. ClickHouse поддерживает более богатую систему типов, чем Iceberg и лежащие в его основе файлы Parquet, поэтому такие типы, как `Enum`, `LowCardinality` и `UInt8`, в Iceberg не поддерживаются и должны быть приведены к совместимым типам.
 
@@ -138,8 +138,10 @@ ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats
 
 Используйте `INSERT INTO SELECT`, чтобы записать данные из таблицы MergeTree в таблицу Iceberg. В этом примере мы записываем только транзакции из Лондона:
 
+Для этого примера требуется [настройка `allow_insert_into_iceberg`](/ru/reference/settings/session-settings/allow#allow_insert_into_iceberg). Текущий уровень готовности и ограничения см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix).
+
 ```sql
-SET allow_experimental_insert_into_iceberg = 1;
+SET allow_insert_into_iceberg = 1;
 
 INSERT INTO uk.uk_iceberg SELECT *
 FROM uk.uk_price_paid

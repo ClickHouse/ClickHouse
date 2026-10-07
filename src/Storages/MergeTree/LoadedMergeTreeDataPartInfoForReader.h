@@ -80,6 +80,8 @@ public:
         return data_part->getColumnSizes();
     }
 
+    CompressionCodecPtr getDefaultCompressionCodec() const override { return data_part->default_codec; }
+
     ColumnSize getSubcolumnSize(const String & subcolumn_name) const override { return data_part->getSubcolumnSize(subcolumn_name); }
 
     const MergeTreeDataPartChecksums & getChecksums() const override { return data_part->checksums; }
@@ -98,7 +100,11 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override { return data_part->getSerialization(column.name); }
 
+    SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
+
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
+
+    UUID getTableUUID() const override { return data_part->storage.getStorageID().uuid; }
 
     MergeTreeSettingsPtr getStorageSettings() const override { return data_part->storage.getSettings(); }
 

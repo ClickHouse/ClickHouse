@@ -378,6 +378,8 @@ struct HashMethodSerialized
 {
     using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+    using EmplaceResult = typename Base::EmplaceResult;
+    using FindResult = typename Base::FindResult;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
@@ -404,7 +406,19 @@ struct HashMethodSerialized
     bool use_batch_serialize = false;
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
-    std::vector<std::string_view> serialized_keys;
+    PODArray<std::string_view> serialized_keys;
+
+    /// Dense cache of aggregate state pointers keyed by the linearized positions of the
+    /// `LowCardinality` dictionaries. It is enabled when every key is a non-nullable
+    /// `LowCardinality` column and the product of the dictionary sizes is small, so that a repeated
+    /// key tuple skips serializing and hashing the key entirely. The hash table still stores the
+    /// serialized key values, so the output, merge and spill paths are not affected.
+    static constexpr size_t lc_cache_max_size = 1 << 16;
+    using LcCacheValue = std::conditional_t<std::is_void_v<Mapped>, char *, Mapped>;
+    bool lc_cache_enabled = false;
+    std::vector<size_t> lc_strides;
+    ColumnRawPtrs lc_index_columns;
+    std::vector<LcCacheValue> lc_cache;
     /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
     /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
     /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
@@ -422,7 +436,8 @@ struct HashMethodSerialized
 
     /// Skip the precomputed-hash prefetch path when the hash table's buffer is below this size,
     /// matching the existing `min_bytes_for_prefetch` contract used by `Aggregator::executeImpl`.
-    /// Checked lazily on the first emplace/find call.
+    /// Holds the raw setting; `minBytesForPrefetch` adjusts it for the cell size on the first
+    /// emplace/find call, once `Data` is known. Checked there as well.
     size_t min_bytes_for_prefetch = 0;
 
     std::unique_ptr<PrefetchingHelper> prefetching;
@@ -459,6 +474,12 @@ struct HashMethodSerialized
             }
         }
 
+        if constexpr (!nullable && Base::has_mapped)
+        {
+            if (!hash_serialized_context->settings.simple_count)
+                initLowCardinalityCache();
+        }
+
         if constexpr (prealloc)
         {
             null_maps.resize(keys_size, nullptr);
@@ -477,8 +498,8 @@ struct HashMethodSerialized
 
                 const size_t rows = row_sizes.size();
                 char * memory = serialized_buffer.data();
-                VectorWithMemoryTracking<char *> memories(rows);
-                serialized_keys.resize(rows);
+                PODArray<char *> memories(rows);
+                serialized_keys.resize_exact(rows);
                 for (size_t i = 0; i < row_sizes.size(); ++i)
                 {
                     memories[i] = memory;
@@ -516,11 +537,88 @@ struct HashMethodSerialized
         }
     }
 
+    /// Set up the dense `LowCardinality` position cache when every key column is a non-nullable
+    /// `LowCardinality` and the product of the dictionary sizes is small enough for a dense array.
+    void initLowCardinalityCache()
+    {
+        if (keys_size < 2)
+            return;
+
+        std::vector<size_t> dict_sizes;
+        dict_sizes.reserve(keys_size);
+        size_t product = 1;
+
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
+            if (!low_cardinality || low_cardinality->getDictionary().nestedColumnIsNullable())
+                return;
+
+            const size_t dict_size = low_cardinality->getDictionary().size();
+            if (dict_size == 0 || product > lc_cache_max_size / dict_size)
+                return;
+
+            product *= dict_size;
+            dict_sizes.push_back(dict_size);
+            lc_index_columns.push_back(low_cardinality->getIndexesPtr().get());
+        }
+
+        lc_strides.assign(keys_size, 1);
+        for (size_t i = keys_size - 1; i > 0; --i)
+            lc_strides[i - 1] = lc_strides[i] * dict_sizes[i];
+
+        lc_cache.assign(product, nullptr);
+        lc_cache_enabled = true;
+    }
+
+    ALWAYS_INLINE size_t getLowCardinalityPosition(size_t row) const
+    {
+        size_t position = 0;
+        for (size_t i = 0; i < lc_index_columns.size(); ++i)
+            position += lc_index_columns[i]->getUInt(row) * lc_strides[i];
+        return position;
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (Base::has_mapped)
+        {
+            if (lc_cache_enabled)
+            {
+                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                if (cached != nullptr)
+                    return EmplaceResult(cached, cached, false);
+
+                auto result = Base::emplaceKey(data, row, pool);
+                if (!result.isInserted())
+                    cached = result.getMapped();
+                return result;
+            }
+        }
+        return Base::emplaceKey(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (Base::has_mapped)
+        {
+            if (lc_cache_enabled)
+            {
+                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                if (cached != nullptr)
+                    return FindResult(&cached, true, 0);
+            }
+        }
+        return Base::findKey(data, row, pool);
+    }
+
     /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
     /// Called once on the first `emplaceKey`/`findKey`, when `Data` becomes known.
     /// Also applies the `min_bytes_for_prefetch` size-threshold contract: skip the precomputed-hash
     /// + prefetch path when the hash table is small enough to fit in caches. Matches
-    /// `Aggregator::executeImpl`'s `prefetch` gate.
+    /// `Aggregator::executeImpl`'s `prefetch` gate, cell-size correction included.
     template <typename Data>
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
         requires prealloc
@@ -528,7 +626,12 @@ struct HashMethodSerialized
         precomputed_hashes_initialized = true;
         calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
 
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        /// This method prefetches on its own instead of going through `Aggregator`'s gate, so it has
+        /// to apply the same cell-size correction the gate does - see `minBytesForPrefetch`. Without
+        /// it a key-only table (`GROUP BY` without aggregate functions) would wait for the byte
+        /// threshold of a table twice as wide, and so start prefetching at twice the cardinality.
+        const size_t min_bytes = minBytesForPrefetch<Data, Base::has_mapped>(min_bytes_for_prefetch);
+        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes)
         {
             can_precompute_hashes = false;
             return;

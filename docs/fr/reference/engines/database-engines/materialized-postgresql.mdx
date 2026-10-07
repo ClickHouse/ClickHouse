@@ -171,7 +171,7 @@ WHERE oid = 'postgres_table'::regclass;
 ```
 
 <Note>
-  La réplication des valeurs [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) n’est pas prise en charge. La valeur par défaut de ce type de données sera utilisée.
+  Les valeurs [**TOAST**](https://www.postgresql.org/docs/current/storage-toast.html) sont répliquées. Lorsque PostgreSQL envoie une référence TOAST inchangée lors d’une mise à jour, la valeur existante est conservée. Si une colonne d’identité de réplica TOAST est inchangée, PostgreSQL doit envoyer un ancien tuple de clé, sans quoi la ligne ne peut pas être identifiée.
 </Note>
 
 <div id="settings">

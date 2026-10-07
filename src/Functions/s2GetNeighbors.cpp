@@ -87,6 +87,9 @@ public:
         auto & dst_offsets = dst_offsets_column->getData();
         size_t current_offset = 0;
 
+        /// Every row appends exactly four neighbors, so the whole block's size is known here.
+        dst_data.reserve(input_rows_count * 4);
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 id = data_id[row];
@@ -99,7 +102,6 @@ public:
             S2CellId neighbors[4];
             cell_id.GetEdgeNeighbors(neighbors);
 
-            dst_data.reserve(dst_data.size() + 4);
             for (auto & neighbor : neighbors)
             {
                 ++current_offset;

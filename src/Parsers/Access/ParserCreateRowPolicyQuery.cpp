@@ -9,8 +9,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
@@ -316,14 +314,12 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserCreateRowPolicyQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementRowPolicy(StatementFactory & factory)
-{
-    factory.registerStatement("CREATE ROW POLICY",
+    documentation["CREATE ROW POLICY"] =
     {
         .description = R"DOCS_MD(
 Creates a [row policy](/concepts/features/security/access-rights#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
@@ -340,7 +336,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -349,7 +345,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -358,7 +354,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -372,6 +368,8 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
 A multi-name list **cannot** be combined with a multi-table `ON` list in one group: `p1, p2 ON t1, t2` is rejected. After a multi-name group, you also cannot append another comma-separated `name ON target` group in the same statement.
 
 Optional `ON CLUSTER` applies to the whole statement (one cluster name). ClickHouse does **not** accept a different `ON CLUSTER` per policy name packed into a single create — run separate `CREATE ROW POLICY` statements when policies must be created on different clusters.
+
+`CREATE ROW POLICY` requires the [CREATE ROW POLICY](/reference/statements/grant#access-management) privilege on the table the policy is created on. `OR REPLACE` throws away an existing policy of the same name, including which roles it applies to, so it additionally requires the [DROP ROW POLICY](/reference/statements/grant#access-management) privilege on that table. The `DROP ROW POLICY` privilege is required whether or not the policy already exists, so the statement cannot be used to find out which policies exist.
 
 ## Multiple names and tables {#multiple-names-and-tables}
 
@@ -410,15 +408,27 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## USING Clause {#using-clause}
+## USING clause {#using-clause}
 
-Allows specifying a condition to filter rows. A user will see a row if the condition is calculated to non-zero for the row.
+Defines a filter condition for a table. A user can only see rows for which the condition is true (evaluates to a non-zero value). This is similar to adding an extra `WHERE` condition to every query the user runs against the table.
+
+For example, the following policy limits `analyst_role` to rows from the EU:
+
+```sql
+CREATE ROW POLICY region_filter ON db.orders
+USING region = 'EU'
+TO analyst_role;
+```
+
+With this policy, `SELECT * FROM db.orders` returns the same rows as `SELECT * FROM db.orders WHERE region = 'EU'` would.
 
 ## TO Clause {#to-clause}
 
 In the `TO` section you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+Roles named in the `TO` section, including those after `ALL EXCEPT`, are matched against the current user's enabled roles ([`system.enabled_roles`](/reference/system-tables/enabled_roles)), not against every role granted to the user, so [`SET ROLE`](/reference/statements/set-role) can change which policies apply.
 
 ## AS Clause {#as-clause}
 
@@ -440,9 +450,11 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 Here is the general formula:
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+If no permissive condition applies, the first condition has no effect and only the restrictive policies decide, because `access_control_improvements.users_without_row_policies_can_read_rows` is enabled by default. A user to whom no condition applies therefore sees every row, and `access_control_improvements.throw_on_unmatched_row_policies`, disabled by default, raises an exception instead when the table does have conditions and none of them apply.
 
 For example, the following policies:
 
@@ -465,6 +477,12 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
+## Tables that read from other tables {#tables-that-read-from-other-tables}
+
+A row policy filters rows where the data is actually read. An `Alias` table returns the rows of its target table as its own, so the row policies of the target apply to reads through the alias as well, combined with the policies of the alias itself using a logical `AND`. A `Merge` table applies the policies of the tables it reads from. One exception: when a matched table reads remotely, such as a `Distributed` table, the remote server processes the query before the policy is applied, because the policy runs above that table's read rather than at the read. Such a query can fail, when it aggregates without selecting the policy's columns, or return fewer rows than the policy allows, when the remote server applies an `ORDER BY ... LIMIT` to rows the policy would have hidden. Define the policy on the underlying local tables of each remote server instead.
+
+This does not extend to every table that reads from another table. A `Buffer` table and a materialized view read through their destination or target table do **not** inherit that table's row policies: the policy is written against the target's schema and, for a view with `SQL SECURITY DEFINER`, is evaluated for a different user than the one running the read. Define the policy on the table users actually query in those cases.
+
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 
 A row policy filters rows where the table data is actually read. A table that delegates reading to remote servers, such as a [Distributed](/reference/engines/table-engines/special/distributed) table or a wrapper over one (for example, a materialized view with a `Distributed` target), only ships the query text to the remote servers and cannot apply the policy filter to the remote read. To keep the filter from being silently dropped, queries to such a table by users the policy applies to are rejected with an `ILLEGAL_PREWHERE` error.
@@ -479,6 +497,10 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
 <Warning>
 This works while the query is shipped as text, which is the default. With [`serialize_query_plan = 1`](/reference/settings/session-settings/serialize#serialize_query_plan) the initiator ships an already-built read plan instead, and a remote server executing such a plan does not apply its own row policies, so a read of a `Distributed` table over `local_table` returns unfiltered rows. Keep `serialize_query_plan = 0` for users whose row policies must be enforced. See [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
+
+## Join tables {#join-tables}
+
+A [Join](/reference/engines/table-engines/special/join) table is a prepared hash table that a `JOIN` or `joinGet` reads as is, so its rows cannot be filtered there. A policy on such a table, including a database-wide `ON db.*` policy, filters a plain `SELECT` from the table, but while it applies, `JOIN` and `joinGet` queries against the table fail with `ACCESS_DENIED`.
 
 ## ON CLUSTER Clause {#on-cluster-clause}
 
@@ -499,15 +521,15 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 )",
         .parent = "CREATE",
         .related = {"ALTER ROW POLICY", "CREATE MASKING POLICY", "CREATE ROLE", "DROP", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("ALTER ROW POLICY",
+    documentation["ALTER ROW POLICY"] =
     {
         .description = R"DOCS_MD(
 Changes row policy.
@@ -589,7 +611,9 @@ ALTER [ROW] POLICY [IF EXISTS] name [, ...]
 )",
         .parent = "ALTER",
         .related = {"CREATE ROW POLICY", "ALTER", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

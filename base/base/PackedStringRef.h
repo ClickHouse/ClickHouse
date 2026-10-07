@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <cstring>
+#include <string_view>
 
 #include <base/StringViewHash.h>
 #include <base/defines.h>
@@ -287,6 +288,15 @@ public:
             r.rawBytes()[TAG_BYTE_OFFSET] = LARGE_TAG_BYTE;
         }
         return r;
+    }
+};
+
+/// Default string-view based hash function for PackedStringRef
+struct PackedStringRefHash
+{
+    ALWAYS_INLINE uint32_t operator()(const char * data, size_t size) const
+    {
+        return static_cast<uint32_t>(StringViewHash()(std::string_view(data, size)));
     }
 };
 

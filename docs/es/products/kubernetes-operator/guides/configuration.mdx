@@ -120,90 +120,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-El operador se dirige a cada pod de Kubernetes a través del Service headless como
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ese sufijo se usa en
-dos partes de la configuración generada:
+Para las réplicas de ClickHouse, el operador crea un Service headless principal `<cluster-name>-clickhouse-headless` que atiende el tráfico de los clientes.
+También crea servicios por réplica `<cluster-name>-clickhouse-internal-<shard>-<index>` que exponen Pods no listos para el tráfico interno
+y las solicitudes de administración del operador. Esto puede utilizarse para la recuperación de una réplica si no logra estar lista por sí misma.
 
-* En un `ClickHouseCluster`, su valor se usa para los nombres del host de las réplicas en
-  `remote_servers` (consultas entre réplicas y consultas `Distributed`).
-* En un `KeeperCluster`, su valor se usa para construir los nombres del host de los nodos de Keeper que
-  ClickHouse utiliza para la coordinación.
-
-<Note>
-  Sobrescriba esto solo cuando el `agente kubelet` de su clúster se ejecute con un `--cluster-domain`
-  distinto de `cluster.local`. Si el valor no coincide con el dominio real del clúster,
-  ClickHouse no podrá resolver los nombres del host de Keeper ni de las réplicas, y la coordinación y
-  las consultas `Distributed` fallarán con errores de resolución de DNS. Establezca el **mismo** valor en el
-  `ClickHouseCluster` y en el `KeeperCluster` al que hace referencia.
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### Almacenamiento multidisco (JBOD)
-</div>
-
-`additionalVolumeClaimTemplates` agrega discos adicionales a cada réplica de ClickHouse, además del `dataVolumeClaimSpec` principal, que es necesario para poder usarlos.
-Cada entrada es una plantilla de PVC: un `metadata.name` y una `spec` de PVC.
-Los discos se reconcilian exactamente igual que el disco de datos principal, como `volumeClaimTemplates` de StatefulSet, por lo que el controlador de StatefulSet crea y conserva un PVC por réplica, con el nombre `<name>-<statefulset>-0`.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-El operador monta cada volumen adicional en `/var/lib/clickhouse/disks/<name>` y lo añade a una configuración de almacenamiento de ClickHouse generada automáticamente.
-Los guiones de un nombre se convierten en guiones bajos en el identificador del disco de ClickHouse; la ruta de montaje conserva el nombre original.
-
-El disco de datos principal y todos los discos adicionales se colocan en un único volumen de la política de almacenamiento `default`, por lo que ClickHouse distribuye las nuevas partes de datos entre todos ellos con un esquema round-robin.
-La capacidad utilizable es la suma de todos los discos, y toda tabla que no defina su propia `storage_policy` (incluidas las tablas `system.*`) usa el conjunto combinado.
-
-<Note>
-  Los nombres de los PVC deben coincidir con `^[a-z]([-a-z0-9]*[a-z0-9])?$` y no deben entrar en conflicto con el nombre del volumen de datos principal.
-  Al igual que el disco de datos principal, el conjunto de discos adicionales queda fijado en el momento de la creación: cualquier intento de añadir, eliminar o renombrar entradas después de la creación se rechaza.
-  Los PVC adicionales se conservan cuando se elimina el clúster, igual que el disco de datos principal.
-  El tamaño de almacenamiento de una entrada existente puede ampliarse si la clase de almacenamiento admite la expansión.
-</Note>
-
-<div id="cluster-domain">
-  ## Dominio del clúster
-</div>
-
-`spec.clusterDomain` establece el sufijo DNS de Kubernetes que usa el operador al generar
-los nombres de host completos de los pods de Kubernetes que escribe en la
-configuración de servidor ClickHouse. Su valor predeterminado es `cluster.local` y está disponible tanto en
-`ClickHouseCluster` como en `KeeperCluster`.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-El operador se dirige a cada pod de Kubernetes a través del Service headless como
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Ese sufijo se usa en
-dos partes de la configuración generada:
-
-* En un `ClickHouseCluster`, su valor se usa para los nombres del host de las réplicas en
-  `remote_servers` (consultas entre réplicas y consultas `Distributed`).
-* En un `KeeperCluster`, su valor se usa para construir los nombres del host de los nodos de Keeper que
-  ClickHouse utiliza para la coordinación.
+Los nodos de Keeper usan nombres de pods de Kubernetes a través de su Service headless: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
   Sobrescriba esto solo cuando el `agente kubelet` de su clúster se ejecute con un `--cluster-domain`
@@ -217,9 +138,7 @@ dos partes de la configuración generada:
   ## Configuración del pod de Kubernetes
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### Dispersión de topología y afinidad automáticas
-</div>
+### Distribución topológica y afinidad automáticas {#automatic-topology-spread-and-affinity}
 
 Distribuya los pods entre las zonas de disponibilidad:
 
@@ -232,6 +151,22 @@ spec:
 
 <Note>
   Asegúrese de que su clúster de Kubernetes tenga suficientes nodos en distintas zonas para cumplir las restricciones de distribución.
+</Note>
+
+Con un autoescalador de nodos (Karpenter, Cluster Autoscaler), la restricción de distribución por sí sola no puede
+aprovisionar una zona que aún no tiene nodos: el planificador se conforma con las zonas que puede ver.
+Establezca `topologyMinDomains` en el número de zonas de disponibilidad para forzar la distribución:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` requiere `topologyZoneKey`. Los pods permanecen en `Pending` mientras haya menos zonas
+  disponibles de las solicitadas, así que manténgalo dentro de las zonas que su clúster pueda proporcionar.
 </Note>
 
 <div id="manual-configuration">
@@ -798,10 +733,10 @@ El nombre del contenedor `version-probe` es el predeterminado del operador: la e
 
 Dos opciones del administrador del operador controlan globalmente el bucle de comprobación de actualizaciones:
 
-| Opción                            | Predeterminado | Efecto                                                                                                                                                            |
-| --------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`          | Frecuencia con la que el operador vuelve a obtener la lista de versiones del origen                                                                               |
-| `--disable-version-update-checks` | `false`        | Desactiva por completo la comprobación de actualizaciones. No se establece la condición `VersionUpgraded` y no se genera tráfico HTTP saliente a `clickhouse.com` |
+| Opción                            | Predeterminado | Efecto                                                                                                                                                                             |
+| --------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`          | Frecuencia con la que el operador vuelve a obtener la lista de versiones del upstream. Debe ser mayor que cero cuando las comprobaciones de actualización de versión están activadas |
+| `--disable-version-update-checks` | `false`        | Desactiva por completo la comprobación de actualizaciones. No se establece la condición `VersionUpgraded` y no se genera tráfico HTTP saliente a `clickhouse.com`                  |
 
 Establece `--disable-version-update-checks=true` en entornos aislados de la red o cuando no se permite la salida a `clickhouse.com`.
 
@@ -912,9 +847,7 @@ spec:
   (`passwordType: password`) en texto plano.
 </Note>
 
-<div id="custom-users-in-configuration">
-  ### Usuarios personalizados en la configuración
-</div>
+### Usuarios personalizados en la configuración {#custom-users-in-configuration}
 
 Configure usuarios adicionales en los archivos de configuración.
 
@@ -1163,4 +1096,17 @@ spec:
       configMap:
         key: password
         name: default-password
+```
+
+## Resincronización periódica {#periodic-resync}
+
+Además de reaccionar a los eventos de Kubernetes, el operador vuelve a reconciliar cada clúster en un intervalo fijo. Esto mantiene actualizadas las condiciones de estado del state que ningún watch puede observar —la health de las réplicas de ClickHouse o el quorum de Keeper— y reintenta acciones de remediación como la limpieza de pods de Kubernetes bloqueados.
+
+El intervalo se controla con la environment variable `RESYNC_PERIOD` del operador (valor predeterminado: `30s`), y se aplica a los recursos `KeeperCluster`, donde `0` deshabilita la resincronización periódica. Los recursos `ClickHouseCluster` consultan mediante poll la tabla `system.warnings` de ClickHouse cada 30 segundos, lo que ya vuelve a activar la reconciliación, de modo que `RESYNC_PERIOD` no tiene actualmente ningún efecto sobre ellos.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
 ```

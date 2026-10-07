@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+import argparse
 import logging
 import os
 import random
 import re
-import sys
 import traceback
 from pathlib import Path
 
@@ -19,6 +19,9 @@ IMAGE_NAME = "clickhouse/fuzzer"
 
 # Maximum number of reproduce commands to display inline before writing to file
 MAX_INLINE_REPRODUCE_COMMANDS = 20
+
+# The runner agent lives on the host, outside this container, so it is only safe if the container cannot take the whole box.
+RUNNER_MEMORY_RESERVE = 8 * 1024**3
 
 cwd = Utils.cwd()
 WORKSPACE_PATH = Path(cwd) / "ci/tmp/workspace"
@@ -245,6 +248,7 @@ def get_run_command(
         # For sysctl
         "--privileged "
         "--network=host "
+        f"--memory={Utils.physical_memory() - RUNNER_MEMORY_RESERVE} "
         "--tmpfs /tmp/clickhouse:mode=1777 "
         f"--volume={WORKSPACE_PATH}:/workspace "
         f"--volume={cwd}:/repo "
@@ -364,11 +368,9 @@ def run_fuzz_job(check_name: str):
     compatibility_setting: str | None = None
     if not buzzhouse:
         if is_old_compatibility:
-            # The minimum version is 24.3 because that's when enable_analyzer
-            # became enabled by default, and the fuzzer profile constrains
-            # enable_analyzer to >= 1 to avoid wasting cycles on the old
-            # interpreter. An older compatibility version would revert the
-            # setting instead of tripping the constraint.
+            # 24.3 is the oldest compatibility version worth fuzzing: it is where the
+            # analyzer became the default, so an older one asks for the behavior of a
+            # release that predates the only query analysis there is now.
             compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
@@ -510,6 +512,8 @@ def run_fuzz_job(check_name: str):
             Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
         )
 
+    results = []
+
     if is_failed:
         if is_sanitized:
             sanitizer_oom = Shell.get_output(
@@ -538,16 +542,24 @@ def run_fuzz_job(check_name: str):
         else:
             # Check for OOM in dmesg for non-sanitized builds
             if Shell.check(f"dmesg > {dmesg_log}", verbose=True):
-                if Shell.check(
-                    f"cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' | tee /dev/stderr | grep -q .",
-                    verbose=True,
-                ):
+                # CIDB takes `test_name` from a sub-result's name, so an OOM kill
+                # needs a named one to stay greppable. The grep is negated: it
+                # exits non-zero exactly when an OOM line is present, and
+                # `with_info_on_failure` captures that line into `info`.
+                oom_result = Result.from_commands_run(
+                    name="OOM in dmesg",
+                    command=f"! cat {dmesg_log} | grep -a -e 'Out of memory: Killed process' -e 'oom_reaper: reaped process' -e 'oom-kill:constraint=CONSTRAINT_NONE' -e 'Memory cgroup out of memory: Killed process' -e 'oom-kill:constraint=CONSTRAINT_MEMCG' | tee /dev/stderr | grep -q .",
+                )
+                if not oom_result.is_ok():
+                    # ERROR, not FAIL: `Result.create_from` resolves an ERROR
+                    # sub-result to a job-level `error`, a `FAIL` one to `failure`.
+                    oom_result.set_status(Result.Status.ERROR)
+                    results.append(oom_result)
                     info.append("ERROR: OOM in dmesg")
                     status = Result.Status.ERROR
             else:
                 print("WARNING: dmesg not enabled")
 
-    results = []
     if is_failed and status != Result.Status.ERROR:
         # died server - lets fetch failure from log
         fuzzer_log_parser = FuzzerLogParser(
@@ -594,9 +606,8 @@ def run_fuzz_job(check_name: str):
 
 
 if __name__ == "__main__":
-    check_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv("CHECK_NAME")
-    assert (
-        check_name
-    ), "Check name must be provided as an input arg or in CHECK_NAME env"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("check_name")
+    args = parser.parse_args()
 
-    run_fuzz_job(check_name)
+    run_fuzz_job(args.check_name)

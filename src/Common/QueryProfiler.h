@@ -15,15 +15,28 @@ namespace Poco
 }
 
 /// Whether the sampling query profiler can run in this build.
+///
 /// It is disabled under TSan on macOS: the profiler pauses threads with signals, and a signal
 /// delivered to a thread waiting on a `pthread_rwlock` makes Darwin's implementation lose the
 /// wakeup and deadlock the process (Apple FB24027930). Other Darwin builds link the replacement
 /// in `base/darwin-compatibility`, but TSan builds cannot, because TSan interposes those same
 /// functions to track lock order.
+///
+/// It is disabled under MSan because it destroys every MSan report. Printing a report takes the
+/// sanitizer runtime seconds (it symbolizes each frame through an `llvm-symbolizer` subprocess),
+/// and it holds `ScopedErrorReportLock` for the whole time. A profiler signal delivered to that
+/// thread meanwhile runs instrumented code in the handler, which trips a second MSan check; the
+/// runtime treats a same-thread re-entry into the report lock as unrecoverable, writes
+/// `MemorySanitizer: nested bug in the same thread, aborting.` and calls `internal__exit`. The
+/// report is then truncated after its `WARNING: MemorySanitizer: use-of-uninitialized-value`
+/// header line, with no stack trace, no `SUMMARY` and no origin - so a real bug found under MSan
+/// carries no information at all about where it is. Other sanitizers are unaffected: their checks
+/// fire only on genuinely invalid accesses, which the handler does not perform.
+///
 /// Emscripten declares `SIGEV_THREAD_ID` but its `sigevent` has no `_sigev_un`, and a
 /// WebAssembly sandbox has no signals to deliver a timer expiry with in the first place.
 #if (defined(SIGEV_THREAD_ID) || defined(OS_DARWIN)) && !(defined(THREAD_SANITIZER) && defined(OS_DARWIN)) \
-    && defined(OS_HAS_SIGNAL_HANDLERS)
+    && !defined(MEMORY_SANITIZER) && defined(OS_HAS_SIGNAL_HANDLERS)
 #    define QUERY_PROFILER_SUPPORTED 1
 #endif
 

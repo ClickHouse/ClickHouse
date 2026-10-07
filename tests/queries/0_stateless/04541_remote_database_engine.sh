@@ -70,22 +70,27 @@ ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${REMOTE_DB}.does_not_exist"
 echo '-- a SELECT from a missing table reports UNKNOWN_TABLE and must not recurse into the name hints'
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}.no_such_table" 2>&1 | grep -c -m1 "UNKNOWN_TABLE"
 
-echo '-- a database that refers to itself is rejected instead of recursing (prints 1 if the expected error is raised)'
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_loop ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_loop', 'default', '')"
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${REMOTE_DB}_loop.t" 2>&1 | grep -c -m1 "INFINITE_LOOP"
-# The table listing must terminate with the same defined error rather than recursing.
-${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${REMOTE_DB}_loop" 2>&1 | grep -c -m1 "INFINITE_LOOP"
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_loop"
+echo '-- a database that refers to itself is rejected at CREATE instead of recursing (prints 1 if the expected error is raised)'
+# A lazily-reported cycle would fail every whole-server scan (e.g. `system.tables`) for every user
+# while the database exists, so the chain is rejected when it is being created.
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_loop ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_loop', 'default', '')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
 
-echo '-- a chain of Remote databases that refers to itself terminates instead of recursing'
+echo '-- a CREATE that would complete a chain of Remote databases referring to itself is rejected (prints 1 if the expected error is raised)'
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_cycle_a ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_cycle_b', 'default', '')"
-${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_cycle_b ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_cycle_a', 'default', '')"
-# The table listing must terminate with a defined error rather than recursing.
-${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${REMOTE_DB}_cycle_a" 2>&1 | grep -c -m1 "INFINITE_LOOP"
-# Table resolution must terminate with a defined error rather than hang.
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}_cycle_a.t" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_cycle_b ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_cycle_a', 'default', '')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+# The half-open chain (its target database does not exist) must not affect whole-server scans, and
+# it lists no tables.
+${CLICKHOUSE_CLIENT} --query "SELECT count() > 0 FROM system.tables"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${REMOTE_DB}_cycle_a'"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_cycle_a"
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_cycle_b"
+
+echo '-- an explicit ATTACH DATABASE is a user query and cannot bypass the cycle rejection (prints 1 if the expected error is raised)'
+# Only the internal metadata replay of server startup skips the check; a user query is validated in
+# full, so a cycle cannot be persisted by attaching one half of it.
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_attach_a ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_attach_b', 'default', '')"
+${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${REMOTE_DB}_attach_b ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_attach_a', 'default', '')" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.databases WHERE name = '${REMOTE_DB}_attach_b'"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_attach_a"
 
 echo '-- a remote failure on table resolution is reported as the real error, not as UNKNOWN_TABLE'
 # Port 1 is never listened on, so the connection is refused; the query must fail with the network

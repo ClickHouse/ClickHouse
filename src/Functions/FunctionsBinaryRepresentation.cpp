@@ -596,7 +596,9 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    /// Not injective: decoding is deliberately tolerant. It is case-insensitive, and an incomplete leading
+    /// group is padded, so `unhex('0a')`, `unhex('0A')` and `unhex('a')` all decode to the same byte.
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -770,10 +772,10 @@ it to the byte represented by the number. The returned value is a binary string 
 
 If you want to convert the result to a number, you can use the `reverse` and `reinterpretAs<Type>` functions.
 
-:::note
+<Note>
 `clickhouse-client` interprets strings as UTF-8.
 This may cause that values returned by `hex` to be displayed surprisingly.
-:::
+</Note>
 
 Supports both uppercase and lowercase letters `A-F`.
 The number of hexadecimal digits does not have to be even.
@@ -874,9 +876,9 @@ Interprets each pair of binary digits (in the argument) as a number and converts
 
 For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the reverse and `reinterpretAs<Type>` functions.
 
-:::note
+<Note>
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
-:::
+</Note>
 
 Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits,
 the result is undefined (no exception is thrown).

@@ -481,7 +481,12 @@ private:
 
     void executeLocally(const QueryRunnerJob & job, ContextMutablePtr job_context) const
     {
-        auto io = executeQuery(job.query, job_context, QueryFlags{ .internal = true }).second;
+        /// The job is nested, hence `internal` - which is also what marks these queries with
+        /// `is_internal = 1` in `system.query_log`. Its text comes from the user who inserted it,
+        /// hence `user_initiated`: without it the access checks of `CREATE` jobs would be skipped, so
+        /// a job would not be limited to the privileges of the principal it runs as.
+        auto io
+            = executeQuery(job.query, job_context, QueryFlags{ .internal = true, .user_initiated = true }).second;
         try
         {
             if (io.pipeline.initialized())
@@ -500,7 +505,7 @@ private:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query: {}", job.query);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query");
                 }
             }
             io.onFinish();
@@ -632,6 +637,8 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
+        const String query_for_logging = formatQueryForLogging(job.query, settings);
+
         query_log->add([&](QueryLogElement & element)
         {
             element.type = type;
@@ -640,14 +647,14 @@ private:
             element.query_start_time = timeInSeconds(query_start_time);
             element.query_start_time_microseconds = timeInMicroseconds(query_start_time);
             element.query_duration_ms = duration_ms;
-            element.query = job.query;
+            element.query = query_for_logging;
             element.current_database = job.database;
             element.log_comment = settings[Setting::log_comment];
             element.client_info = job_context->getClientInfo();
             element.is_internal = true;
 
             if (settings[Setting::log_query_settings])
-                element.query_settings = settings.changedToMap();
+                element.query_settings = settings.changedToFlatMap(/* show_secrets */ false);
 
             if (type == QueryLogElementType::EXCEPTION_WHILE_PROCESSING)
             {
