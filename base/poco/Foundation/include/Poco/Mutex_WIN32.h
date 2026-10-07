@@ -21,6 +21,8 @@
 #include "Poco/Foundation.h"
 #include "Poco/Exception.h"
 #include "Poco/UnWindows.h"
+#include <chrono>
+#include <mutex>
 
 
 namespace Poco {
@@ -41,7 +43,22 @@ private:
 };
 
 
-typedef MutexImpl FastMutexImpl;
+/// Upstream Poco aliases this to `MutexImpl`, but a `CRITICAL_SECTION` is recursive, while `FastMutex`
+/// is documented as not recursive and is not on POSIX (`PTHREAD_MUTEX_NORMAL`). The alias would let a
+/// same-thread reentry succeed on Windows only, hiding there the reentrancy and lock-order bugs that
+/// POSIX surfaces as a deadlock. `std::timed_mutex` is not recursive, and it also gives the timed
+/// `tryLockImpl` a real timed wait instead of the polling loop of `MutexImpl`.
+class Foundation_API FastMutexImpl
+{
+protected:
+	void lockImpl();
+	bool tryLockImpl();
+	bool tryLockImpl(long milliseconds);
+	void unlockImpl();
+
+private:
+	std::timed_mutex _mutex;
+};
 
 
 //
@@ -76,6 +93,44 @@ inline bool MutexImpl::tryLockImpl()
 inline void MutexImpl::unlockImpl()
 {
 	LeaveCriticalSection(&_cs);
+}
+
+
+inline void FastMutexImpl::lockImpl()
+{
+	try
+	{
+		_mutex.lock();
+	}
+	catch (...)
+	{
+		throw SystemException("cannot lock mutex");
+	}
+}
+
+
+inline bool FastMutexImpl::tryLockImpl()
+{
+	return _mutex.try_lock();
+}
+
+
+inline bool FastMutexImpl::tryLockImpl(long milliseconds)
+{
+	try
+	{
+		return _mutex.try_lock_for(std::chrono::milliseconds(milliseconds));
+	}
+	catch (...)
+	{
+		throw SystemException("cannot lock mutex");
+	}
+}
+
+
+inline void FastMutexImpl::unlockImpl()
+{
+	_mutex.unlock();
 }
 
 
