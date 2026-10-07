@@ -21,6 +21,7 @@
 
 #include <map>
 #include <set>
+#include <unordered_set>
 
 namespace DB::ErrorCodes
 {
@@ -996,7 +997,10 @@ private:
         if (children.size() == 1)
         {
             plan = std::move(*children.front());
+            const bool is_above_row_index = row_index_steps.contains(plan.getRootNode()->step.get());
             plan.addStep(std::move(node->step));
+            if (is_above_row_index)
+                mergeRowIndexIntoParent(*plan.getRootNode());
         }
         else
             plan.unitePlans(std::move(node->step), std::move(children));
@@ -1058,8 +1062,26 @@ private:
         auto above_read = makeRowIndexDAG(merge_tree, *plan.getCurrentHeader(), index_name, nullable_index);
         auto step = std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(above_read));
         step->setStepDescription("Row index");
+        row_index_steps.insert(step.get());
         plan.addStep(std::move(step));
         return plan;
+    }
+
+    /// An expression or a filter right above the read computes the row index itself, so that a filter stays right
+    /// above the read, where PREWHERE optimization and lazy FINAL look for it. Other steps keep the row index step
+    /// below them. The step keeps its own description: the row index is a detail of this rebuild.
+    static void mergeRowIndexIntoParent(QueryPlan::Node & parent)
+    {
+        if (!typeid_cast<ExpressionStep *>(parent.step.get()) && !typeid_cast<FilterStep *>(parent.step.get()))
+            return;
+
+        String description(parent.step->getStepDescription());
+        QueryPlan::Nodes unused_nodes;
+        if (!tryMergeExpressions(&parent, unused_nodes, {}))
+            return;
+
+        const auto description_size = description.size();
+        parent.step->setStepDescription(std::move(description), description_size);
     }
 
     const MergedPlanDAG & merged;
@@ -1073,6 +1095,8 @@ private:
     std::unordered_map<const QueryPlan::Node *, const QueryPlan::Node *> parents;
     NodeSet sort_key_nodes;
     std::map<size_t, LazySource> lazy_by_source;
+    /// The steps computing the row index right above a read, to be merged into the step above when that can take it.
+    std::unordered_set<const IQueryPlanStep *> row_index_steps;
 
     /// The values crossing the `LIMIT` besides the sort keys, as the columns they are carried in, and for
     /// each crossing value the column it is carried in.

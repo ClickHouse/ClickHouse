@@ -1,5 +1,6 @@
--- Lazy FINAL with a WHERE that stays a `Filter` step above the read, when lazy materialization over joins puts a
--- step computing the row index between them: lazy FINAL still finds the filter and replaces the read.
+-- Lazy FINAL with a WHERE that stays a `Filter` step above the read, together with lazy materialization over joins.
+-- The latter computes the row index of the read in that filter, so the filter stays right above the read, and lazy
+-- FINAL still finds it and replaces the read.
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_lazy_materialization = 1;
