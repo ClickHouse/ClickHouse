@@ -58,8 +58,6 @@ private:
     /// does not include end.
     size_t start;
     size_t end;
-
-    bool closed = false;
 };
 
 }

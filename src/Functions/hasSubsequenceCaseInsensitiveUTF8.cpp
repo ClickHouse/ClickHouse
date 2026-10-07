@@ -38,9 +38,9 @@ REGISTER_FUNCTION(hasSubsequenceCaseInsensitiveUTF8)
         "Usage example",
         "SELECT hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА');",
         R"(
-┌─hasSubsequenceCaseInsensitiveUTF8('ClickHouse - столбцовая система управления базами данных', 'СИСТЕМА')─┐
-│                                                                                                        1 │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─hasSubsequen⋯ 'СИСТЕМА')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     }
     };

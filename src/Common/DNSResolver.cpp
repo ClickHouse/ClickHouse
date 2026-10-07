@@ -1,6 +1,5 @@
 #include <Common/DNSResolver.h>
 #include <Common/CacheBase.h>
-#include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/ProfileEvents.h>
@@ -22,12 +21,6 @@
 namespace ProfileEvents
 {
     extern const Event DNSError;
-    extern const Event DNSRequests;
-    extern const Event DNSRequestMicroseconds;
-    extern const Event DNSRequestError;
-    extern const Event DNSReverseRequests;
-    extern const Event DNSReverseRequestMicroseconds;
-    extern const Event DNSReverseError;
 }
 
 namespace CurrentMetrics
@@ -114,27 +107,18 @@ DNSResolver::IPAddresses hostByName(const std::string & host)
 
     DNSResolver::IPAddresses addresses;
 
+    try
     {
-        ProfileEvents::increment(ProfileEvents::DNSRequests);
-        ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::DNSRequestMicroseconds);
-
-        try
-        {
-            addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
-        }
-        catch (const Poco::Net::DNSException & e)
-        {
-            LOG_WARNING(getLogger("DNSResolver"), "Cannot resolve host ({}), error {}: {}.", host, e.code(), e.name());
-            addresses.clear();
-        }
+        addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
+    }
+    catch (const Poco::Net::DNSException & e)
+    {
+        LOG_WARNING(getLogger("DNSResolver"), "Cannot resolve host ({}), error {}: {}.", host, e.code(), e.name());
+        addresses.clear();
     }
 
     if (addresses.empty())
     {
-        /// The request that has just been made failed: either the resolver raised an error or it
-        /// answered with no addresses. Both are counted at the same boundary as `DNSRequests`,
-        /// unlike `DNSError`, which also counts failures that do not perform a request at all.
-        ProfileEvents::increment(ProfileEvents::DNSRequestError);
         ProfileEvents::increment(ProfileEvents::DNSError);
         throw DB::NetException(ErrorCodes::DNS_ERROR, "Not found address of host: {}", host);
     }
@@ -173,37 +157,11 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
 {
     auto ptr_resolver = DB::DNSPTRResolverProvider::get();
 
-    ProfileEvents::increment(ProfileEvents::DNSReverseRequests);
-    ProfileEventTimeIncrement<Microseconds> request_time(ProfileEvents::DNSReverseRequestMicroseconds);
-
-    std::unordered_set<String> ptr_records;
-
-    try
+    if (address.family() == Poco::Net::IPAddress::Family::IPv4)
     {
-        if (address.family() == Poco::Net::IPAddress::Family::IPv4)
-            ptr_records = ptr_resolver->resolve(address.toString());
-        else
-            ptr_records = ptr_resolver->resolve_v6(address.toString());
+        return ptr_resolver->resolve(address.toString());
     }
-    catch (...)
-    {
-        ProfileEvents::increment(ProfileEvents::DNSReverseError);
-        ProfileEvents::increment(ProfileEvents::DNSError);
-        throw;
-    }
-
-    /// An empty answer is a failed lookup as well: `c-ares` reports `NXDOMAIN`, `SERVFAIL` and other
-    /// non-success statuses by leaving the result set empty rather than by raising an error,
-    /// and every caller treats the absence of PTR records as a resolution failure.
-    /// `DNSError` is incremented together with `DNSReverseError` so that it stays the total of all
-    /// resolution failures, forward and reverse, as its description promises.
-    if (ptr_records.empty())
-    {
-        ProfileEvents::increment(ProfileEvents::DNSReverseError);
-        ProfileEvents::increment(ProfileEvents::DNSError);
-    }
-
-    return ptr_records;
+    return ptr_resolver->resolve_v6(address.toString());
 }
 
 Poco::Net::IPAddress pickAddress(const DNSResolver::IPAddresses & addresses)

@@ -34,8 +34,8 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
 namespace
 {
@@ -59,7 +59,7 @@ namespace
         if (override_name)
             user.setName(override_name->toString());
         else if (query.new_name)
-            user.setName(query.new_name->toString());
+            user.setName(*query.new_name);
         else if (query.names->size() == 1)
             user.setName(query.names->toStrings().at(0));
 
@@ -236,33 +236,6 @@ namespace
         else if (query.grantees)
             user.grantees = *query.grantees;
     }
-
-    /// Whether the statement does nothing but add authentication methods to the user who runs it, which is
-    /// what `CREATE TOKEN` desugars to. Such a statement is authorized by the `CREATE TOKEN` privilege in
-    /// addition to `ALTER USER` on the user itself, so that a user can issue tokens for its own account
-    /// without being able to administer accounts. Every other clause of `ALTER USER` - renaming, hosts,
-    /// roles, settings, grantees, dropping or replacing the existing authentication methods - keeps
-    /// requiring `ALTER USER`, so the privilege cannot be used to reconfigure the account in any other way.
-    bool isSelfServiceAuthenticationMethodAddition(const ASTCreateUserQuery & query, const String & current_user_name)
-    {
-        if (!query.alter || !query.add_identified_with || query.authentication_methods.empty())
-            return false;
-
-        /// `ADD IDENTIFIED` never replaces or resets the existing methods, but check it explicitly:
-        /// dropping the credentials of an account is account administration, not token issuing.
-        if (query.replace_authentication_methods || query.reset_authentication_methods_to_new)
-            return false;
-
-        /// The user-level `VALID UNTIL` (`global_valid_until`) is rejected because it re-dates the
-        /// pre-existing authentication methods of the account too. A deadline which belongs to the added
-        /// method itself lives in `ASTAuthenticationData::valid_until` and is what `CREATE TOKEN` uses.
-        if (query.new_name || query.hosts || query.add_hosts || query.remove_hosts || query.roles || query.default_roles
-            || query.settings || query.alter_settings || query.grantees || query.default_database || query.global_valid_until)
-            return false;
-
-        const auto names = query.names->toStrings();
-        return (names.size() == 1) && (names.front() == current_user_name);
-    }
 }
 
 BlockIO InterpreterCreateUserQuery::execute()
@@ -272,21 +245,6 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
-
-    /// A session whose access rights are limited by the GRANTS clause of an authentication method must not
-    /// mint credentials for an existing user. The GRANTS clause of a new authentication method is intersected
-    /// at login with the *user's* full access rights, not with the limit of the session which created the
-    /// method, so such a session could otherwise issue itself a token wider than itself. Deny it (fail-close),
-    /// as with role administration. `CREATE USER` is not affected: a newly created user has no access rights,
-    /// so a limit placed on its authentication methods cannot hand out more than nothing.
-    if (query.alter && !query.authentication_methods.empty() && access->getParams().authentication_grants)
-        throw Exception(ErrorCodes::ACCESS_DENIED,
-            "Not enough privileges. "
-            "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
-            "and such sessions cannot add authentication methods to an existing user");
-
-    const bool self_service_authentication_method_addition
-        = isSelfServiceAuthenticationMethodAddition(query, getContext()->getUserName());
 
     /// `CREATE USER OR REPLACE` overwrites an existing user - its authentication methods, its granted
     /// roles and its settings - so it is a drop followed by a create and requires the privileges of both.
@@ -298,18 +256,10 @@ BlockIO InterpreterCreateUserQuery::execute()
         required_access |= AccessType::DROP_USER;
 
     for (const auto & name : query.names->toStrings())
-    {
-        /// `CREATE TOKEN` is an alternative to `ALTER USER` here, not an addition to it: check it only when
-        /// `ALTER USER` is missing, so that the error message of an unprivileged user names the privilege
-        /// which is actually meant for this statement.
-        if (self_service_authentication_method_addition && !access->isGranted(AccessType::ALTER_USER, name))
-            access->checkAccess(AccessType::CREATE_TOKEN);
-        else
-            access->checkAccess(required_access, name);
-    }
+        access->checkAccess(required_access, name);
 
     if (query.new_name && !query.alter)
-        access->checkAccess(AccessType::CREATE_USER, query.new_name->toString());
+        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
 
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
@@ -356,10 +306,6 @@ BlockIO InterpreterCreateUserQuery::execute()
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
-        /// Changing which roles activate by default for a user is role administration, which a session
-        /// limited by an authentication method's GRANTS clause must not do (the ALTER path is otherwise
-        /// authorized with plain ALTER_USER and does not go through the admin-option check below).
-        access->checkCanAdministerDefaultRoles();
         default_roles_from_query = RolesOrUsersSet{*query.default_roles, access_control};
         if (!query.alter && !default_roles_from_query->all)
         {
@@ -389,14 +335,6 @@ BlockIO InterpreterCreateUserQuery::execute()
         /// and rewrite the AST to an absolute, explicit-`UTC` `VALID UNTIL` literal before distributing it.
         auto cluster_query_ptr = updated_query_ptr->clone();
         auto & cluster_query = cluster_query_ptr->as<ASTCreateUserQuery &>();
-
-        /// Bind bare-table grants of the authentication methods (e.g. `GRANTS (SELECT ON t1)`) to the current
-        /// database of the initiator before shipping the query, so that every node persists the same limit.
-        /// `AddDefaultDatabaseVisitor` does not rewrite `ASTAuthenticationData::grants` (they are stored outside
-        /// the AST children), and the current database of a DDL worker is not the initiator's, so otherwise each
-        /// node would rebind bare-table grants to a different database.
-        for (auto & authentication_method_ast : cluster_query.authentication_methods)
-            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
         auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
         {
@@ -452,12 +390,13 @@ BlockIO InterpreterCreateUserQuery::execute()
             return updated_user;
         };
 
-        auto ids = query.if_exists ? storage->find<User>(names) : storage->getIDs<User>(names);
-        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
-            access_control.tryUpdate(ids, update_func);
+        {
+            auto ids = storage->find<User>(names);
+            storage->tryUpdate(ids, update_func);
+        }
         else
-            access_control.update(ids, update_func);
+            storage->update(storage->getIDs<User>(names), update_func);
     }
     else
     {
@@ -474,18 +413,22 @@ BlockIO InterpreterCreateUserQuery::execute()
             new_users.emplace_back(std::move(new_user));
         }
 
-        std::vector<UUID> ids;
-        if (query.or_replace)
-            getContext()->checkSettingsConstraintsForOverwrite(new_users, query.storage_name);
-
         if (!query.storage_name.empty())
-            ids = access_control.insertInto(query.storage_name, new_users, query.or_replace, !query.if_not_exists);
-        else if (query.if_not_exists)
-            ids = access_control.tryInsert(new_users);
+        {
+            for (const auto & name : names)
+            {
+                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::USER, name, storage_ptr))
+                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "User {} already exists in storage {}", name, another_storage_ptr->getStorageName());
+            }
+        }
+
+        std::vector<UUID> ids;
+        if (query.if_not_exists)
+            ids = storage->tryInsert(new_users);
         else if (query.or_replace)
-            ids = access_control.insertOrReplace(new_users);
+            ids = storage->insertOrReplace(new_users);
         else
-            ids = access_control.insert(new_users);
+            ids = storage->insert(new_users);
 
         if (query.grantees)
         {

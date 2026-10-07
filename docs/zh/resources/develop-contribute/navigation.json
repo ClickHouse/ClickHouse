@@ -23,13 +23,15 @@
     {
       "group": "原生协议",
       "pages": [
-        "zh/resources/develop-contribute/native-protocol/protocol",
-        "zh/resources/develop-contribute/native-protocol/format",
+        "zh/resources/develop-contribute/native-protocol/basics",
+        "zh/resources/develop-contribute/native-protocol/client",
+        "zh/resources/develop-contribute/native-protocol/server",
+        "zh/resources/develop-contribute/native-protocol/columns",
         "zh/resources/develop-contribute/native-protocol/hash"
       ]
     },
     {
-      "group": "贡献",
+      "group": "参与贡献",
       "pages": [
         "zh/resources/develop-contribute/contribute/tests",
         "zh/resources/develop-contribute/contribute/continuous-integration",

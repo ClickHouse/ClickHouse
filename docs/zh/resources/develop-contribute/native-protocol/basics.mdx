@@ -1,0 +1,150 @@
+---
+slug: /native-protocol/basics
+title: '基础知识'
+description: '原生协议基础知识'
+keywords: ['原生协议', 'TCP 协议', '协议基础知识', '二进制协议', '客户端-服务器通信']
+doc_type: 'guide'
+---
+
+<Note>
+  客户端协议参考文档仍在编写中。
+
+  大多数示例仅有 Go 版本。
+</Note>
+
+本文档介绍 ClickHouse TCP 客户端使用的二进制协议。
+
+<div id="varint">
+  ## Varint
+</div>
+
+对于长度、数据包代码及其他情况，使用的是*无符号 varint*编码。
+请使用 [binary.PutUvarint](https://pkg.go.dev/encoding/binary#PutUvarint) 和 [binary.ReadUvarint](https://pkg.go.dev/encoding/binary#ReadUvarint)。
+
+<Note>
+  不使用*有符号* varint 编码。
+</Note>
+
+<div id="string">
+  ## String
+</div>
+
+可变长度字符串编码为 *(length, value)*，其中 *length* 是 [varint](#varint)，*value* 是 UTF-8 字符串。
+
+<Warning>
+  验证长度以防止 OOM：
+
+  `0 ≤ len < MAX`
+</Warning>
+
+<Tabs>
+  <Tab title="编码">
+    ```go
+    s := "Hello, world!"
+
+    // 将字符串长度写入为 uvarint。
+    buf := make([]byte, binary.MaxVarintLen64)
+    n := binary.PutUvarint(buf, uint64(len(s)))
+    buf = buf[:n]
+
+    // 写入字符串值。
+    buf = append(buf, s...)
+    ```
+  </Tab>
+
+  <Tab title="解码">
+    ```go
+    r := bytes.NewReader([]byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    })
+
+    // 读取长度。
+    n, err := binary.ReadUvarint(r)
+    if err != nil {
+            panic(err)
+    }
+
+    // 检查 n，以防止 OOM 或在 make() 中出现运行时异常。
+    const maxSize = 1024 * 1024 * 10 // 10 MB
+    if n > maxSize || n < 0 {
+        panic("invalid n")
+    }
+
+    buf := make([]byte, n)
+    if _, err := io.ReadFull(r, buf); err != nil {
+            panic(err)
+    }
+
+    fmt.Println(string(buf))
+    // Hello, world!
+    ```
+  </Tab>
+</Tabs>
+
+<Tabs>
+  <Tab title="十六进制转储">
+    ```hexdump
+    00000000  0d 48 65 6c 6c 6f 2c 20  77 6f 72 6c 64 21        |.Hello, world!|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    DUhlbGxvLCB3b3JsZCE
+    ```
+  </Tab>
+
+  <Tab title="Go">
+    ```go
+    data := []byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="integers">
+  ## 整数
+</div>
+
+<Tip>
+  ClickHouse 对定长整数采用 **小端序 (Little Endian)&#x20;**。
+</Tip>
+
+<div id="int32">
+  ### Int32
+</div>
+
+```go
+v := int32(1000)
+
+// 编码。
+buf := make([]byte, 8)
+binary.LittleEndian.PutUint32(buf, uint32(v))
+
+// 解码。
+d := int32(binary.LittleEndian.Uint32(buf))
+fmt.Println(d) // 1000
+```
+
+<Tabs>
+  <Tab title="十六进制转储">
+    ```hexdump
+    00000000  e8 03 00 00 00 00 00 00                           |........|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    6AMAAAAAAAA
+    ```
+  </Tab>
+</Tabs>
+
+<div id="boolean">
+  ## 布尔值
+</div>
+
+布尔值用单个字节表示，`1` 表示 `true`，`0` 表示 `false`。

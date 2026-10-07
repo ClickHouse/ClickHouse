@@ -9,6 +9,7 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
+#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -47,7 +48,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -76,7 +77,6 @@
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
 #include <Common/CoverageCollection.h>
@@ -351,29 +351,6 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 }
 
 
-static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
-{
-    if (query.database)
-    {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
-        return;
-    }
-
-    loader.reloadDictionary(query.getTable(), context);
-}
-
-static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
-{
-    if (query.database)
-    {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
-        return;
-    }
-
-    loader.unloadDictionary(query.getTable(), context);
-}
-
-
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
         : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(getLogger("InterpreterSystemQuery"))
 {
@@ -401,7 +378,12 @@ BlockIO InterpreterSystemQuery::execute()
     system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     /// Make canonical query for simpler processing
-    if (query.type != Type::RELOAD_DICTIONARY && query.type != Type::UNLOAD_DICTIONARY && query.table)
+    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY)
+    {
+        if (query.database)
+            query.setTable(query.getDatabase() + "." + query.getTable());
+    }
+    else if (query.table)
     {
         StorageID id_in_query(query.getDatabase(), query.getTable());
         /// `IF EXISTS` (currently parsed for `SYSTEM SYNC REPLICA`) must suppress
@@ -485,11 +467,6 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
             prewarmPrimaryIndexCache();
-            break;
-        }
-        case Type::CLEAR_TIME_SERIES_CACHES:
-        {
-            clearTimeSeriesCaches();
             break;
         }
         case Type::CLEAR_MARK_CACHE:
@@ -804,7 +781,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            reloadDictionaryFromSystemQuery(external_dictionaries_loader, query, getContext());
+            external_dictionaries_loader.reloadDictionary(query.getTable(), getContext());
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -824,7 +801,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            unloadDictionaryFromSystemQuery(external_dictionaries_loader, query, getContext());
+            external_dictionaries_loader.unloadDictionary(query.getTable(), getContext());
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -834,6 +811,20 @@ BlockIO InterpreterSystemQuery::execute()
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.unloadAllDictionaries();
             ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::RELOAD_MODEL:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
+            bridge_helper->removeModel();
+            break;
+        }
+        case Type::RELOAD_MODELS:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
+            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
+            bridge_helper->removeAllModels();
             break;
         }
         case Type::RELOAD_FUNCTION:
@@ -1178,16 +1169,6 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
-        case Type::DISABLE_ALL_FAILPOINTS:
-        {
-            /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
-            /// server that injects nothing, which a build without libfiu already is. Failing
-            /// it would only make every caller - a test harness, above all - special-case a
-            /// build flag to ask for a state that already holds.
-            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
-            FailPointInjection::disableAllFailPoints();
-            break;
-        }
 #if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
@@ -1208,7 +1189,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->alloc(query.untracked_memory_size);
-            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::FREE_MEMORY:
@@ -1218,7 +1199,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (!holder)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
             holder->free();
-            LOG_DEBUG(log, "Total tracked memory is {}", ReadableSize(total_memory_tracker.get()));
+            LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
             break;
         }
         case Type::WAIT_FAILPOINT:
@@ -1266,10 +1247,6 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_INFO(getLogger("InterpreterSystemQuery"),
                 "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-            /// The process writes its coverage to files, see `initCoverageFromEnvironment`.
-            if (!isCoverageFileSinkEnabled())
-#endif
             {
                 /// Register (or re-register) the flush callback so coverage data is
                 /// resolved and inserted into system.coverage_log when the previous
@@ -1521,10 +1498,6 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
-    /// The definition comes from metadata stored on this server, not from a user, so it must load the
-    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
-    /// that only a freshly introduced definition needs.
-    create.attach_short_syntax = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
@@ -2579,7 +2552,7 @@ void InterpreterSystemQuery::syncTransactionLog()
 {
     getContext()->checkAccess(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-    TransactionManager::instance().sync();
+    TransactionLog::instance().sync();
 }
 
 
@@ -2745,17 +2718,6 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} has no controllable background activity", table_id.getNameForLogs());
     }
-}
-
-void InterpreterSystemQuery::clearTimeSeriesCaches()
-{
-    if (table_id.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for CLEAR TIME SERIES CACHES command");
-
-    getContext()->checkAccess(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, table_id);
-
-    auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    storagePtrToTimeSeries(table)->clearCaches();
 }
 
 void InterpreterSystemQuery::prewarmMarkCache()
@@ -2930,6 +2892,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::UNLOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARIES: {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            break;
+        }
+        case Type::RELOAD_MODEL:
+        case Type::RELOAD_MODELS:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
         case Type::RELOAD_FUNCTION:
@@ -3160,11 +3128,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, query.getDatabase(), query.getTable());
             break;
         }
-        case Type::CLEAR_TIME_SERIES_CACHES:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TIME_SERIES_CACHES, query.getDatabase(), query.getTable());
-            break;
-        }
         case Type::SYNC_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_SYNC_DATABASE_REPLICA, query.getDatabase());
@@ -3289,7 +3252,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::END: break;
