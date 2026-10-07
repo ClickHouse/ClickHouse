@@ -339,7 +339,8 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
         snapshot.total_record_count,
         snapshot.delta_record_count,
         snapshot.changelog_record_count,
-        snapshot.watermark);
+        snapshot.watermark,
+        snapshot.index_manifest);
 }
 
 void PaimonMetadata::validateTableIdentity() const
@@ -731,30 +732,24 @@ void PaimonMetadata::runBackgroundRefresh()
     refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
-PaimonSnapshot PaimonMetadata::loadSnapshot(Int64 snapshot_id) const
+void PaimonMetadata::checkNoDeletionVectors(const PaimonTableState & state) const
+{
+    if (state.index_manifest && table_client->hasDeletionVectors(*state.index_manifest))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Reading Paimon snapshot {} with deletion vectors is not supported: "
+            "deletion vectors are not applied, so the result would contain rows removed by later deletes and updates.",
+            state.snapshot_id);
+}
+
+PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
 {
     /// Get snapshot by ID
     /// Build snapshot file path: `table_location/snapshot/snapshot-<id>`
     const String snapshot_path = (std::filesystem::path(persistent_components.table_location)
         / PAIMON_SNAPSHOT_DIR
         / fmt::format("{}{}", PAIMON_SNAPSHOT_PREFIX, snapshot_id));
-    return table_client->getSnapshot({snapshot_id, snapshot_path});
-}
-
-void PaimonMetadata::checkNoDeletionVectors(Int64 snapshot_id) const
-{
-    const auto snapshot = loadSnapshot(snapshot_id);
-    if (snapshot.index_manifest && table_client->hasDeletionVectors(*snapshot.index_manifest))
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Reading Paimon snapshot {} with deletion vectors is not supported: "
-            "deletion vectors are not applied, so the result would contain rows removed by later deletes and updates.",
-            snapshot_id);
-}
-
-PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
-{
-    auto snapshot = loadSnapshot(snapshot_id);
+    auto snapshot = table_client->getSnapshot({snapshot_id, snapshot_path});
 
     /// Ensure schema is cached for this snapshot_id
     if (!persistent_components.schema_processor->hasSchema(snapshot.schema_id))
@@ -774,7 +769,8 @@ PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) cons
         snapshot.total_record_count,
         snapshot.delta_record_count,
         snapshot.changelog_record_count,
-        snapshot.watermark);
+        snapshot.watermark,
+        snapshot.index_manifest);
 }
 
 std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
@@ -834,7 +830,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         if (skip_compact && state->isCompact())
         {
             /// The watermark moves past a skipped compaction, which can add deletion vectors.
-            checkNoDeletionVectors(snapshot_id);
+            checkNoDeletionVectors(*state);
             LOG_TRACE(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
             continue;
         }
@@ -913,7 +909,7 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
 {
     for (const auto & snapshot_state : snapshots)
         if (snapshot_state)
-            checkNoDeletionVectors(snapshot_state->snapshot_id);
+            checkNoDeletionVectors(*snapshot_state);
 
     Strings data_files;
     std::unordered_set<String> seen_files;
