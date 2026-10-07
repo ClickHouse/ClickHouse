@@ -558,12 +558,7 @@ public:
     void supersede() { superseded = true; }
     bool isSuperseded() const { return superseded; }
 
-    /// `zookeeper_` is nullptr if the attempt was superseded.
-    void finish(zkutil::ZooKeeperPtr zookeeper_)
-    {
-        zookeeper = std::move(zookeeper_);
-        promise.set_value();
-    }
+    void finish() { promise.set_value(); }
 
     /// Called in the connector's catch block. Throws the connector's own copy of the exception.
     [[noreturn]] void fail(std::exception_ptr error_)
@@ -575,12 +570,11 @@ public:
 
     const std::shared_future<void> & getFuture() const { return future; }
 
-    /// After the future is ready: the client, nullptr if there is none, or throws a copy of the connector's exception.
-    zkutil::ZooKeeperPtr getResult() const
+    /// After the future is ready: throws a copy of the connector's exception if the attempt failed.
+    void rethrowIfFailed() const
     {
         if (error)
             rethrowError();
-        return zookeeper;
     }
 
 private:
@@ -609,7 +603,6 @@ private:
     std::shared_future<void> future = promise.get_future().share();
     bool superseded = false; /// Protected by the client mutex.
     /// Written by the connector before `promise` is satisfied, only read after.
-    zkutil::ZooKeeperPtr zookeeper;
     std::exception_ptr error;
 };
 
@@ -6688,8 +6681,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         if (!is_connector)
         {
             limit.wait(attempt->getFuture(), "ZooKeeper connection attempt");
-            if (auto zookeeper = attempt->getResult())
-                return zookeeper;
+            /// A published client is read under the mutex again: a config reload may have replaced it already.
+            attempt->rethrowIfFailed();
             continue;
         }
 
@@ -6743,7 +6736,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
                         LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
 
                     shared->zookeeper_connection_attempt.reset();
-                    attempt->finish(zookeeper);
+                    attempt->finish();
                     return zookeeper;
                 }
             }
@@ -6753,7 +6746,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
                 std::lock_guard lock(shared->zookeeper_mutex);
                 shared->zookeeper_connection_attempt.reset();
             }
-            attempt->finish(nullptr);
+            attempt->finish();
         }
         catch (...)
         {
@@ -7034,8 +7027,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
         if (!is_connector)
         {
             limit.wait(attempt->getFuture(), "auxiliary ZooKeeper connection attempt");
-            if (auto zookeeper = attempt->getResult())
-                return zookeeper;
+            attempt->rethrowIfFailed();
             continue;
         }
 
@@ -7078,7 +7070,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
                 }
 
                 deregister_attempt();
-                attempt->finish(zookeeper);
+                attempt->finish();
                 return zookeeper;
             }
         }
