@@ -224,7 +224,7 @@ If the above approach does not work for you, use the cmake options from the buil
 
 Two jobs run `clang-tidy` with the checks configured in the `.clang-tidy` file at the repository root.
 
-`Build (arm_tidy)` analyzes every translation unit in the tree.
+`Build (arm_tidy, i/N)` analyzes every translation unit in the tree, split into shards.
 It is thorough, but it takes hours, which is why it is not part of the merge queue -- and why a pull request that was green on its own can still break `clang-tidy` on `master` once it is merged on top of changes that landed after its last run.
 
 `Clang-tidy (changed files)` is the merge-queue counterpart.

@@ -1,7 +1,7 @@
 """Limited clang-tidy check - analyze only the translation units a change touches.
 
-The full clang-tidy check (`Build (arm_tidy)`) runs clang-tidy over every
-translation unit in the tree. That takes hours, so it cannot be part of the
+The full clang-tidy check (the `Build (arm_tidy, i/N)` shards) runs clang-tidy
+over every translation unit in the tree. That takes hours, so it cannot be part of the
 merge queue, and a pull request whose own CI was green can still break
 clang-tidy on `master` once it is merged on top of changes that landed after it
 last ran. This module is the narrow counterpart that is cheap enough to gate the
