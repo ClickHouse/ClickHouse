@@ -36,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
 namespace
 {
@@ -59,7 +60,7 @@ namespace
         if (override_name)
             user.setName(override_name->toString());
         else if (query.new_name)
-            user.setName(query.new_name->toString());
+            user.setName(*query.new_name);
         else if (query.names->size() == 1)
             user.setName(query.names->toStrings().at(0));
 
@@ -309,7 +310,7 @@ BlockIO InterpreterCreateUserQuery::execute()
     }
 
     if (query.new_name && !query.alter)
-        access->checkAccess(AccessType::CREATE_USER, query.new_name->toString());
+        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
 
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();
@@ -452,12 +453,13 @@ BlockIO InterpreterCreateUserQuery::execute()
             return updated_user;
         };
 
-        auto ids = query.if_exists ? storage->find<User>(names) : storage->getIDs<User>(names);
-        getContext()->checkSettingsConstraintsForOverwrite(ids, update_func);
         if (query.if_exists)
-            access_control.tryUpdate(ids, update_func);
+        {
+            auto ids = storage->find<User>(names);
+            storage->tryUpdate(ids, update_func);
+        }
         else
-            access_control.update(ids, update_func);
+            storage->update(storage->getIDs<User>(names), update_func);
     }
     else
     {
@@ -474,18 +476,22 @@ BlockIO InterpreterCreateUserQuery::execute()
             new_users.emplace_back(std::move(new_user));
         }
 
-        std::vector<UUID> ids;
-        if (query.or_replace)
-            getContext()->checkSettingsConstraintsForOverwrite(new_users, query.storage_name);
-
         if (!query.storage_name.empty())
-            ids = access_control.insertInto(query.storage_name, new_users, query.or_replace, !query.if_not_exists);
-        else if (query.if_not_exists)
-            ids = access_control.tryInsert(new_users);
+        {
+            for (const auto & name : names)
+            {
+                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::USER, name, storage_ptr))
+                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "User {} already exists in storage {}", name, another_storage_ptr->getStorageName());
+            }
+        }
+
+        std::vector<UUID> ids;
+        if (query.if_not_exists)
+            ids = storage->tryInsert(new_users);
         else if (query.or_replace)
-            ids = access_control.insertOrReplace(new_users);
+            ids = storage->insertOrReplace(new_users);
         else
-            ids = access_control.insert(new_users);
+            ids = storage->insert(new_users);
 
         if (query.grantees)
         {

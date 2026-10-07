@@ -1,4 +1,3 @@
--- Tags: no-parallel, no-fasttest
 -- Plan-based parallel replicas ships a serialized plan fragment with query-level constants folded on
 -- the initiator, so every replica uses the same value. This guards against per-replica constant
 -- divergence (e.g. randConstant(), now64()), which the old ReadFromParallelRemoteReplicasStep path had

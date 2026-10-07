@@ -542,7 +542,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
         {
-            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getContext()); prepared_set)
+            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
             {
                 if (prepared_set->hasExplicitSetElements())
                 {
@@ -1046,8 +1046,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     out.function = RPNElement::FUNCTION_HAS;
                     /// The function coerces the constant by the element type it sees, which may differ in `LowCardinality`.
                     DataTypePtr nested_type = array_type->getNestedType();
-                    if (const auto * wrapped_array_type = typeid_cast<const DataTypeArray *>(wrapped_key_node.getDAGNode()->result_type.get()))
-                        nested_type = wrapped_array_type->getNestedType();
+
+                    if (const auto * wrapped_dag_node = wrapped_key_node.getDAGNode())
+                    {
+                        if (const auto * wrapped_array_type = typeid_cast<const DataTypeArray *>(wrapped_dag_node->result_type.get()))
+                            nested_type = wrapped_array_type->getNestedType();
+                    }
 
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
                     Field converted_field = convertConstantForArrayIndexFunction(value_field, value_type, nested_type, actual_type);

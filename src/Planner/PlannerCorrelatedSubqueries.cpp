@@ -599,15 +599,16 @@ QueryPlan decorrelateQueryPlan(
         const auto & input_header = context.query_plan.getCurrentHeader();
         for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
         {
-            /// Decorrelation runs inside-out, and the correlated inputs of an intermediate scope are
-            /// injected later, so for some shapes of nested correlated subqueries the correlated column
-            /// is not in the outer query plan yet at this point. Reject those with a clear error instead
-            /// of failing deep inside with `NOT_FOUND_COLUMN_IN_BLOCK`.
+            /// A nested correlated subquery may reference a column from a scope beyond its immediate
+            /// outer query (it skips an intermediate scope). Such a column is not present in the outer
+            /// query plan yet at this point, because decorrelation runs inside-out while the correlated
+            /// inputs of the intermediate scope are injected later. Reject this shape with a clear error
+            /// instead of failing deep inside with NOT_FOUND_COLUMN_IN_BLOCK.
             if (!input_header->has(column))
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
-                    "Correlated subquery is not supported yet, because the correlated column '{}' is not "
-                    "available in the outer query plan at this point. Available columns: {}",
+                    "Correlated subquery is not supported yet, because it references column '{}' from a "
+                    "scope beyond the immediate outer query. Current outer query header: {}",
                     column,
                     input_header->dumpNames());
             buffer_header->insert(input_header->getByName(column));
@@ -1082,24 +1083,6 @@ QueryPlan buildLogicalJoin(
     auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
     auto rhs_plan_header = input_stream_plan.getCurrentHeader();
 
-    /// The same situation as in `decorrelateQueryPlan`, which rejects it on the path where it buffers
-    /// the outer stream: for some shapes of nested correlated subqueries the correlated column is not
-    /// in the plans being joined here, because decorrelation runs inside-out while the correlated
-    /// inputs of an intermediate scope are injected later. Without a buffer the plan lands here
-    /// instead, so reject it the same way rather than failing deep inside the join's actions DAG with
-    /// `NOT_FOUND_COLUMN_IN_BLOCK`.
-    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
-    {
-        if (!rhs_plan_header->has(column_name)
-            || !lhs_plan_header->has(fmt::format("{}.{}", correlated_subquery.action_node_name, column_name)))
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Correlated subquery is not supported yet, because the correlated column '{}' is not "
-                "available in the outer query plan at this point. Available columns: {}",
-                column_name,
-                rhs_plan_header->dumpNames());
-    }
-
     using ColumnNameGetter = std::function<String(const String &)>;
     ColumnNameGetter get_lhs_column_name = [&](const String & column_name) -> String {
         return fmt::format("{}.{}", correlated_subquery.action_node_name, column_name);
@@ -1298,9 +1281,9 @@ void buildQueryPlanForCorrelatedSubquery(
 
             auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
             /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
-            /// so they stay alive after decorrelation destroys the correlated plan, and the decision
-            /// contexts, so they follow the parent's distributed-plan decision.
-            query_plan.takeContextsFrom(correlated_plan);
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
 
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
@@ -1346,9 +1329,9 @@ void buildQueryPlanForCorrelatedSubquery(
 
             auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
             /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
-            /// so they stay alive after decorrelation destroys the correlated plan, and the decision
-            /// contexts, so they follow the parent's distributed-plan decision.
-            query_plan.takeContextsFrom(correlated_plan);
+            /// so they stay alive after decorrelation destroys the correlated plan.
+            for (const auto & ctx : correlated_plan.getInterpretersContexts())
+                query_plan.addInterpreterContext(ctx);
 
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,

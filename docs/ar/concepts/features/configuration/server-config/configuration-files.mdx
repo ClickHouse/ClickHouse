@@ -359,14 +359,16 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-## أمثلة YAML {#example-1}
+<div id="example-1">
+  ## أمثلة YAML
+</div>
 
-هنا يمكنك الاطلاع على ملف التهيئة الافتراضي المكتوب بصيغة YAML: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
+هنا يمكنك الاطلاع على ملف الإعدادات الافتراضي المكتوب بصيغة YAML: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
-توجد بعض الاختلافات بين تنسيقي YAML وXML من حيث تهيئة ClickHouse.
-فيما يلي نصائح لكتابة التهيئة بصيغة YAML.
+توجد بعض الاختلافات بين تنسيقي YAML وXML من حيث إعدادات ClickHouse.
+فيما يلي نصائح لكتابة الإعدادات بصيغة YAML.
 
-يُمثَّل وسم XML ذو القيمة النصية بزوج مفتاح-قيمة في YAML
+يُمثَّل وسم XML ذو القيمة النصية بزوج مفتاح-قيمة في YAML
 
 ```yaml
 key: value
@@ -378,7 +380,7 @@ XML المقابل:
 <key>value</key>
 ```
 
-تُمثَّل عقدة XML المتداخلة بخريطة YAML:
+تُمثَّل عقدة XML المتداخلة بخريطة YAML:
 
 ```yaml
 map_key:
@@ -387,7 +389,7 @@ map_key:
   key3: val3
 ```
 
-XML المقابل:
+تنسيق XML المقابل:
 
 ```xml
 <map_key>
@@ -409,7 +411,7 @@ seq_key:
       key3: val5
 ```
 
-XML المقابل:
+شيفرة XML المقابلة:
 
 ```xml
 <seq_key>val1</seq_key>
@@ -434,7 +436,7 @@ map:
   key: 123
 ```
 
-XML المقابل:
+تمثيل XML المقابل:
 
 ```xml
 <map attr1="value1" attr2="value2">
@@ -459,7 +461,7 @@ XML المقابل:
 <seq attr1="value1" attr2="value2">abc</seq>
 ```
 
-لا تتيح الصيغة المذكورة أعلاه تمثيل عقد النص في XML التي تتضمن سمات XML بصيغة YAML. ويمكن التعامل مع هذه الحالة الخاصة باستخدام مفتاح السمة
+لا تتيح الصياغة المذكورة أعلاه تمثيل عقد النص في XML التي تتضمن سمات XML بصيغة YAML. ويمكن التعامل مع هذه الحالة الخاصة باستخدام مفتاح السمة
 `#text`:
 
 ```yaml
@@ -468,7 +470,7 @@ map_key:
   "#text": value2
 ```
 
-XML المقابل:
+صيغة XML المقابلة:
 
 ```xml
 <map_key attr1="value1">value2</map_key>

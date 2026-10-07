@@ -39,10 +39,8 @@
 #include <Common/ErrnoException.h>
 #include <Common/Jemalloc.h>
 #include <Common/getMultipleKeysFromConfig.h>
-#include <Common/CoverageCollection.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/Config/getConfigPath.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/Elf.h>
@@ -118,24 +116,12 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 void BaseDaemon::loadConfiguration()
 {
     /** If the program is not run in daemon mode and 'config-file' is not specified,
-      *  then we use config from the 'config.xml', 'config.yaml' or 'config.yml' file in current directory,
+      *  then we use config from 'config.xml' file in current directory,
       *  but will log to console (or use parameters --log-file, --errorlog-file from command line)
-      *  instead of using files specified in the config.
+      *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    if (config().has("config-file"))
-    {
-        /// An explicitly requested configuration file is used as is: substituting a different file for it
-        /// would silently start the server with a configuration the user did not ask for.
-        config_path = config().getString("config-file");
-    }
-    else
-    {
-        /// A configuration file can be written in XML or in YAML, so the default one is looked up with
-        /// every supported extension, not only with `.xml`.
-        config_path = getConfigPathForAnySupportedFormat(getDefaultConfigFileName());
-    }
-
+    config_path = config().getString("config-file", getDefaultConfigFileName());
     ConfigProcessor config_processor(config_path, false, true);
     ConfigProcessor::setConfigPath(fs::path(config_path).parent_path());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
@@ -265,11 +251,6 @@ void BaseDaemon::initialize(Application & self)
     }
 
     loadConfiguration();
-
-#if defined(__ELF__) && !defined(OS_FREEBSD) && WITH_COVERAGE_DEPTH
-    /// As early as possible, so that the coverage of the startup (and of its failure) is attributed too.
-    initCoverageFromEnvironment(config().getString("logger.log", ""));
-#endif
 
 #if USE_JEMALLOC
     Jemalloc::setup(

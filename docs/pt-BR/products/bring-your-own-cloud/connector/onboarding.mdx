@@ -1,144 +1,127 @@
 ---
 title: 'Onboarding'
 sidebarTitle: 'Onboarding'
-description: 'Instale o ClickHouse Connector em modo managed e configure-o no Kubernetes ou em uma VM Linux'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding', 'managed mode']
+description: 'Instale o ClickHouse Connector e configure-o no Kubernetes ou em uma VM Linux'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<PrivatePreviewBadge />
+Esta página orienta você desde o token de inscrição até um conector íntegro e verificado. O conector é instalado em um de dois destinos: um cluster do Kubernetes (Helm) ou uma VM Linux (systemd). A inscrição por token é o fluxo padrão; se o ambiente não puder acessar diretamente os endpoints do ClickHouse, consulte [instalações isoladas da internet e espelhadas](#air-gapped-and-mirrored-installs).
 
-Esta página orienta você desde o token de inscrição até um connector verificado em modo managed, no qual o executor aplica o ciclo de vida do serviço conduzido pelo ClickHouse Cloud. O connector é instalado em um cluster do Kubernetes (Helm) ou em uma VM Linux (systemd). A inscrição por token é o fluxo padrão. Quando o ambiente não puder acessar diretamente o connector endpoint do seu connector, consulte [instalações isoladas da internet e com espelhamento](#air-gapped-and-mirrored-installs). Para observar um ClickHouse que você mesmo executa, sem o executor, use `--no-managed`.
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
 
-## Pré-requisitos {#prerequisites}
+Para todas as instalações:
 
-### Registre seu ambiente {#registration}
+* **O endpoint do conector e o token de inscrição**, fornecidos pelo ClickHouse durante o onboarding (consulte a Etapa 1).
+* **Tráfego de saída pela porta 443** para `https://<subdomain>.<connector-domain>` e `https://<subdomain>.enroll.<connector-domain>`, além de `releases.clicklink.clickhouse.com` e do Amazon ECR Public durante a instalação. Se algum deles estiver inacessível, consulte [instalações isoladas da internet e espelhadas](#air-gapped-and-mirrored-installs).
+* **Um listener nativo do ClickHouse acessível** a partir do local onde o conector é executado: seguro (9440) ou em texto simples (9000), detectado automaticamente no Kubernetes.
+* **Acesso de administrador ao ClickHouse para provisionamento**: um usuário `default` sem senha, uma senha (solicitada ou fornecida com `--ch-admin-password-stdin`) ou uma instância gerenciada por operador, caso em que o provisionamento passa a usar injeção de CR e não exige senha.
+* **cosign** em todo local onde você baixar artefatos de lançamento. O instalador sempre verifica o checksum SHA-256, adiciona a verificação de assinatura com cosign quando ele está instalado e se recusa a prosseguir sem ela se você definir `CLICKLINK_REQUIRE_COSIGN=1`.
 
-Antes de realizar a inscrição, sua account team registra seu ambiente e habilita o modo managed para sua organização. Forneça a ela:
+Para instalações no Kubernetes (Helm):
 
-* o ID da sua AWS account, a region e o nome do EKS cluster
-* se o connector é executado em uma Linux VM ou no cluster
-* o node group dos componentes de plataforma
-* o prefix do espaço de nomes dos serviços (padrão `ns-`)
-* como seu cluster obtém as imagens do ClickHouse: pelo registry access que o ClickHouse Cloud configura para sua account ou pelo seu próprio mirror
+* **Qualquer cluster do Kubernetes compatível.**
+* **Um kubeconfig** que permita criar e ler o espaço de nomes do conector, aplicar Secrets, executar comandos nos pods do Kubernetes do ClickHouse (o provisionamento executa `clickhouse-client` no pod), criar ServiceAccounts, Roles e RoleBindings e instalar o chart.
+* **Uma StorageClass padrão**, ou uma classe a ser informada com `--storage-class`; o troubleshooter mantém o estado em um PersistentVolumeClaim.
+* **Acesso para baixar imagens**: os nós do cluster devem conseguir baixar a imagem pública do ECR ou uma imagem espelhada hospedada por você.
 
-Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscrição de uso único. O token identifica seu ambiente, portanto a inscrição não requer nenhum ID adicional.
+Para instalações em VM Linux (systemd):
 
-### Para toda instalação {#prerequisites-every-install}
-
-* **Connector v0.17.0 ou posterior.** Lançamentos anteriores não têm modo managed, comandos `platform` nem `instances create`. O instalador entrega o lançamento mais recente, a menos que você passe `--version`.
-* **Seu connector endpoint e token de inscrição**, fornecidos durante o [registro](#registration).
-* **Egress na porta 443** para `https://<subdomain>.<connector-domain>` e `https://<subdomain>.enroll.<connector-domain>`, além de `releases.clicklink.clickhouse.com` e Amazon ECR Public no momento da instalação. No modo managed, o executor também acessa o Amazon ECR e o STS quando uma sincronização ou criação de plataforma baixa um chart do ECR. Caso algum desses destinos esteja inacessível, consulte [instalações isoladas da internet e com espelhamento](#air-gapped-and-mirrored-installs).
-* **Um EKS cluster da Amazon** para o modo managed. O `init` recusa o modo managed em qualquer outro cluster e indica `--no-managed` para uma instalação sem o executor.
-* **Permissão de administrador do cluster para o grant do executor.** O grant cria uma ClusterRole, um ClusterRoleBinding e uma ValidatingAdmissionPolicy que restringe o executor aos espaços de nomes sob o seu prefix. No Kubernetes, o kubeconfig com o qual você executa o `init` precisa dessa permissão. Em uma VM, quem precisa dela é o kubeconfig do host; quando o host não tem permissões de admin, o `init` imprime o comando a ser executado a partir de um host que as tenha.
-* **Nenhum ClickHouse ainda.** Uma instalação gerenciada começa sem serviços; os que o executor cria se registram sozinhos. No modo managed, o `init` não registra nenhum ClickHouse executado por você (no Kubernetes, ele recusa `--instance` e `--instance-namespace`). Para observar um cluster desse tipo, instale uma implantação de connector separada com `--no-managed`. O `--ch-user-suffix` permite que as duas implantações compartilhem uma instance sem conflitos entre os usuários do connector. Essa implantação precisa de um listener native acessível, 9440 seguro ou 9000 em plaintext, detectado automaticamente no Kubernetes. Ela também precisa de acesso de ClickHouse admin para o provisioning: um usuário `default` sem password, uma password informada com `--ch-admin-password-stdin` ou no prompt, ou injection de CR para instances gerenciadas por operator.
-* **cosign** em qualquer lugar onde você baixe release artifacts. O instalador sempre verifica o checksum SHA-256. Com o cosign instalado, ele também verifica a assinatura do lançamento e, com `CLICKLINK_REQUIRE_COSIGN=1`, recusa-se a prosseguir sem o cosign.
-
-### Para instalações no Kubernetes (Helm) {#prerequisites-kubernetes}
-
-* **Um kubeconfig** cujo contexto atual aponte para o cluster EKS. Ele deve ser capaz de criar e ler o espaço de nomes do connector, aplicar Secrets, criar ServiceAccounts, Roles e RoleBindings, instalar o chart e conceder ao executor seu acesso a todo o cluster.
-* **AWS credenciais** na workstation (ambiente ou perfil) com `eks:DescribeCluster` e `ec2:DescribeVpcs`. O `init` as utiliza para ler os blocos CIDR da VPC do seu cluster para a NetworkPolicy. Se o lookup falhar, ele emite um aviso e deixa essa lista para você preencher.
-* **Os CIDRs por trás do seu connector endpoint**, para habilitar a NetworkPolicy de negação padrão do chart no momento da instalação. Sem eles, o `init` prepara a policy desabilitada e exibe como habilitá-la posteriormente.
-* **Uma StorageClass padrão**, ou uma classe a ser informada com `--storage-class`; o solucionador de problemas e o executor mantêm estado em PersistentVolumeClaims.
-* **Acesso de pull de imagens**: os nós do cluster devem conseguir extrair a imagem pública do ECR, ou um mirror hospedado por você.
-
-### Para instalações em Linux VM (systemd) {#prerequisites-vm}
-
-* **Qualquer host Linux com systemd**, amd64 ou arm64. As compilações Linux são executadas em modo FIPS.
-* **Acesso root** para o instalador e para o `init`.
-* **Portas livres** 8082, 8084 e 8086 para saúde e métricas, 9999 na interface de loopback para a API local do executor, e 8443 quando o gateway de sessão de suporte estiver habilitado.
-* **Acesso de Admin ao Kubernetes API server** para o provisioning e para o grant do executor: um kubeconfig no host, `--server` e `--ca-data`, ou os prompts. Os access bundles são ancorados em ServiceAccounts do Kubernetes em ambos os targets. No modo managed, o contexto atual do kubeconfig deve apontar para o EKS cluster que você gerencia; o `init` se recusa a conceder o grant por meio de qualquer outro contexto.
+* **Qualquer host Linux com systemd**, amd64 ou arm64. As builds para Linux são executadas no modo FIPS.
+* **Acesso root** para o instalador e o `init`.
+* **Portas livres** 8080, 8082 e 8084 (integridade) e 9090, 9092 e 9094 (métricas), além da 8443 quando o gateway de sessão de suporte estiver habilitado.
+* **Acesso de administrador a um servidor da API do Kubernetes** para provisionamento, fornecido por um kubeconfig no host, por `--server` e `--ca-data` ou nos prompts. Os pacotes de acesso são vinculados a ServiceAccounts do Kubernetes em ambos os destinos.
 
 <Note>
-  Em uma VM, `--skip-provision` é a única forma de contornar a exigência do Kubernetes API server, e vale apenas para stage. Ele ignora o provisioning do ClickHouse user, o grant do executor, a habilitação da unit e a verificação, ou seja, por si só não resulta em nenhum connector em execução. No Kubernetes, ele ignora apenas o provisioning do ClickHouse user. O grant do executor continua sendo aplicado, porque o executor do chart não consegue ser agendado sem a ServiceAccount com o grant concedido.
+  `--skip-provision` é a única forma de contornar o requisito do Kubernetes e serve apenas para a etapa de preparação: ele ignora o provisionamento de usuários do ClickHouse e, em uma VM, a ativação e a verificação da unidade; portanto, não produz um conector em execução por si só.
 </Note>
 
-## Instale e faça o registro {#install-and-enroll}
+<div id="install-and-enroll">
+  ## Instale e faça o registro
+</div>
 
 <Steps>
-  <Step title="Obtenha o endpoint do conector e o token de inscrição" id="get-endpoint-and-token">
-    Ambos são fornecidos pela sua equipe de conta assim que o seu ambiente for registrado. O endpoint tem o seguinte formato:
+  <Step title="Obtenha o endpoint do conector e o token de registro" id="get-endpoint-and-token">
+    Durante o onboarding, o ClickHouse fornece o endpoint do conector e um token de inscrição de uso único. O endpoint tem o seguinte formato:
 
     ```text
     https://<subdomain>.<connector-domain>
     ```
 
-    O token é de uso único e expira rapidamente, portanto faça a inscrição logo após recebê-lo. Trate-o como um segredo: a CLI o lê a partir de um prompt oculto ou da primeira linha do stdin, nunca de argumentos de linha de comando, do disco ou de logs. Caso ele expire antes de você concluir a inscrição, solicite um novo à sua equipe de conta.
+    O token é de uso único e expira rapidamente; portanto, execute a inscrição logo após recebê-lo. Trate-o como um segredo: a CLI o lê em um prompt oculto (ou na primeira linha de stdin), nunca em argumentos de linha de comando, disco ou logs. Se o token expirar antes de ser usado, entre em contato com a equipe de conta da ClickHouse para obter um novo.
   </Step>
 
   <Step title="Instale e verifique a CLI" id="install-and-verify-the-cli">
-    Um único comando instala um binary `clicklink` verificado. Ele detecta sua plataforma (macOS ou Linux, amd64 ou arm64), baixa o lançamento atual e verifica o checksum SHA-256. Caso o cosign esteja instalado, ele também verifica a assinatura do lançamento. A instalação é feita em `/usr/local/bin` quando esse diretório é gravável; caso contrário, em `~/.local/bin` (adicione-o ao seu `PATH`, se necessário; `--bin-dir` sobrescreve esse comportamento). Para uma instalação em Kubernetes, execute-o em qualquer workstation com acesso ao cluster via kubeconfig:
+    Um único comando instala um binário `clicklink` verificado: ele detecta sua plataforma e arquitetura (macOS ou Linux, amd64 ou arm64), baixa o lançamento atual, verifica o checksum SHA-256 e, se o cosign estiver instalado, a assinatura do lançamento, e instala o binário no seu `PATH`. Para instalar no Kubernetes, execute-o em qualquer estação de trabalho com acesso ao cluster via kubeconfig:
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | bash
     ```
 
-    Para uma instalação em VM, execute o mesmo script no host com `--host`. Após o download verificado, ele cria o usuário de sistema `clicklink`, os diretórios `/etc/clicklink`, `/var/lib/clicklink` e `/var/log/clicklink`, e as systemd units dos três componentes. Ele inicializa o `/etc/clicklink/redaction-patterns.yaml` com um conjunto inicial de patterns (um arquivo existente é preservado), de modo que a próxima etapa é a inscrição:
+    Para uma instalação em VM, execute o mesmo script no host com `--host`. Após o download ser verificado, ele também cria o usuário de sistema `clicklink`, os diretórios `/etc/clicklink`, `/var/lib/clicklink` e `/var/log/clicklink`, as unidades do systemd e um `/etc/clicklink/redaction-patterns.yaml` padrão (preservado se já existir), para que a próxima etapa comece diretamente pelo registro:
 
     ```bash
     curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
     ```
 
-    Ambas as formas aceitam `--version vX.Y.Z` para fixar um lançamento. Reexecutar qualquer uma delas é seguro: a instalação no host faz backup do binary anterior e preserva a sua configuração ativa. Para inspecionar o script antes de executá-lo, ou para baixar e verificar você mesmo o tarball do lançamento, consulte [download e verificação manuais](#manual-download-and-verification).
+    Ambas as opções aceitam `--version vX.Y.Z` para fixar uma versão, e é seguro executá-las novamente: a instalação no host faz backup do binário anterior e preserva sua configuração em uso. Para inspecionar o script antes de executá-lo ou baixar e verificar o tarball da versão manualmente, consulte [download e verificação manuais](#manual-download-and-verification).
   </Step>
 
-  <Step title="Registre e instale o conector" id="enroll-and-install">
-    `init --enroll` resgata seu token, obtém um certificate de cliente assinado e o acesso cluster-wide do executor e, em seguida, instala e verifica o connector.
+  <Step title="Registrar e instalar o conector" id="enroll-and-install">
+    A inscrição é feita com um único comando. Ele resgata seu token, provisiona o acesso ao ClickHouse, obtém um certificado de cliente assinado, instala o conector e verifica tudo de ponta a ponta.
 
     <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="Fluxo de inscrição do ClickHouse Connector" />
 
-    Em um terminal, o `init` pergunta `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` com `yes` pré-selecionado. Passe `--managed` para pular o prompt, ou `--no-managed` para uma instalação somente de observação, sem o executor. Uma instalação nova não assistida sem nenhum dos dois flags deixa o modo gerenciado desativado (uma reexecução com `--force` mantém a postura da configuração substituída), portanto sempre passe `--managed` em scripts.
-
     <Tabs>
-      <Tab title="Kubernetes" id="enroll-kubernetes">
-        Na sua estação de trabalho, com o contexto kube apontado para o seu EKS cluster, execute:
+      <Tab title="Kubernetes">
+        Na sua estação de trabalho, execute:
 
         ```bash
-        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed
+        clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm
         ```
 
-        Cole o enrollment token no prompt oculto. O `init` lê o nome, a region e a AWS account do cluster a partir do ARN do EKS do contexto atual, ou seja, você não digita nada sobre o cluster. Em seguida, ele solicita:
+        Cole o token de inscrição no prompt oculto. Em seguida, a CLI solicitará:
 
-        * o namespace do connector (padrão `clicklink`)
-        * uma StorageClass, apenas quando o cluster não define nenhuma como padrão
-        * os CIDRs por trás do endpoint do seu connector, para a allowlist de egress da NetworkPolicy (deixe em branco para preparar a policy desativada)
-        * a postura de support-session e, se habilitada, a allowlist de e-mails de operator
+        * o espaço de nomes do conector (o padrão é `clicklink`)
+        * o espaço de nomes em que suas instâncias do ClickHouse são executadas
+        * os detalhes de conexão da instância, preenchidos com base no serviço ClickHouse detectado
+        * uma StorageClass, somente se o cluster não tiver nenhuma marcada como padrão
+        * a configuração das sessões de suporte e, se ativadas, a allowlist de e-mails dos operadores
+        * a senha de administrador do ClickHouse, somente se o provisionamento via SQL precisar dela
 
-        O `init` resgata o token e salva o enrollment bundle como `handoff.yaml` no diretório de trabalho. Ele prepara a sobreposição de values do Helm `clicklink-values.yaml` com o bloco `executor` e os intervalos da VPC do seu cluster como os CIDRs do API server da NetworkPolicy. Ele cria o namespace, aplica o Secret `clicklink-hmac`, gera a private key dentro do Secret `clicklink-mtls` e grava o CSR. Ele concede o acesso cluster-wide do executor ao namespace do connector e faz com que o ClickHouse Cloud assine o certificate do cliente. Ele instala o release Helm `clicklink-connector` com seu cliente Helm integrado (sem necessidade do binary `helm`) e verifica a integridade.
+        Esse único comando executa todo o processo: resgata o token (salvando o pacote de inscrição como `handoff.yaml` no diretório de trabalho), prepara a sobreposição de valores do Helm `clicklink-values.yaml`, cria o espaço de nomes, aplica os Secrets `clicklink-hmac` e `clicklink-mtls`, provisiona usuários do ClickHouse somente leitura para cada instância (selecionando automaticamente concessões SQL ou injeção de CR para instâncias gerenciadas por operador), gera uma chave privada e uma CSR e faz com que o ClickHouse assine o certificado de cliente, instala a release Helm `clicklink-connector` com o cliente Helm integrado (sem necessidade do binário `helm`) e verifica a integridade.
 
-        Para execuções não assistidas, responda aos prompts com flags. Use o bundle salvo como ponto de entrada ou envie o enrollment token para `--enroll` como a primeira linha do stdin:
+        Para execuções não assistidas, responda aos prompts usando flags. Use o pacote salvo como ponto de entrada, pois, em execuções sem terminal, `--enroll` lê o token de inscrição da primeira linha de stdin e consumiria a senha redirecionada:
 
         ```bash
-        clicklink clctl init --handoff handoff.yaml --target helm --managed \
-          --egress-cidrs 203.0.113.0/24 \
+        clicklink clctl init --handoff handoff.yaml --target helm \
+          --instance name=<name>,host=<service-host>,port=9440,secure=true,database=default,namespace=<clickhouse-namespace> \
           --operators '<operator-email-1>,<operator-email-2>' \
-          --storage-class <storage-class>
+          --storage-class <storage-class> \
+          --ch-admin-password-stdin < admin-password.txt
         ```
 
-        Passe `--no-gateway` em vez de `--operators` para desativar as support sessions; os dois flags são mutuamente exclusivos.
+        Repita `--instance` para cada instância do ClickHouse. Passe `--no-gateway` em vez de `--operators` para desativar as sessões de suporte; as duas flags são mutuamente exclusivas.
       </Tab>
 
-      <Tab title="VM Linux" id="enroll-vm">
-        A instalação com `--host` da etapa anterior instalou o binary, o usuário de sistema `clicklink` e seus diretórios, além das units do systemd. Faça a inscrição como root:
+      <Tab title="VM Linux">
+        A instalação com `--host` na etapa anterior já instalou o binário, o usuário de sistema `clicklink`, os diretórios e as unidades do systemd. Faça a inscrição como root:
 
         ```bash
-        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --managed
+        sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain>
         ```
 
-        Cole o enrollment token no prompt oculto. O `init` detecta a cloud a partir dos metadados da instance e o EKS cluster a partir do kubeconfig do host. A region e a AWS account do cluster vêm do ARN desse cluster, tendo os metadados da instance como alternativa. Em um terminal, ele confirma o nome do cluster encontrado (`EKS cluster to manage`) e solicita um nome apenas quando o kubeconfig não indica nenhum. Passe `--cluster-name` para pular esse prompt. Em seguida, ele pergunta sobre a postura de support-session.
-
-        O `init` resgata o token e salva o enrollment bundle como `handoff.yaml`. Ele grava `/etc/clicklink/config.yaml` com o bloco `executor` e instala as credenciais de API e a cadeia de CA. Ele gera uma private key e um CSR e faz com que o ClickHouse Cloud assine o certificate do cliente. Ele gera o bundle de acesso cluster-wide do executor em `/etc/clicklink/access/executor/_cluster` e o aplica por meio do kubeconfig do host. Em seguida, ele habilita e inicia as units `clicklink-scraper`, `clicklink-troubleshooter` e `clicklink-executor`, aguarda que cada uma reporte estar ativa e executa o conjunto completo de verificações de preflight.
+        Cole o token de inscrição no prompt oculto. O comando resgata o token (salvando o pacote de inscrição como `handoff.yaml`), grava `/etc/clicklink/config.yaml`, instala as credenciais da API e a cadeia de CA, gera uma chave privada e uma CSR e faz com que o ClickHouse assine o certificado de cliente, provisiona usuários do ClickHouse somente leitura para ambos os daemons, ativa e inicia os serviços `clicklink-scraper` e `clicklink-troubleshooter`, aguarda cada um reportar que está em execução e conclui executando todo o conjunto de verificações de preflight.
       </Tab>
     </Tabs>
-
-    Quando a instalação é verificada, o `init` exibe `Managed mode is on` junto com o comando que prepara seu primeiro serviço. Continue em [criar um serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#create-a-service).
   </Step>
 
   <Step title="Verifique se a instalação foi bem-sucedida" id="verify-success">
-    O `init` verifica a instalação antes de reportar sucesso. No Kubernetes, ele consulta periodicamente o endpoint `/livez` de cada componente habilitado, incluindo o executor, por até cinco minutos. Quando o gateway de sessão de suporte está habilitado, ele também exige que o gateway responda `401` a probes não autenticados. Em uma VM, ele aguarda o `/livez` de cada daemon e, em seguida, executa a suíte completa de preflight. A suíte verifica a configuração, os arquivos, conflitos de porta, a alcançabilidade da rede, a conectividade com o ClickHouse, o estado das unidades systemd para as três unidades, o acesso por componente, o disco e os padrões de mascaramento.
+    `init` verifica a instalação antes de reportar sucesso. No Kubernetes, ele consulta o endpoint `/livez` de cada componente habilitado por até cinco minutos e, quando o gateway da sessão de suporte está habilitado, também exige que o gateway responda a probes não autenticadas com `401`. Em uma VM, ele aguarda o `/livez` de cada daemon e executa a suíte completa de preflight: configuração, arquivos, conflitos de porta, acessibilidade de rede, conectividade com o ClickHouse, estado da unidade do systemd, acesso por componente, disco e padrões de redação.
 
     Para confirmar manualmente no Kubernetes:
 
@@ -147,7 +130,7 @@ Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscri
     kubectl get pods -n "${CONNECTOR_NAMESPACE}"
     ```
 
-    Todos os pods do connector devem estar `Running` e prontos: o scraper, o solucionador de problemas e o executor.
+    Todos os pods do conector devem estar `Running` e prontos.
 
     Para confirmar manualmente em uma VM:
 
@@ -155,40 +138,44 @@ Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscri
     sudo clicklink clctl preflight
     ```
 
-    Ele retorna `0` quando todas as verificações passam e `2` em caso de falha, além de exibir as verificações que falharam.
+    Ele retorna `0` quando todas as verificações são concluídas com êxito e `2` em caso de falha, exibindo as verificações que falharam.
   </Step>
 
   <Step title="Limpar" id="clean-up">
-    O pacote de inscrição `handoff.yaml` (modo `0600`, no diretório de trabalho) permite que reexecuções e a recuperação durante a instalação prossigam sem um segundo token. Ele armazena o secret de API do connector em plaintext, portanto exclua-o assim que a instalação for verificada:
+    O pacote de inscrição `handoff.yaml` (gravado no diretório de trabalho com o modo `0600`) permite que novas execuções e a recuperação durante a instalação não precisem de um segundo token. Ele contém o Secret da API do connector em texto simples; portanto, exclua-o assim que a instalação for verificada:
 
     ```bash
     rm handoff.yaml        # workstation (Kubernetes installs)
     sudo rm handoff.yaml   # VM host (init ran as root, so the file is root-owned)
     ```
 
-    O connector em execução mantém sua própria cópia das credenciais; upgrades e alterações de configuração nunca precisam desse arquivo. Se mais tarde você precisar do `init` novamente, solicite um novo enrollment token à sua account team e execute `init --enroll --force`.
+    O conector em execução mantém sua própria cópia das credenciais, portanto nenhuma operação depende do arquivo: upgrades e alterações de configuração nunca precisam dele e, se você precisar executar `init` novamente no futuro, solicite um novo token de inscrição à equipe de contas da ClickHouse e execute `init --enroll --force`.
   </Step>
 </Steps>
 
-## Instalações isoladas da internet e com espelhamento {#air-gapped-and-mirrored-installs}
+<div id="air-gapped-and-mirrored-installs">
+  ## Instalações isoladas da internet e espelhadas
+</div>
 
-Duas partes independentes podem ser transferidas fora de banda, dependendo do que o seu ambiente consegue alcançar. O executor não precisa de nada adicional: ele se autentica com o mesmo certificado de cliente e as mesmas credenciais de API que os demais componentes. Você aplica o grant cluster-wide dele pelo seu kubeconfig, e não pela rede.
+Dois componentes independentes podem ser transferidos fora de banda, dependendo do que seu ambiente consegue acessar.
 
-**Entrega do pacote.** Se preferir não resgatar um token on-line, a sua account team pode entregar o pacote de inscrição diretamente durante o onboarding; execute `clicklink clctl init --handoff <bundle-file>` no lugar de `--enroll`. O `--handoff` substitui apenas o resgate do token. A assinatura do certificado continua ocorrendo pelo endpoint de inscrição, portanto use `--handoff` sozinho apenas quando esse endpoint estiver acessível de onde você executa o `init`.
+**Entrega do pacote.** Se preferir não resgatar um token on-line, o ClickHouse poderá fornecer o pacote de inscrição diretamente durante o onboarding; execute `clicklink clctl init --handoff <bundle-file>` em vez de `--enroll`. `--handoff` substitui apenas o resgate do token: a assinatura do certificado ainda ocorre pelo endpoint de inscrição. Portanto, use-o sozinho quando esse endpoint puder ser acessado de onde você executa `init`.
 
-**Assinatura de certificado fora de banda.** Quando o endpoint de inscrição não estiver acessível de onde você executa o `init`, adicione `--no-auto-sign`: o `init` prepara tudo e grava o `clicklink.csr`. Envie o CSR para a sua account team e conclua a instalação com o certificado e a chain retornados. Em uma VM, execute `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt`. No Kubernetes, execute `clicklink clctl init --signed-cert client.crt --chain ca-chain.crt --target helm --target-namespace <connector-namespace> --values clicklink-values.yaml`; a execução preparada imprime uma sequência equivalente de `kubectl patch` seguida de `helm upgrade --install`. Apenas o CSR trafega; a private key nunca sai do seu ambiente.
+**Assinatura de certificado fora de banda.** Quando o endpoint de inscrição não puder ser acessado de onde você executa `init`, adicione `--no-auto-sign`: `init` prepara tudo e grava `clicklink.csr`. Envie a CSR ao ClickHouse por meio da equipe responsável pela sua conta e, em seguida, conclua a instalação com o certificado e a cadeia retornados: `sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt` em uma VM ou o comando completo de conclusão exibido pela execução preparada no Kubernetes (incluindo `--target helm`). Apenas a CSR é transferida; a chave privada nunca sai do seu ambiente.
 
-No Kubernetes, o `--chart` aceita um nome de chart resolvido por meio de `--chart-repo`, uma referência `oci://`, uma URL direta ou um arquivo compactado ou diretório local. O `--chart-version` assume por padrão a própria versão da CLI, de modo que o binary e o chart avançam juntos. Para servir imagens a partir do seu próprio registry, espelhe a imagem de container e defina `image.repository` no values overlay. Se o seu caminho de egress apresentar uma private CA ao connector, passe `--api-private-ca`. O connector passa então a verificar o seu connector endpoint com base nas raízes do sistema e na CA chain do pacote de inscrição.
+No Kubernetes, `--chart` aceita um nome de chart resolvido por `--chart-repo`, uma referência `oci://`, uma URL direta ou um arquivo ou diretório local. Por padrão, `--chart-version` usa a própria versão da CLI, para que o binário e o chart sejam movidos juntos. Para disponibilizar imagens a partir do seu próprio registry, espelhe a imagem de contêiner e defina `image.repository` na sobreposição de values. Se o tráfego de egress apresentar uma CA privada ao conector, passe `--api-private-ca` para que o endpoint da API seja verificado usando a cadeia de CA do pacote de inscrição, em vez do armazenamento de confiança do sistema.
 
-O instalador também funciona a partir de um mirror: hospede os release artifacts e o `install.sh` no seu próprio mirror e aponte para ele com `CLICKLINK_MIRROR_URL`.
+O instalador também funciona a partir de um espelho: hospede os artefatos do lançamento e `install.sh` em seu próprio espelho e use `CLICKLINK_MIRROR_URL` para apontar para ele.
 
-### Download e verificação manuais {#manual-download-and-verification}
+<div id="manual-download-and-verification">
+  ### Download e verificação manuais
+</div>
 
 Se preferir não usar pipe para executar o instalador, baixe e verifique o lançamento manualmente. O bloco detecta sua plataforma e arquitetura; execute-o como está no macOS ou Linux, amd64 ou arm64:
 
 ```bash
 CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
-# Or pin a specific release: CLICKLINK_VERSION='v0.17.0'
+# Or pin a specific release: CLICKLINK_VERSION='v0.9.0'
 CLICKLINK_TARBALL="clicklink-${CLICKLINK_VERSION}-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz"
 for suffix in '' .sha256 .sig .crt; do
   curl -fsSLO "https://releases.clicklink.clickhouse.com/${CLICKLINK_TARBALL}${suffix}"
@@ -211,36 +198,21 @@ cosign verify-blob \
   "${CLICKLINK_TARBALL}"
 ```
 
-Em uma estação de trabalho (para instalações no Kubernetes), extraia o tarball e instale o binary:
+Em uma estação de trabalho (para instalações no Kubernetes), extraia o tarball e instale o binário:
 
 ```bash
 tar -xzf "${CLICKLINK_TARBALL}"
 sudo install -m 0755 clicklink /usr/local/bin/clicklink
 ```
 
-Em uma VM, extraia o tarball e execute `sudo ./install.sh` no diretório extraído. Ao lado dos release artifacts, ele realiza a mesma instalação no host que `--host`.
+Em uma VM, extraia o tarball e execute `sudo ./install.sh` no diretório extraído; ao lado dos artefatos do lançamento, ele realiza a mesma instalação no host que `--host`.
 
-## Se algo falhar {#if-something-fails}
+<div id="if-something-fails">
+  ## Se algo falhar
+</div>
 
-Execute novamente o mesmo comando. O `init` é idempotente: novas execuções convergem para o mesmo estado, preservam sua configuração existente e os arquivos preparados e ignoram o trabalho já concluído. Quando um passo falha no meio do processo, a CLI imprime os comandos de recuperação exatos; eles podem ser repetidos com segurança.
+Execute novamente o mesmo comando. `init` é idempotente: novas execuções convergem para o mesmo estado, preservam a config e os arquivos preparados existentes e pulam o trabalho concluído. Quando uma etapa falha parcialmente, a CLI exibe os comandos de recuperação exatos para a sua situação, e é seguro repeti-los.
 
-Se a inscrição for recusada, é porque o token já foi utilizado, é inválido ou expirou. Para um token já utilizado, execute novamente com `--handoff handoff.yaml`, que existe até o passo de limpeza. Caso contrário, solicite um novo token ao seu account team. Se a inscrição falhar com um erro de transporte, execute novamente o mesmo comando. Uma nova execução recusada significa que a primeira tentativa consumiu o token, então solicite um novo.
+Se a inscrição for recusada, o token já terá sido usado (execute novamente com `--handoff handoff.yaml`, que existe até a etapa final de limpeza) ou será inválido ou estará expirado (entre em contato com a equipe de conta da ClickHouse para obter um novo token). Se a inscrição falhar com um erro de transporte, o token não foi consumido; execute novamente o mesmo comando.
 
-Se o modo managed for recusado porque o cluster não é EKS, execute novamente com `--no-managed` para instalar sem o executor. Em uma VM, um kubeconfig cujo contexto atual aponta para outro lugar também é recusado: troque de contexto com `kubectl config use-context` e execute novamente.
-
-Se o grant do executor não puder ser aplicado:
-
-* **Em uma VM**, o `init` não falha. Ele prepara o pacote e imprime um aviso com o comando exato a ser executado a partir de um kubeconfig que tenha privilégios de administrador do cluster. O preflight de verificação reporta o estado do executor como ele está. Execute o comando impresso e, em seguida, execute novamente o mesmo comando `init` para verificar:
-
-```bash
-sudo env KUBECONFIG=<path> clicklink clctl executor access apply --cluster --config /etc/clicklink/config.yaml
-```
-
-* **No Kubernetes**, um grant recusado interrompe o `init` antes que o chart seja implantado, porque o executor faz o bind à ServiceAccount concedida e não consegue iniciar sem ela. O overlay preparado, os Secrets e a CSR são mantidos, e o `init` exibe os dois comandos que devem ser executados a partir de um host com permissões de admin do cluster. Execute-os e, em seguida, rode novamente o mesmo comando `init` para continuar:
-
-```bash
-clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>
-clicklink clctl executor access apply --cluster --output-dir <dir>
-```
-
-`--force` é uma redefinição explícita; uma retentativa de rotina não precisa dele. Ele sobrescreve a config ou o values overlay mantidos, regenera a client key e substitui um certificado de cliente não expirado (um `409` do endpoint de assinatura significa que já existe um). Ele preserva o UUID do cluster do connector e sua postura de modo managed. Reexecuções não assistidas mantêm a postura e, em um terminal, o prompt assume esse valor por padrão, a menos que você passe `--managed` ou `--no-managed`. Use `--force` para rotacionar credenciais ou substituir um certificado; consulte [operações](/pt-BR/products/bring-your-own-cloud/connector/operations) para o modelo completo de reexecução e recuperação.
+`--force` é uma redefinição explícita, não uma nova tentativa rotineira: ele substitui a config preservada ou a sobreposição de values, gera novamente a chave do client e substitui um certificado de client ainda válido (um `409` do endpoint de assinatura indica que já existe um). O UUID do cluster do conector é preservado mesmo com `--force`, portanto, um conector reinicializado mantém sua identidade. Use-o ao alternar credentials ou substituir um certificado e consulte [operations](/pt-BR/products/bring-your-own-cloud/connector/operations) para conhecer o modelo completo de nova execução e recuperação.

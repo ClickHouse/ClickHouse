@@ -823,7 +823,9 @@ private:
                 VectorWithMemoryTracking<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
-                /// Skip compaction when a postprocessor is applied: it is unsound afterwards and can drop a token.
+                /// Skip tokenizer-specific compaction when a postprocessor is applied: these needle tokens
+                /// are postprocessed and deduplicated below instead, because sparseGrams containment
+                /// compaction is unsound after a postprocessor (it can drop a required token).
                 if (!apply_postprocessor)
                     needles_array = tokenizer->compactTokens(needles_array);
                 needles_field = Array(needles_array.begin(), needles_array.end());
@@ -847,9 +849,11 @@ private:
             chassert(merged_outputs.size() == 1);
             new_children[0] = merged_outputs.front();
 
-            /// new_children[0] is now an Array(String) of postprocessed tokens. Switch the tokenizer argument
-            /// to 'array' to match them verbatim, instead of re-splitting tokens the index stores whole.
-            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
+            /// new_children[0] is now an Array(String) of FINAL postprocessed tokens. hasAnyTokens /
+            /// hasAllTokens would otherwise re-tokenize each array element with the tokenizer argument,
+            /// re-splitting tokens the index stores whole (e.g. a postprocessor that emits separators like
+            /// concat(val, ' x')). Match the elements verbatim by switching the tokenizer argument to 'array'.
+            if (function_name == "hasAnyTokens" || function_name == "hasAllTokens")
             {
                 chassert(new_children.size() == 3);
                 DataTypePtr arg_type = std::make_shared<DataTypeString>();
@@ -858,10 +862,11 @@ private:
                 new_children[2] = &actions_dag.addColumn(std::move(arg_column), arg_type, quoteString(array_tokenizer_desc));
             }
 
-            /// hasToken takes a String haystack, so rejoin the tokens for it to re-tokenize; dropped tokens are
-            /// empty elements that collapse into adjacent separators, keeping positions dense. Its index
-            /// tokenizer is always splitByNonAlpha, which splits on this space.
-            if (function_name == "hasToken")
+            /// hasToken and hasPhrase take a String haystack, so rejoin the postprocessed tokens with a
+            /// separator; the function re-tokenizes them. Tokens the postprocessor dropped are empty array
+            /// elements that become adjacent separators and produce no token on re-split, reproducing the
+            /// index's dense position sequence. hasAnyTokens/hasAllTokens accept the Array(String) directly.
+            if (function_name == "hasToken" || function_name == "hasPhrase")
             {
                 DataTypePtr separator_type = std::make_shared<DataTypeString>();
                 MutableColumnConstPtr separator_column = separator_type->createColumnConst(0, Field(String(" ")));
@@ -872,15 +877,24 @@ private:
 
             if (function_name == "hasPhrase" && needles_field.getType() == Field::Types::String)
             {
-                /// Compare token sequences: rejoining into strings assumed the index tokenizer splits on the
-                /// separator used, which is false for e.g. splitByString(['()']). An emptied phrase never matches.
+                /// The needle is a phrase: tokenize it, postprocess each token (dropping empties), and rejoin
+                /// with a space so hasPhrase re-tokenizes it into the same dense postprocessed token sequence
+                /// the index stored.
                 const auto & phrase = needles_field.safeGet<String>();
                 VectorWithMemoryTracking<String> tokens;
                 tokenizer->stringToTokens(phrase.data(), phrase.size(), tokens);
                 tokens = postprocessor->processTokens(std::move(tokens));
 
-                needles_field = Array(tokens.begin(), tokens.end());
-                needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
+                String joined;
+                for (const auto & token : tokens)
+                {
+                    if (std::ranges::any_of(token, isTokenSeparator))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index postprocessor produced an invalid token '{}'", token);
+                    if (!joined.empty())
+                        joined += ' ';
+                    joined += token;
+                }
+                needles_field = joined;
             }
             else if (needles_field.getType() == Field::Types::String)
             {
@@ -902,20 +916,15 @@ private:
             {
                 const auto & src_array = needles_field.safeGet<Array>();
                 VectorWithMemoryTracking<String> tokens;
-                /// `hasPhrase` ignores an empty element, the set predicates keep it as a token that never matches.
-                const bool drop_empty_needles = function_name == "hasPhrase";
                 for (const Field & element : src_array)
-                {
-                    if (element.getType() != Field::Types::String)
-                        continue;
-
-                    const auto & element_value = element.safeGet<String>();
-                    if (!drop_empty_needles || !element_value.empty())
-                        tokens.push_back(element_value);
-                }
-                /// Compaction is unsound after a postprocessor, and `hasPhrase` needs every duplicate, in order.
+                    if (element.getType() == Field::Types::String)
+                        tokens.push_back(element.safeGet<String>());
+                /// Postprocess, then deduplicate. Do not run tokenizer-specific compaction: sparseGrams
+                /// containment compaction is unsound after a postprocessor (see stringToTokens) and could
+                /// drop a required token, disagreeing with the materialized index.
                 tokens = postprocessor->processTokens(std::move(tokens));
-                needles_field = Array(tokens.begin(), tokens.end());
+                std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
+                needles_field = Array(unique_tokens.begin(), unique_tokens.end());
                 needles_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
             }
         }
@@ -1205,8 +1214,8 @@ void processAndOptimizeTextIndexFunctions(
         prewhere_optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_infos, direct_read_allowed, /*require_index_analyzed_predicate=*/ is_deferred_after_final);
     }
 
-    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the
-    /// filter. Merge it into the filter above so direct read stays possible.
+    /// A first-pass optimization can leave an `ExpressionStep` on top of the read step and hide the filter, e.g. the
+    /// header-converting step of `tryOptimizeTopK`. Merge it into the filter above so direct read stays possible.
     auto walk_begin = stack.rbegin() + 1;
     if (stack.size() >= 3 && typeid_cast<ExpressionStep *>(walk_begin->node->step.get()))
     {

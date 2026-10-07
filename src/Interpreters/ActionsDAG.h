@@ -276,12 +276,6 @@ public:
 
     void removeAliasesForFilter(const std::string & filter_name);
 
-    /// Fold a filter predicate that reaches a Const through `materialize`/`alias` wrappers.
-    /// Limited to value-only predicate functions (equals/and/or/comparisons) so the result
-    /// is safe to re-emit as a single Const COLUMN at the filter root - other outputs and
-    /// representation-observing parents elsewhere in the DAG are never touched
-    void foldFilterPredicateThroughMaterialize(const std::string & filter_column_name);
-
     /// Collapse structurally equivalent subtrees (aliased duplicates, equal constants, functions with identical arguments)
     /// outputs preserve their names via aliases when needed, dead nodes are pruned
     void deduplicateSubtrees();
@@ -473,10 +467,9 @@ public:
 
     struct SplitArrayJoinResult;
 
-    /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
-    /// With `nondeterministic_before_expansion`, a non-deterministic node that does not depend on the join
-    /// goes to `before` too, so it is drawn once per source row.
-    std::optional<SplitArrayJoinResult> extractFirstArrayJoin(bool nondeterministic_before_expansion = false) const;
+    /// Extract one `arrayJoin` function so it can become an ArrayJoinStep between `before` and `after`.
+    /// Picks an ARRAY_JOIN node whose argument does not itself contain an array join; returns nullopt if none.
+    std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
     /// column_name and additional_split_nodes. Outputs of initial actions must contain column_name.
@@ -540,6 +533,7 @@ public:
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
       * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
       * key rather than a rename of an equal-typed column.
+      * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -551,7 +545,8 @@ public:
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-        const NameSet & cross_type_equivalent_columns);
+        const NameSet & cross_type_equivalent_columns,
+        bool filter_is_always_false);
 
     /** Build filter dag from multiple filter dags.
       *

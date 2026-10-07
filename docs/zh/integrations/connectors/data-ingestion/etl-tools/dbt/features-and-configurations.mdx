@@ -13,7 +13,9 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 本节提供有关 dbt 与 ClickHouse 可用部分功能的文档说明。
 
-## Profile.yml 配置 {#profile-yml-configurations}
+<div id="profile-yml-configurations">
+  ## Profile.yml 配置
+</div>
 
 如需通过 dbt 连接到 ClickHouse，您需要在 `profiles.yml` 文件中添加一个 [profile](https://docs.getdbt.com/docs/core/connect-data-platform/connection-profiles)。ClickHouse 的 profile 需符合以下语法：
 
@@ -27,8 +29,8 @@ your_profile_name:
       # Optional
       schema: [default] # ClickHouse database for dbt models
       driver: [http] # http or native.  If not set this will be autodetermined based on port setting
-      host: [localhost]
-      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings
+      host: [localhost] 
+      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings 
       user: [default] # User for all database operations
       password: [<empty string>] # Password for the user
       cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. Distributed materializations require this setting to work. See the following ClickHouse Cluster section for more details.
@@ -52,18 +54,22 @@ your_profile_name:
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
       database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
-
+      
       # Native (clickhouse-driver) connection settings
       sync_request_timeout: [5] # Timeout for server ping
       compress_block_size: [1048576] # Compression block size if compression is enabled
 ```
 
-### schema 与 数据库 {#schema-vs-database}
+<div id="schema-vs-database">
+  ### schema 与 数据库
+</div>
 
 dbt 模型的 relation 标识符 `database.schema.table` 与 ClickHouse 不兼容，因为 ClickHouse 不支持 `schema`。
 因此，我们采用简化形式 `schema.table`，其中 `schema` 表示 ClickHouse 的 数据库。不建议使用 `default` 数据库。
 
-### SET 语句警告 {#set-statement-warning}
+<div id="set-statement-warning">
+  ### SET 语句警告
+</div>
 
 在许多环境中，使用 SET 语句让某个 ClickHouse 设置在所有 DBT 查询中持续生效并不可靠，
 而且可能导致意外失败。尤其是在通过负载均衡器使用 HTTP 连接时，因为负载均衡器会将查询
@@ -71,7 +77,9 @@ dbt 模型的 relation 标识符 `database.schema.table` 与 ClickHouse 不兼�
 出现这种问题。因此，作为最佳实践，我们建议将所需的 ClickHouse 设置配置在 DBT profile 的
 “custom&#95;settings” 属性中，而不要依赖 pre-hook 的 “SET” 语句，尽管这种做法偶尔也会被建议采用。
 
-### 设置 `quote_columns` {#setting-quote_columns}
+<div id="setting-quote_columns">
+  ### 设置 `quote_columns`
+</div>
 
 为避免出现警告，请务必在 `dbt_project.yml` 中为 `quote_columns` 显式指定一个值。更多信息请参阅 [quote&#95;columns 文档](https://docs.getdbt.com/reference/resource-configs/quote_columns)。
 
@@ -80,14 +88,18 @@ seeds:
   +quote_columns: false  #如果 CSV 列标题中含有空格，则设为 `true`
 ```
 
-### 关于 ClickHouse 集群 {#about-the-clickhouse-cluster}
+<div id="about-the-clickhouse-cluster">
+  ### 关于 ClickHouse 集群
+</div>
 
 使用 ClickHouse 集群时，需要考虑两点：
 
 * 设置 `cluster` 参数。
 * 确保写后读一致性，尤其是在使用多个 `threads` 时。
 
-#### 集群设置 {#cluster-setting}
+<div id="cluster-setting">
+  #### 集群设置
+</div>
 
 profile 中的 `cluster` 设置可让 dbt-clickhouse 针对 ClickHouse 集群运行。如果在 profile 中设置了 `cluster`，默认情况下，**所有模型都会使用 `ON CLUSTER` 子句创建**——使用 **Replicated** 引擎的模型除外。这包括：
 
@@ -117,16 +129,22 @@ Replicated 引擎**不会**包含 `ON CLUSTER` 子句，因为它们旨在自行
 
 如果某个模型在创建时未设置 `cluster`，dbt-clickhouse 会检测到这种情况，并在该模型上执行所有不带 `on cluster` 子句的 DDL/DML。
 
-#### 写后读一致性 {#read-after-write-consistency}
+<div id="read-after-write-consistency">
+  #### 写后读一致性
+</div>
 
 dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发送到同一个副本，那么它与拥有多个副本的 ClickHouse 集群并不兼容。你在日常使用 dbt 时可能不会遇到问题，但可以根据集群情况采用一些策略来确保这一点：
 
 * 如果你使用的是 ClickHouse Cloud 集群，只需在 profile 的 `custom_settings` 属性中设置 `select_sequential_consistency: 1`。有关此设置的更多信息，请参见[这里](/zh/reference/settings/session-settings/other#select_sequential_consistency)。
 * 如果你使用的是自托管集群，请确保所有 dbt 请求都发送到同一个 ClickHouse 副本。如果上层有负载均衡器，请尝试使用某种 `replica aware routing`/`sticky sessions` 机制，以确保始终访问同一个副本。在 ClickHouse Cloud 之外的集群中添加设置 `select_sequential_consistency = 1`[不推荐](/zh/reference/settings/session-settings/other#select_sequential_consistency)。
 
-## 其他 ClickHouse 宏 {#additional-clickhouse-macros}
+<div id="additional-clickhouse-macros">
+  ## 其他 ClickHouse 宏
+</div>
 
-### 模型物化实用宏 {#model-materialization-utility-macros}
+<div id="model-materialization-utility-macros">
+  ### 模型物化实用宏
+</div>
 
 以下宏用于简化创建 ClickHouse 特有的表和视图：
 
@@ -143,7 +161,9 @@ dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发�
 * `ttl_config` -- 使用 `ttl` 模型配置属性来指定 ClickHouse 表生存时间 (TTL) 表达式。默认不指定
   TTL。
 
-### s3Source 辅助宏 {#s3source-helper-macro}
+<div id="s3source-helper-macro">
+  ### s3Source 辅助宏
+</div>
 
 `s3source` 宏简化了通过 ClickHouse S3 表函数直接从 S3 选择 ClickHouse 数据的过程。它的工作原理是，
 从一个具名配置字典中填充 S3 表函数的参数 (该字典名称必须以
@@ -164,7 +184,9 @@ dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发�
 | external&#95;id                   | 担任 IAM role 时与 `role_arn` 一并传递的外部 ID。需要设置 `role_arn`。自 dbt-clickhouse 1.10.2 起可用。                                |
 | compression                       | S3 对象使用的压缩方法。如果未提供，ClickHouse 将尝试根据文件名判断压缩方式。                                                                    |
 
-#### 示例 {#s3source-example}
+<div id="s3source-example">
+  #### 示例
+</div>
 
 在 `dbt_project.yml` 中定义共享配置 (字典名称必须以 `s3` 结尾) ：
 
@@ -183,7 +205,9 @@ select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
 
 更多示例请参见 [S3 测试文件](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)。
 
-### 跨数据库宏支持 {#cross-database-macro-support}
+<div id="cross-database-macro-support">
+  ### 跨数据库宏支持
+</div>
 
 dbt-clickhouse 现已支持 `dbt Core` 中包含的大多数跨数据库宏，但以下情况除外：
 
@@ -193,13 +217,19 @@ dbt-clickhouse 现已支持 `dbt Core` 中包含的大多数跨数据库宏，�
 * 同样，ClickHouse 中的 `replace` SQL 函数要求 `old_chars` 和 `new_chars`
   参数必须是常量字符串，因此调用此宏时，这些参数会被解释为字符串而不是列名。
 
-## 目录支持 {#catalog-support}
+<div id="catalog-support">
+  ## 目录支持
+</div>
 
-### dbt 目录集成状态 {#dbt-catalog-integration-status}
+<div id="dbt-catalog-integration-status">
+  ### dbt 目录集成状态
+</div>
 
 dbt Core v1.10 引入了目录集成支持，使适配器能够将模型物化到管理 Apache Iceberg 等开放表格式的外部目录中。**该功能尚未在 dbt-clickhouse 中原生实现。** 你可以在 [GitHub issue #489](https://github.com/ClickHouse/dbt-clickhouse/issues/489) 中跟踪该功能实现的进展。
 
-### ClickHouse 目录支持 {#clickhouse-catalog-support}
+<div id="clickhouse-catalog-support">
+  ### ClickHouse 目录支持
+</div>
 
 ClickHouse 最近新增了对 Apache Iceberg 表和数据目录的原生支持。大多数功能仍处于 `experimental` 阶段，但如果你使用的是较新的 ClickHouse 版本，已经可以使用这些功能。
 
@@ -207,21 +237,23 @@ ClickHouse 最近新增了对 Apache Iceberg 表和数据目录的原生支持�
 
 * 此外，ClickHouse 还提供了 [DataLakeCatalog 数据库引擎](/zh/reference/engines/database-engines/datalake)，可**连接到外部数据目录**，包括 AWS Glue Catalog、Databricks Unity Catalog、Hive Metastore 和 REST Catalog。这样，你就可以直接从外部目录查询开放表格式的数据 (Iceberg、Delta Lake) ，而无需复制数据。
 
-### 使用 Iceberg 和目录的变通方案 {#workarounds-iceberg-catalogs}
+<div id="workarounds-iceberg-catalogs">
+  ### 使用 Iceberg 和目录的变通方案
+</div>
 
 如果你已经使用上述工具在 ClickHouse 集群中定义了 Iceberg 表或目录，就可以在 dbt 项目中从这些 Iceberg 表或目录读取数据。你可以利用 dbt 的 `source` 功能，在 dbt 项目中引用这些表。比如，如果你想访问 REST 目录中的表，可以：
 
 1. **创建一个指向外部目录的数据库：**
 
 ```sql
--- Example with REST Catalog
+-- 使用 REST Catalog 的示例
 SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE iceberg_catalog
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
-SETTINGS
-    catalog_type = 'rest',
-    storage_endpoint = 'http://minio:9000/lakehouse',
+SETTINGS 
+    catalog_type = 'rest', 
+    storage_endpoint = 'http://minio:9000/lakehouse', 
     warehouse = 'demo'
 ```
 
@@ -241,7 +273,7 @@ sources:
 3. **在 dbt 模型中使用目录中的表：**
 
 ```sql
-SELECT
+SELECT 
     o.order_id,
     c.customer_name,
     o.order_date
@@ -250,7 +282,9 @@ INNER JOIN {{ source('external_catalog', 'customers') }} c
     ON o.customer_id = c.customer_id
 ```
 
-### 关于这些变通方案的说明 {#benefits-workarounds}
+<div id="benefits-workarounds">
+  ### 关于这些变通方案的说明
+</div>
 
 这些变通方案的优点包括：
 

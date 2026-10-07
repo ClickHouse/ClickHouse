@@ -16,9 +16,7 @@
 
 #include <Processors/IProcessor.h>
 
-#include <map>
 #include <optional>
-#include <string>
 
 namespace DB
 {
@@ -26,19 +24,10 @@ namespace DB
 /// Read-round loop streaming source.
 class MergeTreeCommitOrderSource final : public IProcessor
 {
-    struct ReadRound
-    {
-        std::optional<ReadRoundPipeline> pipeline;
-        std::map<std::string, int64_t> safe_block_numbers;
-        ClassifiedPartitions partitions;
-    };
-
     Status handleRunningPipeline();
     Status handleShutdown();
     Status handleReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
     Status handleBoundedReconfiguration(const ClassifiedPartitions & partitions, bool subscription_updated);
-    void startRound();
-    void finishRound();
     void surfaceFinalCursor();
 
     bool needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated);
@@ -77,9 +66,8 @@ private:
     int64_t finished_rounds = 0;
 
     /// Reconfiguration
-    std::optional<ReadRound> pending_round;
-    std::optional<ReadRound> current_round;
-    std::optional<ReadRound> finished_round;
+    std::optional<ReadRoundPipeline> current_round;
+    std::optional<ReadRoundPipeline> pending_round;
 };
 
 }

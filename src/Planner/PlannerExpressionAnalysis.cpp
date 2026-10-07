@@ -50,18 +50,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// The columns a step's correlated subqueries correlate on. They are read from the step's input, by the
-/// join the subquery is planned into, so the child step has to keep them even though no expression of
-/// this step reads them.
-NameSet correlatedColumnsOfSubtrees(const CorrelatedSubtrees & correlated_subtrees)
-{
-    NameSet result;
-    for (const auto & correlated_subquery : correlated_subtrees.subqueries)
-        result.insert(
-            correlated_subquery.correlated_column_identifiers.begin(), correlated_subquery.correlated_column_identifiers.end());
-    return result;
-}
-
 /** Construct filter analysis result for filter expression node
   * Actions before filter are added into into actions chain.
   * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
@@ -86,11 +74,7 @@ std::optional<FilterAnalysisResult> analyzeFilter(
         return {};
 
     result.filter_column_name = output->result_name;
-    actions_chain.addStep(std::make_unique<ActionsChainStep>(
-        result.filter_actions,
-        true /*use_actions_nodes_as_output_columns*/,
-        ColumnsWithTypeAndName{},
-        correlatedColumnsOfSubtrees(result.correlated_subtrees)));
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
 
     return result;
 }
@@ -404,9 +388,10 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         }
     }
 
-    /// A window function's aggregate is created during analysis and keeps the argument types known then,
-    /// so an argument whose actual type differs when the window step runs needs the aggregate re-created
-    /// with that type.
+    /// When `group_by_use_nulls = 1` with CUBE/ROLLUP/GROUPING SETS, GROUP BY keys become Nullable
+    /// in the data flowing into window functions. But the aggregate function was created during analysis
+    /// with the original (non-nullable) argument types. We need to re-create the aggregate function
+    /// with the actual (nullable) argument types so that the Null combinator is properly applied.
     for (auto & window_description : window_descriptions)
     {
         for (auto & window_function : window_description.window_functions)
@@ -508,11 +493,7 @@ ProjectionAnalysisResult analyzeProjection(
         projection_column_names_with_display_aliases.push_back({projection_node_name, projection_column.name});
     }
 
-    auto projection_actions_step = std::make_unique<ActionsChainStep>(
-        projection_actions,
-        true /*use_actions_nodes_as_output_columns*/,
-        ColumnsWithTypeAndName{},
-        correlatedColumnsOfSubtrees(correlated_subtrees));
+    auto projection_actions_step = std::make_unique<ActionsChainStep>(projection_actions);
     actions_chain.addStep(std::move(projection_actions_step));
 
     ProjectionAnalysisResult result;

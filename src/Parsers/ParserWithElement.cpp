@@ -7,6 +7,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserWithElement.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -86,11 +88,15 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
-std::map<String, Documentation> ParserWithElement::getDocumentation() const
-{
-    std::map<String, Documentation> documentation;
 
-    documentation["WITH"] =
+}
+
+namespace DB
+{
+
+void registerStatementWith(StatementFactory & factory)
+{
+    factory.registerStatement("WITH",
     {
         .description = R"DOCS_MD(
 ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
@@ -626,9 +632,7 @@ WITH RECURSIVE <identifier> AS <subquery expression>
 )",
         .parent = "SELECT",
         .related = {"SELECT", "FROM", "CREATE VIEW"},
-    };
-
-    return documentation;
+    });
 }
 
 }

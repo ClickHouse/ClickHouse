@@ -9,7 +9,7 @@
 namespace DB
 {
 
-UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, std::span<const ChunkRowRange> slices)
+UInt64 materializeSlicesIntoChunk(Chunk & chunk, Columns && source_columns, UInt64 source_row_count, const std::vector<ChunkRowRange> & slices)
 {
     UInt64 output_row_count = 0;
     for (const auto & slice : slices)
