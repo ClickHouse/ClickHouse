@@ -43,7 +43,7 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     , skip_unavailable_shards(skip_unavailable_shards_)
     , fail_if_replica_unprobed(fail_if_replica_unprobed_)
 {
-    shuffled_pools = pool->getShuffledPools(settings_, priority_func, /* use_slowdown_count */ true);
+    shuffled_pools = pool->getShuffledPools(settings_, std::move(priority_func), /* use_slowdown_count */ true);
 
     for (const auto & shuffled_pool : shuffled_pools)
         replicas.emplace_back(

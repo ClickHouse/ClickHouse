@@ -7,7 +7,7 @@
 namespace DB
 {
 
-bool ask(std::string question, ReadBuffer & in, WriteBuffer & out)
+bool ask(const std::string & question, ReadBuffer & in, WriteBuffer & out)
 {
     while (true)
     {
@@ -24,7 +24,7 @@ bool ask(std::string question, ReadBuffer & in, WriteBuffer & out)
     }
 }
 
-bool ask(std::string question)
+bool ask(const std::string & question)
 {
     while (true)
     {

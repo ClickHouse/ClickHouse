@@ -483,7 +483,7 @@ namespace
         MemoryBackup(
             ContextPtr context_,
             const StorageMetadataPtr & metadata_snapshot_,
-            const std::shared_ptr<const Blocks> blocks_,
+            const std::shared_ptr<const Blocks> & blocks_,
             const String & data_path_in_backup,
             const TemporaryDataOnDiskScopePtr & tmp_data_,
             const ReadSettings & read_settings_)

@@ -36,7 +36,7 @@ namespace DB
 }
 
 ConstantNode::ConstantNode(ConstantValue constant_value_)
-    : ConstantNode(constant_value_, nullptr /*source_expression*/)
+    : ConstantNode(std::move(constant_value_), nullptr /*source_expression*/)
 {}
 
 ConstantNode::ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_)
@@ -47,7 +47,7 @@ ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
     : ConstantNode(constant_column_, applyVisitor(FieldToDataType(), (*constant_column_)[0]))
 {}
 
-ConstantNode::ConstantNode(Field value_, DataTypePtr value_data_type_)
+ConstantNode::ConstantNode(const Field & value_, DataTypePtr value_data_type_)
     : ConstantNode(ConstantValue{convertFieldToTypeOrThrow(value_, *value_data_type_), value_data_type_})
 {}
 

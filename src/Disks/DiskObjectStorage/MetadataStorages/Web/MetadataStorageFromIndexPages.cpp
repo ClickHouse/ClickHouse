@@ -187,7 +187,7 @@ namespace
         return path;
     }
 
-    std::string ensureTrailingSlashInPath(std::string url)
+    std::string ensureTrailingSlashInPath(const std::string & url)
     {
         Poco::URI uri(url, false);
         uri.setPath(ensureTrailingSlash(uri.getPath()));

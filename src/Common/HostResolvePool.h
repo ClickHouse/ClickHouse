@@ -93,7 +93,7 @@ public:
     private:
         friend class HostResolver;
 
-        Entry(HostResolver & pool_, Poco::Net::IPAddress address_)
+        Entry(HostResolver & pool_, const Poco::Net::IPAddress & address_)
             : pool(pool_.getWeakFromThis())
             , address(address_)
             , resolved_host(address.toString())
@@ -132,7 +132,7 @@ protected:
 
     struct Record
     {
-        Record(Poco::Net::IPAddress address_, Poco::Timestamp resolve_time_)
+        Record(const Poco::Net::IPAddress & address_, Poco::Timestamp resolve_time_)
             : address(address_)
             , resolve_time(resolve_time_)
         {}

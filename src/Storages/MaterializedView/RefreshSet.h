@@ -54,7 +54,7 @@ public:
 
     /// Caller should then also call notifyDependents, because dependent views need to know when
     /// their dependencies appear/disappear.
-    void emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task);
+    void emplace(const StorageID & id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task);
 
     /// Finds active refreshable view(s) by database and table name.
     /// Normally there's at most one, but we allow name collisions here, just in case.
@@ -92,11 +92,11 @@ private:
 
     /// Update `tasks`. Caller should then also call notifyDependents, because dependent views need
     /// to know when their dependencies appear/disappear.
-    RefreshTaskList::iterator addTaskLocked(StorageID id, RefreshTaskPtr task);
-    void removeTaskLocked(StorageID id, RefreshTaskList::iterator iter);
+    RefreshTaskList::iterator addTaskLocked(const StorageID & id, RefreshTaskPtr task);
+    void removeTaskLocked(const StorageID & id, RefreshTaskList::iterator iter);
 
-    RefreshTaskList::iterator addInnerTableLocked(StorageID inner_table_id, RefreshTaskPtr task);
-    void removeInnerTableLocked(StorageID inner_table_id, RefreshTaskList::iterator inner_table_iter);
+    RefreshTaskList::iterator addInnerTableLocked(const StorageID & inner_table_id, RefreshTaskPtr task);
+    void removeInnerTableLocked(const StorageID & inner_table_id, RefreshTaskList::iterator inner_table_iter);
     void addDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies);
     void removeDependenciesLocked(RefreshTaskPtr task, const std::vector<StorageID> & dependencies);
 };

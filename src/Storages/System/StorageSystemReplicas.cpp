@@ -241,7 +241,7 @@ public:
         ColumnPtr col_engine_,
         std::vector<TFuture> futures_,
         ContextPtr context_)
-        : ISource(header_)
+        : ISource(std::move(header_))
         , max_block_size(max_block_size_)
         , col_database(std::move(col_database_))
         , col_table(std::move(col_table_))

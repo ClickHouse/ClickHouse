@@ -134,7 +134,7 @@ public:
     /// Change the path to the file.
     void setPath(std::string path_)
     {
-        path = path_;
+        path = std::move(path_);
     }
 
     // Not thread-safe and not synchronized between processes.

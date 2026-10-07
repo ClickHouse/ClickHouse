@@ -15,7 +15,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class MergingAggregatedTransform final : public IAccumulatingTransform
 {
 public:
-    MergingAggregatedTransform(SharedHeader header_, Aggregator::Params params_, bool final_, GroupingSetsParamsList grouping_sets_params, size_t output_streams_ = 1);
+    MergingAggregatedTransform(SharedHeader header_, const Aggregator::Params & params_, bool final_, const GroupingSetsParamsList & grouping_sets_params, size_t output_streams_ = 1);
 
     ~MergingAggregatedTransform() override;
 

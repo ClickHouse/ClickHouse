@@ -28,7 +28,7 @@ HashStatistic::HashStatistic(
 	_numberOfEntries(numEntries),
 	_numZeroEntries(numZeroEntries),
 	_maxEntriesPerHash(maxEntry),
-	_detailedEntriesPerHash(details)
+	_detailedEntriesPerHash(std::move(details))
 {
 }
 

@@ -23,7 +23,7 @@ class PushingAsyncSource : public ISource
 {
 public:
     explicit PushingAsyncSource(SharedHeader header, bool enable_auto_progress)
-        : ISource(header, enable_auto_progress)
+        : ISource(std::move(header), enable_auto_progress)
     {}
 
     String getName() const override { return "PushingAsyncSource"; }

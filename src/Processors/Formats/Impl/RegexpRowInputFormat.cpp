@@ -79,13 +79,13 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
 
 RegexpRowInputFormat::RegexpRowInputFormat(
     ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
-    : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
+    : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), std::move(header_), std::move(params_), format_settings_)
 {
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
     std::unique_ptr<PeekableReadBuffer> buf_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_, *buf_, std::move(params_))
+    : IRowInputFormat(std::move(header_), *buf_, std::move(params_))
     , buf(std::move(buf_))
     , format_settings(format_settings_)
     , escaping_rule(format_settings_.regexp.escaping_rule)

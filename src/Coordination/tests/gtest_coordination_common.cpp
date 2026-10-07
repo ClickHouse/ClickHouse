@@ -52,7 +52,7 @@ void waitDurableLogs(nuraft::log_store & log_store)
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
-void assertFileDeleted(std::string path)
+void assertFileDeleted(const std::string & path)
 {
     for (size_t i = 0; i < 100; ++i)
     {

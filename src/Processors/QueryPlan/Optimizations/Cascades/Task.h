@@ -40,7 +40,7 @@ class OptimizeGroupTask final : public IOptimizationTask
 public:
     OptimizeGroupTask(GroupId group_id_, ExpressionProperties required_properties_)
         : group_id(group_id_)
-        , required_properties(required_properties_)
+        , required_properties(std::move(required_properties_))
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
@@ -91,7 +91,7 @@ class OptimizeExpressionTask final : public IOptimizationTask
 public:
     OptimizeExpressionTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_)
         : expression(expression_)
-        , required_properties(required_properties_)
+        , required_properties(std::move(required_properties_))
     {}
 
     void execute(CascadesOptimizer & optimizer) override;
@@ -108,7 +108,7 @@ class ApplyRuleTask final : public IOptimizationTask
 public:
     ApplyRuleTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, OptimizationRulePtr rule_)
         : expression(expression_)
-        , required_properties(required_properties_)
+        , required_properties(std::move(required_properties_))
         , rule(rule_)
     {}
 

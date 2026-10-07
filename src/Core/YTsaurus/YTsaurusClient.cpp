@@ -152,7 +152,7 @@ ReadBufferPtr YTsaurusClient::lookupRows(const String & cypress_path, const Bloc
     return executeQuery(lookup_rows_query, std::move(out_callback));
 }
 
-ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback)
+ReadBufferPtr YTsaurusClient::executeQuery(const YTsaurusQueryPtr & query, const ReadWriteBufferFromHTTP::OutStreamCallback&& out_callback)
 {
     for (size_t num_try = 0; num_try < connection_info.http_proxy_urls.size(); ++num_try)
     {

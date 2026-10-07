@@ -454,7 +454,7 @@ void StorageMaterializedPostgreSQL::restoreDataFromBackup(
 
 
 boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
-        String name, String type, UInt64 default_value)
+        String name, const String & type, UInt64 default_value)
 {
     auto column_declaration = make_intrusive<ASTColumnDeclaration>();
 

@@ -105,7 +105,7 @@ public:
             REMOVE_IF_EXISTS,
         };
 
-        MetadataChange(Type type_, const String from_, const String & to_)
+        MetadataChange(Type type_, const String & from_, const String & to_)
             : type(type_), from(from_), to(to_)
         {
         }

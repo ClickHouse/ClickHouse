@@ -13,7 +13,7 @@ class GatherExchangeStep final : public LogicalExchangeStep
 {
 public:
     explicit GatherExchangeStep(SharedHeader input_header_, size_t source_bucket_count_, std::optional<SortDescription> maintain_sort_description_ = std::nullopt)
-        : LogicalExchangeStep(input_header_, std::move(maintain_sort_description_))
+        : LogicalExchangeStep(std::move(input_header_), std::move(maintain_sort_description_))
         , source_bucket_count(source_bucket_count_)
     {
     }

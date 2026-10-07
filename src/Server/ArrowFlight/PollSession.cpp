@@ -32,7 +32,7 @@ PollSession::PollSession(
     : query_context(query_context_)
     , thread_group(thread_group_)
     , block_io(std::move(block_io_))
-    , block_modifier(block_modifier_)
+    , block_modifier(std::move(block_modifier_))
 {
     try
     {

@@ -187,7 +187,7 @@ private:
     void stopLoopIfNoReaders();
 
     static Names parseSettings(String settings_list);
-    static AMQP::ExchangeType defineExchangeType(String exchange_type_);
+    static AMQP::ExchangeType defineExchangeType(const String & exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
     ContextMutablePtr addSettings(ContextPtr context) const;

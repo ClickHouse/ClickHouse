@@ -14,7 +14,7 @@ public:
 
     String getName() const override { return "ExtractColumnsTransform"; }
 
-    static Block transformHeader(Block header, const NamesAndTypesList & requested_columns_);
+    static Block transformHeader(const Block & header, const NamesAndTypesList & requested_columns_);
 
 protected:
     void transform(Chunk & chunk) override;

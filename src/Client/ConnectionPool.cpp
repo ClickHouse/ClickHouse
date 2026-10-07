@@ -13,7 +13,7 @@ namespace Setting
 }
 
 IConnectionPool::IConnectionPool(String host_, UInt16 port_, Priority config_priority_)
-    : host(host_), port(port_), address(host + ":" + toString(port_)), config_priority(config_priority_)
+    : host(std::move(host_)), port(port_), address(host + ":" + toString(port_)), config_priority(config_priority_)
 {
 }
 
@@ -29,20 +29,20 @@ Poco::Timespan::TimeDiff connectionPoolMaxWaitMilliseconds(const Settings & sett
 
 ConnectionPoolPtr ConnectionPoolFactory::get(
     unsigned max_connections,
-    String host,
+    const String & host,
     UInt16 port,
-    String default_database,
-    String user,
-    String password,
-    String proto_send_chunked,
-    String proto_recv_chunked,
-    String quota_key,
-    String cluster,
-    String cluster_secret,
-    String client_name,
+    const String & default_database,
+    const String & user,
+    const String & password,
+    const String & proto_send_chunked,
+    const String & proto_recv_chunked,
+    const String & quota_key,
+    const String & cluster,
+    const String & cluster_secret,
+    const String & client_name,
     Protocol::Compression compression,
     Protocol::Secure secure,
-    String bind_host,
+    const String & bind_host,
     Priority priority)
 {
     Key key{

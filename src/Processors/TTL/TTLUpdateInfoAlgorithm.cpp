@@ -13,7 +13,7 @@ TTLUpdateInfoAlgorithm::TTLUpdateInfoAlgorithm(
     bool force_)
     : ITTLAlgorithm(ttl_expressions_, description_, old_ttl_info_, current_time_, force_)
     , ttl_update_field(ttl_update_field_)
-    , ttl_update_key(ttl_update_key_)
+    , ttl_update_key(std::move(ttl_update_key_))
 {
 }
 

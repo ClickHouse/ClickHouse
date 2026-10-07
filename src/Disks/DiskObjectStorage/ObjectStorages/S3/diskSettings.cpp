@@ -108,7 +108,7 @@ std::unique_ptr<S3::Client> getClient(
     auto url = S3::URI(endpoint, false, true, settings.auth_settings[S3AuthSetting::uri_style]);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
-    return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback, is_loading_from_existing_metadata, force_anonymous_load_fallback);
+    return getClient(url, settings, context, for_disk_s3, std::move(opt_disk_name), std::move(refresh_credentials_callback), is_loading_from_existing_metadata, force_anonymous_load_fallback);
 }
 
 std::unique_ptr<S3::Client>
@@ -160,7 +160,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         /* s3_slow_all_threads_after_retryable_error = */ false,
         enable_s3_requests_logging,
         for_disk_s3,
-        opt_disk_name,
+        std::move(opt_disk_name),
         request_settings.request_throttler,
         url.uri.getScheme());
 

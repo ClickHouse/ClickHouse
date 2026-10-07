@@ -479,7 +479,7 @@ std::optional<Poco::Net::Context::CAPaths> CertificateReloader::getCAPaths(const
 }
 
 
-CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std::string pass_phrase)
+CertificateReloader::Data::Data(const std::string & cert_path, const std::string & key_path, const std::string & pass_phrase)
     : certs_chain(X509Certificate::fromFile(cert_path)), key(KeyPair::fromFile(key_path, pass_phrase))
 {
 }

@@ -54,7 +54,7 @@ public:
     /// Change the path to the file.
     void setPath(std::string path_)
     {
-        counter.setPath(path_);
+        counter.setPath(std::move(path_));
     }
 
     void fixIfBroken(UInt64 value)

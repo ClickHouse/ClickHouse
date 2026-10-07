@@ -42,7 +42,7 @@ MessageQueueSink::MessageQueueSink(
     std::unique_ptr<IMessageProducer> producer_,
     const String & storage_name_,
     const ContextPtr & context_)
-    : SinkToStorage(header)
+    : SinkToStorage(std::move(header))
     , format_name(format_name_)
     , max_rows_per_message(max_rows_per_message_)
     , format_header(std::move(format_header_))

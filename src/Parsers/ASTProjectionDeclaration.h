@@ -35,7 +35,7 @@ public:
     }
 
     /// everything after the name, so a statement that prints the name itself can reuse it
-    void formatBody(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
+    void formatBody(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, const FormatStateStacked & frame) const;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;

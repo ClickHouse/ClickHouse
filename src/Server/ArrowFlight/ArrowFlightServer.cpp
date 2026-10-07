@@ -651,7 +651,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
     ArrowFlight::BlockModifier block_modifier = nullptr
 )
 {
-    return executeSQLtoTables_impl(session, sql, false, schema_modifier, block_modifier);
+    return executeSQLtoTables_impl(session, sql, false, std::move(schema_modifier), std::move(block_modifier));
 }
 
 static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::shared_ptr<arrow::Table>>> executeSQLtoTable(
@@ -661,7 +661,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::shared_ptr<
     ArrowFlight::BlockModifier block_modifier = nullptr
 )
 {
-    auto res = executeSQLtoTables_impl(session, sql, true, schema_modifier, block_modifier);
+    auto res = executeSQLtoTables_impl(session, sql, true, std::move(schema_modifier), std::move(block_modifier));
     ARROW_RETURN_NOT_OK(res);
     return std::tuple{std::get<0>(res.ValueUnsafe()), std::get<1>(res.ValueUnsafe()).front()};
 }

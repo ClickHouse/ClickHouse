@@ -25,7 +25,7 @@ WasmCompartment::WasmCompartment()
 template <typename ResultType>
 ResultType WasmCompartment::invoke(std::string_view function_name, const VectorWithMemoryTracking<WasmVal> & params, StopToken stop_token)
 {
-    auto returns = invokeImpl(function_name, params, stop_token);
+    auto returns = invokeImpl(function_name, params, std::move(stop_token));
 
     if constexpr (std::is_same_v<ResultType, void>)
     {

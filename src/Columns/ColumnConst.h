@@ -374,7 +374,7 @@ public:
     bool hasDynamicStructure() const override { return data->hasDynamicStructure(); }
 };
 
-ColumnConst::Ptr createColumnConst(const ColumnPtr & column, Field value);
+ColumnConst::Ptr createColumnConst(const ColumnPtr & column, const Field & value);
 ColumnConst::Ptr createColumnConst(const ColumnPtr & column, size_t const_value_index);
 ColumnConst::Ptr createColumnConstWithDefaultValue(const ColumnPtr  &column);
 

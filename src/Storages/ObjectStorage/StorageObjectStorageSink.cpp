@@ -151,7 +151,7 @@ PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     , object_storage(object_storage_)
     , configuration(configuration_)
     , query_settings(configuration_->getQuerySettings(context_))
-    , format_settings(format_settings_)
+    , format_settings(std::move(format_settings_))
     , sample_block(sample_block_)
     , context(context_)
 {

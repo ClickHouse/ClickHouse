@@ -126,7 +126,7 @@ static auto executeScript(const std::string & command, bool throw_on_error = fal
     return sh->tryWait();
 }
 
-static bool filesEqual(std::string path1, std::string path2)
+static bool filesEqual(const std::string & path1, const std::string & path2)
 {
     MMapReadBufferFromFile in1(path1, 0);
     MMapReadBufferFromFile in2(path2, 0);

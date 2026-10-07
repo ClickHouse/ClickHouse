@@ -33,7 +33,7 @@ void mutate(
     ContextPtr context,
     StoragePtr storage_ptr,
     StorageMetadataPtr storage_metadata,
-    StorageID storage_id,
+    const StorageID & storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
@@ -44,7 +44,7 @@ void mutate(
 void alter(
     const AlterCommands & params,
     ContextPtr context,
-    StorageID storage_id,
+    const StorageID & storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,

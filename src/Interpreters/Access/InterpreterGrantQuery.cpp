@@ -279,7 +279,7 @@ namespace
     /// granted roles the grantees currently have (due to those grantees are located on multiple nodes,
     /// we just don't have the full information about them).
     void checkAdminOptionForExecutingOnCluster(const ContextAccessWrapper & current_user_access,
-                                               const std::vector<UUID> roles_to_grant,
+                                               const std::vector<UUID> & roles_to_grant,
                                                const RolesOrUsersSet & roles_to_revoke)
     {
         /// A session whose access rights are limited by the GRANTS clause of an authentication method cannot

@@ -74,7 +74,7 @@ public:
     }
 
     StrictResizeProcessor(InputPorts inputs_, OutputPorts outputs_)
-        : IProcessor(inputs_, outputs_)
+        : IProcessor(std::move(inputs_), std::move(outputs_))
         , current_input(inputs.begin())
         , current_output(outputs.begin())
     {

@@ -1168,7 +1168,7 @@ private:
         size_t loading_id,
         LoadablePtr previous_version,
         LoadableMutablePtr new_object,
-        std::exception_ptr new_exception,
+        const std::exception_ptr & new_exception,
         size_t error_count,
         const LoadingGuardForAsyncLoad &)
     {

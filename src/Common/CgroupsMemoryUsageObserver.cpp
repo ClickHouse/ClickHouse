@@ -30,7 +30,7 @@ CgroupsMemoryUsageObserver::~CgroupsMemoryUsageObserver()
 void CgroupsMemoryUsageObserver::setOnMemoryAmountAvailableChangedFn(OnMemoryAmountAvailableChangedFn on_memory_amount_available_changed_)
 {
     std::lock_guard<std::mutex> memory_amount_available_changed_lock(memory_amount_available_changed_mutex);
-    on_memory_amount_available_changed = on_memory_amount_available_changed_;
+    on_memory_amount_available_changed = std::move(on_memory_amount_available_changed_);
 }
 
 void CgroupsMemoryUsageObserver::startThread()

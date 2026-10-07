@@ -131,7 +131,7 @@ BuiltSetsByHashPtr collectBuiltSets(const QueryPlan & plan);
 /// build as usual.
 void reuseBuiltSets(QueryPlan & plan, const BuiltSetsByHashPtr & built);
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context);
+void addCreatingSetsStep(QueryPlan & query_plan, const PreparedSets::Subqueries & subqueries, ContextPtr context);
 
 void addDelayedCreatingSetsStep(QueryPlan & query_plan, PreparedSetsPtr prepared_sets, ContextPtr context);
 

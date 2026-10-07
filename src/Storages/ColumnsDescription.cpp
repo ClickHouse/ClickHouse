@@ -87,12 +87,12 @@ ColumnDescription::ColumnDescription(String name_, DataTypePtr type_)
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, String comment_)
-    : name(std::move(name_)), type(std::move(type_)), comment(comment_)
+    : name(std::move(name_)), type(std::move(type_)), comment(std::move(comment_))
 {
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, ASTPtr codec_, String comment_)
-    : name(std::move(name_)), type(std::move(type_)), comment(comment_), codec(codec_)
+    : name(std::move(name_)), type(std::move(type_)), comment(std::move(comment_)), codec(codec_)
 {
 }
 

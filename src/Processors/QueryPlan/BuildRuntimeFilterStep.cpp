@@ -66,7 +66,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
         getTraits())
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
-    , filter_name(filter_name_)
+    , filter_name(std::move(filter_name_))
     , filter_key(std::move(filter_key_))
     , build_options(std::move(build_options_))
     , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)

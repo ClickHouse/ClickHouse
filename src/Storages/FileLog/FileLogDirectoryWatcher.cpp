@@ -35,13 +35,13 @@ const std::string & FileLogDirectoryWatcher::getPath() const
     return path;
 }
 
-void FileLogDirectoryWatcher::onItemAdded(DirectoryWatcherBase::DirectoryEvent ev)
+void FileLogDirectoryWatcher::onItemAdded(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     pending.emplace_back(ev.path, EventInfo{ev.event, "onItemAdded"});
 }
 
 
-void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent ev)
+void FileLogDirectoryWatcher::onItemRemoved(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     pending.emplace_back(ev.path, EventInfo{ev.event, "onItemRemoved"});
 }
@@ -52,17 +52,17 @@ void FileLogDirectoryWatcher::onItemRemoved(DirectoryWatcherBase::DirectoryEvent
 /// So, if we record all of these events, it will use a lot of memory, and then we
 /// need to handle it one by one in StorageFileLog::updateFileInfos, this is unnecessary
 /// because it is equal to just record and handle one MODIY event
-void FileLogDirectoryWatcher::onItemModified(DirectoryWatcherBase::DirectoryEvent ev)
+void FileLogDirectoryWatcher::onItemModified(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     pending.emplace_back(ev.path, EventInfo{ev.event, "onItemModified"});
 }
 
-void FileLogDirectoryWatcher::onItemMovedFrom(DirectoryWatcherBase::DirectoryEvent ev)
+void FileLogDirectoryWatcher::onItemMovedFrom(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     pending.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedFrom", ev.cookie});
 }
 
-void FileLogDirectoryWatcher::onItemMovedTo(DirectoryWatcherBase::DirectoryEvent ev)
+void FileLogDirectoryWatcher::onItemMovedTo(const DirectoryWatcherBase::DirectoryEvent & ev)
 {
     pending.emplace_back(ev.path, EventInfo{ev.event, "onItemMovedTo", ev.cookie});
 }
@@ -79,7 +79,7 @@ void FileLogDirectoryWatcher::commitEvents()
     pending.clear();
 }
 
-void FileLogDirectoryWatcher::onError(Exception e)
+void FileLogDirectoryWatcher::onError(const Exception & e)
 {
     std::lock_guard lock(mutex);
     LOG_ERROR(log, "Error happened during watching directory: {}", error.error_msg);

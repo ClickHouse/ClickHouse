@@ -113,7 +113,7 @@ public:
         }
     }
 
-    static void dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, String path_prefix_, String zk_root_path_, String uuid, LoggerPtr logger);
+    static void dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, const String & path_prefix_, String zk_root_path_, const String & uuid, LoggerPtr logger);
 
 private:
     bool dropTableData(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock);

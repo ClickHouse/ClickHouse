@@ -863,7 +863,7 @@ ISerialization::StreamFileNameSettings::StreamFileNameSettings(const MergeTreeSe
     share_nested_offsets = merge_tree_settings[MergeTreeSetting::share_nested_offsets];
 }
 
-void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath & path, const ISerialization::StreamCallback & callback, ISerialization::Substream substream) const
+void ISerialization::addSubstreamAndCallCallback(ISerialization::SubstreamPath & path, const ISerialization::StreamCallback & callback, const ISerialization::Substream & substream) const
 {
     path.push_back(substream);
     callback(path);

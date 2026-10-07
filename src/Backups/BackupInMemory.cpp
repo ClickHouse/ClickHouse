@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 
 BackupInMemory::BackupInMemory(const String & backup_name_, std::weak_ptr<BackupsInMemoryHolder> holder_)
-    : backup_name(backup_name_), holder(holder_)
+    : backup_name(backup_name_), holder(std::move(holder_))
 {
 }
 

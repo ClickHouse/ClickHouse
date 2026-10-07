@@ -107,7 +107,7 @@ static ColumnsDescription rebindImplicitTimeZones(const ColumnsDescription & col
 
 std::optional<ColumnsDescription> SchemaCache::tryGetColumns(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)
 {
-    auto schema_info = tryGetImpl(key, get_last_mod_time);
+    auto schema_info = tryGetImpl(key, std::move(get_last_mod_time));
     if (!schema_info)
         return std::nullopt;
 
@@ -123,7 +123,7 @@ std::optional<ColumnsDescription> SchemaCache::tryGetColumns(const DB::SchemaCac
 
 std::optional<size_t> SchemaCache::tryGetNumRows(const DB::SchemaCache::Key & key, DB::SchemaCache::LastModificationTimeGetter get_last_mod_time)
 {
-    auto schema_info = tryGetImpl(key, get_last_mod_time);
+    auto schema_info = tryGetImpl(key, std::move(get_last_mod_time));
     if (!schema_info)
         return std::nullopt;
 

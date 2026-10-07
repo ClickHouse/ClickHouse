@@ -1012,7 +1012,7 @@ void IPAddressDictionary::getItemsShortCircuitImpl(
 }
 
 template <typename T>
-void IPAddressDictionary::setAttributeValueImpl(Attribute & attribute, const T value)
+void IPAddressDictionary::setAttributeValueImpl(Attribute & attribute, const T & value)
 {
     auto & vec = std::get<ContainerType<T>>(attribute.maps);
     vec.push_back(value);

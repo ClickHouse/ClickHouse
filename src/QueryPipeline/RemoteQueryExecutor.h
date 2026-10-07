@@ -83,7 +83,7 @@ public:
         const Scalars & scalars_ = Scalars(),
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
-        std::optional<Extension> extension_ = std::nullopt,
+        const std::optional<Extension> & extension_ = std::nullopt,
         ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
         std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
@@ -98,7 +98,7 @@ public:
         const Tables & external_tables_ = Tables(),
         QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete,
 
-        std::optional<Extension> extension_ = std::nullopt);
+        const std::optional<Extension> & extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     /// The optional `pool` parameter keeps the connection pool alive while entries are in use,

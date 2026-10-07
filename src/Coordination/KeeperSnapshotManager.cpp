@@ -784,7 +784,7 @@ std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(
 SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuffer(
     nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage, bool allow_orphaned_nodes_removal) const
 {
-    auto reader = makeSnapshotReader(buffer);
+    auto reader = makeSnapshotReader(std::move(buffer));
     reader->allow_orphaned_nodes_removal = allow_orphaned_nodes_removal;
     storage.loadFromSnapshot(*reader);
 
@@ -798,7 +798,7 @@ SnapshotDeserializationResult KeeperSnapshotManager::deserializeSnapshotFromBuff
 
 SnapshotMetadataPtr KeeperSnapshotManager::deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const
 {
-    auto reader = makeSnapshotReader(buffer);
+    auto reader = makeSnapshotReader(std::move(buffer));
     reader->readMetadata();
     return reader->snapshot_meta;
 }

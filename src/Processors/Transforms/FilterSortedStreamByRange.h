@@ -18,7 +18,7 @@ public:
     FilterSortedStreamByRange(
         SharedHeader header_,
         ExpressionActionsPtr expression_,
-        String filter_column_name_,
+        const String & filter_column_name_,
         bool remove_filter_column_,
         bool on_totals_ = false);
 

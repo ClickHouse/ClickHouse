@@ -265,7 +265,7 @@ void AggregatingSortedAlgorithm::AggregatingMergedData::initAggregateDescription
 AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
     SharedHeader header_,
     size_t num_inputs,
-    SortDescription description_,
+    const SortDescription & description_,
     size_t max_block_size_rows_,
     size_t max_block_size_bytes_,
     std::optional<size_t> max_dynamic_subcolumns_,

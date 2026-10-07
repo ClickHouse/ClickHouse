@@ -18,7 +18,7 @@ struct VersionNumber
     }
 
     /// Parse version number from string.
-    explicit VersionNumber(std::string version);
+    explicit VersionNumber(const std::string & version);
 
     bool operator==(const VersionNumber & rhs) const = default;
 

@@ -271,7 +271,7 @@ void Client::refreshCertificatesTask(const Poco::Util::AbstractConfiguration & c
                 return;
             }
 
-            auto order_callback = [&](std::string token)
+            auto order_callback = [&](const std::string & token)
             {
                 auto path = fs::path(zookeeper_path) / acme_hostname / "challenges" / token;
 

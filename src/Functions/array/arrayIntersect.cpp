@@ -350,7 +350,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
 
 static ColumnPtr callFunctionNotEquals(ColumnWithTypeAndName first, ColumnWithTypeAndName second, const FunctionOverloadResolverPtr & not_equals_func)
 {
-    ColumnsWithTypeAndName args{first, second};
+    ColumnsWithTypeAndName args{std::move(first), std::move(second)};
     auto eq_func = not_equals_func->build(args);
     return eq_func->execute(args, eq_func->getResultType(), args.front().column->size(), /* dry_run = */ false);
 }

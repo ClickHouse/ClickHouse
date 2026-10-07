@@ -133,7 +133,7 @@ public:
         FieldVector::const_iterator begin_,
         FieldVector::const_iterator end_,
         const size_t max_block_size_)
-        : ISource(header)
+        : ISource(std::move(header))
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , physical_header(storage_snapshot_->metadata->getSampleBlock())
@@ -152,7 +152,7 @@ public:
         std::shared_ptr<rocksdb::DB> rocksdb_ptr_,
         std::unique_ptr<rocksdb::Iterator> iterator_,
         const size_t max_block_size_)
-        : ISource(header)
+        : ISource(std::move(header))
         , storage(storage_)
         , storage_snapshot(storage_snapshot_)
         , physical_header(storage_snapshot_->metadata->getSampleBlock())

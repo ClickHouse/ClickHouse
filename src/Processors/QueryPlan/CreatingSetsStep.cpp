@@ -175,7 +175,7 @@ void CreatingSetsStep::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subqueries, ContextPtr context)
+void addCreatingSetsStep(QueryPlan & query_plan, const PreparedSets::Subqueries & subqueries, ContextPtr context)
 {
     SharedHeaders input_headers;
     input_headers.emplace_back(query_plan.getCurrentHeader());
@@ -187,7 +187,7 @@ void addCreatingSetsStep(QueryPlan & query_plan, PreparedSets::Subqueries subque
     const auto & settings = context->getSettingsRef();
     SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
     auto prepared_sets_cache = context->getPreparedSetsCache();
-    for (auto & future_set : subqueries)
+    for (const auto & future_set : subqueries)
     {
         if (future_set->get())
             continue;

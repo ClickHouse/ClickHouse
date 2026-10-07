@@ -28,7 +28,7 @@ namespace
     constexpr bool debug_logging_enabled = false;
 
     template <typename T>
-    void logDebug(String key, const T & value, const char * separator = " : ")
+    void logDebug(const String & key, const T & value, const char * separator = " : ")
     {
         if constexpr (debug_logging_enabled)
         {

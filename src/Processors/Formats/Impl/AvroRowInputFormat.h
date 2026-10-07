@@ -53,8 +53,8 @@ private:
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const Block & header, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
-    AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+    AvroDeserializer(const Block & header, const avro::ValidSchema & schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
+    AvroDeserializer(DataTypePtr data_type, const std::string & column_name, const avro::ValidSchema & schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_);
 
     AvroDeserializer(const AvroDeserializer &) = delete;
     AvroDeserializer & operator=(const AvroDeserializer &) = delete;
@@ -92,12 +92,12 @@ private:
         Action(int target_column_idx_, DeserializeFn deserialize_fn_)
             : type(Deserialize)
             , target_column_idx(target_column_idx_)
-            , deserialize_fn(deserialize_fn_) {}
+            , deserialize_fn(std::move(deserialize_fn_)) {}
 
         explicit Action(SkipFn skip_fn_)
             : type(Skip)
             , target_column_idx(0)
-            , skip_fn(skip_fn_) {}
+            , skip_fn(std::move(skip_fn_)) {}
 
         Action(const std::vector<size_t> & nested_column_indexes_, const std::vector<DeserializeFn> & nested_deserializers_)
             : type(Nested)
@@ -143,7 +143,7 @@ private:
         Action(Type type_, std::vector<Action> actions_)
             : type(type_)
             , target_column_idx(0)
-            , actions(actions_) {}
+            , actions(std::move(actions_)) {}
 
         void deserializeNested(MutableColumns & columns, avro::Decoder & decoder, RowReadExtension & ext) const;
     };

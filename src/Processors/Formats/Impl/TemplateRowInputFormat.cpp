@@ -57,7 +57,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(
     ParsedTemplateFormatString row_format_,
     std::string row_between_delimiter_)
     : TemplateRowInputFormat(
-        header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings_, ignore_spaces_, format_, row_format_, row_between_delimiter_)
+        std::move(header_), std::make_unique<PeekableReadBuffer>(in_), params_, std::move(settings_), ignore_spaces_, std::move(format_), std::move(row_format_), std::move(row_between_delimiter_))
 {
 }
 
@@ -68,7 +68,7 @@ TemplateRowInputFormat::TemplateRowInputFormat(SharedHeader header_, std::unique
     : RowInputFormatWithDiagnosticInfo(header_, *buf_, params_), buf(std::move(buf_)), data_types(header_->getDataTypes()),
       settings(std::move(settings_)), ignore_spaces(ignore_spaces_),
       format(std::move(format_)), row_format(std::move(row_format_)),
-      default_csv_delimiter(settings.csv.delimiter), row_between_delimiter(row_between_delimiter_),
+      default_csv_delimiter(settings.csv.delimiter), row_between_delimiter(std::move(row_between_delimiter_)),
       format_reader(std::make_unique<TemplateFormatReader>(*buf, ignore_spaces_, format, row_format, row_between_delimiter, settings))
 {
     /// Validate format string for rows
@@ -321,7 +321,7 @@ TemplateFormatReader::TemplateFormatReader(
     , ignore_spaces(ignore_spaces_)
     , format(format_)
     , row_format(row_format_)
-    , row_between_delimiter(row_between_delimiter_)
+    , row_between_delimiter(std::move(row_between_delimiter_))
     , format_settings(format_settings_)
 {
     /// Validate format string for result set
@@ -498,7 +498,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     , buf(in_)
     , format(format_)
     , row_format(row_format_)
-    , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
+    , format_reader(buf, ignore_spaces_, format, row_format, std::move(row_between_delimiter), format_settings)
     , default_csv_delimiter(format_settings_.csv.delimiter)
 {
     setColumnNames(row_format.column_names);
@@ -593,7 +593,7 @@ void registerInputFormatTemplate(FormatFactory & factory)
         factory.registerInputFormat(ignore_spaces ? "TemplateIgnoreSpaces" : "Template", [=](
                 ReadBuffer & buf,
                 const Block & sample,
-                IRowInputFormat::Params params,
+                const IRowInputFormat::Params & params,
                 const FormatSettings & settings)
         {
             auto idx_getter = [&](const String & colName) -> std::optional<size_t>

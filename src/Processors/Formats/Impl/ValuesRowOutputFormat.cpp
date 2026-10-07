@@ -12,7 +12,7 @@ namespace DB
 
 
 ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), format_settings(format_settings_)
+    : IRowOutputFormat(std::move(header_), out_), format_settings(format_settings_)
 {
 }
 

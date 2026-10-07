@@ -85,7 +85,7 @@ FunctionBasePtr createFunctionBaseCast(
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
-    std::optional<CastDiagnostic> diagnostic,
+    const std::optional<CastDiagnostic> & diagnostic,
     CastType cast_type);
 
 /// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)

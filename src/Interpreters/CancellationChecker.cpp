@@ -46,7 +46,7 @@ struct CancellationChecker::QueryToTrack
     OverflowMode overflow_mode;
 };
 
-void CancellationChecker::cancelTask(CancellationChecker::QueryToTrack task)
+void CancellationChecker::cancelTask(const CancellationChecker::QueryToTrack & task)
 {
     if (task.query)
     {

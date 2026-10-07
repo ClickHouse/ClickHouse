@@ -45,7 +45,7 @@ public:
         , size_ratio(size_ratio_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
-        , on_remove_entry_function(on_remove_entry_function_)
+        , on_remove_entry_function(std::move(on_remove_entry_function_))
     {
     }
 

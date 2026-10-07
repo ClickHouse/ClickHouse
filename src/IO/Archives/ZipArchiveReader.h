@@ -89,7 +89,7 @@ private:
     };
 
     RawHandleWithStream acquireRawHandle();
-    void releaseRawHandle(RawHandleWithStream handle_info);
+    void releaseRawHandle(const RawHandleWithStream & handle_info);
 
     void checkResult(int code) const;
     [[noreturn]] void showError(const String & message) const;

@@ -305,8 +305,8 @@ struct CodecTestSequence
     DataTypePtr data_type;
 
     CodecTestSequence(std::string name_, std::vector<char> serialized_data_, DataTypePtr data_type_)
-        : name(name_),
-          serialized_data(serialized_data_),
+        : name(std::move(name_)),
+          serialized_data(std::move(serialized_data_)),
           data_type(data_type_)
     {}
 
@@ -458,7 +458,7 @@ private:
     std::vector<std::tuple<const char*, UInt64>> results;
 };
 
-CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePtr data_type)
+CompressionCodecPtr makeCodec(const std::string & codec_string, const DataTypePtr & data_type)
 {
     const std::string codec_statement = "(" + codec_string + ")";
     Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());

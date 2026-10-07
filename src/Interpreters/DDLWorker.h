@@ -147,7 +147,7 @@ protected:
     void updateMaxDDLEntryID(const String & entry_name);
 
     /// Check that query should be executed on leader replica only
-    static bool taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, StoragePtr storage);
+    static bool taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const StoragePtr & storage);
 
     /// Executes query only on leader replica in case of replicated table.
     /// Queries like TRUNCATE/ALTER .../OPTIMIZE have to be executed only on one node of shard.

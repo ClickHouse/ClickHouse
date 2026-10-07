@@ -97,8 +97,8 @@ MatcherNode::MatcherNode(MatcherNodeType matcher_type_,
     ColumnTransformersNodes column_transformers_)
     : IQueryTreeNode(children_size)
     , matcher_type(matcher_type_)
-    , qualified_identifier(qualified_identifier_)
-    , columns_identifiers(columns_identifiers_)
+    , qualified_identifier(std::move(qualified_identifier_))
+    , columns_identifiers(std::move(columns_identifiers_))
 {
     if (pattern_)
     {

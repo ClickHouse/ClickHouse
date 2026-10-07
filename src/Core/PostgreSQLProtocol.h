@@ -724,8 +724,8 @@ private:
 
 public:
     ParameterStatus(String name_, String value_)
-    : name(name_)
-    , value(value_)
+    : name(std::move(name_))
+    , value(std::move(value_))
     {}
 
     void serialize(WriteBuffer & out) const override
@@ -1161,7 +1161,7 @@ class StringField : public ISerializable
 private:
     String str;
 public:
-    explicit StringField(String str_) : str(str_) {}
+    explicit StringField(String str_) : str(std::move(str_)) {}
 
     void serialize(WriteBuffer & out) const override
     {
@@ -1335,7 +1335,7 @@ class CopyOutData : public BackendMessage
     VectorWithMemoryTracking<char> data;
 public:
     explicit CopyOutData(VectorWithMemoryTracking<char> data_)
-        : data(data_)
+        : data(std::move(data_))
     {
     }
 

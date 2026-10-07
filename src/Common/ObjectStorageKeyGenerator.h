@@ -17,7 +17,7 @@ public:
 
 using ObjectStorageKeyGeneratorPtr = std::shared_ptr<IObjectStorageKeyGenerator>;
 
-ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(String key_prefix);
+ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByPrefix(const String & key_prefix);
 ObjectStorageKeyGeneratorPtr createObjectStorageKeyGeneratorByTemplate(String key_template);
 
 }

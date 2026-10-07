@@ -345,7 +345,7 @@ void ASTFunction::finishFormatWithWindow(WriteBuffer & ostr, const FormatSetting
     else
     {
         ostr << "(";
-        window_definition->format(ostr, settings, state, frame);
+        window_definition->format(ostr, settings, state, std::move(frame));
         ostr << ")";
     }
 }
@@ -476,7 +476,7 @@ static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const 
     if (equal_args.size() != 2)
         return false;
 
-    equal_args[0]->format(ostr, settings, state, frame);
+    equal_args[0]->format(ostr, settings, state, std::move(frame));
     ostr << " = ";
     ostr << "'[HIDDEN]'";
 

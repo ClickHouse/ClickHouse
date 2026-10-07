@@ -58,7 +58,7 @@ struct AggregateFunctionMapCombinatorData<String>
     using SearchType = std::string_view;
     UnorderedMapWithMemoryTracking<String, AggregateDataPtr, StringHash, std::equal_to<>> merged_maps;
 
-    static void writeKey(String key, WriteBuffer & buf)
+    static void writeKey(const String & key, WriteBuffer & buf)
     {
         writeStringBinary(key, buf);
     }

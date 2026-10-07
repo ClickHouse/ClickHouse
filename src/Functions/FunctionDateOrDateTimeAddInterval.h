@@ -846,7 +846,7 @@ private:
         if constexpr (supports_fixed_offset_dispatch<Transform, FromDataType>)
             return transform.template executeWithOffsetMode<fixed_offset>(t, delta, time_zone, utc_time_zone, scale);
         else
-            return transform.execute(t, delta, time_zone, utc_time_zone, scale);
+            return transform.execute(std::move(t), delta, time_zone, utc_time_zone, scale);
     }
 
     template <typename Value>

@@ -1459,7 +1459,7 @@ MergeJoinTransform::MergeJoinTransform(
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(
         input_headers,
-        output_header,
+        std::move(output_header),
         /* have_all_inputs_= */ true,
         limit_hint_,
         /* always_read_till_end_= */ false,
@@ -1478,7 +1478,7 @@ MergeJoinTransform::MergeJoinTransform(
         UInt64 limit_hint_)
     : IMergingTransform<MergeJoinAlgorithm>(
         input_headers,
-        output_header,
+        std::move(output_header),
         /* have_all_inputs_= */ true,
         limit_hint_,
         /* always_read_till_end_= */ false,

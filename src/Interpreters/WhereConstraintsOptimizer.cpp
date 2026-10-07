@@ -33,7 +33,7 @@ enum class MatchState : uint8_t
     NONE, /// other
 };
 
-MatchState match(CNFQueryAtomicFormula a, CNFQueryAtomicFormula b)
+MatchState match(const CNFQueryAtomicFormula & a, const CNFQueryAtomicFormula & b)
 {
     bool match_means_ok = (a.negative == b.negative);
     if (a.ast->getTreeHash(/*ignore_aliases=*/ true) == b.ast->getTreeHash(/*ignore_aliases=*/ true))

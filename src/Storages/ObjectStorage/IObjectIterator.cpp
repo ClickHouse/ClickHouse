@@ -51,7 +51,7 @@ ObjectIteratorWithPathAndFileFilter::ObjectIteratorWithPathAndFileFilter(
     const ContextPtr & context_,
     std::function<void(FileProgress)> file_progress_callback_)
     : WithContext(context_)
-    , iterator(iterator_)
+    , iterator(std::move(iterator_))
     , configuration(std::move(configuration_))
     , virtual_columns(virtual_columns_)
     , hive_partition_columns(hive_partition_columns_)
@@ -122,7 +122,7 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     const StorageID & storage_id_,
     FormatFilterInfoPtr format_filter_info_)
     : WithContext(context_)
-    , iterator(iterator_)
+    , iterator(std::move(iterator_))
     , format(format_)
     , object_storage(object_storage_)
     , format_settings(getFormatSettings(context_))

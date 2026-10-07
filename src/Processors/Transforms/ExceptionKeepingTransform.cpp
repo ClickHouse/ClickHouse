@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 ExceptionKeepingTransform::ExceptionKeepingTransform(SharedHeader in_header, SharedHeader out_header, bool ignore_on_start_and_finish_)
-    : IProcessor({in_header}, {out_header})
+    : IProcessor({std::move(in_header)}, {std::move(out_header)})
     , input(inputs.front()), output(outputs.front())
     , ignore_on_start_and_finish(ignore_on_start_and_finish_)
 {

@@ -34,7 +34,7 @@ public:
     bool isLocationEnabled(const Location & to_check) const;
 
     Locations findComplement(Locations redacted, bool use_only_enabled = false) const;
-    Locations findComplement(LocationSet redacted, bool use_only_enabled = false) const;
+    Locations findComplement(const LocationSet & redacted, bool use_only_enabled = false) const;
 
     Locations getEnabledLocations() const;
     Location getLocalLocation() const;

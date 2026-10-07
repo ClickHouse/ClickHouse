@@ -74,7 +74,7 @@ XDBCDictionarySource::XDBCDictionarySource(
     const Configuration & configuration_,
     const Block & sample_block_,
     ContextPtr context_,
-    const BridgeHelperPtr bridge_)
+    const BridgeHelperPtr & bridge_)
     : WithContext(context_->getGlobalContext())
     , log(getLogger(bridge_->getName() + "DictionarySource"))
     , update_time(std::chrono::system_clock::from_time_t(0))

@@ -63,7 +63,7 @@ public:
 };
 
 IIcebergSchemaTransform::IIcebergSchemaTransform(std::vector<IcebergChangeSchemaOperation::Edge> path_)
-    : path(path_)
+    : path(std::move(path_))
 {
 }
 

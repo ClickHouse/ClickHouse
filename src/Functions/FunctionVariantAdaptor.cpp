@@ -621,7 +621,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeDryRunImpl(
 
 FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_,
-    ColumnsWithTypeAndName arguments_with_type_,
+    const ColumnsWithTypeAndName & arguments_with_type_,
     size_t variant_argument_index_)
     : function_overload_resolver(std::move(function_overload_resolver_))
     , variant_argument_index(variant_argument_index_)

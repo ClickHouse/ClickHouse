@@ -321,7 +321,7 @@ private:
     template <typename RequestResult>
     RequestResult processRequestResult(RequestResult && outcome) const;
 
-    void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
+    void updateNextTimeToRetryAfterRetryableError(const Aws::Client::AWSError<Aws::Client::CoreErrors> & error, Int64 attempt_no) const;
     void slowDownAfterRetryableError() const;
 
     void logConfiguration() const;

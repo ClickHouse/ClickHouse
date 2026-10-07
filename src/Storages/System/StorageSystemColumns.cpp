@@ -107,7 +107,7 @@ public:
         ColumnPtr tables_,
         Storages storages_,
         ContextPtr context_)
-        : ISource(header_)
+        : ISource(std::move(header_))
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))

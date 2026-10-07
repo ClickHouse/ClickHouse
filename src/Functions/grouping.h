@@ -159,7 +159,7 @@ class FunctionGroupingForCube final : public FunctionGroupingBase
 public:
 
     FunctionGroupingForCube(ColumnNumbers arguments_indexes_, UInt64 aggregation_keys_number_, bool force_compatibility_)
-        : FunctionGroupingBase(arguments_indexes_, force_compatibility_)
+        : FunctionGroupingBase(std::move(arguments_indexes_), force_compatibility_)
         , aggregation_keys_number(aggregation_keys_number_)
     {}
 

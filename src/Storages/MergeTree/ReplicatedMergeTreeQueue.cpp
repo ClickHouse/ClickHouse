@@ -2849,7 +2849,7 @@ ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
 ReplicatedMergeTreeQueue::SubscriberHandler
 ReplicatedMergeTreeQueue::addSubscriber(ReplicatedMergeTreeQueue::SubscriberCallBack && callback,
                                         std::unordered_set<String> & out_entry_names, SyncReplicaMode sync_mode,
-                                        std::unordered_set<String> src_replicas)
+                                        const std::unordered_set<String> & src_replicas)
 {
     std::lock_guard<SharedMutex> lock(state_mutex);
     std::lock_guard lock_subscribers(subscribers_mutex);

@@ -65,7 +65,7 @@ private:
     /// Entity that hasn't been loaded yet.
     struct EntityOnDisk : public IAccessEntity
     {
-        EntityOnDisk(String name_, AccessEntityType type_): IAccessEntity(), type(type_) { this->setName(name_); }
+        EntityOnDisk(const String & name_, AccessEntityType type_): IAccessEntity(), type(type_) { this->setName(name_); }
 
         std::shared_ptr<IAccessEntity> clone() const override { return std::make_shared<EntityOnDisk>(name, type); }
 

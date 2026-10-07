@@ -130,9 +130,9 @@ using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, cons
 
 static void testServerSideEncryption(
     RequestFn do_request,
-    String server_side_encryption_customer_key_base64,
+    const String & server_side_encryption_customer_key_base64,
     DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
-    String expected_headers,
+    const String & expected_headers,
     bool is_s3express_bucket = false)
 {
     TestPocoHTTPServer http;
@@ -179,7 +179,7 @@ static void testServerSideEncryption(
         access_key_id,
         secret_access_key,
         server_side_encryption_customer_key_base64,
-        sse_kms_config,
+        std::move(sse_kms_config),
         headers,
         DB::S3::CredentialsConfiguration
         {
@@ -385,7 +385,7 @@ void validateCredential(const std::string_view credential_string, const std::str
     }
 }
 
-void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name, const std::string_view expected_external_id = "")
+void validateAssumeRoleQueryParams(const Poco::URI::QueryParameters & query_params, const std::string_view expected_role_arn, const std::string_view expected_role_session_name, const std::string_view expected_external_id = "")
 {
     bool external_id_present = false;
     for (const auto & [param, value] : query_params)

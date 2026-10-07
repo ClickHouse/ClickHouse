@@ -125,7 +125,7 @@ struct Span
     bool addAttributeIfNotEmpty(std::string_view name, std::string_view value) noexcept;
     bool addAttribute(std::string_view name, std::function<String()> value_supplier) noexcept;
     bool addAttribute(const Exception & e) noexcept;
-    bool addAttribute(std::exception_ptr e) noexcept;
+    bool addAttribute(const std::exception_ptr & e) noexcept;
     bool addAttribute(const ExecutionStatus & e) noexcept;
 
     bool isTraceEnabled() const
@@ -214,7 +214,7 @@ struct TracingContextHolder
         const Settings & _settings,
         const std::weak_ptr<OpenTelemetrySpanLog> & _log)
         : TracingContextHolder(_operation_name,
-            _parent_trace_context,
+            std::move(_parent_trace_context),
             &_settings,
             _log)
     {

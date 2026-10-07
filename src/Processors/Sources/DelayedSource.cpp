@@ -8,7 +8,7 @@ namespace DB
 {
 
 DelayedSource::DelayedSource(SharedHeader header, Creator processors_creator, bool add_totals_port, bool add_extremes_port)
-    : IProcessor({}, OutputPorts(1 + (add_totals_port ? 1 : 0) + (add_extremes_port ? 1 : 0), header))
+    : IProcessor({}, OutputPorts(1 + (add_totals_port ? 1 : 0) + (add_extremes_port ? 1 : 0), std::move(header)))
     , creator(std::move(processors_creator))
 {
     auto output = outputs.begin();

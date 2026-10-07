@@ -108,7 +108,7 @@ Chunk getChunkFromCheckResult(const String & database, const String & table, con
 class TableCheckTask : public ChunkInfoCloneable<TableCheckTask>
 {
 public:
-    TableCheckTask(StorageID table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
+    TableCheckTask(const StorageID & table_id, const std::variant<std::monostate, ASTPtr, String> & partition_or_part, ContextPtr context)
         : table(DatabaseCatalog::instance().getTable(table_id, context))
         , check_data_tasks(table->getCheckTaskList(partition_or_part, context))
     {
@@ -186,7 +186,7 @@ class TableCheckSource final : public ISource
 public:
     TableCheckSource(Strings databases_, ContextPtr context_, LoggerPtr log_)
         : ISource(std::make_shared<const Block>(getSingleValueBlock(0)))
-        , databases(databases_)
+        , databases(std::move(databases_))
         , context(context_)
         , log(log_)
     {

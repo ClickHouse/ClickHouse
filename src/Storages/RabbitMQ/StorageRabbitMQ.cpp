@@ -330,7 +330,7 @@ Names StorageRabbitMQ::parseSettings(String settings_list)
 }
 
 
-AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
+AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(const String & exchange_type_)
 {
     AMQP::ExchangeType type = {};
     if (exchange_type_ != ExchangeType::DEFAULT)

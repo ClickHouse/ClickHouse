@@ -48,7 +48,7 @@ public:
         size_t max_block_size_,
         ExpressionActionsPtr database_filter_,
         ExpressionActionsPtr virtual_columns_filter_)
-        : ISource(header_)
+        : ISource(std::move(header_))
         , max_block_size(max_block_size_)
         , virtual_columns_filter(std::move(virtual_columns_filter_))
         , log(getLogger("SystemIcebergFiles"))

@@ -486,13 +486,13 @@ struct SettingFieldMultiEnum final
     ValueType value;
     bool changed = false;
 
-    explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{v} {}
+    explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{std::move(v)} {}
     explicit SettingFieldMultiEnum(EnumType e) : value{e} {}
     explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<String>())) {}
     SettingFieldMultiEnum(const SettingFieldMultiEnum &) = default;
     SettingFieldMultiEnum & operator=(const SettingFieldMultiEnum &) = default;
 
-    SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
+    SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = std::move(x); return *this; }
     SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<String>()); return *this; }
 
     bool isChanged() const { return changed; }

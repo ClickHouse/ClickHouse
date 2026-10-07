@@ -537,7 +537,7 @@ private:
 
 struct DynamicColumnCheckpoint : public ColumnCheckpoint
 {
-    DynamicColumnCheckpoint(size_t size_, UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(variants_checkpoints_)
+    DynamicColumnCheckpoint(size_t size_, UnorderedMapWithMemoryTracking<String, ColumnCheckpointPtr> variants_checkpoints_) : ColumnCheckpoint(size_), variants_checkpoints(std::move(variants_checkpoints_))
     {
     }
 

@@ -24,7 +24,7 @@ namespace
     }
 }
 
-FormRowInputFormat::FormRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, params_), format_settings(format_settings_)
+FormRowInputFormat::FormRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_) : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
     size_t num_columns = header.columns();

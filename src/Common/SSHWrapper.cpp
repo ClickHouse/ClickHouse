@@ -281,7 +281,7 @@ std::optional<SSHKey> SSHKeyFactory::tryMakePrivateKeyFromFileWithoutPassphrase(
     return SSHKey(key);
 }
 
-SSHKey SSHKeyFactory::makePublicKeyFromFile(String filename)
+SSHKey SSHKeyFactory::makePublicKeyFromFile(const String & filename)
 {
     ssh_key key = nullptr;
     if (int rc = ssh_pki_import_pubkey_file(filename.c_str(), &key); rc != SSH_OK)
@@ -290,7 +290,7 @@ SSHKey SSHKeyFactory::makePublicKeyFromFile(String filename)
     return SSHKey(key);
 }
 
-SSHKey SSHKeyFactory::makePublicKeyFromBase64(String base64_key, String type_name)
+SSHKey SSHKeyFactory::makePublicKeyFromBase64(const String & base64_key, const String & type_name)
 {
     ssh_key key = nullptr;
     auto key_type = ssh_key_type_from_name(type_name.c_str());

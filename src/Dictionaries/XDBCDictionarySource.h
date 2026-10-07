@@ -44,7 +44,7 @@ public:
         const Configuration & configuration_,
         const Block & sample_block_,
         ContextPtr context_,
-        BridgeHelperPtr bridge);
+        const BridgeHelperPtr & bridge);
 
     /// copy-constructor is provided in order to support cloneability
     XDBCDictionarySource(const XDBCDictionarySource & other);

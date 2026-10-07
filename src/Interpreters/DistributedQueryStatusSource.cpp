@@ -29,7 +29,7 @@ DistributedQueryStatusSource::DistributedQueryStatusSource(
     ContextPtr context_,
     const Strings & hosts_to_wait,
     const char * logger_name)
-    : ISource(block)
+    : ISource(std::move(block))
     , zookeeper_name(zookeeper_name_)
     , node_path(zk_node_path)
     , replicas_path(zk_replicas_path)

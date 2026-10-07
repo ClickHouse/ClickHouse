@@ -8865,7 +8865,7 @@ std::optional<UUID> Context::getParentTable() const
 void Context::setDDLQueryCancellation(StopToken cancel)
 {
     chassert(!ddl_query_cancellation.stop_possible());
-    ddl_query_cancellation = cancel;
+    ddl_query_cancellation = std::move(cancel);
 }
 
 StopToken Context::getDDLQueryCancellation() const
@@ -8875,7 +8875,7 @@ StopToken Context::getDDLQueryCancellation() const
 
 void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
 {
-    ddl_additional_checks_on_enqueue = requests;
+    ddl_additional_checks_on_enqueue = std::move(requests);
 }
 
 Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const

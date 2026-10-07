@@ -60,7 +60,7 @@ private:
     void addRule(OptimizationRulePtr rule);
     void addEnforcerRule(OptimizationRulePtr rule);
 
-    QueryPlanPtr buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties);
+    QueryPlanPtr buildBestPlan(GroupId subtree_root_group_id, const ExpressionProperties & required_properties);
 
     QueryPlan & query_plan;
     const QueryPlanOptimizationSettings & optimization_settings;

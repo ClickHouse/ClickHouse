@@ -188,7 +188,7 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
     return derived_key;
 }
 
-std::string generateCSR(const std::vector<std::string> domain_names, EVP_PKEY * key)
+std::string generateCSR(const std::vector<std::string> & domain_names, EVP_PKEY * key)
 {
     if (domain_names.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No domain names provided");

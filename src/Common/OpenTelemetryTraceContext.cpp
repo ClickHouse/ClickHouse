@@ -115,7 +115,7 @@ bool Span::addAttribute(const Exception & e) noexcept
         && addAttributeImpl("clickhouse.exception_code", e.code());
 }
 
-bool Span::addAttribute(std::exception_ptr e) noexcept
+bool Span::addAttribute(const std::exception_ptr & e) noexcept
 {
     if (!this->isTraceEnabled() || e == nullptr)
         return false;

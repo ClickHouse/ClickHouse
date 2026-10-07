@@ -86,7 +86,7 @@ public:
         SharedHeader sample_block,
         UInt64 max_block_size_,
         String selected_fields_)
-        : ISource(sample_block)
+        : ISource(std::move(sample_block))
         , client(std::move(client_))
         , fields(std::move(fields_))
         , max_block_size(max_block_size_)

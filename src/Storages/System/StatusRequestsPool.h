@@ -188,7 +188,7 @@ public:
         return {this_request_id, future};
     }
 
-    void scheduleRequests(const UInt64 max_request_id, const QueryStatusPtr query_status)
+    void scheduleRequests(const UInt64 max_request_id, const QueryStatusPtr & query_status)
     {
         while (true)
         {

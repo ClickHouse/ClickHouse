@@ -17,7 +17,7 @@ TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     bool with_types_,
     bool is_raw_,
     const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), with_names(with_names_), with_types(with_types_), is_raw(is_raw_), format_settings(format_settings_)
+    : IRowOutputFormat(std::move(header_), out_), with_names(with_names_), with_types(with_types_), is_raw(is_raw_), format_settings(format_settings_)
 {
 }
 

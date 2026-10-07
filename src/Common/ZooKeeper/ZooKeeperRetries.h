@@ -34,7 +34,7 @@ class ZooKeeperRetriesControl
 {
 public:
     ZooKeeperRetriesControl(std::string name_, LoggerPtr logger_, ZooKeeperRetriesInfo retries_info_)
-        : name(std::move(name_)), logger(logger_), retries_info(retries_info_)
+        : name(std::move(name_)), logger(logger_), retries_info(std::move(retries_info_))
     {
     }
 
@@ -127,7 +127,7 @@ public:
         iteration_succeeded = false;
         user_error.code = code;
         user_error.message = message;
-        user_error.exception = exception;
+        user_error.exception = std::move(exception);
         keeper_error = KeeperError{};
     }
 
@@ -147,7 +147,7 @@ public:
         iteration_succeeded = false;
         keeper_error.code = code;
         keeper_error.message = std::move(message);
-        keeper_error.exception = exception;
+        keeper_error.exception = std::move(exception);
         user_error = UserError{};
     }
 

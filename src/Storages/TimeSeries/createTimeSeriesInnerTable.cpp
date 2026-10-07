@@ -55,7 +55,7 @@ void createTimeSeriesInnerTable(
 
     auto manual_create_query = getInnerTableCreateQuery(
         inner_table_kind, inner_table_uuid, inner_columns,
-        inner_storage_def, time_series_storage_id, version);
+        std::move(inner_storage_def), time_series_storage_id, version);
 
     InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
     create_interpreter.setInternal(true);

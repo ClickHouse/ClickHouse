@@ -62,7 +62,7 @@ ZooKeeperReplicator::ZooKeeperReplicator(
     bool throw_on_invalid_entities_)
     : storage_name(storage_name_)
     , zookeeper_path(zookeeper_path_)
-    , get_zookeeper(get_zookeeper_)
+    , get_zookeeper(std::move(get_zookeeper_))
     , watched_queue(std::make_shared<ConcurrentBoundedQueue<UUID>>(std::numeric_limits<size_t>::max()))
     , watch_entities_list(std::make_shared<Coordination::WatchCallback>([my_watched_queue = watched_queue](const Coordination::WatchResponse &)
       {

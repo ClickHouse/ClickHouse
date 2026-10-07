@@ -26,11 +26,11 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     const RuntimeFilterConfig & runtime_filter_config_,
     ContextPtr query_context_)
     : ISimpleTransform(header_, header_, true)
-    , filter_column_name(filter_column_name_)
+    , filter_column_name(std::move(filter_column_name_))
     , filter_column_position(header_->getPositionByName(filter_column_name))
     , filter_column_original_type(header_->getByPosition(filter_column_position).type)
     , filter_column_target_type(filter_column_type_)
-    , filter_name(filter_name_)
+    , filter_name(std::move(filter_name_))
     , filter_key(std::move(filter_key_))
     , query_context(std::move(query_context_))
 {

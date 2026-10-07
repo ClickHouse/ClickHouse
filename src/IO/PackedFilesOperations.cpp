@@ -185,7 +185,7 @@ void extractPackedRecursive(const DiskPtr & disk_in, const String & input_dir, c
     }
 }
 
-void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_file, Strings file_order_hint)
+void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_file, const Strings & file_order_hint)
 {
     if (!disk_in->existsDirectory(input_dir))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Input path {} doesn't exist or is not a directory", input_dir);
@@ -228,7 +228,7 @@ void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskP
         buf->sync();
 }
 
-void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_dir, Strings file_order_hint)
+void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_dir, const Strings & file_order_hint)
 {
     assertOutputNotInsideInput(disk_in, input_dir, disk_out, output_dir);
 

@@ -166,7 +166,7 @@ namespace
 }
 
 
-String AuthMiddlewareFactory::TokenStorage::getToken(std::string username, std::string password)
+String AuthMiddlewareFactory::TokenStorage::getToken(const std::string & username, const std::string & password)
 {
     std::lock_guard<std::mutex> lock(token_mutex);
 
@@ -181,7 +181,7 @@ String AuthMiddlewareFactory::TokenStorage::getToken(std::string username, std::
     return token;
 }
 
-std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenStorage::getCredentials(std::string token)
+std::optional<std::pair<std::string, std::string>> AuthMiddlewareFactory::TokenStorage::getCredentials(const std::string & token)
 {
     std::lock_guard<std::mutex> lock(token_mutex);
 

@@ -24,7 +24,7 @@ NormalizedPath NormalizedPath::parent_path() const
     return NormalizedPath{std::filesystem::path::parent_path()};
 }
 
-NormalizedPath normalizePath(std::string path)
+NormalizedPath normalizePath(const std::string & path)
 {
     auto lexically_normal = std::filesystem::path(path).lexically_normal();
 

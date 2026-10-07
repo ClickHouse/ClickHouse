@@ -167,7 +167,7 @@ Poco::JSON::Object::Ptr SnapshotSummary::toJSON() const
 {
     Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
     forEachField(
-        [&obj](std::string_view key, std::string value)
+        [&obj](std::string_view key, const std::string & value)
         {
             std::string key_str(key);
 
@@ -184,7 +184,7 @@ Map SnapshotSummary::toMap() const
 {
     Map result;
     forEachField(
-        [&result](std::string_view key, std::string value) { result.emplace_back(Tuple{std::string(key), value}); },
+        [&result](std::string_view key, const std::string & value) { result.emplace_back(Tuple{std::string(key), value}); },
         /*with_extra_fields=*/true);
     return result;
 }

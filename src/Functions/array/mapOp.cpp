@@ -171,7 +171,7 @@ private:
     }
 
     template <typename KeyType, typename ValType>
-    ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypePtr res_type) const
+    ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypePtr & res_type) const
     {
         MutableColumnPtr res_column = res_type->createColumn();
         IColumn *to_keys_data = nullptr;
@@ -287,7 +287,7 @@ private:
     }
 
     template <typename KeyType>
-    ColumnPtr execute1(size_t row_count, const DataTypePtr res_type, const DataTypePtr res_value_type, TupleMaps & args) const
+    ColumnPtr execute1(size_t row_count, const DataTypePtr & res_type, const DataTypePtr & res_value_type, TupleMaps & args) const
     {
         switch (res_value_type->getTypeId())
         {

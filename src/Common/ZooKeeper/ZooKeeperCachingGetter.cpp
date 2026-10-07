@@ -13,7 +13,7 @@ namespace ErrorCodes
 namespace zkutil
 {
 
-ZooKeeperCachingGetter::ZooKeeperCachingGetter(zkutil::GetZooKeeper get_zookeeper_) : get_zookeeper{get_zookeeper_}
+ZooKeeperCachingGetter::ZooKeeperCachingGetter(zkutil::GetZooKeeper get_zookeeper_) : get_zookeeper{std::move(get_zookeeper_)}
 {
 }
 

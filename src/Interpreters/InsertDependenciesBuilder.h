@@ -220,7 +220,7 @@ protected:
         ContextPtr context);
 
 private:
-    bool isView(StorageIDMaybeEmpty id) const;
+    bool isView(const StorageIDMaybeEmpty & id) const;
 
     std::pair<ContextPtr, ContextPtr> createSelectInsertContext(const DependencyPath & path);
     bool observePath(const DependencyPath & path);
@@ -228,17 +228,17 @@ private:
     String debugPath(const DependencyPath & path) const;
     void collectAllDependencies();
 
-    Chain createPreSink(StorageIDMaybeEmpty view_id) const;
-    Chain createSelect(StorageIDMaybeEmpty view_id) const;
-    Chain createSink(StorageIDMaybeEmpty view_id) const;
-    Chain createSinkImpl(StorageIDMaybeEmpty view_id) const;
-    Chain createPostSink(StorageIDMaybeEmpty view_id) const;
+    Chain createPreSink(const StorageIDMaybeEmpty & view_id) const;
+    Chain createSelect(const StorageIDMaybeEmpty & view_id) const;
+    Chain createSink(const StorageIDMaybeEmpty & view_id) const;
+    Chain createSinkImpl(const StorageIDMaybeEmpty & view_id) const;
+    Chain createPostSink(const StorageIDMaybeEmpty & view_id) const;
 
     Chain createRetry(const std::vector<StorageIDMaybeEmpty> & path, StorageIDMaybeEmpty start_from, const std::string & partition) const;
 
-    static QueryViewsLogElement::ViewStatus getQueryViewStatus(std::exception_ptr exception, bool before_start);
+    static QueryViewsLogElement::ViewStatus getQueryViewStatus(const std::exception_ptr & exception, bool before_start);
 
-    String getViewQueryForLog(StorageID view_id) const;
+    String getViewQueryForLog(const StorageID & view_id) const;
 
     StorageIDMaybeEmpty init_table_id;
     StoragePtr init_storage;

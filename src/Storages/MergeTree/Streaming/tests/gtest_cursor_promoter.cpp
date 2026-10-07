@@ -9,7 +9,7 @@ namespace
 
 MergeTreeCursorPromoter makePromoter(
     std::set<Int64> committing,
-    std::vector<std::pair<Int64, Int64>> ranges)
+    const std::vector<std::pair<Int64, Int64>> & ranges)
 {
     PartBlockNumberRanges r;
     for (auto [l, h] : ranges)

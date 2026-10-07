@@ -218,7 +218,7 @@ private:
         bool operator !=(const State & other) const;
 
         void merge(const State & other);
-        void addErrorInfo(std::exception_ptr exception, const String & host);
+        void addErrorInfo(const std::exception_ptr & exception, const String & host);
     };
 
     State state TSA_GUARDED_BY(mutex);

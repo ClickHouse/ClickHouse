@@ -121,7 +121,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request)
     return execute(request, /*seek_performed=*/false);
 }
 
-IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, bool seek_performed)
+IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(const Request & request, bool seek_performed)
 {
     CurrentMetrics::Increment metric_increment{CurrentMetrics::RemoteRead};
 

@@ -16,7 +16,7 @@ namespace
 {
 
 /// Build a single-column ColumnsWithTypeAndName from a list of string values.
-ColumnsWithTypeAndName makeStringBlock(std::vector<String> values)
+ColumnsWithTypeAndName makeStringBlock(const std::vector<String> & values)
 {
     auto col = ColumnString::create();
     for (const auto & v : values)
@@ -25,7 +25,7 @@ ColumnsWithTypeAndName makeStringBlock(std::vector<String> values)
 }
 
 /// Build a single-column ColumnsWithTypeAndName from a list of UInt64 values.
-ColumnsWithTypeAndName makeUInt64Block(std::vector<UInt64> values)
+ColumnsWithTypeAndName makeUInt64Block(const std::vector<UInt64> & values)
 {
     auto col = ColumnVector<UInt64>::create();
     for (auto v : values)
@@ -34,7 +34,7 @@ ColumnsWithTypeAndName makeUInt64Block(std::vector<UInt64> values)
 }
 
 /// Build a two-column ColumnsWithTypeAndName (String, UInt64) from paired values.
-ColumnsWithTypeAndName makeTwoColumnBlock(std::vector<std::pair<String, UInt64>> rows)
+ColumnsWithTypeAndName makeTwoColumnBlock(const std::vector<std::pair<String, UInt64>> & rows)
 {
     auto col_s = ColumnString::create();
     auto col_n = ColumnVector<UInt64>::create();
@@ -106,7 +106,7 @@ TEST(FutureSetContentHash, MultiColumnOrderIndependent)
 /// Multi-column set with repeated element types (String, String): rows that tie on the
 TEST(FutureSetContentHash, MultiColumnRepeatedTypeOrderIndependent)
 {
-    auto makeBlock = [](std::vector<std::pair<String, String>> rows)
+    auto makeBlock = [](const std::vector<std::pair<String, String>> & rows)
     {
         auto col1 = ColumnString::create();
         auto col2 = ColumnString::create();
@@ -215,7 +215,7 @@ TEST(FutureSetContentHash, ThreadSafe)
 /// during insertion, so IN ('a', NULL) and IN ('a') must hash identically.
 TEST(FutureSetContentHash, NullsFilteredWhenTransformNullInDisabled)
 {
-    auto makeBlockWithNull = [](std::vector<std::optional<String>> values)
+    auto makeBlockWithNull = [](const std::vector<std::optional<String>> & values)
     {
         auto col = ColumnString::create();
         auto null_map = ColumnVector<UInt8>::create();

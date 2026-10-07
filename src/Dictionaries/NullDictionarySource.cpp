@@ -10,7 +10,7 @@
 
 namespace DB
 {
-NullDictionarySource::NullDictionarySource(SharedHeader sample_block_) : sample_block(sample_block_)
+NullDictionarySource::NullDictionarySource(SharedHeader sample_block_) : sample_block(std::move(sample_block_))
 {
 }
 

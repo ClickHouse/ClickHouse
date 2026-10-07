@@ -374,7 +374,7 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
 }
 
 static void convertOrdinaryDatabaseToAtomic(LoggerPtr log, ContextMutablePtr context, const DatabasePtr & database,
-                                            const String & name, const String tmp_name)
+                                            const String & name, const String & tmp_name)
 {
     /// It's kind of C++ script that creates temporary database with Atomic engine,
     /// moves all tables to it, drops old database and then renames new one to old name.

@@ -196,7 +196,7 @@ private:
         bool cluster_secure_connection{false};
     } cluster_auth_info;
 
-    void fillClusterAuthInfo(String collection_name);
+    void fillClusterAuthInfo(const String & collection_name);
 
     void checkQueryValid(const ASTPtr & query, ContextPtr query_context) const;
     void checkTableEngine(const ASTCreateQuery & query, ASTStorage & storage, ContextPtr query_context) const;

@@ -57,12 +57,12 @@ public:
     TablesLoader() = delete;
 
     /// Create tasks for async loading of all tables in `databases` after specified jobs `load_after`.
-    [[nodiscard]] LoadTaskPtrs loadTablesAsync(LoadJobSet load_after = {});
+    [[nodiscard]] LoadTaskPtrs loadTablesAsync(const LoadJobSet & load_after = {});
 
     /// Create tasks for async startup of all tables in `databases` after specified jobs `startup_after`.
     /// Note that for every table startup an extra dependency on that table loading will be added along with `startup_after`.
     /// Must be called only after `loadTablesAsync()`.
-    [[nodiscard]] LoadTaskPtrs startupTablesAsync(LoadJobSet startup_after = {});
+    [[nodiscard]] LoadTaskPtrs startupTablesAsync(const LoadJobSet & startup_after = {});
 
 private:
     ContextMutablePtr global_context;

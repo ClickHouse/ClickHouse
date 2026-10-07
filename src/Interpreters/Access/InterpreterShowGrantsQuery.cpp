@@ -32,7 +32,7 @@ namespace
     void getGrantsFromAccess(
         ASTs & res,
         const AccessRights & access,
-        const boost::intrusive_ptr<ASTRolesOrUsersSet> grantees,
+        const boost::intrusive_ptr<ASTRolesOrUsersSet> & grantees,
         const AccessControl * access_control,
         bool attach_mode = false,
         bool with_implicit = false)

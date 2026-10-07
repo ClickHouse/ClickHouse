@@ -20,8 +20,8 @@ public:
         : IStorage(table_id_)
     {
         StorageInMemoryMetadata storage_metadata;
-        storage_metadata.setColumns(columns_description_);
-        storage_metadata.setConstraints(constraints_);
+        storage_metadata.setColumns(std::move(columns_description_));
+        storage_metadata.setConstraints(std::move(constraints_));
         storage_metadata.setComment(comment);
         setInMemoryMetadata(storage_metadata);
     }

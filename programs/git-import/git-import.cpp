@@ -419,7 +419,7 @@ using LineChanges = std::vector<LineChange>;
 
 struct FileDiff
 {
-    explicit FileDiff(FileChange file_change_) : file_change(file_change_) {}
+    explicit FileDiff(FileChange file_change_) : file_change(std::move(file_change_)) {}
 
     FileChange file_change;
     LineChanges line_changes;
@@ -650,7 +650,7 @@ struct FileBlame
         return {};
     }
 
-    void addLine(uint32_t num, Commit commit)
+    void addLine(uint32_t num, const Commit & commit)
     {
         walk(num);
 

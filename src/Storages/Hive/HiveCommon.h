@@ -130,7 +130,7 @@ public:
 
     explicit HiveMetastoreClient(ThriftHiveMetastoreClientBuilder builder_)
         : table_metadata_cache(CurrentMetrics::HiveMetadataFilesCacheBytes, CurrentMetrics::HiveMetadataFilesCacheFiles, 1000)
-        , client_pool(builder_)
+        , client_pool(std::move(builder_))
     {
     }
 

@@ -146,7 +146,7 @@ class PrintTSVStep : public IQueryPlanStep
 public:
     explicit PrintTSVStep(SharedHeader input_header_)
     {
-        updateInputHeaders({input_header_});
+        updateInputHeaders({std::move(input_header_)});
     }
 
     String getName() const override { return "PrintTSV"; }

@@ -98,7 +98,7 @@ static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
     }
 }
 
-StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV1(const Block & sample_block, ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
     return getPatchPartMetadataV1(std::move(columns_desc), local_context);
@@ -195,7 +195,7 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
     return std::make_shared<StorageInMemoryMetadata>(std::move(part_metadata));
 }
 
-StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescription & sorting_key, ContextPtr local_context)
+StorageMetadataPtr getPatchPartMetadataV2(const Block & sample_block, const KeyDescription & sorting_key, ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
     return getPatchPartMetadataV2(std::move(columns_desc), sorting_key, local_context);

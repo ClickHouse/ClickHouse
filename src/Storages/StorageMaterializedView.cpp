@@ -853,7 +853,7 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
     return exchange ? std::make_optional(fresh_table) : std::nullopt;
 }
 
-void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
+void StorageMaterializedView::dropTempTable(const StorageID & table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
     /// Don't apply dropped table size limits to tables produced by refreshable materialized views.
     /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve

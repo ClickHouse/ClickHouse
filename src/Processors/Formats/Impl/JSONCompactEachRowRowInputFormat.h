@@ -26,7 +26,7 @@ public:
     JSONCompactEachRowRowInputFormat(
         SharedHeader header_,
         ReadBuffer & in_,
-        Params params_,
+        const Params & params_,
         bool with_names_,
         bool with_types_,
         bool yield_strings_,

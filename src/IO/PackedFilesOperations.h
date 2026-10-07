@@ -41,11 +41,11 @@ void extractPacked(const DiskPtr & disk_in, const String & input_file, const Dis
 void extractPackedRecursive(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_dir);
 
 /// Creates packed archive from @input_dir into @output_file
-void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_file, Strings file_order_hint);
+void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_file, const Strings & file_order_hint);
 
 /// Recursively creates packed archives from @input_dir into @output_dir.
 /// It traverses input directory and subdirectories, collects all files
 /// in directory and writes them into packed archive with name 'data.packed'
-void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_dir, Strings file_order_hint);
+void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, const DiskPtr & disk_out, const String & output_dir, const Strings & file_order_hint);
 
 }

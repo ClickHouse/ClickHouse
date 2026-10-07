@@ -7,7 +7,7 @@
 namespace DB
 {
 
-VersionNumber::VersionNumber(std::string version_string)
+VersionNumber::VersionNumber(const std::string & version_string)
 {
     if (version_string.empty())
         return;

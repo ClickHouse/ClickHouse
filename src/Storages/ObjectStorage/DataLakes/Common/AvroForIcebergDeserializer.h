@@ -83,7 +83,7 @@ public:
     /// If expected type is provided will throw an exception if types don't match
     DB::Field getValueFromRowByName(size_t row_num, const std::string & path, std::optional<DB::TypeIndex> expected_type = std::nullopt) const;
 
-    std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
+    std::optional<std::string> tryGetAvroMetadataValue(const std::string & metadata_key) const;
 
     ParsedManifestFileEntryPtr getParsedManifestFileEntry(size_t row_index) const;
 

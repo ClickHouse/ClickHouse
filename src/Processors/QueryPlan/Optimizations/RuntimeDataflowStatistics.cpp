@@ -208,7 +208,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
     /// Then we will spend a lot of time serializing it, and the overhead will be too high.
     if (variant.type == AggregatedDataVariants::Type::without_key
         && std::ranges::any_of(
-            variant.aggregator->getParams().aggregates, [](auto agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
+            variant.aggregator->getParams().aggregates, [](const auto & agg_func) { return !agg_func.function->hasTrivialDestructor(); }))
     {
         markUnsupportedCase();
         return;

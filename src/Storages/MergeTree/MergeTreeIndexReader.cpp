@@ -38,7 +38,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
     const MarkRanges & all_mark_ranges,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    MergeTreeReaderSettings settings,
+    const MergeTreeReaderSettings & settings,
     bool interruptible_marks_read)
 {
     auto file_size = getIndexStreamFileSize(data_part_info, stream_name, extension);
@@ -53,7 +53,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
             marks_count,
             /// The reader's own ranges repeat the single mark once per selected data range.
             MarkRanges{{0, marks_count}},
-            std::move(settings),
+            settings,
             uncompressed_cache,
             file_size,
             /*marks_loader=*/ nullptr,
@@ -89,7 +89,7 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         extension,
         marks_count,
         all_mark_ranges,
-        std::move(settings),
+        settings,
         uncompressed_cache,
         file_size,
         std::move(marks_loader),

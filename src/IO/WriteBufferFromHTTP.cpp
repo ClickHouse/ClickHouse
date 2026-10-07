@@ -23,7 +23,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     const HTTPHeaderEntries & additional_headers,
     const ConnectionTimeouts & timeouts,
     size_t buffer_size_,
-    ProxyConfiguration proxy_configuration
+    const ProxyConfiguration & proxy_configuration
 )
     : WriteBufferFromOStream(buffer_size_)
     , session{makeHTTPSession(connection_group, uri, timeouts, proxy_configuration)}

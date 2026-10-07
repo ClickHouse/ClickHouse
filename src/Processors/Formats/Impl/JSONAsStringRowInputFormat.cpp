@@ -61,13 +61,13 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
     SharedHeader header_, ReadBuffer & in_, IRowInputFormat::Params params_, const FormatSettings & format_settings_)
-    : JSONAsStringRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_, format_settings_)
+    : JSONAsStringRowInputFormat(std::move(header_), std::make_unique<PeekableReadBuffer>(in_), std::move(params_), format_settings_)
 {
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
     SharedHeader header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_, const FormatSettings & format_settings_)
-    : JSONAsRowInputFormat(header_, *buf_, params_, format_settings_), buf(std::move(buf_))
+    : JSONAsRowInputFormat(header_, *buf_, std::move(params_), format_settings_), buf(std::move(buf_))
 {
     if (!isString(removeNullable(removeLowCardinality(header_->getByPosition(0).type))))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -180,7 +180,7 @@ void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 
 JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
     SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : JSONAsRowInputFormat(header_, in_, params_, format_settings_)
+    : JSONAsRowInputFormat(header_, in_, std::move(params_), format_settings_)
 {
     const auto & type = header_->getByPosition(0).type;
     if (!isObject(type))

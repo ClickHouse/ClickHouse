@@ -157,7 +157,7 @@ std::unique_ptr<ComparisonGraph<ASTPtr>> ConstraintsDescription::buildGraph() co
     return std::make_unique<ComparisonGraph<ASTPtr>>(constraints_for_graph);
 }
 
-ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr context,
+ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextPtr & context,
                                                               const DB::NamesAndTypesList & source_columns_) const
 {
     /// The columns that are physically available when the constraint is checked (the top-level table columns).

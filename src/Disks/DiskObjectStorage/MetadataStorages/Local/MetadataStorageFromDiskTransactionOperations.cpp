@@ -266,7 +266,7 @@ void RemoveDirectoryOperation::undo()
 }
 
 RemoveRecursiveOperation::RemoveRecursiveOperation(std::string path_, IMetadataTransaction::ShouldRemoveObjectsPredicate should_remove_objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
-    : path(path_)
+    : path(std::move(path_))
     , should_remove_objects(std::move(should_remove_objects_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
@@ -417,8 +417,8 @@ void MoveDirectoryOperation::undo()
 }
 
 ReplaceFileOperation::ReplaceFileOperation(std::string path_from_, std::string path_to_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
-    : path_from(path_from_)
-    , path_to(path_to_)
+    : path_from(std::move(path_from_))
+    , path_to(std::move(path_to_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
     , objects_to_remove(objects_to_remove_)
@@ -476,7 +476,7 @@ void WriteInlineDataOperation::undo()
 }
 
 RewriteFileOperation::RewriteFileOperation(std::string path_, StoredObjects objects_, const std::string & compatible_key_prefix_, IDisk & disk_, StoredObjects & objects_to_remove_)
-    : path(path_)
+    : path(std::move(path_))
     , objects(std::move(objects_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)
@@ -506,7 +506,7 @@ void RewriteFileOperation::finalize()
 }
 
 AddBlobOperation::AddBlobOperation(std::string path_, StoredObject object_, const std::string & compatible_key_prefix_, IDisk & disk_)
-    : path(path_)
+    : path(std::move(path_))
     , object(std::move(object_))
     , compatible_key_prefix(compatible_key_prefix_)
     , disk(disk_)

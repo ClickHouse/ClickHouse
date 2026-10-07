@@ -294,7 +294,7 @@ struct PositionImpl
     /// Search for substring in string.
     static void constantConstantScalar(
         std::string data,
-        std::string needle,
+        const std::string & needle,
         UInt64 start_pos,
         UInt64 & res)
     {

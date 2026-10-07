@@ -73,7 +73,7 @@ ObjectStorageQueuePostProcessor::ObjectStorageQueuePostProcessor(
     : WithContext(context_)
     , type(type_)
     , object_storage(object_storage_)
-    , engine_name(engine_name_)
+    , engine_name(std::move(engine_name_))
     , table_metadata(table_metadata_)
     , settings(std::move(settings_))
     , log(getLogger("ObjectStorageQueuePostProcessor"))

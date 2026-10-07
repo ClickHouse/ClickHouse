@@ -27,7 +27,7 @@ public:
     void stopIntercept();
 
 private:
-    void run(CallbackMap);
+    void run(const CallbackMap &);
     void runImpl(const CallbackMap &) const;
 
     const int fd;

@@ -16,7 +16,7 @@ JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer
         const FormatSettings & settings_,
         bool with_names_,
         bool with_types_)
-    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
+    : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(std::move(header_), out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , settings(settings_)
     , with_names(with_names_)
     , with_types(with_types_)

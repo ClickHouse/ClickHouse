@@ -101,7 +101,7 @@ DatabaseOrdinary::DatabaseOrdinary(
           DatabaseCatalog::getDataDirPath(name_) / "",
           "DatabaseOrdinary (" + name_ + ")",
           context_,
-          database_metadata_disk_settings_)
+          std::move(database_metadata_disk_settings_))
 {
 }
 
@@ -113,7 +113,7 @@ DatabaseOrdinary::DatabaseOrdinary(
     ContextPtr context_,
     DatabaseMetadataDiskSettings database_metadata_disk_settings_)
     : DatabaseOnDisk(name_, metadata_path_, data_path_, logger, context_)
-    , database_metadata_disk_settings(database_metadata_disk_settings_)
+    , database_metadata_disk_settings(std::move(database_metadata_disk_settings_))
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value.empty())
         metadata_disk_ptr = getContext()->getDisk(database_metadata_disk_settings[DatabaseMetadataDiskSetting::disk].value);

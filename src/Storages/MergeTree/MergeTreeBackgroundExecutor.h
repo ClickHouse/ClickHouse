@@ -351,7 +351,7 @@ public:
     size_t reserveTaskSlots(size_t desired) TSA_NO_THREAD_SAFETY_ANALYSIS;
     void releaseTaskSlots(size_t count) noexcept;
 
-    void removeTasksCorrespondingToStorage(StorageID id);
+    void removeTasksCorrespondingToStorage(const StorageID & id);
 
     /// Flip the executor into shutdown mode without joining the worker threads:
     /// new tasks are rejected by `trySchedule` and pending tasks are not started

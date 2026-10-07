@@ -165,7 +165,7 @@ protected:
     /// the real `SSTIndexWriter`), with `dead_rows` marked dead in the part's
     /// delete bitmap.
     ProbeTargetPartPtr makeTarget(
-        std::vector<std::pair<UInt64, UInt32>> kv, std::vector<UInt64> dead_rows = {})
+        std::vector<std::pair<UInt64, UInt32>> kv, const std::vector<UInt64> & dead_rows = {})
     {
         auto reader = makeReader("part_" + std::to_string(counter++), std::move(kv));
         auto bitmap = std::make_shared<DeleteBitmap>();
@@ -174,7 +174,7 @@ protected:
         return std::make_shared<SSTProbeTargetPart>(/*part=*/nullptr, bitmap, std::move(reader));
     }
 
-    UniqueKeyProbeSimple probeOver(ProbeTargetsSnapshot snapshot)
+    UniqueKeyProbeSimple probeOver(const ProbeTargetsSnapshot & snapshot)
     {
         return UniqueKeyProbeSimple(
             [snapshot](const String &) { return snapshot; }, Names{"key"}, MAX_ENC);

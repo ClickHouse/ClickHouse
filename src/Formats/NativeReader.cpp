@@ -41,7 +41,7 @@ NativeReader::NativeReader(
     UInt64 server_revision_,
     std::optional<FormatSettings> format_settings_,
     ISerialization::KindSet allowed_kinds_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_), allowed_kinds(allowed_kinds_)
+    : istr(istr_), server_revision(server_revision_), format_settings(std::move(format_settings_)), allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -98,7 +98,7 @@ void NativeReader::readData(
     ValueSizeMap * avg_value_size_hints_)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
-    settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
+    settings.getter = [&](const ISerialization::SubstreamPath &) -> ReadBuffer * { return &istr; };
     settings.position_independent_encoding = false;
     settings.native_format = true;
     settings.format_settings = format_settings;

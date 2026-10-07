@@ -12,7 +12,7 @@ namespace DB
 {
 
 HashOutputFormat::HashOutputFormat(WriteBuffer & out_, SharedHeader header_)
-    : IOutputFormat(header_, out_)
+    : IOutputFormat(std::move(header_), out_)
 {
 }
 

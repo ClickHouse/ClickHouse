@@ -169,7 +169,7 @@ public:
 
 private:
     static boost::intrusive_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
-            String name, String type, UInt64 default_value);
+            String name, const String & type, UInt64 default_value);
 
     static VirtualColumnsDescription createVirtuals();
 

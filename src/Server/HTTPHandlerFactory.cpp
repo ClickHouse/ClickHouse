@@ -56,7 +56,7 @@ private:
 
 public:
     explicit RedirectRequestHandler(std::string url_, std::unordered_map<String, String> http_response_headers_override_ = {})
-        : url(std::move(url_)), http_response_headers_override(http_response_headers_override_)
+        : url(std::move(url_)), http_response_headers_override(std::move(http_response_headers_override_))
     {
     }
 
@@ -131,7 +131,7 @@ private:
 HTTPRequestHandlerFactoryPtr createRedirectHandlerFactory(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    std::unordered_map<String, String> common_headers)
+    const std::unordered_map<String, String> & common_headers)
 {
     std::string url = config.getString(config_prefix + ".handler.location");
 
@@ -177,7 +177,7 @@ static auto createPingHandlerFactory(IServer & server)
 }
 
 static auto createPingHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                                     std::unordered_map<String, String> common_headers)
+                                     const std::unordered_map<String, String> & common_headers)
 {
     auto creator = [&server, &config, config_prefix, common_headers]() -> std::unique_ptr<StaticRequestHandler>
     {
@@ -193,7 +193,7 @@ static auto createPingHandlerFactory(IServer & server, const Poco::Util::Abstrac
 
 template <typename UIRequestHandler>
 static auto createWebUIHandlerFactory(IServer & server, const Poco::Util::AbstractConfiguration & config, const String & config_prefix,
-                                      std::unordered_map<String, String> common_headers)
+                                      const std::unordered_map<String, String> & common_headers)
 {
     auto creator = [&server, &config, config_prefix, common_headers]() -> std::unique_ptr<UIRequestHandler>
     {

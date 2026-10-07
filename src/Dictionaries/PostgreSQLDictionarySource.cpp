@@ -93,7 +93,7 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(
     : dict_struct(dict_struct_)
     , configuration(configuration_)
     , pool(std::move(pool_))
-    , sample_block(sample_block_)
+    , sample_block(std::move(sample_block_))
     , log(getLogger("PostgreSQLDictionarySource"))
     , query_builder(makeExternalQueryBuilder(dict_struct, configuration.schema, configuration.table, configuration.query, configuration.where))
     , load_all_query(query_builder.composeLoadAllQuery())

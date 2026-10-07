@@ -151,7 +151,7 @@ FilterTransform::FilterTransform(
     std::optional<std::pair<UInt64, String>> condition_,
     bool update_row_numbers_info_)
     : ISimpleTransform(
-            header_,
+            std::move(header_),
             std::make_shared<const Block>(checkAndRemoveFilterColumn(*transformed_header_, filter_column_name_, remove_filter_column_)),
             true)
     , expression(std::move(expression_))
@@ -160,7 +160,7 @@ FilterTransform::FilterTransform(
     , on_totals(on_totals_)
     , update_row_numbers_info(update_row_numbers_info_)
     , rows_filtered(rows_filtered_)
-    , condition(condition_)
+    , condition(std::move(condition_))
     , transformed_header(*transformed_header_)
 {
     if (expression)

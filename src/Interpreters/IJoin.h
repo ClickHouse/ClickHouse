@@ -120,7 +120,7 @@ public:
 
     virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
+        SharedHeader right_sample_block_) const { return clone(table_join_, std::move(left_sample_block_), std::move(right_sample_block_)); }
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.

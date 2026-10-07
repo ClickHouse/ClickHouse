@@ -31,7 +31,7 @@ namespace ErrorCodes
 
 FunctionNode::FunctionNode(String function_name_)
     : IQueryTreeNode(children_size)
-    , function_name(function_name_)
+    , function_name(std::move(function_name_))
 {
     children[parameters_child_index] = std::make_shared<ListNode>();
     children[arguments_child_index] = std::make_shared<ListNode>();

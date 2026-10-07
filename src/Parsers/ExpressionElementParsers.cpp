@@ -1716,7 +1716,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
-inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, String str, Expected & expected)
+inline static bool makeStringLiteral(IParser::Pos & pos, ASTPtr & node, const String & str, Expected & expected)
 {
     auto literal_begin = pos;
     auto literal = make_intrusive<ASTLiteral>(str);

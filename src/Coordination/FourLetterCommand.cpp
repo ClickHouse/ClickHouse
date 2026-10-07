@@ -601,7 +601,7 @@ String LogInfoCommand::run()
     KeeperLogInfo log_info = keeper_dispatcher.getKeeperLogInfo();
     StringBuffer ret;
 
-    auto append = [&ret] (String key, uint64_t value) -> void
+    auto append = [&ret] (const String & key, uint64_t value) -> void
     {
         writeText(key, ret);
         writeText('\t', ret);

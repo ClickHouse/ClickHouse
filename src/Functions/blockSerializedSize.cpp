@@ -52,7 +52,7 @@ public:
         ISerialization::SerializeBinaryBulkSettings settings;
         NullWriteBuffer out;
 
-        settings.getter = [&out](ISerialization::SubstreamPath) -> WriteBuffer * { return &out; };
+        settings.getter = [&out](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &out; };
 
         ISerialization::SerializeBinaryBulkStatePtr state;
 

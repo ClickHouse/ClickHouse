@@ -548,7 +548,7 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
         responses = ObjectStorageQueueMetadata::getZooKeeper(log_, zookeeper_name_)->tryGet(paths);
     });
 
-    auto check_code = [](auto code, auto path)
+    auto check_code = [](auto code, const auto & path)
     {
         if (!(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE))
             throw zkutil::KeeperException::fromPath(code, path);

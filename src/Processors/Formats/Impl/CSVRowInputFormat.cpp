@@ -53,7 +53,7 @@ CSVRowInputFormat::CSVRowInputFormat(
     bool with_types_,
     const FormatSettings & format_settings_)
     : CSVRowInputFormat(
-        header_, std::make_shared<PeekableReadBuffer>(in_), params_, with_names_, with_types_, format_settings_)
+        std::move(header_), std::make_shared<PeekableReadBuffer>(in_), params_, with_names_, with_types_, format_settings_)
 {
 }
 
@@ -66,7 +66,7 @@ CSVRowInputFormat::CSVRowInputFormat(
     const FormatSettings & format_settings_,
     std::unique_ptr<CSVFormatReader> format_reader_)
     : RowInputFormatWithNamesAndTypes(
-        header_,
+        std::move(header_),
         *in_,
         params_,
         false,
@@ -89,7 +89,7 @@ CSVRowInputFormat::CSVRowInputFormat(
     bool with_types_,
     const FormatSettings & format_settings_)
     : RowInputFormatWithNamesAndTypes(
-        header_,
+        std::move(header_),
         *in_,
         params_,
         false,

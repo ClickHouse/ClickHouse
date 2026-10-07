@@ -20,7 +20,7 @@ using namespace mysqlxx;
 
 static auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
 {
-    return [weak_pool = pool, shareable](UInt64 interval_milliseconds)
+    return [weak_pool = std::move(pool), shareable](UInt64 interval_milliseconds)
     {
         auto shared_pool = weak_pool.lock();
         if (!shared_pool)

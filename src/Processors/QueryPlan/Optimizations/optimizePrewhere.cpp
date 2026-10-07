@@ -37,7 +37,7 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-static void removeFromOutput(ActionsDAG & dag, const std::string name)
+static void removeFromOutput(ActionsDAG & dag, const std::string & name)
 {
     const auto * node = &dag.findInOutputs(name);
     auto & outputs = dag.getOutputs();

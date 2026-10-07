@@ -30,7 +30,7 @@ struct WithContextImpl
     using ConstWeak = typename ConstShared::weak_type;
 
     WithContextImpl() = default;
-    explicit WithContextImpl(Weak context_) : context(context_) {}
+    explicit WithContextImpl(Weak context_) : context(std::move(context_)) {}
 
     Shared getContext() const;
 

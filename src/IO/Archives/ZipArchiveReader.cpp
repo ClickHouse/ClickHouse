@@ -827,7 +827,7 @@ ZipArchiveReader::RawHandleWithStream ZipArchiveReader::acquireRawHandle()
     return result;
 }
 
-void ZipArchiveReader::releaseRawHandle(RawHandleWithStream handle_info)
+void ZipArchiveReader::releaseRawHandle(const RawHandleWithStream & handle_info)
 {
     if (!handle_info.handle)
         return;

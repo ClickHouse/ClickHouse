@@ -11,7 +11,7 @@ namespace DB
 RawBLOBRowOutputFormat::RawBLOBRowOutputFormat(
     WriteBuffer & out_,
     SharedHeader header_)
-    : IRowOutputFormat(header_, out_)
+    : IRowOutputFormat(std::move(header_), out_)
 {
 }
 

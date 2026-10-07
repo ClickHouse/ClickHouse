@@ -52,7 +52,7 @@ String ASTUserNameWithHost::toString() const
     return ostr.str();
 }
 
-void ASTUserNameWithHost::replace(const String name)
+void ASTUserNameWithHost::replace(const String & name)
 {
     children.clear();
 

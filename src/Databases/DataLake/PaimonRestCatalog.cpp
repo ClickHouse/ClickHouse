@@ -263,7 +263,7 @@ String PaimonRestCatalog::createAuthHeaders(
             LOG_TEST(log, "canonical_request: {}", canonical_request);
             String string_to_sign = fmt::to_string(fmt::join(
                 {String(SIGNATURE_ALGORITHM),
-                 date_time,
+                 std::move(date_time),
                  fmt::format("{}/{}/{}/{}", date, region, PRODUCT, REQUEST_TYPE),
                  bytesToHex(DB::encodeSHA256(canonical_request))},
                 DLF_NEW_LINE));

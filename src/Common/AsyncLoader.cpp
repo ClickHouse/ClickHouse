@@ -210,7 +210,7 @@ void LoadTask::remove()
     }
 }
 
-AsyncLoader::AsyncLoader(std::vector<PoolInitializer> pool_initializers, bool log_failures_, bool log_progress_, bool log_events_)
+AsyncLoader::AsyncLoader(const std::vector<PoolInitializer> & pool_initializers, bool log_failures_, bool log_progress_, bool log_events_)
     : log_failures(log_failures_)
     , log_progress(log_progress_)
     , log_events(log_events_)
@@ -622,7 +622,7 @@ String AsyncLoader::checkCycle(const LoadJobPtr & job, LoadJobSet & left, LoadJo
     return {};
 }
 
-void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, std::exception_ptr reason, std::unique_lock<std::mutex> & lock)
+void AsyncLoader::finish(const LoadJobPtr & job, LoadStatus status, const std::exception_ptr & reason, std::unique_lock<std::mutex> & lock)
 {
     chassert(scheduled_jobs.contains(job)); // Job was pending
 

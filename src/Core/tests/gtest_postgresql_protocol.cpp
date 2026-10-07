@@ -1117,7 +1117,7 @@ TEST(PostgreSQLProtocol, BindRejectsArityMismatch)
 TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
 {
     /// Arity is the highest `$N`, not the number of declared OIDs.
-    auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, std::vector<Int32> oids)
+    auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, const std::vector<Int32> & oids)
     {
         ASTPreparedStatement statement;
         statement.function_name = "s";
@@ -1367,7 +1367,7 @@ TEST(PostgreSQLProtocol, ExecuteZeroArityReachableThroughGrammar)
 TEST(PostgreSQLProtocol, InferredUnspecifiedOidFractionalIntCastIsRejectedNotTruncated)
 {
     /// OID 0 emits an unambiguous numeric value as a bare, space-padded literal.
-    auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, std::vector<Int32> oids)
+    auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, const std::vector<Int32> & oids)
     {
         ASTPreparedStatement statement;
         statement.function_name = "s";

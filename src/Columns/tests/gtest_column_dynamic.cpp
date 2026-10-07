@@ -64,7 +64,7 @@ TEST(ColumnDynamic, InsertFields)
     ASSERT_TRUE(column->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
-static ColumnDynamic::MutablePtr getDynamicWithManyVariants(size_t num_variants, Field tuple_element = Field(42))
+static ColumnDynamic::MutablePtr getDynamicWithManyVariants(size_t num_variants, const Field & tuple_element = Field(42))
 {
     auto column = ColumnDynamic::create(254);
     for (size_t i = 0; i != num_variants; ++i)

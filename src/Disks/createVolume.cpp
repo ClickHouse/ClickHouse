@@ -26,7 +26,7 @@ VolumePtr createVolumeFromReservation(const ReservationPtr & reservation, Volume
 }
 
 VolumePtr createVolumeFromConfig(
-    String name,
+    const String & name,
     const Poco::Util::AbstractConfiguration & config,
     const String & config_prefix,
     DiskSelectorPtr disk_selector

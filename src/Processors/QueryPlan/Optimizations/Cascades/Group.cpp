@@ -200,7 +200,7 @@ Float64 Group::getBestCostForProperties(const ExpressionProperties & required_pr
     return best.cost.subtree_cost.total(cost_config);
 }
 
-void Group::dump(WriteBuffer & out, const CostConfig & cost_config, String indent) const
+void Group::dump(WriteBuffer & out, const CostConfig & cost_config, const String & indent) const
 {
     if (statistics.has_value())
     {

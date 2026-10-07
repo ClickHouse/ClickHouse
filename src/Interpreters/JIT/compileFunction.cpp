@@ -541,7 +541,7 @@ static void compileInsertAggregatesIntoResultColumns(llvm::Module & module, cons
     b.CreateRetVoid();
 }
 
-CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name)
+CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, const std::string & functions_dump_name)
 {
     Stopwatch watch;
 

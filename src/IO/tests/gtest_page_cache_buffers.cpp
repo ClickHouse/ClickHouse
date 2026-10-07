@@ -51,7 +51,7 @@ CacheViewPtr probeView(
 /// resolutions - the provider attaches a writer to each (one per cache block
 /// the cell spans). Any resident prefix comes back as a hit, not a miss.
 CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
-                         size_t object_file_offset, std::vector<ByteRange> cells)
+                         size_t object_file_offset, const std::vector<ByteRange> & cells)
 {
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)

@@ -378,7 +378,7 @@ private:
     ColumnPtr executeRightTypeArray(
         [[maybe_unused]] const ColumnUInt8 * cond_col,
         [[maybe_unused]] const ColumnsWithTypeAndName & arguments,
-        [[maybe_unused]] const DataTypePtr result_type,
+        [[maybe_unused]] const DataTypePtr & result_type,
         [[maybe_unused]] const ColumnArray * col_left_array,
         [[maybe_unused]] size_t input_rows_count) const
     {

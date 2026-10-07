@@ -72,7 +72,7 @@ void formatWatermark(
     IAST::FormatStateStacked frame)
 {
     wb << "FOR " << backQuoteIfNeed(node.time_attribute_column) << " AS ";
-    node.expression->format(wb, format_settings, state, frame);
+    node.expression->format(wb, format_settings, state, std::move(frame));
 
     if (node.idle_timeout.count() > 0)
         wb << " IDLE TIMEOUT INTERVAL " << static_cast<Int64>(node.idle_timeout.count()) << " MILLISECOND";

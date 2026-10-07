@@ -115,7 +115,7 @@ struct TestCaseParameter
 
     TestCaseParameter(std::vector<std::pair<uint8_t, UInt64>> vals, std::string binary = std::string{}) // NOLINT
         : bits_and_vals(std::move(vals)),
-          expected_buffer_binary(binary)
+          expected_buffer_binary(std::move(binary))
     {}
 };
 

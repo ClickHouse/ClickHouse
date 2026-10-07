@@ -195,7 +195,7 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::READ)
     , reader(std::move(reader_))
-    , lightweight_snapshot_reader_creator(lightweight_snapshot_reader_creator_)
+    , lightweight_snapshot_reader_creator(std::move(lightweight_snapshot_reader_creator_))
     , version(INITIAL_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))

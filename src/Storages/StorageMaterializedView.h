@@ -168,7 +168,7 @@ private:
     prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
         const CursorTreeNodePtr & stream_cursor) const;
     std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
-    void dropTempTable(StorageID table, ContextMutablePtr refresh_context, String & out_exception);
+    void dropTempTable(const StorageID & table, ContextMutablePtr refresh_context, String & out_exception);
 
     void updateTargetTableId(std::optional<String> database_name, std::optional<String> table_name);
 };

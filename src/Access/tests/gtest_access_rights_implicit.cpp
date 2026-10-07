@@ -31,7 +31,7 @@ AccessFlags addImplicitPrivileges(AccessFlags flags,
     return res;
 }
 
-std::string dumpAccessRights(AccessRights root, const std::string & prefix)
+std::string dumpAccessRights(const AccessRights & root, const std::string & prefix)
 {
     WriteBufferFromOwnString out;
     root.dumpTree(out);

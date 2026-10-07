@@ -107,7 +107,7 @@ Setting fields:
         : dict_struct{dict_struct_}
         , configuration(configuration_)
         , pool(std::make_shared<RedisPool>(configuration.pool_size))
-        , sample_block{sample_block_}
+        , sample_block{std::move(sample_block_)}
     {
         if (dict_struct.attributes.size() != 1)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,

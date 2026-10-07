@@ -16,7 +16,7 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
     const FormatSettings & settings_,
     bool pretty_json_)
     : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(
-        header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
+        std::move(header_), out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , pretty_json(pretty_json_)
     , settings(settings_)
 {

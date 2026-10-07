@@ -186,9 +186,9 @@ BackupCoordinationOnCluster::BackupCoordinationOnCluster(
     , data_file_name_prefix_length(*backup_settings_.data_file_name_prefix_length)
     , process_list_element(process_list_element_)
     , log(getLogger("BackupCoordinationOnCluster"))
-    , with_retries(log, get_zookeeper_, keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
+    , with_retries(log, std::move(get_zookeeper_), keeper_settings, process_list_element_, [root_zookeeper_path_](Coordination::ZooKeeperWithFaultInjection::Ptr zk) { zk->sync(root_zookeeper_path_); })
     , cleaner(/* is_restore = */ false, zookeeper_path, with_retries, log)
-    , stage_sync(/* is_restore = */ false, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_backup_, concurrency_counters_, with_retries, schedule_, process_list_element_, log)
+    , stage_sync(/* is_restore = */ false, fs::path{zookeeper_path} / "stage", current_host, all_hosts, allow_concurrent_backup_, concurrency_counters_, with_retries, std::move(schedule_), process_list_element_, log)
 {
     /// If the current host isn't the initiator then there are other hosts working on this backup (at least the initiator itself).
     if (current_host != kInitiator)

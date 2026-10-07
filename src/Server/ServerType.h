@@ -45,7 +45,7 @@ public:
         Type type_,
         const std::string & custom_name_ = "",
         const Types & exclude_types_ = {},
-        const CustomNames exclude_custom_names_ = {})
+        const CustomNames & exclude_custom_names_ = {})
         : type(type_),
           custom_name(custom_name_),
           exclude_types(exclude_types_),

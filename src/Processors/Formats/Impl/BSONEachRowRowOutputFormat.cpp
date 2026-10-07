@@ -53,7 +53,7 @@ static String toValidUTF8String(const String & name, const FormatSettings & sett
 
 BSONEachRowRowOutputFormat::BSONEachRowRowOutputFormat(
     WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_), settings(settings_)
+    : IRowOutputFormat(std::move(header_), out_), settings(settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     fields.reserve(sample.columns());

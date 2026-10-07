@@ -17,7 +17,7 @@ public:
         SharedHeader header,
         size_t num_inputs,
         AggregatingTransformParamsPtr params,
-        SortDescription description,
+        const SortDescription & description,
         size_t max_block_size_rows,
         size_t max_block_size_bytes,
         size_t limit_hint_ = 0)
@@ -26,7 +26,7 @@ public:
             header,
             num_inputs,
             params,
-            std::move(description),
+            description,
             max_block_size_rows,
             max_block_size_bytes,
             limit_hint_)

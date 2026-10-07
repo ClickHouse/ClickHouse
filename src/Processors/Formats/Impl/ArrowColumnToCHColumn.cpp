@@ -1351,7 +1351,7 @@ static ColumnPtr readByteMapFromArrowColumn(const std::shared_ptr<arrow::Chunked
     return nullmap_column;
 }
 
-static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, GeoColumnMetadata geo_metadata, bool precise_float_parsing)
+static ColumnWithTypeAndName readColumnWithGeoData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, const GeoColumnMetadata & geo_metadata, bool precise_float_parsing)
 {
     DataTypePtr type = getGeoDataType(geo_metadata.type);
     MutableColumnPtr column = type->createColumn();
@@ -1904,13 +1904,13 @@ struct ReadColumnFromArrowColumnSettings
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
-    std::string column_name,
-    std::string full_column_name,
-    std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
+    const std::string & column_name,
+    const std::string & full_column_name,
+    const std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> & dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
-    std::optional<GeoColumnMetadata> geo_metadata,
+    const std::optional<GeoColumnMetadata> & geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,
@@ -1919,7 +1919,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
     std::string column_name,
-    std::string full_column_name,
+    const std::string & full_column_name,
     std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
     DataTypePtr type_hint,
     bool is_map_nested_column,
@@ -2611,13 +2611,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
     const std::shared_ptr<arrow::ChunkedArray> & arrow_column,
-    std::string column_name,
-    std::string full_column_name,
-    std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> dictionary_infos,
+    const std::string & column_name,
+    const std::string & full_column_name,
+    const std::unordered_map<String, ArrowColumnToCHColumn::DictionaryInfo> & dictionary_infos,
     DataTypePtr type_hint,
     bool is_nullable_column,
     bool is_map_nested_column,
-    std::optional<GeoColumnMetadata> geo_metadata,
+    const std::optional<GeoColumnMetadata> & geo_metadata,
     const ReadColumnFromArrowColumnSettings & settings,
     const std::shared_ptr<arrow::Field> & arrow_field,
     const std::optional<std::unordered_map<String, String>> & parquet_columns_to_clickhouse,

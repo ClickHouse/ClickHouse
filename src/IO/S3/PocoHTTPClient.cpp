@@ -141,7 +141,7 @@ PocoHTTPClientConfiguration::PocoHTTPClientConfiguration(
     , s3_slow_all_threads_after_retryable_error(s3_slow_all_threads_after_retryable_error_)
     , enable_s3_requests_logging(enable_s3_requests_logging_)
     , for_disk_s3(for_disk_s3_)
-    , opt_disk_name(opt_disk_name_)
+    , opt_disk_name(std::move(opt_disk_name_))
     , request_throttler(request_throttler_)
     , s3_use_adaptive_timeouts(s3_use_adaptive_timeouts_)
     , error_report(error_report_)

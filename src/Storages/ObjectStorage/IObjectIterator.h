@@ -31,7 +31,7 @@ struct ObjectInfo
         : relative_path_with_metadata(RelativePathWithMetadata(relative_path_))
     {
     }
-    explicit ObjectInfo(RelativePathWithMetadata relative_path_with_metadata_)
+    explicit ObjectInfo(const RelativePathWithMetadata & relative_path_with_metadata_)
         : relative_path_with_metadata(relative_path_with_metadata_)
     {
     }

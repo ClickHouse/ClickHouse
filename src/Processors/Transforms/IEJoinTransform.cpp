@@ -1260,7 +1260,7 @@ IEJoinTransform::IEJoinTransform(
     size_t max_block_bytes)
     : IMergingTransform<IEJoinAlgorithm>(
         input_headers,
-        output_header,
+        std::move(output_header),
         /* have_all_inputs_= */ true,
         /* limit_hint_= */ 0,
         /* always_read_till_end_= */ false,

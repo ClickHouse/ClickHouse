@@ -86,7 +86,7 @@ namespace
     }
 }
 
-API::API(Configuration _configuration): configuration(_configuration)
+API::API(Configuration _configuration): configuration(std::move(_configuration))
 {
     connection_timeout_settings = ConnectionTimeouts();
     proxy_configuration = ProxyConfiguration();

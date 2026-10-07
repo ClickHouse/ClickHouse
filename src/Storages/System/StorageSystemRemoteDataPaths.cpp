@@ -47,7 +47,7 @@ public:
         SharedHeader header_,
         UInt64 max_block_size_,
         ContextPtr context_)
-        : ISource(header_)
+        : ISource(std::move(header_))
         , max_block_size(max_block_size_)
         , context(std::move(context_))
     {

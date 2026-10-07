@@ -63,7 +63,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool schema_as_a_part_of_table_name_,
-    StorageInfos storages_info_,
+    const StorageInfos & storages_info_,
     const String & name_for_logger)
     : log(getLogger("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
@@ -1287,7 +1287,7 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(
 }
 
 void MaterializedPostgreSQLConsumer::addNested(
-    const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn)
+    const String & postgres_table_name, const StorageInfo & nested_storage_info, const String & table_start_lsn)
 {
     chassert(!storages.contains(postgres_table_name));
     storages.emplace(postgres_table_name, StorageData(nested_storage_info, log));
@@ -1316,7 +1316,7 @@ void MaterializedPostgreSQLConsumer::addNested(
     waiting_list[postgres_table_name] = table_start_lsn;
 }
 
-void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
+void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, const StorageInfo & nested_storage_info, Int32 table_id, const String & table_start_lsn)
 {
     chassert(!storages.contains(table_name));
     storages.emplace(table_name, StorageData(nested_storage_info, log));

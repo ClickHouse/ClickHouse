@@ -234,7 +234,7 @@ std::pair<ActionsDAG, JoinExpressionActions::NodeToSourceMapping> JoinExpression
 
 JoinActionRef::JoinActionRef(NodeRawPtr node_, std::weak_ptr<JoinExpressionActions::Data> data_)
     : node_ptr(node_)
-    , data(data_)
+    , data(std::move(data_))
 {
 #ifndef NDEBUG
     /// TODO: once we have map with sources initialized in advance we may do lookup there instead
@@ -314,7 +314,7 @@ JoinActionRef JoinExpressionActions::addInput(const String & column_name, const 
     return JoinActionRef(actions_dag_node, data);
 }
 
-ActionsDAG JoinExpressionActions::getSubDAG(JoinActionRef action)
+ActionsDAG JoinExpressionActions::getSubDAG(const JoinActionRef & action)
 {
     return getSubDAG(std::views::single(action));
 }

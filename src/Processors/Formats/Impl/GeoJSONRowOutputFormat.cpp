@@ -126,7 +126,7 @@ std::optional<GeoJSONRowOutputFormat::GeometryKind> GeoJSONRowOutputFormat::geom
 
 GeoJSONRowOutputFormat::GeoJSONRowOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & settings_)
     : RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>(
-          header_, out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
+          std::move(header_), out_, settings_.json.valid_output_on_exception, settings_.json.validate_utf8)
     , settings(settings_)
 {
     /// Coordinates and numeric feature ids are plain JSON numbers and must never be quoted, even when

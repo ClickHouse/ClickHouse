@@ -181,14 +181,14 @@ Pipe buildFullFinalMergePipe(
                             { return std::make_shared<ExpressionTransform>(header, sorting_expr); });
     if (!out_projection)
         out_projection = createProjection(pipe.getHeader());
-    addMergingFinal(pipe, sort_description, merging_params, metadata_snapshot, max_block_size_rows, enable_vertical_final);
+    addMergingFinal(pipe, sort_description, std::move(merging_params), metadata_snapshot, max_block_size_rows, enable_vertical_final);
     return pipe;
 }
 
 Pipe buildDistributedFinalPipe(
     const std::vector<DistributedReadBucket> & lanes,
     const StorageMetadataPtr & metadata_snapshot,
-    MergeTreeData::MergingParams merging_params,
+    const MergeTreeData::MergingParams & merging_params,
     size_t max_block_size_rows,
     bool enable_vertical_final,
     ContextPtr context,

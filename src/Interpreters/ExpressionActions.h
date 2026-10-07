@@ -282,7 +282,7 @@ struct ExpressionActionsChain : WithContext
 
     Steps steps;
 
-    void addStep(NameSet non_constant_inputs = {});
+    void addStep(const NameSet & non_constant_inputs = {});
 
     void finalize();
 

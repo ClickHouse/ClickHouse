@@ -40,7 +40,7 @@ MergeSortingTransform::MergeSortingTransform(
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_,
     TopKThresholdTrackerPtr threshold_tracker_)
-    : SortingTransform(header, description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
+    : SortingTransform(std::move(header), description_, max_merged_block_size_, limit_, increase_sort_description_compile_attempts)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
     , remerge_lowered_memory_bytes_ratio(remerge_lowered_memory_bytes_ratio_)
     , max_bytes_in_block_before_external_sort(max_bytes_in_block_before_external_sort_)

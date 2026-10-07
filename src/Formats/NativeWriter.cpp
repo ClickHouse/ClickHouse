@@ -37,7 +37,7 @@ NativeWriter::NativeWriter(
     size_t initial_size_of_file_)
     : ostr(ostr_)
     , client_revision(client_revision_)
-    , header(header_)
+    , header(std::move(header_))
     , index(index_)
     , initial_size_of_file(initial_size_of_file_)
     , remove_low_cardinality(remove_low_cardinality_)
@@ -73,7 +73,7 @@ void NativeWriter::flush()
     ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
 
     ISerialization::SerializeBinaryBulkSettings settings;
-    settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
+    settings.getter = [&ostr](const ISerialization::SubstreamPath &) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0;
     settings.native_format = true;

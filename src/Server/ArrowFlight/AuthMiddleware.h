@@ -75,11 +75,11 @@ class AuthMiddlewareFactory : public arrow::flight::ServerMiddlewareFactory
         explicit TokenStorage(const Poco::Util::AbstractConfiguration & config_) : config(config_) {}
 
         /// Generates unique token for given credentials and saves it in storage.
-        String getToken(std::string username, std::string password);
+        String getToken(const std::string & username, const std::string & password);
 
         /// Returns credential associated with specific token and updates expiration time for this token.
         /// If the token isn't found (never existed or expired) - returns empty optional.
-        std::optional<std::pair<std::string, std::string>> getCredentials(std::string token);
+        std::optional<std::pair<std::string, std::string>> getCredentials(const std::string & token);
 
     private:
         void cleanupExpiredTokens() TSA_REQUIRES(token_mutex);

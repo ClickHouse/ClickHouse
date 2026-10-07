@@ -34,7 +34,7 @@ LazilyReadFromMergeTree::LazilyReadFromMergeTree(
     : ISourceStep(std::move(header))
     , max_block_size(max_block_size_)
     , min_marks_for_concurrent_read(min_marks_for_concurrent_read_)
-    , reader_settings(reader_settings_)
+    , reader_settings(std::move(reader_settings_))
     , mutations_snapshot(std::move(mutations_snapshot_))
     , storage_snapshot(std::move(storage_snapshot_))
     , context(std::move(context_))

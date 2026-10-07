@@ -194,7 +194,7 @@ StorageObjectStorage::StorageObjectStorage(
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
-    , format_settings(format_settings_)
+    , format_settings(std::move(format_settings_))
     , distributed_processing(distributed_processing_)
     , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))

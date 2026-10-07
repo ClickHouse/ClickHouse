@@ -129,7 +129,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
         // traverse dependent views
         // fill dependencies and missing_dependencies
-        auto check_a_table = [&](const auto & self_, StorageID storage_, const std::vector<String> & route_) -> void
+        auto check_a_table = [&](const auto & self_, const StorageID & storage_, const std::vector<String> & route_) -> void
         {
             checkStackSize();
             const auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_);

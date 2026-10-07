@@ -39,7 +39,7 @@ std::random_device device;
 class FakeExecutableTask : public IExecutableTask
 {
 public:
-    explicit FakeExecutableTask(String name_) : generator(device()), distribution(0, 5), name(name_)
+    explicit FakeExecutableTask(String name_) : generator(device()), distribution(0, 5), name(std::move(name_))
     {
     }
 
@@ -87,7 +87,7 @@ public:
     explicit LambdaExecutableTask(const String & name_, size_t step_count_, StepFunc step_func_ = {}, Int64 priority_value = 0)
         : name(name_)
         , step_count(step_count_)
-        , step_func(step_func_)
+        , step_func(std::move(step_func_))
         , priority{priority_value}
     {}
 

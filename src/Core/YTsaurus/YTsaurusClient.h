@@ -101,8 +101,8 @@ private:
     Poco::Dynamic::Var getMetadata(const String & path);
 
 
-    ReadBufferPtr createQueryRWBuffer(const URI& uri,  const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method);
-    ReadBufferPtr executeQuery(YTsaurusQueryPtr query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr);
+    ReadBufferPtr createQueryRWBuffer(const URI& uri, const ReadWriteBufferFromHTTP::OutStreamCallback& out_callback, const std::string & http_method);
+    ReadBufferPtr executeQuery(const YTsaurusQueryPtr & query, const ReadWriteBufferFromHTTP::OutStreamCallback && out_callback = nullptr);
 
     URI getHeavyProxyURI(const URI& uri);
 

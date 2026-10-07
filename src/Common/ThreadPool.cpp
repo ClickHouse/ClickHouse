@@ -256,7 +256,7 @@ public:
         Job job_, Priority priority_, CurrentMetrics::Metric metric,
         const DB::OpenTelemetry::TracingContextOnThread & thread_trace_context_,
         bool capture_frame_pointers, ScopedDecrement available_threads_decrement_)
-        : job(job_), priority(priority_), metric_increment(metric),
+        : job(std::move(job_)), priority(priority_), metric_increment(metric),
         available_threads_decrement(std::move(available_threads_decrement_)),
         thread_trace_context(thread_trace_context_), enable_job_stack_trace(capture_frame_pointers)
     {

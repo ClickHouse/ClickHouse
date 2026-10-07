@@ -55,7 +55,7 @@ class CompiledFunctionHolder : public CompiledExpressionCacheEntry
 {
 public:
 
-    explicit CompiledFunctionHolder(CompiledFunction compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
+    explicit CompiledFunctionHolder(const CompiledFunction & compiled_function_, std::shared_ptr<CHJIT> jit_owner_)
         : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
         , compiled_function(compiled_function_)
         , jit_owner(std::move(jit_owner_))

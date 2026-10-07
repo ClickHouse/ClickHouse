@@ -224,10 +224,10 @@ namespace
 {
 
 /// Sequentially tries to execute all commands and throws exception with info about failed commands
-void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
+void executeCommandsAndThrowIfError(const std::vector<std::function<void()>> & commands)
 {
     ExecutionStatus result(0);
-    for (auto & command : commands)
+    for (const auto & command : commands)
     {
         try
         {

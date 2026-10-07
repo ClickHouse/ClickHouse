@@ -140,7 +140,7 @@ ConfigProcessor::ConfigProcessor(
 
 static std::unordered_map<std::string, std::string_view> embedded_configs;
 
-void ConfigProcessor::registerEmbeddedConfig(std::string name, std::string_view content)
+void ConfigProcessor::registerEmbeddedConfig(const std::string & name, std::string_view content)
 {
     embedded_configs[name] = content;
 }

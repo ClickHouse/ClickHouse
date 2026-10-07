@@ -451,7 +451,7 @@ public:
 
 template <typename T>
 inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
-    const DataTypePtr data_type, const DataTypes & argument_types, const Array & parameters, SequenceDirection direction, SequenceBase base)
+    const DataTypePtr & data_type, const DataTypes & argument_types, const Array & parameters, SequenceDirection direction, SequenceBase base)
 {
     return std::make_shared<SequenceNextNodeImpl<T, NodeString<max_events_size>>>(
         data_type, argument_types, parameters, base, direction, min_required_args);

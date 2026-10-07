@@ -92,7 +92,7 @@ void ASTShowTablesQuery::formatLimit(WriteBuffer & ostr, const FormatSettings & 
     if (limit_length)
     {
         ostr << " LIMIT ";
-        limit_length->format(ostr, settings, state, frame);
+        limit_length->format(ostr, settings, state, std::move(frame));
     }
 }
 

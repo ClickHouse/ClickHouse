@@ -132,7 +132,7 @@ static String getAstAsStringLiteral(const ASTPtr & ast)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTLiteral, got '{}'", ast->formatForErrorMessage());
 }
 
-void ASTCreateWasmFunctionQuery::setModuleHash(String hash_str)
+void ASTCreateWasmFunctionQuery::setModuleHash(const String & hash_str)
 {
     module_hash_ast = make_intrusive<ASTLiteral>(hash_str);
 }

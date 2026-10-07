@@ -123,7 +123,7 @@ public:
         return header;
     }
 
-    static ColumnsDescription getColumnsDescription(Block header, const Block & virtual_header)
+    static ColumnsDescription getColumnsDescription(const Block & header, const Block & virtual_header)
     {
         ColumnsDescription columns_description{header.getNamesAndTypesList()};
         for (const auto & column : virtual_header)

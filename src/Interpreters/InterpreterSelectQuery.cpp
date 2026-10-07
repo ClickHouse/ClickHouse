@@ -3320,7 +3320,7 @@ void InterpreterSelectQuery::executeProjection(QueryPlan & query_plan, const Act
 }
 
 
-void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before_order, Names columns, bool pre_distinct)
+void InterpreterSelectQuery::executeDistinct(QueryPlan & query_plan, bool before_order, const Names & columns, bool pre_distinct)
 {
     auto & query = getSelectQuery();
     if (query.distinct)

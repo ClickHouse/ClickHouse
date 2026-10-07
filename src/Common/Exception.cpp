@@ -227,7 +227,7 @@ std::string getExceptionStackTraceString(std::exception_ptr e)
 {
     try
     {
-        std::rethrow_exception(e);
+        std::rethrow_exception(std::move(e));
     }
     catch (const std::exception & exception)
     {
@@ -607,7 +607,7 @@ int getExceptionErrorCode(std::exception_ptr e)
 {
     try
     {
-        std::rethrow_exception(e);
+        std::rethrow_exception(std::move(e));
     }
     catch (const Exception & exception)
     {
@@ -654,7 +654,7 @@ void tryLogException(std::exception_ptr e, LoggerPtr logger, const std::string &
 
 void tryLogException(std::exception_ptr e, const AtomicLogger & logger, const std::string & start_of_message)
 {
-    tryLogException(e, logger.load(), start_of_message);
+    tryLogException(std::move(e), logger.load(), start_of_message);
 }
 
 std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool check_embedded_stacktrace)
@@ -765,7 +765,7 @@ std::exception_ptr copyMutableException(std::exception_ptr ptr)
 {
     try
     {
-        std::rethrow_exception(ptr);
+        std::rethrow_exception(std::move(ptr));
     }
     catch (Poco::Exception & e)
     {

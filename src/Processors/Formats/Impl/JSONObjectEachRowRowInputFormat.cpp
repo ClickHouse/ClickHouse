@@ -36,7 +36,7 @@ std::optional<size_t> getColumnIndexForJSONObjectEachRowObjectName(const Block &
 }
 
 JSONObjectEachRowInputFormat::JSONObjectEachRowInputFormat(ReadBuffer & in_, SharedHeader header_, Params params_, const FormatSettings & format_settings_)
-    : JSONEachRowRowInputFormat(in_, header_, params_, format_settings_, false), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(*header_, format_settings_))
+    : JSONEachRowRowInputFormat(in_, header_, std::move(params_), format_settings_, false), field_index_for_object_name(getColumnIndexForJSONObjectEachRowObjectName(*header_, format_settings_))
 {
 }
 
