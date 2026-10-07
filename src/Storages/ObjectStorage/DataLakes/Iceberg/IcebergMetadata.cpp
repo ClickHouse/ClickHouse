@@ -102,6 +102,7 @@ namespace ProfileEvents
 {
 extern const Event IcebergIteratorInitializationMicroseconds;
 extern const Event IcebergMetadataUpdateMicroseconds;
+extern const Event IcebergRowEstimateSkippedPositionDeleteFiles;
 extern const Event IcebergTrivialCountOptimizationApplied;
 }
 
@@ -1417,6 +1418,61 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
     return true;
 }
 
+namespace
+{
+
+/// Counts the rows of `data_files` removed by deletion vectors and by position delete files scoped to one data file,
+/// matched as `IcebergIterator::next` matches them; std::nullopt if such a delete file has a negative `record_count`.
+std::optional<UInt64> countDeletedRows(
+    const std::vector<ProcessedManifestFileEntryPtr> & data_files,
+    const std::vector<ProcessedManifestFileEntryPtr> & position_deletes,
+    LoggerPtr log)
+{
+    /// Keyed by the data file both bounds name, so each data file needs one lookup instead of a pass over the deletes.
+    std::unordered_map<IcebergPathFromMetadata, std::vector<ProcessedManifestFileEntryPtr>> deletes_by_data_file;
+    for (const auto & position_delete : position_deletes)
+    {
+        const auto & lower = position_delete->parsed_entry->lower_reference_data_file_path;
+        if (lower.has_value() && lower == position_delete->parsed_entry->upper_reference_data_file_path)
+            deletes_by_data_file[*lower].push_back(position_delete);
+        else
+            ProfileEvents::increment(ProfileEvents::IcebergRowEstimateSkippedPositionDeleteFiles);
+    }
+
+    UInt64 deleted_rows = 0;
+    if (deletes_by_data_file.empty())
+        return deleted_rows;
+
+    /// `defineDeletesSpan` needs them in the order of `operator<=>`.
+    for (auto & [_, deletes] : deletes_by_data_file)
+        std::sort(deletes.begin(), deletes.end());
+
+    for (const auto & data_file : data_files)
+    {
+        const auto it = deletes_by_data_file.find(data_file->parsed_entry->file_path_key);
+        if (it == deletes_by_data_file.end())
+            continue;
+
+        UInt64 file_scoped_rows = 0;
+        std::optional<UInt64> deletion_vector_rows;
+        for (const auto & position_delete : defineDeletesSpan(data_file, it->second, /* is_equality_delete */ false, log))
+        {
+            const auto & entry = *position_delete->parsed_entry;
+            if (entry.record_count < 0)
+                return std::nullopt;
+            if (entry.isDeletionVector())
+                deletion_vector_rows = entry.record_count;
+            else
+                file_scoped_rows += entry.record_count;
+        }
+        /// A deletion vector replaces the position delete files of its data file (`IcebergDataObjectInfo::addDeletionVector`).
+        deleted_rows += std::min(deletion_vector_rows.value_or(file_scoped_rows), static_cast<UInt64>(data_file->parsed_entry->record_count));
+    }
+    return deleted_rows;
+}
+
+}
+
 std::optional<DataLakeReadEstimate>
 IcebergMetadata::estimateRead(
     StorageMetadataPtr storage_metadata_snapshot, const ActionsDAG * filter, const Names & column_names, ContextPtr context) const
@@ -1458,6 +1514,10 @@ IcebergMetadata::estimateRead(
             context,
             /* require_ready_sets */ true);
 
+    /// Matched after the walk, since delete manifests can follow data manifests.
+    std::vector<ProcessedManifestFileEntryPtr> remaining_data_files;
+    std::vector<ProcessedManifestFileEntryPtr> position_deletes;
+
     std::vector<ManifestFileCacheKey> manifests_to_decode;
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
@@ -1485,8 +1545,9 @@ IcebergMetadata::estimateRead(
         {
             const auto & manifest_list_entry = manifests_to_decode[next_manifest++];
 
-            if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
-                || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+            const auto & manifest_position_deletes = files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE);
+            position_deletes.insert(position_deletes.end(), manifest_position_deletes.begin(), manifest_position_deletes.end());
+            if (!manifest_position_deletes.empty() || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
                 estimate.has_delete_files = true;
 
             /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
@@ -1523,11 +1584,17 @@ IcebergMetadata::estimateRead(
                     return false;
                 }
                 column_statistics.addFile(*data_file, manifest_list_entry.manifest_file_path);
+                remaining_data_files.push_back(data_file);
             }
             return true;
         });
     if (has_negative_record_count)
         return estimate;
+
+    const auto deleted_rows = countDeletedRows(remaining_data_files, position_deletes, log);
+    if (!deleted_rows)
+        return estimate;
+    estimate.deleted_rows = *deleted_rows;
     column_statistics.finalize(estimate);
     return estimate;
 }

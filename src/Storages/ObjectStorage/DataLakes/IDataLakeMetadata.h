@@ -61,6 +61,8 @@ struct DataLakeReadEstimate
     /// The rows of the live data files left after pruning, deleted rows included, and the statistics of the requested
     /// columns over them; std::nullopt if the metadata is malformed.
     std::optional<RelationProfile> profile;
+    /// Part of the rows of `profile` removed by the deletes that can be counted from the metadata.
+    UInt64 deleted_rows = 0;
 };
 
 class IDataLakeMetadata : boost::noncopyable
