@@ -253,12 +253,13 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 ? estimate->column_statistics->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node)
                 : estimate->column_statistics->estimateRelationProfile();
             /// `profile.rows` does not take into account deleted rows, and estimationProfile scales estimate->rows to the filter
-            /// To include deleted rows in the scale we scale also the deleted rows with:
-            /// (rows - deleted rows) / rows.
-            UInt64 estimated_rows = *estimate->rows;
+            /// To include deleted rows in the filter scaled rows we additionally scale the result with deleted rows,
+            /// so complete formula is: ((rows - deleted rows) / rows) * (rows * filter_selectivity)
+            /// which is: rows * filter_selecivity * delete_scale
+            UInt64 estimated_rows = *estimate->rows - estimate->deleted_rows;
             if (estimate_filter)
                 estimated_rows = static_cast<UInt64>(
-                    static_cast<Float64>(profile.rows) * static_cast<Float64>(*estimate->rows - estimate->deleted_rows) / static_cast<Float64>(*estimate->rows));
+                    static_cast<Float64>(profile.rows) * (static_cast<Float64>(estimated_rows) / static_cast<Float64>(*estimate->rows)));
             /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
             for (auto & [name, column] : profile.column_stats)
                 if (auto it = estimate->num_distinct_values.find(name); it != estimate->num_distinct_values.end())
