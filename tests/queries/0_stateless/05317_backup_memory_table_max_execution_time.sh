@@ -11,11 +11,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # temporary_files_buffer_size = 21 makes the serialization take far longer than the 1 s limit, and
 # the finished data.bin larger than the 780 MB of table data (each 21-byte frame gets a header), so
 # a backup that stops during the serialization writes less than 780 MB to the temporary file.
+# A Memory table stores the INSERT's max_block_size-row blocks (min_insert_block_size_* do not apply to it).
 
 $CLICKHOUSE_CLIENT -m -q "
 CREATE TABLE t (x String) ENGINE = Memory SETTINGS compress = 1;
-INSERT INTO t SETTINGS ast_fuzzer_runs = 0, max_block_size = 100, min_insert_block_size_rows = 100,
-    min_insert_block_size_bytes = 0 SELECT repeat('Hello, world', 1000) FROM numbers(65000);
+INSERT INTO t SETTINGS ast_fuzzer_runs = 0, max_block_size = 100
+    SELECT repeat('Hello, world', 1000) FROM numbers(65000);
 "
 
 $CLICKHOUSE_CLIENT -m -q "
