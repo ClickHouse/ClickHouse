@@ -3,6 +3,7 @@
 # UNIQUE KEY: a write whose commit reply is lost waits until its transaction resolves.
 #   1. lost reply: an INSERT and a DELETE succeed with their rows visible
 #   2. next writer: an INSERT of the same key waits for the undetermined one, then succeeds
+#   3. killed: KILL QUERY ends the wait; the next INSERT of its key is refused until it resolves
 # no-parallel: `transaction_force_unknown_state_after_commit` and `transaction_hold_unknown_state`
 # are server-wide.
 
@@ -88,3 +89,26 @@ wait "$STRANDED_PID" && echo "first_committed 1" || echo "first_committed 0"
 wait "$NEXT_PID" && echo "next_committed 1" || echo "next_committed 0"
 $CLICKHOUSE_CLIENT --query "SELECT 'next_writer', id, v FROM uk_next_writer ORDER BY id"
 $CLICKHOUSE_CLIENT --query "DROP TABLE uk_next_writer"
+
+# 3. killed: red if the KILL times out, the next INSERT probes beside the undetermined one, or the retry fails.
+$CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS uk_killed"
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE uk_killed (id UInt64, v String)
+    ENGINE = MergeTree ORDER BY id UNIQUE KEY (id)"
+$CLICKHOUSE_CLIENT --query "INSERT INTO uk_killed SELECT number, 'a' FROM numbers(3)"
+
+strand_insert "${CLICKHOUSE_DATABASE}_killed" "INSERT INTO uk_killed SELECT 1, 'b'"
+start_next_insert "${CLICKHOUSE_DATABASE}_refused" "INSERT INTO uk_killed SELECT 1, 'c'"
+timeout 30 $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '${CLICKHOUSE_DATABASE}_killed' SYNC FORMAT Null" \
+    && echo "kill_returned" || exit 1
+wait "$STRANDED_PID" && echo "killed_committed 1" || echo "killed_committed 0"
+wait "$NEXT_PID" || true
+grep -q "has no creation csn yet" "${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_refused.log" && echo "next_refused 1"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT transaction_hold_unknown_state"
+for _ in {1..240}; do
+    $CLICKHOUSE_CLIENT --query "INSERT INTO uk_killed SELECT 1, 'c'" 2>/dev/null && break
+    sleep 0.5
+done
+$CLICKHOUSE_CLIENT --query "SELECT 'killed', id, v FROM uk_killed ORDER BY id"
+$CLICKHOUSE_CLIENT --query "DROP TABLE uk_killed"

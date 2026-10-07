@@ -8,6 +8,7 @@
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
+#include <condition_variable>
 #include <cstdint>
 #include <list>
 #include <shared_mutex>
@@ -131,8 +132,15 @@ public:
 
     Float64 elapsedSeconds() const { return elapsed.elapsedSeconds(); }
 
-    /// Waits for transaction state to become not equal to the state corresponding to current_state_csn
-    bool waitStateChange(CSN current_state_csn) const;
+    enum class StateWaitResult : uint8_t
+    {
+        Changed,
+        QueryCancelled,
+        ShuttingDown,
+    };
+
+    /// Waits for a lost-reply commit to resolve: CommittingCSN -> csn, or CommittingCSN -> UnknownCSN -> RolledBackCSN.
+    StateWaitResult waitForCommitOutcome() const;
 
     CSN getCSN() const { return csn; }
 
@@ -195,6 +203,11 @@ private:
 
     void checkIsNotCancelled() const;
 
+    StateWaitResult waitStateChange(CSN current_state_csn) const;
+
+    /// Must follow every change of `csn`.
+    void notifyStateChange() const;
+
     mutable std::mutex mutex;
     Stopwatch elapsed;
 
@@ -230,6 +243,8 @@ private:
     Coordination::Requests requests_on_rollback TSA_GUARDED_BY(mutex);
 
     std::atomic<CSN> csn;
+    mutable std::mutex state_change_mutex;
+    mutable std::condition_variable state_change_cv;
 
     /// Counter for `allocateJobId`. Each background operation of this transaction (a merge/mutation
     /// of its own uncommitted parts) takes the next value, so their locks and marker get distinct job

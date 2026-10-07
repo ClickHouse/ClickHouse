@@ -62,20 +62,17 @@ void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 }
 
 /// The commit's Keeper reply was lost. The transaction log's updating thread resolves the transaction once
-/// it knows whether the csn entry exists; a commit that never reached Keeper passes through UnknownCSN on its
-/// way to RolledBackCSN.
+/// it knows whether the csn entry exists.
 CSN waitForLostCommitReply(const MergeTreeTransactionPtr & txn, std::string_view kind)
 {
-    /// TODO(unique-key): KILL QUERY and a cancelled background task cannot interrupt this wait.
-    if (txn->waitStateChange(Tx::CommittingCSN) && txn->getCSN() == Tx::UnknownCSN)
-        txn->waitStateChange(Tx::UnknownCSN);
+    txn->waitForCommitOutcome();
 
     if (txn->getState() == MergeTreeTransaction::ROLLED_BACK)
         throw Exception(ErrorCodes::ABORTED,
             "UNIQUE KEY {}: transaction {} lost its commit reply and was rolled back, retry the query", kind, txn->tid);
     if (txn->getState() != MergeTreeTransaction::COMMITTED)
         throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
-            "UNIQUE KEY {}: transaction {} lost its commit reply and is unresolved at shutdown", kind, txn->tid);
+            "UNIQUE KEY {}: transaction {} lost its commit reply and is unresolved, will finalize it later", kind, txn->tid);
     return txn->getCSN();
 }
 
