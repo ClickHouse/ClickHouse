@@ -6,27 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', '로깅', '통합', '애플리케이션 모니터링']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack NestJS 통합을 사용하면 로거를 직접 생성하거나 기본 로거를 사용해
 ClickStack으로 로그를 전송할 수 있습니다([nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme) 기반).
 
-**이 가이드에서 통합하는 항목:**
-
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ 로그</td>
-      <td className="pe-2">✖️ 메트릭</td>
-      <td className="pe-2">✖️ 트레이스</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs']} />
 
 *메트릭이나 APM/트레이스를 전송하려면 해당 언어용 통합도 애플리케이션에
 추가해야 합니다.*
 
-<div id="getting-started">
-  ## 시작하기
-</div>
+## 시작하기 {#getting-started}
 
 루트 `AppModule`에 `HyperDXNestLoggerModule`을 임포트하고 `forRoot()`
 메서드로 구성합니다.
@@ -38,8 +28,8 @@ import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
 @Module({
   imports: [
     HyperDXNestLoggerModule.forRoot({
-      url: 'http://your-otel-collector:4318',
-      apiKey: ***YOUR_INGESTION_API_KEY***, // Managed ClickStack에는 불필요
+      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
       maxLevel: 'info',
       service: 'my-app',
     }),
@@ -68,9 +58,7 @@ export class CatsController {
 }
 ```
 
-<div id="replacing-the-nest-logger">
-  ### Nest 로거 교체하기(부트스트래핑 시에도 적용)
-</div>
+### Nest 로거 교체하기(부트스트래핑 시에도 적용) {#replacing-the-nest-logger}
 
 <Info>
   **중요**
@@ -95,8 +83,8 @@ import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: HyperDXNestLoggerModule.createLogger({
-      url: 'http://your-otel-collector:4318',
-      apiKey: ***YOUR_INGESTION_API_KEY***, // Managed ClickStack에서는 불필요
+      url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+      apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
       maxLevel: 'info',
       service: 'my-app',
     })

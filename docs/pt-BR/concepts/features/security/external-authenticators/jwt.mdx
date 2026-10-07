@@ -7,15 +7,14 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/pt-BR/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <CloudOnlyBadge />
 
-O ClickHouse pode autenticar usuários usando JSON Web Tokens (JWTs). Diferentemente de outros autenticadores externos, como [LDAP](/pt-BR/concepts/features/security/external-authenticators/ldap) ou [Kerberos](/pt-BR/concepts/features/security/external-authenticators/kerberos), a autenticação por JWT não verifica a identidade de usuários já existentes. Em vez disso, ela cria dinamicamente **usuários efêmeros** a partir das claims contidas em cada token. Esses usuários existem apenas na memória, recebem direitos de acesso derivados das claims do token e são removidos automaticamente quando o token expira.
+O ClickHouse pode autenticar usuários usando JSON Web Tokens (JWTs). Diferentemente de outros autenticadores externos, como [LDAP](/pt-BR/concepts/features/security/external-authenticators/ldap) ou [Kerberos](/pt-BR/concepts/features/security/external-authenticators/kerberos), a autenticação JWT não verifica a identidade de usuários já existentes. Em vez disso, ela cria dinamicamente **usuários efêmeros** a partir das claims contidas em cada token. Esses usuários existem apenas na memória, recebem direitos de acesso derivados das claims do token e são removidos automaticamente quando o token expira.
 
-Isso torna a autenticação por JWT fundamentalmente diferente de métodos baseados em senha ou em certificado: não existe uma instrução `CREATE USER ... IDENTIFIED WITH jwt`, e tentar executá-la gera uma exceção. Os usuários JWT são totalmente gerenciados pelo ciclo de vida do token.
+Isso torna a autenticação JWT fundamentalmente diferente de métodos baseados em senha ou em certificado: não existe uma instrução `CREATE USER ... IDENTIFIED WITH jwt`, e tentar executá-la gera uma exceção. Os usuários JWT são totalmente gerenciados pelo ciclo de vida do token.
 
 <div id="overview">
   ## Visão geral
@@ -253,13 +252,11 @@ Você não precisa configurar nada para usar esse autenticador. Ele é provision
   ## Habilitar a autenticação JWT para seu serviço
 </div>
 
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Autenticação JWT com um provedor de identidade personalizado" />
 
-Além do autenticador integrado, você pode configurar seu serviço ClickHouse Cloud para aceitar JWTs emitidos pelo seu próprio provedor de identidade (por exemplo, Microsoft Entra ou Okta). Este é um recurso beta, disponível no plano Enterprise para serviços que executam o ClickHouse versão 26.4 ou posterior. Você pode configurá-lo por conta própria no Cloud Console em **Settings → Security → JWT authentication** — consulte [Configuração da autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) para obter instruções passo a passo. Cada provedor é definido pelos seguintes itens:
+Além do autenticador integrado, você pode configurar seu serviço ClickHouse Cloud para aceitar JWTs emitidos pelo seu próprio provedor de identidade (por exemplo, Microsoft Entra ou Okta). Este recurso está disponível no plano Enterprise para serviços que executam o ClickHouse versão 26.4 ou posterior. Você pode configurá-lo por conta própria no Cloud Console em **Settings → Security → JWT authentication** — consulte [Configuração da autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) para obter instruções passo a passo. Cada provedor é definido pelos seguintes itens:
 
 | Parâmetro                 | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

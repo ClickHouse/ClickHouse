@@ -38,6 +38,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char local_object_storage_network_error_during_remove[];
+    extern const char local_object_storage_network_error_during_every_remove[];
 }
 
 namespace ErrorCodes
@@ -683,8 +684,12 @@ void LocalObjectStorage::removeObject(const StoredObject & object) const
             error_code,
             error_message);
 
-    fs::path dir = fs::path(resolved_path).parent_path();
+    /// Both paths have to be brought into the same form before they are compared: `resolved_path` is
+    /// relative or otherwise not canonical when the `path` of the disk is (e.g. contains `..`), and then `dir`
+    /// never compares equal to the canonicalized `root`, so the loop below would remove the root directory
+    /// of the object storage itself.
     fs::path root = fs::weakly_canonical(settings.key_prefix);
+    fs::path dir = fs::weakly_canonical(fs::path(resolved_path).parent_path());
     while (dir.has_parent_path() && dir.has_relative_path() && dir != root && pathStartsWith(dir, root))
     {
         LOG_TEST(log, "Removing empty directory {}, has_parent_path: {}, has_relative_path: {}, root: {}, starts with root: {}",
@@ -714,6 +719,10 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeObject(object);
 
     fiu_do_on(FailPoints::local_object_storage_network_error_during_remove, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
+    });
+
+    fiu_do_on(FailPoints::local_object_storage_network_error_during_every_remove, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected error after remove object {}", object.remote_path);
     });
 }

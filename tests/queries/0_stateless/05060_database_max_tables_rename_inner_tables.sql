@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: moving tables between databases is not supported
+
 -- Tests that a cross-database `RENAME` reserves a `max_tables` slot for every inner table it moves.
 -- When one side of the rename is an `Ordinary` database, the inner table names embed the outer
 -- table name, so `StorageMaterializedView::renameInMemory` and `StorageTimeSeries::renameInMemory`

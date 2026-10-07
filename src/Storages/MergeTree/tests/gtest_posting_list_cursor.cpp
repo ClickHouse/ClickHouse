@@ -140,19 +140,53 @@ std::vector<PostingListCursorPtr> resolveTokenCursors(
     return cursors;
 }
 
+/// Helper: convert the cursors to raw pointers.
+std::vector<PostingListCursor *> rawCursors(const std::vector<PostingListCursorPtr> & cursors)
+{
+    std::vector<PostingListCursor *> raw;
+    raw.reserve(cursors.size());
+    for (const auto & cursor : cursors)
+        raw.push_back(cursor.get());
+    return raw;
+}
+
+/// Helper: sort the cursors and perform union, as the reader does.
+void unionSorted(IColumn & column, const std::vector<PostingListCursorPtr> & cursors, size_t column_offset, size_t row_offset, size_t num_rows)
+{
+    auto sorted = rawCursors(cursors);
+    sortCursorsForUnion(sorted);
+    lazyUnionPostingLists(column, sorted, column_offset, row_offset, num_rows);
+}
+
+/// Helper: sort the cursors, resolve the algorithm and perform intersection, as the reader does.
+void intersectSorted(
+    IColumn & column,
+    const std::vector<PostingListCursorPtr> & cursors,
+    size_t column_offset,
+    size_t row_offset,
+    size_t num_rows,
+    TextIndexPostingsIntersectionAlgorithm algorithm)
+{
+    auto sorted = rawCursors(cursors);
+    sortCursorsForIntersection(sorted);
+    LazyPostingsStats stats;
+    lazyIntersectPostingLists(column, sorted, column_offset, row_offset, num_rows, chooseIntersectionAlgorithm(sorted, algorithm), stats);
+}
+
 /// Helper: perform intersection using lazyIntersectPostingLists and return doc IDs.
 std::vector<uint32_t> intersectAndCollect(
     PostingListCursorMap & postings,
     const VectorWithMemoryTracking<String> & tokens,
     size_t row_offset,
     size_t num_rows,
-    bool brute_force,
-    float density_threshold = 0.5f)
+    bool brute_force)
 {
-    float effective_threshold = brute_force ? 0.0f : density_threshold;
+    auto algorithm = brute_force
+        ? TextIndexPostingsIntersectionAlgorithm::BruteForce
+        : TextIndexPostingsIntersectionAlgorithm::Leapfrog;
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
     auto cursors = resolveTokenCursors(postings, tokens);
-    lazyIntersectPostingLists(*col, cursors, 0, row_offset, num_rows, effective_threshold);
+    intersectSorted(*col, cursors, 0, row_offset, num_rows, algorithm);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -170,7 +204,7 @@ std::vector<uint32_t> unionAndCollect(
 {
     auto col = ColumnUInt8::create(num_rows, UInt8(0));
     auto cursors = resolveTokenCursors(postings, tokens);
-    lazyUnionPostingLists(*col, cursors, 0, row_offset, num_rows);
+    unionSorted(*col, cursors, 0, row_offset, num_rows);
     const auto & data = col->getData();
     std::vector<uint32_t> result;
     for (size_t i = 0; i < num_rows; ++i)
@@ -657,7 +691,7 @@ TEST(PostingListCursorTest, LinearAndFullRange)
     auto cursor = makeEmbeddedCursor(info);
 
     std::vector<UInt8> buf(60, 0);
-    cursor->linearAnd(buf.data(), 0, 60);
+    cursor->linearAnd(buf.data(), 0, 60, 0);
 
     for (auto d : docs)
         EXPECT_EQ(buf[d], 1u) << "Expected buf[" << d << "] == 1";
@@ -672,7 +706,7 @@ TEST(PostingListCursorTest, LinearAndIncrementsExisting)
     auto cursor = makeEmbeddedCursor(info);
 
     std::vector<UInt8> buf(40, 1);
-    cursor->linearAnd(buf.data(), 0, 40);
+    cursor->linearAnd(buf.data(), 0, 40, 1);
 
     EXPECT_EQ(buf[10], 2u);
     EXPECT_EQ(buf[20], 2u);
@@ -683,7 +717,7 @@ TEST(PostingListCursorTest, LinearAndIncrementsExisting)
 
 
 // ===========================================================================================
-// Section 6: Two-cursor intersection (intersectTwo)
+// Section 6: Two-cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectTwoIdentical)
@@ -698,7 +732,7 @@ TEST(PostingListCursorTest, IntersectTwoIdentical)
     postings["a"] = c1;
     postings["b"] = c2;
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 60, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 60, false);
     EXPECT_EQ(result, docs);
 }
 
@@ -713,7 +747,7 @@ TEST(PostingListCursorTest, IntersectTwoDisjoint)
     postings["a"] = c1;
     postings["b"] = c2;
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 50, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 50, false);
     EXPECT_TRUE(result.empty());
 }
 
@@ -728,7 +762,7 @@ TEST(PostingListCursorTest, IntersectTwoPartialOverlap)
     postings["a"] = c1;
     postings["b"] = c2;
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 80, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 80, false);
     std::vector<uint32_t> expected = {20, 30};
     EXPECT_EQ(result, expected);
 }
@@ -745,7 +779,7 @@ TEST(PostingListCursorTest, IntersectTwoDenseVsSparse)
     postings["dense"] = makeMultiBlockCursor(data_dense);
     postings["sparse"] = makeMultiBlockCursor(data_sparse);
 
-    auto result = intersectAndCollect(postings, {"dense", "sparse"}, 0, 1000, false, 100.0);
+    auto result = intersectAndCollect(postings, {"dense", "sparse"}, 0, 1000, false);
     EXPECT_EQ(result, sparse_docs);
 }
 
@@ -760,13 +794,13 @@ TEST(PostingListCursorTest, IntersectTwoSingleCommon)
     postings["a"] = c1;
     postings["b"] = c2;
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 150, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 150, false);
     EXPECT_EQ(result, std::vector<uint32_t>{50});
 }
 
 
 // ===========================================================================================
-// Section 7: Three-cursor intersection (intersectThree)
+// Section 7: Three-cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectThreeAllMatch)
@@ -781,7 +815,7 @@ TEST(PostingListCursorTest, IntersectThreeAllMatch)
     postings["b"] = makeEmbeddedCursor(info2);
     postings["c"] = makeEmbeddedCursor(info3);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 50, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 50, false);
     EXPECT_EQ(result, docs);
 }
 
@@ -796,7 +830,7 @@ TEST(PostingListCursorTest, IntersectThreePartialOverlap)
     postings["b"] = makeEmbeddedCursor(info2);
     postings["c"] = makeEmbeddedCursor(info3);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 70, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 70, false);
     std::vector<uint32_t> expected = {20, 30, 60};
     EXPECT_EQ(result, expected);
 }
@@ -812,13 +846,13 @@ TEST(PostingListCursorTest, IntersectThreeNoCommon)
     postings["b"] = makeEmbeddedCursor(info2);
     postings["c"] = makeEmbeddedCursor(info3);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 50, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 50, false);
     EXPECT_TRUE(result.empty());
 }
 
 
 // ===========================================================================================
-// Section 8: Four-cursor intersection (intersectFour)
+// Section 8: Four-cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectFourAllOverlap)
@@ -835,7 +869,7 @@ TEST(PostingListCursorTest, IntersectFourAllOverlap)
     postings["c"] = makeEmbeddedCursor(info3);
     postings["d"] = makeEmbeddedCursor(info4);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c", "d"}, 0, 50, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c", "d"}, 0, 50, false);
     EXPECT_EQ(result, docs);
 }
 
@@ -861,7 +895,7 @@ TEST(PostingListCursorTest, IntersectFourMixedSelectivity)
     postings["c"] = makeMultiBlockCursor(data3);
     postings["d"] = makeMultiBlockCursor(data4);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c", "d"}, 0, 1000, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c", "d"}, 0, 1000, false);
 
     // LCM(2,3,5,7) = 210
     std::vector<uint32_t> expected;
@@ -872,7 +906,7 @@ TEST(PostingListCursorTest, IntersectFourMixedSelectivity)
 
 
 // ===========================================================================================
-// Section 9: Five+ cursor intersection (intersectLeapfrogLinear, n=5..8)
+// Section 9: Five to eight cursor intersection
 // ===========================================================================================
 
 TEST(PostingListCursorTest, IntersectFiveCursors)
@@ -897,7 +931,7 @@ TEST(PostingListCursorTest, IntersectFiveCursors)
     postings["d"] = makeMultiBlockCursor(data4);
     postings["e"] = makeMultiBlockCursor(data5);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c", "d", "e"}, 0, 1000, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c", "d", "e"}, 0, 1000, false);
     // Only 0 is common (LCM=2310, next would be 2310 which is >= 1000)
     EXPECT_EQ(result, std::vector<uint32_t>{0});
 }
@@ -918,16 +952,16 @@ TEST(PostingListCursorTest, IntersectEightCursors)
     for (int i = 0; i < 8; ++i)
         postings[tokens[i]] = makeMultiBlockCursor(data[i]);
 
-    auto result = intersectAndCollect(postings, tokens, 0, 60, false, 100.0);
+    auto result = intersectAndCollect(postings, tokens, 0, 60, false);
     EXPECT_EQ(result, docs);
 }
 
 
 // ===========================================================================================
-// Section 10: Nine+ cursor intersection (intersectLeapfrogHeap)
+// Section 10: Nine+ cursor intersection
 // ===========================================================================================
 
-TEST(PostingListCursorTest, IntersectNineCursorsHeap)
+TEST(PostingListCursorTest, IntersectNineCursors)
 {
     auto docs = generateRange(0, 3, 20); // 0,20,40
     std::vector<TokenPostingsInfo> infos(9);
@@ -943,7 +977,7 @@ TEST(PostingListCursorTest, IntersectNineCursorsHeap)
     for (int i = 0; i < 9; ++i)
         postings[tokens[i]] = makeEmbeddedCursor(infos[i]);
 
-    auto result = intersectAndCollect(postings, tokens, 0, 50, false, 100.0);
+    auto result = intersectAndCollect(postings, tokens, 0, 50, false);
     EXPECT_EQ(result, docs);
 }
 
@@ -968,7 +1002,7 @@ TEST(PostingListCursorTest, IntersectTenCursorsWithVaryingDocs)
         postings[tokens[i]] = makeMultiBlockCursor(data[i]);
     }
 
-    auto result = intersectAndCollect(postings, tokens, 0, 1000, false, 100.0);
+    auto result = intersectAndCollect(postings, tokens, 0, 1000, false);
     // LCM(1,2,...,10) = 2520, so only 0 within [0,1000)
     EXPECT_EQ(result, std::vector<uint32_t>{0});
 }
@@ -1040,7 +1074,7 @@ TEST(PostingListCursorTest, BruteForceVsLeapfrogConsistency)
         postings_lf["a"] = makeMultiBlockCursor(data[0]);
         postings_lf["b"] = makeMultiBlockCursor(data[1]);
         postings_lf["c"] = makeMultiBlockCursor(data[2]);
-        auto lf_result = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 1000, false, 100.0);
+        auto lf_result = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 1000, false);
 
         EXPECT_EQ(bf_result, lf_result) << "Brute-force vs leapfrog mismatch at trial " << trial;
     }
@@ -1122,7 +1156,7 @@ TEST(PostingListCursorTest, IntersectWithRowOffset)
     postings["b"] = makeEmbeddedCursor(info2);
 
     // Only look at rows [200, 400)
-    auto result = intersectAndCollect(postings, {"a", "b"}, 200, 200, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 200, 200, false);
     std::vector<uint32_t> expected = {200, 300};
     EXPECT_EQ(result, expected);
 }
@@ -1136,7 +1170,7 @@ TEST(PostingListCursorTest, IntersectWindowExcludesAll)
     postings["a"] = makeEmbeddedCursor(info1);
     postings["b"] = makeEmbeddedCursor(info2);
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 100, 50, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 100, 50, false);
     EXPECT_TRUE(result.empty());
 }
 
@@ -1190,7 +1224,7 @@ TEST(PostingListCursorTest, IntersectMissingToken)
     postings["exists"] = makeEmbeddedCursor(info);
 
     // "missing" token doesn't exist in map → should act as if 0 cursors intersect
-    auto result = intersectAndCollect(postings, {"exists", "missing"}, 0, 10, false, 100.0);
+    auto result = intersectAndCollect(postings, {"exists", "missing"}, 0, 10, false);
     // Only "exists" cursor is used, intersect with nothing → depends on implementation
     // Since only 1 cursor found, it should just do linearOr
     // But actually if only 1 cursor found out of 2 tokens, n=1 path is taken
@@ -1263,7 +1297,7 @@ TEST(PostingListCursorTest, StressRandomIntersectTwo)
         postings["a"] = makeMultiBlockCursor(data1);
         postings["b"] = makeMultiBlockCursor(data2);
 
-        auto result = intersectAndCollect(postings, {"a", "b"}, 0, 10000, false, 100.0);
+        auto result = intersectAndCollect(postings, {"a", "b"}, 0, 10000, false);
         EXPECT_EQ(result, expected) << "Mismatch at trial " << trial;
     }
 }
@@ -1303,7 +1337,7 @@ TEST(PostingListCursorTest, StressRandomIntersectFour)
         std::set_intersection(sets[2].begin(), sets[2].end(), sets[3].begin(), sets[3].end(), std::back_inserter(tmp2));
         std::set_intersection(tmp1.begin(), tmp1.end(), tmp2.begin(), tmp2.end(), std::back_inserter(expected));
 
-        auto result = intersectAndCollect(postings, tokens, 0, 5000, false, 100.0);
+        auto result = intersectAndCollect(postings, tokens, 0, 5000, false);
         EXPECT_EQ(result, expected) << "Mismatch at trial " << trial;
     }
 }
@@ -1358,7 +1392,7 @@ TEST(PostingListCursorTest, IntersectOneCursorEndsEarly)
     postings["short"] = makeEmbeddedCursor(info1);
     postings["long"] = makeEmbeddedCursor(info2);
 
-    auto result = intersectAndCollect(postings, {"short", "long"}, 0, 70, false, 100.0);
+    auto result = intersectAndCollect(postings, {"short", "long"}, 0, 70, false);
     std::vector<uint32_t> expected = {10, 20, 30};
     EXPECT_EQ(result, expected);
 }
@@ -1373,7 +1407,7 @@ TEST(PostingListCursorTest, IntersectAllDocsAtMaxValue)
     postings["a"] = makeEmbeddedCursor(info1);
     postings["b"] = makeEmbeddedCursor(info2);
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, big - 2, 3, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, big - 2, 3, false);
     std::vector<uint32_t> expected = {big - 2, big - 1, big};
     EXPECT_EQ(result, expected);
 }
@@ -1387,7 +1421,7 @@ TEST(PostingListCursorTest, IntersectLargeGapBetweenMatches)
     postings["a"] = makeEmbeddedCursor(info1);
     postings["b"] = makeEmbeddedCursor(info2);
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 30000, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 30000, false);
     std::vector<uint32_t> expected = {0, 10000, 20000};
     EXPECT_EQ(result, expected);
 }
@@ -1509,7 +1543,7 @@ TEST(PostingListCursorTest, SeekExactLastThenNextInvalidates)
 // Section 23: Mixed algorithm paths — brute-force threshold switching
 // ===========================================================================================
 
-TEST(PostingListCursorTest, DensityThresholdSwitchesAlgorithm)
+TEST(PostingListCursorTest, IntersectionAlgorithmSwitchesPath)
 {
     // Two dense cursors: density ~= 1.0
     auto docs1 = generateRange(0, 100);
@@ -1517,21 +1551,21 @@ TEST(PostingListCursorTest, DensityThresholdSwitchesAlgorithm)
     auto data1 = makeMultiBlockData({docs1});
     auto data2 = makeMultiBlockData({docs2});
 
-    // With high threshold → leapfrog
+    // Forced leapfrog
     {
         PostingListCursorMap postings;
         postings["a"] = makeMultiBlockCursor(data1);
         postings["b"] = makeMultiBlockCursor(data2);
-        auto result = intersectAndCollect(postings, {"a", "b"}, 0, 100, false, 100.0);
+        auto result = intersectAndCollect(postings, {"a", "b"}, 0, 100, false);
         EXPECT_EQ(result, docs1);
     }
 
-    // With low threshold → brute-force (density 1.0 >= 0.1)
+    // Forced brute force
     {
         PostingListCursorMap postings;
         postings["a"] = makeMultiBlockCursor(data1);
         postings["b"] = makeMultiBlockCursor(data2);
-        auto result = intersectAndCollect(postings, {"a", "b"}, 0, 100, false, 0.1f);
+        auto result = intersectAndCollect(postings, {"a", "b"}, 0, 100, true);
         EXPECT_EQ(result, docs1);
     }
 }
@@ -1553,7 +1587,7 @@ TEST(PostingListCursorTest, HighlyAsymmetricCardinalities)
     postings["a"] = makeEmbeddedCursor(info1);
     postings["b"] = makeMultiBlockCursor(data2);
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 5000, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 5000, false);
     EXPECT_EQ(result, std::vector<uint32_t>{500});
 }
 
@@ -1569,7 +1603,7 @@ TEST(PostingListCursorTest, OneEmptyOneFullIntersection)
 
     // The empty cursor is invalid from the start, so intersect should return empty.
     // But since the cursor is invalid after advance(0), intersect returns immediately.
-    auto result = intersectAndCollect(postings, {"empty", "full"}, 0, 100, false, 100.0);
+    auto result = intersectAndCollect(postings, {"empty", "full"}, 0, 100, false);
     EXPECT_TRUE(result.empty());
 }
 
@@ -1605,7 +1639,7 @@ TEST(PostingListCursorTest, WindowExactlyOnFirstMatch)
     postings["b"] = makeEmbeddedCursor(info2);
 
     // Window [50, 51) — exactly covers only doc 50
-    auto result = intersectAndCollect(postings, {"a", "b"}, 50, 1, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 50, 1, false);
     EXPECT_EQ(result, std::vector<uint32_t>{50});
 }
 
@@ -1619,7 +1653,7 @@ TEST(PostingListCursorTest, WindowJustMissesMatch)
     postings["b"] = makeEmbeddedCursor(info2);
 
     // Window [51, 100) — misses 50, captures nothing (100 is at end boundary)
-    auto result = intersectAndCollect(postings, {"a", "b"}, 51, 49, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 51, 49, false);
     EXPECT_TRUE(result.empty());
 }
 
@@ -1874,7 +1908,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndFullRange)
     /// linearAnd is designed to be called after linearOr (buffer already non-zero).
     /// Initialize to 1 to simulate prior linearOr pass.
     std::vector<UInt8> buf(700, 1);
-    cursor->linearAnd(buf.data(), 0, 700);
+    cursor->linearAnd(buf.data(), 0, 700, 1);
 
     for (auto d : data.all_docs)
         EXPECT_EQ(buf[d], 2u) << "Expected buf[" << d << "] == 2";
@@ -1892,7 +1926,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndIncrementsExisting)
     auto cursor = makeMultiBlockCursor(data);
 
     std::vector<UInt8> buf(700, 1);
-    cursor->linearAnd(buf.data(), 0, 700);
+    cursor->linearAnd(buf.data(), 0, 700, 1);
 
     for (auto d : data.all_docs)
         EXPECT_EQ(buf[d], 2u) << "Expected buf[" << d << "] == 2";
@@ -2040,7 +2074,7 @@ TEST(PostingListCursorTest, MultiBlockIntersectTwoMultiBlockCursors)
     postings["a"] = makeMultiBlockCursor(data_a);
     postings["b"] = makeMultiBlockCursor(data_b);
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 800, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 800, false);
 
     std::vector<uint32_t> expected;
     for (uint32_t d = 100; d < 150; ++d)
@@ -2062,7 +2096,7 @@ TEST(PostingListCursorTest, MultiBlockIntersectMultiBlockWithEmbedded)
     postings["a"] = makeMultiBlockCursor(data_a);
     postings["b"] = makeEmbeddedCursor(info_b);
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 1000, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 1000, false);
     std::vector<uint32_t> expected = {50, 150, 550, 650};
     EXPECT_EQ(result, expected);
 }
@@ -2076,7 +2110,7 @@ TEST(PostingListCursorTest, MultiBlockIntersectDisjoint)
     postings["a"] = makeMultiBlockCursor(data_a);
     postings["b"] = makeMultiBlockCursor(data_b);
 
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 700, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 700, false);
     EXPECT_TRUE(result.empty());
 }
 
@@ -2140,7 +2174,7 @@ TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogConsistency)
         PostingListCursorMap postings2;
         postings2["a"] = makeMultiBlockCursor(data_a);
         postings2["b"] = makeMultiBlockCursor(data_b);
-        auto lf = intersectAndCollect(postings2, {"a", "b"}, 0, 800, false, 100.0);
+        auto lf = intersectAndCollect(postings2, {"a", "b"}, 0, 800, false);
 
         EXPECT_EQ(bf, lf);
     }
@@ -2360,7 +2394,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndRangeBeforeAllBlocks)
     auto cursor = makeMultiBlockCursor(data);
 
     std::vector<UInt8> buf(100, 1);
-    cursor->linearAnd(buf.data(), 0, 100);
+    cursor->linearAnd(buf.data(), 0, 100, 1);
 
     /// All values should remain 1 (no increments)
     for (size_t i = 0; i < 100; ++i)
@@ -2439,7 +2473,7 @@ TEST(PostingListCursorTest, MultiBlockIntersectThreeMultiBlockCursors)
     postings["b"] = makeMultiBlockCursor(data_b);
     postings["c"] = makeMultiBlockCursor(data_c);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 800, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 800, false);
 
     std::vector<uint32_t> expected;
     for (uint32_t d = 100; d < 200; ++d) expected.push_back(d);
@@ -2465,16 +2499,15 @@ TEST(PostingListCursorTest, MultiBlockIntersectFourMultiBlockCursors)
     postings["c"] = makeMultiBlockCursor(data_c);
     postings["d"] = makeMultiBlockCursor(data_d);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c", "d"}, 0, 400, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c", "d"}, 0, 400, false);
 
     std::vector<uint32_t> expected;
     for (uint32_t d = 150; d < 200; ++d) expected.push_back(d);
     EXPECT_EQ(result, expected);
 }
 
-TEST(PostingListCursorTest, MultiBlockIntersectFiveMultiBlockLeapfrogLinear)
+TEST(PostingListCursorTest, MultiBlockIntersectFiveMultiBlock)
 {
-    /// 5 cursors → dispatches to intersectLeapfrogLinear.
     /// All share [100..149].
     auto data_a = makeMultiBlockData({generateRange(0, 200)});
     auto data_b = makeMultiBlockData({generateRange(50, 200)});
@@ -2489,7 +2522,7 @@ TEST(PostingListCursorTest, MultiBlockIntersectFiveMultiBlockLeapfrogLinear)
     postings["d"] = makeMultiBlockCursor(data_d);
     postings["e"] = makeMultiBlockCursor(data_e);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c", "d", "e"}, 0, 400, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c", "d", "e"}, 0, 400, false);
 
     /// Intersection is [100..229] ∩ each cursor. Cursor E is [100..229] (130 docs).
     /// Cursor D is [100..249]. Cursor C is [100..299]. Cursor B is [50..249]. Cursor A is [0..199].
@@ -2510,7 +2543,7 @@ TEST(PostingListCursorTest, MultiBlockIntersectThreeDisjoint)
     postings["b"] = makeMultiBlockCursor(data_b);
     postings["c"] = makeMultiBlockCursor(data_c);
 
-    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 600, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b", "c"}, 0, 600, false);
     EXPECT_TRUE(result.empty());
 }
 
@@ -2773,7 +2806,7 @@ TEST(PostingListCursorTest, MultiBlockLinearAndPackedBlockSkipAndEarlyReturn)
 
     /// linearAnd expects non-zero buffer (simulating prior linearOr pass).
     std::vector<UInt8> buf(100, 1);
-    cursor->linearAnd(buf.data(), 200, 100); // [200, 300)
+    cursor->linearAnd(buf.data(), 200, 100, 1); // [200, 300)
 
     for (size_t i = 0; i < 100; ++i)
         EXPECT_EQ(buf[i], 2u) << "Expected buf[" << i << "] == 2 (doc " << (200 + i) << ")";
@@ -2862,7 +2895,7 @@ TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogThreeWay)
     postings_lf["a"] = makeMultiBlockCursor(data_a);
     postings_lf["b"] = makeMultiBlockCursor(data_b);
     postings_lf["c"] = makeMultiBlockCursor(data_c);
-    auto lf = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 800, false, 100.0);
+    auto lf = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 800, false);
 
     EXPECT_EQ(bf, lf);
 
@@ -2894,7 +2927,7 @@ TEST(PostingListCursorTest, MultiBlockBruteForceVsLeapfrogFourWay)
     postings_lf["b"] = makeMultiBlockCursor(data_b);
     postings_lf["c"] = makeMultiBlockCursor(data_c);
     postings_lf["d"] = makeMultiBlockCursor(data_d);
-    auto lf = intersectAndCollect(postings_lf, {"a", "b", "c", "d"}, 0, 500, false, 100.0);
+    auto lf = intersectAndCollect(postings_lf, {"a", "b", "c", "d"}, 0, 500, false);
 
     EXPECT_EQ(bf, lf);
 
@@ -2985,7 +3018,7 @@ TEST(PostingListCursorTest, ArithmeticZeroDeltaLinearAnd)
 
     /// linearAnd expects non-zero buffer (simulating prior linearOr pass).
     std::vector<UInt8> buf(260, 1);
-    cursor->linearAnd(buf.data(), 0, 260);
+    cursor->linearAnd(buf.data(), 0, 260, 1);
     /// linearAnd increments counters; check that the arithmetic block docs are counted.
     for (uint32_t d = 0; d <= 256; ++d)
         EXPECT_EQ(buf[d], 2u) << "at doc_id " << d;
@@ -3223,7 +3256,7 @@ TEST(PostingListCursorTest, ArithmeticIntersectTwoLeapfrog)
     PostingListCursorMap postings;
     postings["a"] = makeMultiBlockCursor(data_a);
     postings["b"] = makeMultiBlockCursor(data_b);
-    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 520, false, 100.0);
+    auto result = intersectAndCollect(postings, {"a", "b"}, 0, 520, false);
 
     /// Intersection: even numbers from 0 to 256.
     std::vector<uint32_t> expected;
@@ -3365,7 +3398,7 @@ TEST(PostingListCursorTest, ArithmeticBruteForceVsLeapfrogConsistency)
     postings_lf["a"] = makeMultiBlockCursor(data_a);
     postings_lf["b"] = makeMultiBlockCursor(data_b);
     postings_lf["c"] = makeMultiBlockCursor(data_c);
-    auto lf = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 520, false, 100.0);
+    auto lf = intersectAndCollect(postings_lf, {"a", "b", "c"}, 0, 520, false);
 
     EXPECT_EQ(bf, lf);
 }
@@ -3587,7 +3620,7 @@ TEST(PostingListCursorTest, RawSingleBlockMaterializedIntersectWithCompressed)
     postings["raw"] = makeEmbeddedCursor(raw_info);
     postings["compressed"] = makeMultiBlockCursor(compressed);
 
-    auto result = intersectAndCollect(postings, {"compressed", "raw"}, 0, 100, false, 100.0f);
+    auto result = intersectAndCollect(postings, {"compressed", "raw"}, 0, 100, false);
     EXPECT_EQ(result, std::vector<uint32_t>({3, 10, 17}));
 }
 
@@ -3765,7 +3798,7 @@ TEST(PostingListCursorTest, LinearAndRowOffsetAboveUInt32MaxThrows)
 
     std::vector<UInt8> buf(64, 7);
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
-    EXPECT_THROW(cursor->linearAnd(buf.data(), huge_offset, buf.size()), Exception);
+    EXPECT_THROW(cursor->linearAnd(buf.data(), huge_offset, buf.size(), 7), Exception);
 }
 
 TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
@@ -3777,7 +3810,7 @@ TEST(PostingListCursorTest, LazyUnionRowOffsetAboveUInt32MaxThrows)
     const size_t huge_offset = static_cast<size_t>(std::numeric_limits<uint32_t>::max()) + 1;
     auto col = ColumnUInt8::create(64, UInt8(0));
     EXPECT_THROW(
-        lazyUnionPostingLists(*col, cursors, 0, huge_offset, 64),
+        unionSorted(*col, cursors, 0, huge_offset, 64),
         Exception);
 }
 
@@ -3793,7 +3826,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/1.0f),
+            intersectSorted(*col, cursors, 0, huge_offset, 64, TextIndexPostingsIntersectionAlgorithm::Leapfrog),
             Exception);
     }
 
@@ -3801,7 +3834,7 @@ TEST(PostingListCursorTest, LazyIntersectRowOffsetAboveUInt32MaxThrows)
     {
         auto col = ColumnUInt8::create(64, UInt8(0));
         EXPECT_THROW(
-            lazyIntersectPostingLists(*col, cursors, 0, huge_offset, 64, /*density_threshold=*/0.0f),
+            intersectSorted(*col, cursors, 0, huge_offset, 64, TextIndexPostingsIntersectionAlgorithm::BruteForce),
             Exception);
     }
 }
@@ -3835,7 +3868,7 @@ TEST(PostingListCursorTest, LinearAndIncrementsRowAtUInt32Max)
 
     /// linearAnd increments; start from 1 to simulate a prior linearOr pass.
     std::vector<UInt8> buf(5, 1);
-    cursor->linearAnd(buf.data(), static_cast<size_t>(m) - 4, 5);
+    cursor->linearAnd(buf.data(), static_cast<size_t>(m) - 4, 5, 1);
 
     EXPECT_EQ(buf[0], 2u);  // m - 4
     EXPECT_EQ(buf[1], 1u);
@@ -3852,12 +3885,12 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     auto info_a = makeEmbeddedInfo({m - 3, m});
     auto info_b = makeEmbeddedInfo({m - 2, m});
 
-    // Brute-force path (forced via density_threshold = 0). This is the path that goes
+    // Brute-force path (forced via the `bruteforce` algorithm). This is the path that goes
     // through `linearOr` + `linearAnd` and was affected by the off-by-one.
     {
         std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/0.0f);
+        intersectSorted(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, TextIndexPostingsIntersectionAlgorithm::BruteForce);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);  // m - 3: only in a
         EXPECT_EQ(data[1], 0u);  // m - 2: only in b
@@ -3865,12 +3898,12 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
         EXPECT_EQ(data[3], 1u);  // m: in both
     }
 
-    // Leapfrog path (density_threshold = 1.0). Uses direct size_t arithmetic so the bug
+    // Leapfrog path (forced via the `leapfrog` algorithm). Uses direct size_t arithmetic so the bug
     // didn't manifest here; included for completeness as a regression guard.
     {
         std::vector<PostingListCursorPtr> cursors{makeEmbeddedCursor(info_a), makeEmbeddedCursor(info_b)};
         auto col = ColumnUInt8::create(4, UInt8(0));
-        lazyIntersectPostingLists(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, /*density_threshold=*/1.0f);
+        intersectSorted(*col, cursors, 0, static_cast<size_t>(m) - 3, 4, TextIndexPostingsIntersectionAlgorithm::Leapfrog);
         const auto & data = col->getData();
         EXPECT_EQ(data[0], 0u);
         EXPECT_EQ(data[1], 0u);

@@ -2,6 +2,10 @@
 
 SET use_uncompressed_cache=0;
 
+-- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
+-- estimate for every query after the first one.
+SET use_columns_cache=0;
+
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';
 
@@ -52,7 +56,7 @@ SELECT 1, URL, COUNT(*) AS c FROM test.hits GROUP BY 1, URL ORDER BY c DESC LIMI
 SET max_block_size=65409;
 
 -- Just checking that statistics are collected with read in order
-SELECT CounterID from test.hits ORDER BY CounterID DESC FORMAT Null SETTINGS optimize_read_in_order=1, query_plan_read_in_order=1, log_comment='query_43';
+SELECT CounterID from test.hits ORDER BY CounterID DESC FORMAT Null SETTINGS optimize_read_in_order=1, log_comment='query_43';
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 

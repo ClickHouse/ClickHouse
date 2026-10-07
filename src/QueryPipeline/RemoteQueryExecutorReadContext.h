@@ -113,7 +113,7 @@ private:
     int pipe_fd[2] = { -1, -1 };
     std::atomic_bool is_pipe_alarmed = false;
 
-    Epoll epoll;
+    Epoll epoll{EpollNesting::AsyncReadContext};
 
     std::string connection_fd_description;
     bool suspend_when_query_sent = false;

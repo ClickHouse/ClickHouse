@@ -3,7 +3,7 @@
 -- query, so that the descendant's nested data is served from the substreams cache (a column
 -- shared with another subcolumn read, containing rows from multiple ranges).
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- Wide part, one row per granule.
 DROP TABLE IF EXISTS t_shared_cache_wide;

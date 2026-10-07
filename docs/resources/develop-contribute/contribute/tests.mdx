@@ -348,7 +348,7 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries.
 Performance tests are located at `tests/performance/`.
 Each test is represented by an `.xml` file with a description of the test case.
-Tests are run with `docker/test/performance-comparison` tool . See the readme file for invocation.
+Tests are run by the `ci/jobs/performance_tests.py` CI job, in the `ci/docker/performance-comparison` image.
 
 Each test run one or multiple queries (possibly with combinations of parameters) in a loop.
 
@@ -359,7 +359,7 @@ It always makes sense to use `perf top` or other `perf` tools during your tests.
 ## Test tools and scripts {#test-tools-and-scripts}
 
 Some programs in `tests` directory are not prepared tests, but are test tools.
-For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout.
+For example, for `Lexer` there is a tool `src/Parsers/examples/lexer.cpp` that just do tokenization of stdin and writes colorized result to stdout.
 You can use these kind of tools as a code examples and for exploration and manual testing.
 
 ## Miscellaneous tests {#miscellaneous-tests}
@@ -498,7 +498,7 @@ Fuzzers are not built by default.
 To build fuzzers both `-DENABLE_FUZZING=1` and `-DENABLE_TESTS=1` options should be set.
 We recommend to disable Jemalloc while building fuzzers.
 Configuration used to integrate ClickHouse fuzzing to
-Google OSS-Fuzz can be found at `docker/fuzz`.
+Google OSS-Fuzz can be found at `tests/fuzz`.
 
 We also use simple fuzz test to generate random SQL queries and to check that the server does not die executing them.
 You can find it in `00746_sql_fuzzy.python`.
@@ -580,7 +580,7 @@ ClickHouse provides diagnostics that will help ops engineers to find faulty hard
 
 Code style rules are described [here](/resources/develop-contribute/contribute/style).
 
-To check for some common style violations, you can use `utils/check-style` script.
+To check for some common style violations, you can use the `ci/jobs/scripts/check_style/check_cpp.sh` script, or run the whole style check locally with `python -m ci.praktika run "Style check"`.
 
 To force proper style of your code, you can use `clang-format`.
 File `.clang-format` is located at the sources root.

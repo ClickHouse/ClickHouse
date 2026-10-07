@@ -46,6 +46,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/removeGroupingFunctionSpecializations.h>
 #include <Analyzer/UnionNode.h>
 
 #include <stack>
@@ -155,7 +156,7 @@ void inlineJoinUsingKeys(QueryTreeNodePtr & join_expression)
 /// handed back to `inlineAliasColumnsImpl` so their own projection columns keep their names.
 void inlineAliasColumnsInExpression(QueryTreeNodePtr & node)
 {
-    if (node->as<QueryNode>() || node->as<UnionNode>())
+    if ((node->getNodeType() == QueryTreeNodeType::QUERY) || node->as<UnionNode>())
     {
         inlineAliasColumnsImpl(node);
         return;
@@ -293,14 +294,23 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool allow_global_join_for_right_table_)
+    /// `enforce_distributed_product_mode` is false when the visitor is only asked what shipping would
+    /// do, rather than driving it. `distributed_product_mode = 'deny'` - the default - makes a local
+    /// IN/JOIN over a distributed table an error, which is a policy the real shipping path has to
+    /// apply but a prediction must not: it would fail a query that the caller was only considering.
+    /// A denied query ships nothing, so it also materializes nothing, which is the answer the
+    /// prediction wants.
+    explicit DistributedProductModeRewriteInJoinVisitor(
+        const ContextPtr & context_, bool allow_global_join_for_right_table_, bool enforce_distributed_product_mode_ = true)
         : Base(context_)
         , allow_global_join_for_right_table(allow_global_join_for_right_table_)
+        , enforce_distributed_product_mode(enforce_distributed_product_mode_)
     {}
 
     struct InFunctionOrJoin
     {
         QueryTreeNodePtr query_node;
+        QueryTreeNodePtr parent_query_node;
         size_t subquery_depth = 0;
     };
 
@@ -331,7 +341,7 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            ++query_node_depth;
+            query_node_stack.push_back(node);
 
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
@@ -341,7 +351,9 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
+            in_function_or_join_entry.subquery_depth = query_node_stack.size();
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
         }
@@ -351,7 +363,9 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
-            in_function_or_join_entry.subquery_depth = query_node_depth;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
+            in_function_or_join_entry.subquery_depth = query_node_stack.size();
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
         }
@@ -362,11 +376,11 @@ public:
 
     void leaveImpl(QueryTreeNodePtr & node)
     {
-        if (node->getNodeType() == QueryTreeNodeType::QUERY)
-            --query_node_depth;
-
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
+
+        if (node->getNodeType() == QueryTreeNodeType::QUERY)
+            query_node_stack.pop_back();
     }
 
 private:
@@ -441,6 +455,9 @@ private:
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
+            if (!enforce_distributed_product_mode)
+                return;
+
             throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
                 "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
                 "You may rewrite query to use local tables "
@@ -448,13 +465,12 @@ private:
         }
     }
 
-    /// Number of enclosing SELECT queries; a UNION is not a level. `max_subquery_depth` is checked against
-    /// this same count for a plain IN/JOIN, so a GLOBAL subquery recorded here needs no higher limit.
-    size_t query_node_depth = 0;
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
+    std::vector<QueryTreeNodePtr> query_node_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
     bool allow_global_join_for_right_table = false;
+    bool enforce_distributed_product_mode = true;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -540,6 +556,23 @@ public:
             return;
         }
 
+        /// Do not replace the state arguments of an analyzer-built `grouping` specialization:
+        /// `removeGroupingFunctionSpecializations` strips them from the query sent to the remote
+        /// server only while they are constants, and the remote server rebuilds them itself.
+        if (auto * function_node = node->as<FunctionNode>())
+        {
+            if (size_t num_state_arguments = getGroupingFunctionSpecializationStateArgumentsCount(*function_node))
+            {
+                const auto & arguments = function_node->getArguments().getNodes();
+                for (size_t i = arguments.size() - num_state_arguments; i < arguments.size(); ++i)
+                    grouping_state_arguments.insert(arguments[i].get());
+            }
+            return;
+        }
+
+        if (grouping_state_arguments.contains(node.get()))
+            return;
+
         auto * constant_node = node->as<ConstantNode>();
 
         if (!constant_node)
@@ -584,6 +617,7 @@ public:
 private:
     Int64 max_size = 0;
     std::stack<QueryTreeNodePtr> in_second_argument;
+    std::unordered_set<const IQueryTreeNode *> grouping_state_arguments;
 };
 
 // Helper function to add DISTINCT to all QueryNode objects inside a query/union subtree
@@ -893,7 +927,7 @@ void checkJoin(const JoinNode & join_node, const QueryNode & enclosing_query)
             continue;
 
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "JOIN {} using identifier '{}' is resolved from an alias nested in the SELECT list, which is not "
+            "JOIN {} using identifier '{}' is resolved from an alias that is not a top-level alias of the SELECT list, which is not "
             "supported for queries sent to remote servers. Move the alias to the top level of the SELECT list",
             join_node.formatASTForErrorMessage(), name);
     }
@@ -925,6 +959,28 @@ void inlineAliasColumns(QueryTreeNodePtr & query_tree_to_modify)
     inlineAliasColumnsImpl(query_tree_to_modify);
 }
 
+bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, const ContextPtr & context)
+{
+    /// Fixed rather than a parameter: this predicts the parallel-replicas path, and both of its
+    /// `buildQueryTreeForShard` call sites - `findParallelReplicasQuery` and
+    /// `ClusterProxy::executeQuery` - pass true. `StorageDistributed` passes false, but nothing here
+    /// predicts that path, and letting a caller choose would let it predict the wrong one.
+    static constexpr bool allow_global_join_for_right_table = true;
+
+    /// Both rewrites below modify the tree as they walk it - `in` becomes `globalIn`, a join's
+    /// locality becomes `Global` - so they get a clone. Handing them the caller's tree would convert
+    /// the real query to its shipped form behind its back.
+    auto query_tree_copy = query_tree->clone();
+
+    /// `ClusterProxy::executeQuery` makes joins global before shipping, so predict that first:
+    /// without it a plain `JOIN` that ships as a `GLOBAL JOIN` goes unnoticed. Then ask the visitor
+    /// `buildQueryTreeForShard` itself uses to decide what to ship.
+    rewriteJoinToGlobalJoin(query_tree_copy, context);
+    DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table, /*enforce_distributed_product_mode*/ false);
+    visitor.visit(query_tree_copy);
+    return !visitor.getGlobalInOrJoinNodes().empty();
+}
+
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
 {
     CollectColumnSourceToColumnsVisitor collect_column_source_to_columns_visitor;
@@ -944,6 +1000,14 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
+        /** `PREWHERE` is bound to the broadcast table and is moved into that subquery (below).
+          * Nested `GLOBAL IN` / `GLOBAL JOIN` nodes collected from the original `PREWHERE` then
+          * point at a tree that is no longer attached. Executing them here would materialize the
+          * nested subquery a second time, after `executeSubqueryNode` already ran the moved copy.
+          */
+        if (!isNodePartOfTree(global_in_or_join_node.query_node.get(), query_tree_to_modify.get()))
+            continue;
+
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
             TableExpressionNodePtr join_table_expression;
@@ -962,6 +1026,24 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
 
             auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+
+            auto * parent_query_node = global_in_or_join_node.parent_query_node
+                ? global_in_or_join_node.parent_query_node->as<QueryNode>()
+                : nullptr;
+            if (parent_query_node && parent_query_node->hasPrewhere())
+            {
+                auto prewhere_table_expression = getPrewhereTableExpression(parent_query_node->getPrewhere());
+
+                if (prewhere_table_expression && isNodePartOfTree(prewhere_table_expression.get(), join_table_expression.get()))
+                {
+                    auto * subquery_query_node = subquery_node->as<QueryNode>();
+                    if (!subquery_query_node || subquery_query_node->hasPrewhere())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move PREWHERE into GLOBAL JOIN subquery");
+
+                    subquery_query_node->getPrewhere() = parent_query_node->getPrewhere()->clone();
+                    parent_query_node->getPrewhere() = {};
+                }
+            }
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),
