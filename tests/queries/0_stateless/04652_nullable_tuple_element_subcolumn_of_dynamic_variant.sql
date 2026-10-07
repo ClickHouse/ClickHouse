@@ -1,4 +1,7 @@
 -- Reading a subcolumn whose own type is Nullable out of a Variant/Dynamic column stored in MergeTree.
+-- A Tuple extracted from a Variant/Dynamic column is itself Nullable(Tuple(...)) and NULL in the rows
+-- of other variants (allow_nullable_tuple_in_extracted_subcolumns, on by default), so every element
+-- read through it - including the .null subcolumn of a Nullable element - is Nullable and NULL there.
 
 SET enable_variant_type = 1;
 
@@ -63,8 +66,9 @@ SELECT toTypeName(value.`Tuple(a LowCardinality(Nullable(String)), b String)`.a)
 SELECT value.`Tuple(a Tuple(x Nullable(UInt32)))`.a.x FROM t_shapes ORDER BY id;
 SELECT value.`Tuple(Nullable(UInt32), String)`.1 FROM t_shapes ORDER BY id;
 
--- Controls. The nullability added by the extraction must still be removed:
--- here the on-disk element is UInt32 while the subcolumn is exposed as Nullable(UInt32).
+-- Controls. The nullability added by the extraction must still be removed: here the on-disk element
+-- is UInt32 while the subcolumn is exposed as Nullable(UInt32), for the type itself and for a plain
+-- element read through an extracted Nullable(Tuple(...)).
 DROP TABLE IF EXISTS t_controls;
 CREATE TABLE t_controls (id UInt64, value Dynamic) ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;

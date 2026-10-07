@@ -1,7 +1,9 @@
 #include <Storages/ColumnSize.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
@@ -24,7 +26,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -893,7 +895,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         /// We avoid covering the whole function with the scope so that transient work stays in the default arena (avoid contention)
         /// The shared bundle and serializations manage their own arena scopes
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        serialization_infos = new_infos;
+        /// A copy, so that the part does not keep objects the writer was charged for.
+        serialization_infos = new_infos.clone();
     }
 
     metadata_version = new_metadata_version;
@@ -1047,14 +1050,10 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        /// Physical, not usability: marks cached before an ALTER made this index unreadable still have
-        /// to be evicted, so the keys must be derived from what is actually on disk.
-        auto index_format = skip_index->getPhysicalFormat(*this, index_name);
 
-        if (!index_format)
-            continue;
-
-        for (const auto & substream : index_format.substreams)
+        /// Not what this part holds: resolving that needs I/O, which must not run during part
+        /// destruction. Evicting an absent key is a no-op, so the superset is free.
+        for (const auto & substream : skip_index->getPotentialSubstreams())
         {
             auto full_stream_name = index_name + substream.suffix;
             auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
@@ -1080,6 +1079,28 @@ void IMergeTreeDataPart::clearCaches()
 
     /// Remove from other caches of secondary indexes
     removeFromVectorIndexCache(storage.getContext()->getVectorSimilarityIndexCache().get());
+
+    /// Remove deserialized columns from cache
+    if (mayStoreColumnsInColumnsCache())
+    {
+        /// No reader can hold this part any more: clearCaches runs from the destructor of the
+        /// part and for outdated parts that are uniquely owned, while a reader owns the part
+        /// through its `data_part_info_for_read` as long as it may still write to the cache. So
+        /// there is no in-flight write to guard against, and removing the entries is enough.
+        if (auto columns_cache = storage.getContext()->getColumnsCache())
+        {
+            columns_cache->removePart(storage.getStorageID().uuid, name);
+        }
+    }
+}
+
+bool IMergeTreeDataPart::mayStoreColumnsInColumnsCache() const
+{
+    /// Only these parts are ever written to the columns cache, see `clearCaches`: the entries are
+    /// keyed by the UUID of the table and the name of the part.
+    return getType() == MergeTreeDataPartType::Wide
+        && !isProjectionPart()
+        && storage.getStorageID().uuid != UUIDHelpers::Nil;
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const
@@ -1088,7 +1109,18 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
         return false;
 
     auto caches = storage.getCachesToPrewarm(getBytesUncompressedOnDisk());
-    return caches.hasAny();
+    if (caches.hasAny())
+        return true;
+
+    /// The columns cache holds deserialized columns of this part, and the prewarmable caches above
+    /// know nothing about it: a part whose only footprint is there has to be cleared as well, or its
+    /// entries stay resident until a much later filesystem cleanup and evict entries of live parts
+    /// in the meantime. Asking the cache is one lookup in its per-part index.
+    if (!mayStoreColumnsInColumnsCache())
+        return false;
+
+    auto columns_cache = storage.getContext()->getColumnsCache();
+    return columns_cache && columns_cache->containsPart(storage.getStorageID().uuid, name);
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -1468,8 +1500,17 @@ Estimates IMergeTreeDataPart::getEstimates() const
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// Statistics are built from table metadata, which can name columns this part does not store:
+    /// an expired column `TTL` removes a column from the part after the statistics set is decided.
+    const auto & part_columns = getColumnsDescription();
+    Estimates stored_estimates;
+    for (const auto & [column_name, estimate] : new_estimates)
+        if (part_columns.tryGet(column_name))
+            stored_estimates.emplace(column_name, estimate);
+
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
+    estimates = std::move(stored_estimates);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
@@ -1523,6 +1564,17 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
                 constant_granularity->fixFromRowsCount(rows_count);
 
+            /// A patch part that holds rows names the parts it patches, so an index without source
+            /// parts is not a patch that applies to nothing - it is a file that lost its content.
+            /// Failing here is what keeps the acknowledged update recoverable: an empty index reports
+            /// data version 0, so `clearUnusedPatchParts` would find the patch materialized everywhere
+            /// and delete the only copy of it. An empty index belongs to an empty part alone (the
+            /// covering parts `cloneEmpty` creates).
+            if (info.isPatch() && rows_count > 0 && patch_part_index && patch_part_index->empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Patch part {} has {} rows, but its index in {} references no source parts",
+                    name, rows_count, PatchPartIndex::FILENAME);
+
             loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
             loadPartitionAndMinMaxIndex();
 
@@ -1552,10 +1604,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// Don't scare people with broken part error if it's retryable.
         if (!isRetryableException(std::current_exception()))
         {
-            auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
-                getDataPartStorage().getFullPath(), message);
-
             if (Exception * e = current_exception_cast<Exception *>())
             {
                 /// Probably there is something wrong with files of this part.
@@ -1575,6 +1623,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 if (isEmpty())
                     e->addMessage("Part is empty");
             }
+
+            auto message = getCurrentExceptionMessage(true);
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
+                getDataPartStorage().getFullPath(), message);
         }
 
         throw;
@@ -1591,9 +1643,9 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        projection_storage = intent == PartDirIntent::CreateFresh
-            ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
-            : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+        projection_storage = intent == PartDirIntent::OpenExisting
+            ? getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection)
+            : getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection);
     }
     if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
     {
@@ -1896,11 +1948,14 @@ namespace
 template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-    storage.removeFileIfExists(path);
-
+    /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
+    /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
+    /// physically stored values that were disclaimed when the source part was adopted.
     if (columns.empty())
         return;
+
+    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    storage.removeFileIfExists(path);
 
     auto out = storage.writeFile(path, 4096, WriteMode::Rewrite, settings);
     IMergeTreeDataPart::writeInvalidatedSystemColumns(*out, columns);
@@ -2077,7 +2132,15 @@ void IMergeTreeDataPart::loadPatchPartIndex()
         return;
 
     if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+    {
         patch_part_index = PatchPartIndex::readBinary(*in);
+
+        /// The file holds nothing but this index, so bytes left over mean its content is not what was
+        /// written. One corruption shape makes this check the difference between a loud and a silent
+        /// failure: a zeroed block parses as an index of format version `V1` with no source parts at
+        /// all, and everything after those nine bytes would otherwise be ignored.
+        assertEOF(*in);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }
@@ -2219,20 +2282,32 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
             if ((column_size.data_compressed != 0 || getType() == MergeTreeDataPartType::Compact) && is_default_coded(part_column.name))
             {
                 String path_to_data_file;
-                getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                if (getType() == MergeTreeDataPartType::Compact)
                 {
-                    if (path_to_data_file.empty())
+                    /// A Compact part has no per-column streams to look for: every column is written
+                    /// into the shared data file, and its first frame is what proves the default codec
+                    /// once every stored column is known to be default-coded (checked above).
+                    const String data_file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+                    if (getDataPartStorage().existsFile(data_file_name) && getDataPartStorage().getFileSize(data_file_name) != 0)
+                        path_to_data_file = data_file_name;
+                }
+                else
+                {
+                    getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                     {
-                        auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
-                        if (!stream_name)
-                            return;
+                        if (path_to_data_file.empty())
+                        {
+                            auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                            if (!stream_name)
+                                return;
 
-                        auto file_name = *stream_name + ".bin";
-                        /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                        if (getDataPartStorage().getFileSize(file_name) != 0)
-                            path_to_data_file = file_name;
-                    }
-                });
+                            auto file_name = *stream_name + ".bin";
+                            /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                            if (getDataPartStorage().getFileSize(file_name) != 0)
+                                path_to_data_file = file_name;
+                        }
+                    });
+                }
 
                 if (path_to_data_file.empty())
                 {
@@ -2242,27 +2317,20 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
 
                 auto recovered = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
 
-                /// The default codec is the column's generic-compression stage. For a column coded
-                /// with the default codec alone the recovered frame codec is that stage itself; for a
-                /// pipeline (`CODEC(Delta, Default)`) the frame is a `Multiple` chain and the default
-                /// codec is its single generic-compression stage (a valid pipeline has at most one).
-                /// A structural substream (`Array` offsets, null map, ...) is written with the
-                /// generic stages only, dropping the rest of the pipeline, so search for the generic
-                /// stage instead of matching the declared pipeline by position. `NONE` counts too:
-                /// it is not a generic compression, but a default of `NONE` produces a plain `NONE`
-                /// frame that identifies the default exactly.
+                /// The default is the chain's generic or encryption stage, searched for because structural substreams drop type-specific ones.
+                /// A bare `NONE` frame counts too.
                 if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
                 {
                     for (const auto & stage : multiple->getCodecs())
                     {
-                        if (stage->isGenericCompression())
+                        if (stage->isGenericCompression() || stage->isEncryption())
                         {
                             result = stage;
                             break;
                         }
                     }
                 }
-                else if (recovered->isGenericCompression() || recovered->isNone())
+                else if (recovered->isGenericCompression() || recovered->isNone() || recovered->isEncryption())
                     result = recovered;
 
                 /// No generic-compression stage in the frame: it cannot prove the default codec
@@ -2557,6 +2625,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
+        /*columns_cache=*/ nullptr,
         storage.getContext()->getMarkCache().get(),
         nullptr,
         MergeTreeReaderSettings::createFromSettings(),
@@ -2576,7 +2645,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
         MutableColumns result;
         result.resize(1);
 
-        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, result);
+        size_t rows_read = reader->readRows(current_mark, total_mark, continue_reading, rows_to_read, result);
         if (!rows_read)
         {
             LOG_WARNING(storage.log, "Part {} has lightweight delete, but _row_exists column not found", name);
@@ -2649,9 +2718,28 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     NamesAndTypesList loaded_columns;
     bool is_readonly_storage = getDataPartStorage().isReadonly();
 
-    if (auto in = readFileIfExists("columns.txt"))
+    /** A power loss can leave a file that was never `fsync`ed at length zero while the rest of the part
+      * survives - the file's inode is persisted, its data block is not - and neither `columns.txt` nor
+      * `metadata_version.txt` is covered by the part checksums, so nothing else notices that one of them
+      * is gone. Both have a safe path for being absent: the column list is regenerated from the table
+      * metadata, the version falls back to the table's. An empty file carries exactly as much as an
+      * absent one, so take the same path for it instead of failing to parse it and detaching the whole
+      * part - with all of its rows - as broken.
+      */
+    auto read_non_empty_file_if_exists = [this](const String & file_name)
     {
-        loaded_columns.readText(*in);
+        auto in = readFileIfExists(file_name);
+        if (in && in->eof())
+            return std::unique_ptr<ReadBuffer>{};
+        return in;
+    };
+
+    auto columns_file = readFileIfExists("columns.txt");
+    bool columns_file_is_empty = columns_file && columns_file->eof();
+
+    if (columns_file && !columns_file_is_empty)
+    {
+        loaded_columns.readText(*columns_file);
 
         for (auto & column : loaded_columns)
             setVersionToAggregateFunctions(column.type, true);
@@ -2659,37 +2747,91 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
         if (!info.isPatch())
             attachQuantizeSerializations(loaded_columns, getMetadataSnapshot()->getColumns());
     }
+    /// If there is no column.txt or it's empty, try to recover it from the metadata.
     else
     {
         /// We can get list of columns only from columns.txt in compact parts.
-        if (require || part_type == Type::Compact || info.isPatch())
+        if (part_type == Type::Compact || info.isPatch())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on disk {}",
                 name, path, getDataPartStorage().getDiskName());
 
         auto metadata_snapshot = getMetadataSnapshot();
-        /// If there is no file with a list of columns, write it down.
+
+        /// No (or empty) columns.txt: rebuild it.
+
+        /// Load columns substreams, so we can check if specific column exists in the data part via getFirstFileNameForColumn correctly.
+        loadColumnsSubstreams(/*validate_against_loaded_columns=*/false);
+
+        /// The file is only ever written non-empty, so present-but-empty means its content was
+        /// discarded as corrupted. Presence would then be inferred from the default serialization,
+        /// dropping every column stored in another layout.
+        if (getColumnsSubstreams().empty() && getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                "Cannot rebuild columns.txt of part {}: {} was discarded as corrupted",
+                name, COLUMNS_SUBSTREAMS_FILE_NAME);
+
+        /** `require` (`require_part_metadata`, set by `StorageReplicatedMergeTree`) means a part with
+          * missing metadata must not be guessed at: it is detached and re-fetched from a healthy replica.
+          * The exception is the power-loss case above - `columns.txt` is present but empty - and only
+          * when `columns_substreams.txt` recorded the part's own column list, which verifies the rebuilt
+          * list exactly - the check below rejects it unless the two agree, so nothing is guessed. Without
+          * that record there is nothing to verify against - a column whose files were lost along with
+          * `columns.txt` would silently drop out of the list - so keep failing and let the replica
+          * re-fetch the part. A completely absent `columns.txt` is not the power-loss case and keeps
+          * failing as well.
+          */
+        if (require && !columns_file_is_empty)
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns.txt in part {}, expected path {} on disk {}",
+                name, path, getDataPartStorage().getDiskName());
+
+        if (require && getColumnsSubstreams().empty())
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                "Empty columns.txt in part {}, expected path {} on disk {}, and no {} to rebuild it from",
+                name, path, getDataPartStorage().getDiskName(), COLUMNS_SUBSTREAMS_FILE_NAME);
+
+        NameSet loaded_column_names;
         for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
-            if (getFileNameForColumn(column))
+        {
+            if (getFirstFileNameForColumn(column).has_value())
+            {
                 loaded_columns.push_back(column);
+                loaded_column_names.insert(column.name);
+            }
+        }
+
+        /// Persistent virtual columns the part carries (getAllPhysical omits them), in the order
+        /// writeColumns wrote them: after the physical columns. A projection lists the parent
+        /// virtuals it stores among its own physical columns, so skip what is already present.
+        for (const auto & column : metadata_snapshot->virtuals.getNamesAndTypes(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader))
+        {
+            if (!loaded_column_names.contains(column.name) && getFirstFileNameForColumn(column).has_value())
+                loaded_columns.push_back(column);
+        }
 
         if (loaded_columns.empty())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
+
+        /// loadColumnsSubstreams() requires exactly this list once loadColumns() returns; checking it
+        /// here keeps the incomplete list off disk.
+        auto recorded_columns = getColumnsSubstreams().getColumnNames();
+        if (!recorded_columns.empty() && recorded_columns != loaded_columns.getNames())
+            throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                "Cannot rebuild columns.txt of part {}: it stores columns [{}], the list rebuilt from the table metadata is [{}]",
+                name, fmt::join(recorded_columns, ", "), fmt::join(loaded_columns.getNames(), ", "));
 
         if (!is_readonly_storage)
             writeColumns(loaded_columns, {});
     }
 
     SerializationInfoByName infos({});
-    if (auto in = readFileIfExists(SERIALIZATION_FILE_NAME))
-        infos = SerializationInfoByName::readJSON(loaded_columns, *in);
+    if (auto serialization_file = readFileIfExists(SERIALIZATION_FILE_NAME))
+        infos = SerializationInfoByName::readJSON(loaded_columns, *serialization_file);
 
     std::optional<int32_t> loaded_metadata_version;
     if (load_metadata_version)
     {
-        if (auto in = readFileIfExists(METADATA_VERSION_FILE_NAME))
-        {
-            readIntText(loaded_metadata_version.emplace(), *in);
-        }
+        if (auto metadata_version_file = read_non_empty_file_if_exists(METADATA_VERSION_FILE_NAME))
+            readIntText(loaded_metadata_version.emplace(), *metadata_version_file);
     }
 
     if (!loaded_metadata_version)
@@ -2703,13 +2845,14 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
     setColumns(loaded_columns, infos, *loaded_metadata_version);
 }
 
-void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
+void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_, bool validate_against_loaded_columns)
 {
     /// The interned list is shared between parts and outlives the query, so it is not charged to it;
     /// see `setColumns`.
     MemoryTrackerBlockerInThread not_charged_to_the_query;
 
-    columns_substreams_.validateColumns(getColumns().getNames());
+    if (validate_against_loaded_columns)
+        columns_substreams_.validateColumns(getColumns().getNames());
     /// Drop the interned list first, as in `setColumns`. Callers always pass a list of their own.
     chassert(&columns_substreams_ != columns_substreams.get());
     columns_substreams = SharedPartColumns::getEmptyColumnsSubstreams();
@@ -2739,7 +2882,7 @@ void IMergeTreeDataPart::moveMetadataToDedicatedArena()
         reallocateByCopy(patch_part_index);
 }
 
-void IMergeTreeDataPart::loadColumnsSubstreams()
+void IMergeTreeDataPart::loadColumnsSubstreams(bool validate_against_loaded_columns)
 {
     if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
     {
@@ -2774,7 +2917,7 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
             }
         }
 
-        setColumnsSubstreams(loaded_columns_substreams);
+        setColumnsSubstreams(loaded_columns_substreams, validate_against_loaded_columns);
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
@@ -2847,6 +2990,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
+    /// Volume merge flags can change during selection; check them for each part.
+    if (!storage_policy->hasAnyVolumeWithDisabledMerges())
+        return true;
+
     auto disk_name = getDataPartStorage().getDiskName();
     return !storage_policy->getVolumeByDiskName(disk_name)->areMergesAvoided();
 }
@@ -3138,7 +3285,9 @@ void IMergeTreeDataPart::checkConsistencyBase() const
         auto check_file_not_empty = [this](const String & file_path)
         {
             UInt64 file_size = 0;
-            if (!getDataPartStorage().existsFile(file_path) || (file_size = getDataPartStorage().getFileSize(file_path)) == 0)
+            if (getDataPartStorage().existsFile(file_path))
+                file_size = getDataPartStorage().getFileSize(file_path);
+            if (file_size == 0)
                 throw Exception(
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                     "Part {} is broken: {} is empty",
@@ -3684,6 +3833,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
+        /*columns_cache=*/ nullptr,
         storage.getContext()->getMarkCache().get(),
         nullptr,
         settings,
@@ -3692,7 +3842,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
 
     MutableColumns result;
     result.resize(1);
-    reader->readRows(0, false, 0, result);
+    reader->readRows(0, total_mark, false, 0, result);
     return std::move(result[0]);
 }
 

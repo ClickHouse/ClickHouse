@@ -209,13 +209,30 @@ SELECT regr_slopeIf(y, x, x IS NULL OR isFinite(x))
 FROM VALUES('x Nullable(Float64), y Nullable(Float64)', (1, 2), (NULL, 5), (2, 4), (3, 6));
 
 SELECT 'the Trino dialect reaches the native aggregates, including as window functions';
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 SELECT regr_slope(y, x), regr_intercept(y, x), regr_r2(y, x) FROM (VALUES (1, 2), (2, 4), (3, 6)) AS t(x, y);
 SELECT regr_slope(y, x) OVER (ORDER BY x) FROM (VALUES (1, 2), (2, 4), (3, 6)) AS t(x, y);
 
 SET dialect = 'clickhouse';
+
+SELECT 'the same functions under ClickHouse-style names';
+SELECT
+    regrCount(y, x) = regr_count(y, x),
+    regrAvgX(y, x) = regr_avgx(y, x),
+    regrAvgY(y, x) = regr_avgy(y, x),
+    regrSXX(y, x) = regr_sxx(y, x),
+    regrSYY(y, x) = regr_syy(y, x),
+    regrSXY(y, x) = regr_sxy(y, x),
+    regrSlope(y, x) = regr_slope(y, x),
+    regrIntercept(y, x) = regr_intercept(y, x),
+    regrR2(y, x) = regr_r2(y, x)
+FROM VALUES('x Float64, y Float64', (1, 2), (2, 4), (3, 7), (4, 8));
+
+SELECT REGRSLOPE(y, x), regrslope(y, x) FROM VALUES('x Float64, y Float64', (1, 2), (2, 4));
+
+SELECT name, alias_to FROM system.functions WHERE alias_to LIKE 'regr%' ORDER BY name;
 
 SELECT 'wrong argument types are rejected';
 SELECT regr_slope('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

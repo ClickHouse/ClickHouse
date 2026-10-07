@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: lazy materialization is gated on the analyzer, so the EXPLAIN assertion
 -- below (JoinLazyColumnsStep / LazilyReadFromMergeTree) is empty under the old analyzer; that
 -- CI variant also forbids changing enable_analyzer inside a subquery.
 --
@@ -67,13 +65,13 @@ FROM numbers(20);
 SELECT trimLeft(explain) AS s FROM (
     EXPLAIN actions = 0, pretty = 0
     SELECT a, b, c FROM test_split_oob4_filter WHERE id > 2 ORDER BY a LIMIT 5
-    SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+    SETTINGS optimize_move_to_prewhere = 0,
         query_plan_optimize_lazy_materialization = 1,
         query_plan_max_limit_for_lazy_materialization = 1000
 ) WHERE s IN ('JoinLazyColumnsStep', 'LazilyReadFromMergeTree', 'Filter') ORDER BY s;
 
 SELECT a, b, c FROM test_split_oob4_filter WHERE id > 2 ORDER BY a LIMIT 5
-SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0,
+SETTINGS optimize_move_to_prewhere = 0,
     query_plan_optimize_lazy_materialization = 1,
     query_plan_max_limit_for_lazy_materialization = 1000;
 

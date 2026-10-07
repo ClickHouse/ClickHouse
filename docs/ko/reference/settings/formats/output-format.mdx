@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)에서 자동으로 생성됩니다.
 
-<div id="output_format_always_write_decimal_point_in_float_and_decimal">
-  ## output_format_always_write_decimal_point_in_float_and_decimal
-</div>
+## output_format_always_write_decimal_point_in_float_and_decimal {#output_format_always_write_decimal_point_in_float_and_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 기본적으로 비활성화되어 있습니다.
 
-<div id="output_format_arrow_compression_method">
-  ## output_format_arrow_compression_method
-</div>
+## output_format_arrow_compression_method {#output_format_arrow_compression_method}
 
 <SettingsInfoBlock type="ArrowCompression" default_value="lz4_frame" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 Arrow 출력 형식의 압축 방식입니다. 지원되는 코덱은 lz4&#95;frame, zstd, none (비압축)입니다.
 
-<div id="output_format_arrow_date_as_uint16">
-  ## output_format_arrow_date_as_uint16
-</div>
+## output_format_arrow_date_as_uint16 {#output_format_arrow_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +39,7 @@ Arrow 출력 형식의 압축 방식입니다. 지원되는 코덱은 lz4&#95;fr
 
 Date 값을 32비트 Arrow DATE32 유형으로 변환하는 대신(다시 읽으면 Date32로 읽힘), 일반 16비트 숫자로 씁니다(다시 읽으면 UInt16으로 읽힘).
 
-<div id="output_format_arrow_fixed_string_as_fixed_byte_array">
-  ## output_format_arrow_fixed_string_as_fixed_byte_array
-</div>
+## output_format_arrow_fixed_string_as_fixed_byte_array {#output_format_arrow_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,17 +47,41 @@ Date 값을 32비트 Arrow DATE32 유형으로 변환하는 대신(다시 읽으
 
 FixedString 컬럼에는 Binary 대신 Arrow FIXED&#95;SIZE&#95;BINARY 타입을 사용합니다.
 
-<div id="output_format_arrow_low_cardinality_as_dictionary">
-  ## output_format_arrow_low_cardinality_as_dictionary
-</div>
+## output_format_arrow_low_cardinality_as_dictionary {#output_format_arrow_low_cardinality_as_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 LowCardinality 유형을 딕셔너리 Arrow 유형으로 출력할 수 있게 합니다
 
-<div id="output_format_arrow_string_as_string">
-  ## output_format_arrow_string_as_string
-</div>
+## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "목표 행 수를 기준으로 `Arrow` 및 `ArrowStream` 출력에서 작은 블록을 결합하는 새로운 설정입니다. 기본값 `0`은 블록당 레코드 배치 하나를 그대로 유지합니다."}]}]} />
+
+`Arrow` 및 `ArrowStream` 출력 형식에서 레코드 배치당 목표 행 수입니다. 작은 블록을 결합하면 메타데이터와 버퍼 패딩 오버헤드가 줄어들며, 선택도가 높은 필터를 사용하는 쿼리에서 특히 효과적입니다.
+
+블록은 이 목표값 또는 [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/ko/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes)에 도달할 때까지 누적됩니다. 이미 행 또는 바이트 목표를 충족하는 블록은 분할되지 않고 별도로 기록됩니다. 행 목표를 설정한 경우 결합된 배치의 행 수는 해당 목표의 두 배 미만이지만, 단일 입력 블록은 그보다 클 수 있습니다.
+
+블록을 버퍼링하면 메모리 사용량이 늘고 출력이 지연될 수 있습니다. 결과가 두 목표 중 어느 쪽에도 도달하지 못하면 `ArrowStream`은 쿼리가 끝난 뒤에야 첫 번째 레코드 배치를 기록합니다. 다만 스키마는 그보다 먼저 기록할 수 있습니다. 블록이 도착하는 대로 레코드 배치를 기록하려면 두 목표값을 모두 `0`으로 두십시오.
+
+`0`(기본값)은 행 목표를 비활성화합니다. 시작값으로 `65409`를 사용해 보십시오.
+
+## output_format_arrow_record_batch_size_bytes {#output_format_arrow_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "누적된 데이터의 목표 크기(바이트)를 기준으로 `Arrow` 및 `ArrowStream` 출력에서 작은 블록을 결합하는 새로운 설정입니다. 기본값 `0`은 블록당 하나의 레코드 배치를 유지합니다."}]}]} />
+
+`Arrow` 및 `ArrowStream` 출력 형식의 목표 레코드 배치 크기이며, 누적된 블록 데이터의 바이트 수로 측정됩니다. [min&#95;insert&#95;block&#95;size&#95;bytes](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)와 동일한 기준을 사용합니다. 이 목표값 또는 [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/ko/reference/settings/formats/output-format#output_format_arrow_record_batch_size) 중 하나에 도달하면 배치가 기록됩니다.
+
+`LowCardinality` 컬럼은 이 바이트 목표값보다 훨씬 크거나 작은 Arrow 배치를 생성할 수 있다는 점에 유의하십시오. [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/ko/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary)가 활성화되어 있지 않으면 반복되는 값이 출력에서 그대로 펼쳐집니다. 또한 필터링된 블록도 큰 딕셔너리를 그대로 유지할 수 있어, 행 수가 매우 적은 블록이라도 목표값에 도달해 별도로 기록될 수 있습니다. 이러한 컬럼에는 [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/ko/reference/settings/formats/output-format#output_format_arrow_record_batch_size)로 행 수를 제어하고 바이트 목표값은 `0`으로 설정하십시오.
+
+블록을 버퍼링하면 메모리 사용량이 늘어나고 쿼리가 끝날 때까지 첫 번째 레코드 배치가 지연될 수 있습니다. 블록이 도착하는 대로 레코드 배치를 기록하려면 두 목표값을 모두 `0`으로 두십시오.
+
+`0`(기본값)은 바이트 목표값을 비활성화합니다. 시작 값으로 `1048576`(1 MiB)을 사용해 보십시오.
+
+## output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,19 +89,43 @@ LowCardinality 유형을 딕셔너리 Arrow 유형으로 출력할 수 있게 �
 
 String 컬럼에 Binary 대신 Arrow String 타입 사용
 
-<div id="output_format_arrow_unsupported_types_as_binary">
-  ## output_format_arrow_unsupported_types_as_binary
-</div>
+## output_format_arrow_unsupported_types {#output_format_arrow_unsupported_types}
+
+<SettingsInfoBlock type="ArrowUnsupportedTypes" default_value="binary" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "binary"},{"label": "`output_format_arrow_unsupported_types_as_binary`를 대체하고 `text` 모드를 추가한 새로운 설정입니다. 기본값은 이전 동작과 동일하므로 `compatibility`가 이를 변경해서는 안 됩니다."}]}]} />
+
+Arrow에 대응하는 일급 매핑이 없는 타입의 컬럼(예: `JSON`, `Dynamic`, `QBit`, `AggregateFunction`)을 어떤 방식으로 기록할지 지정합니다:
+
+* `throw` — 쿼리를 거부합니다;
+* `text` — 행마다 텍스트 형식 값 하나(`CAST(col AS String)`의 결과와 동일)를 Arrow `Utf8` 컬럼으로 기록합니다;
+* `binary` — 각 값의 이진 표현을 Arrow `Binary` 컬럼으로 기록합니다(`RowBinary`와 동일한 값 단위 인코딩).
+
+`AggregateFunction` 컬럼은 `text` 모드에서도 `Binary`로 기록됩니다. 그 텍스트 형식이 실제로는 텍스트가 아니라 원시 aggregate state이며, Arrow `Utf8` 컬럼은 유효한 UTF-8만 담을 수 있기 때문입니다. 읽을 수 있는 값을 얻으려면 `finalizeAggregation`을 사용하십시오.
+
+`Utf8` 컬럼에 기록되는 값은 유효한 UTF-8이 되도록 처리되며, 유효하지 않은 시퀀스는 각각 U+FFFD로 대체됩니다. 이는 애초에 reader가 텍스트로 해석할 수 없었을 데이터에만 영향을 미칩니다. 임의 바이트로 이루어진 `String`을 담고 있는 `Dynamic`이 그 예입니다. 바이트를 그대로 보존해야 한다면 `binary` 모드를 사용하십시오.
+
+`output_format_arrow_string_as_string`은 이러한 컬럼에는 적용되지 않고, 실제 `String` 및 `FixedString` 컬럼에만 적용됩니다. 덕분에 불투명한 컬럼의 Arrow 타입은 해당 컬럼이 어떤 인코딩을 담고 있는지를 나타내는 정보로 유지됩니다. 즉, 그 설정 값과 무관하게 `Utf8`은 텍스트 형식을, `Binary`는 이진 형식을 의미합니다.
+
+`Dynamic`에 담긴 aggregate state에도 같은 원리가 적용됩니다. 컬럼의 타입은 `Dynamic`에서 결정되는데, 이는 각 행이 무엇을 담고 있는지 전혀 알려주지 않으며, Arrow 스키마는 값을 하나도 보기 전에 확정됩니다. 따라서 `AggregateFunction` 컬럼처럼 해당 state에 자체 `Binary` 컬럼을 부여할 수 없고, 그 결과 `text` 모드에서는 손실이 발생합니다. `binary` 모드는 이를 보존합니다. `Variant`는 영향을 받지 않습니다. 대안 타입들을 나열하므로, 그중 `AggregateFunction`이 있으면 자체 `Binary` 자식 컬럼을 갖게 됩니다.
+
+`text`와 `binary` 두 모드 모두에서 해당 필드는 Arrow 스키마에 `clickhouse.opaque` 확장 기능 이름과 원래의 ClickHouse 타입 이름으로 태깅되므로, reader가 이를 진짜 문자열 컬럼이나 이진 컬럼과 구분할 수 있습니다.
+
+ClickHouse는 읽는 쪽에서 이미 해당 타입을 알고 있는 경우, 즉 테이블이 그 타입을 선언하고 있거나 `file` 및 `s3`가 받는 것과 같은 structure argument가 그 타입을 명시한 경우에만 이러한 컬럼을 태그가 가리키는 타입으로 다시 읽어 들입니다. 이 경우 `Array`, `Tuple`, `Map`, `Nullable` 내부에서도 동일하게 동작합니다. 스키마 추론은 태그를 참조하지 않으므로, 타입이 명시되지 않은 채 읽힌 컬럼은 원시 payload를 담은 `String`으로 전달됩니다. `Variant`의 대안 타입은 타입을 명시하더라도 원래 타입으로 읽히지 않습니다. 대안 타입들이 구성하는 Arrow 유니언이 태그를 참조하지 않고 디코딩되기 때문입니다. 기록된 데이터는 모든 경우에 다른 Arrow reader에서도 올바른 형식으로 인식됩니다.
+
+이전 설정인 `output_format_arrow_unsupported_types_as_binary`보다 우선하며, 이전 설정은 이 설정이 기본값으로 남아 있을 때만 참조됩니다.
+
+## output_format_arrow_unsupported_types_as_binary {#output_format_arrow_unsupported_types_as_binary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "지원되지 않는 CH 타입을 UNKNOWN_TYPE 예외 대신 arrow 바이너리로 변환하는 새로운 설정입니다."}]}]} />
 
-변환할 수 없는 출력 타입을 원시 바이너리 데이터로 처리합니다. false이면 이러한 타입에서 UNKNOWN&#95;TYPE 예외가 발생합니다.
+변환할 수 없는 출력 타입을 원시 바이너리 데이터로 처리합니다. false이면 이러한 타입에서 예외가 발생합니다.
 
-<div id="output_format_arrow_use_64_bit_indexes_for_dictionary">
-  ## output_format_arrow_use_64_bit_indexes_for_dictionary
-</div>
+`output_format_arrow_unsupported_types`로 대체되었습니다. `0`은 `throw`, `1`은 `binary`를 의미합니다. `output_format_arrow_unsupported_types`가 명시적으로 설정되지 않은 경우에만 참조됩니다.
+
+## output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -93,9 +133,7 @@ String 컬럼에 Binary 대신 Arrow String 타입 사용
 
 Arrow 형식의 딕셔너리 인덱스에는 항상 64비트 정수를 사용합니다
 
-<div id="output_format_arrow_use_signed_indexes_for_dictionary">
-  ## output_format_arrow_use_signed_indexes_for_dictionary
-</div>
+## output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,45 +141,33 @@ Arrow 형식의 딕셔너리 인덱스에는 항상 64비트 정수를 사용합
 
 Arrow 형식에서 딕셔너리 인덱스에 부호 있는 정수를 사용합니다
 
-<div id="output_format_avro_codec">
-  ## output_format_avro_codec
-</div>
+## output_format_avro_codec {#output_format_avro_codec}
 
 출력에 사용하는 압축 코덱입니다. 가능한 값은 &#39;null&#39;, &#39;deflate&#39;, &#39;snappy&#39;, &#39;zstd&#39;입니다.
 
-<div id="output_format_avro_confluent_subject">
-  ## output_format_avro_confluent_subject
-</div>
+## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "AvroConfluent 출력 작성 시 Confluent 스키마 레지스트리에서 스키마 등록에 사용할 subject name을 지정하는 새로운 설정입니다."}]}]} />
 
 AvroConfluent 출력 형식의 경우: Confluent 스키마 레지스트리에서 스키마가 등록될 subject name입니다. AvroConfluent 출력 작성 시 필요합니다.
 
-<div id="output_format_avro_rows_in_file">
-  ## output_format_avro_rows_in_file
-</div>
+## output_format_avro_rows_in_file {#output_format_avro_rows_in_file}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 파일당 최대 행 수(스토리지에서 허용하는 경우)
 
-<div id="output_format_avro_string_column_pattern">
-  ## output_format_avro_string_column_pattern
-</div>
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
 
 Avro format: AVRO string으로 선택할 String 컬럼을 지정하는 정규식입니다.
 
-<div id="output_format_avro_sync_interval">
-  ## output_format_avro_sync_interval
-</div>
+## output_format_avro_sync_interval {#output_format_avro_sync_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 바이트 단위 동기화 간격입니다.
 
-<div id="output_format_binary_encode_types_in_binary_format">
-  ## output_format_binary_encode_types_in_binary_format
-</div>
+## output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -149,9 +175,7 @@ Avro format: AVRO string으로 선택할 String 컬럼을 지정하는 정규식
 
 RowBinaryWithNamesAndTypes 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리 형식으로 기록합니다
 
-<div id="output_format_binary_write_json_as_string">
-  ## output_format_binary_write_json_as_string
-</div>
+## output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -159,17 +183,13 @@ RowBinaryWithNamesAndTypes 출력 형식에서 타입 이름 대신 데이터 �
 
 RowBinary 출력 형식에서 [JSON](/ko/reference/data-types/newjson) 데이터 타입 값을 JSON [String](/ko/reference/data-types/string) 값으로 기록합니다.
 
-<div id="output_format_bson_string_as_string">
-  ## output_format_bson_string_as_string
-</div>
+## output_format_bson_string_as_string {#output_format_bson_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 String 컬럼에는 Binary 대신 BSON String 유형을 사용합니다.
 
-<div id="output_format_compression_level">
-  ## output_format_compression_level
-</div>
+## output_format_compression_level {#output_format_compression_level}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -179,9 +199,7 @@ String 컬럼에는 Binary 대신 BSON String 유형을 사용합니다.
 
 가능한 값: `1`부터 `22`까지
 
-<div id="output_format_compression_zstd_window_log">
-  ## output_format_compression_zstd_window_log
-</div>
+## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -191,17 +209,13 @@ String 컬럼에는 Binary 대신 BSON String 유형을 사용합니다.
 
 가능한 값: 음이 아닌 숫자입니다. 값이 너무 작거나 너무 크면 `zstdlib`이 예외를 발생시킵니다. 일반적으로는 `20`(window size = `1MB`)에서 `30`(window size = `1GB`) 사이의 값을 사용합니다.
 
-<div id="output_format_csv_crlf_end_of_line">
-  ## output_format_csv_crlf_end_of_line
-</div>
+## output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true로 설정하면 CSV 형식의 줄 끝에 \n 대신 \r\n이 사용됩니다.
 
-<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
-  ## output_format_csv_header_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_header_serialize_tuple_into_separate_columns {#output_format_csv_header_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -211,9 +225,7 @@ true로 설정하면 CSV 형식의 줄 끝에 \n 대신 \r\n이 사용됩니다.
 
 참고: 평탄화된 헤더는 `input_format_with_names_use_header = 1`일 때 이름 기준으로 다시 Tuple로 읽어들여지지 않습니다. 이런 데이터를 다시 Tuple로 읽으려면 출력 시 이 설정을 `0`으로 설정하거나, `input_format_with_names_use_header = 0`으로 읽어야 합니다(`*WithNamesAndTypes` 포맷인 `CSVWithNamesAndTypes` 및 `CustomSeparatedWithNamesAndTypes`의 경우에는 `input_format_with_types_use_header = 0`도 함께 설정해야 합니다. 그렇지 않으면 평탄화된 타입 행이 단일 최상위 Tuple 입력 필드를 기준으로 검증되어 거부됩니다).
 
-<div id="output_format_csv_serialize_tuple_into_separate_columns">
-  ## output_format_csv_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_serialize_tuple_into_separate_columns {#output_format_csv_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -223,9 +235,7 @@ true로 설정하면 CSV 형식에서 `Tuple` 자체인 컬럼은 별도의 컬�
 
 이 평탄화는 `Tuple` 자체인 경우에만 적용됩니다. `Nullable(Tuple)`은 이 설정과 관계없이 항상 단일 CSV 필드로 직렬화됩니다(NULL 행과 non-NULL 행이 동일한 개수의 필드를 차지하도록 하기 위해서입니다).
 
-<div id="output_format_decimal_trailing_zeros">
-  ## output_format_decimal_trailing_zeros
-</div>
+## output_format_decimal_trailing_zeros {#output_format_decimal_trailing_zeros}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -235,9 +245,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본적으로 비활성화되어 있습니다.
 
-<div id="output_format_float_precision">
-  ## output_format_float_precision
-</div>
+## output_format_float_precision {#output_format_float_precision}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -250,9 +258,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 유효 범위: 0~100입니다.
 
-<div id="output_format_image_height">
-  ## output_format_image_height
-</div>
+## output_format_image_height {#output_format_image_height}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -262,9 +268,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본값: 1024.
 
-<div id="output_format_image_streaming_animation">
-  ## output_format_image_streaming_animation
-</div>
+## output_format_image_streaming_animation {#output_format_image_streaming_animation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -276,9 +280,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본값: `false`.
 
-<div id="output_format_image_terminal_mode">
-  ## output_format_image_terminal_mode
-</div>
+## output_format_image_terminal_mode {#output_format_image_terminal_mode}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "PNG와 같은 이미지 출력 형식을 원시 이미지 바이트로 기록하는 대신 인라인 이미지 프로토콜을 사용해 터미널에 직접 렌더링할지 제어하는 새로운 설정입니다."}]}]} />
 
@@ -294,9 +296,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본값: &#96;&#96; (비어 있음).
 
-<div id="output_format_image_time_divisor_seconds">
-  ## output_format_image_time_divisor_seconds
-</div>
+## output_format_image_time_divisor_seconds {#output_format_image_time_divisor_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -308,9 +308,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본값: 60.
 
-<div id="output_format_image_time_multiplier_seconds">
-  ## output_format_image_time_multiplier_seconds
-</div>
+## output_format_image_time_multiplier_seconds {#output_format_image_time_multiplier_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -324,9 +322,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본값: 1.
 
-<div id="output_format_image_width">
-  ## output_format_image_width
-</div>
+## output_format_image_width {#output_format_image_width}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -336,9 +332,7 @@ Decimal 값을 출력할 때 후행 0도 함께 출력합니다. 예: 1.23 대�
 
 기본값: 1024.
 
-<div id="output_format_json_array_of_rows">
-  ## output_format_json_array_of_rows
-</div>
+## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -385,9 +379,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 {"number":"2"}
 ```
 
-<div id="output_format_json_escape_forward_slashes">
-  ## output_format_json_escape_forward_slashes
-</div>
+## output_format_json_escape_forward_slashes {#output_format_json_escape_forward_slashes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -395,9 +387,7 @@ JSON 출력 형식에서 문자열을 출력할 때 슬래시(/)를 이스케이
 
 기본적으로 사용 설정되어 있습니다.
 
-<div id="output_format_json_map_as_array_of_tuples">
-  ## output_format_json_map_as_array_of_tuples
-</div>
+## output_format_json_map_as_array_of_tuples {#output_format_json_map_as_array_of_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -407,9 +397,7 @@ JSON 출력 형식에서 문자열을 출력할 때 슬래시(/)를 이스케이
 
 기본적으로 비활성화되어 있습니다.
 
-<div id="output_format_json_named_tuples_as_objects">
-  ## output_format_json_named_tuples_as_objects
-</div>
+## output_format_json_named_tuples_as_objects {#output_format_json_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -419,9 +407,7 @@ named tuple 컬럼을 JSON 객체로 직렬화합니다.
 
 기본적으로 활성화되어 있습니다.
 
-<div id="output_format_json_pretty_print">
-  ## output_format_json_pretty_print
-</div>
+## output_format_json_pretty_print {#output_format_json_pretty_print}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -469,9 +455,7 @@ named tuple 컬럼을 JSON 객체로 직렬화합니다.
 
 기본적으로 활성화되어 있습니다.
 
-<div id="output_format_json_quote_64bit_floats">
-  ## output_format_json_quote_64bit_floats
-</div>
+## output_format_json_quote_64bit_floats {#output_format_json_quote_64bit_floats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -479,9 +463,7 @@ JSON* 포맷으로 출력할 때 64비트 [부동소수점 값](/ko/reference/da
 
 기본적으로 비활성화되어 있습니다.
 
-<div id="output_format_json_quote_64bit_integers">
-  ## output_format_json_quote_64bit_integers
-</div>
+## output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -495,9 +477,7 @@ JSON* 포맷으로 출력할 때 64비트 [부동소수점 값](/ko/reference/da
 * 0 — 정수를 따옴표 없이 출력합니다.
 * 1 — 정수를 따옴표로 묶어 출력합니다.
 
-<div id="output_format_json_quote_decimals">
-  ## output_format_json_quote_decimals
-</div>
+## output_format_json_quote_decimals {#output_format_json_quote_decimals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -505,9 +485,7 @@ JSON 출력 형식에서 Decimal 값을 따옴표로 감쌀지 여부를 제어�
 
 기본적으로 비활성화되어 있습니다.
 
-<div id="output_format_json_quote_denormals">
-  ## output_format_json_quote_denormals
-</div>
+## output_format_json_quote_denormals {#output_format_json_quote_denormals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -606,17 +584,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 }
 ```
 
-<div id="output_format_json_skip_null_value_in_named_tuples">
-  ## output_format_json_skip_null_value_in_named_tuples
-</div>
+## output_format_json_skip_null_value_in_named_tuples {#output_format_json_skip_null_value_in_named_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 named tuple 컬럼을 JSON 객체로 직렬화할 때 NULL 값을 가진 키-값 쌍을 건너뜁니다. 이 설정은 output&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects가 true일 때만 유효합니다.
 
-<div id="output_format_json_validate_utf8">
-  ## output_format_json_validate_utf8
-</div>
+## output_format_json_validate_utf8 {#output_format_json_validate_utf8}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -624,9 +598,7 @@ JSON 출력 형식에서 UTF-8 시퀀스의 유효성을 검사할지 제어합�
 
 기본적으로 비활성화되어 있습니다.
 
-<div id="output_format_markdown_escape_special_characters">
-  ## output_format_markdown_escape_special_characters
-</div>
+## output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -643,17 +615,13 @@ JSON 출력 형식에서 UTF-8 시퀀스의 유효성을 검사할지 제어합�
 * 0 — 비활성화.
 * 1 — 활성화.
 
-<div id="output_format_msgpack_uuid_representation">
-  ## output_format_msgpack_uuid_representation
-</div>
+## output_format_msgpack_uuid_representation {#output_format_msgpack_uuid_representation}
 
 <SettingsInfoBlock type="MsgPackUUIDRepresentation" default_value="ext" />
 
 MsgPack 포맷에서 UUID를 출력하는 방법입니다.
 
-<div id="output_format_native_encode_types_in_binary_format">
-  ## output_format_native_encode_types_in_binary_format
-</div>
+## output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -661,9 +629,7 @@ MsgPack 포맷에서 UUID를 출력하는 방법입니다.
 
 Native 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리 형식으로 기록합니다
 
-<div id="output_format_native_use_flattened_dynamic_and_json_serialization">
-  ## output_format_native_use_flattened_dynamic_and_json_serialization
-</div>
+## output_format_native_use_flattened_dynamic_and_json_serialization {#output_format_native_use_flattened_dynamic_and_json_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -671,9 +637,7 @@ Native 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리
 
 [JSON](/ko/reference/data-types/newjson) 및 [Dynamic](/ko/reference/data-types/dynamic) 컬럼의 데이터를 평탄화된 포맷으로 씁니다(모든 타입/경로가 별도의 서브컬럼으로 처리됨).
 
-<div id="output_format_native_write_json_as_string">
-  ## output_format_native_write_json_as_string
-</div>
+## output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -681,9 +645,7 @@ Native 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리
 
 기본 네이티브 JSON 직렬화 대신 [JSON](/ko/reference/data-types/newjson) 컬럼 데이터를 JSON 문자열이 들어 있는 [String](/ko/reference/data-types/string) 컬럼으로 씁니다.
 
-<div id="output_format_orc_compression_block_size">
-  ## output_format_orc_compression_block_size
-</div>
+## output_format_orc_compression_block_size {#output_format_orc_compression_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
@@ -691,9 +653,7 @@ Native 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리
 
 ORC 출력 형식의 압축 블록 크기(바이트 단위)입니다.
 
-<div id="output_format_orc_compression_method">
-  ## output_format_orc_compression_method
-</div>
+## output_format_orc_compression_method {#output_format_orc_compression_method}
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
@@ -701,9 +661,7 @@ ORC 출력 형식의 압축 블록 크기(바이트 단위)입니다.
 
 ORC 출력 형식에 사용할 압축 방식입니다. 지원되는 코덱: lz4, snappy, zlib, zstd, none (비압축)
 
-<div id="output_format_orc_dictionary_key_size_threshold">
-  ## output_format_orc_dictionary_key_size_threshold
-</div>
+## output_format_orc_dictionary_key_size_threshold {#output_format_orc_dictionary_key_size_threshold}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -711,17 +669,13 @@ ORC 출력 형식에 사용할 압축 방식입니다. 지원되는 코덱: lz4,
 
 ORC 출력 형식의 문자열 컬럼에서 고유 값 수가 전체 non-NULL 행 수 대비 이 비율을 초과하면 딕셔너리 인코딩을 비활성화합니다. 그렇지 않으면 딕셔너리 인코딩이 활성화됩니다
 
-<div id="output_format_orc_row_index_stride">
-  ## output_format_orc_row_index_stride
-</div>
+## output_format_orc_row_index_stride {#output_format_orc_row_index_stride}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 ORC 출력 형식의 대상 행 인덱스 stride
 
-<div id="output_format_orc_string_as_string">
-  ## output_format_orc_string_as_string
-</div>
+## output_format_orc_string_as_string {#output_format_orc_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -729,9 +683,7 @@ ORC 출력 형식의 대상 행 인덱스 stride
 
 String 컬럼에는 Binary 대신 ORC String 타입을 사용합니다
 
-<div id="output_format_orc_writer_time_zone_name">
-  ## output_format_orc_writer_time_zone_name
-</div>
+## output_format_orc_writer_time_zone_name {#output_format_orc_writer_time_zone_name}
 
 <SettingsInfoBlock type="String" default_value="GMT" />
 
@@ -739,9 +691,7 @@ String 컬럼에는 Binary 대신 ORC String 타입을 사용합니다
 
 ORC writer의 시간대 이름입니다. 기본 ORC writer 시간대는 GMT입니다.
 
-<div id="output_format_parallel_formatting">
-  ## output_format_parallel_formatting
-</div>
+## output_format_parallel_formatting {#output_format_parallel_formatting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -752,17 +702,13 @@ ORC writer의 시간대 이름입니다. 기본 ORC writer 시간대는 GMT입�
 * 1 — 활성화됨.
 * 0 — 비활성화됨.
 
-<div id="output_format_parquet_batch_size">
-  ## output_format_parquet_batch_size
-</div>
+## output_format_parquet_batch_size {#output_format_parquet_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 이 행 수마다 페이지 크기를 확인합니다. 평균값 크기가 몇 KB를 초과하는 컬럼이 있으면 값을 줄이는 것을 고려하십시오.
 
-<div id="output_format_parquet_bloom_filter_bits_per_value">
-  ## output_format_parquet_bloom_filter_bits_per_value
-</div>
+## output_format_parquet_bloom_filter_bits_per_value {#output_format_parquet_bloom_filter_bits_per_value}
 
 <SettingsInfoBlock type="Double" default_value="10.5" />
 
@@ -776,9 +722,7 @@ Parquet 블룸 필터에서 각 고유값에 사용할 비트 수의 대략적�
 * 26.4 비트 -  0.01%
 * 41   비트 -  0.001%
 
-<div id="output_format_parquet_bloom_filter_flush_threshold_bytes">
-  ## output_format_parquet_bloom_filter_flush_threshold_bytes
-</div>
+## output_format_parquet_bloom_filter_flush_threshold_bytes {#output_format_parquet_bloom_filter_flush_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
@@ -790,9 +734,7 @@ Parquet 파일에서 블룸 필터를 배치할 위치를 지정합니다. 블�
   * 이 값이 모든 블룸 필터의 총크기보다 크면, 모든 row group의 블룸 필터를 메모리에 누적한 다음 파일 끝부분 근처에 함께 기록합니다.
   * 그렇지 않으면 블룸 필터를 메모리에 누적하다가, 총크기가 이 값을 초과할 때마다 기록합니다.
 
-<div id="output_format_parquet_compression_method">
-  ## output_format_parquet_compression_method
-</div>
+## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
 <SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
 
@@ -800,17 +742,13 @@ Parquet 파일에서 블룸 필터를 배치할 위치를 지정합니다. 블�
 
 Parquet 출력 형식의 압축 방식입니다. 지원되는 코덱: snappy, lz4, brotli, zstd, gzip, none (비압축)
 
-<div id="output_format_parquet_data_page_size">
-  ## output_format_parquet_data_page_size
-</div>
+## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 압축 전 페이지의 목표 크기(바이트)입니다.
 
-<div id="output_format_parquet_date_as_uint16">
-  ## output_format_parquet_date_as_uint16
-</div>
+## output_format_parquet_date_as_uint16 {#output_format_parquet_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -818,9 +756,7 @@ Parquet 출력 형식의 압축 방식입니다. 지원되는 코덱: snappy, lz
 
 Date 값을 32비트 Parquet DATE 타입으로 변환해 기록하는 대신 일반 16비트 숫자로 기록합니다(다시 읽을 때는 UInt16으로 읽음). 기존 방식은 다시 읽을 때 Date32로 읽습니다.
 
-<div id="output_format_parquet_datetime_as_uint32">
-  ## output_format_parquet_datetime_as_uint32
-</div>
+## output_format_parquet_datetime_as_uint32 {#output_format_parquet_datetime_as_uint32}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -828,9 +764,7 @@ Date 값을 32비트 Parquet DATE 타입으로 변환해 기록하는 대신 일
 
 DateTime 값을 밀리초로 변환해 쓰고(다시 읽을 때는 DateTime64(3)로 읽음), 대신 원시 Unix timestamp로 씁니다(다시 읽을 때는 UInt32로 읽음).
 
-<div id="output_format_parquet_enum_as_byte_array">
-  ## output_format_parquet_enum_as_byte_array
-</div>
+## output_format_parquet_enum_as_byte_array {#output_format_parquet_enum_as_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -838,9 +772,7 @@ DateTime 값을 밀리초로 변환해 쓰고(다시 읽을 때는 DateTime64(3)
 
 Parquet 물리 타입: BYTE&#95;ARRAY 및 논리 타입: ENUM을 사용해 enum 기록
 
-<div id="output_format_parquet_fixed_string_as_fixed_byte_array">
-  ## output_format_parquet_fixed_string_as_fixed_byte_array
-</div>
+## output_format_parquet_fixed_string_as_fixed_byte_array {#output_format_parquet_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -848,9 +780,7 @@ Parquet 물리 타입: BYTE&#95;ARRAY 및 논리 타입: ENUM을 사용해 enum 
 
 FixedString 컬럼에 대해 Binary 대신 Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY 타입을 사용합니다.
 
-<div id="output_format_parquet_geometadata">
-  ## output_format_parquet_geometadata
-</div>
+## output_format_parquet_geometadata {#output_format_parquet_geometadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -858,9 +788,7 @@ FixedString 컬럼에 대해 Binary 대신 Parquet FIXED&#95;LEN&#95;BYTE&#95;AR
 
 Parquet 메타데이터에 Geo 컬럼 정보를 기록하고 컬럼을 WKB 포맷으로 인코딩할 수 있습니다.
 
-<div id="output_format_parquet_max_dictionary_size">
-  ## output_format_parquet_max_dictionary_size
-</div>
+## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -868,33 +796,25 @@ Parquet 메타데이터에 Geo 컬럼 정보를 기록하고 컬럼을 WKB 포�
 
 딕셔너리 크기가 이 바이트 수를 초과하면 딕셔너리를 사용하지 않는 인코딩으로 전환됩니다. 딕셔너리 encoding을 비활성화하려면 0으로 설정하십시오.
 
-<div id="output_format_parquet_parallel_encoding">
-  ## output_format_parquet_parallel_encoding
-</div>
+## output_format_parquet_parallel_encoding {#output_format_parquet_parallel_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Parquet 인코딩을 여러 스레드로 수행합니다.
 
-<div id="output_format_parquet_row_group_size">
-  ## output_format_parquet_row_group_size
-</div>
+## output_format_parquet_row_group_size {#output_format_parquet_row_group_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 대상 row group의 크기(행 수 기준)입니다.
 
-<div id="output_format_parquet_row_group_size_bytes">
-  ## output_format_parquet_row_group_size_bytes
-</div>
+## output_format_parquet_row_group_size_bytes {#output_format_parquet_row_group_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
 압축 전 기준 row group의 목표 크기(바이트)입니다.
 
-<div id="output_format_parquet_string_as_string">
-  ## output_format_parquet_string_as_string
-</div>
+## output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -902,9 +822,7 @@ Parquet 인코딩을 여러 스레드로 수행합니다.
 
 String 컬럼에는 Binary 대신 Parquet String 타입을 사용합니다.
 
-<div id="output_format_parquet_wide_integer_as_decimal">
-  ## output_format_parquet_wide_integer_as_decimal
-</div>
+## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -912,9 +830,7 @@ String 컬럼에는 Binary 대신 Parquet String 타입을 사용합니다.
 
 `Int128`, `UInt128`, `Int256`, `UInt256` 값을 빅 엔디언 바이트 순서로 표준을 준수하는 Parquet `DECIMAL` 값으로 기록합니다. 기본값은 이전 ClickHouse 버전과의 호환성을 위해 주석 없는 레거시 리틀 엔디언 `FIXED_LEN_BYTE_ARRAY` 표현을 유지합니다. Decimal 표현을 사용하면 상호 운용 가능한 숫자 통계를 지원하지만, 일부 Parquet 리더는 38 또는 76을 초과하는 정밀도를 지원하지 않습니다.
 
-<div id="output_format_parquet_write_bloom_filter">
-  ## output_format_parquet_write_bloom_filter
-</div>
+## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -922,9 +838,7 @@ String 컬럼에는 Binary 대신 Parquet String 타입을 사용합니다.
 
 Parquet 파일에 블룸 필터를 기록합니다.
 
-<div id="output_format_parquet_write_checksums">
-  ## output_format_parquet_write_checksums
-</div>
+## output_format_parquet_write_checksums {#output_format_parquet_write_checksums}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -932,9 +846,7 @@ Parquet 파일에 블룸 필터를 기록합니다.
 
 Parquet 페이지 헤더에 crc32 체크섬을 포함합니다.
 
-<div id="output_format_parquet_write_page_index">
-  ## output_format_parquet_write_page_index
-</div>
+## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -942,9 +854,7 @@ Parquet 페이지 헤더에 crc32 체크섬을 포함합니다.
 
 컬럼 인덱스와 오프셋 인덱스(즉, 각 데이터 페이지의 통계로, 읽기 시 filter pushdown에 사용할 수 있음)를 Parquet 파일에 기록합니다.
 
-<div id="output_format_pretty_color">
-  ## output_format_pretty_color
-</div>
+## output_format_pretty_color {#output_format_pretty_color}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -952,9 +862,7 @@ Parquet 페이지 헤더에 crc32 체크섬을 포함합니다.
 
 Pretty 형식에서 ANSI 이스케이프 시퀀스를 사용합니다. 0 - 비활성화, 1 - 활성화, &#39;auto&#39; - 출력이 터미널인 경우 활성화됩니다.
 
-<div id="output_format_pretty_display_footer_column_names">
-  ## output_format_pretty_display_footer_column_names
-</div>
+## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -988,9 +896,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
       └─number─┴─toTypeName(number)─┘
 ```
 
-<div id="output_format_pretty_display_footer_column_names_min_rows">
-  ## output_format_pretty_display_footer_column_names_min_rows
-</div>
+## output_format_pretty_display_footer_column_names_min_rows {#output_format_pretty_display_footer_column_names_min_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -998,9 +904,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names](/ko/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names) 설정이 활성화된 경우, 컬럼명이 포함된 푸터를 표시할 최소 행 수를 지정합니다.
 
-<div id="output_format_pretty_fallback_to_vertical">
-  ## output_format_pretty_fallback_to_vertical
-</div>
+## output_format_pretty_fallback_to_vertical {#output_format_pretty_fallback_to_vertical}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1009,9 +913,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 활성화된 경우, 테이블의 너비가 넓고 행 수가 적으면 Pretty 형식은 Vertical 형식처럼 출력됩니다.
 이 동작을 세부적으로 조정하려면 `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` 및 `output_format_pretty_fallback_to_vertical_min_table_width`를 참조하십시오.
 
-<div id="output_format_pretty_fallback_to_vertical_max_rows_per_chunk">
-  ## output_format_pretty_fallback_to_vertical_max_rows_per_chunk
-</div>
+## output_format_pretty_fallback_to_vertical_max_rows_per_chunk {#output_format_pretty_fallback_to_vertical_max_rows_per_chunk}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1019,9 +921,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참조)은 청크의 행 수가 지정된 값을 넘지 않는 경우에만 활성화됩니다.
 
-<div id="output_format_pretty_fallback_to_vertical_min_columns">
-  ## output_format_pretty_fallback_to_vertical_min_columns
-</div>
+## output_format_pretty_fallback_to_vertical_min_columns {#output_format_pretty_fallback_to_vertical_min_columns}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -1029,9 +929,7 @@ Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참�
 
 Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참조)은 컬럼 수가 지정된 값보다 많을 때만 활성화됩니다.
 
-<div id="output_format_pretty_fallback_to_vertical_min_table_width">
-  ## output_format_pretty_fallback_to_vertical_min_table_width
-</div>
+## output_format_pretty_fallback_to_vertical_min_table_width {#output_format_pretty_fallback_to_vertical_min_table_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
@@ -1039,9 +937,7 @@ Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참�
 
 Vertical 형식으로의 폴백(`output_format_pretty_fallback_to_vertical` 참조)은 테이블 내 컬럼 길이의 합이 지정된 값 이상이거나, 하나 이상의 값에 줄바꿈 문자가 포함된 경우에만 활성화됩니다.
 
-<div id="output_format_pretty_glue_chunks">
-  ## output_format_pretty_glue_chunks
-</div>
+## output_format_pretty_glue_chunks {#output_format_pretty_glue_chunks}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -1051,9 +947,7 @@ Pretty 형식으로 렌더링된 데이터가 여러 청크에 걸쳐 도착한 
 
 0 - 비활성화, 1 - 활성화, &#39;auto&#39; - 터미널일 때 활성화됩니다.
 
-<div id="output_format_pretty_grid_charset">
-  ## output_format_pretty_grid_charset
-</div>
+## output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
 <SettingsInfoBlock type="String" default_value="UTF-8" />
 
@@ -1061,9 +955,7 @@ Pretty 형식으로 렌더링된 데이터가 여러 청크에 걸쳐 도착한 
 
 대화형 모드에서는 이 설정을 명시적으로 지정하지 않은 경우, 터미널이 UTF-8을 지원하지 않으면(`LC_ALL`, `LC_CTYPE`, `LANG` 환경 변수를 기준으로 판단) `clickhouse-client`가 자동으로 `ASCII`로 전환합니다.
 
-<div id="output_format_pretty_highlight_digit_groups">
-  ## output_format_pretty_highlight_digit_groups
-</div>
+## output_format_pretty_highlight_digit_groups {#output_format_pretty_highlight_digit_groups}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1071,9 +963,7 @@ Pretty 형식으로 렌더링된 데이터가 여러 청크에 걸쳐 도착한 
 
 활성화되어 있고 출력이 터미널인 경우, 천 단위, 백만 단위 등 각 자릿수 그룹의 숫자를 밑줄로 강조 표시합니다.
 
-<div id="output_format_pretty_highlight_trailing_spaces">
-  ## output_format_pretty_highlight_trailing_spaces
-</div>
+## output_format_pretty_highlight_trailing_spaces {#output_format_pretty_highlight_trailing_spaces}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1081,9 +971,7 @@ Pretty 형식으로 렌더링된 데이터가 여러 청크에 걸쳐 도착한 
 
 활성화되어 있고 출력 대상이 터미널이면, 후행 공백을 회색으로 표시하고 밑줄을 추가합니다.
 
-<div id="output_format_pretty_max_column_name_width_cut_to">
-  ## output_format_pretty_max_column_name_width_cut_to
-</div>
+## output_format_pretty_max_column_name_width_cut_to {#output_format_pretty_max_column_name_width_cut_to}
 
 <SettingsInfoBlock type="UInt64" default_value="24" />
 
@@ -1092,9 +980,7 @@ Pretty 형식으로 렌더링된 데이터가 여러 청크에 걸쳐 도착한 
 컬럼명이 너무 길면 이 길이로 잘립니다.
 컬럼명 길이가 `output_format_pretty_max_column_name_width_cut_to`와 `output_format_pretty_max_column_name_width_min_chars_to_cut`를 더한 값보다 길면 잘립니다.
 
-<div id="output_format_pretty_max_column_name_width_min_chars_to_cut">
-  ## output_format_pretty_max_column_name_width_min_chars_to_cut
-</div>
+## output_format_pretty_max_column_name_width_min_chars_to_cut {#output_format_pretty_max_column_name_width_min_chars_to_cut}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -1103,17 +989,13 @@ Pretty 형식으로 렌더링된 데이터가 여러 청크에 걸쳐 도착한 
 컬럼명이 너무 길 때 잘라낼 최소 문자 수입니다.
 컬럼명 길이가 `output_format_pretty_max_column_name_width_cut_to`와 `output_format_pretty_max_column_name_width_min_chars_to_cut`의 합보다 길면 컬럼명을 잘라냅니다.
 
-<div id="output_format_pretty_max_column_pad_width">
-  ## output_format_pretty_max_column_pad_width
-</div>
+## output_format_pretty_max_column_pad_width {#output_format_pretty_max_column_pad_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
 Pretty 형식에서 컬럼의 모든 값을 패딩할 때 적용되는 최대 너비입니다.
 
-<div id="output_format_pretty_max_rows">
-  ## output_format_pretty_max_rows
-</div>
+## output_format_pretty_max_rows {#output_format_pretty_max_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1121,18 +1003,14 @@ Pretty 형식에서 컬럼의 모든 값을 패딩할 때 적용되는 최대 �
 
 Pretty 형식의 행 수 제한입니다.
 
-<div id="output_format_pretty_max_value_width">
-  ## output_format_pretty_max_value_width
-</div>
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Pretty 형식에 표시할 값의 최대 너비입니다. 이보다 크면 잘립니다.
 값이 0이면 잘리지 않습니다.
 
-<div id="output_format_pretty_max_value_width_apply_for_single_value">
-  ## output_format_pretty_max_value_width_apply_for_single_value
-</div>
+## output_format_pretty_max_value_width_apply_for_single_value {#output_format_pretty_max_value_width_apply_for_single_value}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1140,9 +1018,7 @@ Pretty 형식에 표시할 값의 최대 너비입니다. 이보다 크면 잘�
 
 값은 블록 내 단일 값이 아닐 때만 잘라냅니다(`output_format_pretty_max_value_width` 설정 참고). 단일 값인 경우에는 전체를 그대로 출력하며, 이는 `SHOW CREATE TABLE` 쿼리에 유용합니다.
 
-<div id="output_format_pretty_multiline_fields">
-  ## output_format_pretty_multiline_fields
-</div>
+## output_format_pretty_multiline_fields {#output_format_pretty_multiline_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1151,9 +1027,7 @@ Pretty 형식에 표시할 값의 최대 너비입니다. 이보다 크면 잘�
 활성화하면 Pretty 형식에서 여러 줄 필드를 테이블 셀 내부에 렌더링하므로 테이블의 테두리 형태가 유지됩니다.
 비활성화하면 있는 그대로 렌더링되므로 테이블 모양이 깨질 수 있습니다(비활성화된 상태로 두면 여러 줄 값을 복사하여 붙여넣기가 더 쉬워진다는 장점도 있습니다).
 
-<div id="output_format_pretty_named_tuples_as_json">
-  ## output_format_pretty_named_tuples_as_json
-</div>
+## output_format_pretty_named_tuples_as_json {#output_format_pretty_named_tuples_as_json}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1161,9 +1035,7 @@ Pretty 형식에 표시할 값의 최대 너비입니다. 이보다 크면 잘�
 
 Pretty 형식에서 이름이 지정된 Tuple을 가독성 좋게 포맷된 JSON 객체로 출력할지 제어합니다.
 
-<div id="output_format_pretty_row_numbers">
-  ## output_format_pretty_row_numbers
-</div>
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1171,9 +1043,7 @@ Pretty 형식에서 이름이 지정된 Tuple을 가독성 좋게 포맷된 JSON
 
 Pretty 출력 형식에서 각 행 앞에 행 번호를 표시합니다
 
-<div id="output_format_pretty_single_large_number_tip_threshold">
-  ## output_format_pretty_single_large_number_tip_threshold
-</div>
+## output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -1181,9 +1051,7 @@ Pretty 출력 형식에서 각 행 앞에 행 번호를 표시합니다
 
 블록이 이 값(0 제외)을 초과하는 단일 숫자 하나로 구성된 경우 테이블 오른쪽에 읽기 쉬운 숫자 팁을 출력합니다
 
-<div id="output_format_pretty_squash_consecutive_ms">
-  ## output_format_pretty_squash_consecutive_ms
-</div>
+## output_format_pretty_squash_consecutive_ms {#output_format_pretty_squash_consecutive_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -1192,9 +1060,7 @@ Pretty 출력 형식에서 각 행 앞에 행 번호를 표시합니다
 다음 블록이 올 때까지 지정된 밀리초 동안 기다렸다가, 쓰기 전에 이전 블록과 병합합니다.
 이렇게 하면 너무 작은 블록이 자주 출력되는 것을 방지하면서도 데이터를 스트리밍 방식으로 표시할 수 있습니다.
 
-<div id="output_format_pretty_squash_max_wait_ms">
-  ## output_format_pretty_squash_max_wait_ms
-</div>
+## output_format_pretty_squash_max_wait_ms {#output_format_pretty_squash_max_wait_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1202,9 +1068,7 @@ Pretty 출력 형식에서 각 행 앞에 행 번호를 표시합니다
 
 이전 출력 이후 지정된 밀리초보다 많은 시간이 지나면, 대기 중인 블록을 Pretty 형식으로 출력합니다.
 
-<div id="output_format_pretty_use_nbsp_for_padding">
-  ## output_format_pretty_use_nbsp_for_padding
-</div>
+## output_format_pretty_use_nbsp_for_padding {#output_format_pretty_use_nbsp_for_padding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1214,63 +1078,47 @@ Pretty 출력 형식에서 각 행 앞에 행 번호를 표시합니다
 출력은 고정폭 글꼴에서 시각적으로는 동일하지만, 일반 공백이 연속된 부분을 압축하거나 잘라내는 도구를 거쳐도 패딩은 유지됩니다.
 `output_format_pretty_grid_charset`이 `UTF-8`일 때만 적용됩니다.
 
-<div id="output_format_protobuf_nullables_with_google_wrappers">
-  ## output_format_protobuf_nullables_with_google_wrappers
-</div>
+## output_format_protobuf_nullables_with_google_wrappers {#output_format_protobuf_nullables_with_google_wrappers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Google wrappers를 사용해 널 허용 컬럼을 직렬화할 때, 기본값을 빈 wrapper로 직렬화합니다. 이 설정을 끄면 기본값과 NULL 값은 직렬화되지 않습니다.
 
-<div id="output_format_schema">
-  ## output_format_schema
-</div>
+## output_format_schema {#output_format_schema}
 
 자동으로 생성된 스키마를 [Cap&#39;n Proto](/ko/reference/formats/CapnProto) 또는 [Protobuf](/ko/reference/formats/Protobuf/Protobuf) 포맷으로 저장할 파일의 경로입니다.
 
-<div id="output_format_sql_insert_include_column_names">
-  ## output_format_sql_insert_include_column_names
-</div>
+## output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 INSERT 쿼리에 컬럼명 포함하기
 
-<div id="output_format_sql_insert_max_batch_size">
-  ## output_format_sql_insert_max_batch_size
-</div>
+## output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="65409" />
 
 하나의 INSERT 문에 포함될 수 있는 최대 행 수입니다.
 
-<div id="output_format_sql_insert_quote_names">
-  ## output_format_sql_insert_quote_names
-</div>
+## output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 컬럼명을 &#39;&#96;&#39; 문자로 감싸 표시합니다
 
-<div id="output_format_sql_insert_table_name">
-  ## output_format_sql_insert_table_name
-</div>
+## output_format_sql_insert_table_name {#output_format_sql_insert_table_name}
 
 <SettingsInfoBlock type="String" default_value="table" />
 
 출력 INSERT 쿼리의 테이블 이름
 
-<div id="output_format_sql_insert_use_replace">
-  ## output_format_sql_insert_use_replace
-</div>
+## output_format_sql_insert_use_replace {#output_format_sql_insert_use_replace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 INSERT 대신 REPLACE 문을 사용합니다
 
-<div id="output_format_trim_fixed_string">
-  ## output_format_trim_fixed_string
-</div>
+## output_format_trim_fixed_string {#output_format_trim_fixed_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1278,17 +1126,13 @@ INSERT 대신 REPLACE 문을 사용합니다
 
 텍스트 출력 형식에서 FixedString 값의 후행 널 바이트를 제거합니다. 예를 들어 `toFixedString('John', 8)`은 `John\0\0\0\0` 대신 `John`으로 출력됩니다.
 
-<div id="output_format_tsv_crlf_end_of_line">
-  ## output_format_tsv_crlf_end_of_line
-</div>
+## output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true로 설정하면 TSV 포맷에서 줄 끝이 \n 대신 \r\n이 됩니다.
 
-<div id="output_format_values_escape_quote_with_quote">
-  ## output_format_values_escape_quote_with_quote
-</div>
+## output_format_values_escape_quote_with_quote {#output_format_values_escape_quote_with_quote}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1296,9 +1140,7 @@ true로 설정하면 TSV 포맷에서 줄 끝이 \n 대신 \r\n이 됩니다.
 
 값이 true이면 &#39;를 &#39;&#39;로 이스케이프하고, 그렇지 않으면 &#92;&#39;로 인용합니다
 
-<div id="output_format_write_statistics">
-  ## output_format_write_statistics
-</div>
+## output_format_write_statistics {#output_format_write_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

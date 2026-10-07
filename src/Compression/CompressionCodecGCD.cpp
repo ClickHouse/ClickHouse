@@ -27,7 +27,7 @@ public:
     explicit CompressionCodecGCD(UInt8 gcd_bytes_size_, bool is_signed_type_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
+    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -65,7 +65,7 @@ CompressionCodecGCD::CompressionCodecGCD(UInt8 gcd_bytes_size_, bool is_signed_t
 {
 }
 
-ASTPtr CompressionCodecGCD::getCodecDesc() const
+ASTPtr CompressionCodecGCD::getCodecDescription() const
 {
     return makeCodecDescription("GCD");
 }
@@ -84,7 +84,7 @@ uint8_t CompressionCodecGCD::getMethodByte() const
 
 void CompressionCodecGCD::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(gcd_bytes_size);
     hash.update(is_signed_type);
 }

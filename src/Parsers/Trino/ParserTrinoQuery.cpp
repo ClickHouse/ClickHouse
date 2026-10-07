@@ -73,7 +73,7 @@ bool ParserTrinoQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!feature_enabled)
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Support for the Trino dialect is disabled (turn on setting 'allow_experimental_trino_dialect')");
+            "Support for the Trino dialect is disabled (turn on setting 'enable_trino_dialect')");
 
     const Pos statement_begin = pos;
     const char * begin = pos->begin;

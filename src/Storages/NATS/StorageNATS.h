@@ -77,6 +77,9 @@ public:
     INATSConsumerPtr popConsumer();
     INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
+    /// Makes the streaming task subscribe the consumers again before its next cycle.
+    void markConsumersNotReady() { consumers_ready.store(false); }
+
     const String & getFormatName() const { return format_name; }
 
 private:
@@ -140,10 +143,14 @@ private:
 
     void createConsumersConnection();
     void createConsumers();
+    void dropConsumers();
 
     bool subscribeConsumers();
-    bool consumersNeedResubscribe();
+    /// Replaces the subscription of every consumer that stopped consuming and has an empty queue.
+    void resubscribeStaleConsumers();
     void unsubscribeConsumers();
+    /// Unsubscribes the consumers in the pool which are still subscribed, without touching `consumers_ready`.
+    void unsubscribeHandedBackConsumers();
 
     void stopEventLoop();
 

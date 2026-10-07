@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-random-settings
+# Tags: no-fasttest, long, no-random-settings, no-parallel-replicas
 # no-fasttest: needs S3, and the test is slow (exercises throttling)
 # no-random-settings: S3 prefetch settings affect read throughput; disabling prefetch can make
 # the natural read rate drop close to the throttle limit, causing the throttler to never sleep
+# no-parallel-replicas: a remote replica runs the read as the cluster's user, outside this user's
+# throttler and the ProfileEvents of the initial query
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

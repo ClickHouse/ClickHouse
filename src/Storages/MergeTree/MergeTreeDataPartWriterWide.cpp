@@ -149,6 +149,7 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
     enumerate_settings.object_serialization_version = settings_.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings_.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings_.object_shared_data_buckets;
+    enumerate_settings.object_shared_data_target_chunk_rows = settings_.object_shared_data_target_chunk_rows;
     enumerate_settings.max_buckets_in_map = settings_.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings_.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings_.map_buckets_coefficient;
@@ -249,6 +250,14 @@ void MergeTreeDataPartWriterWide::addStreams(
             (settings.min_columns_to_activate_adaptive_write_buffer && *streams_to_open_in_part >= settings.min_columns_to_activate_adaptive_write_buffer)
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
+
+        /// Otherwise bytes of a single value will be split across two blocks and won't compress well.
+        if (const auto & type = substream_path.back().data.type)
+        {
+            max_compress_block_size = roundCompressBlockSizeToWholeValues(max_compress_block_size, *type);
+            query_write_settings.adaptive_write_buffer_initial_size
+                = roundCompressBlockSizeToWholeValues(query_write_settings.adaptive_write_buffer_initial_size, *type);
+        }
 
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
         {
@@ -565,6 +574,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;

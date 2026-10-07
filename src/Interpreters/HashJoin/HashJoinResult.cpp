@@ -563,7 +563,7 @@ IJoinResult::JoinResultBlock HashJoinResult::next()
             /// Copy data from the original columns to preserve columns size in the block.
             rhs_columns.reserve(columns.size());
             for (auto & column : columns)
-                rhs_columns.push_back(column->cut(prev_offset, num_rhs_rows)->assumeMutable());
+                rhs_columns.push_back(IColumn::mutate(column->cut(prev_offset, num_rhs_rows)));
 
             if (is_last)
                 columns.clear();

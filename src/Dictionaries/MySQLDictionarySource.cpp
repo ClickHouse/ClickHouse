@@ -88,6 +88,26 @@ static void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, co
                 key, contents_key);
     }
 }
+
+/// `enable_local_infile` sets `MYSQL_OPT_LOCAL_INFILE`, which lets the MySQL endpoint ask the client
+/// for the contents of a file of its choosing, read with the server's own privileges: the option is
+/// off by default because it is insecure (`mysqlxx/Connection.h`). Same reasoning as above.
+/// `fallback_prefix` is the parent prefix a `<replica>` inherits the value from, resolved in the same
+/// order as `Pool::Pool`, so what is checked is the value the connection will actually use.
+static void checkNoLocalInfile(
+    const Poco::Util::AbstractConfiguration & config,
+    const std::string & prefix,
+    const std::string & fallback_prefix = {})
+{
+    const bool inherited
+        = !fallback_prefix.empty() && config.getBool(fallback_prefix + ".enable_local_infile", false);
+
+    if (config.getBool(prefix + ".enable_local_infile", inherited))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`enable_local_infile` cannot be enabled in a dictionary created with a DDL query. "
+            "It is only accepted in a dictionary defined in a server configuration file");
+}
 #endif
 
 void registerDictionarySourceMysql(DictionarySourceFactory & factory);
@@ -197,6 +217,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                         {
                             const auto replica_prefix = settings_config_prefix + "." + replica_key;
                             checkNoSSLPaths(config, replica_prefix);
+                            checkNoLocalInfile(config, replica_prefix, settings_config_prefix);
                             global_context->getRemoteHostFilter().checkHostAndPort(
                                 config.getString(replica_prefix + ".host"),
                                 toString(config.getInt(replica_prefix + ".port", 3306)));
@@ -205,6 +226,7 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                 }
                 else
                 {
+                    checkNoLocalInfile(config, settings_config_prefix);
                     global_context->getRemoteHostFilter().checkHostAndPort(
                         config.getString(settings_config_prefix + ".host"),
                         toString(config.getInt(settings_config_prefix + ".port", 3306)));
@@ -300,6 +322,7 @@ Setting fields:
 | `fail_on_connection_loss` | Controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the server retries to fetch data at least three times before reporting an error. Note that retrying leads to increased response times. Default value: `false`. |
 | `query` | The custom query. Optional. |
 | `enable_compression` | Enables zlib compression for the MySQL protocol connection. When set to `1`, ClickHouse requests protocol-level compression from the MySQL server. Can also be set per-replica inside `<replica>`. Default value: `0`. |
+| `enable_local_infile` | Allows the MySQL server to ask ClickHouse for the contents of a local file (`LOAD DATA LOCAL INFILE`). Only a dictionary defined in a server configuration file may enable it; a `CREATE DICTIONARY` query may leave it unset or set it to `0`. Can also be set per-replica inside `<replica>`, and a `<replica>` that does not set it inherits the value above. Default value: `0`. |
 | `ssl_ca_pem` | Contents of the CA certificate that the MySQL server certificate is verified against. Optional. |
 | `ssl_cert_pem` | Contents of the client certificate, for certificate-based authentication. Optional. |
 | `ssl_key_pem` | Contents of the private key belonging to `ssl_cert_pem`. Optional. |
@@ -311,6 +334,10 @@ The `table` or `where` fields cannot be used together with the `query` field. An
 
 <Note>
 `ssl_ca`, `ssl_cert` and `ssl_key` name files that the server opens with its own privileges, so they are only accepted for a dictionary defined in a server configuration file, or through a named collection defined there. A `CREATE DICTIONARY` query that specifies the TLS credentials directly must pass their contents instead, in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem`. Those values are masked in logs and in `SHOW` queries, the same way passwords are.
+</Note>
+
+<Note>
+`enable_local_infile` lets the MySQL server ask ClickHouse for the contents of a file of its choosing, which the server reads with its own privileges, so it is only accepted for a dictionary defined in a server configuration file. A `CREATE DICTIONARY` query that enables it, at the source or at one of its `<replica>` entries, is rejected with `BAD_ARGUMENTS`.
 </Note>
 
 <Note>

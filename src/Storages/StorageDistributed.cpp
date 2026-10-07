@@ -4,6 +4,7 @@
 #include <Access/Common/AccessFlags.h>
 
 #include <Databases/IDatabase.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 #include <Disks/IDisk.h>
 
@@ -15,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 
 #include <Disks/IVolume.h>
 
@@ -54,6 +56,8 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/parseQuery.h>
 
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -66,6 +70,7 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
 
@@ -76,6 +81,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -83,6 +89,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
@@ -94,12 +101,14 @@
 #include <Storages/Distributed/parseRemoteFunctionArguments.h>
 
 #include <Storages/buildQueryTreeForShard.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 #include <Storages/IStorageCluster.h>
 
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -109,8 +118,10 @@
 
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#include <Core/UUID.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -119,10 +130,6 @@
 
 #include <memory>
 #include <filesystem>
-
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
-
 
 namespace fs = std::filesystem;
 
@@ -154,7 +161,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
@@ -194,6 +200,7 @@ namespace DistributedSetting
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
     extern const DistributedSettingsUInt64 bytes_to_throw_insert;
     extern const DistributedSettingsBool flush_on_detach;
+    extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
 }
 
@@ -207,7 +214,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
     extern const int TYPE_MISMATCH;
-    extern const int TOO_MANY_ROWS;
+    extern const int INCOMPATIBLE_COLUMNS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
     extern const int INVALID_SHARD_ID;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
@@ -216,6 +223,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace ActionLocks
@@ -256,6 +264,127 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     }
 
     return res;
+}
+
+/// The columns of the table the storage is asked about that the shards evaluate a key over, on the
+/// analyzer path: the columns read by the sorting key expressions, and, when the shards finalize the
+/// query's reductions, by the GROUP BY and LIMIT BY keys and by a DISTINCT projection. Only those
+/// cross the cast below a shard's sort or reduction, so only their conversion can corrupt the result.
+/// A column of another table (a joined one, a subquery) or of another scope (a lambda's argument) is
+/// not cast by this storage, whatever its name is, so a mere name coincidence with a sloppily declared
+/// column of this table refuses nothing.
+struct KeyColumns
+{
+    /// The source columns of the keys could not be established, and every column of the table has
+    /// to be treated as a key column. Set when the query comes without a query tree (the old analyzer
+    /// cannot be enabled since 26.9, so this is a safeguard) and for a column whose origin cannot be
+    /// traced (see `getKeyColumns`).
+    bool unknown = false;
+    NameSet names;
+
+    /// The query relies neither on the shards' order nor on their reductions: it has none of the keys
+    /// above, or they read no column of this table (a constant such as `ORDER BY tuple()`, or a joined
+    /// table's column).
+    bool none() const { return !unknown && names.empty(); }
+};
+
+KeyColumns getKeyColumns(const SelectQueryInfo & query_info, bool shards_finalize_reductions)
+{
+    KeyColumns result;
+
+    if (!query_info.query_tree)
+    {
+        /// Internal reads (e.g. of external tables) come with an empty `SelectQueryInfo`, and the old
+        /// interpreter still fills only the AST. Without the keys nothing relies on the shards; with
+        /// them, their source columns cannot be traced from the AST, so check all of them.
+        const auto * select = query_info.query ? query_info.query->as<ASTSelectQuery>() : nullptr;
+        result.unknown = select
+            && (select->orderBy() || (shards_finalize_reductions && (select->groupBy() || select->limitBy() || select->distinct)));
+        return result;
+    }
+
+    const auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node)
+        return result;
+
+    /// Positional arguments and `ORDER BY ALL` are already resolved to columns here.
+    auto collect = [&result, &query_info](const QueryTreeNodePtr & node, auto & self) -> void
+    {
+        /// A subquery sorts and returns its own columns; the ones inside it are not what this
+        /// stream is sorted by.
+        const auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            return;
+
+        if (const auto * column_node = node->as<ColumnNode>())
+        {
+            const auto source = column_node->getColumnSourceOrNull();
+            if (!source)
+            {
+                result.unknown = true;
+                return;
+            }
+
+            if (source.get() == query_info.table_expression.get())
+            {
+                result.names.insert(column_node->getColumnName());
+            }
+            else if (const auto * array_join_node = source->as<ArrayJoinNode>())
+            {
+                /// An ARRAY JOIN column is an element of an array expression, and the array is what
+                /// crosses the cast: `ORDER BY a` over `ARRAY JOIN arr AS a` sorts by the elements of
+                /// `arr`, so the columns of that expression are the ones to check. The resolved column
+                /// carries only the name, its expression is kept in the ARRAY JOIN node.
+                bool traced = false;
+                for (const auto & array_join_expression : array_join_node->getJoinExpressions().getNodes())
+                {
+                    const auto * array_join_column = array_join_expression->as<ColumnNode>();
+                    if (!array_join_column || array_join_column->getColumnName() != column_node->getColumnName())
+                        continue;
+
+                    traced = true;
+                    if (array_join_column->hasExpression())
+                        self(array_join_column->getExpression(), self);
+                    else
+                        result.unknown = true;
+                }
+                if (!traced)
+                    result.unknown = true;
+            }
+            else if (source->getNodeType() == QueryTreeNodeType::JOIN)
+            {
+                /// A `JOIN USING` key keeps the columns of both sides as a list in its expression (see
+                /// `CollectSourceColumnsVisitor`); they are collected below as the column's children.
+                /// Any other column of a JOIN itself cannot be attributed to a table.
+                if (!column_node->hasExpression() || !column_node->getExpression()->as<ListNode>())
+                    result.unknown = true;
+            }
+            /// A column of another table expression, or a lambda's argument, does not cross this
+            /// table's cast: nothing to check for it. An ALIAS column of this table keeps its
+            /// expression as a child and the columns it reads are collected below.
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                self(child, self);
+    };
+    if (query_node->hasOrderBy())
+        collect(query_node->getOrderByNode(), collect);
+
+    if (shards_finalize_reductions)
+    {
+        /// A shard groups and deduplicates by its own type, and the cast to the declared one comes after
+        /// it: `String` values '1' and '01' are distinct groups on the shard and both become `1` as `Int8`.
+        /// `DISTINCT ON` is already rewritten into LIMIT BY here.
+        if (query_node->hasGroupBy())
+            collect(query_node->getGroupByNode(), collect);
+        if (query_node->hasLimitBy())
+            collect(query_node->getLimitByNode(), collect);
+        if (query_node->isDistinct())
+            collect(query_node->getProjectionNode(), collect);
+    }
+
+    return result;
 }
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
@@ -311,6 +440,23 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
     return true;
 }
 
+/// Weaker than `isExpressionActionsDeterministic`: it also accepts a function whose result can change
+/// between queries as long as it is fixed within one, `dictGet` being the motivating case. Such a sharding
+/// key still describes where a row belongs — `allow_nondeterministic_optimize_skip_unused_shards` exists
+/// precisely so that reads can prune by it — whereas `rand()`, which is not deterministic even within a
+/// query, describes nothing.
+bool isExpressionActionsDeterministicInScopeOfQuery(const ExpressionActionsPtr & actions)
+{
+    for (const auto & action : actions->getActions())
+    {
+        if (action.node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+        if (!action.node->function_base->isDeterministicInScopeOfQuery())
+            return false;
+    }
+    return true;
+}
+
 /// Find the sharding key output node in `sharding_key_dag`.
 /// `sharding_key_column_name` is the name of the unanalyzed sharding key AST and can differ from the
 /// analyzed DAG output name: the analyzer may const-fold or otherwise rewrite the expression, so a name
@@ -351,47 +497,6 @@ const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_ke
     }
 
     return result;
-}
-
-class ReplacingConstantExpressionsMatcher
-{
-public:
-    using Data = Block;
-
-    static bool needChildVisit(ASTPtr &, const ASTPtr &)
-    {
-        return true;
-    }
-
-    static void visit(ASTPtr & node, Block & block_with_constants)
-    {
-        if (!node->as<ASTFunction>())
-            return;
-
-        std::string name = node->getColumnName();
-        if (block_with_constants.has(name))
-        {
-            const auto & result = block_with_constants.getByName(name);
-            if (!isColumnConst(*result.column))
-                return;
-
-            node = make_intrusive<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
-        }
-    }
-};
-
-void replaceConstantExpressions(
-    ASTPtr & node,
-    ContextPtr context,
-    const NamesAndTypesList & columns,
-    ConstStoragePtr storage,
-    const StorageSnapshotPtr & storage_snapshot)
-{
-    auto syntax_result = TreeRewriter(context).analyze(node, columns, storage, storage_snapshot);
-    Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
-
-    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
-    visitor.visit(node);
 }
 
 size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & cluster)
@@ -436,6 +541,7 @@ StorageDistributed::StorageDistributed(
     const String & relative_data_path_,
     const DistributedSettings & distributed_settings_,
     LoadingStrictnessLevel mode,
+    bool is_fresh_definition,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
     bool is_remote_function_,
@@ -473,6 +579,28 @@ StorageDistributed::StorageDistributed(
 
     if (sharding_key_)
     {
+        /// `arrayJoin` is the one function that changes the number of rows, while the shard selector
+        /// built from the sharding key is applied positionally to the block being inserted: the insert
+        /// either fails with "Size of selector ... doesn't match size of column" or, when the sizes
+        /// happen to agree, routes rows by an unrelated row's array element.
+        ///
+        /// Only a definition the user supplies now is rejected. A definition that is replayed - a short
+        /// `ATTACH TABLE t`, the tables of an `ATTACH DATABASE`, a `Replicated` database's
+        /// `SECONDARY_CREATE`, a `RESTORE`, server startup - is read back from metadata that already
+        /// exists, and rejecting it there would make the table (or the whole database) unloadable
+        /// instead of failing the one insert that is actually broken. The size mismatch in
+        /// `DistributedSink` remains the backstop for such a table, and `ALTER TABLE ... MODIFY QUERY`
+        /// is not available for an engine argument, so the way out is `DETACH` plus a fresh `ATTACH`
+        /// with a corrected key.
+        ///
+        /// The raw AST is what gets checked, so the two indirections the analyzer would have resolved
+        /// later are looked through as well: the `unnest` alias (matched by canonical name, so the
+        /// verdict does not depend on `normalize_function_names`, which is off for secondary queries)
+        /// and a SQL UDF body that is inlined when the expression is built.
+        if (is_fresh_definition && expressionContainsArrayJoin(sharding_key_))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Sharding expression cannot contain arrayJoin, because it changes the number of rows");
+
         /// Check that sharding_key exists in the table and has numeric type.
         checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
@@ -484,6 +612,7 @@ StorageDistributed::StorageDistributed(
         if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
             sharding_key_column_name = node->result_name;
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
+        sharding_key_is_deterministic_in_scope_of_query = isExpressionActionsDeterministicInScopeOfQuery(sharding_key_expr);
     }
 
     if (!relative_data_path.empty())
@@ -529,8 +658,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// Always calculate optimized cluster here, to avoid conditions during read()
             /// (Anyway it will be calculated in the read())
-            auto syntax_analyzer_result = query_info.syntax_analyzer_result;
-            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info, syntax_analyzer_result);
+            ClusterPtr optimized_cluster = getOptimizedCluster(local_context, storage_snapshot, query_info);
             if (optimized_cluster)
             {
                 LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
@@ -549,6 +677,40 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         }
     }
 
+    const auto stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
+
+    /// The query was analyzed against the columns declared here, but a shard resolves the remote
+    /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
+    /// only afterwards (`createLocalPlan`, `RemoteQueryExecutor::adaptBlockStructure`), so a cast that
+    /// does not preserve the order, say `String` to `Int8`, reorders the values after they were sorted,
+    /// while the initiator takes the shards' order on trust: it merges the streams as sorted, cuts them
+    /// with LIMIT and applies DISTINCT and LIMIT BY to them as sorted, and in a debug build
+    /// `DistinctSortedStreamTransform` throws `Equal values are not contiguous`. A shard sorts and
+    /// applies its preliminary LIMIT at every stage from `WithMergeableState` on, and `FetchColumns`
+    /// is not a stage this storage can be read at (the shard query is built from the whole query
+    /// tree), so there is no stage to fall back to: refuse the query instead of returning wrong rows.
+    /// `StorageMerge` refuses the same conversion for its children by dropping to `FetchColumns`.
+    /// Only the columns the query sorts by matter: without ORDER BY the shards' sort is not relied
+    /// upon at all, and a column that no sorting key expression reads is just carried along, so a
+    /// table with one sloppily declared column keeps working as long as nothing orders by it.
+    /// The same holds for GROUP BY, LIMIT BY and DISTINCT, but only while the initiator redoes them
+    /// over the converted values: at `Complete` and the stages above it (a single shard,
+    /// `distributed_group_by_no_merge`, a GROUP BY by the sharding key) a shard finalizes them by its
+    /// own type, and a conversion that merges distinct values leaves duplicate groups behind.
+    if (nodes > 0)
+    {
+        const auto key_columns = getKeyColumns(query_info, stage >= QueryProcessingStage::Complete);
+        if (!key_columns.none())
+            checkRemoteTableConversionPreservesOrder(
+                local_context, storage_snapshot, cluster, key_columns.unknown ? std::nullopt : std::make_optional(key_columns.names));
+    }
+
+    return stage;
+}
+
+QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
+    QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const
+{
     if (settings[Setting::distributed_group_by_no_merge])
     {
         if (settings[Setting::distributed_group_by_no_merge] == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
@@ -571,6 +733,14 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
+    if (nodes == 0)
+    {
+        /// In case of 0 shards, the query should be processed fully on the initiator,
+        /// since we need to apply aggregations.
+        /// That's why we need to return FetchColumns.
+        return QueryProcessingStage::FetchColumns;
+    }
+
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
     if (to_stage == QueryProcessingStage::WithMergeableState)
@@ -587,19 +757,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         /// relevant for Distributed over Distributed
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
-    if (nodes == 0)
-    {
-        /// In case of 0 shards, the query should be processed fully on the initiator,
-        /// since we need to apply aggregations.
-        /// That's why we need to return FetchColumns.
-        return QueryProcessingStage::FetchColumns;
-    }
 
-    std::optional<QueryProcessingStage::Enum> optimized_stage;
-    if (settings[Setting::allow_experimental_analyzer])
-        optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
-    else
-        optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
+    std::optional<QueryProcessingStage::Enum> optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     if (optimized_stage)
     {
         if (*optimized_stage == QueryProcessingStage::Complete)
@@ -608,6 +767,63 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::WithMergeableState;
+}
+
+void StorageDistributed::checkRemoteTableConversionPreservesOrder(
+    ContextPtr local_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ClusterPtr & cluster,
+    const std::optional<NameSet> & key_columns) const
+{
+    if (remote_table_function_ptr)
+        return;
+
+    /// A shard that is this server reads `remote_database.remote_table` from here, whatever
+    /// `prefer_localhost_replica` says, so that table's types are the ones a shard sorts by. Nothing
+    /// is known about the tables behind remote-only shards, and a local table that merely shares
+    /// their name would be unrelated to them.
+    if (cluster->getLocalShardCount() == 0)
+        return;
+
+    /// An empty remote database means the shard's default database, which for this server is the
+    /// query's current database (`createLocalPlan` runs the shard query in a copy of this context).
+    const String & remote_database_name = remote_database.empty() ? local_context->getCurrentDatabase() : remote_database;
+    StorageID remote_table_id{remote_database_name, remote_table};
+    auto remote_table_storage = DatabaseCatalog::instance().tryGetTable(remote_table_id, local_context);
+    if (!remote_table_storage)
+        return;
+
+    /// `ALIAS` columns cross the same cast, so they are compared too.
+    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+    const auto & declared_columns = storage_snapshot->metadata->getColumns();
+    const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
+    for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
+    {
+        /// A column no key reads is converted above the shards' sort and reductions like any other
+        /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
+        /// there is none of this check's business. `std::nullopt` means the key columns are unknown
+        /// and every column has to be checked.
+        if (key_columns && !key_columns->contains(remote_column.name))
+            continue;
+
+        auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
+        if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
+                "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
+                "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
+                "cannot be processed. Declare the column with "
+                "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
+                "a Nullable of it",
+                backQuoteIfNeed(remote_column.name),
+                remote_column.type->getName(),
+                remote_table_id.getNameForLogs(),
+                declared_column->type->getName(),
+                getStorageID().getNameForLogs(),
+                remote_column.type->getName(),
+                declared_column->type->getName());
+    }
 }
 
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
@@ -620,6 +836,11 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
 {
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
+
+    /// The set registry of a planner context derived per child table is empty, and
+    /// `PlannerActionsVisitor` resolves `IN` through it.
+    collectSets(expr, *query_info.planner_context);
+
     // When comparing sharding key expressions, we need to ignore table qualifiers in column names
     // because the sharding key is defined without table qualifiers, but the query expression
     // may have internal table aliases (e.g. __table1.id). Setting use_column_identifier_as_action_node_name=false
@@ -719,90 +940,6 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
     // OFFSET
     // LIMIT AFTER/UNTIL (the no-count forms leave hasLimit() false but must still be applied once on the initiator)
     if (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitAfter() || query_node.hasLimitUntil())
-        return default_stage;
-
-    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
-    return QueryProcessingStage::Complete;
-}
-
-std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
-{
-    bool optimize_sharding_key_aggregation = settings[Setting::optimize_skip_unused_shards] && settings[Setting::optimize_distributed_group_by_sharding_key]
-        && hasShardingKeyForReads() && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
-
-    QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-    if (settings[Setting::distributed_push_down_limit])
-        default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-
-    auto expr_contains_sharding_key = [&](const auto & exprs) -> bool
-    {
-        std::unordered_set<std::string> expr_columns;
-        for (auto & expr : exprs)
-        {
-            auto id = expr->template as<ASTIdentifier>();
-            if (!id)
-                continue;
-            expr_columns.emplace(id->name());
-        }
-
-        for (const auto & column : sharding_key_expr->getRequiredColumns())
-        {
-            if (!expr_columns.contains(column))
-                return false;
-        }
-
-        return true;
-    };
-
-    // GROUP BY qualifiers
-    // - TODO: WITH TOTALS can be implemented
-    // - TODO: WITH ROLLUP can be implemented (I guess)
-    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
-        return {};
-    // Window functions are not supported.
-    if (query_info.has_window)
-        return {};
-    // TODO: extremes support can be implemented
-    if (settings[Setting::extremes])
-        return {};
-
-    // DISTINCT
-    if (select.distinct)
-    {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(select.select()->children))
-            return {};
-    }
-
-    // GROUP BY
-    const ASTPtr group_by = select.groupBy();
-
-    bool has_aggregates = query_info.has_aggregates;
-    if (query_info.syntax_analyzer_result)
-        has_aggregates = !query_info.syntax_analyzer_result->aggregates.empty();
-
-    if (has_aggregates || group_by)
-    {
-        if (!optimize_sharding_key_aggregation || !group_by || !expr_contains_sharding_key(group_by->children))
-            return {};
-    }
-
-    // LIMIT BY
-    if (const ASTPtr limit_by = select.limitBy())
-    {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(limit_by->children))
-            return {};
-    }
-
-    // ORDER BY
-    if (const ASTPtr order_by = select.orderBy())
-        return default_stage;
-
-    // LIMIT
-    // OFFSET
-    // LIMIT AFTER/UNTIL (the no-count forms leave limitLength() false but must still be applied once on the initiator)
-    if (select.limitLength() || select.limitOffset() || select.limitAfter() || select.limitUntil())
         return default_stage;
 
     // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
@@ -1013,9 +1150,6 @@ void StorageDistributed::read(
 
     SelectQueryInfo modified_query_info = query_info;
 
-    const auto & settings = local_context->getSettingsRef();
-
-    if (settings[Setting::allow_experimental_analyzer])
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
 
@@ -1044,23 +1178,14 @@ void StorageDistributed::read(
 
         /// Return directly (with correct header) if no shard to query.
         if (modified_query_info.getCluster()->getShardsInfo().empty())
-            return;
-    }
-    else
-    {
-        header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-
-        modified_query_info.query = ClusterProxy::rewriteSelectQuery(
-            local_context, modified_query_info.query,
-            remote_database, remote_table, remote_table_function_ptr);
-
-        if (modified_query_info.getCluster()->getShardsInfo().empty())
         {
-            Pipe pipe(std::make_shared<NullSource>(header));
-            auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-            read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
-            query_plan.addStep(std::move(read_from_pipe));
-
+            /// At `FetchColumns` the planner builds the empty source from the table columns itself.
+            if (processed_stage != QueryProcessingStage::FetchColumns)
+            {
+                auto read_nothing = std::make_unique<ReadNothingStep>(header);
+                read_nothing->setStepDescription("Read from NullSource (Distributed)");
+                query_plan.addStep(std::move(read_nothing));
+            }
             return;
         }
     }
@@ -1363,16 +1488,8 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
     QueryPlan plan;
     SelectQueryOptions options;
     options.only_analyze = true;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
-        plan = std::move(interpreter).extractQueryPlan();
-    }
-    else
-    {
-        InterpreterSelectWithUnionQuery interpreter(ast, context, options);
-        interpreter.buildQueryPlan(plan);
-    }
+    InterpreterSelectQueryAnalyzer interpreter(ast, context, options);
+    plan = std::move(interpreter).extractQueryPlan();
 
     plan.optimize(QueryPlanOptimizationSettings(context));
 
@@ -1409,7 +1526,7 @@ static std::shared_ptr<const ActionsDAG> getFilterFromQuery(const ASTPtr & ast, 
 
 
 std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStorage(
-    const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
+    IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr local_context) const
 {
     const auto & settings = local_context->getSettingsRef();
 
@@ -1418,8 +1535,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     if (filter)
         predicate = filter->getOutputs().at(0);
 
-    auto dst_cluster = getCluster();
-
     auto new_query = boost::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
     if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL)
     {
@@ -1427,6 +1542,46 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
         /// Reset table function for INSERT INTO remote()/cluster()
         new_query->reset(new_query->table_function);
     }
+
+    /// A `*Cluster` source hands files to shards by hashing their paths, so the rows a shard reads cannot
+    /// satisfy the destination's sharding key - and with `parallel_distributed_insert_select = 2` the
+    /// forwarded INSERT writes straight into the shard's local table, bypassing the key entirely.
+    if (settings[Setting::parallel_distributed_insert_select] == PARALLEL_DISTRIBUTED_INSERT_SELECT_ALL
+        && hasShardingKeyForReads() && sharding_key_is_deterministic_in_scope_of_query)
+    {
+        LOG_INFO(
+            log,
+            "Parallel distributed INSERT SELECT into {} is not possible: the rows read from {} cannot satisfy "
+            "its deterministic sharding key ({}); falling back to the ordinary INSERT SELECT",
+            getStorageID().getNameForLogs(),
+            src_storage_cluster.getName(),
+            sharding_key_column_name);
+        return {};
+    }
+
+    /// `distributedWrite` only gets here for a single `SELECT` over a single table expression.
+    auto & select_to_send = new_query->select->as<ASTSelectWithUnionQuery &>();
+    chassert(select_to_send.list_of_selects->children.size() == 1);
+    auto & source_to_send = select_to_send.list_of_selects->children.at(0);
+
+    /// Replace `url()` / `s3()` / ... in the forwarded query text with its `*Cluster()` variant, named with
+    /// this `Distributed` table's cluster: its shards are the ones that run the forwarded query, and they
+    /// take their share of the files from the initiator's task iterator rather than reading all of them.
+    /// A destination written as a table function gives no name to put there -
+    /// `INSERT INTO FUNCTION remote('127.0.0.{1,2}', db, tbl)` builds its cluster from the address
+    /// expression, which has no name anywhere - so skip the distributed execution instead of forwarding a
+    /// query that every shard would answer with the whole source.
+    /// A source the user already wrote as `*Cluster` keeps its own name in that case - see
+    /// `IStorageCluster::updateQueryToSendIfNeeded`.
+    const auto * source_table_function = extractTableFunctionFromSelectQuery(source_to_send);
+    const bool needs_cluster_function = source_table_function && !endsWith(source_table_function->name, "Cluster");
+    if (needs_cluster_function && cluster_name.empty())
+        return {};
+
+    src_storage_cluster.updateExternalDynamicMetadataIfExists(local_context);
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
+    const auto src_snapshot = src_storage_cluster.getStorageSnapshot(storage_metadata, local_context);
+    src_storage_cluster.updateQueryToSendIfNeeded(source_to_send, src_snapshot, local_context, cluster_name);
 
     /// Drop the initiator-only settings from the query text forwarded to the shards (the settings
     /// packet is stripped separately, on `query_context` below).
@@ -1461,7 +1616,6 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
-    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
         predicate, filter.get(), local_context, cluster, storage_metadata);
 
@@ -1584,10 +1738,13 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
+    /// The sharding key itself is an engine argument and cannot be altered, so it is only revalidated
+    /// against the new columns here; the `arrayJoin` rejection stays where the definition is introduced
+    /// (the constructor), so an unrelated `ALTER` on a table created before that check does not throw.
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
 
-void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
 
@@ -1698,16 +1855,21 @@ Strings StorageDistributed::getDataPaths() const
     return paths;
 }
 
+/// Prefix of a subdirectory renamed by renameUnrecognizedDirectoryQueue()
+static constexpr std::string_view unrecognized_directory_queue_prefix = "unrecognized_";
+/// File in such a subdirectory that holds its name before the rename
+static constexpr std::string_view unrecognized_directory_queue_original_name_file = "original_name";
+
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
-    /// a `Remote` database has none, so the statement would be a silent no-op reported as success,
+    /// a read-through database proxy has none, so the statement would be a silent no-op reported as success,
     /// while the user expects the remote table to be truncated; reject it like the rest of the DDL
     /// against such a database.
     if (is_remote_database_proxy)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Table {} is a read-through proxy of a `Remote` database and does not support TRUNCATE TABLE",
+            "Table {} is a read-through database proxy and does not support TRUNCATE TABLE",
             getStorageID().getNameForLogs());
 
     std::lock_guard lock(cluster_nodes_mutex);
@@ -1719,6 +1881,46 @@ void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, Co
         it->second.directory_queue->shutdownAndDropAllData();
         it = cluster_nodes_data.erase(it);
     }
+
+    /// A directory quarantined by initializeDirectoryQueuesForDisk() has no directory queue, so it
+    /// is not in `cluster_nodes_data`, but its files are still part of the on-disk spool this
+    /// statement drops. Removing them here is the only way to get rid of them from SQL.
+    if (!relative_data_path.empty())
+        for (const DiskPtr & disk : data_volume->getDisks())
+            removeUnrecognizedDirectoryQueues(disk);
+}
+
+void StorageDistributed::removeUnrecognizedDirectoryQueues(const DiskPtr & disk) const
+{
+    const std::filesystem::path path(disk->getPath() + relative_data_path);
+    if (!std::filesystem::exists(path))
+        return;
+
+    /// Taken before the loop below removes an entry of `path`, which would let the iterator skip
+    /// or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (it->is_directory() && it->path().filename().string().starts_with(unrecognized_directory_queue_prefix))
+            dir_paths.push_back(it->path());
+
+    if (dir_paths.empty())
+        return;
+
+    /// Like the removal of a directory queue, so that with `fsync_directories` the directories
+    /// do not come back after a crash that follows `TRUNCATE TABLE`.
+    auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
+    for (const auto & dir_path : dir_paths)
+    {
+        LOG_DEBUG(log, "Removing {}, which holds files of an async INSERT that cannot be sent", dir_path.string());
+        std::filesystem::remove_all(dir_path);
+    }
+}
+
+SyncGuardPtr StorageDistributed::getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const
+{
+    if ((*distributed_settings)[DistributedSetting::fsync_directories])
+        return disk->getDirectorySyncGuard(relative_path);
+    return nullptr;
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
@@ -1726,37 +1928,96 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
+/// A queue directory is named after its single destination: `shardN_replicaM` or `shardN_all_replicas`,
+/// exactly what `DistributedSink` writes. Anything looser (for example, several names joined with a
+/// comma, which no writer produces) is treated as unrecognized, so a stray directory cannot make the
+/// queue send its files to a destination the sink never chose.
+static bool isDirectoryQueueName(const std::string & name)
+{
+    return Cluster::Address::tryParseFullString(name).has_value();
+}
+
+void StorageDistributed::renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const
+{
+    /// The name is not one `DistributedSink` writes, so it names no destination and the files in
+    /// it can never be sent. Renaming keeps it from being taken for a directory queue on every
+    /// start; the files are left for the administrator to inspect or remove.
+    const auto parent_path = dir_path.parent_path();
+    const auto old_name = dir_path.filename().string();
+
+    /// The new name is a random UUID, because the old one may hold a password (a server older than
+    /// 26.9 named the directory after `user:password@host:port`) and the new one is logged and shown.
+    /// Not a hash of the old name: an unkeyed hash would let anyone who sees the new name check
+    /// guesses of the password against it offline.
+    /// The old name is the only record of where the files were meant to be sent, so it is kept in
+    /// a file next to them: a downgrade or a manual recovery needs it to replay them. Written
+    /// before the rename, so an interrupted start leaves the directory with its old name, and the
+    /// next start writes the file again.
+    {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path + old_name);
+        WriteBufferFromFile out((dir_path / unrecognized_directory_queue_original_name_file).string());
+        writeString(old_name, out);
+        out.finalize();
+        out.sync();
+    }
+
+    const auto new_name = fmt::format("{}{}", unrecognized_directory_queue_prefix, toString(UUIDHelpers::generateV4()));
+    {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
+        std::filesystem::rename(dir_path, parent_path / new_name);
+    }
+    /// Logged as a warning and not as an error: a server upgraded from a version that still wrote
+    /// the old directory names meets this on the first start of every table with a non-empty
+    /// queue, and it is the expected handling of it, not a failure of the server.
+    LOG_WARNING(log, "Renamed an unrecognized subdirectory of {} to {}, the files in it will not be sent. "
+                     "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'. "
+                     "Its old name is kept in the file '{}' in it",
+                     parent_path.string(), new_name, unrecognized_directory_queue_original_name_file);
+}
+
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
 {
     const std::string path(disk->getPath() + relative_data_path);
     fs::create_directories(path);
 
-    std::filesystem::directory_iterator begin(path);
-    std::filesystem::directory_iterator end;
-    for (auto it = begin; it != end; ++it)
+    /// Taken before anything below removes or renames an entry of `path`, which would let the
+    /// iterator skip or repeat the entries around it.
+    std::vector<std::filesystem::path> dir_paths;
+    for (std::filesystem::directory_iterator it(path), end; it != end; ++it)
+        if (std::filesystem::is_directory(it->path()))
+            dir_paths.push_back(it->path());
+
+    for (const auto & dir_path : dir_paths)
     {
-        const auto & dir_path = it->path();
-        if (std::filesystem::is_directory(dir_path))
+        /// Created by DistributedSink
+        const auto tmp_path = dir_path / "tmp";
+        if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
+            std::filesystem::remove(tmp_path);
+
+        const auto broken_path = dir_path / "broken";
+        if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
+            std::filesystem::remove(broken_path);
+
+        const auto dir_name = dir_path.filename().string();
+
+        if (std::filesystem::is_empty(dir_path))
         {
-            /// Created by DistributedSink
-            const auto & tmp_path = dir_path / "tmp";
-            if (std::filesystem::is_directory(tmp_path) && std::filesystem::is_empty(tmp_path))
-                std::filesystem::remove(tmp_path);
-
-            const auto & broken_path = dir_path / "broken";
-            if (std::filesystem::is_directory(broken_path) && std::filesystem::is_empty(broken_path))
-                std::filesystem::remove(broken_path);
-
-            if (std::filesystem::is_empty(dir_path))
-            {
-                LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
-                /// Will be created by DistributedSink on demand.
-                std::filesystem::remove(dir_path);
-            }
-            else
-            {
-                getDirectoryQueue(disk, dir_path.filename().string());
-            }
+            LOG_DEBUG(log, "Removing {} (used for async INSERT into Distributed)", dir_path.string());
+            /// Will be created by DistributedSink on demand.
+            std::filesystem::remove(dir_path);
+        }
+        else if (dir_name.starts_with(unrecognized_directory_queue_prefix))
+        {
+            /// Renamed by an earlier start, left for the administrator.
+            LOG_WARNING(log, "{} holds files of an async INSERT that cannot be sent", dir_path.string());
+        }
+        else if (!isDirectoryQueueName(dir_name))
+        {
+            renameUnrecognizedDirectoryQueue(disk, dir_path);
+        }
+        else
+        {
+            getDirectoryQueue(disk, dir_name);
         }
     }
 }
@@ -1803,44 +2064,43 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     const auto & shards_info = cluster->getShardsInfo();
     const auto & shards_addresses = cluster->getShardsAddresses();
 
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+    auto address = Cluster::Address::tryParseFullString(name);
+
+    /// Unreachable: initializeDirectoryQueuesForDisk() renames a name it does not recognize
+    /// instead of starting a queue for it, and DistributedSink generates the name it passes.
+    /// Returned empty rather than thrown on so a stray name cannot keep the table from attaching.
+    if (!address)
     {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        Cluster::Address address = Cluster::Address::fromFullString(dirname);
-
-        /// Check new format shard{shard_index}_replica{replica_index}
-        /// (shard_index and replica_index starts from 1).
-        if (address.shard_index)
-        {
-            if (address.shard_index > shards_info.size())
-            {
-                LOG_ERROR(log, "No shard with shard_index={} ({})", address.shard_index, name);
-                continue;
-            }
-
-            const auto & replicas_addresses = shards_addresses[address.shard_index - 1];
-            size_t replicas = replicas_addresses.size();
-
-            if (dirname.ends_with("_all_replicas"))
-            {
-                for (const auto & replica_address : replicas_addresses)
-                    addresses.push_back(replica_address);
-                continue;
-            }
-
-            if (address.replica_index == 0 || address.replica_index > replicas)
-            {
-                LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
-                               "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
-                                address.replica_index, dirname, replicas, address.shard_index);
-                continue;
-            }
-
-            addresses.push_back(replicas_addresses[address.replica_index - 1]);
-        }
-        else
-            addresses.push_back(address);
+        LOG_ERROR(log, "Unrecognized name of a directory queue of {}", getStorageID().getNameForLogs());
+        return addresses;
     }
+
+    if (address->shard_index > shards_info.size())
+    {
+        LOG_ERROR(log, "No shard with shard_index={} ({})", address->shard_index, name);
+        return addresses;
+    }
+
+    const auto & replicas_addresses = shards_addresses[address->shard_index - 1];
+    size_t replicas = replicas_addresses.size();
+
+    /// shardN_all_replicas
+    if (address->replica_index == 0)
+    {
+        for (const auto & replica_address : replicas_addresses)
+            addresses.push_back(replica_address);
+        return addresses;
+    }
+
+    if (address->replica_index > replicas)
+    {
+        LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                       "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                        address->replica_index, name, replicas, address->shard_index);
+        return addresses;
+    }
+
+    addresses.push_back(replicas_addresses[address->replica_index - 1]);
     return addresses;
 }
 
@@ -1865,8 +2125,7 @@ ClusterPtr StorageDistributed::getCluster() const
 ClusterPtr StorageDistributed::getOptimizedCluster(
     ContextPtr local_context,
     const StorageSnapshotPtr & storage_snapshot,
-    const SelectQueryInfo & query_info,
-    const TreeRewriterResultPtr & syntax_analyzer_result) const
+    const SelectQueryInfo & query_info) const
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
@@ -1875,7 +2134,7 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
 
     if (hasShardingKeyForReads() && sharding_key_is_usable)
     {
-        ClusterPtr optimized = skipUnusedShards(cluster, query_info, syntax_analyzer_result, storage_snapshot, local_context);
+        ClusterPtr optimized = skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
         if (optimized)
             return optimized;
     }
@@ -1964,82 +2223,6 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(
-    ClusterPtr cluster,
-    const SelectQueryInfo & query_info,
-    const TreeRewriterResultPtr & syntax_analyzer_result,
-    const StorageSnapshotPtr & storage_snapshot,
-    ContextPtr local_context) const
-{
-    if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        return skipUnusedShardsWithAnalyzer(cluster, query_info, storage_snapshot, local_context);
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-    if (!select.prewhere() && !select.where())
-        return nullptr;
-
-    /// FIXME: support analyzer
-    if (!syntax_analyzer_result)
-        return nullptr;
-
-    ASTPtr condition_ast;
-    /// Remove JOIN from the query since it may contain a condition for other tables.
-    /// But only the conditions for the left table should be analyzed for shard skipping.
-    {
-        ASTPtr select_without_join_ptr = select.clone();
-        ASTSelectQuery select_without_join = select_without_join_ptr->as<ASTSelectQuery &>();
-        TreeRewriterResult analyzer_result_without_join = *syntax_analyzer_result;
-
-        removeJoin(select_without_join, analyzer_result_without_join, local_context);
-        if (!select_without_join.prewhere() && !select_without_join.where())
-            return nullptr;
-
-        if (select_without_join.prewhere() && select_without_join.where())
-            condition_ast = makeASTOperator("and", select_without_join.prewhere()->clone(), select_without_join.where()->clone());
-        else
-            condition_ast = select_without_join.prewhere() ? select_without_join.prewhere()->clone() : select_without_join.where()->clone();
-    }
-
-    replaceConstantExpressions(condition_ast, local_context, storage_snapshot->metadata->getColumns().getAll(), shared_from_this(), storage_snapshot);
-
-    size_t limit = local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit];
-    if (!limit || limit > SSIZE_MAX)
-    {
-        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
-    }
-    // To interpret limit==0 as limit is reached
-    ++limit;
-    const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr, limit);
-
-    if (!limit)
-    {
-        LOG_DEBUG(
-            log,
-            "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
-            "try to increase it, but note that this may increase query processing time.",
-            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit].value);
-        return nullptr;
-    }
-
-    // Can't get a definite answer if we can skip any shards
-    if (!blocks)
-        return nullptr;
-
-    std::set<int> shards;
-
-    for (const auto & block : *blocks)
-    {
-        if (!block.has(sharding_key_column_name))
-            throw Exception(ErrorCodes::TOO_MANY_ROWS, "sharding_key_expr should evaluate as a single row");
-
-        const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
-        const auto selector = createSelector(cluster, result);
-
-        shards.insert(selector.begin(), selector.end());
-    }
-
-    return cluster->getClusterWithMultipleShards({shards.begin(), shards.end()});
-}
 
 ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
 {
@@ -2316,6 +2499,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 StorageID{remote_database, remote_table},
                 structure_context,
                 /* table_func_ptr = */ nullptr);
+            columns.clearColumnTTLs();
         }
 
         return std::make_shared<StorageDistributed>(
@@ -2331,7 +2515,8 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             distributed_settings,
-            args.mode);
+            args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
     },
     {
         .supports_settings = true,
@@ -2725,7 +2910,10 @@ void registerStorageRemote(StorageFactory & factory)
                     args.getLocalContext(),
                     parsed.remote_table_function_ptr);
                 if (columns.empty())
+                {
                     columns = std::move(inferred);
+                    columns.clearColumnTTLs();
+                }
             }
             catch (const Exception & e)
             {
@@ -2774,6 +2962,7 @@ void registerStorageRemote(StorageFactory & factory)
             args.relative_data_path,
             distributed_settings,
             args.mode,
+            isFreshTableDefinition(args.mode, args.query.attach_short_syntax),
             std::move(parsed.cluster),
             std::move(parsed.remote_table_function_ptr),
             /* is_remote_function_ = */ true);

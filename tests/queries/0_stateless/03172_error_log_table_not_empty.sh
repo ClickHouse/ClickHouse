@@ -56,3 +56,16 @@ FROM system.error_log WHERE event_date >= yesterday() AND event_time >= '$start_
 FORMAT CSV
 SETTINGS allow_introspection_functions=1;
 "
+
+# Frames inside the main binary are stored as file offsets, which is what keeps a flushed row
+# resolvable after a restart or on another host. `system.symbols` reports offsets into the binary, so
+# its largest one bounds them, while a runtime address is far above it on a position independent build.
+$CLICKHOUSE_CLIENT -m -q "
+SELECT countIf(x BETWEEN 1 AND (SELECT max(address_end) FROM system.symbols)) > 10
+FROM (SELECT arrayJoin(trace) AS x FROM (
+    SELECT last_error_trace AS trace
+    FROM system.error_log WHERE event_date >= yesterday() AND event_time >= '$start_time' AND code = 333
+    ORDER BY last_error_time DESC LIMIT 1))
+FORMAT CSV
+SETTINGS allow_introspection_functions=1;
+"

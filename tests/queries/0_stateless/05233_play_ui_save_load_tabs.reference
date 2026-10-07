@@ -1,0 +1,40 @@
+--- the two buttons sit in the tab bar, in that order, before the connection key
+<button id="tab-save" type="button" title="Save all tabs and their queries as Markdown">
+<button id="tab-load" type="button" title="Load tabs and their queries from Markdown">
+<div id="tab-io">
+<div id="connection-menu">
+--- one auto margin pushes that whole right-hand cluster over; a second one would split it
+1
+--- Save opens a modal with the document, Load one with a textarea to paste into
+<dialog id="tabs-save-dialog" class="tabs-dialog">
+<dialog id="tabs-load-dialog" class="tabs-dialog">
+id="tabs-save-text"
+id="tabs-load-text"
+<button id="tabs-save-copy" type="button">Copy</button>
+<button id="tabs-save-download" type="button">Download</button>
+<button id="tabs-load-upload" type="button">Upload a file...</button>
+<button id="tabs-load-apply" type="button">Load</button>
+--- a section per tab: its title as a top-level heading, then its query in a fenced block
+out.push('# ' + tab.title);
+out.push(fence + '\n' + cell.query + '\n' + fence);
+--- a notebook tab writes every cell, a Markdown cell as a block with the markdown info string
+if (cell.type === 'text') {
+out.push(text_fence + 'markdown\n' + cell.text + '\n' + text_fence);
+--- the fence is one backtick longer than the longest run of backticks inside the query
+return '`'.repeat(Math.max(3, longest + 1));
+--- the parameter values follow the query, written as JSON so that they round-trip exactly
+out.push('## Parameters');
+out.push(params_fence + 'json\n' + json + '\n' + params_fence);
+--- a cell of a result table escapes what would otherwise break the row apart
+return text.replace(/\\/g, '\\\\').replace(/([`|])/g, '\\$1').replace(/\r?\n/g, '<br>');
+--- loading reads back the title, the cells and the parameters - and nothing else
+if (kind === 'query') {
+if (current && line.match(/^##[ \t]+parameters[ \t]*$/i)) { expect = 'params'; continue; }
+current.cells.push({ type: 'query', query: body.join('\n'), params: null });
+current.cells.push({ type: 'text', text: body.join('\n') });
+--- a loaded cell states its query and its parameter values together, so the pair is coherent
+const cell = makeQueryCell(c.query, c.params || {});
+if (c.params) cell.paramsSyncedQuery = cell.query;
+--- replacing the workspace closes the old tabs, and asks first when there is anything to lose
+if (has_content && !confirm(
+abortTabQuery(tab);

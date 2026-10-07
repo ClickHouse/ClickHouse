@@ -1,0 +1,166 @@
+group 1: TSV
+7
+0
+3242
+100
+9
+1
+0
+group 1: TSKV
+7
+0
+3242
+100
+9
+1
+0
+group 1: TSVRaw
+7
+0
+3242
+100
+9
+1
+0
+group 1: CustomSeparated
+7
+0
+3242
+100
+9
+1
+0
+group 2: signed padded
+-7
+0
+-3242
+-100
+group 3: plus sign
+7
+7
+0
+group 4: a lone minus is documented to read as zero
+0
+0
+0
+0	1
+group 4: a sign followed by no digit -- the plus is rejected by the reader
+group 4: a minus followed by no digit -- rejected by the format layer
+group 4: two signs are rejected even when a digit follows
+group 4: CSV rejects every one of them too
+group 5: inference and the reader agree
+c1	Nullable(Int64)					
+-7
+c1	Nullable(Int64)					
+7
+c1	Nullable(Int64)					
+7
+group 6: padded integers keep inferring String
+c1	Nullable(String)					
+007
+c1	Nullable(String)					
+018446744073709551615
+group 7: CSV oracle
+7
+-7
+7
+group 7: JSONEachRow control
+7
+-7
+group 8: UInt64 target
+7
+7
+7
+group 8: wide integer targets take the same reader
+7
+-7
+7
+7
+-7
+7
+7
+7
+group 9: overflow parity with CSV
+-1
+-1
+-1
+-1
+group 10: floats unchanged
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 10: and they read back as before
+0.5
+-0.5
+0.5
+-0.5
+0.5
+0.5
+-0.5
+-0
+7
+-7
+7
+0
+group 11: zero run edges
+0
+0
+0
+7
+9	0
+0	9
+group 12: whole file reads
+3
+3
+group 13: MySQLDump, the Quoted rule
+7
+-7
+7
+group 13: a query parameter
+7
+7
+group 13: a dictionary null_value
+7
+group 13: Values, unchanged at default settings
+7
+7
+-7
+group 13: Values, an overflowing padded value now wraps like the unpadded one
+-128
+-128
+-128
+group 13: Values, the same values with defaulting off, which reported TYPE_MISMATCH
+-128
+-128
+-128
+group 14: a string literal compared with a numeric column
+7
+7
+7	7
+group 14: index analysis accepts the same literal
+Condition: (id in [7, 7])
+Name: bf_04812
+group 15: a lone plus reports the reader code, as a float target already does
+group 15: two carriers that wrap the reader code in their own
+group 16: the JSON formats that yield strings read them as whole text
+7
+7
+-7
+7
+7
+group 16: the same values in the siblings that do not, which the JSON override already read
+7
+7
+7
+group 16: a Form field, and a Regexp capture group
+7
+7
+group 16: an element of a composite type cast from a string, read with the Quoted rule
+[7]	[7]	(7)
+group 16: a Map key spelled in a subcolumn name
+x	x

@@ -5,9 +5,11 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -37,7 +39,6 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
 }
 
-
 class SystemRemoteDataPathsSource final : public ISource
 {
 public:
@@ -51,10 +52,8 @@ public:
         , context(std::move(context_))
     {
         for (const auto & disk : disks_)
-        {
-            if (disk.second->isRemote())
+            if (isDiskObjectStorage(disk.second))
                 disks.push_back(disk);
-        }
 
         auto component_guard = Coordination::setCurrentComponent("SystemRemoteDataPathsSource::SystemRemoteDataPathsSource");
         /// Position at the first disk
@@ -123,6 +122,13 @@ private:
 
     ssize_t current_disk = -1;  /// Start from -1 to move to the first disk on the first call to nextDisk()
     std::vector<DirListingAndPosition> paths_stack; /// Represents the current path for DFS order traversal
+
+    /// Metadata type name of the current disk, computed once per disk instead of once per row.
+    String current_metadata_type_name;
+
+    /// Zero where the metadata storage records no modification time - `Plain` and the `Web` ones
+    /// answer `getLastModifiedIfExists` with the query's time, not the file's.
+    bool current_disk_reports_last_modified = true;
 };
 
 class ReadFromSystemRemoteDataPaths final : public SourceStepWithFilter
@@ -169,12 +175,14 @@ StorageSystemRemoteDataPaths::StorageSystemRemoteDataPaths(const StorageID & tab
     {
         {"disk_name", std::make_shared<DataTypeString>(), "Disk name."},
         {"path", std::make_shared<DataTypeString>(), "Disk path."},
+        {"metadata_type", std::make_shared<DataTypeString>(), "Metadata storage type of the disk (e.g. `Local`, `PlainRewritable`)."},
         {"cache_base_path", std::make_shared<DataTypeString>(), "Base directory of cache files."},
         {"local_path", std::make_shared<DataTypeString>(), "Path of ClickHouse file, also used as metadata path."},
         {"remote_path", std::make_shared<DataTypeString>(), "Blob path in object storage, with which ClickHouse file is associated with."},
         {"size", std::make_shared<DataTypeUInt64>(), "Size of the file (compressed)."},
         {"common_prefix_for_blobs", std::make_shared<DataTypeString>(), "Common prefix for blobs in object storage."},
         {"cache_paths", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Cache files for corresponding blob."},
+        {"last_modified", std::make_shared<DataTypeDateTime>(), "Last modification time of the file's metadata. Zero for a metadata storage that records none."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -266,6 +274,13 @@ bool SystemRemoteDataPathsSource::nextDisk()
 
         if (current_disk >= static_cast<ssize_t>(disks.size()))
             break;
+
+        const auto & disk = disks[current_disk].second;
+        const auto metadata_type = disk->getDataSourceDescription().metadata_type;
+        current_metadata_type_name = String{magic_enum::enum_name(metadata_type)};
+
+        const auto metadata_storage = disk->getMetadataStorage();
+        current_disk_reports_last_modified = !metadata_storage->isReadOnly() && !metadata_storage->isWriteOnce();
 
         auto & current = paths_stack.emplace_back();
 
@@ -383,6 +398,8 @@ Chunk SystemRemoteDataPathsSource::generate()
     MutableColumnPtr col_size = ColumnUInt64::create();
     MutableColumnPtr col_namespace = ColumnString::create();
     MutableColumnPtr col_cache_paths = ColumnArray::create(ColumnString::create());
+    MutableColumnPtr col_metadata_type = ColumnString::create();
+    MutableColumnPtr col_last_modified = ColumnUInt32::create();
 
     QueryStatusPtr query_status = context->getProcessListElement();
 
@@ -403,27 +420,41 @@ Chunk SystemRemoteDataPathsSource::generate()
                 col_remote_path->byteSize() +
                 col_size->byteSize() +
                 col_namespace->byteSize() +
-                col_cache_paths->byteSize();
+                col_cache_paths->byteSize() +
+                col_metadata_type->byteSize() +
+                col_last_modified->byteSize();
             if (total_size > max_block_size)
                 break;
         }
 
         const auto & [disk_name, disk] = disks[current_disk];
-        auto local_path = getCurrentPath();
+        const auto & base_path = disk->getPath();
+
+        FileCachePtr cache;
+        if (disk->supportsCache())
+            cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
+
+        const auto metadata_storage = disk->getMetadataStorage();
+        const std::string local_path = getCurrentPath();
 
         const auto & skip_predicate = getCurrentSkipPredicate();
         if (skip_predicate && skip_predicate(local_path))
             continue;
 
-        FileCachePtr cache;
-
-        if (disk->supportsCache())
-            cache = FileCacheFactory::instance().getByName(disk->getCacheName())->cache;
-
         StoredObjects storage_objects;
+        time_t last_modified = 0;
         try
         {
-            storage_objects = disk->getMetadataStorage()->getStorageObjects(local_path);
+            storage_objects = metadata_storage->getStorageObjects(local_path);
+
+            if (current_disk_reports_last_modified)
+            {
+                /// On a storage that records modification times, no timestamp means the path is already gone.
+                auto timestamp = metadata_storage->getLastModifiedIfExists(local_path);
+                if (!timestamp)
+                    continue;
+                last_modified = timestamp->epochTime();
+            }
         }
         catch (Exception & e)
         {
@@ -438,17 +469,25 @@ Chunk SystemRemoteDataPathsSource::generate()
             e.addMessage("While parsing file {}", local_path);
             throw;
         }
+        catch (const fs::filesystem_error & e)
+        {
+            /// Files or directories can disappear due to concurrent operations
+            if (e.code() == std::errc::no_such_file_or_directory)
+                continue;
+
+            throw;
+        }
 
         for (const auto & object : storage_objects)
         {
             ++row_count;
             col_disk_name->insert(disk_name);
-            col_base_path->insert(disk->getPath());
+            col_base_path->insert(base_path);
             if (cache)
                 col_cache_base_path->insert(cache->getBasePath());
             else
                 col_cache_base_path->insertDefault();
-            col_local_path->insert(local_path.string());
+            col_local_path->insert(local_path);
             col_remote_path->insert(object.remote_path);
             col_size->insert(object.bytes_size);
 
@@ -463,6 +502,8 @@ Chunk SystemRemoteDataPathsSource::generate()
             {
                 col_cache_paths->insertDefault();
             }
+            col_metadata_type->insert(current_metadata_type_name);
+            col_last_modified->insert(static_cast<UInt32>(last_modified));
         }
     }
     while (nextFile() || nextDisk());
@@ -470,12 +511,14 @@ Chunk SystemRemoteDataPathsSource::generate()
     Columns res_columns;
     res_columns.emplace_back(std::move(col_disk_name));
     res_columns.emplace_back(std::move(col_base_path));
+    res_columns.emplace_back(std::move(col_metadata_type));
     res_columns.emplace_back(std::move(col_cache_base_path));
     res_columns.emplace_back(std::move(col_local_path));
     res_columns.emplace_back(std::move(col_remote_path));
     res_columns.emplace_back(std::move(col_size));
     res_columns.emplace_back(std::move(col_namespace));
     res_columns.emplace_back(std::move(col_cache_paths));
+    res_columns.emplace_back(std::move(col_last_modified));
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);

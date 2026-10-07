@@ -49,7 +49,11 @@ static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 8 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
+/// How far ahead the `ReaderExecutor` resolves cache residency into its held `ReadPlan` (a cheap
+/// probe, not a read) so one resolve serves many windows.
+static constexpr size_t DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD = 16_MiB;
 static constexpr size_t MIN_READER_EXECUTOR_SIZE = 128_KiB;
+static constexpr size_t MAX_READER_EXECUTOR_SIZE = 40_MiB;
 
 /// The default memory-pressure thresholds, as a percent of a memory tracker's hard limit. Shared by the
 /// `reader_executor_memory_pressure_*_level_pct` settings and the monitor's built-in thresholds, which are
@@ -131,6 +135,9 @@ static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE = 2_GiB;
 static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_SIZE_RATIO = 0.5;
 static constexpr auto DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES = 1'000'000;
+static constexpr auto DEFAULT_COLUMNS_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_COLUMNS_CACHE_MAX_SIZE = 2_GiB;
+static constexpr auto DEFAULT_COLUMNS_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;

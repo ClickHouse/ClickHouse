@@ -1,3 +1,7 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: every parallel replica reads all rows of the table behind `timeSeriesTags`, so each row
+-- is returned once per replica, see https://github.com/ClickHouse/ClickHouse/issues/118130.
+
 -- The clause `AS <other_table>` copies the settings of the other table and merges them with the `SETTINGS` clause
 -- written in the query; the merge rules are covered by the unit test gtest_normalize_time_series_definition.cpp.
 -- This test checks the parts which need a server: the engine inherited by `AS` without `ENGINE`,
@@ -21,7 +25,7 @@ FROM system.tables WHERE database = currentDatabase() AND name = 'ts_derived';
 -- that needs the `tags_to_columns` setting. The database is passed explicitly because with parallel
 -- replicas the query can go to a replica where the current database is different.
 SELECT '-- the copied `tags_to_columns` fills the dedicated column';
-INSERT INTO ts_derived (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
+INSERT INTO ts_derived (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
 SELECT metric_name, job FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_derived') ORDER BY metric_name;
 
 DROP TABLE ts_derived;
