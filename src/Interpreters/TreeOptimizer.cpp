@@ -45,6 +45,7 @@ namespace Setting
 {
     extern const SettingsBool convert_query_to_cnf;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool exact_division_for_integers;
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
     extern const SettingsBool optimize_append_index;
     extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
@@ -542,10 +543,10 @@ void optimizeUsing(const ASTSelectQuery * select_query)
         expression_list = uniq_expressions_list;
 }
 
-void optimizeAggregationFunctions(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns)
+void optimizeAggregationFunctions(ASTPtr & query, const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns, bool exact_division_for_integers)
 {
     /// Move arithmetic operations out of aggregation functions
-    ArithmeticOperationsInAgrFuncVisitor::Data data{tables_with_columns};
+    ArithmeticOperationsInAgrFuncVisitor::Data data{tables_with_columns, exact_division_for_integers};
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
@@ -665,7 +666,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Move arithmetic operations out of aggregation functions
     if (settings[Setting::optimize_arithmetic_operations_in_aggregate_functions])
-        optimizeAggregationFunctions(query, tables_with_columns);
+        optimizeAggregationFunctions(query, tables_with_columns, settings[Setting::exact_division_for_integers]);
 
     bool converted_to_cnf = false;
     if (settings[Setting::convert_query_to_cnf])

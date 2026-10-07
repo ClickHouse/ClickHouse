@@ -109,7 +109,7 @@ Field zeroField(const Field & value)
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
-ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & tables)
+ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & tables, bool exact_division_for_integers)
 {
     static const std::unordered_map<String, std::unordered_set<String>> supported
         = {{"sum", {"multiply", "divide"}},
@@ -123,6 +123,10 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
     const ASTFunction * child_func = getInternalFunction(func);
     if (!child_func || !child_func->arguments || child_func->arguments->children.size() != 2 || !supported.contains(lower_name)
         || !supported.find(lower_name)->second.contains(child_func->name))
+        return {};
+
+    /// Operand types are not resolved here; preserve per-row truncation and overflow checks.
+    if (exact_division_for_integers && child_func->name == "divide")
         return {};
 
     auto original_alias = func.tryGetAlias();
@@ -189,7 +193,7 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
 
 void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
-    if (auto exchanged_funcs = tryExchangeFunctions(func, data.tables))
+    if (auto exchanged_funcs = tryExchangeFunctions(func, data.tables, data.exact_division_for_integers))
     {
         ast = exchanged_funcs;
 
