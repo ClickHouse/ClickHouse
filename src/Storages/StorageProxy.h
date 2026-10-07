@@ -59,6 +59,9 @@ public:
     /// database's `lazy_load_tables` setting. Both are only queried while validating an ALTER,
     /// which materializes the nested table anyway.
     bool supportsTTL() const override { return getNested()->supportsTTL(); }
+    /// Asked by every interpreter inside a transaction before the operation, which materializes the
+    /// nested table anyway - a lazy `MergeTree` table must not be rejected as an engine without them.
+    bool supportsTransactions() const override { return getNested()->supportsTransactions(); }
     bool supportsStatistics() const override { return getNested()->supportsStatistics(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
@@ -189,6 +192,14 @@ public:
     /// methods below, so it has to be forwarded as well - otherwise `BACKUP TABLE ... PARTITION ...`
     /// is rejected with `Table engine TableProxy doesn't support partitions`.
     bool supportsBackupPartition() const override { return getNested()->supportsBackupPartition(); }
+
+    /// `DatabaseWithOwnTablesBase::getTablesForBackup` calls it on the catalog object before the data is
+    /// collected, e.g. `ReplicatedMergeTree` puts the current metadata from ZooKeeper into the backed up
+    /// `CREATE TABLE` query here.
+    void applyMetadataChangesToCreateQueryForBackup(const ASTPtr & create_query) const override
+    {
+        getNested()->applyMetadataChangesToCreateQueryForBackup(create_query);
+    }
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override
     {

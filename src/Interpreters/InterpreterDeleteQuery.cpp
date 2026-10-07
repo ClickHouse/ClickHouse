@@ -95,8 +95,17 @@ BlockIO InterpreterDeleteQuery::execute()
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    checkStorageSupportsTransactionsIfNeeded(table, getContext());
-    if (table->isStaticStorage())
+
+    /// A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in, which both
+    /// defeats a downcast to the engine and answers metadata queries from the columns cached out of the
+    /// `CREATE TABLE` query alone - without the projections, which the guard below has to see. It does
+    /// not know about transactions or read-only disks either, so the checks right below would reject or
+    /// let through the wrong tables. A `DELETE` materializes the table in any case, so resolve it to the
+    /// real storage right away.
+    StoragePtr engine_table = resolveStorageProxyLoading(table);
+
+    checkStorageSupportsTransactionsIfNeeded(engine_table, getContext());
+    if (engine_table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
@@ -115,12 +124,6 @@ BlockIO InterpreterDeleteQuery::execute()
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-
-    /// A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in, which both
-    /// defeats a downcast to the engine and answers metadata queries from the columns cached out of the
-    /// `CREATE TABLE` query alone - without the projections, which the guard below has to see. A
-    /// `DELETE` materializes the table in any case, so resolve it to the real storage right away.
-    StoragePtr engine_table = resolveStorageProxyLoading(table);
 
     /// For DataLake tables with lazy initialization (e.g. from DatabaseDataLake / REST catalog),
     /// metadata is not loaded until the first access.  Initialize it now so that
