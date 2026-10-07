@@ -13,7 +13,6 @@ Partition::Partition()
 void Partition::beginAt(const SlidingBlocks & blocks, RowNumber first_row)
 {
     partition_bounds = PartitionBounds{.start = first_row, .end = blocks.next(first_row), .fully_visible = false};
-    first_peer_group_index_in_input = blocks.blockAt(first_row.block).index.peer_group_indexes[first_row.row];
     rows_count = 1;
 }
 
@@ -58,7 +57,7 @@ int64_t Partition::size() const
 
 int64_t Partition::peerGroupIndex(const SlidingBlocks & blocks, RowNumber row) const
 {
-    return blocks.blockAt(row.block).index.peer_group_indexes[row.row] - first_peer_group_index_in_input;
+    return blocks.blockAt(row.block).index.peer_group_indexes[row.row];
 }
 
 }

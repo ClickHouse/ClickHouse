@@ -32,7 +32,6 @@ private:
     PartitionBounds partition_bounds;
     RowPoint end_point;
     int64_t rows_count = 0;
-    int64_t first_peer_group_index_in_input = 0;
 };
 
 }

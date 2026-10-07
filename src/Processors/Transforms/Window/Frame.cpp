@@ -55,22 +55,20 @@ bool advanceToPeerGroup(const SlidingBlocks & blocks, const Partition & partitio
 
     while (bound.location != partition_end)
     {
-        bound.peer_group_index_in_partition = partition.peerGroupIndex(blocks, bound.location);
+        const SlidingBlock & block = blocks.blockAt(bound.location.block);
+        const std::vector<int64_t> & groups = block.index.peer_group_indexes;
+        bound.peer_group_index_in_partition = groups[bound.location.row];
         if (bound.peer_group_index_in_partition >= group)
             return true;
 
-        const SlidingBlock & block = blocks.blockAt(bound.location.block);
-        const std::vector<int64_t> & groups = block.index.peer_group_indexes;
         const int64_t rows_end = partition_end.block == bound.location.block ? partition_end.row : block.rows_count;
-        const int64_t first_group_in_input = groups[bound.location.row] - bound.peer_group_index_in_partition;
-        const int64_t target_in_input = group + first_group_in_input;
-        const int64_t found = findEqualRangeEndAssumeSorted(bound.location.row, rows_end, 16, [&](size_t row) { return groups[row] < target_in_input; });
+        const int64_t found = findEqualRangeEndAssumeSorted(bound.location.row, rows_end, 16, [&](size_t row) { return groups[row] < group; });
         const int64_t rows_passed = found - bound.location.row;
         bound.location = blocks.move(bound.location, rows_passed);
         bound.row_index_in_partition += rows_passed;
         if (found < rows_end)
         {
-            bound.peer_group_index_in_partition = groups[found] - first_group_in_input;
+            bound.peer_group_index_in_partition = groups[found];
             return true;
         }
     }
