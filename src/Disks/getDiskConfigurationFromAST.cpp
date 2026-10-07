@@ -356,9 +356,12 @@ bool resolvedS3BackendIsRestricted(
     const Poco::Util::AbstractConfiguration & config, const String & prefix, bool is_root, const DynamicS3DiskCredentialInfo & info)
 {
     auto key = [&](const String & k) { return prefix + k; };
-    auto is_s3_type = [](const String & t) { return t == "s3" || t.starts_with("s3_"); };
-    const bool resolved_backend_is_s3
-        = is_s3_type(config.getString(key("type"), "")) || is_s3_type(config.getString(key("object_storage_type"), ""));
+    /// Pick the backend the same way `ObjectStorageFactory::create` does: a root `type = local` is a disk of
+    /// its own, and otherwise `object_storage_type` is authoritative when it is given, so a compatibility
+    /// alias `type = s3` next to `object_storage_type = local` is a local backend.
+    const String type = config.getString(key("type"), "");
+    const String backend = (is_root && type == "local") ? type : config.getString(key("object_storage_type"), type);
+    const bool resolved_backend_is_s3 = backend == "s3" || backend.starts_with("s3_");
     if (!resolved_backend_is_s3)
         return false;
 
