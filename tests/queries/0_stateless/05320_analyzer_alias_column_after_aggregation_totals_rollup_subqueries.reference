@@ -36,6 +36,10 @@ b	2	b!	102	20
 a
 a	a!
 b	b!
+a
+b
+a	42
+b	42
 -- remote
 a	a!	100
 b	b!	40

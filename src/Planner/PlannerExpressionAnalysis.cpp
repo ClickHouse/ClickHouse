@@ -372,12 +372,12 @@ public:
             }
             case QueryTreeNodeType::QUERY:
             {
-                visit(node->as<QueryNode &>().getCorrelatedColumnsNode());
+                visitCorrelatedColumns(node->as<QueryNode &>().getCorrelatedColumnsNode());
                 return;
             }
             case QueryTreeNodeType::UNION:
             {
-                visit(node->as<UnionNode &>().getCorrelatedColumnsNode());
+                visitCorrelatedColumns(node->as<UnionNode &>().getCorrelatedColumnsNode());
                 return;
             }
             default:
@@ -392,7 +392,14 @@ public:
     const ColumnNodes & getAliasColumns() const { return alias_columns; }
 
 private:
-    void visitColumn(const QueryTreeNodePtr & node)
+    void visitCorrelatedColumns(const QueryTreeNodePtr & correlated_columns_node)
+    {
+        for (const auto & correlated_column : correlated_columns_node->as<ListNode &>().getNodes())
+            if (correlated_column->getNodeType() == QueryTreeNodeType::COLUMN)
+                visitColumn(correlated_column, /*is_correlated=*/ true);
+    }
+
+    void visitColumn(const QueryTreeNodePtr & node, bool is_correlated = false)
     {
         auto column_node = std::static_pointer_cast<ColumnNode>(node);
         if (!column_node->hasExpression() || outer_columns.contains(column_node))
@@ -404,9 +411,10 @@ private:
             || (column_source->getNodeType() != QueryTreeNodeType::TABLE && column_source->getNodeType() != QueryTreeNodeType::TABLE_FUNCTION))
             return;
 
-        /// The planner computes constant ALIAS expressions in place.
+        /// The planner computes constant ALIAS expressions in place, but a correlated subquery takes the values
+        /// of its correlated columns from the outer query, so they must be computed even if they are constant.
         const auto & expression = column_node->getExpression();
-        if (expression->getNodeType() == QueryTreeNodeType::CONSTANT)
+        if (expression->getNodeType() == QueryTreeNodeType::CONSTANT && !is_correlated)
             return;
 
         auto column_name = getActionNodeName(node);
