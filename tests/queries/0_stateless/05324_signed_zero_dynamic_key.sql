@@ -25,16 +25,39 @@ INSERT INTO t_signed_zero_dynamic_tuple VALUES ((-0.0, 1)), ((0.5, 1)), ((0.0, 1
 SELECT 'k = (0.0, 1)', count(), (SELECT count() FROM t_signed_zero_dynamic_tuple WHERE k = (0.0, 1) SETTINGS use_primary_key = 0) FROM t_signed_zero_dynamic_tuple WHERE k = (0.0, 1);
 DROP TABLE t_signed_zero_dynamic_tuple;
 
--- Only a constant that can be a zero gives up the key: a non-zero number, or a string that is not a zero,
--- still selects a few granules out of 100.
+-- The comparison parses a string into the type of each stored variant, so a string that is not a zero as a
+-- `Float64` can still be one as a narrower float: `'1e-50'` underflows to zero as a `Float32`, and `'1e-42'`
+-- as a `BFloat16`.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_float32;
+DROP TABLE IF EXISTS t_signed_zero_dynamic_bfloat16;
+CREATE TABLE t_signed_zero_dynamic_float32 (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
+INSERT INTO t_signed_zero_dynamic_float32 VALUES (-0.0::Float32), (0.0::Float32), (2::Float32);
+CREATE TABLE t_signed_zero_dynamic_bfloat16 (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
+INSERT INTO t_signed_zero_dynamic_bfloat16 VALUES (-0.0::BFloat16), (0.0::BFloat16), (2::BFloat16);
+
+SELECT 'Float32: d = \'1e-50\'', count(), (SELECT count() FROM t_signed_zero_dynamic_float32 WHERE d = '1e-50' SETTINGS use_primary_key = 0) FROM t_signed_zero_dynamic_float32 WHERE d = '1e-50';
+SELECT 'BFloat16: d = \'1e-42\'', count(), (SELECT count() FROM t_signed_zero_dynamic_bfloat16 WHERE d = '1e-42' SETTINGS use_primary_key = 0) FROM t_signed_zero_dynamic_bfloat16 WHERE d = '1e-42';
+
+DROP TABLE t_signed_zero_dynamic_float32;
+DROP TABLE t_signed_zero_dynamic_bfloat16;
+
+-- A number spelled in a non-canonical way: the stored float is keyed as '42', but the comparison parses '042' to 42.
+DROP TABLE IF EXISTS t_signed_zero_dynamic_non_canonical;
+CREATE TABLE t_signed_zero_dynamic_non_canonical (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
+INSERT INTO t_signed_zero_dynamic_non_canonical SELECT number::Float64 FROM numbers(100);
+SELECT 'd = \'042\'', count(), (SELECT count() FROM t_signed_zero_dynamic_non_canonical WHERE d = '042' SETTINGS use_primary_key = 0) FROM t_signed_zero_dynamic_non_canonical WHERE d = '042';
+DROP TABLE t_signed_zero_dynamic_non_canonical;
+
+-- Only a constant that can be a zero gives up the key: a non-zero number, or a string that does not parse as
+-- a number, still selects a few granules out of 100.
 DROP TABLE IF EXISTS t_signed_zero_dynamic_strings;
 DROP TABLE IF EXISTS t_signed_zero_dynamic_floats;
 CREATE TABLE t_signed_zero_dynamic_strings (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
-INSERT INTO t_signed_zero_dynamic_strings SELECT toString(number) FROM numbers(100);
+INSERT INTO t_signed_zero_dynamic_strings SELECT concat('s', toString(number)) FROM numbers(100);
 CREATE TABLE t_signed_zero_dynamic_floats (d Dynamic) ENGINE = MergeTree ORDER BY d::String SETTINGS index_granularity = 1;
 INSERT INTO t_signed_zero_dynamic_floats SELECT number::Float64 FROM numbers(100);
 
-SELECT 'pruned for \'42\'', count() < 10 FROM t_signed_zero_dynamic_strings WHERE d = '42' SETTINGS force_primary_key = 1, max_rows_to_read = 10;
+SELECT 'pruned for \'s42\'', count() < 10 FROM t_signed_zero_dynamic_strings WHERE d = 's42' SETTINGS force_primary_key = 1, max_rows_to_read = 10;
 SELECT 'pruned for 42.0', count() < 10 FROM t_signed_zero_dynamic_floats WHERE d = 42.0 SETTINGS force_primary_key = 1, max_rows_to_read = 10;
 
 DROP TABLE t_signed_zero_dynamic_strings;
