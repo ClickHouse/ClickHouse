@@ -117,8 +117,23 @@ struct ColumnsCacheEntry
     /// Whether a read has found the entry since it was written, see `ColumnsCache::shouldAdmit`.
     mutable std::atomic<bool> used{false};
 
+    /// Whether the memory of `column` is the server's rather than the query's that read it: set when the
+    /// cache admits the entry and takes the memory off the query, see `ColumnsCache::setMany`, or from the
+    /// start for an entry the cache builds itself. Such a column is released under
+    /// `MemoryTrackerBlockerInThread`, so that the query or the user that happens to release it is not
+    /// credited with memory it was never charged for. The rest of the entry is the server's from the
+    /// start, see `makeColumnsCacheEntry`.
+    std::atomic<bool> owned_by_server{false};
+
+    ColumnsCacheEntry() = default;
+    ~ColumnsCacheEntry();
+
     bool coversMarks(size_t from_mark, size_t to_mark) const { return first_mark <= from_mark && to_mark <= end_mark; }
 };
+
+/// A new entry, whose own memory is the server's: allocated and released under
+/// `MemoryTrackerBlockerInThread`, like the strings in it, which have to be assigned under it as well.
+std::shared_ptr<ColumnsCacheEntry> makeColumnsCacheEntry();
 
 struct ColumnsCacheWeightFunction
 {
@@ -449,6 +464,10 @@ private:
     /// the union of the two when they overlap or touch, or nothing when the new entry adds no
     /// granule. See `setMany`.
     static MappedPtr mergeEntries(const MappedPtr & existing, const MappedPtr & incoming);
+
+    /// `setMany` under `MemoryTrackerBlockerInThread`. Adds the memory of the admitted columns the
+    /// query read to `bytes_to_hand_over`.
+    size_t setManyImpl(const std::vector<MappedPtr> & entries, UInt64 expected_table_generation, size_t & bytes_to_hand_over);
 };
 
 using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;

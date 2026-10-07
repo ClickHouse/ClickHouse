@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
 #include <Common/FailPoint.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/UUID.h>
@@ -935,10 +936,13 @@ bool MergeTreeReaderWide::writeStripeToColumnsCache(
 
 void MergeTreeReaderWide::addPendingColumnsCacheEntry(size_t pos, size_t first_mark, size_t end_mark, ColumnPtr column)
 {
-    auto entry = std::make_shared<ColumnsCacheEntry>();
+    auto entry = makeColumnsCacheEntry();
+    {
+        MemoryTrackerBlockerInThread not_charged_to_query_or_user;
+        entry->part_name = data_part_info_for_read->getPartName();
+        entry->column_name = requested_column_names[pos];
+    }
     entry->table_uuid = data_part_info_for_read->getTableUUID();
-    entry->part_name = data_part_info_for_read->getPartName();
-    entry->column_name = requested_column_names[pos];
     entry->schema_identity = settings.columns_cache_schema_identity;
     entry->first_mark = first_mark;
     entry->end_mark = end_mark;
