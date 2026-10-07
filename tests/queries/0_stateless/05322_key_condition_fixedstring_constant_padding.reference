@@ -10,6 +10,8 @@ SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Va
 3
 SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Dynamic);
 3
+SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Variant(String, FixedString(4))));
+0
 SELECT count() FROM t_bare WHERE s IN (SELECT toFixedString('abc', 4));
 3
 SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)));
@@ -18,6 +20,19 @@ SELECT count() FROM t_bare WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Dy
 0
 SELECT count() FROM t_array WHERE s IN (SELECT [toFixedString('abc', 4)]);
 3
+-- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
+SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
+1
+SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Dynamic) SETTINGS force_primary_key = 1;
+1
+SELECT count() FROM t_monotonic WHERE s <= CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
+1
+SELECT count() FROM t_bare WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
+1
+SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
+1
+SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Dynamic)) SETTINGS force_primary_key = 1;
+1
 DROP TABLE t_monotonic;
 DROP TABLE t_deterministic;
 DROP TABLE t_bare;

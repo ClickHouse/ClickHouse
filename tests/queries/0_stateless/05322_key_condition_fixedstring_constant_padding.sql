@@ -2,6 +2,8 @@
 -- pushed through a key expression this way: `s <= toFixedString('abc', 4)` would become `key <= 'abc'`. The same
 -- holds for a `FixedString` nested in another type or held by a `Variant` or `Dynamic` value.
 
+SET allow_suspicious_variant_types = 1;
+
 DROP TABLE IF EXISTS t_monotonic;
 DROP TABLE IF EXISTS t_deterministic;
 DROP TABLE IF EXISTS t_bare;
@@ -30,10 +32,19 @@ SELECT count() FROM t_deterministic WHERE s = toFixedString('abc', 4);
 SELECT count() FROM t_deterministic WHERE s IN (SELECT toFixedString('abc', 4));
 SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Variant(FixedString(4), UInt64));
 SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Dynamic);
+SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Variant(String, FixedString(4))));
 SELECT count() FROM t_bare WHERE s IN (SELECT toFixedString('abc', 4));
 SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)));
 SELECT count() FROM t_bare WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Dynamic));
 SELECT count() FROM t_array WHERE s IN (SELECT [toFixedString('abc', 4)]);
+
+-- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
+SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Dynamic) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_monotonic WHERE s <= CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_bare WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Dynamic)) SETTINGS force_primary_key = 1;
 
 DROP TABLE t_monotonic;
 DROP TABLE t_deterministic;

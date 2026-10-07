@@ -1874,10 +1874,39 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
+/// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
+/// array or a set usually occupies only some of them. Judging such a constant by its declared alternatives
+/// would decline exact pruning because of branches that carry no value at all, so narrow the type
+/// down to the alternatives that are actually occupied. `ignored_discriminator` skips the shared
+/// variant of a `Dynamic` column, which is handled by the caller.
+static DataTypePtr narrowVariantToOccupiedAlternatives(
+    const ColumnVariant & variant_column, const DataTypes & alternatives, std::optional<size_t> ignored_discriminator = {})
+{
+    DataTypes occupied_types;
+    for (size_t i = 0; i < alternatives.size(); ++i)
+    {
+        if (ignored_discriminator && i == *ignored_discriminator)
+            continue;
+        if (!variant_column.getVariantByGlobalDiscriminator(i).empty())
+            occupied_types.push_back(alternatives[i]);
+    }
+
+    /// A column with no occupied alternative holds nothing but NULLs, which never poison the set:
+    /// they are either dropped by the accurate-or-null conversion or match the NULL of a `Nullable`
+    /// key.
+    if (occupied_types.empty())
+        return std::make_shared<DataTypeNothing>();
+
+    if (occupied_types.size() == 1)
+        return occupied_types.front();
+
+    return std::make_shared<DataTypeVariant>(occupied_types);
+}
+
 /// A cast of a `FixedString` to `String` drops its trailing zero bytes, which changes how it compares. This also
 /// holds for a `FixedString` nested in an `Array`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
-/// `from_column`, if given, narrows a top-level `Dynamic` to the types it actually stores. Pass it only for the very
-/// values the condition compares with, like set elements: a `Dynamic` constant rebuilt from a `Field` loses its type.
+/// `from_column`, if given, narrows a top-level `Variant` or `Dynamic` to the types it actually stores. Pass it only for
+/// the very values the condition compares with, like set elements: a constant rebuilt from a `Field` loses its type.
 static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr)
 {
     auto from = removeLowCardinalityAndNullable(from_type);
@@ -1894,7 +1923,14 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
         /// The shared variant holds values of any type in serialized form.
         if (!dynamic_column.getSharedVariant().empty())
             return true;
-        from = dynamic_column.getVariantInfo().variant_type;
+        from = narrowVariantToOccupiedAlternatives(
+            dynamic_column.getVariantColumn(),
+            assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants(),
+            dynamic_column.getSharedVariantDiscriminator());
+    }
+    else if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from.get()); from_column && variant_type)
+    {
+        from = narrowVariantToOccupiedAlternatives(assert_cast<const ColumnVariant &>(*from_column), variant_type->getVariants());
     }
 
     return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
@@ -2466,9 +2502,11 @@ static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input
 
 
 /// Cast column to target_type and fail if the cast introduces NULLs.
-static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
+/// `column_holds_compared_values` is false for a constant rebuilt from a `Field`, see `castMayDropFixedStringPadding`.
+static bool castColumnWithoutNulls(
+    ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type, bool column_holds_compared_values)
 {
-    if (castMayDropFixedStringPadding(type, target_type))
+    if (castMayDropFixedStringPadding(type, target_type, column_holds_compared_values ? column.get() : nullptr))
         return false;
 
     if (canBeSafelyCast(type, target_type))
@@ -2526,7 +2564,8 @@ static bool convertColumnForDeterministicDag(
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
     DataTypePtr & out_type,
-    bool & out_transform_applied)
+    bool & out_transform_applied,
+    bool column_holds_compared_values)
 {
     out_transform_applied = false;
 
@@ -2596,7 +2635,8 @@ static bool convertColumnForDeterministicDag(
             out_column = input_column;
             out_type = input_type;
 
-            if (!input_type->equals(*cast_result_type) && !castColumnWithoutNulls(out_column, out_type, cast_result_type))
+            if (!input_type->equals(*cast_result_type)
+                && !castColumnWithoutNulls(out_column, out_type, cast_result_type, column_holds_compared_values))
                 return false;
 
             return finalizeTransformedColumn(out_column, out_type);
@@ -2607,7 +2647,7 @@ static bool convertColumnForDeterministicDag(
         /// `DateTime64(6)` constant casts to a `String` with six fractional digits, while the key space
         /// of `ORDER BY d::String` over a `DateTime64(3)` column holds three of them, and the range
         /// check then misses the value and prunes the part that holds it.
-        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
+        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type, column_holds_compared_values))
         {
             /// The round trip is not always possible - `String` -> `Dynamic` -> `String` - and the cast
             /// above refuses such a target outright. Apply the `CAST` of the DAG directly then, but only
@@ -2704,7 +2744,8 @@ static bool applyDeterministicDagToColumn(
     bool transform_applied = false;
 
     if (!convertColumnForDeterministicDag(
-            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied))
+            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied,
+            /* column_holds_compared_values = */ true))
         return false;
 
     if (transform_applied)
@@ -2958,7 +2999,8 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr transform_input_type;
     bool transform_applied = false;
     if (!convertColumnForDeterministicDag(
-            const_column, const_value_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
+            const_column, const_value_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied,
+            /* column_holds_compared_values = */ false))
         return false;
 
     /// The direct-CAST fast path converts and transforms in one step, so it produces no intermediate value
@@ -3655,35 +3697,6 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         out.relaxed = true;
 
     return true;
-}
-
-/// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
-/// array usually occupies only some of them. Judging such a constant by its declared alternatives
-/// would decline exact pruning because of branches that carry no value at all, so narrow the type
-/// down to the alternatives that are actually occupied. `ignored_discriminator` skips the shared
-/// variant of a `Dynamic` column, which is handled by the caller.
-static DataTypePtr narrowVariantToOccupiedAlternatives(
-    const ColumnVariant & variant_column, const DataTypes & alternatives, std::optional<size_t> ignored_discriminator = {})
-{
-    DataTypes occupied_types;
-    for (size_t i = 0; i < alternatives.size(); ++i)
-    {
-        if (ignored_discriminator && i == *ignored_discriminator)
-            continue;
-        if (!variant_column.getVariantByGlobalDiscriminator(i).empty())
-            occupied_types.push_back(alternatives[i]);
-    }
-
-    /// A column with no occupied alternative holds nothing but NULLs, which never poison the set:
-    /// they are either dropped by the accurate-or-null conversion or match the NULL of a `Nullable`
-    /// key.
-    if (occupied_types.empty())
-        return std::make_shared<DataTypeNothing>();
-
-    if (occupied_types.size() == 1)
-        return occupied_types.front();
-
-    return std::make_shared<DataTypeVariant>(occupied_types);
 }
 
 bool KeyCondition::tryPrepareSetIndexForHas(
@@ -4992,6 +5005,16 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
 
+            /// `tryGetConstant` hands out the nested value of a `Variant`/`Dynamic` constant, and wrapping the
+            /// constant rebuilds it from that value, which cannot tell its active member type from the declared
+            /// wrapper. Wrap it as a value of the active member type then, when that type is known.
+            /// Stays nullptr for a constant of any other type, or when the active member type cannot be determined.
+            DataTypePtr active_const_type;
+            if (const auto unwrapped_const_type = removeLowCardinalityAndNullable(const_type);
+                isVariant(unwrapped_const_type) || isDynamic(unwrapped_const_type))
+                active_const_type = tryGetActiveTypeOfErasedConstant(func.getArgumentAt(const_arg_pos));
+            DataTypePtr wrapped_const_type = active_const_type ? active_const_type : const_type;
+
             /// If the table sorting key is `x` and the query predicate is `f(x) <op> const`, we try to analyze `f`.
             /// If `f` is a monotonic function chain, we store the chain and later, in `checkInRange`, apply it to
             /// the left and right mark bounds before comparing with `const` to decide whether the mark can be skipped.
@@ -5020,17 +5043,19 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (
                 !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, constant_chain_is_positive))
+                    key_arg, info, key_column_num, key_expr_type, const_value, wrapped_const_type, constant_chain_is_positive))
             {
+                const_type = wrapped_const_type;
                 condition_is_relaxed = true;
             }
             else if (func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
             {
                 bool atom_is_exact = false;
                 if (!canConstantBeWrappedByDeterministicFunctions(
-                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, atom_is_exact))
+                        key_arg, info, key_column_num, key_expr_type, const_value, wrapped_const_type, atom_is_exact))
                     return false;
 
+                const_type = wrapped_const_type;
                 condition_is_relaxed = !atom_is_exact;
             }
             else
@@ -5119,10 +5144,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         /// cannot be determined counts as possibly padded, so the range is declined.
                         DataTypePtr const_type_unwrapped = removeLowCardinalityAndNullable(const_type);
                         if (WhichDataType(const_type_unwrapped).isVariant() || WhichDataType(const_type_unwrapped).isDynamic())
-                        {
-                            const auto active_type = tryGetActiveTypeOfErasedConstant(func.getArgumentAt(const_arg_pos));
-                            const_type_unwrapped = active_type ? removeLowCardinalityAndNullable(active_type) : nullptr;
-                        }
+                            const_type_unwrapped = active_const_type ? removeLowCardinalityAndNullable(active_const_type) : nullptr;
 
                         if ((!const_type_unwrapped || WhichDataType(const_type_unwrapped).isFixedString())
                             && isStringOrFixedString(key_expr_type_not_null))
