@@ -2669,9 +2669,9 @@ struct ToYearNumSinceEpochImpl
             /// Clamped: see ToStartOfDayImpl.
             return static_cast<UInt16>(std::clamp<Int64>(time_zone.toYearSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static auto execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYearSinceEpoch(static_cast<time_t>(t));
+        return execute(static_cast<Int64>(t), time_zone);
     }
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -2766,9 +2766,9 @@ struct ToMonthNumSinceEpochImpl
             /// Clamped: see ToStartOfDayImpl.
             return static_cast<UInt16>(std::clamp<Int64>(time_zone.toMonthNumSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static auto execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(static_cast<time_t>(t)));
+        return execute(static_cast<Int64>(t), time_zone);
     }
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -2832,9 +2832,9 @@ struct ToRelativeDayNumImpl
             /// Clamped: see ToStartOfDayImpl.
             return static_cast<UInt16>(std::clamp<Int64>(time_zone.toDayNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
-    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    static auto execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(t)));
+        return execute(static_cast<Int64>(t), time_zone);
     }
     static auto execute(Int32 d, const DateLUTImpl &)
     {
