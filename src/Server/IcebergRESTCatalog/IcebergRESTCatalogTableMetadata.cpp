@@ -52,9 +52,9 @@ void collectFieldId(const Poco::JSON::Object & holder, const String & key, std::
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate field id {} in schema", id);
 }
 
-void checkRequiredFlag(const Poco::JSON::Object & holder, const String & key)
+void validateBoolean(const Poco::JSON::Object & object, const String & key)
 {
-    if (!holder.has(key) || !holder.get(key).isBoolean())
+    if (!object.has(key) || !object.get(key).isBoolean())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or non-boolean '{}'", key);
 }
 
@@ -82,7 +82,7 @@ void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<In
             collectFieldId(*field_object, f_id, ids);
             if (!field_object->has(f_name) || !field_object->get(f_name).isString() || field_object->getValue<String>(f_name).empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every schema field must have a non-empty string 'name'");
-            checkRequiredFlag(*field_object, f_required);
+            validateBoolean(*field_object, f_required);
             if (!field_object->has(f_type))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every schema field must have a 'type'");
             collectAndValidateNestedFields(field_object->get(f_type), ids);
@@ -91,7 +91,7 @@ void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<In
     else if (kind == f_list)
     {
         collectFieldId(*object, f_element_id, ids);
-        checkRequiredFlag(*object, f_element_required);
+        validateBoolean(*object, f_element_required);
         collectAndValidateNestedFields(object->get(f_element), ids);
     }
     else if (kind == f_map)
@@ -99,21 +99,21 @@ void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<In
         collectFieldId(*object, f_key_id, ids);
         collectAndValidateNestedFields(object->get(f_key), ids);
         collectFieldId(*object, f_value_id, ids);
-        checkRequiredFlag(*object, f_value_required);
+        validateBoolean(*object, f_value_required);
         collectAndValidateNestedFields(object->get(f_value), ids);
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown nested type '{}' in schema", kind);
 }
 
-void checkString(const Poco::JSON::Object & object, const String & key)
+void validateString(const Poco::JSON::Object & object, const String & key)
 {
     if (!object.has(key) || !object.get(key).isString() || object.getValue<String>(key).empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty string '{}'", key);
 }
 
 /// Reuse the reader's parser so that every persisted transform can be read back.
-void checkTransform(const String & transform)
+void validateTransform(const String & transform)
 {
 #if USE_AVRO
     if (!parseTransformAndArgument(transform))
@@ -148,8 +148,8 @@ std::vector<Poco::JSON::Object::Ptr> getAndValidateSpecFields(const Poco::JSON::
         if (!schema_ids.contains(source_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown source-id {}", source_id);
         for (const auto & key : required_field_members)
-            checkString(*field_object, key);
-        checkTransform(field_object->getValue<String>(f_transform));
+            validateString(*field_object, key);
+        validateTransform(field_object->getValue<String>(f_transform));
 
         if (kind == SpecKind::SortOrder)
         {
