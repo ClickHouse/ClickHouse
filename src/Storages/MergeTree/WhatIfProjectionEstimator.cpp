@@ -711,6 +711,17 @@ bool tryEstimateProjection(
         return false;
     }
 
+    /// the sample model maps every row read to its granule, and the projection drops deleted rows
+    const bool has_lightweight_delete = std::ranges::any_of(
+        baseline_parts, [](const auto & part_with_ranges) { return part_with_ranges.data_part->hasLightweightDelete(); });
+    if (sample_step > 1 && has_lightweight_delete)
+    {
+        result.empirical_unsupported_reason
+            = "The parts read have lightweight-deleted rows, which an estimate from a sample of granules cannot follow "
+              "(see projection_scan_budget_rows)";
+        return false;
+    }
+
     /// the granule floor and one granule per part can outgrow the budget, so check the read limit before reading
     std::vector<MarkRanges> ranges_to_scan;
     ranges_to_scan.reserve(baseline_parts.size());
