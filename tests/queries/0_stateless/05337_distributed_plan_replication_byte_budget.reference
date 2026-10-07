@@ -8,7 +8,7 @@ Expression ((Project names + Projection))
             ShuffleExchange (by hash([__table1.k]))
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (default.t_rb_big)
-            ScatterExchange (by hash([__table2.k]))
+            ShuffleExchange (by hash([__table2.k]))
               Expression (Change column names to column identifiers)
                 ReadFromMergeTree (default.t_rb_small)
 -- the same rows at 16 bytes fit: broadcast
@@ -56,6 +56,13 @@ Expression ((Project names + Projection))
         ScatterExchange (any)
           Expression ((Before GROUP BY + Change column names to column identifiers))
             ReadFromMergeTree (default.t_rb_small)
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t_rb_small)
+-- the width of a row comes from the estimator too: 2 MB rows by hint exceed the budget
 Expression ((Project names + Projection))
   MergingAggregated (merge)
     GatherExchange

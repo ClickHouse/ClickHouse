@@ -1013,15 +1013,19 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     if (read_from_merge_tree_step)
     {
         /// A small table stays one read task, which the plan copies to every node when the other
-        /// side of a join is distributed; so it has to fit the row limit and the byte budget.
+        /// side of a join is distributed; so it has to fit the row limit and the byte budget. The
+        /// rows and the row width come from the estimator, as for the right side of a broadcast
+        /// join: a hint or column statistics widen a row beyond what its types alone say.
         /// TODO: implement better logic for choosing number of parallel readers
         auto analysis_result = read_from_merge_tree_step->getOrCreateAnalyzedResult();
         if (analysis_result)
         {
+            const auto stats = estimateReadRowsCount(node);
             const ReplicationSize size{
-                .estimated_rows = analysis_result->selected_rows,
-                .max_rows = analysis_result->selected_rows,
-                .bytes_per_row = estimateRowWidthFromHeader(*read_from_merge_tree_step->getOutputHeader())};
+                .estimated_rows = stats.estimated_rows,
+                .estimate_from_defaults = stats.estimate_from_defaults,
+                .max_rows = stats.max_rows ? stats.max_rows : std::optional<UInt64>(analysis_result->selected_rows),
+                .bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_merge_tree_step->getOutputHeader(), stats.column_stats))};
             if (decideReplication(size, replicationBudget(optimization_settings)).allowed)
                 return;
         }

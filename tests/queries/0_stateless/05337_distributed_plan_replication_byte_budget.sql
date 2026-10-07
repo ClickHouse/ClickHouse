@@ -45,6 +45,11 @@ SELECT '-- a table that fits the row limit stays one read task, unless its bytes
 EXPLAIN SELECT sum(v) FROM t_rb_small;
 EXPLAIN SELECT sum(v) FROM t_rb_small SETTINGS distributed_plan_max_bytes_to_broadcast = 1000;
 
+SELECT '-- the width of a row comes from the estimator too: 2 MB rows by hint exceed the budget';
+SET param__internal_join_table_stat_hints = '{"t_rb_small": {"cardinality": 1000, "avg_row_bytes": 2000000}}';
+EXPLAIN SELECT sum(v) FROM t_rb_small;
+SET param__internal_join_table_stat_hints = '{}';
+
 SELECT '-- results do not depend on the shape';
 SELECT count() FROM t_rb_big AS b JOIN t_rb_small AS s ON b.k = s.k WHERE s.v % 7 = 1
 SETTINGS distributed_plan_execute_locally = 1;
