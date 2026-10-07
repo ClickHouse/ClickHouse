@@ -716,6 +716,9 @@ TEST(ParallelReplicasShardScope, CoordinatorReplicasCountFollowsAliasesOfTheSame
 
     auto context = Context::createCopy(getContext().context);
     context->makeQueryContext();
+    /// A parallel-replicas read always resolves its cluster from `cluster_for_parallel_replicas`
+    /// (see `Context::getClusterForParallelReplicas`), so it is never empty there.
+    context->setSetting("cluster_for_parallel_replicas", Field{"alias_a"});
 
     /// The dispatch records the count for the cluster narrowed to the shard it reads.
     const auto scope = getParallelReplicasCoordinatorClusterScope(context, *alias_a->getClusterWithSingleShard(1));
