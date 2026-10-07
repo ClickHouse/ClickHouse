@@ -178,6 +178,8 @@ DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
 # Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
+# Pause between the log export flushes of a nightly run.
+NIGHTLY_FLUSH_INTERVAL_SEC = 900
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
 flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
@@ -1251,7 +1253,8 @@ def match_reference_debug_info():
 
 
 class CHServer:
-    NIGHTLY_TEST_TIMEOUT_SEC = 3 * 3600
+    # `tpcds_sf100`: 2.7 h on `master_head`, hit 3 h on `release_base`.
+    NIGHTLY_TEST_TIMEOUT_SEC = 4 * 3600
     # upstream/master
     LEFT_SERVER_PORT = 9001
     LEFT_SERVER_KEEPER_PORT = 9181
@@ -2786,6 +2789,7 @@ def main():
                         entry.unlink()
 
         def run_tests():
+            last_flush = time.monotonic()
             for test in test_files:
                 clean = CHServer.run_test(
                     "./tests/performance/" + test,
@@ -2795,8 +2799,9 @@ def main():
                     long=nightly,
                 )
                 cleanup_user_files()
-                if nightly:
+                if nightly and time.monotonic() - last_flush >= NIGHTLY_FLUSH_INTERVAL_SEC:
                     flush_log_export(log_export_servers)
+                    last_flush = time.monotonic()
                 if not clean:
                     break
             return True
