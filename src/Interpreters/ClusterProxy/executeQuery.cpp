@@ -770,16 +770,16 @@ static std::optional<Block> getShardNumScalar(const ContextPtr & context, const 
 }
 
 /// The shard number the initiator shipped, or 0 when none was. Says nothing about which numbering a shipped
-/// number indexes, and cannot fail: `cluster_for_parallel_replicas` is resolved only to decide whether a
-/// special scalar of a local shard plan applies, without `getClusterForParallelReplicas`, which would turn an
-/// unset or unresolvable cluster name into an exception.
+/// number indexes, and cannot fail: it resolves no cluster, since `cluster_for_parallel_replicas` may be unset
+/// or unresolvable on a follower. Either carrier counts: a special scalar of a local shard plan means the
+/// query is running inside a distributed sub-query even when it does not belong to this read's cluster.
 static UInt64 getShippedShardNum(const ContextPtr & context)
 {
-    ClusterPtr cluster;
-    if (const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas]; !cluster_name.empty())
-        cluster = context->tryGetCluster(cluster_name);
+    if (auto special_scalar = context->tryGetSpecialScalar("_shard_num"))
+        if (const UInt64 shard_num = special_scalar->safeGetByPosition(0).column->getUInt(0))
+            return shard_num;
 
-    const auto block = getShardNumScalar(context, cluster.get());
+    const auto block = getShardNumScalar(context, nullptr);
     if (!block)
         return 0;
 

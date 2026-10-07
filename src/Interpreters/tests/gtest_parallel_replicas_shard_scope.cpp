@@ -379,6 +379,16 @@ TEST(ParallelReplicasShardScope, LocalPlanPredicateResolvesNoCluster)
     /// on a read that has nothing to do with the shard scope.
     shipped->setSetting("cluster_for_parallel_replicas", Field{"no_such_cluster_04727"});
     EXPECT_FALSE(canUseLocalPlanForParallelReplicas(shipped));
+
+    /// A local shard plan carries the shard number only in the special scalar. It must count as shipped too,
+    /// whether or not `cluster_for_parallel_replicas` resolves to the cluster the scalar belongs to.
+    auto local_shard = with_local_plan(Context::createCopy(getContext().context));
+    local_shard->makeQueryContext();
+    local_shard->addSpecialScalar("_shard_num", makeShardNumScalarCompat(2, String("some_cluster")));
+    EXPECT_FALSE(canUseLocalPlanForParallelReplicas(local_shard));
+
+    local_shard->setSetting("cluster_for_parallel_replicas", Field{"no_such_cluster_04727"});
+    EXPECT_FALSE(canUseLocalPlanForParallelReplicas(local_shard));
 }
 
 /// A discovered cluster is renumbered from whichever nodes are visible when it is built, so its name
