@@ -234,26 +234,49 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
         const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
 
-        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
-        if (has_filter && !estimate->pruned_data_files && *estimate->rows != 0)
+        const ActionsDAG::Node * prewhere_node = nullptr;
+        if (const auto prewhere_info = reading->getPrewhereInfo())
+            prewhere_node = prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name);
+        /// As for MergeTree, column statistics estimate the filter on the remaining files.
+        const bool estimate_filter = estimate->column_statistics && (filter || prewhere_node);
+
+        /// Without column statistics or a filter they can read, as for MergeTree without column statistics, a filter that
+        /// pruned nothing gives no estimate.
+        if (has_filter && !estimate_filter && !estimate->pruned_data_files && *estimate->rows != 0)
             return unknown;
 
         const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
-        RelationStats stats{
+        if (estimate->column_statistics)
+        {
+            /// Requires cardinality to be set already
+            auto profile = estimate_filter
+                ? estimate->column_statistics->estimateRelationProfile(reading->getStorageMetadata(), filter, prewhere_node)
+                : estimate->column_statistics->estimateRelationProfile();
+            /// `profile.rows` does not take into account deleted rows, and estimationProfile scales estimate->rows to the filter
+            /// To include deleted rows in the scale we scale also the deleted rows with:
+            /// (rows - deleted rows) / rows.
+            UInt64 estimated_rows = *estimate->rows;
+            if (estimate_filter)
+                estimated_rows = static_cast<UInt64>(
+                    static_cast<Float64>(profile.rows) * static_cast<Float64>(*estimate->rows - estimate->deleted_rows) / static_cast<Float64>(*estimate->rows));
+            /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
+            for (auto & [name, column] : profile.column_stats)
+                if (auto it = estimate->num_distinct_values.find(name); it != estimate->num_distinct_values.end())
+                    column.num_distinct_values = std::clamp<UInt64>(it->second, 1, std::max<UInt64>(estimated_rows, 1));
+
+            return RelationStats{
+                .estimated_rows = estimated_rows,
+                .column_stats = std::move(profile.column_stats),
+                .table_name = table_display_name,
+                .imprecise_estimate = !exact,
+                .source = RowEstimateSource::DataLakeMetadata,
+                };
+        }
+        return RelationStats{
             .estimated_rows = *estimate->rows - estimate->deleted_rows,
             .table_name = table_display_name,
             .imprecise_estimate = !exact,
             .source = RowEstimateSource::DataLakeMetadata};
-        if (estimate->column_statistics)
-        {
-            auto profile = estimate->column_statistics->estimateRelationProfile();
-            /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
-            for (auto & [name, column] : profile.column_stats)
-                if (auto it = estimate->num_distinct_values.find(name); it != estimate->num_distinct_values.end())
-                    column.num_distinct_values = it->second;
-            stats.column_stats = std::move(profile.column_stats);
-        }
-        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
