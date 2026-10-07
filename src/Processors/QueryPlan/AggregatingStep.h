@@ -107,7 +107,14 @@ public:
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     bool memoryBoundMergingWillBeUsed() const;
-    void skipMerging() { skip_merging = true; }
+    void skipMerging()
+    {
+        skip_merging = true;
+        /// The skip-merging path (`ConvertingAggregatedToChunksSource`) only calls
+        /// `Aggregator::convertOneBucketToChunk` and never reaches the top-K threshold merge,
+        /// which the first optimization pass may have set. Drop it, like `applyOrder` does.
+        params.threshold_top_k.reset();
+    }
     /// `prefix_columns` is the number of leading columns of the group-by sort description
     /// the query is ordered by; the in-order streams may stop only at a boundary of them.
     void setLimitHint(size_t limit, size_t prefix_columns)
