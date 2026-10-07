@@ -10,7 +10,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/optimizePrewhere.h>
-#include <Processors/QueryPlan/Optimizations/removeUnusedColumns.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -27,11 +26,6 @@ namespace Setting
     extern const SettingsBool optimize_move_to_prewhere_if_final;
     extern const SettingsBool optimize_prewhere_after_pushdown;
     extern const SettingsBool vector_search_with_rescoring;
-}
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
 }
 
 namespace QueryPlanOptimizations
@@ -358,56 +352,15 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!remove_unused_columns)
         return;
 
-    auto & parent_step = parent_node.step;
-    if (source_step_with_filter->canRemoveUnusedColumns() && source_step_with_filter->canRemoveColumnsFromOutput()
-        && parent_step->canRemoveUnusedColumns())
-    {
-        /// Pass all output positions (we want to keep the same outputs, just prune inputs).
-        const auto & parent_output = parent_step->getOutputHeader();
-        std::vector<size_t> all_positions;
-        all_positions.reserve(parent_output->columns());
-        for (size_t i = 0; i < parent_output->columns(); ++i)
-            all_positions.push_back(i);
-
-        const auto unused_column_removal_result = parent_step->removeUnusedColumns(all_positions, true);
-
-        if (unused_column_removal_result.changed && !unused_column_removal_result.required_input_positions.empty())
-        {
-            /// The parent step returned the positions it needs from its child (child 0).
-            /// Pass them directly to the source step.
-            chassert(unused_column_removal_result.required_input_positions.size() == 1);
-            const auto & required_positions = unused_column_removal_result.required_input_positions[0];
-            auto source_removal_result = source_step_with_filter->removeUnusedColumns(required_positions, true);
-
-            const auto effective_kept_positions = effectiveKeptOutputPositions(
-                source_removal_result.changed,
-                std::move(source_removal_result.kept_output_positions),
-                source_step_with_filter->getOutputHeader()->columns());
-
-            /// The source step might keep extra columns it cannot remove (e.g., `ReadFromMergeTree` with
-            /// FINAL must keep sort key columns for merging). If so, absorb them into the parent's DAG.
-            /// The parent step is always an ExpressionStep or FilterStep (created above), so absorption
-            /// must succeed.
-            if (!blocksHaveEqualStructure(*parent_step->getInputHeaders().at(0), *source_step_with_filter->getOutputHeader()))
-            {
-                if (!absorbExtraChildColumns(parent_node, 0, required_positions, effective_kept_positions))
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Input-output header mismatch after removing unused columns after pushing down filters to prewhere "
-                        "and failed to absorb extra columns. Input header: {}, output header: {}",
-                        parent_step->getInputHeaders().at(0)->dumpStructure(),
-                        source_step_with_filter->getOutputHeader()->dumpStructure());
-            }
-        }
+    /// Keep the outputs as they are, and prune what the new step and the read below it no longer need. A column the
+    /// read keeps anyway - `ReadFromMergeTree` with FINAL keeps the sorting key for the merge - is consumed by the step.
+    removeUnusedColumns(parent_node, RemoveUnusedColumnsMode::Local);
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        {
-            assertBlocksHaveEqualStructure(
-                *source_step_with_filter->getOutputHeader(),
-                *parent_step->getInputHeaders()[0],
-                "after removing unused columns in optimizePrewhere");
-        }
+    assertBlocksHaveEqualStructure(
+        *source_step_with_filter->getOutputHeader(),
+        *parent_node.step->getInputHeaders()[0],
+        "after removing unused columns in optimizePrewhere");
 #endif
-    }
 }
 
 }

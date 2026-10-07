@@ -3487,6 +3487,7 @@ void MergeTreeData::startStatisticsCache()
 {
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+    std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
     if (refresh_statistics_seconds)
@@ -3498,6 +3499,14 @@ void MergeTreeData::startStatisticsCache()
 
         refresh_stats_task->activateAndSchedule();
     }
+}
+
+void MergeTreeData::stopStatisticsCache()
+{
+    /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
+    std::lock_guard lock(refresh_stats_task_mutex);
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -3714,8 +3723,7 @@ MergeTreeData::~MergeTreeData()
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        if (refresh_stats_task)
-            refresh_stats_task->deactivate();
+        stopStatisticsCache();
     }
     catch (...)
     {
