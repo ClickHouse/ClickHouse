@@ -53,6 +53,8 @@ namespace ErrorCodes
     extern const int REQUIRED_PASSWORD;
 }
 
+using namespace IcebergRESTCatalogJSON;
+
 namespace
 {
 
@@ -155,17 +157,6 @@ bool getBooleanQueryParameter(const Poco::URI & uri, const String & name, bool d
     if (Poco::icompare(*value, "false") == 0)
         return false;
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Query parameter '{}' must be 'true' or 'false', got '{}'", name, *value);
-}
-
-/// Returns nullptr for an absent or null key. `getObject` alone would also return nullptr for a wrong type.
-Poco::JSON::Object::Ptr getOptionalObject(const Poco::JSON::Object & json, const String & key)
-{
-    if (!json.has(key) || json.isNull(key))
-        return nullptr;
-    auto object = json.getObject(key);
-    if (!object)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' must be an object", key);
-    return object;
 }
 
 Poco::JSON::Object tableIdentifierToJSON(const IcebergNamespaceName & ns, const String & table)

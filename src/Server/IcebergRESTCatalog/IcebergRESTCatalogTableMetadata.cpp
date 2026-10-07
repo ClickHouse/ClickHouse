@@ -3,6 +3,7 @@
 #include "config.h"
 
 #include <Common/Exception.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
@@ -23,27 +24,13 @@ namespace ErrorCodes
 }
 
 using namespace Iceberg;
+using namespace IcebergRESTCatalogJSON;
 
 namespace
 {
 
 /// Partition field ids start here by Iceberg convention. `last-partition-id` of a table without partition fields is one less.
 constexpr Int64 PARTITION_FIELD_ID_START = 1000;
-
-Int64 getInteger(const Poco::JSON::Object & object, const String & key)
-{
-    if (!object.has(key) || !object.get(key).isInteger())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or non-integer '{}'", key);
-    return object.getValue<Int64>(key);
-}
-
-Poco::JSON::Array::Ptr getArray(const Poco::JSON::Object & object, const String & key)
-{
-    auto array = object.getArray(key);
-    if (!array)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or non-array '{}'", key);
-    return array;
-}
 
 void collectFieldId(const Poco::JSON::Object & holder, const String & key, std::set<Int64> & ids)
 {
@@ -52,17 +39,11 @@ void collectFieldId(const Poco::JSON::Object & holder, const String & key, std::
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate field id {} in schema", id);
 }
 
-void validateBoolean(const Poco::JSON::Object & object, const String & key)
-{
-    if (!object.has(key) || !object.get(key).isBoolean())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or non-boolean '{}'", key);
-}
-
 void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<Int64> & ids)
 {
     if (type.isString())
     {
-        /// Reuse the reader's parser so that every persisted primitive type can be read back.
+        /// Reuse type validation logic in IcebergSchemaProcessor.
         IcebergSchemaProcessor::getSimpleType(type.extract<String>());
         return;
     }
@@ -74,47 +55,69 @@ void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<In
     const auto kind = object->optValue<String>(f_type, "");
     if (kind == f_struct)
     {
+        /// Validate the fields of the struct.
         for (const auto & field : *getArray(*object, f_fields))
         {
             if (field.type() != typeid(Poco::JSON::Object::Ptr))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every schema field must be an object");
             const auto & field_object = field.extract<Poco::JSON::Object::Ptr>();
             collectFieldId(*field_object, f_id, ids);
-            if (!field_object->has(f_name) || !field_object->get(f_name).isString() || field_object->getValue<String>(f_name).empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every schema field must have a non-empty string 'name'");
+
+            /// Validate the struct field's name, required, and type.
+            validateString(*field_object, f_name);
             validateBoolean(*field_object, f_required);
-            if (!field_object->has(f_type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every schema field must have a 'type'");
-            collectAndValidateNestedFields(field_object->get(f_type), ids);
+
+            /// Validate nested fields.
+            collectAndValidateNestedFields(getValue(*field_object, f_type), ids);
         }
     }
     else if (kind == f_list)
     {
+        /// Validate the list's element-id, element-required, and element.
         collectFieldId(*object, f_element_id, ids);
         validateBoolean(*object, f_element_required);
-        collectAndValidateNestedFields(object->get(f_element), ids);
+        collectAndValidateNestedFields(getValue(*object, f_element), ids);
     }
     else if (kind == f_map)
     {
+        /// Validate key id and key type.
         collectFieldId(*object, f_key_id, ids);
-        collectAndValidateNestedFields(object->get(f_key), ids);
+        collectAndValidateNestedFields(getValue(*object, f_key), ids);
+
+        /// Validate value id, nullability, and type.
         collectFieldId(*object, f_value_id, ids);
         validateBoolean(*object, f_value_required);
-        collectAndValidateNestedFields(object->get(f_value), ids);
+        collectAndValidateNestedFields(getValue(*object, f_value), ids);
     }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown nested type '{}' in schema", kind);
 }
 
-void validateString(const Poco::JSON::Object & object, const String & key)
+/// Validates the schema of a new table and marks it as schema 0.
+void prepareInitialSchema(Poco::JSON::Object::Ptr schema)
 {
-    if (!object.has(key) || !object.get(key).isString() || object.getValue<String>(key).empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty string '{}'", key);
+    if (!schema)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'schema' must be an object");
+    if (schema->optValue<String>(f_type, f_struct) != f_struct)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'schema' must be a struct type");
+    std::set<Int64> ids;
+    collectAndValidateNestedFields(Poco::Dynamic::Var(schema), ids);
+    schema->set(f_type, f_struct);
+    schema->set(f_schema_id, 0);
 }
 
-/// Reuse the reader's parser so that every persisted transform can be read back.
+/// Returns all field ids of a schema checked by `prepareInitialSchema`, including nested ones.
+std::set<Int64> getFieldIds(const Poco::JSON::Object::Ptr & schema)
+{
+    std::set<Int64> ids;
+    collectAndValidateNestedFields(Poco::Dynamic::Var(schema), ids);
+    return ids;
+}
+
 void validateTransform(const String & transform)
 {
+    /// TODO: Validate the transform works with the source column type.
+    /// For example, reject the `day` transform on a string column.
 #if USE_AVRO
     if (!parseTransformAndArgument(transform))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown transform '{}'", transform);
@@ -139,16 +142,20 @@ std::vector<Poco::JSON::Object::Ptr> getAndValidateSpecFields(const Poco::JSON::
     std::vector<Poco::JSON::Object::Ptr> fields;
     for (const auto & field : *getArray(spec, f_fields))
     {
+        /// Get spec field.
         if (field.type() != typeid(Poco::JSON::Object::Ptr))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every spec field must be an object");
         const auto & field_object = field.extract<Poco::JSON::Object::Ptr>();
 
-        /// TODO: validate the transform against the source column type, like Java's `PartitionSpec.checkCompatibility`.
+        /// Validate spec references a real column.
         const auto source_id = getInteger(*field_object, f_source_id);
         if (!schema_ids.contains(source_id))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown source-id {}", source_id);
+
+        /// Validate all required field members.
         for (const auto & key : required_field_members)
             validateString(*field_object, key);
+
         validateTransform(field_object->getValue<String>(f_transform));
 
         if (kind == SpecKind::SortOrder)
@@ -166,54 +173,48 @@ std::vector<Poco::JSON::Object::Ptr> getAndValidateSpecFields(const Poco::JSON::
     return fields;
 }
 
-/// Validates the partition fields and assigns `field-id` 1000, 1001, etc.
-/// Ignores any `field-id` sent by the client. Returns the `last-partition-id`.
-Int64 getLastPartitionId(const Poco::JSON::Object & spec, const std::set<Int64> & schema_ids)
-{
-    Int64 last_partition_id = PARTITION_FIELD_ID_START - 1;
-    for (auto & field : getAndValidateSpecFields(spec, SpecKind::Partition, schema_ids))
-        field->set(f_field_id, ++last_partition_id);
-    return last_partition_id;
-}
-
-/// Returns the `order-id`. The spec reserves 0 for the unsorted order, so a sorted order gets 1 like in Java and pyiceberg.
-Int64 getSortOrderId(const Poco::JSON::Object & spec, const std::set<Int64> & schema_ids)
-{
-    return getAndValidateSpecFields(spec, SpecKind::SortOrder, schema_ids).empty() ? 0 : 1;
-}
-
-std::set<Int64> getFieldIds(const Poco::JSON::Object::Ptr & schema)
-{
-    std::set<Int64> ids;
-    collectAndValidateNestedFields(Poco::Dynamic::Var(schema), ids);
-    return ids;
-}
-
-/// Checks the schema is a struct and marks it as schema 0.
-void prepareSchema(Poco::JSON::Object::Ptr schema)
-{
-    if (!schema)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'schema' must be an object");
-    if (schema->optValue<String>(f_type, f_struct) != f_struct)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'schema' must be a struct type");
-    schema->set(f_type, f_struct);
-    schema->set(f_schema_id, 0);
-}
-
 /// Replaces a missing spec with an empty one.
-Poco::JSON::Object::Ptr prepareSpec(Poco::JSON::Object::Ptr spec)
+void makeEmptySpecIfMissing(Poco::JSON::Object::Ptr & spec)
 {
     if (!spec)
     {
         spec = new Poco::JSON::Object;
         spec->set(f_fields, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     }
-    return spec;
+}
+
+/// Validates the first partition spec of a new table, marks it as spec 0, and assigns `field-id` 1000, 1001, etc.
+/// Ignores any `field-id` sent by the client.
+void prepareInitialPartitionSpec(Poco::JSON::Object::Ptr & spec, const std::set<Int64> & schema_ids)
+{
+    makeEmptySpecIfMissing(spec);
+    spec->set(f_spec_id, 0);
+    Int64 field_id = PARTITION_FIELD_ID_START;
+    for (auto & field : getAndValidateSpecFields(*spec, SpecKind::Partition, schema_ids))
+        field->set(f_field_id, field_id++);
+}
+
+/// Validates the first sort order of a new table and sets its `order-id`.
+void prepareInitialSortOrder(Poco::JSON::Object::Ptr & spec, const std::set<Int64> & schema_ids)
+{
+    makeEmptySpecIfMissing(spec);
+    /// Per the spec, an unsorted order gets 0. Otherwise the first sorted order gets 1.
+    const Int64 order_id = getAndValidateSpecFields(*spec, SpecKind::SortOrder, schema_ids).empty() ? 0 : 1;
+    spec->set(f_order_id, order_id);
+}
+
+/// Returns the largest partition `field-id`, or 999 if the spec has no fields.
+Int64 getLastPartitionId(const Poco::JSON::Object & spec)
+{
+    Int64 last_partition_id = PARTITION_FIELD_ID_START - 1;
+    for (const auto & field : *getArray(spec, f_fields))
+        last_partition_id = std::max(last_partition_id, getInteger(*field.extract<Poco::JSON::Object::Ptr>(), f_field_id));
+    return last_partition_id;
 }
 
 }
 
-/// Normalizes the request objects in place to place them in the metadata.
+/// Builds the metadata of a new table from the create-table request.
 Poco::JSON::Object::Ptr buildInitialTableMetadata(
     const String & uuid,
     const String & location,
@@ -222,7 +223,7 @@ Poco::JSON::Object::Ptr buildInitialTableMetadata(
     Poco::JSON::Object::Ptr write_order,
     std::map<String, String> properties)
 {
-    /// TODO: support format version 3. The initial file needs `next-row-id: 0`, and the commit path needs v3 handling.
+    /// TODO: support format version 3.
     if (auto it = properties.find(f_format_version); it != properties.end())
     {
         if (it->second != "2")
@@ -230,25 +231,20 @@ Poco::JSON::Object::Ptr buildInitialTableMetadata(
         properties.erase(it);
     }
 
-    prepareSchema(schema);
+    prepareInitialSchema(schema);
     const auto field_ids = getFieldIds(schema);
+    prepareInitialPartitionSpec(partition_spec, field_ids);
+    prepareInitialSortOrder(write_order, field_ids);
+
     const Int64 last_column_id = field_ids.empty() ? 0 : *field_ids.rbegin();
-
-    partition_spec = prepareSpec(partition_spec);
-    partition_spec->set(f_spec_id, 0);
-    const auto last_partition_id = getLastPartitionId(*partition_spec, field_ids);
-
-    write_order = prepareSpec(write_order);
-    const auto sort_order_id = getSortOrderId(*write_order, field_ids);
-    write_order->set(f_order_id, sort_order_id);
-
+    const auto last_partition_id = getLastPartitionId(*partition_spec);
+    const auto sort_order_id = write_order->getValue<Int64>(f_order_id);
     Poco::JSON::Object::Ptr properties_json = new Poco::JSON::Object;
     for (const auto & [key, value] : properties)
         properties_json->set(key, value);
-
     const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
-    /// Key order follows the Iceberg spec listing so the file reads like the ones Java writes.
+    /// Key order follows the Iceberg spec listing.
     Poco::JSON::Object::Ptr metadata = new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER);
     metadata->set(f_format_version, 2);
     metadata->set(f_table_uuid, uuid);
@@ -257,21 +253,14 @@ Poco::JSON::Object::Ptr buildInitialTableMetadata(
     metadata->set(f_last_updated_ms, static_cast<Int64>(now_ms));
     metadata->set(f_last_column_id, last_column_id);
     metadata->set(f_current_schema_id, 0);
-    Poco::JSON::Array::Ptr schemas = new Poco::JSON::Array;
-    schemas->add(schema);
-    metadata->set(f_schemas, schemas);
+    metadata->set(f_schemas, makeArray(schema));
     metadata->set(f_default_spec_id, 0);
-    Poco::JSON::Array::Ptr partition_specs = new Poco::JSON::Array;
-    partition_specs->add(partition_spec);
-    metadata->set(f_partition_specs, partition_specs);
+    metadata->set(f_partition_specs, makeArray(partition_spec));
     metadata->set(f_last_partition_id, last_partition_id);
     metadata->set(f_default_sort_order_id, sort_order_id);
-    Poco::JSON::Array::Ptr sort_orders = new Poco::JSON::Array;
-    sort_orders->add(write_order);
-    metadata->set(f_sort_orders, sort_orders);
+    metadata->set(f_sort_orders, makeArray(write_order));
     metadata->set(f_properties, properties_json);
     metadata->set(f_current_snapshot_id, -1);
-    /// Java and pyiceberg write an empty `refs` for a table without snapshots.
     metadata->set(f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
     metadata->set(f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
     metadata->set(f_snapshot_log, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
