@@ -12,6 +12,8 @@ INSERT INTO FUNCTION file(currentDatabase() || '/05332/only/a=1/key=9/data.parqu
 INSERT INTO FUNCTION file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') SELECT (5, 5), number FROM numbers(10);
 INSERT INTO FUNCTION file(currentDatabase() || '/05332/t=(1,2)/data.jsonl', JSONEachRow, 't Tuple(a Int64, b Int64), v Int64') SELECT (5, 5), number FROM numbers(10);
 INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05332/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SELECT NULL, number FROM numbers(1000) SETTINGS output_format_parquet_row_group_size = 100;
+INSERT INTO FUNCTION file(currentDatabase() || '/05332/cache/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') SELECT NULL, number FROM numbers(1000);
+INSERT INTO FUNCTION s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SELECT NULL, number FROM numbers(1000);
 
 CREATE TABLE t_05332_hive (v Int64, key String) ENGINE = S3(s3_conn, filename = currentDatabase() || '/05332/strategy', format = Parquet, partition_strategy = 'hive') PARTITION BY key;
 INSERT INTO t_05332_hive VALUES (1, 'abc');
@@ -19,6 +21,8 @@ INSERT INTO t_05332_hive VALUES (1, 'abc');
 SET use_hive_partitioning = 1;
 
 CREATE TABLE t_05332_file AS file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64');
+CREATE TABLE t_05332_cache AS file(currentDatabase() || '/05332/cache/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64');
+SELECT sleep(1) FORMAT Null;
 
 -- { echoOn }
 
@@ -41,11 +45,29 @@ SELECT v, key, key.size FROM t_05332_hive;
 SELECT count() FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') WHERE t.a = 1 AND v >= 0 SETTINGS input_format_parquet_filter_push_down = 1;
 SELECT count() FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') WHERE key.null = 0 SETTINGS input_format_parquet_filter_push_down = 1;
 
+-- PREWHERE on a file column still reads its inputs when the query requests a partition subcolumn.
+SELECT count() FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') PREWHERE v >= 0 WHERE t.a = 1;
+SELECT count() FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') PREWHERE v >= 0 WHERE key.null = 0;
+SELECT count(), any(t.a) FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') PREWHERE v >= 0;
+SELECT count(), any(key.null) FROM s3(s3_conn, filename = currentDatabase() || '/05332/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') PREWHERE v >= 500;
+
 CREATE ROW POLICY p_05332 ON t_05332_file USING key.null = 0 TO ALL;
 SELECT count() FROM t_05332_file SETTINGS optimize_count_from_files = 0;
 DROP ROW POLICY p_05332 ON t_05332_file;
+CREATE ROW POLICY p_05332 ON t_05332_file USING v >= 500 TO ALL;
+SELECT key.null, count() FROM t_05332_file PREWHERE v < 600 GROUP BY ALL;
+DROP ROW POLICY p_05332 ON t_05332_file;
+
+-- A filtered read must not store its row count as the file's count.
+CREATE ROW POLICY p_05332_cache ON t_05332_cache USING v >= 500 TO ALL;
+SELECT key.null, count() FROM t_05332_cache GROUP BY ALL SETTINGS use_cache_for_count_from_files = 1;
+DROP ROW POLICY p_05332_cache ON t_05332_cache;
+SELECT count() FROM t_05332_cache SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1;
+SELECT key.null, count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') PREWHERE v >= 500 GROUP BY ALL SETTINGS use_cache_for_count_from_files = 1;
+SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1;
 
 -- { echoOff }
 
 DROP TABLE t_05332_file;
+DROP TABLE t_05332_cache;
 DROP TABLE t_05332_hive;

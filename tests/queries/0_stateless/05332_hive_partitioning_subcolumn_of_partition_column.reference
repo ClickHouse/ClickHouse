@@ -37,7 +37,31 @@ SELECT count() FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Par
 10
 SELECT count() FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') WHERE key.null = 0 SETTINGS input_format_parquet_filter_push_down = 1;
 1000
+-- PREWHERE on a file column still reads its inputs when the query requests a partition subcolumn.
+SELECT count() FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') PREWHERE v >= 0 WHERE t.a = 1;
+10
+SELECT count() FROM file(currentDatabase() || '/05332/key=9/data.parquet', Parquet, 'key Nullable(Int64), v Int64') PREWHERE v >= 0 WHERE key.null = 0;
+1000
+SELECT count(), any(t.a) FROM file(currentDatabase() || '/05332/t=(1,2)/data.parquet', Parquet, 't Tuple(a Int64, b Int64), v Int64') PREWHERE v >= 0;
+10	1
+SELECT count(), any(key.null) FROM s3(s3_conn, filename = currentDatabase() || '/05332/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') PREWHERE v >= 500;
+500	0
 CREATE ROW POLICY p_05332 ON t_05332_file USING key.null = 0 TO ALL;
 SELECT count() FROM t_05332_file SETTINGS optimize_count_from_files = 0;
 1000
 DROP ROW POLICY p_05332 ON t_05332_file;
+CREATE ROW POLICY p_05332 ON t_05332_file USING v >= 500 TO ALL;
+SELECT key.null, count() FROM t_05332_file PREWHERE v < 600 GROUP BY ALL;
+0	100
+DROP ROW POLICY p_05332 ON t_05332_file;
+-- A filtered read must not store its row count as the file's count.
+CREATE ROW POLICY p_05332_cache ON t_05332_cache USING v >= 500 TO ALL;
+SELECT key.null, count() FROM t_05332_cache GROUP BY ALL SETTINGS use_cache_for_count_from_files = 1;
+0	500
+DROP ROW POLICY p_05332_cache ON t_05332_cache;
+SELECT count() FROM t_05332_cache SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1;
+1000
+SELECT key.null, count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') PREWHERE v >= 500 GROUP BY ALL SETTINGS use_cache_for_count_from_files = 1;
+0	500
+SELECT count() FROM s3(s3_conn, filename = currentDatabase() || '/05332/cache/key=9/data.parquet', format = Parquet, structure = 'key Nullable(Int64), v Int64') SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1;
+1000
