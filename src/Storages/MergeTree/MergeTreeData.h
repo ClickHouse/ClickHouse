@@ -2225,12 +2225,17 @@ protected:
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
 
+    /// Protects `refresh_stats_task` itself: `startStatisticsCache` re-assigns the holder (on startup and
+    /// on `ALTER` of `refresh_statistics_interval`), which may race with `stopStatisticsCache` called from
+    /// a concurrent `shutdown`. Declared before the holder, so it outlives it.
+    std::mutex refresh_stats_task_mutex;
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
+    void stopStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);

@@ -41,6 +41,12 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
 
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    void setTopKFilter(FormatTopKFilterInfoPtr info) override;
+
+    void describeActions(FormatSettings & format_settings) const override;
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+
     QueryPlanStepPtr clone() const override;
 
     const StoragePtr & getStorage() const { return storage; }
@@ -57,7 +63,11 @@ private:
     /// were built in place; see `updatePrewhereInfo`.
     bool filters_applied = false;
 
-    /// In-source filtering (row-level security filter, PREWHERE) from `query_info`,
+    /// TopN dynamic filtering (see `tryOptimizeTopK`): the rows that cannot enter the top-K heap
+    /// of the query are dropped inside the source, before the other columns are read.
+    FormatTopKFilterInfoPtr top_k_filter;
+
+    /// In-source filtering (TopN threshold, row-level security filter, PREWHERE),
     /// or nullptr when there is nothing to apply.
     MemorySourceFilterPtr makeSourceFilter(const NamesAndTypesList & physical_columns) const;
 
