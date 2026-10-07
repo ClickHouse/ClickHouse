@@ -377,7 +377,7 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
                 need_marks = marks_in_part;
 
             MarkRanges ranges_to_get_from_part;
-            size_t marks_in_ranges = need_marks;
+            size_t marks_in_ranges = 0;
 
             /// Get whole part to read if it is small enough.
             if (marks_in_part <= need_marks)
@@ -393,7 +393,6 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
             else
             {
                 /// Loop through part ranges.
-                size_t marks_taken = 0;
                 while (need_marks > 0)
                 {
                     if (part_with_ranges.ranges.empty())
@@ -406,12 +405,11 @@ void MergeTreeReadPool::fillPerThreadInfo(size_t threads, size_t sum_marks)
                     ranges_to_get_from_part.emplace_back(range.begin, range.begin + marks_to_get_from_range);
                     range.begin += marks_to_get_from_range;
                     marks_in_part -= marks_to_get_from_range;
-                    marks_taken += marks_to_get_from_range;
+                    marks_in_ranges += marks_to_get_from_range;
                     need_marks -= std::min(need_marks, marks_to_get_from_range);
                     if (range.begin == range.end)
                         part_with_ranges.ranges.pop_front();
                 }
-                marks_in_ranges = marks_taken;
 
                 /// The cut was moved to the end of the part.
                 if (marks_in_part == 0)

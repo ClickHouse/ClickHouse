@@ -1264,7 +1264,12 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     /// Reading is finished: hand the columns over as shared ColumnPtr.
     result.columns.reserve(read_columns.size());
     for (size_t i = 0; i < read_columns.size(); ++i)
-        result.columns.push_back(read_columns[i] ? std::move(read_columns[i]) : std::move(shared_columns[i]));
+    {
+        if (read_columns[i])
+            result.columns.push_back(std::move(read_columns[i]));
+        else
+            result.columns.push_back(std::move(shared_columns[i]));
+    }
 
     size_t last_mark = stream.isFinished() ? stream.last_mark : stream.current_mark;
     if (current_mark && current_mark < last_mark)
@@ -1582,7 +1587,12 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
 
     columns.reserve(read_columns.size());
     for (size_t i = 0; i < read_columns.size(); ++i)
-        columns.push_back(read_columns[i] ? std::move(read_columns[i]) : std::move(shared_columns[i]));
+    {
+        if (read_columns[i])
+            columns.push_back(std::move(read_columns[i]));
+        else
+            columns.push_back(std::move(shared_columns[i]));
+    }
 
     fillVirtualColumns(columns, result);
 

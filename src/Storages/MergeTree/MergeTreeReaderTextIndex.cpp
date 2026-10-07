@@ -476,8 +476,10 @@ size_t MergeTreeReaderTextIndex::readRows(
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
         {
-            ColumnPtr column = fallback_cols[col_idx] ? std::move(fallback_cols[col_idx]) : std::move(fallback_shared_cols[col_idx]);
-            fallback_block.insert({std::move(column), col_name_type.type, col_name_type.name});
+            if (fallback_cols[col_idx])
+                fallback_block.insert({std::move(fallback_cols[col_idx]), col_name_type.type, col_name_type.name});
+            else
+                fallback_block.insert({fallback_shared_cols[col_idx], col_name_type.type, col_name_type.name});
             ++col_idx;
         }
     }
