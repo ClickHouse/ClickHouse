@@ -42,6 +42,8 @@ public:
         bool use_parallel_layout_);
 
     std::string getName() const override { return "JoinSwitcher"; }
+
+    std::string getAlgorithm() const override { return join->getAlgorithm(); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override
     {

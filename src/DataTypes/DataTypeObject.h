@@ -89,10 +89,11 @@ public:
     DataTypePtr getTypeOfNestedObjects() const;
     DataTypePtr getDynamicType() const;
 
-    /// Extracts a combined literal+sub-object subcolumn for the given path.
-    /// When skip_null_typed_paths is true, typed paths with NULL values in sub-objects
-    /// are not considered present, so a parent path whose typed descendants are all NULL
-    /// is treated as absent (NULL in the result).
+    /// Extracts a combined literal+sub-object subcolumn for the given path as Dynamic.
+    /// When skip_null_typed_paths is true, typed paths with NULL values are not considered present:
+    /// a parent whose typed descendants are all NULL is absent, while a NULL typed literal still
+    /// surfaces a non-empty sub-object. Typed literals are cast to Dynamic so the result type is
+    /// always Dynamic (including the empty-sub-object early return).
     ColumnPtr extractCombinedSubcolumn(const String & path, const ColumnPtr & column, bool skip_null_typed_paths) const;
 
     /// Shared data has type Array(Tuple(String, String)).

@@ -118,6 +118,9 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+    # Exports per-test coverage and runs the post-export selector smoke.
+    "ci/jobs/scripts/functional_tests/export_coverage.py",
+    "ci/jobs/scripts/coverage_selection.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
     # are continuous-mode kill-safe.
@@ -735,9 +738,9 @@ def should_skip_job(job_name):
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
-            if (
-                (match and match.group(1) != "1")
-                or ("sequential" in job_name and "selected tests" not in job_name)
+            if (match and match.group(1) != "1") or (
+                "sequential" in job_name
+                and "targeted" not in job_name
             ):
                 return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 

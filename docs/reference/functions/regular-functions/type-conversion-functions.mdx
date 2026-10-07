@@ -118,6 +118,15 @@ Introduced in: v1.1.0
 Converts a value to a specified data type.
 Unlike the reinterpret function, CAST tries to generate the same value in the target type.
 If that is not possible, an exception is raised.
+
+When `x` is written as a number and `T` is a `Decimal` or an integer wider than 64 bits, the digits
+of the number are read directly with `T`, so no precision is lost on the way. Without this,
+`CAST(0.1 AS Decimal256(76))` would read `0.1` as a `Float64` first and return
+`0.1000000000000000127244406382982157680441515146893321226564617167921968152`. This applies to a
+number written as the argument; a number that first takes part in an expression, as in
+`CAST(0.1 + 0 AS Decimal256(76))`, is still read as a `Float64`. A number not written plainly in
+decimal - in brackets, in hexadecimal, or with a leading plus - is read with `T` from the way it is
+written back into a query, which is the nearest `Float64` when it has a fractional part.
     
 
 **Syntax**
@@ -173,6 +182,18 @@ SELECT '123'::UInt32
 ┌─CAST('123', 'UInt32')─┐
 │                   123 │
 └───────────────────────┘
+```
+
+**A number is read with the target Decimal, and keeps all of its digits**
+
+```sql title=Query
+SELECT CAST(0.1 AS Decimal256(76))
+```
+
+```response title=Response
+┌─CAST('0.1', 'Decimal256(76)')─┐
+│                           0.1 │
+└───────────────────────────────┘
 ```
 
 ## DATE {#DATE}
@@ -6358,7 +6379,7 @@ toInterval(value, unit)
 
 **Returned value**
 
-Returns an Interval value of the specified type. The result type depends on the unit: IntervalNanosecond, IntervalMicrosecond, IntervalMillisecond, IntervalSecond, IntervalMinute, IntervalHour, IntervalDay, IntervalWeek, IntervalMonth, IntervalQuarter, or IntervalYear. [`Interval`](/reference/data-types/int-uint)
+Returns an Interval value of the specified type. The result type depends on the unit: IntervalNanosecond, IntervalMicrosecond, IntervalMillisecond, IntervalSecond, IntervalMinute, IntervalHour, IntervalDay, IntervalWeek, IntervalMonth, IntervalQuarter, or IntervalYear. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6428,7 +6449,7 @@ toIntervalDay(n)
 
 **Returned value**
 
-Returns an interval of `n` days. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` days. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6466,7 +6487,7 @@ toIntervalHour(n)
 
 **Returned value**
 
-Returns an interval of `n` hours. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` hours. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6504,7 +6525,7 @@ toIntervalMicrosecond(n)
 
 **Returned value**
 
-Returns an interval of `n` microseconds. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` microseconds. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6542,7 +6563,7 @@ toIntervalMillisecond(n)
 
 **Returned value**
 
-Returns an interval of `n` milliseconds. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` milliseconds. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6580,7 +6601,7 @@ toIntervalMinute(n)
 
 **Returned value**
 
-Returns an interval of `n` minutes. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` minutes. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6618,7 +6639,7 @@ toIntervalMonth(n)
 
 **Returned value**
 
-Returns an interval of `n` months. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` months. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6656,7 +6677,7 @@ toIntervalNanosecond(n)
 
 **Returned value**
 
-Returns an interval of `n` nanoseconds. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` nanoseconds. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6694,7 +6715,7 @@ toIntervalQuarter(n)
 
 **Returned value**
 
-Returns an interval of `n` quarters. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` quarters. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6732,7 +6753,7 @@ toIntervalSecond(n)
 
 **Returned value**
 
-Returns an interval of `n` seconds. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` seconds. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6770,7 +6791,7 @@ toIntervalWeek(n)
 
 **Returned value**
 
-Returns an interval of `n` weeks. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` weeks. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
@@ -6808,7 +6829,7 @@ toIntervalYear(n)
 
 **Returned value**
 
-Returns an interval of `n` years. [`Interval`](/reference/data-types/int-uint)
+Returns an interval of `n` years. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 

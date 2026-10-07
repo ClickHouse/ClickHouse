@@ -245,8 +245,8 @@ class FTResultsProcessor:
         test_results = s.test_results
 
         if s.no_tests_run and allow_no_tests and not s.hung:
-            # The job was given an explicit list of tests (flaky, targeted or
-            # `selected tests` run), and `clickhouse-test` explicitly proved it
+            # The job was given an explicit list of tests (a flaky or targeted
+            # check), and `clickhouse-test` explicitly proved it
             # filtered every one of them out - e.g. all are tagged `no-tsan` in a
             # TSan job. A generic "No tests were run" banner is not sufficient:
             # it is also printed after runner-level failures before the first test.

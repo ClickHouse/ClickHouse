@@ -722,9 +722,20 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// parts, and the projection parts are in one-to-one correspondence with them, so the copied value
     /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
     /// by passing the stamp into `analyzeProjectionCandidate` above.)
+    ///
+    /// Likewise, `registerLeftSideIndexAnalysisSecondPass` has already attached the join runtime filter
+    /// descriptors for the second-pass granule pruning to the replaced read. Carry them over as well,
+    /// otherwise a JOIN whose left side is served from a normal projection would silently lose the
+    /// pruning that `enable_join_runtime_filters_index_analysis` asks for. Each descriptor is re-checked
+    /// against the projection's own primary key and skip indexes and dropped if it cannot prune there.
     if (projection_reading)
+    {
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+        {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
+            projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
+        }
+    }
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);

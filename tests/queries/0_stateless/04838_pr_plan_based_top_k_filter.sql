@@ -83,6 +83,14 @@ SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
 FROM (EXPLAIN SELECT b, a FROM t_pr_top_k ORDER BY b, a LIMIT 5)
 SETTINGS use_top_k_dynamic_filtering = 0, use_skip_indexes_for_top_k = 0;
 
+-- The scope is reads that end up carrying the filter, not every read that qualifies for one. The filter is
+-- not merged into a PREWHERE whose value depends on the block it is evaluated on (`blockSize` reports that
+-- block's row count), and a read left without the filter distributes like any other.
+SELECT '--- explain: read distributed when the PREWHERE cannot carry the filter ---';
+SELECT countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read
+FROM (EXPLAIN SELECT b, a FROM t_pr_top_k PREWHERE blockSize() > 100 ORDER BY b, a LIMIT 5)
+SETTINGS use_skip_indexes_for_top_k = 0;
+
 -- That distributed read is the shipped-`SortingStep` path for a non-primary-key `ORDER BY`, so check its
 -- results too: the shape assertion above still passes if the per-replica sort or the merge on the initiator
 -- returns the wrong rows.

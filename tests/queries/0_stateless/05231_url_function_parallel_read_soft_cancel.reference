@@ -1,0 +1,3 @@
+the data was read by the workers of the parallel read buffer
+the interrupted background read was discarded
+the query returned its partial result

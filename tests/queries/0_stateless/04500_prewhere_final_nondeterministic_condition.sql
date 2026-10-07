@@ -36,6 +36,21 @@ SELECT countIf(data = 'old') FROM t_prewhere_final_rand FINAL WHERE arrayExists(
 
 DROP TABLE t_prewhere_final_rand;
 
+-- -0.0 and 0.0 land in one dedup group but toString tells them apart
+SELECT '= condition over a float sorting key column is not moved =';
+
+DROP TABLE IF EXISTS t_prewhere_final_float;
+
+CREATE TABLE t_prewhere_final_float (a UInt64, f Float64, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY (a, f);
+
+INSERT INTO t_prewhere_final_float VALUES (1, 0.0, 1);
+INSERT INTO t_prewhere_final_float VALUES (1, -0.0, 2);
+
+SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_float FINAL WHERE toString(f) = '0') WHERE explain LIKE '%Prewhere filter%';
+SELECT a, f, v FROM t_prewhere_final_float FINAL WHERE toString(f) = '0';
+
+DROP TABLE t_prewhere_final_float;
+
 -- query-scoped constants like now are folded before the optimizer runs, so such filters keep moving
 SELECT '= filter with now is still moved =';
 

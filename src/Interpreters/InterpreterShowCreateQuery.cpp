@@ -169,7 +169,7 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         {
             auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
             if (const auto * alias = table ? table->as<StorageAlias>() : nullptr;
-                alias && !alias->isTargetTableGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
+                alias && !alias->isDeclaredTargetGranted(getContext(), AccessType::SHOW_COLUMNS, {}))
                 throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to show metadata exposed by {}", table_id.getNameForLogs());
         }
 

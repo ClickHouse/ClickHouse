@@ -237,7 +237,7 @@ std::pair<KeeperResponsesForSessions, Int64> KeeperStorage::processWatchesImpl(
             {
                 std::shared_ptr<Coordination::ZooKeeperWatchResponse> watch_list_response
                     = std::make_shared<Coordination::ZooKeeperWatchResponse>();
-                watch_list_response->path = current_path;
+                watch_list_response->path = std::string{path};
                 watch_list_response->xid = Coordination::WATCH_XID;
                 watch_list_response->zxid = -1;
                 watch_list_response->type = event_type;

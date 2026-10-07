@@ -6,6 +6,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -164,6 +165,9 @@ bool JoinSwitcher::switchJoin()
     bool success = true;
     for (const Block & saved_block : right_blocks)
         success = success && merge_join->addBlockToJoin(saved_block, saved_block.rows(), /* worker_id = */ 0, true);
+
+
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::PARTIAL_MERGE);
 
     return success;
 }

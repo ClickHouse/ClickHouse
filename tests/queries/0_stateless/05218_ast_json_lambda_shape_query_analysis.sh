@@ -32,17 +32,21 @@ ${CLICKHOUSE_LOCAL} --enable_json_ast_dialect 1 --dialect clickhouse_json -q "$C
 #    takes the flag as proof of the `lambda(tuple(...), body)` shape and reads the absent list.
 run_json BAD_ARGUMENTS '{"type":"SelectWithUnionQuery","list_of_selects":{"type":"ExpressionList","children":[{"type":"SelectQuery","select":{"type":"ExpressionList","children":[{"type":"Function","name":"lambda","is_lambda_function":true}]}}]}}'
 
-# 3. A skip index expression that is a `lambda` function with no `arguments`. No flag is involved
-#    here: `IndexDescription::initExpressionInfo` collects the declared argument names by function
-#    name alone, for any index expression.
+# 3. A skip index expression that is a `lambda` function with no `arguments`. A storage definition's
+#    expression slots are screened as the AST is deserialized, so the `expression` key is rejected
+#    there rather than by `IndexDescription::initExpressionInfo` behind it. The second payload is
+#    that screen's negative: a wrong-sized `arguments` list passes it, and the reader answers.
 INDEX_JSON=$(${CLICKHOUSE_LOCAL} -q "SELECT replace(parseQueryToJSON('CREATE TABLE t (a UInt8, INDEX idx lambda TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY a'), '\"type\":\"Identifier\",\"name\":\"lambda\"', '\"type\":\"Function\",\"name\":\"lambda\"') FORMAT TSVRaw")
-run_json NUMBER_OF_ARGUMENTS_DOESNT_MATCH "$INDEX_JSON"
+run_json BAD_ARGUMENTS "$INDEX_JSON"
+INDEX_JSON_ARITY=$(${CLICKHOUSE_LOCAL} -q "SELECT parseQueryToJSON('CREATE TABLE t (a UInt8, INDEX idx lambda(a) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY a') FORMAT TSVRaw")
+run_json NUMBER_OF_ARGUMENTS_DOESNT_MATCH "$INDEX_JSON_ARITY"
 
-# 4. The same collection reads the argument tuple's own argument list, which a `tuple` node restored
-#    without one does not have. Written in function-call syntax, so the node carries no
-#    `is_lambda_function` and the boundary check on that flag never inspects it.
+# 4. The reader behind it also reads the argument tuple's own argument list, which a `tuple` node
+#    restored without one does not have. Written in function-call syntax, so the node carries no
+#    `is_lambda_function` and the boundary check on that flag never inspects it; the screen is
+#    recursive and rejects the nested node all the same.
 INDEX_JSON_TUPLE=$(${CLICKHOUSE_LOCAL} -q "SELECT replace(parseQueryToJSON('CREATE TABLE t (a UInt8, INDEX idx lambda(tuple(a), a) TYPE set(0) GRANULARITY 1) ENGINE = MergeTree ORDER BY a'), '\"name\":\"tuple\",\"arguments\":{\"type\":\"ExpressionList\",\"children\":[{\"type\":\"Identifier\",\"name\":\"a\"}]}', '\"name\":\"tuple\"') FORMAT TSVRaw")
-run_json TYPE_MISMATCH "$INDEX_JSON_TUPLE"
+run_json BAD_ARGUMENTS "$INDEX_JSON_TUPLE"
 
 # 5. `CREATE FUNCTION` restores its core through the untyped `readChild`, and the validation that
 #    registration performs on it tests nothing about the node beyond `as<ASTFunction>()`, so neither

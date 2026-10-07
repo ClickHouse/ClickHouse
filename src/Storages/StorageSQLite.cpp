@@ -184,14 +184,14 @@ public:
         WriteBufferFromOwnString sqlbuf;
 
         sqlbuf << "INSERT INTO ";
-        sqlbuf << doubleQuoteString(remote_table_name);
+        sqlbuf << doubleQuoteStringSQLite(remote_table_name);
         sqlbuf << " (";
 
         for (auto it = block.begin(); it != block.end(); ++it)
         {
             if (it != block.begin())
                 sqlbuf << ", ";
-            sqlbuf << quoteString(it->name);
+            sqlbuf << doubleQuoteStringSQLite(it->name);
         }
 
         sqlbuf << ") VALUES ";

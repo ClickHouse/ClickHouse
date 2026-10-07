@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -114,3 +115,37 @@ inline BasicScopeGuard<F> make_scope_guard(F && function_) { return std::forward
 const auto scope_exit##n = make_scope_guard([&] { __VA_ARGS__; })
 #define SCOPE_EXIT_FWD(n, ...) SCOPE_EXIT_CONCAT(n, __VA_ARGS__)
 #define SCOPE_EXIT(...) SCOPE_EXIT_FWD(__LINE__, __VA_ARGS__)
+
+/// This is made exclusively for OpenTelemetry tracing handling
+/// Runs the function only if the enclosing scope is left by an exception (a "scope fail" guard).
+/// Compares with the number of uncaught exceptions at construction rather than with zero.
+///
+/// it can only react to the fact that the scope failed. It must not throw.
+template <class Function>
+class [[nodiscard]] BasicScopeFail
+{
+public:
+    explicit BasicScopeFail(Function function_) : function(std::move(function_)) {}
+    // no assignment allowed
+    BasicScopeFail(const BasicScopeFail &) = delete;
+    BasicScopeFail & operator=(const BasicScopeFail &) = delete;
+
+    ~BasicScopeFail()
+    {
+        /// If there was any exception we run the proper handling
+        if (std::uncaught_exceptions() != exceptions_level)
+            function();
+    }
+
+private:
+    Function function;
+    int exceptions_level = std::uncaught_exceptions();
+};
+
+template <class F>
+inline BasicScopeFail<F> make_scope_fail(F && function_) { return BasicScopeFail<F>(std::forward<F>(function_)); }
+
+#define SCOPE_FAIL_CONCAT(n, ...) \
+const auto scope_fail##n = make_scope_fail([&] { __VA_ARGS__; })
+#define SCOPE_FAIL_FWD(n, ...) SCOPE_FAIL_CONCAT(n, __VA_ARGS__)
+#define SCOPE_FAIL(...) SCOPE_FAIL_FWD(__LINE__, __VA_ARGS__)

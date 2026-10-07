@@ -332,7 +332,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// dropped or moved to another database meanwhile, the same as for ALTER TABLE ... DROP PARTITION.
             /// For the rest of tables types exclusive lock is needed
             /// An `Alias` runs the truncate on its target, so the exemption follows the target:
-            /// `isMergeTree()` resolves it, and is false while it is missing or not loaded yet.
+            /// `isMergeTree()` resolves it, and is false for a missing or non-MergeTree target.
             if (table->isMergeTree())
                 table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
             else

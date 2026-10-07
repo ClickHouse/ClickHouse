@@ -3220,8 +3220,10 @@ void QueryFuzzer::fuzzTableName(ASTTableExpression & table)
     if (!table.database_and_table_name)
         return;
 
+    /// A fully parameterized name such as `{p:Identifier}` has only empty name parts, so
+    /// `getTableId` throws `UNKNOWN_TABLE` rather than returning an empty `StorageID`.
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
 
     /// Point the read at one of the table's live `__fuzz_N` clones
@@ -3460,7 +3462,7 @@ void QueryFuzzer::wrapTableAsDistributed(ASTTableExpression & table)
     if (table.database_and_table_name)
     {
         const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-        if (!identifier)
+        if (!identifier || identifier->isParam())
             return;
         const auto table_id = identifier->getTableId();
         if (table_id.getTableName().empty())
@@ -3495,7 +3497,7 @@ void QueryFuzzer::wrapTableAsMerge(ASTTableExpression & table)
         return;
 
     const auto * identifier = table.database_and_table_name->as<ASTTableIdentifier>();
-    if (!identifier)
+    if (!identifier || identifier->isParam())
         return;
     const auto table_id = identifier->getTableId();
     const String table_name = table_id.getTableName();
@@ -6080,7 +6082,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (!expr)
                 return nullptr;
             auto watermark = std::make_shared<WatermarkSettings>();
-            watermark->column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
+            watermark->time_attribute_column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
             watermark->expression = expr;
             if (fuzz_rand() % 2 == 0)
                 watermark->idle_timeout = std::chrono::milliseconds((fuzz_rand() % 1000 + 1) * 1000);

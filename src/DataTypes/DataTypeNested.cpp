@@ -101,8 +101,6 @@ CREATE TABLE test.visits
 
 This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
 
-When [flatten_nested](/reference/settings/session-settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
-
 In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
 Example:
@@ -167,6 +165,49 @@ For an INSERT query, you should pass all the component column arrays of a nested
 For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
 
 The ALTER query for elements in a nested data structure has limitations.
+
+When [flatten_nested](/reference/settings/session-settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported:
+
+```sql
+CREATE TABLE test.visits
+(
+    CounterID UInt32,
+    StartDate Date,
+    Sign Int8,
+    IsNew UInt8,
+    VisitID UInt64,
+    UserID UInt64,
+    ...
+    Goals Nested
+    (
+        ID UInt32,
+        Serial UInt32,
+        EventTime DateTime,
+        Price Int64,
+        OrderID String,
+        CurrencyID UInt32
+    ),
+    ...
+) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
+  SETTINGS flatten_nested = 0
+```
+
+The syntax for accessing Nested values remains the same: use dotted names:
+
+```sql
+SELECT
+    Goals.ID,
+    Goals.EventTime
+FROM test.visits
+WHERE CounterID = 101500 AND length(Goals.ID) < 5
+LIMIT 10
+```
+
+For an INSERT query, use an array of [Tuple](/reference/data-types/tuple)s an unflattened Nested column, e.g.:
+
+```sql
+[tuple(1, 2, now(), 22, 'abc', 'usd'), tuple(3, 4, now(), 33, '1x1', 'cad')]
+```
 )DOCS_MD",
             .syntax = "Nested(name1 Type1, name2 Type2, ...)",
             .examples = {},

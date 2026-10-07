@@ -916,7 +916,7 @@ def test_onelake_create_without_flag(node, catalog_manager):
     db = catalog_manager.make_database_name()
     sql = catalog_manager.create_db_sql(db)
     error = node.query_and_get_error(
-        sql, settings={"allow_experimental_database_iceberg": "0"}
+        sql, settings={"allow_database_iceberg": "0"}
     )
     assert "allow_database_iceberg" in error or "SUPPORT_IS_DISABLED" in error
 

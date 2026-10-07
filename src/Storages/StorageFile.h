@@ -391,6 +391,11 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
+    /// and only for a sort column it physically reads from the file.
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+
     ReadFromFile(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -430,6 +435,7 @@ private:
     const size_t max_num_streams;
 
     std::shared_ptr<StorageFileSource::FilesIterator> files_iterator;
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyFileRegistryPtr lazy_row_index_registry;

@@ -1015,15 +1015,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                     context->addExternalTable(it.first, std::move(*it.second));
         }
 
-        if (!options.only_analyze || options.modify_inplace)
-        {
-            if (syntax_analyzer_result->rewrite_subqueries)
-            {
-                /// remake interpreter_subquery when PredicateOptimizer rewrites subqueries and main table is subquery
-                interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
-            }
-        }
-
         if (interpreter_subquery)
         {
             /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
@@ -2738,7 +2729,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         return {};
 
     auto & query = getSelectQuery();
-    if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
+    if (!query.prewhere() && !query.where())
     {
         /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
         /// require reading some data (but much faster than reading columns).

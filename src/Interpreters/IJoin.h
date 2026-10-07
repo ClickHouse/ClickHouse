@@ -2,9 +2,11 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Core/Joins.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Common/Exception.h>
@@ -88,6 +90,8 @@ public:
     virtual ~IJoin() = default;
 
     virtual std::string getName() const = 0;
+
+    virtual std::string getAlgorithm() const = 0;
 
     virtual const TableJoin & getTableJoin() const = 0;
 
@@ -197,7 +201,9 @@ public:
     virtual bool isParallelNonJoinedProcessingEnabled() const { return supportParallelNonJoinedBlocksProcessing(); }
 
     /// True when joined blocks already respect `max_joined_block_size_*`. `JoinStep` then skips the
-    /// squashing that would only copy those blocks after a parallel join.
+    /// squashing that would only copy those blocks after a parallel join. Otherwise the squashing
+    /// transform asks again on its first chunk: by then a wrapper that switches algorithms during the
+    /// build has settled. The answer must not change after `onBuildPhaseFinish`.
     virtual bool emitsSizedOutputBlocks() const { return false; }
 
     /// Get non-joined blocks for a specific stream partition

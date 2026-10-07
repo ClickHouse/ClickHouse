@@ -1239,16 +1239,33 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         const bool spill_to_disk = params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk()
             && GraceHashJoin::isSupported(table_join);
 
-        /// The partitioned join has no spilling mode yet, so an external-join limit is one more shape
-        /// that `hash` takes.
-        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && !spill_to_disk && PartitionedHashJoin::isSupported(*table_join))
+        if (algorithm == JoinAlgorithm::PARTITIONED_HASH && PartitionedHashJoin::isSupported(*table_join))
+        {
+            if (spill_to_disk)
+                return std::make_shared<SpillingHashJoin>(
+                    PartitionedCollectingTag{},
+                    table_join,
+                    left_table_expression_header,
+                    right_table_expression_header,
+                    table_join->getTempDataOnDisk(),
+                    params.grace_hash_join_initial_buckets,
+                    params.grace_hash_join_max_buckets,
+                    params.max_threads,
+                    stats_collecting_params,
+                    params.join_any_take_last_row,
+                    params.rhs_size_estimation);
+
+            /// Without temporary storage, or for a shape `GraceHashJoin` declines, there is no join to
+            /// spill into. The budget stays off then: it could only refuse a table growth.
             return std::make_shared<PartitionedHashJoin>(
                 table_join,
                 right_table_expression_header,
                 params.max_threads,
                 params.join_any_take_last_row,
                 stats_collecting_params,
+                /*max_bytes_before_external_join_=*/0,
                 params.rhs_size_estimation);
+        }
 
         if (spill_to_disk)
         {

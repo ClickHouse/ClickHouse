@@ -1663,7 +1663,6 @@ target_compile_options(musl PRIVATE
     -std=c99
     -ffreestanding
     -fno-builtin
-    -fno-stack-protector
     -fomit-frame-pointer
 
     # Never instrument libc: its early-init code (__init_libc, CRT) runs before
@@ -1701,6 +1700,25 @@ target_compile_definitions(musl PRIVATE
     -D_XOPEN_SOURCE=700
 )
 
+# The rest of libc is compiled with the global -fstack-protector-strong, but the objects below
+# must not be: they run before the canary exists, or they are what installs it. This is upstream
+# musl's own NOSSP_OBJS list (Makefile), minus the objects this build compiles from assembly.
+# __init_ssp writes the canary into the thread pointer, so a function that reads it on entry and
+# again on return would see two different values; __init_tls and __set_thread_area set up the
+# thread pointer the canary is read through; memcpy and memset are called from that path.
+set_source_files_properties(
+    "${MUSL_SOURCE_DIR}/src/env/__init_tls.c"
+    "${MUSL_SOURCE_DIR}/src/env/__libc_start_main.c"
+    "${MUSL_SOURCE_DIR}/src/env/__stack_chk_fail.c"
+    "${MUSL_SOURCE_DIR}/src/string/memcpy.c"
+    "${MUSL_SOURCE_DIR}/src/string/memset.c"
+    "${MUSL_SOURCE_DIR}/src/thread/__set_thread_area.c"
+    "${MUSL_SOURCE_DIR}/src/thread/aarch64/__set_thread_area.c"
+    "${MUSL_SOURCE_DIR}/ldso/dlstart.c"
+    "${MUSL_SOURCE_DIR}/ldso/dynlink.c"
+    PROPERTIES COMPILE_OPTIONS "-fno-stack-protector"
+)
+
 target_compile_definitions(musl PUBLIC
     -D__MUSL__=1
 )
@@ -1725,6 +1743,7 @@ target_include_directories(musl-crt1 PRIVATE
 target_compile_options(musl-crt1 PRIVATE
     -std=c99
     -ffreestanding
+    # Runs before the thread pointer and the canary exist (upstream musl NOSSP_OBJS covers all CRT objects).
     -fno-stack-protector
     -fno-sanitize=all
     -fno-builtin

@@ -7,8 +7,8 @@
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
--- The runner randomizes `max_bytes_before_external_join`; any non-zero spill budget would send the join
--- to `hash` at plan time.
+-- The runner randomizes `max_bytes_before_external_join`; any non-zero spill budget would wrap the join
+-- in `SpillingHashJoin`.
 SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET max_bytes_in_join = 0;
@@ -83,6 +83,18 @@ SELECT count() FROM (
 SELECT 'the rewritten query gives the same rows as the join', j.1, j = i FROM (SELECT
     (SELECT (count(), sum(p.k)) FROM t_phj_plan_probe AS p INNER JOIN (SELECT k FROM t_phj_plan_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', query_plan_convert_join_to_in = 0) AS j,
     (SELECT (count(), sum(p.k)) FROM t_phj_plan_probe AS p INNER JOIN (SELECT k FROM t_phj_plan_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', query_plan_convert_join_to_in = 1) AS i);
+
+SELECT '-- with automatic external join the partitioned algorithm stays selected';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k
+    SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 1000000, max_bytes_ratio_before_external_join = 0
+) WHERE explain LIKE '%Algorithm: SpillingHashJoin(PartitionedHashJoin)%';
+
+SELECT '-- listing both algorithms keeps partitioned_hash when spilling is configured';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1 SELECT count() FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k
+    SETTINGS join_algorithm = 'partitioned_hash,parallel_hash', max_bytes_before_external_join = 1000000, max_bytes_ratio_before_external_join = 0
+) WHERE explain LIKE '%SpillingHashJoin(PartitionedHashJoin)%';
 
 DROP TABLE t_phj_plan_probe;
 DROP TABLE t_phj_plan_build;

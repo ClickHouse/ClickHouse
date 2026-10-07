@@ -286,7 +286,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
 {
     const auto * func = ast.as<const ASTFunction>();
     if (!func)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected function, got {}", ast.formatForErrorMessage());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a function as the backup locator");
 
     BackupInfo res;
     res.backup_engine_name = func->name;
@@ -295,7 +295,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
     {
         const auto * list = func->arguments->as<const ASTExpressionList>();
         if (!list)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected list, got {}", func->arguments->formatForErrorMessage());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected an argument list in the backup locator");
 
         size_t index = 0;
         if (!list->children.empty())
@@ -329,7 +329,7 @@ BackupInfo BackupInfo::fromAST(const IAST & ast)
                     res.function_arg = elem;
                     break;
                 }
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected literal, got {}", elem->formatForErrorMessage());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a literal argument in the backup locator");
             }
             res.args.push_back(lit->value);
         }

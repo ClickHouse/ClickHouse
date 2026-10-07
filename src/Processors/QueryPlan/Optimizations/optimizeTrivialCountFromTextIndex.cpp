@@ -16,6 +16,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -300,22 +301,24 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
-/// E.g. "Trivial count from text index (idx, token = 'alpha')" or "... (idx, tokens = ['alpha', 'zeta'])".
+/// E.g. "Trivial count from text index (idx, token = "alpha")" or "... (idx, tokens = ["alpha", "zeta"])".
 String makeStepDescription(const ResolvedQuery & resolved)
 {
     const auto & query_tokens = resolved.query->getTokens();
+    const auto & tokenizer = *resolved.condition->getTokenizer();
 
     WriteBufferFromOwnString description;
     description << "Trivial count from text index (" << resolved.index.index->index.name << ", ";
+
     if (query_tokens.size() == 1)
     {
-        description << "token = '" << query_tokens.front() << "'";
+        description << "token = " << tokenizer.formatTokenForLogs(query_tokens.front());
     }
     else
     {
         description << "tokens = [";
         for (size_t i = 0; i < query_tokens.size(); ++i)
-            description << (i == 0 ? "'" : ", '") << query_tokens[i] << "'";
+            description << (i == 0 ? "" : ", ") << tokenizer.formatTokenForLogs(query_tokens[i]);
         description << "]";
     }
     description << ")";

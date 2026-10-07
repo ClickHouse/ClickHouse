@@ -30,8 +30,7 @@
               "group": "实时分析",
               "pages": [
                 "zh/get-started/quickstarts/create-your-first-materialized-view",
-                "zh/get-started/quickstarts/create-your-first-projection",
-                "zh/get-started/quickstarts/tutorial"
+                "zh/get-started/quickstarts/create-your-first-projection"
               ]
             },
             {

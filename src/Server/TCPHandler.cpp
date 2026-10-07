@@ -1988,7 +1988,10 @@ bool TCPHandler::receiveProxyHeader()
     /// Only PROXYv1 is supported.
     /// Validation of protocol is not fully performed.
 
-    LimitReadBuffer limit_in(*in, {.read_no_more=107, .expect_eof=true}); /// Maximum length from the specs.
+    /// No `expect_eof`: except for the `UNKNOWN` health check below, the client sends its handshake
+    /// right after the header, so the connection does not end at the limit. An over-long header is
+    /// rejected anyway, by carrying no `\r\n` within these 107 bytes.
+    LimitReadBuffer limit_in(*in, {.read_no_more=107}); /// Maximum length from the specs.
 
     assertString("PROXY ", limit_in);
 

@@ -246,7 +246,7 @@ addDate(datetime, interval)
 **Arguments**
 
 - `datetime` — The date or date with time to which `interval` is added. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64) or [`String`](/reference/data-types/string)
-- `interval` — Interval to add. [`Interval`](/reference/data-types/int-uint)
+- `interval` — Interval to add. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Returned value**
 
@@ -395,8 +395,8 @@ addInterval(interval_1, interval_2)
 
 **Arguments**
 
-- `interval_1` — First interval or tuple of intervals. [`Interval`](/reference/data-types/int-uint) or [`Tuple(Interval)`](/reference/data-types/tuple)
-- `interval_2` — Second interval to be added. [`Interval`](/reference/data-types/int-uint)
+- `interval_1` — First interval or tuple of intervals. [`Interval`](/reference/data-types/special-data-types/interval) or [`Tuple(Interval)`](/reference/data-types/tuple)
+- `interval_2` — Second interval to be added. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Returned value**
 
@@ -2437,7 +2437,7 @@ subDate(datetime, interval)
 **Arguments**
 
 - `datetime` — The date or date with time from which `interval` is subtracted. [`Date`](/reference/data-types/date) or [`Date32`](/reference/data-types/date32) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
-- `interval` — Interval to subtract. [`Interval`](/reference/data-types/int-uint)
+- `interval` — Interval to subtract. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Returned value**
 
@@ -2585,8 +2585,8 @@ subtractInterval(interval_1, interval_2)
 
 **Arguments**
 
-- `interval_1` — First interval or interval of tuples. [`Interval`](/reference/data-types/int-uint) or [`Tuple(Interval)`](/reference/data-types/tuple)
-- `interval_2` — Second interval to be negated. [`Interval`](/reference/data-types/int-uint)
+- `interval_1` — First interval or interval of tuples. [`Interval`](/reference/data-types/special-data-types/interval) or [`Tuple(Interval)`](/reference/data-types/tuple)
+- `interval_2` — Second interval to be negated. [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Returned value**
 

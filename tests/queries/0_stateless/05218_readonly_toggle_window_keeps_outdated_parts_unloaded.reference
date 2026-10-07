@@ -1,0 +1,7 @@
+outdated parts loaded on a read-only table: 0
+outdated parts loaded inside the window: 0
+toggle failed at the commit: 1
+still readonly after failed toggle: 1
+outdated parts loaded after failed toggle: 0
+parts after successful toggle: 1 empty active, 2 outdated
+rows after successful toggle: 0

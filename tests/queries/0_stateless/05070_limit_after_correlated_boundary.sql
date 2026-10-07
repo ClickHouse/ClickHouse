@@ -3,7 +3,7 @@
 -- instead of failing during execution with a missing column.
 -- Correlated subqueries are resolved by the analyzer only.
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 SELECT o.number, (SELECT i.number FROM numbers(5) AS i ORDER BY i.number LIMIT 1 AFTER i.number >= o.number) AS picked FROM numbers(3) AS o ORDER BY o.number; -- { serverError NOT_IMPLEMENTED }
 SELECT o.number, (SELECT i.number FROM numbers(5) AS i ORDER BY i.number LIMIT UNTIL i.number >= o.number) AS picked FROM numbers(3) AS o ORDER BY o.number; -- { serverError NOT_IMPLEMENTED }
