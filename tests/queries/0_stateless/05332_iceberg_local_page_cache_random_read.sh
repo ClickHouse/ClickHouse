@@ -8,8 +8,9 @@
 # chunks with positional (random) reads rather than sequentially, so the cached buffer has to serve
 # those out of the page cache: populate the blocks a read lands in on a cold miss, fetch a run of
 # neighbouring missing blocks in one go, and then answer the next query from the blocks already held.
-# The test reads the same table twice through that path and checks that all rows come back whole on
-# the cold pass as well as on the warm one.
+# The test reads the same table twice through that path, checks that all rows come back whole on
+# the cold pass as well as on the warm one, and checks per query in `system.query_log` that the cold
+# pass misses the cache while the warm pass is served from it without a single miss.
 #
 # The CI server configures no page cache (`page_cache_max_size` is 0 by default), so each step runs a
 # private clickhouse-local that has one, as in 04039_page_cache_in_local.sh and
@@ -28,6 +29,9 @@ mkdir -p "./${work_dir}"
 
 > "./${work_dir}/config.yaml" echo "
 page_cache_max_size: 134217728
+query_log:
+    database: system
+    table: query_log
 "
 
 # The writer is given no config file, so it has no page cache of its own and cannot warm one up.
@@ -54,11 +58,13 @@ page_cache=(
     --read_from_page_cache_if_exists_otherwise_bypass_cache 0
 )
 
-${CLICKHOUSE_LOCAL} --path "./${work_dir}/read" "${page_cache[@]}" --query "
+${CLICKHOUSE_LOCAL} --path "./${work_dir}/read" "${page_cache[@]}" --log_queries 1 --query "
     -- Cold cache: every block the Parquet reader asks for is a miss and has to be populated.
-    SELECT count(), sum(k), uniqExact(v) FROM icebergLocal('${work_dir}/icedata/', 'Parquet');
+    SELECT count(), sum(k), uniqExact(v) FROM icebergLocal('${work_dir}/icedata/', 'Parquet') SETTINGS log_comment = 'cold';
     -- Warm cache: the same blocks are already held, and the rows must still be the same.
-    SELECT count(), sum(k) FROM icebergLocal('${work_dir}/icedata/', 'Parquet');
-    SELECT value > 0 FROM system.events WHERE event = 'PageCacheReadBytes';"
+    SELECT count(), sum(k) FROM icebergLocal('${work_dir}/icedata/', 'Parquet') SETTINGS log_comment = 'warm';
+    SYSTEM FLUSH LOGS query_log;
+    SELECT ProfileEvents['PageCacheMisses'] > 0 FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'cold';
+    SELECT ProfileEvents['PageCacheMisses'], ProfileEvents['PageCacheHits'] > 0 FROM system.query_log WHERE type = 'QueryFinish' AND log_comment = 'warm';"
 
 rm -rf "./${work_dir}"
