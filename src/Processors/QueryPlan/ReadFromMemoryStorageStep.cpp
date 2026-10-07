@@ -708,7 +708,19 @@ bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
         return false;
 
     const auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name);
-    if (!column)
+    if (!column || !column->type->equals(*sort_column.type))
+        return false;
+
+    /// The threshold is computed from the output column, while the filter reads the physical column
+    /// of the same name. They are the same only if the in-source filters pass it through unchanged.
+    auto is_shadowed = [&](const ActionsDAG & dag)
+    {
+        const auto * node = dag.tryFindInOutputs(sort_column.name);
+        return node && node->type != ActionsDAG::ActionType::INPUT;
+    };
+    if (query_info.row_level_filter && is_shadowed(query_info.row_level_filter->actions))
+        return false;
+    if (query_info.prewhere_info && is_shadowed(query_info.prewhere_info->prewhere_actions))
         return false;
 
     /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
