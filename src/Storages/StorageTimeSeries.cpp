@@ -332,7 +332,7 @@ StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, c
         return res;
     }
 
-    /// For inner targets in Atomic databases `target_table_id` has a UUID but no name — look up directly by UUID.
+    /// For inner targets in Atomic databases `target_table_id` has a UUID but no name, so look up directly by UUID.
     if (target_table_id.hasUUID())
     {
         auto res = DatabaseCatalog::instance().tryGetByUUID(target_table_id.uuid).second;
