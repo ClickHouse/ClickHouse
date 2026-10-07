@@ -126,13 +126,14 @@ void ViewDefinitionsRenaming::checkDetachedTables() const
 {
     for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
     {
-        if (!dynamic_cast<const DatabaseOnDisk *>(database.get()))
-            continue;
-
         for (auto it = database->getDetachedTablesIterator(context, {}, false); it->isValid(); it->next())
         {
-            auto definition = DatabaseOnDisk::parseQueryFromMetadata(
-                getLogger("InterpreterRenameQuery"), context, database->getDisk(), it->metadataPath(), /*throw_on_error=*/ false);
+            ASTPtr definition;
+            if (dynamic_cast<const DatabaseOnDisk *>(database.get()))
+                definition = DatabaseOnDisk::parseQueryFromMetadata(
+                    getLogger("InterpreterRenameQuery"), context, database->getDisk(), it->metadataPath(), /*throw_on_error=*/ false);
+            else
+                definition = database->tryGetCreateTableQuery(it->table(), context);
             if (!definition)
                 continue;
 
@@ -153,8 +154,6 @@ void ViewDefinitionsRenaming::prepare()
     /// Guards are keyed by name, so both names are guarded until the end.
     for (const auto & database_name : std::set<String>{old_database_name, new_database_name})
         database_guards.push_back(catalog.getExclusiveDDLGuardForDatabase(database_name));
-
-    checkDetachedTables();
 
     /// The tables of other databases are guarded one by one, so scan again until no new table is found.
     while (true)
@@ -181,6 +180,8 @@ void ViewDefinitionsRenaming::prepare()
         if (!guarded_new_table)
             break;
     }
+
+    checkDetachedTables();
 
     std::sort(views.begin(), views.end(), [](const View & lhs, const View & rhs) { return lhs.name < rhs.name; });
     for (const auto & view : views)

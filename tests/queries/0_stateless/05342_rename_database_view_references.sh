@@ -49,6 +49,8 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE ${SRC}.tgt2 (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE MATERIALIZED VIEW ${SRC}.qualified_mv TO ${SRC}.tgt2 AS SELECT ${SRC}.sample.a AS a FROM ${SRC}.sample;
     CREATE VIEW ${SRC}.qualified_v AS SELECT ${SRC}.sample.* FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.regexp_v AS SELECT ${SRC}.sample.COLUMNS('^a$') FROM ${SRC}.sample;
+    CREATE VIEW ${SRC}.list_v AS SELECT ${SRC}.sample.COLUMNS(a) FROM ${SRC}.sample;
     CREATE VIEW ${SRC}.join_v AS SELECT ${SRC}.sample.a AS a, b FROM ${SRC}.sample JOIN ${SRC}.other ON ${SRC}.sample.a = ${SRC}.other.a;
 
     CREATE TABLE ${EXT}.s (a UInt64) ENGINE = MergeTree ORDER BY a;
@@ -97,7 +99,7 @@ function check()
         INSERT INTO ${DST}.ts (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(100, 3), 1.0)]);
         INSERT INTO ${EXT}.ts (metric_name, tags, samples) VALUES ('m', map(), [(toDateTime64(100, 3), 1.0)]);
     "
-    for table in ${DST}.inline_mv ${DST}.tgt ${DST}.pv ${DST}.not_in_v ${DST}.tgt2 ${DST}.qualified_v ${DST}.join_v \
+    for table in ${DST}.inline_mv ${DST}.tgt ${DST}.pv ${DST}.not_in_v ${DST}.tgt2 ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v \
         ${EXT}.tgt ${DST}.tgt3 ${EXT}.v ${MEM}.v ${DST}.samples ${DST}.samples2; do
         rows "$table" | sed "s/${CLICKHOUSE_DATABASE}//"
     done
@@ -106,7 +108,7 @@ function check()
 echo "-- after the rename"
 check
 total=0
-for table in ${DST}.inline_mv ${DST}.to_mv ${DST}.pv ${DST}.not_in_v ${DST}.qualified_mv ${DST}.qualified_v ${DST}.join_v ${EXT}.mv ${EXT}.mv2 ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv ${DST}.ts ${EXT}.ts; do
+for table in ${DST}.inline_mv ${DST}.to_mv ${DST}.pv ${DST}.not_in_v ${DST}.qualified_mv ${DST}.qualified_v ${DST}.regexp_v ${DST}.list_v ${DST}.join_v ${EXT}.mv ${EXT}.mv2 ${EXT}.v ${MEM}.v ${DST}.rmv ${EXT}.rmv ${DST}.ts ${EXT}.ts; do
     total=$((total + $(occurrences "$table" "${SRC}")))
 done
 echo "occurrences of the old name: $total"
@@ -189,6 +191,7 @@ echo "occurrences of the old name: $(( $(occurrences "${DICT_B}.cv" "${DICT_A}")
 echo "-- a detached view"
 TA="${CLICKHOUSE_DATABASE}_ta"
 TB="${CLICKHOUSE_DATABASE}_tb"
+TM="${CLICKHOUSE_DATABASE}_tm"
 ${CLICKHOUSE_CLIENT} -q "
     CREATE DATABASE ${TA} ENGINE = Atomic;
     CREATE TABLE ${TA}.t (a UInt64) ENGINE = MergeTree ORDER BY a;
@@ -198,10 +201,37 @@ ${CLICKHOUSE_CLIENT} -q "
     DETACH VIEW ${TA}.dv;
     DETACH VIEW ${TA}.dv_unrelated;
 "
+${CLICKHOUSE_CLIENT} -q "
+    CREATE DATABASE ${TM} ENGINE = Memory;
+    CREATE VIEW ${TM}.dv AS SELECT a FROM ${TA}.t;
+    DETACH VIEW ${TM}.dv;
+"
 ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${TA} TO ${TB}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${TA}"
-${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${TA}.dv; RENAME DATABASE ${TA} TO ${TB}; SELECT count() FROM ${TB}.dv"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${TA}.dv; ATTACH TABLE ${TM}.dv; RENAME DATABASE ${TA} TO ${TB}; SELECT count() FROM ${TB}.dv; SELECT count() FROM ${TM}.dv"
 
-for db in ${DICT_B} ${DST} ${EXT} ${MEM} ${RN} ${C0} ${GB} ${TB}; do
+echo "-- clickhouse-local, a view in the default (Overlay) database"
+LOCAL_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
+rm -rf "${LOCAL_DIR}"
+${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" -m -q "
+    CREATE DATABASE a ENGINE = Atomic;
+    CREATE TABLE a.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE TABLE default.d (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE VIEW default.v AS SELECT x FROM a.t;
+    CREATE MATERIALIZED VIEW default.mv TO default.d AS SELECT x FROM a.t;
+    RENAME DATABASE a TO b;
+    INSERT INTO b.t VALUES (1);
+    SELECT count() FROM default.v;
+    SELECT count() FROM default.d;
+"
+${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" -m -q "
+    INSERT INTO b.t VALUES (2);
+    SELECT count() FROM default.v;
+    SELECT count() FROM default.d;
+    SELECT countIf(create_table_query LIKE '% a.%') FROM system.tables WHERE database = 'default' AND name IN ('v', 'mv');
+"
+rm -rf "${LOCAL_DIR}"
+
+for db in ${DICT_B} ${DST} ${EXT} ${MEM} ${RN} ${C0} ${GB} ${TB} ${TM}; do
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db} SYNC"
 done
