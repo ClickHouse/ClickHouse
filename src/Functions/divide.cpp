@@ -60,6 +60,7 @@ public:
     explicit FunctionDivide(ContextPtr context)
         : legacy(FunctionDivideLegacy::create(context))
         , exact(std::make_unique<FunctionToOverloadResolverAdaptor>(createFunctionExactDivide()))
+        , integral(FunctionFactory::instance().get("intDiv", context))
     {
     }
 
@@ -92,14 +93,34 @@ public:
 private:
     const FunctionOverloadResolverPtr & delegate(const ColumnsWithTypeAndName & arguments) const
     {
-        if (isInteger(removeNullable(recursiveRemoveLowCardinality(arguments[0].type)))
-            && isInteger(removeNullable(recursiveRemoveLowCardinality(arguments[1].type))))
+        const auto left = recursiveRemoveLowCardinality(arguments[0].type);
+        const auto right = recursiveRemoveLowCardinality(arguments[1].type);
+        /// Reuse `intDiv` where its operand casts preserve every input value, including a signed
+        /// dividend with a narrower unsigned divisor. This retains its constant-divisor kernels
+        /// and monotonicity metadata, with a canonical name distinct from floating-point `divide`.
+        /// Other mixed-sign pairs need checked magnitudes; nullable inputs need to skip masked
+        /// overflow and zero-divisor rows.
+        if ((isInt(left) && isInt(right)) || (isUInt(left) && isUInt(right))
+            || (isInt(left) && isUInt(right) && left->getSizeOfValueInMemory() > right->getSizeOfValueInMemory()))
+        {
+            /// `intDiv` disables lazy execution for constant divisors. Keep potentially throwing
+            /// constants on the checked path so an enclosing `if` can mask zero and overflow.
+            if (arguments[1].column && isColumnConst(*arguments[1].column))
+            {
+                const auto divisor = (*arguments[1].column)[0];
+                if (accurateEquals(divisor, Field(0)) || accurateEquals(divisor, Field(-1)))
+                    return exact;
+            }
+            return integral;
+        }
+        if (isInteger(removeNullable(left)) && isInteger(removeNullable(right)))
             return exact;
         return legacy;
     }
 
     FunctionOverloadResolverPtr legacy;
     FunctionOverloadResolverPtr exact;
+    FunctionOverloadResolverPtr integral;
 };
 
 REGISTER_FUNCTION(Divide)
