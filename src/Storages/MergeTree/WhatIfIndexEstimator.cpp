@@ -14,13 +14,13 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
+#include <Storages/MergeTree/WhatIfProjectionEstimator.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
 
@@ -36,8 +36,8 @@ namespace Setting
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
-    extern const SettingsString ignore_data_skipping_indices;
-    extern const SettingsString force_data_skipping_indices;
+    extern const SettingsString ignore_data_skipping_indexes;
+    extern const SettingsString force_data_skipping_indexes;
 }
 
 namespace ErrorCodes
@@ -76,37 +76,6 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
-/// projections are stored but not estimated yet, so report them instead of dropping them.
-/// whoever adds the estimate must also require SELECT on the projection's columns, the way
-/// evaluateIndex does, since it will read them
-void appendProjectionCandidates(
-    WhatIfResult & result, const HypotheticalObjectStore & store, const MergeTreeData & data, const ContextPtr & context)
-{
-    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
-    {
-        WhatIfCandidateResult r;
-        r.name = projection.name;
-        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
-        r.status = WhatIfCandidateResult::NotApplicable;
-        r.not_applicable_reason = "EXPLAIN WHATIF does not estimate hypothetical projections yet";
-
-        /// re-run the same ADD PROJECTION validation as CREATE did, so both a dropped column and a
-        /// later MODIFY SETTING that disables the projection's features surface as drift
-        try
-        {
-            checkHypotheticalProjectionIsAddable(data, metadata, projection.definition_ast, /*if_not_exists=*/false, context);
-        }
-        catch (const Exception &)
-        {
-            r.not_applicable_reason = "Hypothetical projection can no longer be added to this table: "
-                + getCurrentExceptionMessage(false);
-        }
-
-        result.candidates.push_back(std::move(r));
-    }
-}
-
 /// only when the store held nothing for this table
 void appendNoCandidatesRow(WhatIfResult & result)
 {
@@ -134,7 +103,17 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
-    appendProjectionCandidates(result, store, data, context);
+    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+    {
+        WhatIfCandidateResult r;
+        r.name = projection.name;
+        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
+        r.status = WhatIfCandidateResult::NotApplicable;
+        r.not_applicable_reason = reason;
+        refreshHypotheticalProjection(projection, data, metadata, context, r.not_applicable_reason);
+        result.candidates.push_back(std::move(r));
+    }
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
     return result;
@@ -154,13 +133,15 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
             if (auto * set_query = settings_ast->as<ASTSetQuery>())
                 std::erase_if(set_query->changes, [&](const auto & change)
                 {
-                    if (change.name == "force_data_skipping_indices")
+                    if (change.name == "force_data_skipping_indexes" || change.name == "force_data_skipping_indices")
                     {
                         removed_force.push_back(change.value.template safeGet<String>());
                         return true;
                     }
                     /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
-                    return change.name == "enable_parallel_replicas"
+                    return change.name == "force_optimize_projection_name"
+                        || change.name == "preferred_optimize_projection_name"
+                        || change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
                         || change.name == "use_skip_indexes_on_data_read";
                 });
@@ -201,10 +182,10 @@ WhatIfCandidateResult evaluateIndex(
     /// CANNOT_PARSE_TEXT) and skip the candidate if it's named
     {
         const auto & user_settings = context->getSettingsRef();
-        if (user_settings[Setting::ignore_data_skipping_indices].changed)
+        if (user_settings[Setting::ignore_data_skipping_indexes].changed)
         {
             auto ignored_names = parseIdentifiersOrStringLiteralsToSet(
-                user_settings[Setting::ignore_data_skipping_indices].toString(), user_settings);
+                user_settings[Setting::ignore_data_skipping_indexes].toString(), user_settings);
             if (ignored_names.contains(index_desc.name))
             {
                 result.status = WhatIfCandidateResult::NotApplicable;
@@ -335,14 +316,17 @@ WhatIfResult estimateHypotheticalIndexes(
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
     /// Grab the forced index names, drop them for baseline planning, re-check them at the end
-    local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
+    local_context->resetSettingsToDefaultValue(
+        {"force_data_skipping_indices",
+         "force_optimize_projection_name",
+         "preferred_optimize_projection_name"});
 
     auto select_query_copy = select_query->clone();
     std::vector<String> forced_strings;
     stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
-    if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
-        forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
+    if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
+        forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indexes]);
 
     SelectQueryOptions query_options;
     query_options.setExplain();
@@ -356,7 +340,10 @@ WhatIfResult estimateHypotheticalIndexes(
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    plan.optimize(QueryPlanOptimizationSettings(plan_context));
+    /// plan as the query would, but a forced projection that is not used must not fail the statement
+    QueryPlanOptimizationSettings optimization_settings(plan_context);
+    optimization_settings.force_use_projection = false;
+    plan.optimize(optimization_settings);
 
     std::vector<ReadFromMergeTree *> read_steps;
     collectReadSteps(plan.getRootNode(), read_steps);
@@ -365,7 +352,7 @@ WhatIfResult estimateHypotheticalIndexes(
     {
         auto storage = tryResolveSingleTable(select_query, local_context);
         const auto & store = local_context->getHypotheticalObjectStore();
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
+        if (const auto * mt = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)
@@ -392,7 +379,9 @@ WhatIfResult estimateHypotheticalIndexes(
             }
 
             return buildResultWithoutScan(
-                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read",
+                *mt,
+                store,
+                "The query is answered without reading the table's parts, so an index on them would not be read",
                 local_context);
         }
 
@@ -441,6 +430,7 @@ WhatIfResult estimateHypotheticalIndexes(
     result.table = data.getStorageID().getTableName();
     result.baseline_parts = analysis.selected_parts;
     result.baseline_marks = analysis.selected_marks;
+    result.baseline_rows = analysis.selected_rows;
 
     /// The average row size is the parent table's, so it says nothing about rows selected from a
     /// projection. Leave it at 0 and the formatter omits the line rather than printing a wrong one
@@ -560,7 +550,9 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
-    appendProjectionCandidates(result, store, data, context);
+    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+        result.candidates.push_back(
+            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);

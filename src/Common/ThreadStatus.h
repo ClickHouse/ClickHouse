@@ -85,6 +85,7 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
+    ~ThreadGroup();
 
     /// The first thread created this thread group
     const UInt64 master_thread_id;
@@ -130,6 +131,9 @@ public:
         return shared_data;
     }
 
+    /// Must be called before any thread attaches to the group: threads copy the predicates on attach.
+    void setQueryCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
+
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
@@ -138,13 +142,19 @@ public:
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
-    /// NOTE: The caller should call background_memory_tracker.adjustOnBackgroundTaskEnd() at the end (see existing callers),
-    /// and make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
+    /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
     static ThreadGroupPtr createForMergeMutate(ContextPtr storage_context);
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
     static ThreadGroupPtr createForExplainAnalyze(ThreadGroupPtr parent_thread_group);
+
+    /// For work a query only triggers but that outlives it (e.g. loading a dictionary): memory is accounted in the
+    /// server total, in every thread of the group, unlike `MemoryTrackerBlockerInThread`.
+    static ThreadGroupPtr createWithoutQueryMemoryTracker(ThreadGroupPtr parent);
+
+    /// Nested groups charge memory through the group above them; only a top-level one is attached to a user.
+    bool isNested() const { return parent != nullptr; }
 
     std::vector<UInt64> getInvolvedThreadIds() const;
     size_t getPeakThreadsUsage() const;
@@ -173,7 +183,7 @@ private:
 
     static ThreadGroupPtr create(ContextPtr context, Int32 os_threads_nice_value);
 
-    explicit ThreadGroup(ThreadGroupPtr parent_thread_group);
+    explicit ThreadGroup(ThreadGroupPtr parent_thread_group, bool charge_memory_to_parent = true);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group);
 };
 
@@ -319,6 +329,18 @@ public:
 
     /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
     void throwIfQueryCanceled() const;
+
+    /// While alive, `isQueryCanceled` returns false and `throwIfQueryCanceled` does nothing in the current thread.
+    /// For code that must not be interrupted, like the finalization of a committed transaction.
+    class QueryCancellationBlocker : private boost::noncopyable
+    {
+    public:
+        QueryCancellationBlocker();
+        ~QueryCancellationBlocker();
+
+    private:
+        bool previous;
+    };
 
     /// Proper cal for fatal_error_callback
     void onFatalError();

@@ -134,6 +134,12 @@ ClickHouse では、オープンテーブルフォーマットを読み取る方
     ```
 
     クエリの構文はまったく同じで、変わるのは `FROM` 句だけです。データソースが変わっても、ClickHouse SQL のすべての関数、JOIN、集計は同じように使用できます。
+
+    <Note>
+      **対象となるクエリにコンピュートを追加する**
+
+      On-Demand Compute は、サポートされている Apache Iceberg および Delta Lake のデータに対する対象の `SELECT` クエリ向けにプライベートプレビューで提供されています。サービスをリサイズすることなく、既存のサービスとエンドポイントを通じて追加の ClickHouse ワーカーを一時的に割り当てます。対象条件と制限事項については、[On-Demand Compute のドキュメント](/ja/products/cloud/features/infrastructure/on-demand-compute)を参照してください。
+    </Note>
   </Step>
 
   <Step title="ClickHouse にデータの一部を読み込む" id="load-data">
@@ -231,9 +237,7 @@ ClickHouse では、オープンテーブルフォーマットを読み取る方
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## 次のステップ
-</div>
+## 次のステップ {#next-steps}
 
 ここまででワークフロー全体を確認できたので、各領域をさらに詳しく見ていきましょう。
 

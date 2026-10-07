@@ -140,14 +140,9 @@ void MergeSortingTransform::consume(Chunk chunk)
             size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
             SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
             TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
-            size_t max_merged_block_size = this->max_merged_block_size;
-            if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
-            {
-                auto avg_row_bytes = sum_bytes_in_blocks / sum_rows_in_blocks;
-                /// max_merged_block_size >= 128
-                max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
-            }
-            merge_sorter = std::make_unique<MergeSorter>(shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter = std::make_unique<MergeSorter>(
+                shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit,
+                MergeSorter::Mode::PreserveRows, max_block_bytes);
             auto sink = std::make_shared<BufferingToFileSink>(shared_header_without_constants, std::move(tmp_stream), log);
             auto source = std::make_shared<BufferingFromFileSource>(shared_header_without_constants, sink->getHolder(), log);
 
@@ -164,7 +159,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                         shared_header_without_constants,
                         0,
                         description,
-                        max_merged_block_size,
+                        merge_sorter->getMaxMergedBlockSize(),
                         /*max_merged_block_size_bytes=*/0,
                         /*max_dynamic_subcolumns=*/std::nullopt,
                         SortingQueueStrategy::Batch,
