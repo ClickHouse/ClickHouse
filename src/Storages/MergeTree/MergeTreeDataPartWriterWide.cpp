@@ -251,6 +251,14 @@ void MergeTreeDataPartWriterWide::addStreams(
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 
+        /// Otherwise bytes of a single value will be split across two blocks and won't compress well.
+        if (const auto & type = substream_path.back().data.type)
+        {
+            max_compress_block_size = roundCompressBlockSizeToWholeValues(max_compress_block_size, *type);
+            query_write_settings.adaptive_write_buffer_initial_size
+                = roundCompressBlockSizeToWholeValues(query_write_settings.adaptive_write_buffer_initial_size, *type);
+        }
+
         fiu_do_on(FailPoints::wide_part_writer_fail_in_add_streams,
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
