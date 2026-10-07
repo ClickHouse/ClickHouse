@@ -163,13 +163,6 @@ private:
     StorageSnapshotPtr storage_snapshot;
 };
 
-String resolveFileLogPath(const String & path, const String & user_files_path)
-{
-    if (user_files_path.empty() || std::filesystem::path(path).is_absolute() || fileOrSymlinkPathStartsWith(path, user_files_path))
-        return path;
-    return std::filesystem::path(user_files_path) / path;
-}
-
 StorageFileLog::StorageFileLog(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -184,7 +177,7 @@ StorageFileLog::StorageFileLog(
     , WithContext(context_->getGlobalContext())
     , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
-    , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
+    , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
@@ -233,7 +226,7 @@ StorageFileLog::StorageFileLog(
         if (path_is_directory)
             directory_watch = std::make_unique<FileLogDirectoryWatcher>(root_data_path, *this, getContext());
 
-        auto thread = getContext()->getSchedulePool()->createTask(getStorageID(), log->name(), [this] { threadFunc(); });
+        auto thread = getContext()->getSchedulePool().createTask(getStorageID(), log->name(), [this] { threadFunc(); });
         task = std::make_shared<TaskContext>(std::move(thread));
     }
     catch (...)
@@ -522,16 +515,12 @@ void StorageFileLog::openFilesAndSetPos()
             auto & meta = findInMap(file_infos.meta_by_inode, file_ctx.inode);
             if (meta.last_writen_position > static_cast<UInt64>(file_end))
             {
-                /// Truncated in place, e.g. by `logrotate` with `copytruncate`.
-                LOG_INFO(
-                    log,
-                    "File {} is smaller than its saved offset ({} < {}), reading it again from the beginning",
+                throw Exception(
+                    ErrorCodes::CANNOT_READ_ALL_DATA,
+                    "Last saved offsset for File {} is bigger than the file size ({} > {})",
                     file,
-                    std::streamoff{file_end},
-                    meta.last_writen_position);
-                /// Before resetting: `serialize` refuses to store an offset smaller than the one on disk.
-                disk->removeFileIfExists(getFullMetaPath(meta.file_name));
-                meta.last_writen_position = 0;
+                    meta.last_writen_position,
+                    std::streamoff{file_end});
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -949,14 +938,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine arguments:
 
-- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. Note that ClickHouse allows only paths inside `user_files` directory.
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. Note that ClickHouse allows only paths inside `user_files` directory.
 - `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
 
 Optional parameters:
 
-- `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](/reference/settings/session-settings/stream#stream_poll_timeout_ms).
-- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/reference/settings/session-settings/max#max_block_size).
-- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](/reference/settings/session-settings/max-insert#max_insert_block_size).
+- `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
+- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
+- `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
 - `poll_directory_watch_events_backoff_max` - The max sleep value for watch directory thread. Default: `32000`.
@@ -965,9 +954,9 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
+The delivered records are tracked automatically, so each record in a log file is only counted once.
 
-`SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
+`SELECT` is not particularly useful for reading records (except for debugging), because each record can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
 1.  Use the engine to create a FileLog table and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -983,7 +972,7 @@ CREATE TABLE logs (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = FileLog('my_app/app.log', 'JSONEachRow');
+  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
 
 CREATE TABLE daily (
     day Date,
@@ -1020,14 +1009,6 @@ Additional virtual columns when `handle_error_mode='stream'`:
 - `_error` - Exception message happened during failed parsing. Data type: `Nullable(String)`.
 
 Note: `_raw_record` and `_error` virtual columns are filled only in case of exception during parsing, they are always `NULL` when message was parsed successfully.
-
-## Data durability {#data-durability}
-
-The `FileLog` engine records the offset it has consumed for a chunk before the insert that chunk belongs to has been committed, so an interrupted server can leave the recorded offset ahead of the data that reached the target table. On restart each log file resumes from the offset recorded in its metadata directory, so those rows are never re-read: they are lost with no error and `count()` is simply smaller. An ordinary process failure is enough to expose this, and it does not require a power loss, because the offset is recorded in a metadata file that is renamed into place while the target part is still being written.
-
-A loss of the OS page cache can additionally discard data that had already been written to the target table; examples are a device-level power loss and an unclean host or kernel reset. The metadata files holding the offsets are themselves written without an fsync of the file or of its directory, so they carry no durability guarantee of their own either.
-
-Unlike the message-broker engines, `FileLog` cannot be protected against this by making the target durable first. Because the offset is recorded from inside the reading pipeline, before the insert it belongs to has finished, setting `fsync_after_insert = 1` on the target `MergeTree` tables does not establish the inserted part as durable before the offset advances. Treat `FileLog` consumption as best-effort tailing of local files: where no rows may be lost, keep the source log files until the consumed data has been verified in the target, so that consumption can be repeated. Dropping and recreating the table discards the recorded offsets and re-reads the files from the beginning.
 )DOCS_MD",
             .syntax = "ENGINE = FileLog('path_to_logs', 'format') SETTINGS ...",
             .related = {"Kafka", "RabbitMQ", "NATS"}});

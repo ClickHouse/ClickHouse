@@ -3,18 +3,17 @@ SELECT 'Negative tests';
 SELECT hasPhrase(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasPhrase('a'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasPhrase('a', 'b', 'c', 'd'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
--- 1st arg must be String, FixedString or an array of those
+-- 1st arg must be String or FixedString
 SELECT hasPhrase(1, 'hello'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT hasPhrase([1, 2], 'hello'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- 2nd arg must be a const String or const Array(String)
+-- 2nd arg must be const String
 SELECT hasPhrase('a', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT hasPhrase(['a', 'b'], [1, 2]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase('a', materialize('b')); -- { serverError ILLEGAL_COLUMN }
 -- 3rd arg (if given) must be const String (tokenizer name)
 SELECT hasPhrase('a', 'b', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT hasPhrase('a', 'b', 'unsupported_tokenizer'); -- { serverError BAD_ARGUMENTS }
 -- sparseGrams is not supported because gram ordering depends on context
 SELECT hasPhrase('a', 'b', 'sparseGrams'); -- { serverError BAD_ARGUMENTS }
+SELECT hasPhrase('a', 'b', 'array'); -- { serverError BAD_ARGUMENTS }
 -- NULL arguments
 SELECT hasPhrase(NULL); -- { serverError BAD_ARGUMENTS }
 SELECT hasPhrase(NULL, NULL); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
@@ -69,50 +68,6 @@ SELECT hasPhrase(CAST(NULL AS Nullable(String)), 'quick brown');
 SELECT '-- Nullable(FixedString) input';
 SELECT hasPhrase(toNullable(toFixedString('the quick brown fox', 19)), 'quick brown');
 SELECT hasPhrase(CAST(NULL AS Nullable(FixedString(19))), 'quick brown');
-
-SELECT '-- Array input: elements are tokenized';
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick brown');
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'quick fox');
-SELECT hasPhrase(['the', 'quick', 'brown', 'fox'], 'the quick brown fox');
-SELECT hasPhrase(['a b', 'c'], 'a b c');
-SELECT hasPhrase(['a', 'a', 'b'], 'a b');
-SELECT hasPhrase(['a', 'b'], 'b a');
-SELECT hasPhrase(['a', 'b'], '');
-SELECT hasPhrase(CAST([], 'Array(String)'), 'a');
-SELECT hasPhrase([], 'a');
-SELECT '-- the tokens of one row are one sequence, so a phrase spans elements';
-SELECT hasPhrase(['a b', 'c'], ['b', 'c']);
-SELECT '-- empty or NULL element is not a token';
-SELECT hasPhrase(['a', '', 'b'], 'a b');
-SELECT hasPhrase(['a', NULL, 'b'], 'a b');
-SELECT '-- Array(FixedString) input';
-SELECT hasPhrase([toFixedString('aa', 2), toFixedString('bb', 2)], ['aa', 'bb']);
-SELECT '-- a FixedString input needs a tokenizer that splits at its zero padding';
-SELECT hasPhrase(toFixedString('abc', 6), 'abc', 'ngrams(3)');
-SELECT hasPhrase(toFixedString('a b', 8), 'a b');
-SELECT hasPhrase(toFixedString('aa', 4), 'aa', 'array'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase([toFixedString('aa', 4)], ['aa'], 'array'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase(toFixedString('a b', 8), 'a b', 'splitByString([\' \'])'); -- { serverError BAD_ARGUMENTS }
-SELECT hasPhrase([toFixedString('a b', 8)], ['a', 'b'], $$splitByRegexp(' ')$$); -- { serverError BAD_ARGUMENTS }
-SELECT '-- Array phrase: elements are tokens';
-SELECT hasPhrase(['a b', 'c'], ['a b', 'c']);
-SELECT hasPhrase('the quick brown fox jumps', ['quick', 'brown']);
-SELECT '-- the array tokenizer is what the postprocessor rewrite passes';
-SELECT hasPhrase(['a b', 'c'], ['a b'], 'array');
-SELECT '-- tokenizer applies to input elements and a String phrase';
-SELECT hasPhrase(['a', 'b'], 'a()b', 'splitByString([\'()\'])');
-SELECT hasPhrase(['a()b', 'c'], 'a()b', 'splitByString([\'()\'])');
-
-SELECT '-- Array(String) column values';
-
-DROP TABLE IF EXISTS tab;
-CREATE TABLE tab (id UInt64, tokens Array(String)) ENGINE = MergeTree() ORDER BY id;
-INSERT INTO tab VALUES (1, ['the', 'quick', 'brown']), (2, ['quick', 'the', 'brown']), (3, []);
-
-SELECT id FROM tab WHERE hasPhrase(tokens, 'the quick') ORDER BY id;
-SELECT id, hasPhrase(tokens, 'quick brown') FROM tab ORDER BY id;
-
-DROP TABLE tab;
 
 SELECT '-- Nullable(String) column values';
 

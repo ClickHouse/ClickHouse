@@ -4,7 +4,6 @@
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemoryTracker.h>
 
@@ -134,9 +133,7 @@ const MemoryTracker & MergeListElement::getMemoryTracker() const
 
 MergeListElement::~MergeListElement()
 {
-    /// The part produced goes to the table; also marks the caller for an `OPTIMIZE` merging inline.
-    thread_group->memory_tracker.setDriftExpected();
-    setCurrentQueryMemoryDriftExpected();
+    background_memory_tracker.adjustOnBackgroundTaskEnd(&getMemoryTracker());
 }
 
 }

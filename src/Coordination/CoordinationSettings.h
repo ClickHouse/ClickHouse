@@ -22,10 +22,8 @@ struct CoordinationSettingsImpl;
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, LogsLevel) \
     M(CLASS_NAME, Milliseconds) \
-    M(CLASS_NAME, Int64) \
     M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, NonZeroUInt64) \
-    M(CLASS_NAME, Float)
+    M(CLASS_NAME, NonZeroUInt64)
 
 COORDINATION_SETTINGS_SUPPORTED_TYPES(CoordinationSettings, DECLARE_SETTING_TRAIT)
 

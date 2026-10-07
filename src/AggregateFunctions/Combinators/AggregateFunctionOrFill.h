@@ -164,33 +164,6 @@ public:
         }
     }
 
-    void addBatchWithNonNullPlaces( /// NOLINT
-        size_t row_begin,
-        size_t row_end,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena,
-        ssize_t if_argument_pos = -1) const override
-    {
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if (flags[i])
-                    add(places[i] + place_offset, columns, i, arena);
-            }
-        }
-        else
-        {
-            nested_function->addBatchWithNonNullPlaces(
-                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
-            for (size_t i = row_begin; i < row_end; ++i)
-                (places[i] + place_offset)[size_of_data] = 1;
-        }
-    }
-
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -291,20 +264,6 @@ public:
         nested_function->serialize(place, buf, version);
 
         writeChar(place[size_of_data], buf);
-    }
-
-    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
-    {
-        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
-            return *nested_bound + sizeof(char);
-        return std::nullopt;
-    }
-
-    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
-    {
-        dst = nested_function->serializeToMemory(place, dst, version);
-        writeBinary(place[size_of_data], dst);
-        return dst;
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override

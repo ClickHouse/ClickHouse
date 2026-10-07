@@ -4,13 +4,11 @@
 #include <IO/LongConnectionLimit.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ICacheProvider.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <cstring>
 
 #include <Common/CurrentThread.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -19,7 +17,6 @@
 #include <Interpreters/Context.h>
 
 #include <gtest/gtest.h>
-#include <algorithm>
 #include <fstream>
 #include <filesystem>
 #include <optional>
@@ -39,7 +36,7 @@ namespace ProfileEvents
 {
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorBytesFromSource;
-    extern const Event ReaderExecutorDeliveredBytes;
+    extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
@@ -48,8 +45,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorLongConnectionHits;
     extern const Event ReaderExecutorLongConnectionFallbacks;
     extern const Event ReaderExecutorLongConnectionBytes;
-    extern const Event ReaderExecutorConcurrentDownloadWaits;
-    extern const Event ReaderExecutorConcurrentDownloadWaitTimeouts;
 }
 
 namespace DB::ErrorCodes
@@ -85,202 +80,6 @@ unsigned char patternByte(size_t i)
 {
     return static_cast<unsigned char>(i % 256);
 }
-
-/// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
-/// `concurrent_download` holds the ranges another thread is downloading: `role` leaves them
-/// unlisted and `write` refuses to land bytes there, so the driver fetches them through from source.
-struct MockCacheState
-{
-    std::vector<char> store;
-    /// Size the provider believes the file is, used only to frame blocks (block clamping). Defaults
-    /// to the real store size; a test sets it to `UnknownSize` to model an unknown-size file, where
-    /// the final block stays full-width and its whole-block `covers` check can never be satisfied.
-    size_t declared_size;
-    IntervalSet resident;
-    IntervalSet concurrent_download;
-    /// Ranges that became committed AFTER `resolve` but are still reported as a miss by `resolve`
-    /// (they are not in `resident`). `committed()` reports them - models a block a concurrent query
-    /// populated in the window between our read-only probe and the role.
-    IntervalSet late_committed;
-    /// Blocks a POPULATING tier resolves as a writer-less miss because the segment is detached (cannot
-    /// take a downloader) - like `DiskCacheProvider`'s `emit_uncacheable_miss`. Served from source,
-    /// never populated, even though the tier populates in general.
-    IntervalSet detached;
-    /// Blocks whose `write` the cache rejects (returns 0, `committed()` does not advance) - models no
-    /// disk space / a reservation failure. The executor must retain the rejected bytes in memory.
-    IntervalSet reject;
-    VectorWithMemoryTracking<ByteRange> writes;
-    /// Model a `waitAndRead` timeout: when set, a writer's `waitAndRead` serves nothing, so the driver
-    /// must fall back to a source read.
-    bool wait_returns_empty = false;
-    /// Highest `range.end()` any `resolve` has asked for - how far ahead the plan probed.
-    size_t max_resolved_end = 0;
-    explicit MockCacheState(size_t file_size) : store(file_size, 0), declared_size(file_size) {}
-
-    void addConcurrentDownload(ByteRange r) { concurrent_download.add(r); }
-};
-
-/// A minimal in-memory FILE-LEVEL cache in one of two disciplines: whole-block (default, like the page
-/// cache - a block hits only when fully resident, `write` is all-or-nothing) or `incremental` (like the
-/// filesystem cache - the committed prefix grows, `write` appends from the frontier). Records writes so
-/// a test can assert what was cached.
-class MockFileCacheProvider : public ICacheProvider
-{
-public:
-    MockFileCacheProvider(size_t block_size_, std::shared_ptr<MockCacheState> state_,
-                          bool bypass_ = false, bool incremental_ = false)
-        : block_size(block_size_), state(std::move(state_)), bypass(bypass_), incremental(incremental_) {}
-
-    CacheTier tier() const override { return incremental ? CacheTier::FilesystemCache : CacheTier::PageCache; }
-    bool fillsWholeSegment() const override { return !incremental; }
-    String name() const override { return "MockFileCache"; }
-
-    /// Tile the asked range into file-level blocks: a fully-resident block is a Hit (fresh reader),
-    /// else a Miss carrying a Writer (null on a bypass tier, which never populates). Past EOF -> empty.
-    VectorWithMemoryTracking<CacheResolution> resolve(const StoredObject &, size_t, ByteRange range) override
-    {
-        VectorWithMemoryTracking<CacheResolution> out;
-        const size_t file_size = state->declared_size;
-        state->max_resolved_end = std::max(state->max_resolved_end, range.end());
-        if (range.offset >= file_size)
-            return out;
-        const size_t ask_end = std::min(range.end(), file_size);
-        for (size_t pos = range.offset / block_size * block_size; pos < ask_end; )
-        {
-            const ByteRange block{pos, std::min(block_size, file_size - pos)};
-            CacheResolution r;
-            r.range = block;
-            if (state->resident.subtract(block).empty())
-            {
-                r.kind = CacheResolution::Kind::Hit;
-                r.reader = std::make_unique<Reader>(block, state);
-            }
-            else
-            {
-                r.kind = CacheResolution::Kind::Miss;
-                /// A writer is attached only for a populating tier and a segment that can take one. A
-                /// bypass (read-only) tier never populates; a detached segment cannot, so both leave the
-                /// miss writer-less - served from source, never filled.
-                const bool block_detached = state->detached.subtract(block).empty();
-                if (!bypass && !block_detached)
-                    r.writer = std::make_unique<Writer>(block, state, incremental);
-            }
-            out.push_back(std::move(r));
-            pos += block.size;
-        }
-        return out;
-    }
-
-private:
-    class Reader : public CacheReader
-    {
-    public:
-        Reader(ByteRange r_, std::shared_ptr<MockCacheState> s_) : r(r_), state(std::move(s_)) {}
-        ByteRange range() const override { return r; }
-        ChainedBuffers read(ByteRange sub) override
-        {
-            const size_t lo = std::max(sub.offset, r.offset);
-            const size_t hi = std::min(sub.end(), r.end());
-            ChainedBuffers out;
-            if (lo >= hi)
-                return out;
-            auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
-            std::memcpy(buf->data(), state->store.data() + lo, hi - lo);
-            out.append(ChainedBufferNode{std::move(buf), 0, hi - lo, lo});
-            return out;
-        }
-    private:
-        ByteRange r;
-        std::shared_ptr<MockCacheState> state;
-    };
-
-    class Writer : public CacheWriter
-    {
-    public:
-        Writer(ByteRange r_, std::shared_ptr<MockCacheState> s_, bool incremental_)
-            : r(r_), state(std::move(s_)), incremental(incremental_) {}
-        ByteRange range() const override { return r; }
-        bool fillsWholeSegment() const override { return !incremental; }
-        size_t committed() const override
-        {
-            if (incremental)
-            {
-                /// The contiguous resident prefix from the block start (grows as partials land).
-                auto uncovered = state->resident.subtract(r);
-                return uncovered.empty() ? r.end() : uncovered.front().offset;
-            }
-            /// Whole-block: committed at resolve time (`resident`) or filled since (`late_committed`).
-            const bool done = state->resident.subtract(r).empty() || state->late_committed.subtract(r).empty();
-            return done ? r.end() : r.offset;
-        }
-        ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
-        /// Models waiting on a concurrent downloader: it commits (returns the bytes) unless the test
-        /// forces a timeout via `wait_returns_empty`.
-        ChainedBuffers waitAndRead(ByteRange sub) override
-        {
-            if (state->wait_returns_empty)
-                return {};
-            return read(sub);
-        }
-        FillRole takeFillRole() override
-        {
-            /// A block populated since `resolve` (`committed()` now reports it): nothing to fill, no role.
-            if (state->late_committed.subtract(r).empty())
-                return {};
-            /// We hold the role unless the whole segment is being downloaded elsewhere (then hold nothing).
-            const bool held = !state->concurrent_download.subtract(r).empty();
-            return makeFillRole(held, /*release=*/nullptr);
-        }
-        size_t write(ChainedBuffers data, const FillRole & role) override
-        {
-            chassert(role);
-            /// The cache rejects this block (no disk space / reservation failure): nothing lands, so
-            /// `committed()` does not advance and the caller must keep the bytes in memory.
-            if (state->reject.subtract(r).empty())
-                return 0;
-            if (incremental)
-            {
-                /// Append the contiguous run of `data` from the committed frontier (like the fs cache).
-                const size_t lo = committed();
-                if (lo >= r.end())
-                    return 0;
-                const ByteRange want{lo, r.end() - lo};
-                size_t hi = r.end();
-                if (auto g = data.gaps(want); !g.empty())
-                    hi = g.front().offset;   /// first byte `data` does not cover from the frontier
-                if (hi <= lo)
-                    return 0;
-                const ByteRange wrote{lo, hi - lo};
-                data.copyTo(state->store.data() + lo, wrote);
-                state->resident.add(wrote);
-                state->writes.push_back(wrote);
-                return hi - lo;
-            }
-            /// A block another thread is downloading is not ours to fill (no downloader role).
-            size_t free_bytes = 0;
-            for (const auto & fr : state->concurrent_download.subtract(r))
-                free_bytes += fr.size;
-            if (free_bytes != r.size)
-                return 0;
-            /// Whole-cell: a straddling block is covered only by a cross-object fetch.
-            if (!data.covers(r))
-                return 0;
-            data.copyTo(state->store.data() + r.offset, r);
-            state->resident.add(r);
-            state->writes.push_back(r);
-            return r.size;
-        }
-    private:
-        ByteRange r;
-        std::shared_ptr<MockCacheState> state;
-        bool incremental;
-    };
-
-    size_t block_size;
-    std::shared_ptr<MockCacheState> state;
-    bool bypass;
-    bool incremental;
-};
 
 /// A source buffer that mimics object storage opened with `use_external_buffer=true`: it owns no
 /// read memory, and `nextImpl` fills the caller's externally `set()` buffer (`internal_buffer`).
@@ -465,7 +264,7 @@ protected:
         TestThreadGroup tg;
         auto ex = std::make_unique<ReaderExecutor>(
             std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-                .window_size = block, .min_bytes_for_seek = 64 * 1024,
+                .min_bytes_for_seek = 64 * 1024, .block_size = block,
                 .max_tail_for_drain = 64 * 1024, .long_connection_limit = std::move(limit)});
         PipelineReadBuffer buf(std::move(ex));
 
@@ -489,7 +288,7 @@ protected:
 TEST_F(ReaderExecutorTest, SequentialReadSingleObject)
 {
     StoredObjects objects{makeFile("a.bin", 1024)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 256});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_EQ(ex.totalSize(), 1024u);
     EXPECT_FALSE(ex.hasUnknownSize());
@@ -504,7 +303,7 @@ TEST_F(ReaderExecutorTest, SequentialReadSingleObject)
 TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
 {
     StoredObjects objects{makeFile("a.bin", 1000)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 100});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 100});
 
     size_t total = 0;
     size_t windows = 0;
@@ -522,128 +321,10 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
     EXPECT_EQ(windows, 10u);
 }
 
-TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
-{
-    /// Under memory pressure the executor serves a smaller window, so its in-flight buffers hold
-    /// less. The no-cache path serves the whole (pressure-adjusted) window, so the first window's
-    /// size is exactly `sizeAtPressure(level, window_size, WINDOW_REDUCTION)`, capped by the file.
-    constexpr size_t base_window = 8 * 1024 * 1024;
-    StoredObjects objects{makeFile("a.bin", base_window)};
-
-    /// Drive the query's pressure level by loading its group memory tracker to a percent of a large
-    /// hard limit (kept large so the executor's own tracked reads stay well inside it). A fresh group
-    /// per call starts the cooldown clean, and snap-up is immediate, so the first window reflects the
-    /// level. Default thresholds are 75 / 90 / 95 percent.
-    auto firstWindow = [&](UInt64 pct) -> size_t
-    {
-        TestThreadGroup tg;
-        MemoryTracker & mt = tg.thread_group->memory_tracker;
-        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB
-        mt.setHardLimit(limit);
-        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
-        mt.adjustWithUntrackedMemory(amount);
-
-        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.window_size = base_window});
-        ChainedBuffers w = ex.readNextWindow();
-        const size_t got = w.atEnd() ? 0 : w.totalBytes();
-
-        mt.adjustWithUntrackedMemory(-amount);
-        return got;
-    };
-
-    EXPECT_EQ(firstWindow(50), base_window);        /// Normal: full window
-    EXPECT_EQ(firstWindow(80), base_window / 4);    /// Elevated: window / 4
-    EXPECT_EQ(firstWindow(92), base_window / 16);   /// High: window / 16
-    EXPECT_EQ(firstWindow(99), 128u * 1024);        /// Critical: window / 64, floored at 128 KiB
-}
-
-TEST_F(ReaderExecutorTest, PlanLookAheadShrinksUnderMemoryPressure)
-{
-    /// The plan resolves a shorter span under pressure, so it pins fewer cache cells; the mock records
-    /// how far `resolve` looked. See `WindowShrinksUnderMemoryPressure` for how the level is driven.
-    constexpr size_t file_size = 8 * 1024 * 1024;
-    constexpr size_t base_look_ahead = 4 * 1024 * 1024;
-    constexpr size_t block = 256 * 1024;
-    StoredObjects objects{makeFile("a.bin", file_size)};
-
-    auto resolvedReach = [&](UInt64 pct) -> size_t
-    {
-        auto state = std::make_shared<MockCacheState>(file_size);
-        CacheChain chain;
-        chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-        TestThreadGroup tg;
-        MemoryTracker & mt = tg.thread_group->memory_tracker;
-        constexpr Int64 limit = Int64(8) << 30;
-        mt.setHardLimit(limit);
-        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
-        mt.adjustWithUntrackedMemory(amount);
-
-        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{
-                .block_size = block, .plan_look_ahead = base_look_ahead, .cache_chain = std::move(chain)});
-        ex.readNextWindow();
-
-        mt.adjustWithUntrackedMemory(-amount);
-        return state->max_resolved_end;
-    };
-
-    EXPECT_EQ(resolvedReach(50), base_look_ahead);        /// Normal
-    EXPECT_EQ(resolvedReach(80), base_look_ahead / 2);    /// Elevated
-    EXPECT_EQ(resolvedReach(92), base_look_ahead / 8);    /// High
-    EXPECT_EQ(resolvedReach(99), base_look_ahead / 32);   /// Critical, at the 128 KiB floor
-}
-
-TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
-{
-    /// The block shrinks too, not only the window: the source path chunks into nodes of the
-    /// pressure-adjusted block. Under Elevated the window is `window/4` but each node is `block/2`,
-    /// so the node size proves the block adapts independently of the window.
-    constexpr size_t base_window = 8 * 1024 * 1024;
-    constexpr size_t base_block = 1024 * 1024;
-    StoredObjects objects{makeFile("a.bin", base_window)};
-
-    /// Read one window and return {total bytes, largest node bytes}. See `WindowShrinksUnderMemoryPressure`
-    /// for how the pressure level is driven through the group memory tracker.
-    auto windowNodes = [&](UInt64 pct) -> std::pair<size_t, size_t>
-    {
-        TestThreadGroup tg;
-        MemoryTracker & mt = tg.thread_group->memory_tracker;
-        constexpr Int64 limit = Int64(8) << 30;
-        mt.setHardLimit(limit);
-        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
-        mt.adjustWithUntrackedMemory(amount);
-
-        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.window_size = base_window, .block_size = base_block});
-        ChainedBuffers w = ex.readNextWindow();
-        size_t total = 0;
-        size_t max_node = 0;
-        while (!w.atEnd())
-        {
-            auto span = w.peek();
-            max_node = std::max(max_node, span.size);
-            total += span.size;
-            w.advance(span.size);
-        }
-        mt.adjustWithUntrackedMemory(-amount);
-        return {total, max_node};
-    };
-
-    const auto [normal_total, normal_node] = windowNodes(50);   /// Normal
-    EXPECT_EQ(normal_total, base_window);
-    EXPECT_EQ(normal_node, base_block);          /// nodes of the full block
-
-    const auto [elevated_total, elevated_node] = windowNodes(80);   /// Elevated
-    EXPECT_EQ(elevated_total, base_window / 4);   /// window / 4
-    EXPECT_EQ(elevated_node, base_block / 2);     /// block / 2, smaller than the window
-}
-
 TEST_F(ReaderExecutorTest, SeekThenRead)
 {
     StoredObjects objects{makeFile("a.bin", 1024)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 256});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     ex.seek(500);
     EXPECT_EQ(ex.getPosition(), 500u);
@@ -663,601 +344,30 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     EXPECT_EQ(static_cast<unsigned char>(span2.data[0]), patternByte(10));
 }
 
-TEST_F(ReaderExecutorTest, MultiObjectWindowSpansBoundary)
+TEST_F(ReaderExecutorTest, MultiObjectConcatenationNeverCrossesBoundary)
 {
-    /// One window larger than the first object fetches across the boundary.
     StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 200)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 512});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_EQ(ex.totalSize(), 500u);
 
-    ChainedBuffers w = ex.readNextWindow();
-    ASSERT_FALSE(w.atEnd());
-    EXPECT_EQ(w.totalBytes(), 500u);  // one window covers both objects
-
-    std::vector<char> out;
-    while (!w.atEnd())
+    /// A window must never straddle the object boundary at 300.
+    while (true)
     {
-        auto span = w.peek();
-        out.insert(out.end(), span.data, span.data + span.size);
-        w.advance(span.size);
-    }
-    ASSERT_EQ(out.size(), 500u);
-    for (size_t i = 0; i < 300; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(out[i]), patternByte(i)) << "object A at " << i;
-    for (size_t i = 0; i < 200; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(out[300 + i]), patternByte(i)) << "object B at " << i;
-
-    EXPECT_TRUE(ex.readNextWindow().atEnd());
-}
-
-TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
-{
-    /// The block [256, 512) straddles the object boundary at 300; it populates only if the fetch
-    /// spans both objects.
-    StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 300)};  // file [0, 600)
-    const size_t block = 256;
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/600);
-    auto make_chain = [&]() -> CacheChain
-    {
-        CacheChain chain;
-        chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-        return chain;
-    };
-
-    std::vector<char> data;
-    {
-        TestThreadGroup cold_tg;
-        ReaderExecutor cold(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
-        data = drain(cold);
-        ASSERT_EQ(data.size(), 600u);
-        EXPECT_EQ(cold_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 600u);
-    }
-
-    /// A write covered the straddling block, and it is resident.
-    bool wrote_straddling = false;
-    for (const auto & w : state->writes)
-        if (w.offset <= 256 && 512 <= w.end())
-            wrote_straddling = true;
-    EXPECT_TRUE(wrote_straddling) << "no write covered the object-straddling block [256, 512)";
-    EXPECT_TRUE(state->resident.subtract(ByteRange{256, block}).empty()) << "block [256, 512) is not resident";
-
-    /// Warm: served entirely from cache (zero source bytes), so the straddling block hits.
-    TestThreadGroup warm_tg;
-    ReaderExecutor warm(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
-    auto warm_data = drain(warm);
-    ASSERT_EQ(warm_data, data);
-    EXPECT_EQ(warm_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 0u)
-        << "warm read fetched from source -> a boundary block missed the cache";
-}
-
-TEST_F(ReaderExecutorTest, ConcurrentDownloadIsWaitedForAndServedFromCache)
-{
-    /// A cell another thread is already downloading: we hold no role over it, so instead of re-reading
-    /// it from source we wait for that downloader and serve it from cache (`waitAndRead`). Only the rest
-    /// of the file comes from source, and we never write the concurrently-downloaded cell.
-    StoredObjects objects{makeFile("a.bin", 1024)};
-    const size_t block = 256;
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
-    state->addConcurrentDownload(ByteRange{0, 256});
-    /// The concurrent downloader's committed bytes that `waitAndRead` returns (models the download
-    /// finishing during the wait); it never becomes `resident` here - that thread owns caching it.
-    for (size_t i = 0; i < 256; ++i)
-        state->store[i] = static_cast<char>(patternByte(i));
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 1024u);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// The concurrently-downloaded [0,256) was served via waitAndRead, so only [256,1024) hit source.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 768u);
-    /// The wait is counted, and a wait that DID deliver is not a timeout - the request reaches past the
-    /// 256-byte cell, so this only holds because the check clamps to the writer's range.
-    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaits), 1u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaitTimeouts), 0u);
-    for (const auto & wr : state->writes)
-        EXPECT_GE(wr.offset, 256u) << "wrote into the concurrently-downloaded block";
-}
-
-TEST_F(ReaderExecutorTest, ConcurrentDownloadWaitTimesOutFallsBackToSource)
-{
-    /// If the wait times out (the downloader did not commit in time), the bytes must still be served:
-    /// the driver reads the whole run from source, still without writing the cell it does not lead.
-    StoredObjects objects{makeFile("a.bin", 1024)};
-    const size_t block = 256;
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/1024);
-    state->addConcurrentDownload(ByteRange{0, 256});
-    state->wait_returns_empty = true;   /// force the waitAndRead timeout
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 1024u);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// Wait failed, so everything came from source; still no write into the concurrently-downloaded cell.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
-    /// A timed-out wait is counted as both a wait and a timeout, so the pair measures how often a query
-    /// advances at a peer's download pace instead of reading from source.
-    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaits), 1u);
-    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaitTimeouts), 1u);
-    for (const auto & wr : state->writes)
-        EXPECT_GE(wr.offset, 256u) << "wrote into the concurrently-downloaded block";
-    EXPECT_FALSE(state->resident.subtract(ByteRange{0, block}).empty());
-}
-
-TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
-{
-    /// A block that a concurrent query populated AFTER our `resolve` (a read-only probe) but BEFORE we
-    /// role it: `takeFillRole` re-probes and reports it as `available`, so the executor serves it
-    /// from cache and does not re-read it from the source. Here block 0 is committed-since-resolve;
-    /// blocks 1..3 are plain misses fetched from source. Zero source bytes for block 0 is the signal.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 4 * block)};
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
-    /// Block [0, block) is NOT resident (so `resolve` misses it), but it became committed since - the
-    /// bytes are in the store and `committed()` reports it.
-    state->late_committed.add(ByteRange{0, block});
-    for (size_t i = 0; i < block; ++i)
-        state->store[i] = static_cast<char>(patternByte(i));
-
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 4 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// Only blocks 1..3 hit the source; block 0 came from cache via the role-time recheck.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 3 * block)
-        << "block committed since resolve should be served from cache, not the source";
-    /// Nothing filled block 0 - it was already committed (available, no role).
-    for (const auto & wr : state->writes)
-        EXPECT_GE(wr.offset, block) << "wrote the already-committed block 0";
-}
-
-TEST_F(ReaderExecutorTest, CoalescesConsecutiveMissesIntoOneSourceRead)
-{
-    /// Several consecutive cold blocks in one window are fetched in a SINGLE source request, not one
-    /// per block: `resolve` returns per-block misses and `readThroughCaches` gathers the contiguous run,
-    /// fetches it whole, and populates every block (later windows then hit the just-written cells).
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 4 * block)};
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 4 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u)
-        << "four cold blocks should be one source request, not one per block";
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
-}
-
-TEST_F(ReaderExecutorTest, GatheredMissRunDoesNotReReadSlowerTierHit)
-{
-    /// Stacked tiers: a fast tier misses blocks 0..1, a slower tier already holds block 1. Gathering the
-    /// fast tier's miss run must not stretch the source fetch across block 1 - it is served from the
-    /// slower tier next window, so only block 0 hits the source.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 2 * block)};
-
-    auto fast = std::make_shared<MockCacheState>(2 * block);   // tier0: all miss
-    auto slow = std::make_shared<MockCacheState>(2 * block);   // tier1: block1 resident
-    slow->resident.add(ByteRange{block, block});
-    for (size_t i = block; i < 2 * block; ++i)
-        slow->store[i] = static_cast<char>(patternByte(i));
-
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, fast));
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, slow));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 2 * block, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 2 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// block1 was warm in the slower tier, so only block0 hits the source.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), block)
-        << "block1 (resident in the slower tier) must not be re-read from source";
-}
-
-TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
-{
-    /// A read-only (bypass) tier - `resolve` returns writer-less misses, like `*_if_exists_otherwise_bypass = 1`
-    /// - has no writer, so an all-miss window reads from source. It must still serve a cell cached
-    /// AFTER a head miss: read source only up to the miss cell and re-probe, never swallow the whole
-    /// window. Regression for the bot finding (window read the whole `window_size` and skipped a warm
-    /// later block). Mirrors its trace: block cached at [block, 2*block), miss at 0.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 4 * block)};
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
-    /// Pre-cache the SECOND block [block, 2*block) with the correct bytes.
-    state->resident.add(ByteRange{block, block});
-    for (size_t i = block; i < 2 * block; ++i)
-        state->store[i] = static_cast<char>(patternByte(i));
-
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state, /*bypass=*/true));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 4 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// The cached block is served from the tier; the other three come from source. Before the fix the
-    /// head miss read the whole window (4*block) from source and never probed the warm block.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 3 * block)
-        << "the cell cached after a head miss was re-read from source (bypass path swallowed the window)";
-    EXPECT_TRUE(state->writes.empty()) << "a bypass tier must not populate";
-}
-
-TEST_F(ReaderExecutorTest, NoCacheReadsFromSourceAndNeverTouchesCache)
-{
-    /// Case 1: an empty cache chain bypasses the plan entirely (`readNextWindow` -> `readSource`). Every
-    /// byte comes from source and no cache counter moves.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 4 * block)};
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block});   /// no cache_chain
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 4 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
-}
-
-TEST_F(ReaderExecutorTest, DetachedSegmentServedFromSourceNotPopulated)
-{
-    /// Case 3: a POPULATING tier whose block-1 segment is detached resolves it as a writer-less miss
-    /// (like `DiskCacheProvider::emit_uncacheable_miss`). The cold read fetches every block from source
-    /// and populates all of them EXCEPT the detached one.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 4 * block)};
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
-    state->detached.add(ByteRange{block, block});   /// block 1's segment is detached
-
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    /// One coalesced window covers all four blocks: the fetch bridges the detached block 1 to fill its
-    /// writer-backed neighbours, and block 1's bytes - which no writer accepts - are retained in memory
-    /// and served on its window instead of re-read. So the file is read once: exactly 4*block from source.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 4 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// The whole file is read once; the retained bytes cover the detached block, no re-read.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
-    for (const auto & wr : state->writes)
-        EXPECT_NE(wr.offset, block) << "populated the detached block 1";
-    EXPECT_FALSE(state->resident.subtract(ByteRange{block, block}).empty())
-        << "the detached block must stay uncached";
-}
-
-TEST_F(ReaderExecutorTest, RejectedCacheWriteRetainedInMemoryNotReRead)
-{
-    /// A populating tier rejects block 1's write (no disk space). The coalesced fetch already pulled its
-    /// bytes, so they are retained in memory and served on block 1's window - not re-read from source -
-    /// and the block stays uncached. Guards against assuming a claimed writer cached its whole range.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 4 * block)};
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
-    state->reject.add(ByteRange{block, block});   /// block 1's write is rejected
-
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 4 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// One coalesced source read; the rejected block's bytes were held, not re-fetched.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block)
-        << "the rejected block was re-read from source instead of served from the retained fetch";
-    EXPECT_FALSE(state->resident.subtract(ByteRange{block, block}).empty())
-        << "a rejected write must not leave the block cached";
-}
-
-TEST_F(ReaderExecutorTest, WholeSegmentCellEnteredByFetchIsCompleted)
-{
-    /// Two whole-segment (page-cache) blocks; the window stops inside the second. The fetch must widen to
-    /// complete that entered cell (a partial write is rejected), so both blocks land in ONE source read -
-    /// not a partial write held in memory with the block re-read on the next window.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 2 * block)};
-
-    auto state = std::make_shared<MockCacheState>(2 * block);
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));   /// whole-segment tier
-
-    TestThreadGroup tg;
-    /// window (384) stops mid the second block [256, 512); block_size 256.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 384, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 2 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// One coalesced source read widened to the second block's end; both blocks cached, none re-read.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u)
-        << "the fetch did not widen to complete the entered whole-segment block";
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2 * block);
-    EXPECT_TRUE(state->resident.subtract(ByteRange{0, 2 * block}).empty())
-        << "both whole-segment blocks must be populated";
-}
-
-TEST_F(ReaderExecutorTest, PageBlockStraddlingObjectsIsFetchedWholeAndCached)
-{
-    /// A file-level (page-cache-like) block can straddle two StoredObjects: block [256, 512) crosses the
-    /// A/B boundary at 300. The whole-segment fetch widens across the boundary, reads the block whole
-    /// from source (spanning both objects), and caches it. Documents the accepted cross-object C-case -
-    /// the widen may read a bit into the neighbour object, but the block is stored and served correctly.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 300)};   /// boundary at 300, inside [256,512)
-    const size_t total = 600;
-
-    auto state = std::make_shared<MockCacheState>(total);
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
-
-    TestThreadGroup tg;
-    /// window (384) stops inside the straddling block, forcing the widen across the object boundary.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 384, .block_size = block, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), total);
-    for (size_t i = 0; i < 300; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "object A at " << i;
-    for (size_t i = 0; i < 300; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[300 + i]), patternByte(i)) << "object B at " << i;
-
-    /// The block spanning A and B was fetched whole and cached.
-    EXPECT_TRUE(state->resident.subtract(ByteRange{256, block}).empty())
-        << "the cross-object block was not cached";
-    /// Each byte is read from source exactly once - the widen never re-reads a part it already fetched.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), total)
-        << "the file was re-fetched in part";
-}
-
-TEST_F(ReaderExecutorTest, StackedTiersRefetchFasterHitToFillSlower)
-{
-    /// C-case (stacked page + filesystem cache): the faster tier holds [0,50), the slower tier misses
-    /// [0,100). Serving [0,50) from the faster tier is free, but filling the slower tier's cell needs it
-    /// from its start, so the fetch re-reads [0,50) from source. Correct (data right), but NOT perfect -
-    /// the faster hit does not shrink the source read (the deferred gather-from-slower-tier path would
-    /// read only [50,100)). Documents that we accept this on the stacked-layer path.
-    StoredObjects objects{makeFile("a.bin", 100)};
-
-    auto fast = std::make_shared<MockCacheState>(100);   /// faster tier: [0,50) resident
-    fast->resident.add(ByteRange{0, 50});
-    for (size_t i = 0; i < 50; ++i)
-        fast->store[i] = static_cast<char>(patternByte(i));
-    auto slow = std::make_shared<MockCacheState>(100);   /// slower tier: all miss
-
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/50, fast));
-    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/100, slow));   /// one [0,100) cell
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 200, .block_size = 50, .cache_chain = std::move(chain)});
-
-    auto data = drain(ex);
-    ASSERT_EQ(data.size(), 100u);
-    for (size_t i = 0; i < 100; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// Correct but not perfect: the whole file is read from source to fill the slower tier, even though
-    /// the faster tier already held [0,50) (a gather path would read only ~50 bytes).
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 100u)
-        << "expected the C-case whole-file read (faster hit re-read to fill the slower tier)";
-    EXPECT_TRUE(slow->resident.subtract(ByteRange{0, 100}).empty()) << "slower tier not populated";
-}
-
-TEST_F(ReaderExecutorTest, LongConnectionReusedThroughPageCache)
-{
-    /// Case A: cold forward scan through a whole-segment (page) tier. The FETCHes are contiguous-forward,
-    /// so one long connection is opened and reused across the cache path.
-    constexpr size_t size = 1024 * 1024;
-    constexpr size_t win = 128 * 1024;
-    StoredObjects objects{makeFile("a.bin", size)};
-    auto state = std::make_shared<MockCacheState>(size);
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/win, state));   /// whole-segment
-    auto limit = std::make_shared<LongConnectionLimit>(4);
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-        .window_size = win, .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = win,
-        .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit, .cache_chain = std::move(chain)});
-    auto data = drain(ex);
-
-    ASSERT_EQ(data.size(), size);
-    for (size_t i = 0; i < size; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
-    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u)
-        << "the long connection was not reused across the cache FETCHes";
-    EXPECT_TRUE(state->resident.subtract(ByteRange{0, size}).empty()) << "the file was not fully cached";
-}
-
-TEST_F(ReaderExecutorTest, LongConnectionReusedThroughFilesystemCache)
-{
-    /// Case B: same as A but an incremental (filesystem) tier. The window-capped FETCHes stay
-    /// contiguous-forward, so the connection is reused too.
-    constexpr size_t size = 1024 * 1024;
-    constexpr size_t win = 128 * 1024;
-    StoredObjects objects{makeFile("a.bin", size)};
-    auto state = std::make_shared<MockCacheState>(size);
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(
-        /*block_size=*/size, state, /*bypass=*/false, /*incremental=*/true));   /// one incremental segment
-    auto limit = std::make_shared<LongConnectionLimit>(4);
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-        .window_size = win, .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = win,
-        .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit, .cache_chain = std::move(chain)});
-    auto data = drain(ex);
-
-    ASSERT_EQ(data.size(), size);
-    for (size_t i = 0; i < size; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 1u);
-    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u)
-        << "the long connection was not reused across the cache FETCHes";
-    EXPECT_TRUE(state->resident.subtract(ByteRange{0, size}).empty()) << "the file was not fully cached";
-}
-
-TEST_F(ReaderExecutorTest, LongConnectionCorrectAcrossStackedTiers)
-{
-    /// Case C: stacked page (holds [0, half)) over filesystem (all miss). C must be CORRECT, not optimal:
-    /// filling the slower tier re-reads [0, half) from source, so the whole file is fetched though half
-    /// was already cached.
-    constexpr size_t size = 512 * 1024;
-    constexpr size_t half = size / 2;
-    StoredObjects objects{makeFile("a.bin", size)};
-
-    auto fast = std::make_shared<MockCacheState>(size);   /// page: [0, half) resident
-    fast->resident.add(ByteRange{0, half});
-    for (size_t i = 0; i < half; ++i)
-        fast->store[i] = static_cast<char>(patternByte(i));
-    auto slow = std::make_shared<MockCacheState>(size);   /// fs: all miss
-
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/half, fast));                    /// page
-    chain.push_back(std::make_shared<MockFileCacheProvider>(/*block_size=*/size, slow, false, true));       /// fs
-    auto limit = std::make_shared<LongConnectionLimit>(4);
-
-    TestThreadGroup tg;
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-        .window_size = 64 * 1024, .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 64 * 1024,
-        .max_tail_for_drain = size, .long_connection_limit = limit, .cache_chain = std::move(chain)});
-    auto data = drain(ex);
-
-    ASSERT_EQ(data.size(), size);
-    for (size_t i = 0; i < size; ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size)
-        << "expected the C-case whole-file read despite the faster-tier hit";
-    EXPECT_TRUE(slow->resident.subtract(ByteRange{0, size}).empty()) << "slower tier not fully populated";
-}
-
-TEST_F(ReaderExecutorTest, WriterlessMissNotRefreshedWithinHeldSpan)
-{
-    /// Case 4 (snapshot contract): a writer-less miss (here a read-only/bypass tier) is resolved once and
-    /// not re-resolved as the cursor advances, so a block that becomes resident AFTER `resolve` is still
-    /// read from source until the plan is rebuilt. Contrast `ServesBlockCommittedBetweenResolveAndClaim`,
-    /// where a writer-backed miss IS refreshed live via `committed()`. A writer-less miss is rare - the
-    /// cache is full or the segment is detached - so we deliberately do not re-probe it and add pressure
-    /// to a cache that already had no room.
-    const size_t block = 256;
-    StoredObjects objects{makeFile("a.bin", 4 * block)};
-
-    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
-    CacheChain chain;
-    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state, /*bypass=*/true));
-
-    TestThreadGroup tg;
-    /// window == one block so each `readNextWindow` advances by a block; the whole file (< look-ahead) is
-    /// resolved on the first call, capturing block 3 as a writer-less miss before it turns resident.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = block, .block_size = block, .cache_chain = std::move(chain)});
-
-    std::vector<char> data;
-    auto pull = [&]
-    {
+        size_t pos = ex.getPosition();
         ChainedBuffers w = ex.readNextWindow();
-        while (!w.atEnd()) { auto s = w.peek(); data.insert(data.end(), s.data, s.data + s.size); w.advance(s.size); }
-    };
-
-    pull();   /// window 0: resolves [0, look-ahead), serves block 0 from source
-
-    /// A concurrent query populates block 3 AFTER the plan captured it as a miss.
-    state->resident.add(ByteRange{3 * block, block});
-    for (size_t i = 3 * block; i < 4 * block; ++i)
-        state->store[i] = static_cast<char>(patternByte(i));
-
-    pull();
-    pull();
-    pull();   /// windows 1..3
-
-    ASSERT_EQ(data.size(), 4 * block);
-    for (size_t i = 0; i < data.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
-
-    /// Block 3 is still read from source: the held writer-less miss keeps its snapshot residency.
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block)
-        << "a writer-less miss must keep its snapshot residency until the plan is rebuilt";
+        if (w.atEnd())
+            break;
+        if (pos < 300)
+            EXPECT_LE(w.peek().logical_offset + w.totalBytes(), 300u) << "window from " << pos << " crossed boundary";
+    }
+    EXPECT_EQ(ex.getPosition(), 500u);
 }
 
 TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)
 {
     StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 200)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 64});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 64});
 
     auto data = drain(ex);
     ASSERT_EQ(data.size(), 500u);
@@ -1271,7 +381,7 @@ TEST_F(ReaderExecutorTest, MultiObjectDataIsCorrect)
 TEST_F(ReaderExecutorTest, EmptyFileIsImmediateEOF)
 {
     StoredObjects objects{makeFile("empty.bin", 0)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 256});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_EQ(ex.totalSize(), 0u);
     EXPECT_TRUE(ex.readNextWindow().atEnd());
@@ -1297,7 +407,7 @@ TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
     /// total (rather than silently reporting a short file).
     StoredObject obj = makeFile("short.bin", 100);
     obj.bytes_size = 1000;  // pretend the object is larger than the file on disk
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {obj}, ReaderExecutor::Options{.window_size = 256});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {obj}, ReaderExecutor::Options{.block_size = 256});
 
     EXPECT_ANY_THROW(drain(ex));
 }
@@ -1311,12 +421,12 @@ TEST_F(ReaderExecutorTest, ProfileEventsCountSourceReadsAndBytes)
     /// 1 MiB file read in 256 KiB blocks -> 4 source reads, all bytes served.
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 256 * 1024});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256 * 1024});
     drain(ex);
 
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 4u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), size);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorDeliveredBytes), size);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorRequestedBytes), size);
     /// The cache / connection KPI inputs are not implemented in this slice.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCacheGetRequests), 0u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorCachePopulateRequests), 0u);
@@ -1330,11 +440,11 @@ TEST_F(ReaderExecutorTest, ModeledCostMatchesFormula)
     /// Modeled cost = 30ms/source request + 20ms/MiB from source (cache/conn terms 0).
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 256 * 1024});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 256 * 1024});
     drain(ex);
 
     const auto cost = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
-    const auto requested = tg.get(ProfileEvents::ReaderExecutorDeliveredBytes);
+    const auto requested = tg.get(ProfileEvents::ReaderExecutorRequestedBytes);
     EXPECT_EQ(cost, 30000u * 4 + 20000u);  // 4 reads + 1 MiB
     EXPECT_EQ(requested, size);
 
@@ -1353,14 +463,14 @@ TEST_F(ReaderExecutorTest, ModeledCostScalesWithSourceRequests)
     constexpr size_t size = 1024 * 1024;
     {
         StoredObjects big_block{makeFile("a.bin", size)};
-        ReaderExecutor coarse(std::make_shared<LocalSourceReader>(), big_block, ReaderExecutor::Options{.window_size = 1024 * 1024});
+        ReaderExecutor coarse(std::make_shared<LocalSourceReader>(), big_block, ReaderExecutor::Options{.block_size = 1024 * 1024});
         drain(coarse);
     }
     const auto cost_after_coarse = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
     const auto requests_after_coarse = tg.get(ProfileEvents::ReaderExecutorSourceRequests);
     {
         StoredObjects small_block{makeFile("b.bin", size)};
-        ReaderExecutor fine(std::make_shared<LocalSourceReader>(), small_block, ReaderExecutor::Options{.window_size = 64 * 1024});
+        ReaderExecutor fine(std::make_shared<LocalSourceReader>(), small_block, ReaderExecutor::Options{.block_size = 64 * 1024});
         drain(fine);
     }
     const auto cost_after_fine = tg.get(ProfileEvents::ReaderExecutorModeledCostMicroseconds);
@@ -1377,7 +487,7 @@ TEST_F(ReaderExecutorTest, LongConnectionsOffByDefault)
     constexpr size_t size = 1024 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
     /// No LongConnectionLimit -> the stateless path; behavior must be unchanged.
-    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 128 * 1024});
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 128 * 1024});
     auto data = drain(ex);
 
     ASSERT_EQ(data.size(), size);
@@ -1395,7 +505,7 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     StoredObjects objects{makeFile("a.bin", size)};
     auto limit = std::make_shared<LongConnectionLimit>(4);
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-        .window_size = 128 * 1024, .min_bytes_for_seek = 2 * 1024 * 1024,
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
         .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit});
     auto data = drain(ex);
 
@@ -1407,42 +517,6 @@ TEST_F(ReaderExecutorTest, SequentialScanOpensAndReusesConnection)
     EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionHits), 1u);
     /// Forward-scan connections are read to their bound, so none are abandoned.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
-}
-
-TEST_F(ReaderExecutorTest, LongConnectionAdmissionFollowsThePressureWindow)
-{
-    /// Admission is "the run outlives the current window", so it must weigh the run against the
-    /// pressure-adjusted window rather than the base one. The same scan is run twice over the same
-    /// file, and the only difference is the window the rule is measured against: at `Normal` the run
-    /// never outlives an 8 MiB window before the file ends, while at `Elevated` it outgrows a 2 MiB
-    /// window part way in. Measuring against the base window at `Elevated` gives one-shot reads
-    /// throughout, which is what this pins.
-    /// See `WindowShrinksUnderMemoryPressure` for how the pressure level is driven.
-    constexpr size_t base_window = 8 * 1024 * 1024;
-    constexpr size_t size = 12 * 1024 * 1024;
-    StoredObjects objects{makeFile("a.bin", size)};
-
-    auto connectionsOpened = [&](UInt64 pct) -> UInt64
-    {
-        TestThreadGroup tg;
-        MemoryTracker & mt = tg.thread_group->memory_tracker;
-        constexpr Int64 limit = Int64(8) << 30;   /// 8 GiB, far above anything the read tracks
-        mt.setHardLimit(limit);
-        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
-        mt.adjustWithUntrackedMemory(amount);
-
-        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-            .window_size = base_window, .min_bytes_for_seek = 2 * 1024 * 1024,
-            .max_tail_for_drain = 1024 * 1024,
-            .long_connection_limit = std::make_shared<LongConnectionLimit>(4)});
-        EXPECT_EQ(drain(ex).size(), size);
-
-        mt.adjustWithUntrackedMemory(-amount);
-        return tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened);
-    };
-
-    EXPECT_EQ(connectionsOpened(50), 0u);   /// Normal: no run outlives an 8 MiB window here
-    EXPECT_GE(connectionsOpened(80), 1u);   /// Elevated: the run outlives the 2 MiB window
 }
 
 TEST_F(ReaderExecutorTest, InBufferSeekIsServedWithoutRefetch)
@@ -1457,7 +531,7 @@ TEST_F(ReaderExecutorTest, InBufferSeekIsServedWithoutRefetch)
     constexpr size_t size = 64 * 1024;
     StoredObjects objects{makeFile("a.bin", size)};
     auto ex = std::make_unique<ReaderExecutor>(
-        std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 16 * 1024});
+        std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = 16 * 1024});
     PipelineReadBuffer buf(std::move(ex));
 
     /// Fetch one window [0, 16K) and partly consume it (one source request).
@@ -1498,7 +572,7 @@ TEST_F(ReaderExecutorTest, CapacityZeroAlwaysFallsBack)
     StoredObjects objects{makeFile("a.bin", size)};
     auto limit = std::make_shared<LongConnectionLimit>(0);   /// no slots available
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-        .window_size = 128 * 1024, .min_bytes_for_seek = 2 * 1024 * 1024,
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
         .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit});
     auto data = drain(ex);
 
@@ -1517,7 +591,7 @@ TEST_F(ReaderExecutorTest, DataCorrectAcrossSeeksWithLongConnections)
     StoredObjects objects{makeFile("a.bin", size)};
     auto limit = std::make_shared<LongConnectionLimit>(4);
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-        .window_size = 128 * 1024, .min_bytes_for_seek = 2 * 1024 * 1024,
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
         .max_tail_for_drain = 1024 * 1024, .long_connection_limit = limit});
 
     auto read_at = [&](size_t pos, size_t len)
@@ -1550,7 +624,7 @@ TEST_F(ReaderExecutorTest, IncompleteConnectionOnAbandonedDrop)
     /// max_tail_for_drain = 0: a connection dropped before its bound is never drained, so it
     /// is abandoned mid-response and must count as incomplete.
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
-        .window_size = 128 * 1024, .min_bytes_for_seek = 2 * 1024 * 1024,
+        .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024,
         .max_tail_for_drain = 0, .long_connection_limit = limit});
 
     /// Read until a long connection is open (it has a large bound), then seek backward to
@@ -1586,7 +660,7 @@ TEST_F(ReaderExecutorTest, DrainFailureDoesNotAbortQuery)
     /// (opened for the backward read) starts with a full budget again.
     ReaderExecutor ex(std::make_shared<FaultBudgetSourceReader>(data, /*budget=*/block + block / 2),
         StoredObjects{obj}, ReaderExecutor::Options{
-            .window_size = block, .min_bytes_for_seek = 2 * 1024 * 1024,
+            .min_bytes_for_seek = 2 * 1024 * 1024, .block_size = block,
             .max_tail_for_drain = size, .long_connection_limit = limit});
 
     /// Open a long connection with a large bound (an undrained tail remains), serving one window.
@@ -1629,7 +703,7 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
     TestThreadGroup tg;
     auto limit = std::make_shared<LongConnectionLimit>(4);
     ReaderExecutor ex(std::make_shared<ExternalBufferSourceReader>(data), StoredObjects{obj},
-        ReaderExecutor::Options{.window_size = 128 * 1024, .min_bytes_for_seek = 2 * 1024 * 1024, .long_connection_limit = limit});
+        ReaderExecutor::Options{.min_bytes_for_seek = 2 * 1024 * 1024, .block_size = 128 * 1024, .long_connection_limit = limit});
 
     /// Read until a long connection opens, and hold that connection's first served window.
     ChainedBuffers held;
@@ -1748,7 +822,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossManyWindows)
 
     /// A small block forces several windows (3 full + a partial tail).
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4096});
+        ReaderExecutor::Options{.block_size = 4096});
     executor.addDecryptionLayer("/t",
         [&](UInt128 got_fp, const String &)
         {
@@ -1766,7 +840,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossBlobBoundary)
 {
     /// A single encrypted file (header + ciphertext) split across two objects. The header lives in
     /// the first object and the payload spans both, so this exercises the physical shift
-    /// `position + data_start_offset` and the object-piece mapping crossing a boundary while decrypting.
+    /// `position + data_start_offset` and `findObjectAt` crossing an object boundary while decrypting.
     String key(16, 'm');
     const FileEncryption::InitVector iv(UInt128{0x55});
     const size_t plaintext_size = 5000;
@@ -1784,7 +858,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossBlobBoundary)
 
     /// A small block forces windows to reach and cross the object boundary.
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 1024});
+        ReaderExecutor::Options{.block_size = 1024});
     executor.addDecryptionLayer("/m", [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -1847,7 +921,7 @@ TEST_F(ReaderExecutorTest, DecryptsMultiLayer)
     StoredObjects objects{writeBytesObject(tmp_dir, "layered.enc", file_bytes)};
 
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 4096});
+        ReaderExecutor::Options{.block_size = 4096});
     /// Layers are added outermost-first, innermost-last -- the order the stacked-disk prepareRead
     /// chain produces (each layer recurses into its delegate before appending its `needDecryption`).
     executor.addDecryptionLayer("/outer", [&](UInt128, const String &) { return key_outer; });
@@ -1900,7 +974,7 @@ TEST_F(ReaderExecutorTest, EncryptedEofReleasesLongConnectionSlot)
 
     auto limit = std::make_shared<LongConnectionLimit>(4);
     ReaderExecutor executor(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 512, .min_bytes_for_seek = 64, .long_connection_limit = limit});
+        ReaderExecutor::Options{.min_bytes_for_seek = 64, .block_size = 512, .long_connection_limit = limit});
     executor.addDecryptionLayer("/t", [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -1925,7 +999,7 @@ TEST_F(ReaderExecutorTest, EncryptionHeaderCacheServesRepeatedOpens)
     auto read_once = [&]
     {
         ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-            ReaderExecutor::Options{.window_size = 4096, .encryption_header_cache = cache});
+            ReaderExecutor::Options{.block_size = 4096, .encryption_header_cache = cache});
         ex.addDecryptionLayer("/c", key_finder);
         ex.initDecryption();
         auto out = drain(ex);

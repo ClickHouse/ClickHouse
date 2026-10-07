@@ -35,7 +35,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Достаточно места на диске для файлов журналов
 
 <Steps>
-  <Step title="Настройте логирование PostgreSQL" id="configure-postgres">
+  <Step>
+    #### Настройте логирование PostgreSQL
+
     PostgreSQL поддерживает несколько форматов логов. Для структурированного разбора с OpenTelemetry мы рекомендуем формат CSV, который обеспечивает единообразный и пригодный для разбора вывод.
 
     Файл `postgresql.conf` обычно находится по следующему пути:
@@ -47,19 +49,19 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Добавьте или измените следующие настройки в `postgresql.conf`:
 
     ```conf
-    # Required for CSV logging
+    # Обязательно для логирования в формате CSV
     logging_collector = on
     log_destination = 'csvlog'
 
-    # Recommended: Connection logging
+    # Рекомендуется: логирование подключений
     log_connections = on
     log_disconnections = on
 
-    # Optional: Tune based on your monitoring needs
-    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
-    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
-    #log_checkpoints = on                # Log checkpoint activity
-    #log_lock_waits = on                 # Log lock contention
+    # Опционально: настройте в соответствии с потребностями мониторинга
+    #log_min_duration_statement = 1000  # Логировать запросы, выполняющиеся дольше 1 секунды
+    #log_statement = 'ddl'               # Логировать DDL-операторы (CREATE, ALTER, DROP)
+    #log_checkpoints = on                # Логировать активность контрольных точек
+    #log_lock_waits = on                 # Логировать конкуренцию за блокировки
     ```
 
     <Note>
@@ -69,17 +71,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     После внесения этих изменений перезапустите PostgreSQL:
 
     ```bash
-    # For systemd
+    # Для systemd
     sudo systemctl restart postgresql
 
-    # For Docker
+    # Для Docker
     docker restart 
     ```
 
     Проверьте, что записи журнала создаются:
 
     ```bash
-    # Default log location on Linux
+    # Расположение логов по умолчанию в Linux
     tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 
     # macOS Homebrew
@@ -87,7 +89,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Создайте пользовательскую конфигурацию OTel collector" id="custom-otel">
+  <Step>
+    #### Создайте пользовательскую конфигурацию OTel collector
+
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, смонтировав пользовательский файл конфигурации и задав переменную окружения. Пользовательская конфигурация объединяется с базовой конфигурацией, которой HyperDX управляет через OpAMP.
 
     Создайте файл с именем `postgres-logs-monitoring.yaml` со следующей конфигурацией:
@@ -96,7 +100,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     receivers:
       filelog/postgres:
         include:
-          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Измените путь в соответствии с вашей инсталляцией PostgreSQL
         start_at: end
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
@@ -149,7 +153,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Настройка ClickStack для загрузки пользовательской конфигурации" id="load-custom">
+  <Step>
+    #### Настройка ClickStack для загрузки пользовательской конфигурации
+
     Чтобы включить пользовательскую конфигурацию collector в уже существующем развертывании ClickStack, необходимо:
 
     1. Смонтировать файл пользовательской конфигурации в `/etc/otelcol-contrib/custom.config.yaml`
@@ -163,14 +169,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... существующая конфигурация ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... другие переменные окружения ...
         volumes:
           - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/lib/postgresql:/var/lib/postgresql:ro
-          # ... other volumes ...
+          # ... другие тома ...
     ```
 
     ##### Вариант 2: Docker Run (образ «всё в одном»)
@@ -191,7 +197,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Проверка журналов в HyperDX" id="verifying-logs">
+  <Step>
+    #### Проверка журналов в HyperDX
+
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
     1. Перейдите в представление поиска
@@ -212,7 +220,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию журналов PostgreSQL перед настройкой своих систем в продакшне, мы предоставляем пример набора данных с заранее сгенерированными журналами PostgreSQL, имитирующими реалистичные шаблоны.
 
 <Steps>
-  <Step title="Скачайте пример набора данных" id="download-sample">
+  <Step>
+    #### Скачайте пример набора данных
+
     Скачайте пример файла журнала:
 
     ```bash
@@ -220,7 +230,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Создайте тестовую конфигурацию коллектора" id="test-config">
+  <Step>
+    #### Создайте тестовую конфигурацию collector
+
     Создайте файл `postgres-logs-demo.yaml` со следующей конфигурацией:
 
     ```yaml
@@ -265,7 +277,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Запустите ClickStack с демо-конфигурацией" id="run-demo">
+  <Step>
+    #### Запустите ClickStack с демо-конфигурацией
+
     Запустите ClickStack с демо-журналами и этой конфигурацией:
 
     ```bash
@@ -278,7 +292,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Проверьте журналы в HyperDX" id="verify-demo-logs">
+  <Step>
+    #### Проверьте журналы в HyperDX
+
     После запуска ClickStack:
 
     1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учётную запись (возможно, сначала потребуется создать учётную запись)
@@ -304,11 +320,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы вам было проще начать мониторинг PostgreSQL с помощью ClickStack, мы предоставляем ключевые визуализации для журналов PostgreSQL.
 
 <Steps>
-  <Step title="Скачать конфигурацию панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-logs-dashboard.json'} download="postgresql-logs-dashboard.json" eventName="docs.postgres_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
   </Step>
 
-  <Step title="Импортируйте преднастроенную панель мониторинга" id="import-dashboard">
+  <Step>
+    #### Импортируйте преднастроенную панель мониторинга
+
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -319,7 +337,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="Завершение импорта" />
   </Step>
 
-  <Step title="Откройте панель мониторинга" id="created-dashboard">
+  <Step>
+    #### Откройте панель мониторинга
+
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
     <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="Панель мониторинга журналов" />
@@ -385,4 +405,4 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
   ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный OpenTelemetry Collector ClickStack. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Инструкции по настройке для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве для быстрой настройки используется встроенный OpenTelemetry Collector из ClickStack. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурацию для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
