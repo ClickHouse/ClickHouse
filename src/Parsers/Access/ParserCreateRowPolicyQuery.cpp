@@ -544,10 +544,18 @@ together, so nothing of a hidden row survives in a visible one:
 CREATE ROW POLICY sensitive_filter ON test USING key != 'secret_key' TO accountant;
 ```
 
+Do not use a floating-point sorting key column (`Float32`, `Float64`, `BFloat16`, also inside `Tuple`, `Array` or
+`Nullable`) in such a filter. A merge puts `-0.0` and `0.0` into one row, but the filter can tell them apart.
+
 <Note>
-The same check runs for a policy on the whole database (`ON db.*`) when the database holds such a table, and
-for `CREATE TABLE` with one of these engines when a policy for it already exists. Policies which were created
-before the upgrade keep working. On these engines the policy is always applied before `FINAL`, regardless of
+The same check runs in these cases:
+
+- A policy on the whole database (`ON db.*`), if the database holds such a table.
+- A policy on a table which reads such a table, for example an `Alias` table.
+- `CREATE TABLE` and `ATTACH TABLE` with a full definition, if a policy for the table already exists.
+- `RENAME TABLE` and `EXCHANGE TABLES`, if a policy for the new name exists.
+
+Policies which were created before the upgrade keep working. On these engines the policy is always applied before `FINAL`, regardless of
 `apply_row_policy_after_final`, so at least
 `FINAL` does not merge hidden rows into the result of a query.
 </Note>
