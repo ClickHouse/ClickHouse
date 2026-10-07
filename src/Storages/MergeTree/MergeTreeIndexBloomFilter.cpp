@@ -596,25 +596,24 @@ static bool isFloatZero(const DataTypePtr & type, const Field & field)
 
 static Field otherFloatZero(const Field & zero)
 {
-    return std::signbit(zero.safeGet<Float64>()) ? Field(0.0) : Field(-0.0);
+    return Field(-zero.safeGet<Float64>());
 }
 
 /// The hash of `field`, and for a float zero also the hash of the other zero. A predicate with several
 /// hashes matches a granule that may hold any of them, except for `FUNCTION_HAS_ALL`.
 static ColumnPtr hashWithFieldAndOtherZero(const DataTypePtr & type, const Field & field)
 {
-    ColumnPtr hash = BloomFilterHash::hashWithField(type.get(), field);
     if (!isFloatZero(type, field))
-        return hash;
+        return BloomFilterHash::hashWithField(type.get(), field);
 
     auto hashes = ColumnUInt64::create();
-    hashes->insertValue(hash->getUInt(0));
-    hashes->insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(field))->getUInt(0));
+    hashes->insertValue(BloomFilterHash::getFieldHash(type.get(), field));
+    hashes->insertValue(BloomFilterHash::getFieldHash(type.get(), otherFloatZero(field)));
     return hashes;
 }
 
-/// The hashes of the values in `column`, and for each float zero also the hash of the other zero.
-/// Sets `has_float_zero` if there is one, which `FUNCTION_HAS_ALL` cannot express.
+/// The hashes of the values in `column`, and the hash of a zero whose sign is missing when the other zero is
+/// there. Sets `has_float_zero` if there is a zero, which `FUNCTION_HAS_ALL` cannot express.
 static ColumnPtr hashWithColumnAndOtherZeros(const DataTypePtr & type, const ColumnPtr & column, bool & has_float_zero)
 {
     has_float_zero = false;
@@ -622,22 +621,27 @@ static ColumnPtr hashWithColumnAndOtherZeros(const DataTypePtr & type, const Col
     if (!isFloat(removeLowCardinalityAndNullable(type)))
         return hashes;
 
-    MutableColumnPtr result;
+    bool has_positive_zero = false;
+    bool has_negative_zero = false;
     for (size_t i = 0; i < column->size(); ++i)
     {
         Field value = (*column)[i];
         if (!isFloatZero(type, value))
             continue;
 
-        if (!result)
-            result = IColumn::mutate(hashes->convertToFullColumnIfConst());
-        has_float_zero = true;
-        assert_cast<ColumnUInt64 &>(*result).insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(value))->getUInt(0));
+        if (std::signbit(value.safeGet<Float64>()))
+            has_negative_zero = true;
+        else
+            has_positive_zero = true;
     }
 
-    if (result)
-        return result;
-    return hashes;
+    has_float_zero = has_positive_zero || has_negative_zero;
+    if (!has_float_zero || (has_positive_zero && has_negative_zero))
+        return hashes;
+
+    auto result = IColumn::mutate(std::move(hashes));
+    assert_cast<ColumnUInt64 &>(*result).insertValue(BloomFilterHash::getFieldHash(type.get(), Field(has_positive_zero ? -0.0 : 0.0)));
+    return result;
 }
 
 /// True when converting the constant to the element type yields the exact bytes the index holds, so
@@ -1162,10 +1166,20 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 /// `hasAll` needs one of the two zeros in the granule, while `FUNCTION_HAS_ALL` needs every hash.
                 /// A granule matches only if each predicate entry matches, and under `FUNCTION_HAS_ANY` an entry
                 /// matches if any of its hashes does. So one entry per element, with both hashes for a zero, is
-                /// exactly `hasAll`.
+                /// exactly `hasAll`. Every zero element gets the same entry, so it is added once.
                 out.function = RPNElement::FUNCTION_HAS_ANY;
+                bool has_zero_entry = false;
                 for (size_t i = 0; i < column->size(); ++i)
-                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, (*column)[i])));
+                {
+                    Field value = (*column)[i];
+                    if (isFloatZero(actual_type, value))
+                    {
+                        if (has_zero_entry)
+                            continue;
+                        has_zero_entry = true;
+                    }
+                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, value)));
+                }
             }
             else
             {

@@ -26,9 +26,17 @@ SELECT 'arrayJoin(b) = 0', arraySort(groupArray(id)), (SELECT arraySort(groupArr
 SELECT 'arrayJoin(b) = 0.5', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_zero_follow_up WHERE arrayJoin(b) = 0.5 SETTINGS use_skip_indexes = 0) FROM t_bf_zero_follow_up WHERE arrayJoin(b) = 0.5;
 -- `0.1` is not exactly a `Float32`, so the constant is not converted and the index is not used.
 SELECT 'arrayJoin(b) = 0.1', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_zero_follow_up WHERE arrayJoin(b) = 0.1 SETTINGS use_skip_indexes = 0) FROM t_bf_zero_follow_up WHERE arrayJoin(b) = 0.1;
+-- Both zeros, or the same zero several times, in the constant array.
+SELECT 'hasAny(a, [0.0, -0.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_zero_follow_up WHERE hasAny(a, [0.0, -0.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_zero_follow_up WHERE hasAny(a, [0.0, -0.0]);
+SELECT 'hasAny(a, [-0.0, -0.0, 42.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_zero_follow_up WHERE hasAny(a, [-0.0, -0.0, 42.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_zero_follow_up WHERE hasAny(a, [-0.0, -0.0, 42.0]);
+SELECT 'hasAll(a, [0.0, -0.0, 42.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_zero_follow_up WHERE hasAll(a, [0.0, -0.0, 42.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_zero_follow_up WHERE hasAll(a, [0.0, -0.0, 42.0]);
+SELECT 'hasAll(a, [0.0, 0.0])', arraySort(groupArray(id)), (SELECT arraySort(groupArray(id)) FROM t_bf_zero_follow_up WHERE hasAll(a, [0.0, 0.0]) SETTINGS use_skip_indexes = 0) FROM t_bf_zero_follow_up WHERE hasAll(a, [0.0, 0.0]);
 
 -- The index skips most granules.
 SELECT 'pruned for hasAll(a, [0.0, 42.0])', count() FROM t_bf_zero_follow_up WHERE hasAll(a, [0.0, 42.0]) SETTINGS force_data_skipping_indices = 'idx_a', max_rows_to_read = 30;
+SELECT 'pruned for hasAll(a, [0.0, -0.0, 42.0])', count() FROM t_bf_zero_follow_up WHERE hasAll(a, [0.0, -0.0, 42.0]) SETTINGS force_data_skipping_indices = 'idx_a', max_rows_to_read = 30;
+SELECT 'pruned for hasAny(a, [0.0, -0.0])', count() FROM t_bf_zero_follow_up WHERE hasAny(a, [0.0, -0.0]) SETTINGS force_data_skipping_indices = 'idx_a', max_rows_to_read = 30;
+SELECT 'pruned for hasAny(a, [-0.0, -0.0, 42.0])', count() FROM t_bf_zero_follow_up WHERE hasAny(a, [-0.0, -0.0, 42.0]) SETTINGS force_data_skipping_indices = 'idx_a', max_rows_to_read = 30;
 SELECT 'pruned for arrayJoin(a) = 42', count() FROM t_bf_zero_follow_up WHERE arrayJoin(a) = 42 SETTINGS force_data_skipping_indices = 'idx_a', max_rows_to_read = 30;
 SELECT 'pruned for arrayJoin(a) = 0.0', count() FROM t_bf_zero_follow_up WHERE arrayJoin(a) = 0.0 SETTINGS force_data_skipping_indices = 'idx_a', max_rows_to_read = 30;
 SELECT 'pruned for arrayJoin(b) = 0.5', count() FROM t_bf_zero_follow_up WHERE arrayJoin(b) = 0.5 SETTINGS force_data_skipping_indices = 'idx_b', max_rows_to_read = 30;
