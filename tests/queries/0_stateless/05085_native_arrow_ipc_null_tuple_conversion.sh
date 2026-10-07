@@ -112,14 +112,14 @@ for fmt, writer, reader in (("Arrow", ipc.new_file, ipc.open_file),
         structure = ("s " + target).replace("'", "''")
         queries.append(
             f"SELECT s FROM file('{path}', '{fmt}', '{structure}') FORMAT JSONEachRow "
-            f"SETTINGS allow_experimental_nullable_tuple_type={nullable_tuples}, "
+            f"SETTINGS enable_nullable_tuple_type={nullable_tuples}, "
             f"input_format_null_as_default={null_as_default};")
         checks.append((f"{fmt} {name}: OK", expected))
 
     # Column defaults apply to null input tuples when null-as-default handling is enabled.
     for nullable_tuples in (0, 1):
         queries.extend([
-            f"SET allow_experimental_nullable_tuple_type={nullable_tuples}, input_format_null_as_default=1, "
+            f"SET enable_nullable_tuple_type={nullable_tuples}, input_format_null_as_default=1, "
             "input_format_defaults_for_omitted_fields=1;",
             "CREATE TEMPORARY TABLE default_rows (s Tuple(a Int32) DEFAULT tuple(99));",
             f"INSERT INTO default_rows FROM INFILE '{out / f'plain.{fmt}'}' FORMAT {fmt};",
@@ -131,7 +131,7 @@ for fmt, writer, reader in (("Arrow", ipc.new_file, ipc.open_file),
 
     queries.append(
         f"SELECT s FROM file('{out / f'plain.{fmt}'}', '{fmt}', 's Tuple(a Int32)') "
-        "SETTINGS allow_experimental_nullable_tuple_type=1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }")
+        "SETTINGS enable_nullable_tuple_type=1; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }")
     checks.append((f"{fmt} null_tuple: rejected", []))
 
     invalid = make_struct(pa.array(["123", "invalid"]), [True, False])
@@ -141,7 +141,7 @@ for fmt, writer, reader in (("Arrow", ipc.new_file, ipc.open_file),
         stream.write_batch(batch)
     queries.append(
         f"SELECT s FROM file('{path}', '{fmt}', 's Nullable(Tuple(a Int32))') "
-        "SETTINGS allow_experimental_nullable_tuple_type=1; -- { serverError CANNOT_PARSE_TEXT }")
+        "SETTINGS enable_nullable_tuple_type=1; -- { serverError CANNOT_PARSE_TEXT }")
     checks.append((f"{fmt} visible_text: rejected", []))
 
 result = subprocess.run(local + [

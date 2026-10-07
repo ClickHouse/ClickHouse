@@ -25,6 +25,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <base/EnumReflection.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
@@ -138,6 +139,12 @@ namespace FailPoints
 namespace
 {
 
+/// Draw a random number for RANDOMIZE FOR. The range matches what addRandomSpread expects.
+Int64 drawRandomness()
+{
+    return std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
+}
+
 /// Whether the Keeper this view is coordinated through is missing a feature flag that coordination
 /// requires (MULTI_READ, CREATE_IF_NOT_EXISTS). readZnodesIfNeeded uses multi-read on the
 /// scheduling thread, where a throw aborts the whole server, so this must be detected up front and
@@ -181,7 +188,13 @@ RefreshTask::RefreshTask(
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
 
-    coordination.root_znode.randomize();
+    /// The first znode write has to carry a random offset for replicas running older versions.
+    coordination.root_znode.randomness_obsolete = drawRandomness();
+
+    /// randomness_drawn_for_timeslot and last_completed_timeslot are both zero until the first
+    /// successful refresh, so the redraw keyed on that timeslot doesn't happen before then.
+    scheduling.randomness = drawRandomness();
+
     if (empty)
     {
         /// To skip initial refresh, set the initial scheduling-related state as if this view was just refreshed.
@@ -650,7 +663,7 @@ void RefreshTask::run()
         /// stays owed across a Keeper session loss or restart. One per replica, so repeats coalesce; any replica may run it.
         auto component_guard = Coordination::setCurrentComponent("RefreshTask::run");
         String path = coordination.path + "/" + requestZnodeName();
-        auto code = context->getZooKeeper()->tryCreate(path, coordination.replica_name, zkutil::CreateMode::Persistent);
+        auto code = context->getZooKeeper()->tryCreate(path, "1", zkutil::CreateMode::Persistent);
         if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
             throw Coordination::Exception::fromPath(code, path);
     }
@@ -1391,7 +1404,14 @@ void RefreshTask::executeRefresh()
         znode.last_success_dependencies = std::move(execution.dependencies);
         znode.previous_attempt_error = "";
         znode.attempt_number = 0;
-        znode.randomize();
+        znode.randomness_obsolete = drawRandomness();
+    }
+    else if (retriesExhausted(znode))
+    {
+        /// `determineNextRefreshTime` will skip to the next scheduled refresh as if this one succeeded.
+        /// Consume the dependency refreshes this attempt ran after, as a success would. Otherwise they
+        /// still look new, and a view without REFRESH EVERY starts another refresh right away, forever.
+        znode.last_success_dependencies = std::move(execution.dependencies);
     }
     execution.znode = znode;
 
@@ -1440,7 +1460,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// truth on resume; otherwise resume from the cursor in the Keeper coordination znode.
             stream_cursor = execution.znode.cursor;
             StoragePtr target_table = view->getTargetTable();
-            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(target_table.get());
+            if (auto * object_storage = castStorage<StorageObjectStorage>(target_table, DeferredTable::Load).get();
                 object_storage && object_storage->isTransactionalRefreshTarget())
             {
                 cursor_persisted_by_target = true;
@@ -1709,6 +1729,12 @@ void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps
     }
 }
 
+bool RefreshTask::retriesExhausted(const CoordinationZnode & znode) const
+{
+    Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
+    return retries >= 0 && znode.attempt_number > retries;
+}
+
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
     UInt64 delay_ms = 0;
@@ -1726,7 +1752,7 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
 {
     chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
-    if (refresh_settings[RefreshSetting::refresh_retries] >= 0 && znode.attempt_number > refresh_settings[RefreshSetting::refresh_retries])
+    if (retriesExhausted(znode))
     {
         /// Skip to the next scheduled refresh, as if a refresh succeeded.
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, znode.last_attempt_time, znode.last_attempt_time, false);
@@ -1813,7 +1839,14 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
     if (when == std::chrono::system_clock::time_point::max())
         waiting_for_dependencies = true;
     else
-        when = refresh_schedule.addRandomSpread(when, znode.randomness);
+    {
+        if (znode.last_completed_timeslot != scheduling.randomness_drawn_for_timeslot)
+        {
+            scheduling.randomness_drawn_for_timeslot = znode.last_completed_timeslot;
+            scheduling.randomness = drawRandomness();
+        }
+        when = refresh_schedule.addRandomSpread(when, scheduling.randomness);
+    }
 
     znode.previous_attempt_error = "";
     if (!znode.last_attempt_succeeded && znode.last_attempt_time.time_since_epoch().count() != 0)
@@ -2251,11 +2284,6 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
     skipWhitespaceIfAny(in, /*one_line=*/ true);
 }
 
-void RefreshTask::CoordinationZnode::randomize()
-{
-    randomness = std::uniform_int_distribution<Int64>(Int64(-1e9), Int64(1e9))(thread_local_rng);
-}
-
 String RefreshTask::CoordinationZnode::toString() const
 {
     /// "format version" should be incremented when making incompatible change, to make older
@@ -2283,7 +2311,7 @@ String RefreshTask::CoordinationZnode::toString() const
         << "last_attempt_succeeded: " << last_attempt_succeeded << "\n"
         << "previous_attempt_error: " << escape << previous_attempt_error << "\n"
         << "attempt_number: " << attempt_number << "\n"
-        << "randomness: " << randomness << "\n"
+        << "randomness: " << randomness_obsolete << "\n"
         << "refresh_running: " << refresh_running << "\n"
         << "last_success_end_time_ns: " << Int64(last_success_end_time.time_since_epoch().count()) << "\n";
 
@@ -2382,7 +2410,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
     required_field("last_attempt_succeeded", last_attempt_succeeded);
     required_field("previous_attempt_error", previous_attempt_error);
     required_field("attempt_number", attempt_number);
-    required_field("randomness", randomness);
+    required_field("randomness", randomness_obsolete);
 
     refresh_running = running_znode_exists;
     optional_field("refresh_running", refresh_running);

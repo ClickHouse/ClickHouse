@@ -3,6 +3,9 @@
 #include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/PODArray.h>
 
@@ -43,15 +46,29 @@ std::map<std::string, Occurrences> collectPositions(MergeTreeIndexTextGranuleBui
 
     builder.tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        const auto * positions = mapped.getPositions();
+        auto * positions = mapped.getPositions();
         if (!positions)
             return;
 
+        /// The tests add few rows, so all row ids are still in the raw buffer.
+        const auto & large = mapped.getLarge();
+        EXPECT_EQ(large.encoder, nullptr);
+        const auto & rows = large.values;
+
+        WriteBufferFromOwnString out;
+        positions->finalize(out);
+        const std::string blob = out.str();
+
+        PaddedPODArray<UInt32> doc_offsets;
+        PaddedPODArray<UInt32> doc_positions;
+        TextIndexBlockedPositionsCodec::DecodeScratch scratch;
+        ReadBufferFromMemory in(blob.data(), blob.size());
+        TextIndexBlockedPositionsCodec::decodeAll(in, rows.size(), blob.size(), doc_offsets, doc_positions, scratch);
+
         auto & occurrences = result[std::string(static_cast<std::string_view>(key))];
-        for (const auto & entry : positions->getEntries())
-            for (UInt32 bit = 0; bit < RoaringishEntry::BITMAP_BITS; ++bit)
-                if (entry.bitmap & (1U << bit))
-                    occurrences.emplace_back(entry.doc_id, entry.group * RoaringishEntry::BITMAP_BITS + bit);
+        for (size_t rank = 0; rank < rows.size(); ++rank)
+            for (size_t i = doc_offsets[rank]; i < doc_offsets[rank + 1]; ++i)
+                occurrences.emplace_back(rows[rank], doc_positions[i]);
     });
 
     for (auto & [_, occurrences] : result)

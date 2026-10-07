@@ -82,6 +82,9 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
+    /// Print the values of secret function arguments (keys, passwords) in pretty expressions instead of
+    /// `[HIDDEN]`. Not a user-facing EXPLAIN option: set from `canDisplaySecrets` by the interpreter.
+    bool show_secrets = false;
     /// Show estimates
     bool estimates = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
@@ -90,6 +93,9 @@ struct ExplainPlanOptions
     /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
     /// durin colleciton
     bool matches = false;
+    /// Collect per-processor work intervals during execution to report per-step and per-branch wall time.
+    /// Gives access to more elaborative time metrics, affects the performance of a query
+    bool time = false;
 
     SettingsChanges toSettingsChanges() const;
 };

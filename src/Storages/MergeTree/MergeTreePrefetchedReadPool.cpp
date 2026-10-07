@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/setThreadName.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 
 
 namespace ProfileEvents
@@ -96,8 +97,9 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
     /// the prefetch thread pool. Ranges dropped by the refiner are never prefetched.
     /// Both the task and the pool outlive this job: the task owns this object through
     /// readers_future and waits for the job in its destructor.
-    prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch]
+    prefetch_runner.enqueueAndKeepTrack([this, &task, &read_prefetch, current_component = Coordination::getCurrentComponent()]
     {
+        auto component_guard = Coordination::setCurrentComponent(current_component);
         task.ranges = read_prefetch.refineReadRanges(*task.read_info, std::move(task.ranges));
         if (task.ranges.empty())
         {
@@ -108,7 +110,10 @@ MergeTreePrefetchedReadPool::PrefetchedReaders::PrefetchedReaders(
         task.patches_ranges = read_prefetch.ranges_in_patch_parts.getRanges(
             task.read_info->data_part_info->getDataPart(), task.read_info->patch_parts, task.ranges);
 
-        readers = MergeTreeReadTask::createReaders(task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges);
+        const auto map = read_prefetch.getActualReadRequestMap(*task.read_info, nullptr);
+        readers = MergeTreeReadTask::createReaders(
+            task.read_info, read_prefetch.getExtras(), task.ranges, task.patches_ranges,
+            map, read_prefetch.getActualPatchReadRequestMaps(*task.read_info, map));
 
         /// This is already a prefetch thread, so initiate the prefetches inline.
         read_prefetch.createPrefetchedTask(readers.main.get(), task.priority)();
