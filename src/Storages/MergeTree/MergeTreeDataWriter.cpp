@@ -766,10 +766,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
     ContextPtr context,
-    bool may_have_leftover)
+    bool may_have_leftover,
+    const MergeTreeTransactionPtr & txn)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover, txn);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
@@ -790,7 +791,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     std::optional<PatchPartIndex> patch_part_index,
     ContextPtr context,
     UInt64 block_number,
-    bool may_have_leftover)
+    bool may_have_leftover,
+    const MergeTreeTransactionPtr & txn)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     Block & block = *block_with_partition.block;
@@ -1085,6 +1087,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     IMergedBlockOutputStream::GatheredData gathered_data;
     gathered_data.statistics = std::move(statistics);
 
+    const auto & creating_txn = txn ? txn : context->getCurrentTransaction();
+    const auto creation_tid = (data.supportsTransactions() && creating_txn) ? creating_txn->tid : Tx::NonTransactionalTID;
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         data_settings,
@@ -1093,7 +1097,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         indices,
         compression_codec,
         std::move(index_granularity_ptr),
-        (data.supportsTransactions() && context->getCurrentTransaction()) ? context->getCurrentTransaction()->tid : Tx::NonTransactionalTID,
+        creation_tid,
         block.bytes(),
         /*reset_columns=*/false,
         /*blocks_are_granules_size=*/false,
@@ -1173,6 +1177,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+    if (metadata_snapshot->hasUniqueKey() && perm_ptr)
+        temp_part->sort_permutation = std::move(perm);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
