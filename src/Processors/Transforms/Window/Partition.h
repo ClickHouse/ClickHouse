@@ -28,7 +28,6 @@ public:
     int64_t size() const;
     int64_t rowIndex(const SlidingBlocks & blocks, RowNumber row) const;
     int64_t peerGroupIndex(const SlidingBlocks & blocks, RowNumber row) const;
-    RowPoint pointAt(const SlidingBlocks & blocks, RowNumber row) const;
 
 private:
     PartitionBounds partition_bounds;

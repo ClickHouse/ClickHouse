@@ -65,14 +65,4 @@ int64_t Partition::peerGroupIndex(const SlidingBlocks & blocks, RowNumber row) c
     return blocks.blockAt(row.block).index.peer_group_indexes[row.row] - first_peer_group_index_in_input;
 }
 
-RowPoint Partition::pointAt(const SlidingBlocks & blocks, RowNumber row) const
-{
-    const SlidingBlock & block = blocks.blockAt(row.block);
-    return RowPoint{
-        .location = row,
-        .row_index_in_partition = block.first_row_index_in_input + row.row - first_row_index_in_input,
-        .peer_group_index_in_partition = block.index.peer_group_indexes[row.row] - first_peer_group_index_in_input,
-    };
-}
-
 }
