@@ -22,7 +22,7 @@
 #include <Core/Settings.h>
 
 #include <algorithm>
-#include <numeric>
+#include <iterator>
 #include <optional>
 
 namespace ProfileEvents
@@ -1207,6 +1207,10 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
 
     Stopwatch candidates_watch;
 
+    std::vector<PostingListCursor *> leapfrog_cursors;
+    leapfrog_cursors.reserve(num_tokens);
+    std::ranges::transform(postings_cursors, std::back_inserter(leapfrog_cursors), [](const auto & cursor) { return cursor.get(); });
+
     std::vector<TextIndexPostingsRankCursor> cursors;
     cursors.reserve(num_tokens);
     for (size_t u = 0; u < num_tokens; ++u)
@@ -1251,38 +1255,9 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
             ranks.clear();
     };
 
-    /// The rarest token leads and the others follow in ascending count; the first one past the lead's document moves the lead.
-    /// Each candidate arrives with its rank in every token, so the ranks cost nothing extra.
-    std::vector<size_t> order(num_tokens);
-    std::iota(order.begin(), order.end(), size_t{0});
-    std::ranges::stable_sort(order, {}, [&cursors](size_t u) { return cursors[u].numDocuments(); });
-
-    auto & lead = cursors[order[0]];
-    bool exhausted = false;
-    while (!exhausted && lead.valid())
+    sortCursorsForIntersection(leapfrog_cursors);
+    leapfrogIntersect(leapfrog_cursors, std::numeric_limits<size_t>::max(), [&](UInt32 doc)
     {
-        const UInt32 doc = lead.docId();
-        size_t i = 1;
-        for (; i < num_tokens; ++i)
-        {
-            auto & follower = cursors[order[i]];
-            if (follower.valid() && follower.docId() < doc)
-                follower.advance(doc);
-
-            exhausted = !follower.valid();
-            if (exhausted || follower.docId() > doc)
-                break;
-        }
-
-        if (exhausted)
-            break;
-
-        if (i < num_tokens)
-        {
-            lead.advance(cursors[order[i]].docId());
-            continue;
-        }
-
         chunk_candidates.push_back(doc);
         for (size_t u = 0; u < num_tokens; ++u)
             chunk_ranks[u].push_back(cursors[u].rank());
@@ -1290,10 +1265,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
 
         if (chunk_candidates.size() == PhraseChunkMatcher::CHUNK)
             match_chunk();
-
-        for (auto & cursor : cursors)
-            cursor.next();
-    }
+    });
     match_chunk();
 
     const UInt64 elapsed_us = candidates_watch.elapsedMicroseconds();
