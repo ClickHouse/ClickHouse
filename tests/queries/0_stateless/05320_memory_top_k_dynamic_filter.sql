@@ -49,5 +49,11 @@ INSERT INTO t_memory_top_k (k, v, s, p, n) VALUES (100000, 1, 'a', 'b', 7), (100
 SELECT k, n FROM t_memory_top_k ORDER BY n, k LIMIT 3;
 SELECT k, n FROM t_memory_top_k ORDER BY n DESC, k LIMIT 3;
 
+SELECT '-- a column with a DEFAULT expression added after the blocks were inserted';
+ALTER TABLE t_memory_top_k ADD COLUMN d UInt64 DEFAULT k + 1;
+INSERT INTO t_memory_top_k (k, v, s, p, n, d) VALUES (100002, 1, 'a', 'b', 0, 5);
+SELECT k, d FROM t_memory_top_k ORDER BY d DESC, k LIMIT 3;
+SELECT k, d FROM t_memory_top_k ORDER BY d, k LIMIT 3;
+
 DROP TABLE t_memory_top_k;
 DROP TABLE t_memory_top_k_compressed;

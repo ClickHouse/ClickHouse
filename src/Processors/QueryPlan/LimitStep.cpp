@@ -9,6 +9,7 @@
 #include <Core/Defines.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -39,6 +40,38 @@ LimitStep::LimitStep(
     , always_read_till_end(always_read_till_end_)
     , with_ties(with_ties_), description(std::move(description_))
 {
+}
+
+IQueryPlanStep::UnneededInputPositions LimitStep::getUnneededColumns(const std::vector<size_t> & unneeded_output_positions) const
+{
+    auto unneeded = unneeded_output_positions;
+    if (with_ties)
+    {
+        /// `LimitTransform` compares the first column of each name in `description`, so only that copy stays.
+        const auto & header = *input_headers.front();
+        std::unordered_set<size_t> compared_positions;
+        for (const auto & column : description)
+            compared_positions.insert(header.getPositionByName(column.column_name));
+
+        std::erase_if(unneeded, [&](size_t position) { return compared_positions.contains(position); });
+    }
+
+    return {std::move(unneeded)};
+}
+
+IQueryPlanStep::RemoveUnusedColumnsResult
+LimitStep::removeUnusedColumns(const std::vector<size_t> & /*unneeded_output_positions*/, const std::vector<PrunedInput> & inputs)
+{
+    const auto & pruned = inputs.at(0);
+
+    RemoveUnusedColumnsResult result;
+    result.dropped_output_positions = pruned.dropped_positions;
+    result.step_changed = !blocksHaveEqualStructure(*input_headers.front(), *pruned.header);
+
+    if (result.step_changed)
+        updateInputHeader(pruned.header, 0);
+
+    return result;
 }
 
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

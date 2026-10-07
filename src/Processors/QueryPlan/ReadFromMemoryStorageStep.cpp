@@ -703,11 +703,21 @@ void ReadFromMemoryStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
 
 bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
 {
+    /// Virtual columns do not qualify.
+    if (std::ranges::find(columns_to_read, sort_column.name) == columns_to_read.end())
+        return false;
+
+    const auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name);
+    if (!column)
+        return false;
+
     /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
-    /// after the block was inserted) with the defaults of the type, the same values the sorting above
-    /// gets, so every physical column the step reads qualifies. Virtual columns do not.
-    return std::ranges::find(columns_to_read, sort_column.name) != columns_to_read.end()
-        && storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name).has_value();
+    /// after the block was inserted) with the defaults of the type. For a column without a default
+    /// expression these are exactly the values the query sees. For a column with a `DEFAULT` expression
+    /// the values agree only as long as nothing evaluates the expression above the source; do not rely
+    /// on that and exclude such columns and their subcolumns, the same way
+    /// `StorageMemory::supportedPrewhereColumns` does for `PREWHERE`.
+    return !storage_snapshot->metadata->getColumns().hasDefault(column->getNameInStorage());
 }
 
 void ReadFromMemoryStorageStep::setTopKFilter(FormatTopKFilterInfoPtr info)

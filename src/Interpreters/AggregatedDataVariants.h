@@ -524,9 +524,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;
     /// Whether the active method's top-K heap is inactive for the block about to be processed: it has
-    /// already frozen, or `shouldFreeze()` is true and `Aggregator::executeImpl` will freeze it before
-    /// processing row 0 of that block. Both checks are needed because `shouldFreeze()` turns false once
-    /// the heap has frozen, while the plan-level `top_k` flag stays set in both states.
+    /// already frozen, or `Aggregator::executeImpl` will certainly freeze it before processing row 0 of
+    /// that block (see `TopKAggregationHeapBase::willBeInactive`). Conservative: when the shared-boundary
+    /// exchange may still keep the heap running, the heap is reported as active.
     bool topKHeapInactive() const;
 
     /** Select the aggregation method based on the number and types of keys. */

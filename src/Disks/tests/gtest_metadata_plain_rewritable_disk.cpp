@@ -3505,3 +3505,130 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoRestoresAReplacedFile)
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
     EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/target").front().remote_path), "the target file");
 }
+
+/// A marker of an unfinished operation is rewritten in place, so on the local object storage a process that dies in the
+/// middle of it leaves the content torn. While anything has the name of such a marker, the load must neither roll the
+/// operation back nor reclaim it, and a torn marker that marks nothing is just deleted.
+TEST_F(MetadataPlainRewritableDiskTest, TornTombstoneMarker)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("TornTombstoneMarker");
+    auto object_storage = getObjectStorage("TornTombstoneMarker");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/file").serialize(), "the file");
+        tx->createMetadataFile("/A/file", {StoredObject("/A/file", "file", size)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// As if a removal of `A` died after moving the directory under the removed name.
+    const std::string removed_name = "__removed.abcdefghijklmnop";
+    const std::string marker_key = fmt::format("./TornTombstoneMarker/__meta/__tombstone/{}", removed_name);
+    writeObject(object_storage, createMetadataObjectPath(metadata, "A/"), removed_name + "/");
+
+    /// Torn while being rewritten as committed, and while being written as pending.
+    for (const auto & torn_content : {std::string(), removed_name.substr(0, 12), std::string("pending\nA/"), std::string("pending\n")})
+    {
+        writeObject(object_storage, marker_key, torn_content);
+        EXPECT_THROW(restartMetadataStorage("TornTombstoneMarker"), DB::Exception) << "'" << torn_content << "'";
+        EXPECT_TRUE(object_storage->exists(StoredObject(marker_key)));
+    }
+
+    writeObject(object_storage, marker_key, "pending\nA/\n");
+    metadata = restartMetadataStorage("TornTombstoneMarker");
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "the file");
+    EXPECT_FALSE(object_storage->exists(StoredObject(marker_key)));
+
+    const std::string unused_marker_key = "./TornTombstoneMarker/__meta/__tombstone/__removed.qrstuvwxyzabcdef";
+    writeObject(object_storage, unused_marker_key, "pend");
+    metadata = restartMetadataStorage("TornTombstoneMarker");
+    EXPECT_FALSE(object_storage->exists(StoredObject(unused_marker_key)));
+    EXPECT_EQ(readObject(object_storage, metadata->getStorageObjects("/A/file").front().remote_path), "the file");
+}
+
+/// A read-only disk cannot restore the target of a replacement that a writer died in the middle of, but it has to show
+/// the last committed state anyway: the target as it was before the replacement, and the source still in place.
+TEST_F(MetadataPlainRewritableDiskTest, ReadOnlyLoadOfPendingReplace)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("ReadOnlyPendingReplace");
+    auto object_storage = getObjectStorage("ReadOnlyPendingReplace");
+
+    std::string source_key;
+    std::string target_key;
+    size_t target_size = 0;
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        source_key = tx->generateObjectKeyForPath("/A/source").serialize();
+        auto source_size = writeObject(object_storage, source_key, "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+
+        target_key = tx->generateObjectKeyForPath("/A/target").serialize();
+        target_size = writeObject(object_storage, target_key, "the target file, longer");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// As if a writer died after copying the source over the target, but before committing the replacement.
+    const std::string removed_name = "__removed.abcdefghijklmnop";
+    writeObject(
+        object_storage,
+        fmt::format("./ReadOnlyPendingReplace/__meta/__tombstone/{}", removed_name),
+        PlainRewritableLayout::makePendingReplaceTombstoneContent(PlainRewritableLayout::PendingReplace{
+            .directory_remote_path = fs::path(target_key).parent_path().filename(),
+            .file_name = "target",
+            .size = target_size,
+        }));
+    writeObject(object_storage, fmt::format("./ReadOnlyPendingReplace/__root/{}", removed_name), "the target file, longer");
+    writeObject(object_storage, target_key, "the source file");
+
+    const auto objects_before = allObjects(object_storage, "ReadOnlyPendingReplace");
+
+    LocalObjectStorageSettings read_only_settings("test", "./ReadOnlyPendingReplace", /*read_only_=*/true);
+    auto read_only_object_storage = std::make_shared<LocalObjectStorage>(std::move(read_only_settings));
+    auto read_only_metadata = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(read_only_object_storage, "", hard_links_enabled);
+
+    /// The same after a subsequent load.
+    for (size_t load = 0; load < 2; ++load)
+    {
+        if (load)
+            read_only_metadata->dropCache();
+
+        EXPECT_EQ(sorted(read_only_metadata->listDirectory("/A")), (std::vector<std::string>{"source", "target"}));
+        EXPECT_EQ(read_only_metadata->getFileSize("/A/target"), target_size);
+        EXPECT_EQ(readObject(object_storage, read_only_metadata->getStorageObjects("/A/target").front().remote_path), "the target file, longer");
+        EXPECT_EQ(readObject(object_storage, read_only_metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
+    }
+
+    EXPECT_EQ(allObjects(object_storage, "ReadOnlyPendingReplace"), objects_before);
+
+    /// A writable disk restores the target.
+    {
+        auto restored_metadata = restartMetadataStorage("ReadOnlyPendingReplace");
+        EXPECT_EQ(restored_metadata->getStorageObjects("/A/target").front().remote_path, target_key);
+        EXPECT_EQ(readObject(object_storage, target_key), "the target file, longer");
+        EXPECT_EQ(readObject(object_storage, restored_metadata->getStorageObjects("/A/source").front().remote_path), "the source file");
+    }
+
+    /// The replacement is redone and finished this time. The `prefix.path` of the directory does not change, but a refresh
+    /// of the read-only disk must not reuse the info of the directory that described the target as read from its backup.
+    {
+        auto tx = getMetadataStorage("ReadOnlyPendingReplace")->createTransaction();
+        tx->replaceFile("/A/source", "/A/target");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    read_only_metadata->refresh(0);
+    EXPECT_EQ(sorted(read_only_metadata->listDirectory("/A")), (std::vector<std::string>{"target"}));
+    EXPECT_EQ(read_only_metadata->getFileSize("/A/target"), std::string_view("the source file").size());
+    EXPECT_EQ(readObject(object_storage, read_only_metadata->getStorageObjects("/A/target").front().remote_path), "the source file");
+
+    read_only_metadata->shutdown();
+}

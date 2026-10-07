@@ -1935,6 +1935,7 @@ class SettingsRandomizer:
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "optimize_move_to_prewhere_if_final": lambda: random.randint(0, 1),
         # Default-false optimize_* settings: enable with 0.5 probability
+        "apply_string_filters_during_scan": lambda: random.random() < 0.5,
         "optimize_rewrite_array_exists_to_has": lambda: random.random() < 0.5,
         "optimize_skip_unused_shards": lambda: random.random() < 0.5,
         "optimize_trivial_approximate_count_query": lambda: random.random() < 0.5,

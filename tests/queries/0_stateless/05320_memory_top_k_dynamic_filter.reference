@@ -61,3 +61,10 @@ TopN filter column: v
 100001	100
 100000	7
 0	0
+-- a column with a DEFAULT expression added after the blocks were inserted
+100002	5
+0	0
+1	0
+0	0
+1	0
+2	0
