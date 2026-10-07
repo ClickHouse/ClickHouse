@@ -5,7 +5,6 @@
 #include <pcg_random.hpp>
 
 #include <atomic>
-#include <limits>
 #include <utility>
 
 namespace DB::Runtime::Wyrd
@@ -14,29 +13,20 @@ namespace DB::Runtime::Wyrd
 namespace
 {
 
-std::atomic<UInt64> base_seed{randomSeed()};
-std::atomic<UInt64> epoch{0};
+const UInt64 base_seed = randomSeed();
 std::atomic<UInt64> thread_counter{0};
-
-struct Generator
-{
-    pcg64 rng;
-    UInt64 epoch_seen = std::numeric_limits<UInt64>::max();
-};
 
 pcg64 & generator()
 {
-    thread_local Generator generator;
-
-    UInt64 current_epoch = epoch.load();
-    if (generator.epoch_seen != current_epoch)
-    {
-        generator.rng.seed(base_seed.load(), thread_counter.fetch_add(1));
-        generator.epoch_seen = current_epoch;
-    }
-    return generator.rng;
+    thread_local pcg64 rng(base_seed, thread_counter.fetch_add(1));
+    return rng;
 }
 
+}
+
+void setRandomSeed(UInt64 seed)
+{
+    generator().seed(seed, 0);
 }
 
 UInt64 randomNumber()
@@ -50,13 +40,6 @@ bool randomEventEvery(size_t freq)
         return false;
 
     return generator()() % freq == 0;
-}
-
-void setRandomSeed(UInt64 seed)
-{
-    base_seed.store(seed);
-    thread_counter.store(0);
-    epoch.fetch_add(1);
 }
 
 template <typename T>

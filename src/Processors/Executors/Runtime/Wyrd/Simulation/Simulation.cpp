@@ -22,7 +22,7 @@ struct TraceRecord
 namespace
 {
 
-Simulation * current_simulation = nullptr;
+thread_local Simulation * current_simulation = nullptr;
 
 std::string formatTimeline(const std::vector<TraceRecord> & timeline)
 {
