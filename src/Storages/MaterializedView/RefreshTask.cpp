@@ -194,7 +194,10 @@ UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, cons
     /// context below, so that an `ALTER TABLE ... MODIFY QUERY` that only adds, say,
     /// `SETTINGS use_query_cache = 1` does not discard the watermark of an `APPEND` view.
     if (metadata.select.select_query)
-        updateHashWithQueryIgnoringOperationalSettings(hash, *metadata.select.select_query);
+        updateHashWithQueryIgnoringOperationalSettings(
+            hash,
+            *metadata.select.select_query,
+            additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
     if (metadata.refresh)
         metadata.refresh->updateTreeHash(hash, /*ignore_aliases=*/ false);
     /// Canonicalized, so that a security change the refresh never acts on - spelling out the

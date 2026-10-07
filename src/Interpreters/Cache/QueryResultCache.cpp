@@ -586,10 +586,62 @@ static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const 
     return true;
 }
 
+/// Collects the filter expressions of the `additional_table_filters` entries in the `SETTINGS` clauses
+/// of `ast` itself (e.g. the stored query of a view). Returns false when one cannot be parsed or has an
+/// unexpected shape.
+static bool collectAdditionalTableFiltersFromQuerySettings(const IAST & ast, const Settings & settings, ASTs & filter_asts)
+{
+    for (const auto & child : ast.children)
+        if (!collectAdditionalTableFiltersFromQuerySettings(*child, settings, filter_asts))
+            return false;
+
+    const auto * set_query = ast.as<ASTSetQuery>();
+    if (!set_query)
+        return true;
+
+    try
+    {
+        for (const auto & change : set_query->changes)
+        {
+            if (change.name != "additional_table_filters")
+                continue;
+            if (change.value.getType() != Field::Types::Map)
+                return false;
+            for (const auto & entry : change.value.safeGet<Map>())
+            {
+                const auto & filter = entry.safeGet<Tuple>().at(1).safeGet<String>();
+                ParserExpression parser;
+                filter_asts.push_back(parseQuery(
+                    parser,
+                    filter.data(),
+                    filter.data() + filter.size(),
+                    "additional filter",
+                    settings[Setting::max_query_size],
+                    settings[Setting::max_parser_depth],
+                    settings[Setting::max_parser_backtracks]));
+            }
+        }
+    }
+    catch (...)
+    {
+        /// Ok to ignore: a filter that cannot be analyzed leaves the set unknown, and the caller treats
+        /// every entry as applicable.
+        return false;
+    }
+    return true;
+}
+
 std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    if (settings[Setting::additional_table_filters].value.empty())
+
+    /// The filters given in the query's own `SETTINGS` clauses (e.g. in the stored query of a view) are
+    /// matched against the same names, and their subqueries are planned with them too.
+    ASTs query_filter_roots;
+    if (!collectAdditionalTableFiltersFromQuerySettings(*ast, settings, query_filter_roots))
+        return {};
+
+    if (settings[Setting::additional_table_filters].value.empty() && query_filter_roots.empty())
         return NameSet{};
 
     /// The filters themselves are planned with the same settings, so a table read by a filter's subquery
@@ -597,6 +649,7 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
     ASTs roots{ast};
     if (!parseFilterASTsInjectedFromSettings(context, roots))
         return {};
+    roots.insert(roots.end(), query_filter_roots.begin(), query_filter_roots.end());
 
     NameSet names;
     for (const auto & root : roots)

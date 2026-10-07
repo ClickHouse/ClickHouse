@@ -855,7 +855,12 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         SipHash hash;
         hash.update(getStorageID().uuid);
         hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
-        hash.update(getMetadataVersionForModificationHash());
+        /// `getMetadataVersionForModificationHash` is deliberately not folded: every input that determines
+        /// the rows of a view (its columns, stored query, effective security and settings, and the loop-free
+        /// hashes of the tables it reads) is folded directly, so a definition that returns to an earlier
+        /// state returns the same rows and may repeat the earlier hash. Folding the version would instead
+        /// move the hash on an `ALTER TABLE ... MODIFY QUERY` that only changes operational `SETTINGS` of
+        /// the stored query, which the normalization below leaves out on purpose.
         /// Canonicalized, so that a semantic no-op such as spelling out the default `SQL SECURITY
         /// INVOKER` on a legacy view, or a `MODIFY DEFINER` under `INVOKER` / `NONE`, does not move
         /// the hash: `getSQLSecurityOverriddenContext` reads neither.
@@ -871,7 +876,8 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
             effective_context->getSettingsRef(),
             additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
         /// The operational entries of the stored query's own `SETTINGS` are left out as well.
-        updateHashWithQueryIgnoringOperationalSettings(hash, *inner_query);
+        updateHashWithQueryIgnoringOperationalSettings(
+            hash, *inner_query, additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
         hash.update(*referenced_tables_hash);
         return hash.get128();
     }

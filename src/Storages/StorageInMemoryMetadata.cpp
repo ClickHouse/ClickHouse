@@ -1291,14 +1291,36 @@ namespace
 /// Drops the entries of every `SETTINGS` clause in `ast` that `settingCanAffectQueryRows` rejects, and
 /// removes a `SELECT`'s clause altogether once nothing is left of it, so that it hashes the same as a
 /// query that never had one.
-void removeSettingsNotAffectingQueryRows(IAST & ast)
+/// An `additional_table_filters` entry keyed by a name outside `additional_table_filters_matchable_names`
+/// (when given) is dropped as well, and the setting altogether once no entry is left.
+void removeSettingsNotAffectingQueryRows(IAST & ast, const NameSet * additional_table_filters_matchable_names)
 {
     for (const auto & child : ast.children)
-        removeSettingsNotAffectingQueryRows(*child);
+        removeSettingsNotAffectingQueryRows(*child, additional_table_filters_matchable_names);
 
     if (auto * set_query = ast.as<ASTSetQuery>())
     {
         std::erase_if(set_query->changes, [](const SettingChange & change) { return !settingCanAffectQueryRows(change.name); });
+        if (additional_table_filters_matchable_names)
+        {
+            std::erase_if(set_query->changes, [&](SettingChange & change)
+            {
+                /// A value of another shape is kept as is: the whole setting then takes part in the hash.
+                if (change.name != "additional_table_filters" || change.value.getType() != Field::Types::Map)
+                    return false;
+                Map & entries = change.value.safeGet<Map>();
+                std::erase_if(entries, [&](const Field & entry)
+                {
+                    if (entry.getType() != Field::Types::Tuple)
+                        return false;
+                    const auto & tuple = entry.safeGet<Tuple>();
+                    if (tuple.empty() || tuple[0].getType() != Field::Types::String)
+                        return false;
+                    return !additional_table_filters_matchable_names->contains(tuple[0].safeGet<String>());
+                });
+                return entries.empty();
+            });
+        }
         std::erase_if(set_query->default_settings, [](const String & name) { return !settingCanAffectQueryRows(name); });
     }
     else if (auto * select = ast.as<ASTSelectQuery>())
@@ -1314,10 +1336,10 @@ void removeSettingsNotAffectingQueryRows(IAST & ast)
 
 }
 
-void updateHashWithQueryIgnoringOperationalSettings(SipHash & hash, const IAST & query)
+void updateHashWithQueryIgnoringOperationalSettings(SipHash & hash, const IAST & query, const NameSet * additional_table_filters_matchable_names)
 {
     auto normalized = query.clone();
-    removeSettingsNotAffectingQueryRows(*normalized);
+    removeSettingsNotAffectingQueryRows(*normalized, additional_table_filters_matchable_names);
     normalized->updateTreeHash(hash, /*ignore_aliases=*/ false);
 }
 

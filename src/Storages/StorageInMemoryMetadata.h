@@ -400,8 +400,11 @@ bool settingCanAffectQueryRows(std::string_view setting_name);
 /// Fold the tree hash of `query` into `hash`, leaving out the entries of its `SETTINGS` clauses that
 /// `settingCanAffectQueryRows` rejects. A view's stored `SELECT` is hashed this way, so that an edit
 /// such as `ALTER TABLE mv MODIFY QUERY SELECT ... SETTINGS use_query_cache = 1`, which reads the same
-/// rows, does not look like a definition change.
-void updateHashWithQueryIgnoringOperationalSettings(SipHash & hash, const IAST & query);
+/// rows, does not look like a definition change. When `additional_table_filters_matchable_names` is given
+/// (see `collectNamesMatchableByAdditionalTableFilters`), the `additional_table_filters` entries of those
+/// clauses keyed by any other name are left out too, as they cannot apply to the query.
+void updateHashWithQueryIgnoringOperationalSettings(
+    SipHash & hash, const IAST & query, const NameSet * additional_table_filters_matchable_names = nullptr);
 
 /// Fold the settings of `settings` that pass `settingCanAffectQueryRows` into `hash`, in a
 /// deterministic order. Settings left at their default value are equal on every replica and every
