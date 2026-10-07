@@ -130,16 +130,9 @@ public:
     Partition partition;
 
     // The row for which we are now computing the window functions.
-    RowNumber current_row;
-    // The start of current peer group, needed for CURRENT ROW frame start.
-    // For ROWS frame, always equal to the current row, and for RANGE and GROUP
-    // frames may be earlier.
-    RowNumber peer_group_start;
-
-    // Row and group numbers in partition for calculating rank() and friends.
-    Int64 current_row_number = 1;
-    Int64 peer_group_start_row_number = 1;
-    Int64 peer_group_number = 1;
+    RowPoint current;
+    // The start of current peer group.
+    RowPoint peer_group_start;
 
     // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
     // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together

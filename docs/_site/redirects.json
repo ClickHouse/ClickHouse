@@ -1,5 +1,41 @@
 [
   {
+    "destination": "/products/cloud/getting-started/intro",
+    "source": "/cloud"
+  },
+  {
+    "destination": "/ar/products/cloud/getting-started/intro",
+    "source": "/ar/cloud"
+  },
+  {
+    "destination": "/es/products/cloud/getting-started/intro",
+    "source": "/es/cloud"
+  },
+  {
+    "destination": "/fr/products/cloud/getting-started/intro",
+    "source": "/fr/cloud"
+  },
+  {
+    "destination": "/ja/products/cloud/getting-started/intro",
+    "source": "/ja/cloud"
+  },
+  {
+    "destination": "/ko/products/cloud/getting-started/intro",
+    "source": "/ko/cloud"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/getting-started/intro",
+    "source": "/pt-BR/cloud"
+  },
+  {
+    "destination": "/ru/products/cloud/getting-started/intro",
+    "source": "/ru/cloud"
+  },
+  {
+    "destination": "/zh/products/cloud/getting-started/intro",
+    "source": "/zh/cloud"
+  },
+  {
     "destination": "/ar/integrations/language-clients/java/jdbc",
     "source": "/ar/concepts/features/interfaces/jdbc"
   },

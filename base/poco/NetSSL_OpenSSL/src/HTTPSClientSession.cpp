@@ -151,6 +151,10 @@ std::string HTTPSClientSession::proxyRequestPrefix() const
 
 void HTTPSClientSession::proxyAuthenticate(HTTPRequest& request)
 {
+	/// This is called only for a request sent through a proxy without a `CONNECT` tunnel.
+	/// In that case `connect` establishes TLS with the proxy itself (the peer name is the proxy host),
+	/// so the credentials go to the proxy over TLS and never reach the target.
+	proxyAuthenticateImpl(request);
 }
 
 
