@@ -42,7 +42,7 @@ SELECT 'aggregation in order still forced without the overflow row', count() > 0
 FROM (EXPLAIN PIPELINE SELECT t FROM t_in_order_overflow_row GROUP BY t WITH TOTALS SETTINGS max_rows_to_group_by = 0)
 WHERE explain ILIKE '%AggregatingInOrderTransform%';
 
--- A scalar subquery of a mutation is planned by the old query analysis, which had the same hole.
+-- The same query as the scalar subquery of a mutation.
 DROP TABLE IF EXISTS t_in_order_overflow_row_mut;
 CREATE TABLE t_in_order_overflow_row_mut (c0 Int32, c1 Nullable(Int32)) ENGINE = MergeTree ORDER BY c0;
 INSERT INTO t_in_order_overflow_row_mut VALUES (1, 2), (3, 5);
