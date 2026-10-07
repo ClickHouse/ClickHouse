@@ -1298,6 +1298,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     FunctionNodePtr function_node_ptr = std::static_pointer_cast<FunctionNode>(node);
     auto function_name = function_node_ptr->getFunctionName();
 
+    CurrentThread::checkIfNotCancelled();
+
     /// Resolve function parameters
 
     auto parameters_projection_names = resolveExpressionNodeList(

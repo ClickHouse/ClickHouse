@@ -13,11 +13,13 @@ SELECT intDiv(length(arrayMap(x -> arrayResize(CAST([] AS Array(UInt8)), 60000 -
 
 -- The edit distance of two 20000-character strings is a constant that takes longer than the deadline to evaluate.
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), intDiv(1, 0) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
--- The next function is not built after the deadline either, with constant or other arguments, as an aggregate function or
--- after its lambda; otherwise it reports the unknown tokenizer or the illegal argument or lambda result type.
+-- The next function is not built after the deadline either, with constant or other arguments or with its parameters, nor
+-- an aggregate function whose parameter passed it, nor a function after its lambda; otherwise it reports the unknown
+-- tokenizer, the illegal argument type, the non-constant or out-of-bound parameter or the illegal lambda result type.
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), hasPhrase('a', 'a', 'invalid') SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), hasPhrase(toString(dummy), 'a', 'invalid') FROM system.one SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
-SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), sum('x') SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), quantile(number)(number) FROM numbers(1) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
+SELECT quantile(editDistance(repeat('a', 20000), repeat('b', 20000)))(number) FROM numbers(1) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 SELECT arrayFilter(x -> editDistance(repeat('a', 20000), repeat('b', 20000)), [1]) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
 -- A constant of more than 1 MiB is not kept by the analyzer, so it is evaluated again when the query plan is built.
 SELECT intDiv(length(repeat('ab', 600000)), 0), editDistance(repeat('a', 20000), repeat('b', 20000)) SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw'; -- { serverError TIMEOUT_EXCEEDED }
@@ -27,7 +29,7 @@ SELECT intDiv(length(repeat('ab', 600000)), 0), editDistance(repeat('a', 20000),
 DROP TABLE IF EXISTS t_qbit;
 CREATE TABLE t_qbit (q QBit(Float32, 4)) ENGINE = MergeTree ORDER BY tuple();
 SELECT L2DistanceTransposed(q, ['x'], 16) FROM t_qbit SETTINGS optimize_qbit_distance_function_reads = 1; -- { serverError CANNOT_PARSE_NUMBER }
-SELECT editDistance(repeat('a', 20000), repeat('b', 20000)), L2DistanceTransposed(q, ['x'], 16) FROM t_qbit SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw', optimize_qbit_distance_function_reads = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT L2DistanceTransposed(q, ['x'], 16), editDistance(repeat('a', 20000), repeat('b', 20000)) FROM t_qbit SETTINGS max_execution_time = 0.001, timeout_overflow_mode = 'throw', optimize_qbit_distance_function_reads = 1; -- { serverError TIMEOUT_EXCEEDED }
 DROP TABLE t_qbit;
 
 -- A timeout while folding a partition constant for index analysis is not one of the ignored evaluation failures,
