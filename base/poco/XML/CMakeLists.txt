@@ -9,6 +9,7 @@ add_library (Poco::XML::Expat ALIAS _poco_xml_expat)
 target_compile_options (_poco_xml_expat
     PRIVATE
         -Wno-cast-qual
+        -Wno-disabled-macro-expansion
         -Wno-empty-translation-unit
         -Wno-extra-semi-stmt
         -Wno-implicit-fallthrough
