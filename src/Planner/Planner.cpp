@@ -513,8 +513,7 @@ LimitRangeConditions buildLimitRangeConditions(
         actions.addInput(column);
 
     const auto correlated_columns_set = query_node.getCorrelatedColumnsSet();
-    PlannerActionsVisitor actions_visitor(
-        planner_context, correlated_columns_set, /*use_column_identifier_as_action_node_name=*/ true, /*compute_missing_alias_columns=*/ true);
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
     auto add_boundary = [&](const QueryTreeNodePtr & boundary_node, const String & description) -> std::optional<String>
     {
         if (!boundary_node)
@@ -1286,6 +1285,12 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     if (having_analysis_result.filter_actions)
     {
         actions = std::move(having_analysis_result.filter_actions->dag);
+
+        /// `TotalsHavingStep` fills the keys in the totals row with default values and evaluates HAVING on it,
+        /// so ALIAS columns computed by the same actions get the same values in it as other functions of the keys.
+        if (const auto & alias_columns_actions = aggregation_analysis_result.alias_columns_after_aggregation_actions)
+            actions = ActionsDAG::merge(std::move(alias_columns_actions->dag), std::move(*actions));
+
         if (having_analysis_result.filter_actions->project_input)
             actions->appendInputsForUnusedColumns(*query_plan.getCurrentHeader());
     }
@@ -1547,11 +1552,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
                 ColumnNodePtrWithHashSet empty_correlated_columns_set;
-                PlannerActionsVisitor planner_actions_visitor(
-                    planner_context,
-                    empty_correlated_columns_set,
-                    /*use_column_identifier_as_action_node_name=*/ true,
-                    /*compute_missing_alias_columns=*/ true);
+                PlannerActionsVisitor planner_actions_visitor(planner_context, empty_correlated_columns_set);
                 auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
                 expression_to_interpolate_correlated_subtrees.assertEmpty("in expression to interpolate");
@@ -3076,14 +3077,30 @@ void Planner::buildPlanForQueryNode()
             }
 
             bool having_executed = false;
+            bool alias_columns_computed = false;
 
             if (query_node.isGroupByWithTotals())
             {
+                /// Computes ALIAS columns together with HAVING, see `addTotalsHavingStep`.
+                alias_columns_computed = expression_analysis_result.hasHaving();
                 addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
                 having_executed = true;
             }
 
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, query_node);
+
+            /// ROLLUP and CUBE produce the rows with default values of the keys from the aggregated data,
+            /// so ALIAS columns can be computed only after them.
+            auto & alias_columns_actions = expression_analysis_result.getAggregation().alias_columns_after_aggregation_actions;
+            if (!alias_columns_computed && alias_columns_actions)
+                addExpressionStep(
+                    planner_context,
+                    query_plan,
+                    alias_columns_actions,
+                    /*correlated_subtrees=*/{},
+                    select_query_options,
+                    "Compute ALIAS columns after aggregation",
+                    useful_sets);
 
             if (!having_executed && expression_analysis_result.hasHaving())
                 addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
