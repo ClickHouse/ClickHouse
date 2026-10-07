@@ -1084,7 +1084,7 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
              || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")
              || (engine_name == "Iceberg") || (engine_name == "IcebergS3")
              || (engine_name == "Paimon") || (engine_name == "PaimonS3")
-             || (engine_name == "S3Queue"))
+             || (engine_name == "LanceS3") || (engine_name == "S3Queue"))
     {
         /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
         find_secrets = [this] { findS3TableEngineSecretArguments(); };
