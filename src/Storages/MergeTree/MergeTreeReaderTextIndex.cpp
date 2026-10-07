@@ -1140,8 +1140,7 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
             /// materialized list beats per-candidate roaring rank(); sparse: rank() wins.
             const auto & postings = token_postings[u];
 
-            /// readDirectory rejects a blob whose document count disagrees with the postings. That
-            /// equality is what bounds a rank below num_docs, so the block index needs no check.
+            /// readDirectory rejects a blob whose document count disagrees with the postings.
             dirs[u] = readPositionsDirectory(*positions_stream, token_info, postings.cardinality());
             stats.blocks_total += dirs[u].numBlocks();
             stats.directory_us += directory_watch.elapsedMicroseconds();

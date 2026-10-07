@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/// Walks a token's posting list, reporting each document's rank (its ordinal in the list) without materialising the list.
+/// Walks a token's posting list, reporting each document's rank (its ordinal in the list) without materializing the list.
 class TextIndexPostingsRankCursor
 {
 public:
