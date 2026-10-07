@@ -16,6 +16,8 @@ public:
     static UInt128 getHash(const SerializationPtr & nested_);
     static SerializationPtr create(const SerializationPtr & nested_);
 
+    bool supportsRowRanges() const override { return nested_serialization->supportsRowRanges(); }
+
     void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

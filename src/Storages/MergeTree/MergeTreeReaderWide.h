@@ -44,6 +44,14 @@ public:
         size_t max_rows_to_read,
         MutableColumns & res_columns) override;
 
+    size_t readRowsWithFilter(
+        size_t from_mark,
+        size_t current_range_last_mark,
+        bool continue_reading,
+        size_t max_rows_to_read,
+        MutableColumns & res_columns,
+        const UInt8 * row_filter) override;
+
     bool canReadIncompleteGranules() const override { return true; }
 
     void prefetchBeginOfRange(Priority priority) override;
@@ -127,7 +135,8 @@ private:
         bool continue_reading,
         size_t max_rows_to_read,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
+        const ISerialization::RowRanges * row_ranges);
 
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(
@@ -161,7 +170,8 @@ private:
         size_t max_rows_to_read,
         MutableColumns & res_columns,
         const ColumnReadSelector & selector,
-        std::vector<size_t> * sizes_before_reading = nullptr);
+        std::vector<size_t> * sizes_before_reading = nullptr,
+        const ISerialization::RowRanges * row_ranges = nullptr);
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;

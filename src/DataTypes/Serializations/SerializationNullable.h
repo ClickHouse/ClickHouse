@@ -28,6 +28,7 @@ public:
     static bool isNullMapSubcolumn(const SubstreamPath & path);
 
     bool supportsPooling() const override { return nested->supportsPooling(); }
+    bool supportsRowRanges() const override { return nested->supportsRowRanges(); }
 
     const SerializationPtr & getNested() const { return nested; }
 
