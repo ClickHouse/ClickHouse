@@ -39,7 +39,9 @@
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
@@ -289,6 +291,27 @@ std::optional<NameAndTypePair> findOrderBreakingConversion(const ColumnsDescript
     return {};
 }
 
+/// Whether a read of `storage` lands on a `Merge`, through wrappers that forward both the stage and the read.
+bool readLandsOnMerge(StoragePtr storage)
+{
+    for (size_t depth = 0; storage && depth < max_storage_proxy_depth; ++depth)
+    {
+        if (dynamic_cast<const StorageMerge *>(storage.get()))
+            return true;
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+            storage = proxy->getNested();
+        else if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+            storage = alias->tryGetTargetTable();
+        else if (const auto * buffer = dynamic_cast<const StorageBuffer *>(storage.get()))
+            storage = buffer->getDestinationTable();
+        else if (const auto * view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+            storage = view->tryGetTargetTable();
+        else
+            return false;
+    }
+    return false;
+}
+
 }
 
 QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
@@ -302,9 +325,9 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
         const auto stage = destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
 
-        /// `read` casts the destination's result to these types above `stage`. A `Merge` can be read at
-        /// `FetchColumns` instead (its header is plain names); a `Distributed` there returns identifiers.
-        if (stage > QueryProcessingStage::FetchColumns && dynamic_cast<const StorageMerge *>(destination.get())
+        /// `read` casts the destination's result to these types above `stage`. A `Merge`, also behind wrappers that
+        /// forward the read, can be read at `FetchColumns` instead; a `Distributed` there returns identifiers.
+        if (stage > QueryProcessingStage::FetchColumns && readLandsOnMerge(destination)
             && findOrderBreakingConversion(destination_metadata->getColumns(), storage_snapshot->metadata->getColumns()))
             return QueryProcessingStage::FetchColumns;
         return stage;
@@ -370,7 +393,7 @@ void StorageBuffer::read(
 
         /// The stage was chosen from an earlier, unlocked snapshot (see `getQueryProcessingStage`) and cannot
         /// be lowered any more, so a conversion that a concurrent `ALTER` made order-breaking fails the query.
-        if (processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<const StorageMerge *>(destination.get()))
+        if (processed_stage > QueryProcessingStage::FetchColumns && readLandsOnMerge(destination))
         {
             if (auto column = findOrderBreakingConversion(destination_metadata_snapshot->getColumns(), metadata_snapshot->getColumns()))
                 throw Exception(
