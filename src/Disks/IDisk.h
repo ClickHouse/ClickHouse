@@ -128,6 +128,9 @@ class ISyncGuard
 public:
     ISyncGuard() = default;
     virtual ~ISyncGuard() = default;
+
+    /// Synchronize explicitly, propagating failures instead of logging them in the destructor.
+    virtual void sync();
 };
 
 using SyncGuardPtr = std::unique_ptr<ISyncGuard>;

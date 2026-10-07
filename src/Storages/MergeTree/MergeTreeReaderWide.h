@@ -67,7 +67,7 @@ private:
 
         /// `factory` runs only when the stream is missing, and with the mutex released: creating a
         /// stream schedules its marks load, which blocks when the marks pool queue is full.
-        MergeTreeReaderStream * getOrCreate(const String & stream_name, const StreamFactory & factory);
+        MergeTreeReaderStream & getOrCreate(const String & stream_name, const StreamFactory & factory);
         MergeTreeReaderStream * find(const String & stream_name) const;
         void release(const String & stream_name);
         /// Valid only while no task runs: a running task can `release` streams.
@@ -117,7 +117,7 @@ private:
         bool seek_to_mark,
         ISerialization::SubstreamsCache & cache);
 
-    MergeTreeReaderStream * getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
+    MergeTreeReaderStream & getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
 
     void readData(
         const NameAndTypePair & name_and_type,
