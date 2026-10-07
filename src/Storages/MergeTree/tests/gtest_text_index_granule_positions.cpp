@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <Columns/IColumn.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -77,6 +79,30 @@ std::map<std::string, Occurrences> collectPositions(MergeTreeIndexTextGranuleBui
     return result;
 }
 
+ColumnPtr lowCardinalityArrayColumn(const Array & elements, size_t rows)
+{
+    auto column = DataTypeFactory::instance().get("Array(LowCardinality(String))")->createColumn();
+    for (size_t i = 0; i < rows; ++i)
+        column->insert(elements);
+    return column;
+}
+
+void expectQuickBrownFoxRows(const std::map<std::string, Occurrences> & positions, size_t rows)
+{
+    Occurrences quick;
+    Occurrences brown;
+    Occurrences fox;
+    for (UInt32 row = 0; row < rows; ++row)
+    {
+        quick.emplace_back(row, 0);
+        brown.emplace_back(row, 1);
+        fox.emplace_back(row, 2);
+    }
+    EXPECT_EQ(positions.at("quick"), quick);
+    EXPECT_EQ(positions.at("brown"), brown);
+    EXPECT_EQ(positions.at("fox"), fox);
+}
+
 MergeTreeIndexTextParams paramsWithPositions()
 {
     MergeTreeIndexTextParams params;
@@ -130,4 +156,29 @@ TEST(MergeTreeIndexText, TokenPositionsOfDocumentsAndTokens)
     EXPECT_EQ(positions["quick"], (Occurrences{{0, 0}}));
     EXPECT_EQ(positions["brown"], (Occurrences{{0, 1}}));
     EXPECT_EQ(positions["fox"], (Occurrences{{0, 2}}));
+}
+
+/// 32 elements over 3 dictionary values enable the cache of tokenized dictionary values.
+TEST(MergeTreeIndexText, TokenPositionsOfLowCardinalityArrayWithCache)
+{
+    SplitByNonAlphaTokenizer tokenizer;
+    auto codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    MergeTreeIndexTextGranuleBuilder builder(paramsWithPositions(), &tokenizer, codec.get());
+
+    constexpr size_t rows = 16;
+    builder.addDocumentsFromLowCardinality(lowCardinalityArrayColumn(Array{"quick brown", "fox"}, rows), 0, rows, builder.buildContext());
+
+    expectQuickBrownFoxRows(collectPositions(builder), rows);
+}
+
+TEST(MergeTreeIndexText, TokenPositionsOfLowCardinalityArrayWithoutCache)
+{
+    SplitByNonAlphaTokenizer tokenizer;
+    auto codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    MergeTreeIndexTextGranuleBuilder builder(paramsWithPositions(), &tokenizer, codec.get());
+
+    constexpr size_t rows = 2;
+    builder.addDocumentsFromLowCardinality(lowCardinalityArrayColumn(Array{"quick brown", "fox"}, rows), 0, rows, builder.buildContext());
+
+    expectQuickBrownFoxRows(collectPositions(builder), rows);
 }
