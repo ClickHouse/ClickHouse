@@ -9,16 +9,15 @@ keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
 
 import { Image } from "/snippets/components/Image.jsx";
 
-import Tagging from '/snippets/_clickstack_tagging.mdx';
+import Tagging from '/snippets/_observability_tagging.mdx';
 
 ClickHouse Observability allows you to do a full-text search on your events (logs and traces). You can get started searching by just typing keywords that match your events. For example, if your log contains "Error", you can find it by just typing in "Error" in the search bar.
 
-This same search syntax is used for filtering events with Dashboards and Charts
-as well.
+The same search syntax is used to filter events in dashboards and charts.
 
 ## Search features {#search-features}
 
-### Natural language search syntax {#natural-language-syntax}
+### Lucene search syntax {#natural-language-syntax}
 
 - Searches aren't case sensitive
 - Searches match by whole word by default (ex. `Error` will match `Error here`
@@ -32,16 +31,16 @@ as well.
   `Error OR Exception`)
 - Exact matches can be done via double quotes (ex. `"Error tests not found"`)
 
-<Image img="/images/use-cases/observability/hyperdx-27.webp" alt="Search" size="md"/>
+<Image img="/images/clickstack/observability-search.png" alt="Fully managed Search showing log results for the query failed to watch" size="md"/>
 
 #### Column/property search {#column-search}
 
-- You can search columns and JSON/map properties by using `column:value` (ex. `level:Error`,
-  `service:app`)
+- You can search columns and JSON/map properties by using `column:value` (ex. `SeverityText:error`,
+  `ServiceName:app`)
 - You can search for a range of values by using comparison operators (`>`, `<`,
   `>=`, `<=`) (ex. `Duration:>1000`)
 - You can search for the existence of a property by using `property:*` (ex.
-  `duration:*`)
+  `Duration:*`)
 
 ### Time input {#time-input}
 
@@ -56,28 +55,28 @@ as well.
 ### SQL search syntax {#sql-syntax}
 
 You can optionally toggle search inputs to be in SQL mode. This will accept any valid
-SQL WHERE clause for searching. This is useful for complex queries that can't be
+`WHERE` clause for searching. This is useful for complex queries that can't be
 expressed in Lucene syntax.
 
 ### Select statement {#select-statement}
 
 To specify the columns to display in the search results, you can use the `SELECT`
-input. This is a SQL SELECT expression for the columns to select in the search page.
-Aliases aren't supported at this time (ex. you can not use `column as "alias"`).
+input. This is a SQL `SELECT` expression for the columns to select in the search page.
+Aliases aren't supported at this time (ex. you cannot use `column as "alias"`).
 
 ## Saved searches {#saved-searches}
 
 You can save your searches for quick access later. Once saved, your searches will appear on the `Saved Searches` page, making it easy to revisit frequently used search queries without having to reconstruct them.
 
-<Image img="/images/use-cases/observability/clickstack-saved-search-listing.webp" alt="Saved Search Listing Page" size="lg" />
+<Image img="/images/clickstack/observability-saved-search-listing.png" alt="Saved Searches in fully managed ClickHouse Observability showing My Saved Search" size="lg" />
 
-To save a search, simply configure your search query and click the save button. You can give your saved search a descriptive name to help identify it later.
+To save a search, configure your query, select **Save**, and give the search a descriptive name. When editing an existing saved search, the dialog shows **Update**, as in the example below.
 
-<Image img="/images/use-cases/observability/clickstack-saved-search.webp" alt="Saving a Search" size="md" />
+<Image img="/images/clickstack/observability-save-search.png" alt="Save Search dialog showing the query, name, tags, and Update button for an existing saved search" size="md" />
 
 ### Adding alerts to saved searches {#alerts-on-saved-searches}
 
-Saved searches can be monitored with alerts to notify you when certain conditions are met. You can set up alerts to trigger when the number of events matching your saved search exceeds or falls below a specified threshold. 
+Saved searches can be monitored with alerts to notify you when certain conditions are met. You can set up alerts to trigger when the number of events matching your saved search exceeds or falls below a specified threshold.
 
 For more information on setting up and configuring alerts, see the [Alerts documentation](/clickstack/observability/features/alerts).
 

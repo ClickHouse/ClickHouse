@@ -804,6 +804,36 @@ details.accordion > summary,
     border-bottom: 1px solid #e5e7eb;
 }
 
+/* Keep deployment tabs below the sticky logo, search, and product selector. */
+#sidebar-content #navigation-items:has(> ul > li > a[href="/clickstack/self-configured"]) {
+    margin-top: 0;
+}
+
+#sidebar-content:has(#navigation-items > ul > li > a[href="/clickstack/self-configured"]) > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+    bottom: 0;
+}
+
+#sidebar-content #navigation-items > ul:has(> li > a[href="/clickstack/observability"]):has(> li > a[href="/clickstack/self-configured"]) {
+    position: sticky;
+    top: 11.125rem;
+    margin-top: 0;
+    z-index: 19;
+    background: #ffffff;
+}
+
+#sidebar-content #navigation-items > ul:has(> li > a[href="/clickstack/observability"]):has(> li > a[href="/clickstack/self-configured"])::before {
+    position: absolute;
+    z-index: -1;
+    inset: -2rem -1rem 0;
+    background: inherit;
+    content: "";
+    pointer-events: none;
+}
+
+.dark #sidebar-content #navigation-items > ul:has(> li > a[href="/clickstack/observability"]):has(> li > a[href="/clickstack/self-configured"]) {
+    background: #151515;
+}
+
 #navigation-items > ul:has(> li > a[href="/clickstack/observability"]):has(> li > a[href="/clickstack/self-configured"]) > li {
     flex: 1 1 0;
     min-width: 0;
