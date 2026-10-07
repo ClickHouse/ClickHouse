@@ -75,6 +75,34 @@ std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & 
     return projection_names;
 }
 
+/// Mirrors the `projection_part_misses_column` check of `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`:
+/// a parent table column that the parent part also lacks is a legitimate late addition and does not count.
+std::set<std::string> getProjectionsMissingColumns(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot)
+{
+    std::set<std::string> projection_names;
+
+    const auto & parent_table_columns = metadata_snapshot->getColumns();
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        auto it = part->getProjectionParts().find(projection.name);
+        if (it == part->getProjectionParts().end() || it->second->is_broken)
+            continue;
+
+        for (const auto & column : projection.metadata->getColumns().getAllPhysical())
+        {
+            if (!it->second->tryGetColumn(column.name)
+                && (part->tryGetColumn(column.name)
+                    || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+            {
+                projection_names.insert(projection.name);
+                break;
+            }
+        }
+    }
+
+    return projection_names;
+}
+
 }
 
 PartProperties buildPartProperties(
@@ -87,6 +115,7 @@ PartProperties buildPartProperties(
         .name = part->name,
         .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
+        .projections_missing_columns = getProjectionsMissingColumns(part, metadata_snapshot),
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
         .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
         .size = part->getExistingBytesOnDisk(),

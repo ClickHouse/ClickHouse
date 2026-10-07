@@ -358,8 +358,7 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool 
 /// source part already has is, in the common case, merged from the projection parts of the sources after the
 /// parent merge and does not add its columns to the horizontal stage. Like the rest of the estimate, this leans
 /// towards over-counting where the exact answer depends on more than the part properties: any column TTL over
-/// a column of a projection is taken as expiring it. The one case it misses is a projection part that lacks a
-/// column the projection now expects (after an `ALTER` of an `ALIAS` column it selects), which is rare.
+/// a column of a projection is taken as expiring it.
 NameSet getColumnsOfProjectionsRebuiltByMerge(const ChooseContext & ctx, PartsRangeView range, bool removes_expired_values)
 {
     NameSet columns;
@@ -390,11 +389,14 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(const ChooseContext & ctx, PartsRa
         const auto & required_columns = projection.getRequiredColumns();
         const bool is_special_projection = projection.with_parent_part_offset || projection.with_block_number || projection.with_block_offset;
 
-        bool rebuild;
+        bool rebuild = false;
         if (may_reduce_rows && (mode != DeduplicateMergeProjectionMode::IGNORE || is_special_projection))
             rebuild = true;
         else if (removes_expired_values && mode != DeduplicateMergeProjectionMode::IGNORE
             && std::any_of(required_columns.begin(), required_columns.end(), [&](const String & name) { return column_ttls.contains(name); }))
+            rebuild = true;
+        else if (mode != DeduplicateMergeProjectionMode::IGNORE
+            && std::any_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.projections_missing_columns.contains(projection.name); }))
             rebuild = true;
         else if (std::all_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.projection_names.contains(projection.name); }))
             rebuild = false;

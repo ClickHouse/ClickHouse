@@ -26,6 +26,12 @@ struct PartProperties
     const MergeTreePartInfo info;
     const std::set<std::string> projection_names = {};
 
+    /// The projections among `projection_names` whose projection part lacks a column the current projection
+    /// metadata expects (after an `ALTER` of an `ALIAS` column it selects). A merge rebuilds such a projection
+    /// from the parent part instead of merging the projection parts, see
+    /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
+    const std::set<std::string> projections_missing_columns = {};
+
     const bool all_ttl_calculated_if_any = false;
     const bool is_in_volume_where_merges_avoid = false;
 
