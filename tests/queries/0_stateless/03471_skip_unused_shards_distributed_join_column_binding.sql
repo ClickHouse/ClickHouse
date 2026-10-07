@@ -1,7 +1,9 @@
 -- Tags: no-parallel
 -- ^ test_cluster_two_shards_different_databases uses fixed shard_0 / shard_1 databases.
--- Every query pins optimize_skip_unused_shards and optimize_distributed_group_by_sharding_key, and the
--- EXPLAIN assertions only check for MergingAggregated, so the test is deterministic under randomization.
+-- Random settings limits: optimize_distributed_group_by_sharding_key=(1, None)
+-- Every query pins optimize_skip_unused_shards, optimize_distributed_group_by_sharding_key is clamped on (the guarded
+-- probe only runs with it), and the EXPLAIN assertions only check for MergingAggregated, so the test is deterministic
+-- under randomization.
 
 -- optimize_skip_unused_shards must not change column name resolution. In a global distributed join
 -- where both sides have a column of the same name, the shard-processing-stage optimization used to
