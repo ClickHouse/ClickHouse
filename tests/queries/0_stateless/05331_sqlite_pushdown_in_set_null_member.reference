@@ -1,0 +1,24 @@
+NOT (s IN ('7', NULL))
+2
+Query: SELECT `k`, `s` FROM `tn` WHERE NOT (`s` IN ('7'))
+NOT (k IN (1, NULL))
+2,3
+Query: SELECT `k` FROM `tn` WHERE NOT (`k` IN (1))
+(s IN ('7', NULL)) = 0
+2
+Query: SELECT `k`, `s` FROM `tn` WHERE NOT (`s` IN ('7'))
+isNotNull(s IN ('7', NULL))
+1,2
+Query: SELECT `k`, `s` FROM `tn` WHERE (`s` IN ('7')) IS NOT NULL
+NOT ((s, k) IN (('7', 1), ('x', NULL)))
+2,3
+Query: SELECT `k`, `s` FROM `tn` WHERE NOT ((`s`, `k`) IN (('7', 1)))
+NOT (s IN (NULL))
+1,2
+Query: SELECT `k`, `s` FROM `tn`
+s IN ('7', NULL)
+1
+Query: SELECT `k`, `s` FROM `tn` WHERE `s` IN ('7')
+s IN ('7', NULL, 'x')
+1,2
+Query: SELECT `k`, `s` FROM `tn` WHERE `s` IN ('7', 'x')

@@ -1426,9 +1426,15 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
 {
     if (filter_column_name.empty())
         return;
-    const Node * filter_node = tryFindInOutputs(filter_column_name);
-    if (!filter_node)
-        return;
+
+    const auto it = std::ranges::find_if(outputs, [&](const Node * output) { return output->result_name == filter_column_name; });
+    if (it != outputs.end())
+        foldFilterPredicateThroughMaterialize(static_cast<size_t>(it - outputs.begin()));
+}
+
+void ActionsDAG::foldFilterPredicateThroughMaterialize(size_t filter_output_position)
+{
+    const Node * filter_node = outputs.at(filter_output_position);
 
     /// A prior optimizer pass may already have folded this filter. Replacing an
     /// existing const output with another const output makes the pass report a
@@ -1446,15 +1452,8 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
     /// `removeUnusedActions` prunes the now-orphan subtree later
     const Node & new_const = addColumn(
         std::move(folded->column), filter_node->result_type,
-        std::string(filter_column_name), folded->deterministic, folded->masked_secret);
-    for (auto & out : outputs)
-    {
-        if (out == filter_node)
-        {
-            out = &new_const;
-            break;
-        }
-    }
+        filter_node->result_name, folded->deterministic, folded->masked_secret);
+    outputs[filter_output_position] = &new_const;
 }
 
 void ActionsDAG::deduplicateSubtrees()
@@ -1864,22 +1863,6 @@ ActionsDAG::MatchedInputPositions ActionsDAG::matchInputPositionsToHeader(const 
     return matchInputNodesToHeader(inputs, header);
 }
 
-ActionsDAG::SplitOutputPositions ActionsDAG::splitOutputPositions(const std::vector<size_t> & output_positions) const
-{
-    SplitOutputPositions result;
-    const size_t num_dag_outputs = outputs.size();
-
-    for (size_t pos : output_positions)
-    {
-        if (pos < num_dag_outputs)
-            result.dag_indices.push_back(pos);
-        else
-            result.passthrough_indices.push_back(pos - num_dag_outputs);
-    }
-
-    return result;
-}
-
 ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
@@ -2234,50 +2217,49 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 
 bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
-    /// Find column in output nodes and remove.
-    const Node * col = nullptr;
+    auto output_it = std::ranges::find_if(outputs, [&](const Node * node) { return node->result_name == column_name; });
+    if (output_it == outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+    /// The nodes the result is computed by, each the only child of the one before, down to an input or a column.
+    std::vector<const Node *> chain;
+    for (const Node * node = *output_it;; node = node->children.front())
     {
-        auto it = outputs.begin();
-        for (; it != outputs.end(); ++it)
-            if ((*it)->result_name == column_name)
-                break;
+        if (node->children.size() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Result {} is not a chain of nodes down to an input or a column: {} has {} children\n{}",
+                column_name, node->result_name, node->children.size(), dumpDAG());
 
-        if (it == outputs.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
-
-        col = *it;
-        outputs.erase(it);
+        chain.push_back(node);
+        if (node->children.empty())
+            break;
     }
 
-    /// Check if column is in input.
-    auto it = inputs.begin();
-    for (; it != inputs.end(); ++it)
-        if (*it == col)
-            break;
+    outputs.erase(output_it);
 
-    /// Check column has no dependent.
+    std::unordered_map<const Node *, size_t> uses;
     for (const auto & node : nodes)
         for (const auto * child : node.children)
-            if (col == child)
-                return false;
+            ++uses[child];
+    for (const auto * output : outputs)
+        ++uses[output];
 
-    /// Do not remove input if it was mentioned in output nodes several times.
-    for (const auto * output_node : outputs)
-        if (col == output_node)
+    /// Remove the chain from the top while nothing else uses a node: another node, or an output of the same name or of
+    /// another one.
+    for (const auto * node : chain)
+    {
+        if (uses[node] != 0)
             return false;
 
-    /// Remove from nodes and inputs.
-    for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
-    {
-        if (&(*jt) == col)
-        {
-            nodes.erase(jt);
-            break;
-        }
+        if (!node->children.empty())
+            --uses[node->children.front()];
+
+        if (node->type == ActionType::INPUT)
+            std::erase(inputs, node);
+
+        nodes.remove_if([&](const Node & candidate) { return &candidate == node; });
     }
 
-    if (it != inputs.end())
-        inputs.erase(it);
     return true;
 }
 
@@ -3534,15 +3516,43 @@ struct ConjunctionNodes
     ActionsDAG::NodeRawConstPtrs rejected;
 };
 
+/// indexHint keeps its arguments in its own dag, so they are not children of the node, and hints may nest
+template <typename Predicate>
+bool allIndexHintInputs(const ActionsDAG::Node & node, const Predicate & predicate)
+{
+    if (node.type != ActionsDAG::ActionType::FUNCTION || node.function_base->getName() != "indexHint")
+        return true;
+
+    const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node.function_base);
+    const auto & dag = assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions();
+    return std::ranges::all_of(dag.getInputs(), predicate)
+        && std::ranges::all_of(dag.getNodes(), [&](const auto & inner) { return allIndexHintInputs(inner, predicate); });
+}
+
 /// Take a node which result is a predicate.
 /// Assuming predicate is a conjunction (probably, trivial).
 /// Find separate conjunctions nodes. Split nodes into allowed and rejected sets.
 /// Allowed predicate is a predicate which can be calculated using only nodes from the allowed_nodes set.
-ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordered_set<const ActionsDAG::Node *> allowed_nodes, bool allow_non_deterministic_functions)
+ConjunctionNodes getConjunctionNodes(
+    ActionsDAG::Node * predicate,
+    const ActionsDAG::NodeRawConstPtrs & inputs,
+    std::unordered_set<const ActionsDAG::Node *> allowed_nodes,
+    bool allow_non_deterministic_functions,
+    bool allow_index_hints = true)
 {
     ConjunctionNodes conjunction;
     std::unordered_set<const ActionsDAG::Node *> allowed;
     std::unordered_set<const ActionsDAG::Node *> rejected;
+
+    std::unordered_set<std::string_view> rejected_input_names;
+    for (const auto * input : inputs)
+        if (!allowed_nodes.contains(input))
+            rejected_input_names.insert(input->result_name);
+
+    auto is_index_hint_input_allowed = [&](const ActionsDAG::Node * input)
+    {
+        return allow_index_hints && !rejected_input_names.contains(input->result_name);
+    };
 
     /// Parts of predicate in case predicate is conjunction (or just predicate itself).
     std::unordered_set<const ActionsDAG::Node *> predicates;
@@ -3615,7 +3625,8 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
 
                 if (cur.node->type != ActionsDAG::ActionType::ARRAY_JOIN
                     && cur.node->type != ActionsDAG::ActionType::INPUT
-                    && !is_deprecated_function)
+                    && !is_deprecated_function
+                    && allIndexHintInputs(*cur.node, is_index_hint_input_allowed))
                     allowed_nodes.emplace(cur.node);
             }
 
@@ -3822,7 +3833,8 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
     bool removes_filter,
     const Names & available_inputs,
     const ColumnsWithTypeAndName & all_inputs,
-    bool allow_non_deterministic_functions)
+    bool allow_non_deterministic_functions,
+    bool allow_index_hints)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3855,7 +3867,7 @@ std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::splitActionsForF
         }
     }
 
-    auto conjunction = getConjunctionNodes(predicate, allowed_nodes, allow_non_deterministic_functions);
+    auto conjunction = getConjunctionNodes(predicate, inputs, allowed_nodes, allow_non_deterministic_functions, allow_index_hints);
 
     if (conjunction.allowed.empty())
         return {};
@@ -3922,9 +3934,9 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto right_stream_allowed_nodes = get_input_nodes(right_stream_available_columns_to_push_down);
     auto both_streams_allowed_nodes = get_input_nodes(equivalent_columns_to_push_down);
 
-    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
-    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
-    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
+    auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, left_stream_allowed_nodes, false);
+    auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, inputs, right_stream_allowed_nodes, false);
+    auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, inputs, both_streams_allowed_nodes, false);
 
     /// A cross-type equivalent input is replaced below by a cast of the opposite side's key rather than
     /// renamed to an equal-typed column, so it can be constant where the input is not and is computed a
