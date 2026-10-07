@@ -2336,6 +2336,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return {};
     }
 
+    /// Under the DDL guard of the table, so that a concurrent RENAME, EXCHANGE or DROP cannot see the table without them.
+    if (!create.attach)
+        createInnerObjectsOfIndexes(create);
+
     /// A materialized view with POPULATE subscribes to new inserts of its source table and, at the same
     /// time, must be filled with the data that already exists in the source. Doing these two steps
     /// independently is racy: a row inserted concurrently can be routed to the view and also appear in the
@@ -2361,9 +2365,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     ddl_guard.reset();
     source_ddl_guard.reset();
-
-    if (!create.attach)
-        createInnerObjectsOfIndexes(create);
 
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
@@ -2393,8 +2394,20 @@ void InterpreterCreateQuery::createInnerObjectsOfIndexes(const ASTCreateQuery & 
         /// nothing references the table, so the reference held here must be released first.
         table.reset();
         dropVectorSimilarityIvfInnerObjects(table_id, getVectorSimilarityIvfIndexNames(*metadata), getContext());
-        InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext()->getGlobalContext(), getContext(), table_id,
-            /*sync=*/ true, /*ignore_sync_setting=*/ false, /*need_ddl_guard=*/ true);
+
+        /// The caller holds the DDL guard of the table, which is not recursive.
+        auto drop_query = make_intrusive<ASTDropQuery>();
+        drop_query->setDatabase(table_id.getDatabaseName());
+        drop_query->setTable(table_id.getTableName());
+        drop_query->kind = ASTDropQuery::Kind::Drop;
+        drop_query->if_exists = true;
+        drop_query->sync = true;
+        drop_query->no_ddl_lock = true;
+        auto drop_context = Context::createCopy(getContext()->getGlobalContext());
+        drop_context->setSettings(getContext()->getSettingsRef());
+        drop_context->setDDLOrOnClusterInternal(true);
+        ASTPtr ast_drop_query = drop_query;
+        InterpreterDropQuery(ast_drop_query, drop_context).execute();
         throw;
     }
 }
