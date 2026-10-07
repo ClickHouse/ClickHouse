@@ -4441,7 +4441,12 @@ bool ClientBase::processAIChat(const String & text_)
     /// that parses another dialect fails the question itself - and then the turn is refused as well,
     /// with the reason: the messages added to a server exception are not shown without the stack
     /// trace, so the guidance would not reach the user from the exception.
-    if (aiSessionReadonly() == 1)
+    ///
+    /// The help (a bare `?`) and `? clear` / `? reset` are local: they neither call a provider nor
+    /// run a query for the model, so they are not refused - `? clear` is the way out of a
+    /// conversation, and it must work in exactly such a session too.
+    const bool is_local_command = text.empty() || text == "clear" || text == "reset";
+    if (!is_local_command && aiSessionReadonly() == 1)
     {
         bool dialect_pin_required = true;
         String probe_error;
