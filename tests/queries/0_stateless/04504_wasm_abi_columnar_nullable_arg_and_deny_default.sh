@@ -7,6 +7,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS array_of_len;
+DROP FUNCTION IF EXISTS bytes_equal_nullable;
 DELETE FROM system.webassembly_modules WHERE name = 'columnar_abi_nullable_arg';
 EOF
 
@@ -16,20 +17,31 @@ cat "${CUR_DIR}/wasm/columnar_abi.wasm" \
 
 ${CLICKHOUSE_CLIENT} --allow_experimental_analyzer=1 << 'EOF'
 
--- array_of_len_col(s String) -> Array(UInt64) returns [byte_len(s)] per row. Since
--- Array(UInt64) cannot be inside Nullable, useDefaultImplementationForNulls() is false
--- and the analyzer passes a genuinely Nullable(String) argument through unmodified
--- against the declared non-nullable String parameter. executeColumnar must cast this
--- to Nullable(String) (not plain String) before serialization, or the cast itself
--- throws CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN on the first NULL row.
+-- A declared Nullable(String) parameter turns the framework's NULL handling off, so the
+-- module receives the null map. array_of_len_col returns [] for a NULL row and
+-- [byte_len(s)] otherwise, which tells a NULL that reached the module apart from the ''
+-- the framework would have substituted for it.
 CREATE OR REPLACE FUNCTION array_of_len
     LANGUAGE WASM ABI COLUMNAR_V1 FROM 'columnar_abi_nullable_arg' :: 'array_of_len_col'
-    ARGUMENTS (s String) RETURNS Array(UInt64)
+    ARGUMENTS (s Nullable(String)) RETURNS Array(UInt64)
     DETERMINISTIC;
 
 SELECT s, array_of_len(s)
-FROM (SELECT 'abc' AS s FROM numbers(1) UNION ALL SELECT NULL FROM numbers(1))
-ORDER BY s;
+FROM (SELECT arrayJoin([CAST('abc', 'Nullable(String)'), NULL, '']) AS s)
+ORDER BY s NULLS LAST;
+
+-- With NULL handling off, a Nullable column also reaches a parameter declared as plain
+-- String. executeColumnar must cast it to Nullable(String), not String, before
+-- serialization, or the cast itself throws CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN on the
+-- first NULL row.
+CREATE OR REPLACE FUNCTION bytes_equal_nullable
+    LANGUAGE WASM ABI COLUMNAR_V1 FROM 'columnar_abi_nullable_arg' :: 'bytes_equal_col'
+    ARGUMENTS (a Nullable(String), b String) RETURNS UInt8
+    DETERMINISTIC;
+
+SELECT b, bytes_equal_nullable('abc', b)
+FROM (SELECT arrayJoin([CAST('abc', 'Nullable(String)'), NULL]) AS b)
+ORDER BY b NULLS LAST;
 EOF
 
 # validateColumnarWireSupportedType must deny-by-default: any type family it doesn't
@@ -50,6 +62,7 @@ CREATE OR REPLACE FUNCTION array_of_len_json
 
 ${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS array_of_len;
+DROP FUNCTION IF EXISTS bytes_equal_nullable;
 DROP FUNCTION IF EXISTS array_of_len_dynamic;
 DROP FUNCTION IF EXISTS array_of_len_json;
 DELETE FROM system.webassembly_modules WHERE name = 'columnar_abi_nullable_arg';

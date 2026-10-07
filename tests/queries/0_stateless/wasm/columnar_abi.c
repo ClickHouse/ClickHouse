@@ -150,6 +150,14 @@ static const uint8_t * str_bytes(const ColBuf * cb, uint32_t col,
     return cb->base + d.data_offset + start;
 }
 
+// 1 if row `row` of column `col` is NULL. Only a COL_IS_NULLABLE column carries a null map.
+static int is_null_row(const ColBuf * cb, uint32_t col, uint32_t row) {
+    ColDesc d = get_desc(cb, col);
+    if (!(d.type & COL_IS_NULLABLE)) return 0;
+    uint32_t idx = (d.type & COL_IS_CONST) ? 0u : row;
+    return cb->base[d.null_offset + idx] != 0;
+}
+
 static uint64_t get_u64(const ColBuf * cb, uint32_t col, uint32_t row) {
     ColDesc d = get_desc(cb, col);
     uint32_t idx = (d.type & COL_IS_CONST) ? 0u : row;
@@ -186,7 +194,8 @@ static Buffer * alloc_fixed_out(uint32_t num_rows, uint32_t col_type,
 // ── Exported columnar functions ───────────────────────────────────────────────
 
 // str_byte_sum(s String) -> UInt64
-// Computes the sum of all byte values in each string row.
+// Computes the sum of all byte values in each string row. A NULL row of a nullable
+// input yields UINT64_MAX, so a test can tell it from the 0 of an empty string.
 __attribute__((export_name("str_byte_sum_col")))
 Buffer * str_byte_sum_col(Buffer * ptr, uint32_t num_rows) {
     ColBuf  cb  = parse_input(ptr);
@@ -195,6 +204,10 @@ Buffer * str_byte_sum_col(Buffer * ptr, uint32_t num_rows) {
 
     uint64_t * res = (uint64_t *)(out->data + HEADER_BYTES + DESC_BYTES);
     for (uint32_t i = 0; i < num_rows; ++i) {
+        if (is_null_row(&cb, 0, i)) {
+            res[i] = UINT64_MAX;
+            continue;
+        }
         uint32_t len;
         const uint8_t * data = str_bytes(&cb, 0, i, &len);
         uint64_t sum = 0;
@@ -340,11 +353,12 @@ Buffer * const_answer_col(Buffer * ptr, uint32_t num_rows) {
 // Nullable(String) argument reaches this export's caller instead of being
 // null-propagated by the analyzer first (used to test that a Nullable(String)
 // argument round-trips correctly against a declared non-nullable String parameter).
+// A NULL row yields [] instead, so a test can tell it from the [0] of an empty string.
 __attribute__((export_name("array_of_len_col")))
 Buffer * array_of_len_col(Buffer * ptr, uint32_t num_rows) {
     ColBuf cb = parse_input(ptr);
 
-    // Layout: [BufHeader][ColDesc][outer_offsets:u64[N+1]][nested u64 data: one per row]
+    // Layout: [BufHeader][ColDesc][outer_offsets:u64[N+1]][nested u64 data: at most one per row]
     uint32_t offs_base = HEADER_BYTES + DESC_BYTES;
     uint32_t data_base = offs_base + (num_rows + 1u) * 8u;
     uint32_t total_cap = data_base + num_rows * 8u;
@@ -352,26 +366,28 @@ Buffer * array_of_len_col(Buffer * ptr, uint32_t num_rows) {
     Buffer * out = clickhouse_create_buffer(total_cap);
     if (!out) return NULL;
     memset(out->data, 0, total_cap);
-    out->size = total_cap;
 
     uint8_t * p = out->data;
     write_header(p, num_rows, 1u);
 
+    uint64_t cumulative = 0;
+    for (uint32_t i = 0; i < num_rows; ++i) {
+        if (!is_null_row(&cb, 0, i)) {
+            uint32_t len;
+            str_bytes(&cb, 0, i, &len);
+            uint64_t val = (uint64_t)len;
+            memcpy(p + data_base + cumulative * 8u, &val, 8u);
+            cumulative += 1u;
+        }
+        memcpy(p + offs_base + (uint64_t)(i + 1u) * 8u, &cumulative, 8u);
+    }
+
     ColDesc od = {0};
     od.type        = COL_COMPLEX;
     od.data_offset = offs_base;
-    od.data_size   = (uint64_t)(num_rows + 1u) * 8u + (uint64_t)num_rows * 8u;
+    od.data_size   = (uint64_t)(num_rows + 1u) * 8u + cumulative * 8u;
     memcpy(p + HEADER_BYTES, &od, DESC_BYTES);
-
-    uint64_t cumulative = 0;
-    for (uint32_t i = 0; i < num_rows; ++i) {
-        uint32_t len;
-        str_bytes(&cb, 0, i, &len);
-        cumulative += 1u; // exactly one element per row
-        memcpy(p + offs_base + (uint64_t)(i + 1u) * 8u, &cumulative, 8u);
-        uint64_t val = (uint64_t)len;
-        memcpy(p + data_base + (uint64_t)i * 8u, &val, 8u);
-    }
+    out->size = data_base + (uint32_t)cumulative * 8u;
 
     return out;
 }

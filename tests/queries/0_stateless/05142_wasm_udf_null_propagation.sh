@@ -81,9 +81,9 @@ ${CLICKHOUSE_CLIENT} --query "SELECT ${FUNC_NULLABLE}('ab')" 2>&1 \
     | grep -oE 'INCORRECT_DATA|LOGICAL_ERROR' | head -1
 
 # Declaring a `Nullable` parameter turns the framework's null handling off: the module receives
-# the null map and its answer for the `NULL` row is returned as is. `str_byte_sum_col` ignores the
-# null map and sums the (empty) value, so that row yields 0 instead of `NULL`, and the result type
-# stays the declared `UInt64`.
+# the null map and its answer for the `NULL` row is returned as is. `str_byte_sum_col` answers
+# `UINT64_MAX` for a row its null map marks, so that row yields 18446744073709551615 - neither `NULL`
+# nor the 0 of the empty string - and the result type stays the declared `UInt64`.
 ${CLICKHOUSE_CLIENT} --query "
 CREATE OR REPLACE FUNCTION ${FUNC_NULLABLE_ARG}
     LANGUAGE WASM ABI COLUMNAR_V1
