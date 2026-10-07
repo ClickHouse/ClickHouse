@@ -1,0 +1,45 @@
+--- fixture: data files and rows per Iceberg table
+del	DATA	2	2000
+del	POSITION_DELETE	1	500
+p	DATA	2	10000
+t	DATA	4	10000
+--- T1: v = 3, 10000 / 5 values
+Join: t[no_stats~2000] ⋈ dim[1]
+rows: 2000
+--- T1: v IN (1, 2)
+Join: t[no_stats~4000] ⋈ dim[2]
+rows: 4000
+--- T1: n IS NULL
+Join: t[no_stats~9000] ⋈ dim[5]
+rows: 9000
+--- T1: k BETWEEN 1000 AND 8999, every file overlaps
+Join: t[no_stats~7999] ⋈ dim[5]
+rows: 8000
+--- T1: s = 'rare', strings have no bounds in the statistics and no counted NDV, so 1%
+Join: t[no_stats~100] ⋈ dim[5]
+rows: 200
+--- T2: k < 1000, 1 of 4 files remains
+Join: t[no_stats~999] ⋈ dim[5]
+rows: 1000
+--- T2: d = '2024-01-05', 1 of 4 files remains, 25 days in it
+Join: t[no_stats~100] ⋈ dim[5]
+rows: 100
+--- T3: r = 'us', the partition of 3000 rows
+Join: t[no_stats~3000] ⋈ dim[5]
+rows: 3000
+--- T4: v = 1 with 500 of 2000 rows deleted, 2000 / 5 * 1500 / 2000
+Join: t[no_stats~300] ⋈ dim[1]
+rows: 300
+--- T5: plan, manifest statistics off: the Iceberg reads have no estimate, so neither have the joins above them
+Join: c ⋈ g ⋈ (l ⋈ o)
+Join: c ⋈ g
+Join: l ⋈ o
+--- T5: plan, manifest statistics on
+Join: l[30000] ⋈ (o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1]))
+Join: o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1])
+Join: c[no_stats~200] ⋈ g[no_stats~1]
+--- T5: result, then rows put into hash tables, manifest statistics off and on
+6000
+6000
+off	40001
+on	2201

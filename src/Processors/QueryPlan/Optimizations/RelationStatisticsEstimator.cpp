@@ -286,11 +286,12 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
         /// The step's filter also holds the `PREWHERE` and the row policy, so a read without it returns every row.
         const bool has_filter = filter || reading->getFilterActionsDAG() || reading->getPrewhereInfo() || reading->getRowLevelFilter();
 
-        /// As for MergeTree without column statistics, a filter that pruned nothing gives no estimate.
-        if (has_filter && !estimate->pruned_data_files && profile.rows != 0)
+        /// As for MergeTree, the column statistics estimate the filter; without them, as for MergeTree without column statistics,
+        /// a filter that pruned nothing gives no estimate.
+        if (has_filter && !estimate->filter_estimated && !estimate->pruned_data_files && profile.rows != 0)
             return unknown;
 
-        const bool exact = profile.rows == 0 || (!has_filter && !estimate->has_delete_files);
+        const bool exact = !estimate->filter_estimated && (profile.rows == 0 || (!has_filter && !estimate->has_delete_files));
         return RelationStats{
             .estimated_rows = profile.rows,
             .column_stats = profile.column_stats,

@@ -68,8 +68,8 @@ public:
     void subtractDeletedRows(UInt64 rows);
 
     /// Sets the profile of `estimate`: the rows of the added files and the merged statistics of the requested columns with
-    /// their numbers of distinct values. Called once, after the last file.
-    void finalize(DataLakeReadEstimate & estimate);
+    /// their numbers of distinct values, under `filter` if there is one. Called once, after the last file.
+    void finalize(DataLakeReadEstimate & estimate, const ActionsDAG * filter, const StorageMetadataPtr & storage_metadata);
 
 private:
     /// A requested column that gets statistics.

@@ -8,8 +8,8 @@
 # - T2: the smaller table becomes the build side.
 # - T3: a table that was never written has 0 rows.
 # - T4: the count comes from the snapshot the read uses.
-# - T5: an aggregation over an Iceberg read estimates its groups from the NDV; without rows it is named in the data lake
-#   hint line.
+# - T5: an aggregation over an Iceberg read estimates its groups from the NDV, also under a filter that prunes nothing,
+#   which the column statistics estimate, so the data lake hint line does not name the read.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -123,7 +123,6 @@ T5="SELECT count() FROM mt AS m JOIN (SELECT k, count() AS c FROM ice_big GROUP 
 echo '--- T5: aggregation over an Iceberg read'
 labels "${T5}" ${ON}
 
-# A filter that prunes nothing leaves the read without rows and column statistics, so the data lake hint line names it.
 T5_FILTERED="SELECT count() FROM mt AS m
     JOIN (SELECT k, count() AS c FROM ice_big WHERE v % 2 = 0 GROUP BY k) AS ice_filtered ON m.k = ice_filtered.k"
 echo '--- T5: aggregation over an Iceberg read with a filter that prunes nothing'

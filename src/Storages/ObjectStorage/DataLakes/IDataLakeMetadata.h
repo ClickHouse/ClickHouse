@@ -59,8 +59,11 @@ struct DataLakeReadEstimate
     /// The snapshot has live delete files.
     bool has_delete_files = false;
     /// The rows of the live data files left after pruning, without the deleted rows the metadata can count, and the
-    /// statistics of the requested columns over them; std::nullopt if the metadata is malformed.
+    /// statistics of the requested columns over them, under the read's filter if `filter_estimated`; std::nullopt if the
+    /// metadata is malformed.
     std::optional<RelationProfile> profile;
+    /// `profile` is the estimate of the read's filter on the column statistics.
+    bool filter_estimated = false;
 };
 
 class IDataLakeMetadata : boost::noncopyable

@@ -282,7 +282,8 @@ void ManifestColumnStatistics::subtractDeletedRows(UInt64 rows)
     total_rows -= rows;
 }
 
-void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
+void ManifestColumnStatistics::finalize(
+    DataLakeReadEstimate & estimate, const ActionsDAG * filter, const StorageMetadataPtr & storage_metadata)
 {
     auto & profile = estimate.profile.emplace();
     profile.rows = total_rows;
@@ -304,6 +305,19 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
         if (distinct_values.counted)
             statistics_builder.setCardinality(targets[i].name, distinct_values.count);
     }
+
+    if (!filter)
+        return;
+
+    /// The filter's selectivity applies to the rows left after the deletes.
+    statistics_builder.incrementRowCount(total_rows);
+    auto filtered = estimator->estimateRelationProfile(storage_metadata, filter->getOutputs().front(), nullptr);
+    /// The numbers of distinct values from the manifests, at most the rows under the filter.
+    for (auto & [name, column] : filtered.column_stats)
+        if (const auto it = profile.column_stats.find(name); it != profile.column_stats.end())
+            column.num_distinct_values = std::clamp<UInt64>(it->second.num_distinct_values, 1, std::max<UInt64>(filtered.rows, 1));
+    profile = std::move(filtered);
+    estimate.filter_estimated = true;
 }
 
 }

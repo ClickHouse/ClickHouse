@@ -1595,7 +1595,7 @@ IcebergMetadata::estimateRead(
     if (!deleted_rows)
         return estimate;
     column_statistics.subtractDeletedRows(*deleted_rows);
-    column_statistics.finalize(estimate);
+    column_statistics.finalize(estimate, filter, storage_metadata_snapshot);
     return estimate;
 }
 
