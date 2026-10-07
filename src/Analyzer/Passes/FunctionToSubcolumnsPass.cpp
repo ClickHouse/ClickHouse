@@ -24,6 +24,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageProxy.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -654,9 +655,9 @@ bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx
 
 /// True when this MergeTree table can contain a `with_key_columns` part.
 /// `basic` and `with_buckets` tables stay on `has(m.keys, key)` so an index on `mapKeys` still matches.
-bool tableMayStoreMapWithKeyColumns(const IStorage & storage)
+bool tableMayStoreMapWithKeyColumns(const StoragePtr & storage)
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(&storage);
+    const auto merge_tree = castStorage<const MergeTreeData>(storage, DeferredTable::Load);
     if (!merge_tree)
         return false;
 
@@ -706,7 +707,7 @@ std::optional<NameAndTypePair> tryMapConstantKeyExistsSubcolumn(const FunctionNo
         return {};
 
     auto storage = getStorageForColumnSource(ctx.column_source);
-    if (!storage || !tableMayStoreMapWithKeyColumns(*storage))
+    if (!storage || !tableMayStoreMapWithKeyColumns(storage))
         return {};
 
     auto serialized_key = serializedConstantMapKey(key_type, *constant);
