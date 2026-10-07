@@ -66,7 +66,7 @@ public:
 
     /// Sets the merged statistics and the numbers of distinct values of `estimate`, whose `rows` is the sum of
     /// `record_count` over the added files; nothing is set when `rows` is unknown or 0.
-    void finalize(DataLakeReadEstimate & estimate) const;
+    void finalize(DataLakeReadEstimate & estimate);
 
 private:
     /// A requested column that gets statistics.
@@ -135,9 +135,17 @@ private:
     /// Adds the size and the identity-partition value that a file gives for a target.
     static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
 
+    struct DistinctValues
+    {
+        UInt64 count;
+        /// Rule 1, or rule 2 below the clamp: a count or a bound from the values, not a guess.
+        bool counted;
+    };
+
     /// The number of distinct values of a target by the first rule that applies, clamped to [1, non-NULL rows];
     /// `column` holds its merged statistics over `rows` rows.
-    static UInt64 estimateDistinctValues(const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
+    static DistinctValues estimateDistinctValues(
+        const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
 
     /// Resolves field ids and the column types of each file's schema.
     const IcebergSchemaProcessor & schema_processor;
