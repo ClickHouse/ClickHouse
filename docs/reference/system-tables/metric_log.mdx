@@ -176,10 +176,11 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_TextIndexLazySegmentsBuilt` ([UInt64](/reference/data-types/int-uint)) — Number of segments actually read and decoded (cache misses) in lazy posting list mode.
 - `ProfileEvent_TextIndexLazyBruteForceIntersections` ([UInt64](/reference/data-types/int-uint)) — Number of brute-force intersections performed in lazy posting list mode.
 - `ProfileEvent_TextIndexLazyLeapfrogIntersections` ([UInt64](/reference/data-types/int-uint)) — Number of leapfrog intersections performed in lazy posting list mode.
-- `ProfileEvent_TextIndexLazyBruteForceEarlyExits` ([UInt64](/reference/data-types/int-uint)) — Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.
+- `ProfileEvent_TextIndexLazyBruteForceEarlyExits` ([UInt64](/reference/data-types/int-uint)) — Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.
 - `ProfileEvent_TextIndexLazySegmentsSkippedDense` ([UInt64](/reference/data-types/int-uint)) — Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.
-- `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
-- `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+- `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
+- `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
+- `ProfileEvent_TextIndexLazyBlocksSkippedDense` ([UInt64](/reference/data-types/int-uint)) — Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.
 - `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/reference/data-types/int-uint)) — Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.
 - `ProfileEvent_TextIndexPatternBypassCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 - `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/reference/data-types/int-uint)) — Number of times the generic exclusion search algorithm is used over the text index.
@@ -884,7 +885,8 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_FilesystemCacheStateLockMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Lock filesystem cache time for state lock
 - `ProfileEvent_FilesystemCacheReserveMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache space reservation time
 - `ProfileEvent_FilesystemCacheReserveAttempts` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache space reservation attempt
-- `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/reference/data-types/int-uint)) — Number of failed file cache space reservation attempts.
+- `ProfileEvent_FilesystemCacheReserveAheadRetries` ([UInt64](/reference/data-types/int-uint)) — Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size
+- `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/reference/data-types/int-uint)) — Number of failed file cache space reservation attempts, including reserve-ahead attempts that were retried with the exact size (see FilesystemCacheReserveAheadRetries).
 - `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache eviction time
 - `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache getOrSet() time
 - `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Filesystem cache get() time
@@ -2278,6 +2280,8 @@ The `bucketed` schema stores all profile events and current metrics in a single 
     </metric_log>
 </clickhouse>
 ```
+
+Because the per-metric columns of this schema are `ALIAS` columns, it cannot be used together with a configuration that skips alias columns in system log tables (`default_system_log_flush_policy.skip_alias_columns`, or a table engine which does not support them): the server refuses to start instead of creating a table without the `ProfileEvent_*` and `CurrentMetric_*` columns. The engine settings of the bucketed `Map` serialization are part of the default table definition, so they are not applied when the configuration specifies `<engine>` explicitly.
 
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
