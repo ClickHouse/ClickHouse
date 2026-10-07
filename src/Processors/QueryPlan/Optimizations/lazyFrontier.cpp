@@ -94,7 +94,7 @@ public:
 
     /// Values the main branch has to hand over anyway, the sort keys above all: they are part of the
     /// block the `LIMIT` produces whatever this decides, so taking them costs nothing.
-    void markFreeToCross(const ActionsDAG::NodeRawConstPtrs & nodes) { free_to_cross.insert(nodes.begin(), nodes.end()); }
+    void markAlreadyCrossing(const ActionsDAG::NodeRawConstPtrs & nodes) { already_crossing.insert(nodes.begin(), nodes.end()); }
 
     /// Places `node` and everything it reads. Every value can be placed: what cannot be had above the
     /// `LIMIT` is computed below it and crosses, which is what the plan did anyway.
@@ -192,7 +192,7 @@ private:
             return have_it_above;
 
         /// The main branch hands this one over regardless, so there is nothing to weigh up.
-        if (free_to_cross.contains(node))
+        if (already_crossing.contains(node))
             return Decision::Cross;
 
         /// This value was already used below the `LIMIT` and the result has to agree with it, so one
@@ -232,7 +232,7 @@ private:
     const MergedPlanDAG & merged;
     const std::vector<bool> & lazy_sources;
     const std::unordered_set<const MergedPlanDAG::Stuffing *> & masked_stuffings;
-    NodeSet free_to_cross;
+    NodeSet already_crossing;
     LazyFrontier frontier;
 };
 
@@ -254,15 +254,15 @@ LazyFrontier chooseLazyFrontier(
     computed_below_roots.append_range(merged.join_condition_nodes);
     computed_below_roots.append_range(merged.step_read_nodes);
 
-    ActionsDAG::NodeRawConstPtrs free_to_cross;
+    ActionsDAG::NodeRawConstPtrs already_crossing;
     for (size_t position : eager_output_positions)
     {
         computed_below_roots.push_back(outputs[position]);
-        free_to_cross.push_back(outputs[position]);
+        already_crossing.push_back(outputs[position]);
     }
 
     chooser.markComputedBelow(computed_below_roots);
-    chooser.markFreeToCross(free_to_cross);
+    chooser.markAlreadyCrossing(already_crossing);
 
     for (const auto * output : outputs)
         chooser.place(output);
