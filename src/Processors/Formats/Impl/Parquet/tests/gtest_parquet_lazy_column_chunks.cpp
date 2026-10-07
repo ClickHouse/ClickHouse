@@ -863,7 +863,7 @@ TEST(ParquetLazyColumnChunks, MetadataCacheConcurrentAdds)
     {
         readers.emplace_back([&, t]
         {
-            std::mt19937 rng(t);
+            std::mt19937 rng(static_cast<std::mt19937::result_type>(t));
             for (size_t iteration = 0;
                  iteration < 200 || ((loads.load() <= 1 || cached_chunks_seen.load() == 0) && std::chrono::steady_clock::now() < deadline);
                  ++iteration)
