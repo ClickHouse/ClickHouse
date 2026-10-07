@@ -10813,32 +10813,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// `EPHEMERAL` is followed for symmetry with the non-determinism check below. A column
     /// definition cannot reference itself, but keep the set of visited columns anyway, so that
     /// malformed metadata cannot make the recursion unbounded.
-    ///
-    /// The identifiers are the raw text of the predicate, not resolved yet, so a column may be
-    /// spelled qualified (`table.column`, `database.table.column`), while `ColumnsDescription` is
-    /// keyed by the bare storage name. The analysis below resolves such qualified names against
-    /// the storage all the same, so strip the qualifier that names this very table.
     const auto & columns_description = metadata_snapshot->getColumns();
-    const auto storage_id = getStorageID();
-    auto unqualified_column_name = [&](const ASTIdentifier & identifier) -> String
-    {
-        const auto & name_parts = identifier.name_parts;
-        size_t qualifier_size = 0;
-        if (name_parts.size() > 2 && name_parts[0] == storage_id.database_name && name_parts[1] == storage_id.table_name)
-            qualifier_size = 2;
-        else if (name_parts.size() > 1 && name_parts[0] == storage_id.table_name)
-            qualifier_size = 1;
-
-        String result;
-        for (size_t i = qualifier_size; i < name_parts.size(); ++i)
-        {
-            if (i > qualifier_size)
-                result += ".";
-            result += name_parts[i];
-        }
-        return result;
-    };
-
     std::unordered_set<String> visited_columns;
     /// The parameters of the lambdas enclosing the node being visited. Inside a lambda body such a
     /// name shadows a storage column of the same name, so it must not be followed into that
@@ -10922,17 +10897,33 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             && (identifier->name_parts.empty()
                 || std::ranges::find(deferred_set_lambda_parameters, identifier->name_parts.front()) == deferred_set_lambda_parameters.end()))
         {
-            /// The name may also address a subcolumn (`column.subcolumn`), so look up every prefix
-            /// that ends at a name boundary: an accidental match only costs a pruning opportunity.
-            const auto name = unqualified_column_name(*identifier);
-            for (size_t end = name.find('.'); ; end = name.find('.', end + 1))
+            /// The identifier is the raw text of the predicate, not resolved yet, so the column can be
+            /// spelled qualified (`table.column`, `database.table.column`) or addressed through a
+            /// subcolumn (`column.subcolumn`), while `ColumnsDescription` is keyed by the bare storage
+            /// name. A leading part matching the table name is not necessarily a qualifier either: the
+            /// analyzer resolves `t.hit` as the subcolumn `hit` of a column named `t` before trying a
+            /// table qualifier. So look up every contiguous range of the name parts: an accidental
+            /// match with an unrelated column only costs a pruning opportunity.
+            const auto & name_parts = identifier->name_parts;
+            for (size_t begin = 0; begin < name_parts.size(); ++begin)
             {
-                const auto column_name = name.substr(0, end);
-                if (const auto column_default = columns_description.getDefault(column_name);
-                    column_default && column_default->expression
-                    && (column_default->kind == ColumnDefaultKind::Alias || column_default->kind == ColumnDefaultKind::Ephemeral)
-                    && visited_columns.emplace(column_name).second)
+                String column_name;
+                for (size_t end = begin; end < name_parts.size(); ++end)
                 {
+                    if (end > begin)
+                        column_name += ".";
+                    column_name += name_parts[end];
+
+                    if (!visited_columns.emplace(column_name).second)
+                        continue;
+
+                    const auto column_default = columns_description.getDefault(column_name);
+                    if (!column_default || !column_default->expression)
+                        continue;
+
+                    if (column_default->kind != ColumnDefaultKind::Alias && column_default->kind != ColumnDefaultKind::Ephemeral)
+                        continue;
+
                     /// The column definition is a separate expression: the lambdas of the predicate
                     /// do not bind any names in it.
                     std::vector<String> enclosing_lambda_parameters;
@@ -10942,9 +10933,6 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                     if (definition_contains_deferred_set)
                         return true;
                 }
-
-                if (end == String::npos)
-                    break;
             }
         }
 

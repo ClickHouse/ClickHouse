@@ -30,6 +30,7 @@ SET mutations_sync = 0;
 DROP TABLE IF EXISTS t_prune_in_table_keys;
 DROP TABLE IF EXISTS t_prune_in_table;
 DROP TABLE IF EXISTS t_prune_in_table_alias;
+DROP TABLE IF EXISTS t_prune_in_table_sub;
 CREATE TABLE t_prune_in_table_keys (p UInt8) ENGINE = MergeTree ORDER BY p;
 CREATE TABLE t_prune_in_table (p UInt8, x UInt64)
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_in_table', 'r1')
@@ -95,6 +96,30 @@ SYSTEM SYNC REPLICA t_prune_in_table_alias PULL;
 SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_prune_in_table_alias' ORDER BY mutation_id;
 
+-- A leading name part that matches the table name is not necessarily a table qualifier: the analyzer
+-- resolves `t_prune_in_table_sub.is_hit` as the subcolumn `is_hit` of the column named after the table.
+CREATE TABLE t_prune_in_table_sub
+(
+    p UInt8,
+    x UInt64,
+    t_prune_in_table_sub Tuple(is_hit UInt8) ALIAS tuple(p IN t_prune_in_table_keys)
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_prune_in_table_sub', 'r1')
+PARTITION BY p ORDER BY x;
+
+INSERT INTO t_prune_in_table_sub VALUES (1, 1), (2, 2);
+
+SYSTEM STOP REPLICATION QUEUES t_prune_in_table_sub;
+
+-- Not pruned: the subcolumn of the `ALIAS` column hides a deferred set.
+ALTER TABLE t_prune_in_table_sub DELETE WHERE t_prune_in_table_sub.is_hit;
+
+SYSTEM SYNC REPLICA t_prune_in_table_sub PULL;
+
+SELECT mutation_id, `block_numbers.partition_id` FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_prune_in_table_sub' ORDER BY mutation_id;
+
+DROP TABLE t_prune_in_table_sub;
 DROP TABLE t_prune_in_table_alias;
 DROP TABLE t_prune_in_table;
 DROP TABLE t_prune_in_table_keys;
