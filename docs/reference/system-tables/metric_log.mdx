@@ -513,6 +513,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_MarkCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedMarks` ([UInt64](/reference/data-types/int-uint)) — Number of marks evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of mark files evicted from the mark cache.
+- `ProfileEvent_ColumnsCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was found in the columns cache.
+- `ProfileEvent_ColumnsCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was not found in the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedEntries` ([UInt64](/reference/data-types/int-uint)) — Number of entries evicted from the columns cache.
 - `ProfileEvent_LoadedPrimaryIndexFiles` ([UInt64](/reference/data-types/int-uint)) — Number of primary index files loaded.
 - `ProfileEvent_LoadedPrimaryIndexRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.
 - `ProfileEvent_LoadedPrimaryIndexBytes` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.
@@ -2065,6 +2069,9 @@ It is safe to truncate or drop this table at any time.
 - `CurrentMetric_PageCacheCells` ([Int64](/reference/data-types/int-uint)) — Total number of entries in the userspace page cache
 - `CurrentMetric_UncompressedCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided
 - `CurrentMetric_UncompressedCacheCells` ([Int64](/reference/data-types/int-uint)) — Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided
+- `CurrentMetric_ColumnsCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of columns cache in bytes. The columns cache stores deserialized columns from MergeTree tables to avoid repeated decompression and deserialization.
+- `CurrentMetric_ColumnsCacheEntries` ([Int64](/reference/data-types/int-uint)) — Total number of entries in the columns cache.
+- `CurrentMetric_ColumnsCacheSizeLimit` ([Int64](/reference/data-types/int-uint)) — The size limit of the columns cache in bytes currently in effect. It is lowered below the configured `columns_cache_size` while the rest of the server is short of memory, and raised back towards it once that usage subsides, see `columns_cache_free_memory_ratio`.
 - `CurrentMetric_IndexMarkCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of mark cache for secondary indices in bytes
 - `CurrentMetric_IndexMarkCacheFiles` ([Int64](/reference/data-types/int-uint)) — Total number of mark files cached in the mark cache for secondary indices
 - `CurrentMetric_IndexUncompressedCacheBytes` ([Int64](/reference/data-types/int-uint)) — Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided

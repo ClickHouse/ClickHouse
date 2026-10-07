@@ -272,6 +272,7 @@ static struct InitFiu
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(pulling_async_pipeline_executor_delay_first_pull) \
     REGULAR(slowdown_skip_index_read_result_build) \
+    REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     PAUSEABLE_ONCE(iceberg_writes_pause_before_commit) \
     REGULAR(iceberg_slow_manifest_read) \

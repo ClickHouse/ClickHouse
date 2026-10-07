@@ -309,10 +309,7 @@ void BlockNestedLoopJoinStep::describeActions(FormatSettings & settings) const
         /// pretty-name map; render the sub-DAG the way an `Expression` step's outputs are rendered.
         PrettySetNameMap subquery_set_names;
         settings.out << QueryPlanFormat::formatNodePretty(
-            predicate.actions->getActionsDAG().getOutputs().front(),
-            settings.pretty_names,
-            settings.runtime_filter_names,
-            subquery_set_names);
+            predicate.actions->getActionsDAG().getOutputs().front(), settings, subquery_set_names);
     }
     else
     {

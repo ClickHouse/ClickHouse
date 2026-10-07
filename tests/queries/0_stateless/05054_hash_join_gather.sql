@@ -95,7 +95,7 @@ INSERT INTO dg_build SELECT
 FROM numbers(2000);
 
 -- 1000 probe rows against 2000 unique build keys usually keeps the estimated fanout below the row
--- store's `min_rows_ratio_for_hash_join_row_store` of 5, but that estimate is not a guarantee, so
+-- store's `min_rows_ratio_for_hash_join_row_store` of 3, but that estimate is not a guarantee, so
 -- `c_fs40` is what holds these columns on the columnar emit path.
 CREATE TABLE dg_probe (k UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dg_probe SELECT number * 2 FROM numbers(1000);

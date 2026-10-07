@@ -519,6 +519,10 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_MarkCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedMarks` ([UInt64](/reference/data-types/int-uint)) — Number of marks evicted from the mark cache.
 - `ProfileEvent_MarkCacheEvictedFiles` ([UInt64](/reference/data-types/int-uint)) — Number of mark files evicted from the mark cache.
+- `ProfileEvent_ColumnsCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was found in the columns cache.
+- `ProfileEvent_ColumnsCacheMisses` ([UInt64](/reference/data-types/int-uint)) — Number of times a deserialized column was not found in the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedBytes` ([UInt64](/reference/data-types/int-uint)) — Number of bytes evicted from the columns cache.
+- `ProfileEvent_ColumnsCacheEvictedEntries` ([UInt64](/reference/data-types/int-uint)) — Number of entries evicted from the columns cache.
 - `ProfileEvent_LoadedPrimaryIndexFiles` ([UInt64](/reference/data-types/int-uint)) — Number of primary index files loaded.
 - `ProfileEvent_LoadedPrimaryIndexRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.
 - `ProfileEvent_LoadedPrimaryIndexBytes` ([UInt64](/reference/data-types/int-uint)) — Number of rows of primary key loaded.

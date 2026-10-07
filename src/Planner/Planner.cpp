@@ -825,15 +825,6 @@ void applyTopKPushdownToPartialAggregation(
     if (settings[Setting::make_distributed_plan])
         return;
 
-    /// With `serialize_query_plan` the follower executes the initiator's
-    /// serialized sub-plan instead of planning the query text, and
-    /// `AggregatingStep::serialize` deliberately does not carry `top_k` (the
-    /// plan-serialization protocol has no version negotiation, so appending
-    /// fields would break older followers).  Annotating the step here would
-    /// only mislead: EXPLAIN would show a Top-K the followers never run.
-    if (settings[Setting::serialize_query_plan])
-        return;
-
     /// Pruning undercounts `rows_before_limit_at_least` in exact mode.
     if (settings[Setting::exact_rows_before_limit])
         return;
@@ -943,10 +934,6 @@ void applyTopKPushdownToPartialAggregation(
 bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit)
 {
     if (!settings[Setting::enable_group_by_top_k_optimization])
-        return false;
-
-    /// The heap is not applied to a serialized plan; see `applyTopKPushdownToPartialAggregation`.
-    if (settings[Setting::serialize_query_plan])
         return false;
 
     /// A user-set `max_rows_to_group_by` (already known to be looser than the cutoff here) makes
