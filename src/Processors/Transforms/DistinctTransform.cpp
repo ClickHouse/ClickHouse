@@ -77,6 +77,30 @@ Chunk DistinctTransform::flushPendingChunks()
     return Squashing::squashWithoutChunkInfo(std::move(chunks));
 }
 
+void DistinctTransform::transform(Chunk & input_chunk, Chunk & output_chunk)
+{
+    /// A `ChunkInfo` can carry metadata for the consumer (e.g. the watermarks of a streaming read, also in
+    /// rowless marker chunks), which squashing would lose. Such a chunk is not coalesced: the held back rows
+    /// are emitted first (keeping the input for the next call), then the chunk is processed on its own.
+    if (coalesce_rows && !input_chunk.getChunkInfos().empty())
+    {
+        if (!pending_chunks.empty())
+        {
+            output_chunk = flushPendingChunks();
+            forward_input_after_flush = true;
+            return;
+        }
+
+        forward_input_after_flush = false;
+        deduplicate(input_chunk);
+        output_chunk.swap(input_chunk);
+        return;
+    }
+
+    transform(input_chunk);
+    output_chunk.swap(input_chunk);
+}
+
 void DistinctTransform::transform(Chunk & chunk)
 {
     if (!coalesce_rows)

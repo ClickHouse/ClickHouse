@@ -67,7 +67,7 @@ public:
     /// scheduling in the consumer. This is worst for a parallel final `DISTINCT`, which scatters every
     /// chunk across all partitions and merges the many resulting pieces into the query output. The bound
     /// in input rows keeps the delay finite on an unbounded input that adds no new keys, so a downstream
-    /// limit can still stop the query.
+    /// limit can still stop the query. Chunks with a `ChunkInfo` are not coalesced, see `transform`.
     DistinctTransform(
         SharedHeader header_,
         const SizeLimits & set_size_limits_,
@@ -84,7 +84,9 @@ public:
     Status prepare() override;
 
 protected:
+    void transform(Chunk & input_chunk, Chunk & output_chunk) override;
     void transform(Chunk & chunk) override;
+    bool needInputData() const override { return !forward_input_after_flush; }
 
 private:
     void deduplicate(Chunk & chunk);
@@ -108,6 +110,8 @@ private:
     Chunks pending_chunks;
     UInt64 pending_rows = 0;
     UInt64 pending_input_rows = 0;
+    /// The held back rows were emitted ahead of an input chunk with a `ChunkInfo`, which is processed next.
+    bool forward_input_after_flush = false;
 };
 
 }
