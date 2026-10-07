@@ -15,7 +15,7 @@ from helpers.s3_queue_common import (
 )
 from helpers.test_tools import assert_eq_with_retry
 
-AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
+AVAILABLE_MODES = ["unordered", "ordered"]
 
 
 @pytest.fixture(autouse=True)

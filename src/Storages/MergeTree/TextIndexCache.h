@@ -127,12 +127,13 @@ enum class TextIndexPostingsCacheKind : UInt8
 {
     Roaring = 0,
     Segment = 1,
-    Phrase = 3, /// phrase-search result, a sorted array of doc ids
+    Flat = 2,
+    Phrase = 3, /// phrase-search result, reusing the Flat (sorted doc-id) payload
 };
 
 /// A single cell of TextIndexPostingsCache. It holds one of:
 ///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
-///   - FlatPostingsPtr:       a sorted array of doc ids of a phrase-search result;
+///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (prebuilt or embedded cursor);
 ///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
 /// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
 /// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.

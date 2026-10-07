@@ -423,14 +423,9 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
     {
         SharedLockGuard lock(mutex);
         auto it = iceberg_table_schemas_by_ids.find(schema_id);
-        if (it != iceberg_table_schemas_by_ids.end())
-        {
-            const bool registered_from_manifest = manifest_sourced_schema_ids.contains(schema_id);
-            if (source == SchemaSource::ManifestFile && tolerate_conflicting_manifest_schemas && !registered_from_manifest)
-                return;
-            if (source == SchemaSource::ManifestFile || !registered_from_manifest)
-                registered_schema = it->second;
-        }
+        if (it != iceberg_table_schemas_by_ids.end()
+            && (source == SchemaSource::ManifestFile || !manifest_sourced_schema_ids.contains(schema_id)))
+            registered_schema = it->second;
     }
     if (registered_schema && schemasAreIdentical(*registered_schema, *schema_ptr, type_mapping))
         return;
@@ -487,7 +482,15 @@ void IcebergSchemaProcessor::addIcebergTableSchema(
         else
         {
             if (source == SchemaSource::ManifestFile && tolerate_conflicting_manifest_schemas)
+            {
+                LOG_WARNING(
+                    getLogger("IcebergSchemaProcessor"),
+                    "Manifest file header carries schema-id {} which differs from the schema already "
+                    "registered for that id from metadata.json; ignoring the manifest header copy "
+                    "(disable setting `iceberg_tolerate_conflicting_manifest_schemas` to make this an error)",
+                    schema_id);
                 return;
+            }
             /// A schema-id is immutable per the Iceberg spec: re-binding it to different fields is malformed metadata.
             throw Exception(
                 ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
@@ -612,7 +615,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name_arg, 
         {
             return DataTypeFactory::instance().get("Geometry");
         }
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_geo_types_in_iceberg flag");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using geometry/geography types is not allowed without enabled allow_experimental_geo_types_in_iceberg flag");
     }
     if (type_name == f_uuid)
         return std::make_shared<DataTypeUUID>();
@@ -942,13 +945,6 @@ bool IcebergSchemaProcessor::hasClickHouseTableSchemaById(Int32 id) const
     return clickhouse_table_schemas_by_ids.contains(id);
 }
 
-bool IcebergSchemaProcessor::isSchemaRegisteredFromMetadata(Int32 id) const
-{
-    SharedLockGuard lock(mutex);
-
-    return iceberg_table_schemas_by_ids.contains(id) && !manifest_sourced_schema_ids.contains(id);
-}
-
 std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::JSON::Array::Ptr schema)
 {
     std::unordered_map<String, Int64> result;
@@ -989,22 +985,12 @@ std::unordered_set<String> IcebergSchemaProcessor::collectIcebergOptionalPaths(P
     return result;
 }
 
-void IcebergSchemaProcessor::updateLastColumnId(Int32 last_column_id_)
-{
-    Int64 current = last_column_id.load();
-    while (last_column_id_ > current && !last_column_id.compare_exchange_weak(current, last_column_id_))
-        ;
-}
-
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
     if (!schema)
         return nullptr;
-    auto column_mapper = createColumnMapper(schema);
-    if (Int64 known_last_column_id = last_column_id.load(); known_last_column_id >= 0)
-        column_mapper->setLastAssignedFieldId(known_last_column_id);
-    return column_mapper;
+    return createColumnMapper(schema);
 }
 
 ColumnMapperPtr createColumnMapperFromFields(Poco::JSON::Array::Ptr fields)

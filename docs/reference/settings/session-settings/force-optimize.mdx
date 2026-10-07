@@ -18,8 +18,6 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 Enables or disables the obligatory use of [projections](/reference/engines/table-engines/mergetree-family/mergetree#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](/reference/settings/session-settings/optimize-use#optimize_use_projections) setting).
 
-When enabled, a projection that can serve the query is used even if it requires reading more marks than the table itself, and the query fails with the `PROJECTION_NOT_USED` error when no projection can be used.
-
 Possible values:
 
 - 0 — Projection optimization is not obligatory.

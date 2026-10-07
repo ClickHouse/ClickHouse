@@ -45,8 +45,7 @@ BlockIO InterpreterRenameQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
-    if (!skip_access_check)
-        getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
+    getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
     String current_database = getContext()->getCurrentDatabase();
 

@@ -1,5 +1,4 @@
 #include <Databases/DataLake/ICatalog.h>
-#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
@@ -51,7 +50,7 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
     return parseStorageTypeFromString(location.substr(0, pos));
 }
 
-std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type)
+StorageType parseStorageTypeFromString(const std::string & type)
 {
     auto capitalize_first_letter = [] (const std::string & s)
     {
@@ -81,18 +80,13 @@ std::optional<StorageType> tryParseStorageTypeFromString(const std::string & typ
     else if (storage_type_str == "abfss") /// Azure Blob File System Secure
         storage_type_str = "Azure";
 
-    return magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
-}
-
-StorageType parseStorageTypeFromString(const std::string & type)
-{
-    auto storage_type = tryParseStorageTypeFromString(type);
+    auto storage_type = magic_enum::enum_cast<StorageType>(capitalize_first_letter(storage_type_str));
 
     if (!storage_type)
     {
         throw DB::Exception(
             DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Unsupported storage type: {}", type);
+            "Unsupported storage type: {}", storage_type_str);
     }
 
     return *storage_type;
@@ -350,24 +344,6 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
-}
-
-std::string_view ICatalog::getTableEngineName(const TableMetadata & table_metadata) const
-{
-    if (!table_metadata.isDefaultReadableTable())
-        return FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
-
-    switch (getTableFormat(table_metadata))
-    {
-        case DataLakeTableFormat::UNKNOWN:
-            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Table is readable, but its catalog reports no data lake format");
-        case DataLakeTableFormat::DELTA:
-            return "DeltaLake";
-        case DataLakeTableFormat::ICEBERG:
-            return "Iceberg";
-        case DataLakeTableFormat::PAIMON:
-            return "Paimon";
-    }
 }
 
 CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
