@@ -1,9 +1,8 @@
 <test>
     <!--
-        arrayReverse falls back to a generic per-element insertFrom loop for element types that
-        executeNumber/executeString do not cover (Int128/256, Tuple, nested Array).
-        That loop used to reserve the row count rather than the nested element count, so an
-        array of several elements paid repeated capacity growth.
+        arrayReverse uses a generic per-element insertFrom loop for element types without a
+        specialized path, such as Tuple and nested Array. The substitutions also benchmark the
+        Decimal and wide integer numeric paths.
     -->
     <settings>
         <max_threads>1</max_threads>
@@ -15,6 +14,9 @@
             <values>
                 <value>Decimal64(3)</value>
                 <value>Int128</value>
+                <value>UInt128</value>
+                <value>Int256</value>
+                <value>UInt256</value>
                 <value>Decimal256(3)</value>
             </values>
         </substitution>

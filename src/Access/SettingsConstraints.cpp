@@ -397,7 +397,7 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
 }
 
-void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const
 {
     /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
     /// check also deliberately permits a reset that does not change the value.
@@ -411,6 +411,11 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
         if (settingIsBuiltin(name))
         {
             check(current_settings, SettingChange{name, settingDefaultValue(name)}, source);
+            /// A `Settings` setting can land on a value `compatibility` gives it instead, and a later change of
+            /// `compatibility` moves it back to the declared default, so both values have to be allowed.
+            /// `Settings` also owns some `merge_tree_`-prefixed names, so the prefix does not identify the class.
+            if (Settings::hasBuiltin(name))
+                check(current_settings, SettingChange{name, after_reset.get(name)}, source);
             continue;
         }
 
