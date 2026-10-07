@@ -1950,7 +1950,8 @@ static bool castTypeMayDropFixedStringPadding(const DataTypePtr & from_type, con
 /// to the types it actually stores. A constant column must be built with `createConstantColumn` for that.
 static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr)
 {
-    auto from = removeLowCardinalityAndNullable(from_type);
+    /// `Variant` and `Dynamic` cannot be inside `Nullable` or `LowCardinality`, so `from_column` is their own column.
+    auto from = from_type;
     if (from_column && isDynamic(from))
     {
         const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*from_column);
