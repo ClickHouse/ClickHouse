@@ -1686,7 +1686,11 @@ StorageFileSource::StorageFileSource(
     {
         auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
         query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
-            storage->getStorageID().uuid, storage->format_name, storage->compression_method, metadata_snapshot->getColumns());
+                        storage->getStorageID().uuid,
+            storage->format_name,
+            storage->compression_method,
+            metadata_snapshot->getColumns(),
+            format_filter_info->column_mapper.get());
     }
 
     if (!storage->use_table_fd)

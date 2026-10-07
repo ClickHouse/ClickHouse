@@ -360,7 +360,11 @@ StorageObjectStorageSource::StorageObjectStorageSource(
 {
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
-            storage_id.uuid, configuration->format, configuration->compression_method, storage_snapshot->metadata->getColumns());
+            storage_id.uuid,
+            configuration->format,
+            configuration->compression_method,
+            storage_snapshot->metadata->getColumns(),
+            format_filter_info->column_mapper.get());
 }
 
 StorageObjectStorageSource::~StorageObjectStorageSource()

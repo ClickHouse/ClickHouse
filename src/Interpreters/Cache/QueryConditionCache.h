@@ -11,6 +11,7 @@ namespace DB
 
 struct Settings;
 class ColumnsDescription;
+class ColumnMapper;
 
 /// Settings that change how a function inside a condition evaluates without leaving any trace in the
 /// condition's `ActionsDAG` (the `formatDateTime`/`parseDateTime` family, `locate`, `least`/`greatest` and a few more
@@ -110,9 +111,16 @@ public:
     /// The `part_name` identifies only the bytes of the file, not how they are read: the same file can be
     /// read through another format, compression or structure (e.g. a column missing in the file with
     /// another default), and a verdict of one such reader is wrong for another. A table fixes all of them,
-    /// so a table without a UUID gets an id derived from them instead.
+    /// so a table without a UUID gets an id derived from them instead. A data lake also maps its columns to
+    /// the fields of a file by field ids (`column_mapper`, may be null), and the same file and columns can
+    /// map to different fields (e.g. a column dropped and added again under the same name, read at two
+    /// snapshots), so the mapping is part of the id too.
     static UUID getTableIdForFileEntries(
-        const UUID & table_uuid, std::string_view format, std::string_view compression_method, const ColumnsDescription & columns);
+        const UUID & table_uuid,
+        std::string_view format,
+        std::string_view compression_method,
+        const ColumnsDescription & columns,
+        const ColumnMapper * column_mapper);
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
