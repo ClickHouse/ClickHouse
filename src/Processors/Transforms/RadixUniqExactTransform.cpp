@@ -47,31 +47,34 @@ ALWAYS_INLINE inline UInt64 partitionHash(UInt32 x)
     return intHash64(x);
 }
 
-/// The 128-bit keys are uniformly distributed (see `mixKey`), so their low half is used as the hash.
+/// The 128-bit keys are uniformly distributed (see `mixKey`), so their low half is used as the hash, and the high half
+/// is used for the slot.
 ALWAYS_INLINE inline UInt64 partitionHash(UInt128 x)
 {
     return static_cast<UInt64>(x);
 }
 
-/// The slot of a key in a set is selected by a different hash:
+/// The slot of a key in a set is selected by the top bits of a different hash:
 /// - The keys of a partition share the top bits of `partitionHash`, so a hash that is independent of it is needed to
 ///   spread them over the whole set.
 /// - It is computed for every insertion into a set (the local set, the deduplication of the buffered keys, the build
-///   of a partition), so it must be as cheap as possible. CRC32 is a single instruction, and the set uses only its low
-///   bits, which are mixed well enough for that, as in the ordinary `uniqExact`.
+///   of a partition), so it must be as cheap as possible. It is Fibonacci hashing (Knuth, TAOCP vol. 3, 6.4): the
+///   multiplication by 2^64 divided by the golden ratio, a single instruction. Its top bits depend on all the bits of
+///   the key, and it spreads a range of consecutive keys over the set almost without collisions, whatever the size
+///   of the set.
 ALWAYS_INLINE inline UInt64 slotHash(UInt64 x)
 {
-    return intHashCRC32(x);
+    return x * 0x9E3779B97F4A7C15ULL;
 }
 
 ALWAYS_INLINE inline UInt64 slotHash(UInt32 x)
 {
-    return intHashCRC32(x);
+    return slotHash(UInt64{x});
 }
 
 ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
 {
-    return static_cast<UInt64>(x);
+    return static_cast<UInt64>(x >> 64);
 }
 
 /// A bijection that makes the 128-bit values that are not hashes (`UUID`, `UInt128`, `Int128`) uniformly distributed,
@@ -98,6 +101,7 @@ public:
         cells.resize(capacity);
         memset(cells.data(), 0, capacity * sizeof(Key));
         mask = capacity - 1;
+        shift = 64 - std::countr_zero(capacity);
         count = 0;
         has_zero = false;
     }
@@ -112,7 +116,7 @@ public:
             return inserted;
         }
 
-        size_t place = slotHash(key) & mask;
+        size_t place = slotHash(key) >> shift;
         while (true)
         {
             Key & cell = cells[place];
@@ -128,7 +132,7 @@ public:
         }
     }
 
-    ALWAYS_INLINE void prefetch(Key key) const { __builtin_prefetch(&cells[slotHash(key) & mask]); }
+    ALWAYS_INLINE void prefetch(Key key) const { __builtin_prefetch(&cells[slotHash(key) >> shift]); }
 
     size_t size() const { return count + has_zero; }
     size_t capacity() const { return mask + 1; }
@@ -147,6 +151,7 @@ public:
 private:
     PODArray<Key> cells;
     size_t mask = 0;
+    size_t shift = 64;
     size_t count = 0;
     bool has_zero = false;
 };
