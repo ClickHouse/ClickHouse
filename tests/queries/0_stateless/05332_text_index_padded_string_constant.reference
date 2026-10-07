@@ -22,6 +22,8 @@ text array answer, String constant	1	1
 String column, UTF-8 tail	1	1
 LowCardinality column, UTF-8 tail	1	1
 sparse_grams column, UTF-8 tail	1	1
+String column IN, UTF-8 tail	1	1
+FixedString column IN, UTF-8 tail	1	1
 text ngrams, UTF-8 tail	1	1
 text sparseGrams, UTF-8 tail	1	1
 text splitByNonAlpha, UTF-8 tail	1	1

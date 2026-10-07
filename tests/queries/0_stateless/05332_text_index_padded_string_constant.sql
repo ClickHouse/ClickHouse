@@ -93,6 +93,8 @@ INSERT INTO w_log     SELECT number, if(number = 7, concat('VALUE', unhex('C200'
 SELECT 'String column, UTF-8 tail', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)), (SELECT count() FROM w_str WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8));
 SELECT 'LowCardinality column, UTF-8 tail', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)), (SELECT count() FROM w_lc WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8));
 SELECT 'sparse_grams column, UTF-8 tail', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)), (SELECT count() FROM w_sparse WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8));
+SELECT 'String column IN, UTF-8 tail', (SELECT count() FROM w_log WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))), (SELECT count() FROM w_str WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8)));
+SELECT 'FixedString column IN, UTF-8 tail', (SELECT count() FROM u_log WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))), (SELECT count() FROM u_idx WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8)));
 
 -- The `text` index has the same trimming step behind its own guard, and the same incomplete sequence reaches it.
 DROP TABLE IF EXISTS t_ngrams;
