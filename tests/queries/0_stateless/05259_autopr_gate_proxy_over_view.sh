@@ -4,7 +4,7 @@
 # building the candidate plan it would cost them, and answers from the storage the catalog holds for
 # each table. `CREATE TABLE ... AS view(...)` is attached as a `StorageTableFunctionProxy`, which
 # answers `isView() == false` although reading it plans the view's body - and that body is read with
-# parallel replicas. `AutoParallelReplicasPlanBuildAttempts` counts the candidate plans built, so
+# parallel replicas. `AutomaticParallelReplicasProbePlansBuilt` counts the candidate plans built, so
 # it must be non-zero here.
 #
 # Spelled as a shell test because the view's body is stored as written and resolved later, when the
@@ -43,7 +43,7 @@ SETTINGS enable_analyzer = 1,
 
 ${CLICKHOUSE_CLIENT} --query "
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['AutoParallelReplicasPlanBuildAttempts'] > 0 AS candidate_plan_built
+SELECT ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] > 0 AS candidate_plan_built
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'

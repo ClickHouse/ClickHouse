@@ -1,7 +1,7 @@
 -- Automatic parallel replicas decides whether replicas pay off by building a second, candidate plan
 -- and costing it. For a query parallel replicas cannot read at all, that plan is built only to be
 -- recognized as useless and thrown away, so the eligibility of the query is checked before building
--- it. `AutoParallelReplicasPlanBuildAttempts` counts the candidate plans actually built, so it is
+-- it. `AutomaticParallelReplicasProbePlansBuilt` counts the candidate plans actually built, so it is
 -- non-zero exactly for the queries that reach the check and pass it.
 --
 -- The eligible cases are the ones worth pinning. Eligibility depends on settings the query's own
@@ -119,7 +119,7 @@ SET parallel_replicas_for_non_replicated_merge_tree = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT log_comment, ProfileEvents['AutoParallelReplicasPlanBuildAttempts'] > 0 AS candidate_plan_built
+SELECT log_comment, ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] > 0 AS candidate_plan_built
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND type = 'QueryFinish'

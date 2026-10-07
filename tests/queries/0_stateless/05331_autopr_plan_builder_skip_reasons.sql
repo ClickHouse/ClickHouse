@@ -1,6 +1,6 @@
 -- The builder of the plan with parallel replicas checks what it can before building anything. When it
 -- stops there, the query is counted as skipped - by its settings or by its shape - not as a plan that
--- was built (`AutoParallelReplicasPlanBuildAttempts`) and turned out unsuitable
+-- was built (`AutomaticParallelReplicasProbePlansBuilt`) and turned out unsuitable
 -- (`AutoParallelReplicasPlanNotSuitable`), and its time is not charged as building one
 -- (`AutoParallelReplicasPlanBuildMicroseconds`).
 
@@ -36,7 +36,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT log_comment,
        ProfileEvents['AutoParallelReplicasSkippedDueToSettings'] AS skipped_due_to_settings,
        ProfileEvents['AutoParallelReplicasPlanShapeNotSupported'] AS shape_not_supported,
-       ProfileEvents['AutoParallelReplicasPlanBuildAttempts'] AS built,
+       ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] AS built,
        ProfileEvents['AutoParallelReplicasPlanNotSuitable'] AS not_suitable,
        ProfileEvents['AutoParallelReplicasPlanBuildMicroseconds'] > 0 AS build_timed
 FROM system.query_log

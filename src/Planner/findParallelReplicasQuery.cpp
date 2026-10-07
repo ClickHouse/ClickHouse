@@ -322,9 +322,6 @@ bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_nod
     if (walkCannotAnswerFor(query_tree_node.get()))
         return true;
 
-    if (!context->canUseParallelReplicasOnInitiator())
-        return false;
-
     /// The walk returns an empty stack when nothing in the join tree can be read with replicas: a
     /// non-MergeTree storage, a table function, a `FINAL` modifier, a view that does not resolve to a
     /// MergeTree table, a refreshable materialized view, a non-replicated MergeTree without

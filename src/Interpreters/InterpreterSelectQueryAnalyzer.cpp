@@ -229,6 +229,12 @@ PlanWithParallelReplicas buildQueryPlanForAutomaticParallelReplicas(
         eligibility_context->setSetting("automatic_parallel_replicas_mode", Field{0});
         eligibility_context->setSetting("enable_parallel_replicas", Field{1});
 
+        if (!eligibility_context->canUseParallelReplicasOnInitiator())
+        {
+            LOG_TRACE(logger, "Parallel replicas cannot be used for this query. Skipping building query plan with parallel replicas.");
+            return PlanWithParallelReplicas{.plan = nullptr, .skip_reason = PlanWithParallelReplicas::SkipReason::Settings};
+        }
+
         if (!canQueryPossiblyUseParallelReplicas(single_node_query_tree, eligibility_context))
         {
             LOG_TRACE(logger, "Parallel replicas cannot read anything for this query. Skipping building query plan with parallel replicas.");

@@ -1700,7 +1700,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AutoParallelReplicasSkippedDueToSettings, "Number of times automatic parallel replicas skipped a query without building a plan with parallel replicas, because of the settings it was given. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \
     M(AutoParallelReplicasPlanShapeNotSupported, "Number of times automatic parallel replicas skipped a query without building a plan with parallel replicas, because of certain query features. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \
-    M(AutoParallelReplicasPlanBuildAttempts, "Number of times automatic parallel replicas built a plan with parallel replicas in order to decide whether it pays off", ValueType::Number) \
+    M(AutomaticParallelReplicasProbePlansBuilt, "Number of times automatic parallel replicas built a plan with parallel replicas in order to decide whether it pays off", ValueType::Number) \
     M(AutoParallelReplicasOptimizationMicroseconds, "Time spent in the automatic parallel replicas optimization other than building the plan with parallel replicas", ValueType::Microseconds) \
     M(AutoParallelReplicasPlanBuildMicroseconds, "Time spent building the plan with parallel replicas that automatic parallel replicas compares against the local plan", ValueType::Microseconds) \
     M(AutoParallelReplicasPlanNotSuitable, "Number of times automatic parallel replicas built a plan with parallel replicas but could not reach a decision from it. The `AutoParallelReplicas` logger says which case it was", ValueType::Number) \

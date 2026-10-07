@@ -49,7 +49,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment,
        ProfileEvents['AutoParallelReplicasSkippedEarly'] AS skipped_early,
-       ProfileEvents['AutoParallelReplicasPlanBuildAttempts'] AS built,
+       ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] AS built,
        ProfileEvents['AutoParallelReplicasNoStatistics'] AS collected,
        ProfileEvents['AutoParallelReplicasCostModelEvaluated'] AS evaluated,
        ProfileEvents['AutoParallelReplicasRejectedByThreshold'] AS rejected_by_threshold,

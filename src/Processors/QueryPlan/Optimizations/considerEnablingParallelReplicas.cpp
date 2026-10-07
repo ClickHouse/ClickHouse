@@ -39,7 +39,7 @@ using namespace DB::QueryPlanOptimizations;
 
 namespace ProfileEvents
 {
-extern const Event AutoParallelReplicasPlanBuildAttempts;
+extern const Event AutomaticParallelReplicasProbePlansBuilt;
 extern const Event AutoParallelReplicasOptimizationMicroseconds;
 extern const Event AutoParallelReplicasPlanBuildMicroseconds;
 extern const Event AutoParallelReplicasSkippedDueToSettings;
@@ -935,7 +935,7 @@ void considerEnablingParallelReplicas(
             break;
     }
     chassert(build_result.plan);
-    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanBuildAttempts);
+    ProfileEvents::increment(ProfileEvents::AutomaticParallelReplicasProbePlansBuilt);
     /// Only a plan that was built is charged as building one; a skip stays in the rest of the optimization.
     plan_build_microseconds = plan_build_watch.elapsedMicroseconds();
     ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanBuildMicroseconds, plan_build_microseconds);
