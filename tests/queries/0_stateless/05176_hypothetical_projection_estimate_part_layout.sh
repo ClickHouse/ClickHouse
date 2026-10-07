@@ -150,6 +150,25 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE b < 30 SETTINGS ${PIN};
 " | grep -E '^\s+(empirical_status|empirical_reason):' | awk '{$1=$1; print}'
 
+# next to a live part, the read takes the parent's ranges of the part with every row deleted
+echo "--- a part with every row deleted next to a live part ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_m; DROP TABLE IF EXISTS t_real_m;
+    CREATE TABLE t_est_m (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree PARTITION BY a < 1000 ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+                 lightweight_mutation_projection_mode = 'rebuild';
+    CREATE TABLE t_real_m AS t_est_m;
+    ALTER TABLE t_real_m ADD PROJECTION p_m (SELECT a, b, v ORDER BY b);
+    INSERT INTO t_est_m SELECT number, number % 100, number FROM numbers(2000);
+    INSERT INTO t_real_m SELECT number, number % 100, number FROM numbers(2000);
+    DELETE FROM t_est_m WHERE a < 1000 SETTINGS lightweight_deletes_sync = 2;
+    DELETE FROM t_real_m WHERE a < 1000 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_m ON t_est_m (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, v FROM t_est_m WHERE b < 30 SETTINGS ${PIN};
+    -- the EXPLAIN header of the parent read counts both parts, so take what the read selects
+    SELECT 'real marks:', marks FROM (EXPLAIN ESTIMATE SELECT a, v FROM t_real_m WHERE b < 30 SETTINGS ${PIN}, force_optimize_projection = 1);
+" | grep -E '^\s+(marks|rows|verdict):|^real marks:' | awk '{$1=$1; print}'
+
 # a projection that stores less per row gets bigger granules, so a full scan of it beats the base read
 
 # even when the predicate cannot prune its key and there is no ORDER BY to help
