@@ -94,7 +94,8 @@ void collectAndValidateNestedFields(const Poco::Dynamic::Var & type, std::set<In
 }
 
 /// Validates the schema of a new table and marks it as schema 0.
-void prepareInitialSchema(Poco::JSON::Object::Ptr schema)
+/// Returns its field ids.
+std::set<Int64> prepareInitialSchema(Poco::JSON::Object::Ptr schema)
 {
     if (!schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'schema' must be an object");
@@ -104,13 +105,6 @@ void prepareInitialSchema(Poco::JSON::Object::Ptr schema)
     collectAndValidateNestedFields(Poco::Dynamic::Var(schema), ids);
     schema->set(f_type, f_struct);
     schema->set(f_schema_id, 0);
-}
-
-/// Returns all field ids of a schema checked by `prepareInitialSchema`, including nested ones.
-std::set<Int64> getFieldIds(const Poco::JSON::Object::Ptr & schema)
-{
-    std::set<Int64> ids;
-    collectAndValidateNestedFields(Poco::Dynamic::Var(schema), ids);
     return ids;
 }
 
@@ -231,8 +225,7 @@ Poco::JSON::Object::Ptr buildInitialTableMetadata(
         properties.erase(it);
     }
 
-    prepareInitialSchema(schema);
-    const auto field_ids = getFieldIds(schema);
+    const auto field_ids = prepareInitialSchema(schema);
     prepareInitialPartitionSpec(partition_spec, field_ids);
     prepareInitialSortOrder(write_order, field_ids);
 
