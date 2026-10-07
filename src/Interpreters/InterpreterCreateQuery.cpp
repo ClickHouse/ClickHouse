@@ -1678,6 +1678,15 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             storage_def = make_intrusive<ASTStorage>();
             storage_def->set(storage_def->engine, as_create.storage->engine->clone());
             create.is_time_series_table = true;
+
+            /// normalizeTimeSeriesDefinition copies the settings and the inner engines of the source,
+            /// and this query inherits each one it does not give itself
+            if (as_create.storage->settings && !(create.storage && create.storage->settings))
+                check_access_to_inherited_definition(*as_create.storage->settings);
+            if (as_create.targets)
+                for (const auto & target : as_create.targets->targets)
+                    if (target.inner_engine && !create.getTargetInnerEngine(target.kind))
+                        check_access_to_inherited_definition(*target.inner_engine);
         }
         else if (as_create.storage)
         {
@@ -1693,9 +1702,25 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// check what the server stores: settings in this query replace the source settings, and
             /// Null can replace an external engine
             auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
-            if (inherited->settings && create.storage && create.storage->settings)
-                for (const auto & change : create.storage->settings->changes)
-                    inherited->settings->changes.removeSetting(change.name);
+            if (create.storage)
+            {
+                /// inheritStorageFromSource keeps the clauses this query gives, so drop them here too
+                if (create.storage->partition_by)
+                    inherited->reset(inherited->partition_by);
+                if (create.storage->primary_key)
+                    inherited->reset(inherited->primary_key);
+                if (create.storage->order_by)
+                    inherited->reset(inherited->order_by);
+                if (create.storage->sample_by)
+                    inherited->reset(inherited->sample_by);
+                if (create.storage->ttl_table)
+                    inherited->reset(inherited->ttl_table);
+                if (create.storage->unique_key)
+                    inherited->reset(inherited->unique_key);
+                if (inherited->settings && create.storage->settings)
+                    for (const auto & change : create.storage->settings->changes)
+                        inherited->settings->changes.removeSetting(change.name);
+            }
             replaceExternalEngineWithNullIfNeeded(
                 *inherited, getContext()->getSettingsRef()[Setting::restore_replace_external_engines_to_null]);
 
