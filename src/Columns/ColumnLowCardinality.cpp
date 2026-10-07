@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 void throwUnexpectedLowCardinalityIndexType(size_t size)
@@ -30,6 +31,9 @@ void throwUnexpectedLowCardinalityIndexType(size_t size)
 
 namespace
 {
+    /// The range path starts to win around 64 rows when there are only a few distinct short keys.
+    constexpr size_t max_rows_to_translate_individually = 64;
+
     void checkColumn(const IColumn & column)
     {
         if (!dynamic_cast<const IColumnUnique *>(&column))
@@ -257,6 +261,22 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     else
     {
         compactIfSharedDictionary();
+
+        if (length <= max_rows_to_translate_individually)
+        {
+            const IColumn & src_indexes = low_cardinality_src->getIndexes();
+            if (start > src_indexes.size() || length > src_indexes.size() - start)
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameters start = {}, length = {} are out of bound in "
+                    "ColumnLowCardinality::insertRangeFrom method (size() = {}).", start, length, src_indexes.size());
+
+            std::array<UInt64, max_rows_to_translate_individually> positions; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first `length` entries are written before read
+            for (size_t i = 0; i < length; ++i)
+                positions[i] = src_indexes.getUInt(start + i);
+            getDictionary().uniqueInsertRowsFrom(*low_cardinality_src->getDictionary().getNestedColumn(), {positions.data(), length});
+            for (size_t i = 0; i < length; ++i)
+                idx.insertIndex(positions[i]);
+            return;
+        }
 
         /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
 

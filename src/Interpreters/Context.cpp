@@ -83,6 +83,7 @@
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
@@ -5864,6 +5865,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear(tag);
+
+    /// The entries of the query result cache on disk live in the filesystem cache selected by setting
+    /// `query_cache_on_disk_cache_name` of this query (or of the user's settings profile).
+    QueryResultCacheOnDisk::clear(getSettingsRef(), tag);
 }
 
 void Context::clearCaches() const
@@ -6495,19 +6500,29 @@ void recordZooKeeperConnectionLoss()
 std::unique_lock<std::timed_mutex> acquireZooKeeperLock(
     const Context & context, std::timed_mutex & mutex, const char * lock_name)
 {
+    const bool has_query_context = context.hasQueryContext();
     auto lock_acquire_timeout = context.getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    if (context.hasQueryContext())
+    if (has_query_context)
         lock_acquire_timeout = context.getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
 
     std::unique_lock lock(mutex, std::defer_lock);
     if (lock_acquire_timeout.totalMilliseconds() == 0)
         lock.lock();
     else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+    {
+        /// Without a query context, report a Keeper error, handled like a lost connection; a query fails fast instead.
+        if (!has_query_context)
+            throw Coordination::Exception(
+                Coordination::Error::ZOPERATIONTIMEOUT,
+                "Timeout exceeded while acquiring {} ({} ms)",
+                lock_name,
+                lock_acquire_timeout.totalMilliseconds());
         throw Exception(
             ErrorCodes::TIMEOUT_EXCEEDED,
             "Timeout exceeded while acquiring {} ({} ms)",
             lock_name,
             lock_acquire_timeout.totalMilliseconds());
+    }
 
     return lock;
 }
