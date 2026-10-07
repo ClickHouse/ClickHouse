@@ -279,6 +279,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
     /// dispatch the question instead of opening the SQL continuation prompt. Decided by the first
     /// line of the input, so that the rest of a pasted question is not taken for SQL.
     bool is_ai_chat = false;
+    first_line_prompt = first_prompt;
 
     while (auto status = readOneLine(need_next_line ? second_prompt : first_prompt))
     {

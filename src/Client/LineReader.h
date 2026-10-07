@@ -123,6 +123,10 @@ protected:
 
     String prev_line;
 
+    /// The prompt of the first line of the input being read by `readLine`: `readOneLine` is also
+    /// called with the continuation prompt, and an implementation can need the normal one.
+    String first_line_prompt;
+
     virtual InputStatus readOneLine(const String & prompt);
     virtual void addToHistory(const String &) {}
 

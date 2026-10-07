@@ -1043,9 +1043,11 @@ LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
 
     /// Remember the SQL prompt so it can be restored when leaving AI-chat mode (the key handler
     /// that leaves the mode has no access to it otherwise). In AI mode the passed SQL prompt is
-    /// replaced by the `:?` prompt.
-    if (!ai_mode)
-        sql_prompt = prompt;
+    /// replaced by the `:?` prompt, which is built from it. It is refreshed in AI mode as well:
+    /// `/dialect` works from the `:?` prompt and changes the SQL prompt. In AI mode the prompt of
+    /// the first line is taken rather than the one passed, because a continuation line of a
+    /// question also gets the `:?` prompt.
+    sql_prompt = ai_mode ? first_line_prompt : prompt;
 
     const char* cinput = rx.input(ai_mode ? aiModePrompt() : prompt);
     if (cinput == nullptr)
