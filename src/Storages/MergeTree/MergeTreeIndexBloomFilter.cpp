@@ -1013,6 +1013,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     if (!isSupportedBloomFilterArrayElementType(array_nested_type) || !bloomFilterHashDomainMatches(type, array_nested_type))
         return false;
 
+    /// A NULL set member does not cast to a non-Nullable indexed element and cannot match a stored value.
+    const auto * nullable_column = typeid_cast<const ColumnNullable *>(column.get());
+    if (nullable_column && !array_nested_type->isNullable()
+        && std::ranges::any_of(nullable_column->getNullMapData(), [](UInt8 is_null) { return is_null != 0; }))
+        return false;
+
     /// Both the generated-default oracle and the NULL-membership oracle require one completed
     /// scalar set. Tuple recursion deliberately passes nullptr, so decline before either oracle.
     if ((array_input.has_empty_array_to_single || is_null_in)

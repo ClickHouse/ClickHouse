@@ -269,6 +269,29 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_aj_numeric WHERE arrayJoin(CA
 SELECT 'tuple generated-default hit declines Bloom pruning', max(explain LIKE '%Name: idx_tags%') = 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_aj_wrappers WHERE tuple(arrayJoin(emptyArrayToSingle(tags)), id) IN (('', toUInt64(0)), ('target', toUInt64(1))) SETTINGS query_plan_lower_array_join_function = 1);
 
+SELECT 'nested tuple NULL member declines Bloom pruning', max(explain LIKE '%Name: idx_tags%') = 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_aj_wrappers WHERE tuple(tuple(CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)')), id) IN (tuple(tuple(CAST(NULL, 'Nullable(String)')), toUInt64(3)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(1)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(2))) SETTINGS transform_null_in = 0, query_plan_lower_array_join_function = 1);
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_tags') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    name_row > 0 AS has_index,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'NULL-free nested Nullable tuple prunes idx_tags', has_index AND selected > 0 AND selected < total
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_aj_wrappers WHERE tuple(tuple(CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)')), id) IN (tuple(tuple(CAST('absent', 'Nullable(String)')), toUInt64(3)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(1)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(2))) SETTINGS transform_null_in = 0, query_plan_lower_array_join_function = 1);
+
+WITH
+    (SELECT arraySort(groupArray(tuple(id, isNull(value), ifNull(value, '')))) FROM (SELECT id, CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)') AS value FROM t_bf_aj_wrappers WHERE tuple(tuple(CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)')), id) IN (tuple(tuple(CAST(NULL, 'Nullable(String)')), toUInt64(3)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(1)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(2)))) SETTINGS use_skip_indexes = 1, transform_null_in = 0, query_plan_lower_array_join_function = 1) AS indexed,
+    (SELECT arraySort(groupArray(tuple(id, isNull(value), ifNull(value, '')))) FROM (SELECT id, CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)') AS value FROM t_bf_aj_wrappers WHERE tuple(tuple(CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)')), id) IN (tuple(tuple(CAST(NULL, 'Nullable(String)')), toUInt64(3)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(1)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(2)))) SETTINGS use_skip_indexes = 0, transform_null_in = 0, query_plan_lower_array_join_function = 1) AS full_scan
+SELECT 'NULL-bearing nested tuple preserves full tuple multiset', indexed = full_scan AND indexed = [(toUInt64(1), toUInt8(0), 'target'), (toUInt64(2), toUInt8(0), 'target'), (toUInt64(2), toUInt8(0), 'target')];
+
+WITH
+    (SELECT arraySort(groupArray(tuple(id, isNull(value), ifNull(value, '')))) FROM (SELECT id, CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)') AS value FROM t_bf_aj_wrappers WHERE tuple(tuple(CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)')), id) IN (tuple(tuple(CAST('absent', 'Nullable(String)')), toUInt64(3)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(1)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(2)))) SETTINGS use_skip_indexes = 1, transform_null_in = 0, query_plan_lower_array_join_function = 1) AS indexed,
+    (SELECT arraySort(groupArray(tuple(id, isNull(value), ifNull(value, '')))) FROM (SELECT id, CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)') AS value FROM t_bf_aj_wrappers WHERE tuple(tuple(CAST(arrayJoin(CAST(tags AS Array(Nullable(String)))), 'Nullable(String)')), id) IN (tuple(tuple(CAST('absent', 'Nullable(String)')), toUInt64(3)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(1)), tuple(tuple(CAST('target', 'Nullable(String)')), toUInt64(2)))) SETTINGS use_skip_indexes = 0, transform_null_in = 0, query_plan_lower_array_join_function = 1) AS full_scan
+SELECT 'NULL-free nested Nullable tuple preserves full tuple multiset', indexed = full_scan AND indexed = [(toUInt64(1), toUInt8(0), 'target'), (toUInt64(2), toUInt8(0), 'target'), (toUInt64(2), toUInt8(0), 'target')];
+
 WITH
     (SELECT arraySort(groupArray(tuple(id, isNull(value), ifNull(value, '')))) FROM (SELECT id, arrayJoin(tags) AS value FROM t_bf_aj_wrappers WHERE value GLOBAL IN (SELECT value FROM t_bf_aj_target)) SETTINGS use_skip_indexes = 1, query_plan_lower_array_join_function = 1) AS indexed,
     (SELECT arraySort(groupArray(tuple(id, isNull(value), ifNull(value, '')))) FROM (SELECT id, arrayJoin(tags) AS value FROM t_bf_aj_wrappers WHERE value GLOBAL IN (SELECT value FROM t_bf_aj_target)) SETTINGS use_skip_indexes = 0, query_plan_lower_array_join_function = 1) AS full_scan

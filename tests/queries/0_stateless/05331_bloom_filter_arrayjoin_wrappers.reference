@@ -27,6 +27,10 @@ plain GLOBAL IN with NULL RHS preserves tuple multiset	1
 plain GLOBAL IN NULL-free RHS preserves tuple multiset	1
 type-changing Dynamic path declines Bloom pruning	1
 tuple generated-default hit declines Bloom pruning	1
+nested tuple NULL member declines Bloom pruning	1
+NULL-free nested Nullable tuple prunes idx_tags	1
+NULL-bearing nested tuple preserves full tuple multiset	1
+NULL-free nested Nullable tuple preserves full tuple multiset	1
 bare GLOBAL IN preserves tuple multiset	1
 typed Dynamic identity preserves tuple multiset	1
 full Dynamic-emptyArrayToSingle-Nullable wrapper preserves tuple multiset	1
