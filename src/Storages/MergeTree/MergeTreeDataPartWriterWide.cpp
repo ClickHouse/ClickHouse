@@ -4,6 +4,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
+#include <DataTypes/TypeTree.h>
 #include <Disks/WriteMode.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
@@ -535,11 +536,8 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
     /// A late key copies both templates as its history prefix, but the value template is written
     /// with the value type's default serialization. A value type that contains LowCardinality has
     /// a shared dictionary the copy would not reproduce, so refuse it (matching the reference).
-    bool value_contains_low_cardinality = per_key->getValueType()->lowCardinality();
-    per_key->getValueType()->forEachChild([&](const IDataType & child)
-    {
-        value_contains_low_cardinality |= child.lowCardinality();
-    });
+    const bool value_contains_low_cardinality
+        = anyInTypeTree(*per_key->getValueType(), [](const IDataType & node) { return node.lowCardinality(); });
     if (has_history && value_contains_low_cardinality)
     {
         throw Exception(
