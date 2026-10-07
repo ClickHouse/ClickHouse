@@ -20,13 +20,15 @@ bool haveSameKeys(const Columns & lhs, size_t lhs_row, const Columns & rhs, size
     return true;
 }
 
-void markKeyChangesInRange(const Columns & columns, const std::vector<size_t> & key_indices, size_t begin, size_t end, std::vector<bool> & changes)
+/// `equal_range_end(row)` is the end of the run of rows with the same key as `row`, bounded by `end`.
+template <typename EqualRangeEnd>
+void markKeyChangesInRange(size_t begin, size_t end, std::vector<bool> & changes, EqualRangeEnd && equal_range_end)
 {
-    size_t next_change = getEqualRangeEndAssumeSorted(columns, key_indices, begin, end, /*nan_direction_hint=*/1);
+    size_t next_change = equal_range_end(begin);
     while (next_change < end)
     {
         changes[next_change] = true;
-        next_change = getEqualRangeEndAssumeSorted(columns, key_indices, next_change, end, /*nan_direction_hint=*/1);
+        next_change = equal_range_end(next_change);
     }
 }
 
@@ -34,7 +36,10 @@ std::vector<bool> markPartitionStarts(const Columns & columns, size_t rows_count
 {
     std::vector<bool> starts(rows_count, false);
     starts[0] = !previous_partition_key || !haveSameKeys(*previous_partition_key, 0, columns, 0, partition_by_indices);
-    markKeyChangesInRange(columns, partition_by_indices, 0, rows_count, starts);
+    markKeyChangesInRange(0, rows_count, starts, [&](size_t row)
+    {
+        return getEqualRangeEndAssumeSorted(columns, partition_by_indices, row, rows_count, /*nan_direction_hint=*/1);
+    });
     return starts;
 }
 
@@ -53,13 +58,13 @@ std::vector<bool> markPeerGroupStarts(
         return partition_starts;
 
     std::vector<bool> starts = partition_starts;
-    starts[0] = starts[0] || !previous_order_key || !haveSameKeys(*previous_order_key, 0, columns, 0, order_by_indices);
+    starts[0] = starts[0] || !previous_order_key || !params.haveEqualOrderByValues(*previous_order_key, 0, columns, 0);
 
     size_t partition_begin = 0;
     while (partition_begin < rows_count)
     {
         const size_t partition_end = std::find(partition_starts.begin() + partition_begin + 1, partition_starts.end(), true) - partition_starts.begin();
-        markKeyChangesInRange(columns, order_by_indices, partition_begin, partition_end, starts);
+        markKeyChangesInRange(partition_begin, partition_end, starts, [&](size_t row) { return params.getOrderByEqualRangeEnd(columns, row, partition_end); });
         partition_begin = partition_end;
     }
 
