@@ -1904,25 +1904,59 @@ static DataTypePtr narrowVariantToOccupiedAlternatives(
 }
 
 /// A cast of a `FixedString` to `String` drops its trailing zero bytes, which changes how it compares. This also
-/// holds for a `FixedString` nested in an `Array`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
-/// `from_column`, if given, narrows a top-level `Variant` or `Dynamic` to the types it actually stores. Pass it only for
-/// the very values the condition compares with, like set elements: a constant rebuilt from a `Field` loses its type.
+/// holds for a `FixedString` nested in an `Array`, a `Map`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
+/// The types are matched the way `CAST` converts them, so a `FixedString` that stays a `FixedString` does not count.
+/// Where the mapping is unknown, any `FixedString` or `Dynamic` in `from` and any `String` in `to` count.
+static bool castTypeMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto from = removeLowCardinalityAndNullable(from_type);
+    const auto to = removeLowCardinalityAndNullable(to_type);
+    if (from->equals(*to) || !anyInTypeTree(*to, [](const IDataType & type) { return isString(type); }))
+        return false;
+
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from.get()))
+        return std::ranges::any_of(
+            from_variant->getVariants(),
+            [&](const DataTypePtr & alternative) { return castTypeMayDropFixedStringPadding(alternative, to); });
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+        return castTypeMayDropFixedStringPadding(from_array->getNestedType(), to_array->getNestedType());
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+        return castTypeMayDropFixedStringPadding(from_map->getKeyType(), to_map->getKeyType())
+            || castTypeMayDropFixedStringPadding(from_map->getValueType(), to_map->getValueType());
+
+    /// `CAST` matches the elements of two named tuples by name, otherwise by position.
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (from_tuple && to_tuple && from_tuple->getElements().size() == to_tuple->getElements().size()
+        && (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames()
+            || from_tuple->getElementNames() == to_tuple->getElementNames()))
+    {
+        for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
+            if (castTypeMayDropFixedStringPadding(from_tuple->getElements()[i], to_tuple->getElements()[i]))
+                return true;
+        return false;
+    }
+
+    return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
+}
+
+/// Same as `castTypeMayDropFixedStringPadding`, but `from_column`, if given, narrows a top-level `Variant` or `Dynamic`
+/// to the types it actually stores. A constant column must be built with `createConstantColumn` for that.
 static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr)
 {
     auto from = removeLowCardinalityAndNullable(from_type);
-    const auto to = removeLowCardinalityAndNullable(to_type);
-    if (from->equals(*to))
-        return false;
-
-    if (!anyInTypeTree(*to, [](const IDataType & type) { return isString(type); }))
-        return false;
-
     if (from_column && isDynamic(from))
     {
         const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*from_column);
         /// The shared variant holds values of any type in serialized form.
         if (!dynamic_column.getSharedVariant().empty())
-            return true;
+            return castTypeMayDropFixedStringPadding(from, to_type);
         from = narrowVariantToOccupiedAlternatives(
             dynamic_column.getVariantColumn(),
             assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants(),
@@ -1933,7 +1967,22 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
         from = narrowVariantToOccupiedAlternatives(assert_cast<const ColumnVariant &>(*from_column), variant_type->getVariants());
     }
 
-    return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
+    return castTypeMayDropFixedStringPadding(from, to_type);
+}
+
+/// Builds the one-row column of a constant. `tryGetConstant` hands out only the nested value of a `Variant`/`Dynamic`
+/// constant, which does not tell its active member type, so such a constant is built from `active_type`: the column
+/// then holds the value in that member, as the original constant did. Returns nullptr when `active_type` is unknown.
+static ColumnPtr createConstantColumn(const DataTypePtr & type, const Field & value, const DataTypePtr & active_type)
+{
+    const auto unwrapped_type = removeLowCardinalityAndNullable(type);
+    if (!isVariant(unwrapped_type) && !isDynamic(unwrapped_type))
+        return type->createColumnConst(1, value);
+
+    if (!active_type)
+        return nullptr;
+
+    return castColumn({active_type->createColumnConst(1, value), active_type, ""}, type);
 }
 
 /// Sequentially applies functions to the column, returns `true`
@@ -1967,7 +2016,7 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
-    if (castMayDropFixedStringPadding(result_type, in_argument_type))
+    if (castMayDropFixedStringPadding(result_type, in_argument_type, result_column.get()))
         return false;
 
     if (canBeSafelyCast(result_type, in_argument_type))
@@ -2210,6 +2259,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
+    const DataTypePtr & const_active_type,
     bool & out_chain_is_positive)
 {
     out_chain_is_positive = true;
@@ -2317,7 +2367,9 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     if (!tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, const_value, const_value_type))
         return false;
 
-    ColumnPtr const_column = const_value_type->createColumnConst(1, const_value);
+    ColumnPtr const_column = createConstantColumn(const_value_type, const_value, const_active_type);
+    if (!const_column)
+        return false;
 
     ColumnPtr transformed_const_column;
     DataTypePtr transformed_const_type;
@@ -2502,11 +2554,9 @@ static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input
 
 
 /// Cast column to target_type and fail if the cast introduces NULLs.
-/// `column_holds_compared_values` is false for a constant rebuilt from a `Field`, see `castMayDropFixedStringPadding`.
-static bool castColumnWithoutNulls(
-    ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type, bool column_holds_compared_values)
+static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
 {
-    if (castMayDropFixedStringPadding(type, target_type, column_holds_compared_values ? column.get() : nullptr))
+    if (castMayDropFixedStringPadding(type, target_type, column.get()))
         return false;
 
     if (canBeSafelyCast(type, target_type))
@@ -2564,8 +2614,7 @@ static bool convertColumnForDeterministicDag(
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
     DataTypePtr & out_type,
-    bool & out_transform_applied,
-    bool column_holds_compared_values)
+    bool & out_transform_applied)
 {
     out_transform_applied = false;
 
@@ -2635,8 +2684,7 @@ static bool convertColumnForDeterministicDag(
             out_column = input_column;
             out_type = input_type;
 
-            if (!input_type->equals(*cast_result_type)
-                && !castColumnWithoutNulls(out_column, out_type, cast_result_type, column_holds_compared_values))
+            if (!input_type->equals(*cast_result_type) && !castColumnWithoutNulls(out_column, out_type, cast_result_type))
                 return false;
 
             return finalizeTransformedColumn(out_column, out_type);
@@ -2647,7 +2695,7 @@ static bool convertColumnForDeterministicDag(
         /// `DateTime64(6)` constant casts to a `String` with six fractional digits, while the key space
         /// of `ORDER BY d::String` over a `DateTime64(3)` column holds three of them, and the range
         /// check then misses the value and prunes the part that holds it.
-        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type, column_holds_compared_values))
+        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
         {
             /// The round trip is not always possible - `String` -> `Dynamic` -> `String` - and the cast
             /// above refuses such a target outright. Apply the `CAST` of the DAG directly then, but only
@@ -2744,8 +2792,7 @@ static bool applyDeterministicDagToColumn(
     bool transform_applied = false;
 
     if (!convertColumnForDeterministicDag(
-            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied,
-            /* column_holds_compared_values = */ true))
+            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied))
         return false;
 
     if (transform_applied)
@@ -2951,6 +2998,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr & out_key_column_type,
     Field & out_value,
     DataTypePtr & out_type,
+    const DataTypePtr & const_active_type,
     bool & out_atom_is_exact)
 {
     out_atom_is_exact = false;
@@ -2991,7 +3039,9 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!tryNormalizeTextConstantForZonelessDateTimeInput(dag.input_type, const_value, const_value_type))
         return false;
 
-    ColumnPtr const_column = const_value_type->createColumnConst(1, const_value);
+    ColumnPtr const_column = createConstantColumn(const_value_type, const_value, const_active_type);
+    if (!const_column)
+        return false;
 
     /// Convert before transforming, so the value the transform consumes is observable here: normalizing
     /// the constant to the type the key expression reads is where a `String` can become a NaN.
@@ -2999,8 +3049,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     DataTypePtr transform_input_type;
     bool transform_applied = false;
     if (!convertColumnForDeterministicDag(
-            const_column, const_value_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied,
-            /* column_holds_compared_values = */ false))
+            const_column, const_value_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
         return false;
 
     /// The direct-CAST fast path converts and transforms in one step, so it produces no intermediate value
@@ -5005,15 +5054,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             bool condition_is_relaxed = false;
             bool constant_chain_is_positive = true;
 
-            /// `tryGetConstant` hands out the nested value of a `Variant`/`Dynamic` constant, and wrapping the
-            /// constant rebuilds it from that value, which cannot tell its active member type from the declared
-            /// wrapper. Wrap it as a value of the active member type then, when that type is known.
-            /// Stays nullptr for a constant of any other type, or when the active member type cannot be determined.
+            /// The active member type of a `Variant`/`Dynamic` constant, see `createConstantColumn`.
             DataTypePtr active_const_type;
             if (const auto unwrapped_const_type = removeLowCardinalityAndNullable(const_type);
                 isVariant(unwrapped_const_type) || isDynamic(unwrapped_const_type))
                 active_const_type = tryGetActiveTypeOfErasedConstant(func.getArgumentAt(const_arg_pos));
-            DataTypePtr wrapped_const_type = active_const_type ? active_const_type : const_type;
 
             /// If the table sorting key is `x` and the query predicate is `f(x) <op> const`, we try to analyze `f`.
             /// If `f` is a monotonic function chain, we store the chain and later, in `checkInRange`, apply it to
@@ -5043,19 +5088,18 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             else if (
                 !no_relaxed_atom_functions.contains(func_name)
                 && canConstantBeWrappedByMonotonicFunctions(
-                    key_arg, info, key_column_num, key_expr_type, const_value, wrapped_const_type, constant_chain_is_positive))
+                    key_arg, info, key_column_num, key_expr_type, const_value, const_type, active_const_type,
+                    constant_chain_is_positive))
             {
-                const_type = wrapped_const_type;
                 condition_is_relaxed = true;
             }
             else if (func_name == "equals" || func_name == "notEquals" || func_name == "isNotDistinctFrom")
             {
                 bool atom_is_exact = false;
                 if (!canConstantBeWrappedByDeterministicFunctions(
-                        key_arg, info, key_column_num, key_expr_type, const_value, wrapped_const_type, atom_is_exact))
+                        key_arg, info, key_column_num, key_expr_type, const_value, const_type, active_const_type, atom_is_exact))
                     return false;
 
-                const_type = wrapped_const_type;
                 condition_is_relaxed = !atom_is_exact;
             }
             else

@@ -580,6 +580,7 @@ private:
         DataTypePtr & out_key_column_type,
         DeterministicKeyTransformDag & out_functions_chain) const;
 
+    /// `const_active_type` is the active member type of a `Variant`/`Dynamic` constant, nullptr for any other one.
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
@@ -587,6 +588,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        const DataTypePtr & const_active_type,
         bool & out_chain_is_positive);
 
     bool canConstantBeWrappedByDeterministicFunctions(
@@ -596,6 +598,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        const DataTypePtr & const_active_type,
         bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
