@@ -62,6 +62,8 @@ struct DataLakeReadEstimate
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
+    /// Part of `rows` removed by the deletes that can be counted from the metadata.
+    UInt64 deleted_rows = 0;
     /// Statistics of the requested columns over the remaining data files, merged as those of MergeTree parts;
     /// nullptr unless `rows` is known and positive.
     ConditionSelectivityEstimatorPtr column_statistics;
