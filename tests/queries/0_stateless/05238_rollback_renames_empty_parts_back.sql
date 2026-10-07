@@ -1,5 +1,6 @@
--- Tags: no-parallel, no-shared-merge-tree, no-replicated-database
+-- Tags: no-parallel, no-fasttest, no-shared-merge-tree, no-replicated-database
 -- no-parallel: enables a global failpoint that the asserted server error depends on.
+-- no-fasttest: tests that arm a failpoint are left to the full stateless jobs.
 -- no-shared-merge-tree: the test is about the empty covering parts that plain `MergeTree` writes.
 -- no-replicated-database: the test relies on the block numbers of a single, freshly created table.
 
