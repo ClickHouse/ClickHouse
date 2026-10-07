@@ -290,6 +290,90 @@ String AIServerFunctionTransport::renderConversation(const ai::Messages & messag
     return out.str();
 }
 
+namespace
+{
+
+/// An assistant message with tool calls rendered into at most `max_bytes`, or an empty string
+/// if not even its structure fits. Cutting the rendered message at a byte position - which is
+/// what is done to the other messages - could leave a `<tool_call>` block without its end, and
+/// the next `Tool result [<id>]` entry would then belong to a call the model cannot read the
+/// name and arguments of. Here the commentary is cut first, then the arguments of the calls, and
+/// every call block stays complete with the name of its tool.
+String renderAssistantMessageWithinBudget(const ai::Message & message, size_t max_bytes)
+{
+    const auto calls = message.get_tool_calls();
+
+    auto render_call = [](const String & tool_name, const ai::JsonValue & arguments)
+    {
+        ai::JsonValue rendered{{"name", tool_name}, {"arguments", arguments}};
+        return "<tool_call>" + rendered.dump() + "</tool_call>\n";
+    };
+
+    String calls_part;
+    for (const auto & call : calls)
+        calls_part += render_call(call.tool_name, call.arguments);
+
+    constexpr std::string_view header = "Assistant:\n";
+    if (header.size() + calls_part.size() + 1 > max_bytes)
+    {
+        /// The arguments do not fit whole: every call gets an equal share of what is left after
+        /// the fixed parts, and its arguments are replaced by the beginning of their JSON in
+        /// a string. Half of the share goes to the text, because escaping it in JSON can make it
+        /// longer; the result is checked below anyway.
+        static constexpr std::string_view arguments_cut = " [the arguments were cut to fit the server-side AI request limit]";
+        size_t fixed = header.size() + 1;
+        for (const auto & call : calls)
+            fixed += render_call(call.tool_name, String(arguments_cut)).size();
+        const size_t share = (max_bytes > fixed && !calls.empty()) ? (max_bytes - fixed) / calls.size() : 0;
+
+        calls_part.clear();
+        for (const auto & call : calls)
+        {
+            String arguments = call.arguments.dump();
+            truncateToUTF8Boundary(arguments, share / 2);
+            arguments += arguments_cut;
+            calls_part += render_call(call.tool_name, arguments);
+        }
+
+        if (header.size() + calls_part.size() + 1 > max_bytes)
+            return {};
+
+        String out(header);
+        out += calls_part;
+        out += '\n';
+        return out;
+    }
+
+    /// The calls fit whole, so only the commentary is cut, to what remains of the budget.
+    String text_part;
+    if (const auto text = message.get_text(); !text.empty())
+    {
+        WriteBufferFromOwnString quoted;
+        writeQuotedPayload(text, quoted);
+        text_part = quoted.str();
+        text_part += '\n';
+        const size_t text_budget = max_bytes - header.size() - calls_part.size() - 1;
+        if (text_part.size() > text_budget)
+        {
+            if (text_budget > CONVERSATION_CUT.size())
+            {
+                truncateToUTF8Boundary(text_part, text_budget - CONVERSATION_CUT.size());
+                text_part += CONVERSATION_CUT;
+            }
+            else
+                text_part.clear();
+        }
+    }
+
+    String out(header);
+    out += text_part;
+    out += calls_part;
+    out += '\n';
+    return out;
+}
+
+}
+
 String AIServerFunctionTransport::renderConversationWithinBudget(const ai::Messages & messages, size_t max_bytes)
 {
     std::vector<String> parts;
@@ -358,7 +442,18 @@ String AIServerFunctionTransport::renderConversationWithinBudget(const ai::Messa
         /// rather than left over, and stop - everything older than it is dropped. When it is the
         /// newest message of all, this is also what leaves the model with the beginning of the
         /// work of this turn instead of nothing of it.
-        if (budget > CONVERSATION_CUT.size())
+        const auto & message = messages[next - 1];
+        if (message.role == ai::kMessageRoleAssistant && message.has_tool_calls())
+        {
+            /// A tool call block must not be cut in the middle: the results after it refer to it.
+            part = renderAssistantMessageWithinBudget(message, budget);
+            if (!part.empty())
+            {
+                kept.push_back(std::move(part));
+                --next;
+            }
+        }
+        else if (budget > CONVERSATION_CUT.size())
         {
             truncateToUTF8Boundary(part, budget - CONVERSATION_CUT.size());
             part += CONVERSATION_CUT;

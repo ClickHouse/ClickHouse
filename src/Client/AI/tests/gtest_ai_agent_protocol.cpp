@@ -407,6 +407,37 @@ TEST(AIAgentProtocol, BudgetKeepsOlderTurnsOutButNotTheCurrentQuestion)
     EXPECT_EQ(rendered.find("Tool result [call_old]"), String::npos);
 }
 
+TEST(AIAgentProtocol, BudgetDoesNotCutAToolCallBlock)
+{
+    /// When only a part of an assistant message with tool calls fits, a byte-level cut could end
+    /// the transcript in the middle of a `<tool_call>` block, and the result that follows would
+    /// belong to a call the model cannot read. The block stays complete with the name of its tool.
+    static constexpr size_t budget = 64 * 1024;
+
+    ai::Messages messages;
+    messages.push_back(ai::Message::user(String(30 * 1024, 'q')));
+    messages.push_back(ai::Message::assistant_with_tools(
+        "Inserting.",
+        {ai::ToolCallContentPart{"call_1", "run_query", ai::JsonValue{{"query", "INSERT INTO t VALUES " + String(32 * 1024, 'v')}}}}));
+    messages.push_back(ai::Message::tool_results({ai::ToolResultContentPart{
+        "call_1", ai::JsonValue{{"success", true}, {"result", String(16 * 1024, 'x')}}, false}}));
+
+    ASSERT_GT(AIServerFunctionTransport::renderConversation(messages).size(), budget);
+
+    const String rendered = AIServerFunctionTransport::renderConversationWithinBudget(messages, budget);
+
+    EXPECT_LE(rendered.size(), budget);
+    EXPECT_NE(rendered.find("Tool result [call_1]"), String::npos);
+    EXPECT_EQ(countLinesStartingWith(rendered, "<tool_call>"), 1u);
+    const size_t block = rendered.find("<tool_call>");
+    ASSERT_NE(block, String::npos);
+    const size_t block_end = rendered.find("</tool_call>\n", block);
+    ASSERT_NE(block_end, String::npos);
+    EXPECT_LT(block_end, rendered.find("Tool result [call_1]"));
+    EXPECT_NE(rendered.find("\"name\":\"run_query\""), String::npos);
+    EXPECT_NE(rendered.find("the arguments were cut"), String::npos);
+}
+
 TEST(AIAgentProtocol, RenderSystemPromptListsTools)
 {
     ai::ToolSet tools;
