@@ -581,6 +581,8 @@ The `bucketed` schema stores all profile events and current metrics in a single 
 </clickhouse>
 ```
 
+Because the per-metric columns of this schema are `ALIAS` columns, it cannot be used together with a configuration that skips alias columns in system log tables (`default_system_log_flush_policy.skip_alias_columns`, or a table engine which does not support them): the server refuses to start instead of creating a table without the `ProfileEvent_*` and `CurrentMetric_*` columns. The engine settings of the bucketed `Map` serialization are part of the default table definition, so they are not applied when the configuration specifies `<engine>` explicitly.
+
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
 **Histograms**
@@ -1803,6 +1805,8 @@ private:
     /// Whether the definition of the union table has to be verified against the expected one.
     /// This is done at the first flush and after each rotation of the log table; on other
     /// flushes the union table is only recreated if it went missing (e.g. dropped by a user).
+    /// Also cleared when the name is occupied by a table that was not created by this feature:
+    /// such a table is left intact until it is dropped or renamed by the user.
     bool union_table_check_pending = true;
     /// Set when the union table cannot be created (e.g. the configured cluster does not exist)
     /// or the database engine does not support it, to avoid retrying the creation and polluting

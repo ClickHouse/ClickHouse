@@ -3,21 +3,30 @@
 #include <Analyzer/TableNode.h>
 
 #include <Common/Exception.h>
+#include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/Settings.h>
+
 #include <Columns/FilterDescription.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Functions/FunctionTopKFilter.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MaterializedCTE.h>
+#include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <IO/Operators.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/NullSource.h>
 
 #include <atomic>
@@ -29,6 +38,13 @@
 namespace DB
 {
 
+namespace Setting
+{
+
+extern const SettingsBool enable_multiple_prewhere_read_steps;
+
+}
+
 namespace ErrorCodes
 {
 
@@ -36,10 +52,13 @@ extern const int LOGICAL_ERROR;
 
 }
 
-/// In-source filtering for the row-level security filter and PREWHERE.
-/// The steps are applied to every stored block before the block's remaining columns are read,
-/// so for a table with `compress = true` a selective condition only decompresses the columns
-/// it uses, and blocks where no row passes are skipped without touching the other columns.
+/// In-source filtering for the TopN threshold, the row-level security filter and PREWHERE.
+/// The steps are applied to every stored block one after another, and each step reads its columns
+/// only for the rows that passed the previous steps. A conjunction in PREWHERE is split into several
+/// steps, like `MergeTreeSelectProcessor` does with `enable_multiple_prewhere_read_steps`, with the
+/// conditions over the cheapest columns first. So for a table with `compress = true` a selective
+/// condition only decompresses the columns it uses, and blocks where no row passes are skipped
+/// without touching the columns of the later steps and the rest of the query.
 struct MemorySourceFilter
 {
     struct Step
@@ -51,14 +70,16 @@ struct MemorySourceFilter
         /// `SourceStepWithFilter::applyPrewhereActions` is: for `PREWHERE k` it is the column `k`
         /// itself, which is not read again.
         bool remove_filter_column = false;
+        /// The requested physical columns that the step's actions take as input.
+        /// Those not produced by the previous steps are read before the step is executed.
+        NamesAndTypesList input_columns;
     };
 
     std::vector<Step> steps;
 
-    /// The requested physical columns, partitioned by whether some step consumes them.
-    /// Both lists preserve the requested order.
-    NamesAndTypesList filter_input_columns;
-    NamesAndTypesList deferred_columns;
+    /// The columns of the output header that are requested physical columns, in header order.
+    /// Those not produced by the steps are read after all steps, only for the passing rows.
+    NamesAndTypesList output_columns;
 };
 
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
@@ -198,13 +219,8 @@ private:
     /// number of rows scanned, the same as what `ReadFromMergeTree` reports for its `PREWHERE`,
     /// so `max_rows_to_read`, read quotas and `SelectedRows` still see the whole scan.
     ///
-    /// The block is assembled with an entry for every requested column, in the requested order,
-    /// because the layout `ExpressionActions::execute` produces (outputs first, then the input
-    /// columns it did not consume, in their block order) depends on which named entries are
-    /// present - and it must reproduce the output header, which was built by running the same
-    /// actions on the full sample block in `SourceStepWithFilter::applyPrewhereActions`.
-    /// Entries for the columns no step consumes are created with a null column and are read
-    /// from the stored block at the end, only when some rows pass and only for those rows.
+    /// The layout of the block after the steps depends on how the steps were split, so the result
+    /// is assembled by name in the order of the output header, as in `MergeTreeSelectProcessor`.
     std::optional<Chunk> generateFiltered(const Block & src)
     {
         const size_t num_src_rows = src.rows();
@@ -213,43 +229,46 @@ private:
         size_t num_read_bytes = 0;
 
         Block block;
-        {
-            Columns filter_columns;
-            filter_columns.reserve(filter->filter_input_columns.size());
-            for (const auto & name_and_type : filter->filter_input_columns)
-                filter_columns.emplace_back(readColumn(src, name_and_type));
-
-            fillMissingColumns(filter_columns, num_src_rows, filter->filter_input_columns, filter->filter_input_columns, {}, nullptr);
-
-            for (const auto & column : filter_columns)
-                num_read_bytes += column->byteSize();
-
-            auto filter_column_it = filter_columns.begin();
-            auto filter_input_it = filter->filter_input_columns.begin();
-            for (const auto & name_and_type : physical_columns)
-            {
-                if (filter_input_it != filter->filter_input_columns.end() && filter_input_it->name == name_and_type.name)
-                {
-                    block.insert({*filter_column_it, name_and_type.type, name_and_type.name});
-                    ++filter_column_it;
-                    ++filter_input_it;
-                }
-                else
-                {
-                    block.insert({nullptr, name_and_type.type, name_and_type.name});
-                }
-            }
-        }
-
         size_t num_rows = num_src_rows;
-        const bool has_deferred_columns = !filter->deferred_columns.empty();
 
-        /// Mask over the stored block's rows combining all steps, for cutting the deferred
-        /// columns at the end. Empty while no step has filtered anything.
+        /// Mask over the stored block's rows combining all steps so far, for cutting the columns
+        /// read after some step has filtered. Empty while no step has filtered anything.
         IColumn::Filter combined_mask;
+
+        /// Reads those of the columns that the block does not have yet, only for the rows that
+        /// passed the steps so far.
+        auto read_missing_columns = [&](const NamesAndTypesList & columns_to_read)
+        {
+            NamesAndTypesList missing;
+            for (const auto & name_and_type : columns_to_read)
+                if (!block.has(name_and_type.name))
+                    missing.push_back(name_and_type);
+
+            if (missing.empty())
+                return;
+
+            Columns columns;
+            columns.reserve(missing.size());
+            for (const auto & name_and_type : missing)
+                columns.emplace_back(readColumn(src, name_and_type));
+
+            fillMissingColumns(columns, num_src_rows, missing, missing, {}, nullptr);
+
+            auto column_it = columns.begin();
+            for (const auto & name_and_type : missing)
+            {
+                ColumnPtr column = std::move(*column_it);
+                ++column_it;
+                num_read_bytes += column->byteSize();
+                if (!combined_mask.empty())
+                    column = column->filter(combined_mask, num_rows);
+                block.insert({column, name_and_type.type, name_and_type.name});
+            }
+        };
 
         for (const auto & step : filter->steps)
         {
+            read_missing_columns(step.input_columns);
             step.actions->execute(block, num_rows);
 
             const size_t filter_column_position = block.getPositionByName(step.filter_column_name);
@@ -275,12 +294,8 @@ private:
                 if (num_passed_rows != num_rows)
                 {
                     for (auto & elem : block)
-                        if (elem.column)
-                            elem.column = filter_description.filter(*elem.column, num_passed_rows);
-                }
+                        elem.column = filter_description.filter(*elem.column, num_passed_rows);
 
-                if (has_deferred_columns)
-                {
                     if (combined_mask.empty())
                     {
                         combined_mask.assign(*filter_description.data);
@@ -303,35 +318,17 @@ private:
                 block.erase(filter_column_position);
         }
 
-        if (has_deferred_columns)
-        {
-            Columns deferred_columns;
-            deferred_columns.reserve(filter->deferred_columns.size());
-            for (const auto & name_and_type : filter->deferred_columns)
-                deferred_columns.emplace_back(readColumn(src, name_and_type));
-
-            fillMissingColumns(deferred_columns, num_src_rows, filter->deferred_columns, filter->deferred_columns, {}, nullptr);
-
-            for (const auto & column : deferred_columns)
-                num_read_bytes += column->byteSize();
-
-            auto deferred_it = deferred_columns.begin();
-            for (auto & elem : block)
-            {
-                if (elem.column)
-                    continue;
-                chassert(deferred_it != deferred_columns.end());
-                if (combined_mask.empty())
-                    elem.column = std::move(*deferred_it);
-                else
-                    elem.column = (*deferred_it)->filter(combined_mask, num_rows);
-                ++deferred_it;
-            }
-            chassert(deferred_it == deferred_columns.end());
-        }
+        read_missing_columns(filter->output_columns);
 
         progress(num_src_rows, num_read_bytes);
-        return Chunk(block.getColumns(), num_rows);
+
+        const auto & header = getPort().getHeader();
+        Columns result_columns;
+        result_columns.reserve(header.columns());
+        for (const auto & elem : header)
+            result_columns.push_back(block.getByName(elem.name).column);
+
+        return Chunk(std::move(result_columns), num_rows);
     }
 
     void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
@@ -431,13 +428,87 @@ void ReadFromMemoryStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
         VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
 }
 
+bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    /// Virtual columns do not qualify.
+    if (std::ranges::find(columns_to_read, sort_column.name) == columns_to_read.end())
+        return false;
+
+    const auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name);
+    if (!column)
+        return false;
+
+    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
+    /// after the block was inserted) with the defaults of the type. For a column without a default
+    /// expression these are exactly the values the query sees. For a column with a `DEFAULT` expression
+    /// the values agree only as long as nothing evaluates the expression above the source; do not rely
+    /// on that and exclude such columns and their subcolumns, the same way
+    /// `StorageMemory::supportedPrewhereColumns` does for `PREWHERE`.
+    return !storage_snapshot->metadata->getColumns().hasDefault(column->getNameInStorage());
+}
+
+void ReadFromMemoryStorageStep::setTopKFilter(FormatTopKFilterInfoPtr info)
+{
+    top_k_filter = std::move(info);
+}
+
+void ReadFromMemoryStorageStep::describeActions(FormatSettings & format_settings) const
+{
+    SourceStepWithFilter::describeActions(format_settings);
+    if (top_k_filter)
+        format_settings.out << format_settings.detail_prefix << "TopN filter column: " << top_k_filter->column_name << '\n';
+}
+
+void ReadFromMemoryStorageStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    SourceStepWithFilter::describeActions(map);
+    if (top_k_filter)
+        map.add("TopN Filter Column", top_k_filter->column_name);
+}
+
 MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAndTypesList & physical_columns) const
 {
-    if (!query_info.row_level_filter && !query_info.prewhere_info)
-        return nullptr;
+    /// The threshold filter runs first and shrinks the block before the other steps, which then see
+    /// a different set of rows. `tryOptimizeTopK` checks that the filters do not depend on that, but
+    /// `optimizePrewhere` may have moved such a condition into PREWHERE after it.
+    const bool use_top_k_filter = top_k_filter
+        && !(query_info.row_level_filter && query_info.row_level_filter->actions.hasNonDeterministicOrStatefulFunctions())
+        && !(query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
 
     auto result = std::make_shared<MemorySourceFilter>();
     ExpressionActionsSettings actions_settings(context);
+
+    /// Drop the rows that cannot enter the top-K heap of the query. The comparison is cheap and, once
+    /// the threshold is set, usually the most selective of the filters, so it goes first: the columns
+    /// of the later steps are then read only for the few remaining rows, and a block where no row is
+    /// within the threshold is skipped after reading only the sort column.
+    if (use_top_k_filter)
+    {
+        const auto sort_column = physical_columns.tryGetByName(top_k_filter->column_name);
+        if (!sort_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The sort column '{}' of the TopN filter is not read", top_k_filter->column_name);
+
+        ActionsDAG dag({*sort_column});
+        const auto * input_node = dag.getInputs().front();
+        const auto & filter_node = dag.addFunction(
+            createInternalFunctionTopKFilterResolver(top_k_filter->threshold_tracker), {input_node}, {});
+        dag.getOutputs() = {input_node, &filter_node};
+
+        /// The steps find columns in the block by name.
+        if (!physical_columns.contains(filter_node.result_name) && !output_header->has(filter_node.result_name))
+        {
+            String filter_column_name = filter_node.result_name;
+            result->steps.push_back({
+                .actions = std::make_shared<ExpressionActions>(std::move(dag), actions_settings),
+                .filter_column_name = std::move(filter_column_name),
+                .remove_filter_column = true,
+                .input_columns = {},
+            });
+        }
+    }
+
+    if (result->steps.empty() && !query_info.row_level_filter && !query_info.prewhere_info)
+        return nullptr;
 
     /// The row-level security filter runs first, so PREWHERE expressions are never evaluated
     /// on the rows the policy hides.
@@ -448,31 +519,63 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
             .actions = std::make_shared<ExpressionActions>(row_level_filter.actions.clone(), actions_settings),
             .filter_column_name = row_level_filter.column_name,
             .remove_filter_column = row_level_filter.do_remove_column,
+            .input_columns = {},
         });
     }
 
     if (query_info.prewhere_info)
     {
-        const auto & prewhere_info = *query_info.prewhere_info;
-        result->steps.push_back({
-            .actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone(), actions_settings),
-            .filter_column_name = prewhere_info.prewhere_column_name,
-            .remove_filter_column = prewhere_info.remove_prewhere_column,
-        });
-    }
-
-    NameSet filter_input_names;
-    for (const auto & step : result->steps)
-        for (const auto & required_column_name : step.actions->getRequiredColumns())
-            filter_input_names.insert(required_column_name);
-
-    for (const auto & name_and_type : physical_columns)
-    {
-        if (filter_input_names.contains(name_and_type.name))
-            result->filter_input_columns.push_back(name_and_type);
+        /// Split a conjunction into steps, so that the columns of a later condition are read only
+        /// for the rows that passed the earlier ones. The steps always filter the block, which is
+        /// what their `need_filter` asks for, so it is not needed here.
+        /// A stateful function (e.g. `runningConcurrency`, `rowNumberInBlock`) or a function that is
+        /// non-deterministic in scope of the query (e.g. `blockSize`, `rand`) depends on the set of
+        /// rows it is evaluated on, so a condition with it must see all rows, not only those that
+        /// passed the preceding conditions: such a PREWHERE is evaluated in a single step.
+        PrewhereExprInfo prewhere_steps;
+        if (context->getSettingsRef()[Setting::enable_multiple_prewhere_read_steps]
+            && !query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions()
+            && tryBuildPrewhereSteps(
+                query_info.prewhere_info,
+                actions_settings,
+                prewhere_steps,
+                /*force_short_circuit_execution*/ false,
+                &storage_snapshot->metadata->getColumns()))
+        {
+            for (const auto & step : prewhere_steps.steps)
+            {
+                result->steps.push_back({
+                    .actions = step->actions,
+                    .filter_column_name = step->filter_column_name,
+                    .remove_filter_column = step->remove_filter_column,
+                    .input_columns = {},
+                });
+            }
+        }
         else
-            result->deferred_columns.push_back(name_and_type);
+        {
+            const auto & prewhere_info = *query_info.prewhere_info;
+            result->steps.push_back({
+                .actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone(), actions_settings),
+                .filter_column_name = prewhere_info.prewhere_column_name,
+                .remove_filter_column = prewhere_info.remove_prewhere_column,
+                .input_columns = {},
+            });
+        }
     }
+
+    for (auto & step : result->steps)
+    {
+        const Names required_columns = step.actions->getRequiredColumns();
+        const NameSet required_column_names(required_columns.begin(), required_columns.end());
+        for (const auto & name_and_type : physical_columns)
+            if (required_column_names.contains(name_and_type.name))
+                step.input_columns.push_back(name_and_type);
+    }
+
+    for (const auto & elem : *output_header)
+        if (auto name_and_type = physical_columns.tryGetByName(elem.name))
+            result->output_columns.push_back(*name_and_type);
 
     return result;
 }

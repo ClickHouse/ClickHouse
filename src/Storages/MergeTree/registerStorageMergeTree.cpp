@@ -239,6 +239,8 @@ static std::string_view getNamePart(const String & engine_name)
 /// Extracts zookeeper path and replica name from the table engine's arguments.
 /// The function can modify those arguments (that's why they're passed separately in `engine_args`) and also determines RenamingRestrictions.
 /// The function assumes the table engine is Replicated.
+/// `validate_substitutions` judges a path the definition's own arguments supplied;
+/// `validate_injected_defaults` judges one minted here from `default_replica_path`.
 static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const ASTCreateQuery & query,
     const StorageID & table_id,
@@ -246,7 +248,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     ASTs & engine_args,
     LoadingStrictnessLevel mode,
     const ContextPtr & local_context,
-    bool validate_substitutions)
+    bool validate_substitutions,
+    bool validate_injected_defaults)
 {
     chassert(isReplicated(engine_name));
 
@@ -259,9 +262,9 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         evaluateEngineArgs(engine_args, local_context);
     }
 
-    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
+    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name, bool validate) -> TableZnodeInfo
     {
-        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate);
         ast_zk_path->value = res.full_path_for_metadata;
         ast_replica_name->value = res.replica_name_for_metadata;
         return res;
@@ -321,7 +324,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
             ast_replica_name->value = server_settings[ServerSetting::default_replica_name];
         }
 
-        return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
+        return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>(), validate_substitutions);
     }
     if (is_extended_storage_def
         && (arg_cnt == 0
@@ -341,7 +344,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
-        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name]);
+        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name], validate_injected_defaults);
 
         engine_args.emplace_back(std::move(path_arg));
         engine_args.emplace_back(std::move(name_arg));
@@ -377,7 +380,7 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
         /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
         auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
             query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
-            /*validate_substitutions=*/ false);
+            /*validate_substitutions=*/ false, /*validate_injected_defaults=*/ false);
         return res.full_path;
     }
     catch (Exception & e)
@@ -578,6 +581,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                                                    "See also `allow_deprecated_syntax_for_merge_tree` setting.");
     }
 
+    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
+    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+
     /// Extract zookeeper path and replica name from engine arguments.
     TableZnodeInfo zookeeper_info;
 
@@ -592,7 +601,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
             args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
-            validate_substitutions);
+            validate_substitutions,
+            /*validate_injected_defaults=*/ validate_substitutions || (args.is_restore_from_backup && !is_ddl_replay));
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -695,12 +705,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// server (short `ATTACH`, `ATTACH DATABASE`, restart) carry `attach_short_syntax`, and
     /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
     const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
-
-    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
-    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
-    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
-    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
 
     /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
@@ -1182,6 +1186,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->ttl_table && args.mode <= LoadingStrictnessLevel::CREATE)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
+
+    /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+        MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
@@ -2009,7 +2017,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause can't be used for key columns.
+The `TTL` clause can't be used for key columns, or for columns whose subcolumns are used in the sorting or partition key.
 
 **Examples**
 
@@ -4694,7 +4702,7 @@ If you had a `MergeTree` table that was manually replicated, you can convert it 
 
 [ATTACH TABLE ... AS REPLICATED](/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) statement allows to attach detached `MergeTree` table as `ReplicatedMergeTree`.
 
-`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for `Atomic` database).
+`MergeTree` table can be automatically converted on server restart if `convert_to_replicated` flag is set at the table's data directory (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` for an `Atomic` database or `/data/database_name/table_name/` for an `Ordinary` database).
 Create empty `convert_to_replicated` file and the table will be loaded as replicated on next server restart.
 
 This query can be used to get the table's data path. If table has many data paths, you have to use the first one.
@@ -4704,6 +4712,7 @@ SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = '
 ```
 
 Note that ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings.
+For an `Ordinary` database, the conversion generates a UUID and expands `default_replica_path` once with it. The stored path keeps no `{uuid}` macro, so the znode such a table owns is found by matching the path against `default_replica_path` again on every load; the conversion is refused when that template cannot be matched back (for example, when it expands `{uuid}` more than once). `{database}` and `{table}` in `default_replica_name` are unfolded into the stored replica name, the same way `CREATE TABLE` unfolds them, so the table can still be renamed. `{uuid}` in `default_replica_name` is not supported for any conversion.
 To create a converted table on other replicas, you will need to explicitly specify its path in the first argument of the `ReplicatedMergeTree` engine. The following query can be used to get its path.
 
 ```sql

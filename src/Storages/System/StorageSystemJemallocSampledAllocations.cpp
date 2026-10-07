@@ -100,6 +100,7 @@ protected:
                     throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
                         "Malformed backtrace line in heap profile '{}': '{}'", filename, line);
                 current_stack.clear();
+                seen_backtrace = true;
                 continue;
             }
 
@@ -109,8 +110,8 @@ protected:
                 continue;
             record.remove_prefix(std::string_view("f:").size());
 
-            /// Allocation records are emitted only under a backtrace block.
-            if (current_addresses.empty())
+            /// Allocation records are emitted only under a backtrace block; its stack is empty if jemalloc could not unwind.
+            if (!seen_backtrace)
                 throw Exception(ErrorCodes::CANNOT_PARSE_TEXT,
                     "Allocation record without a preceding backtrace in heap profile '{}'", filename);
 
@@ -168,6 +169,7 @@ private:
     std::unique_ptr<ReadBufferFromFile> file_input;
     std::vector<UInt64> current_addresses;
     Array current_stack;
+    bool seen_backtrace = false;
     UInt64 sample_interval = 0;
     bool is_finished = false;
 };
@@ -199,6 +201,7 @@ ColumnsDescription StorageSystemJemallocSampledAllocations::getColumnsDescriptio
     {
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()),
             "Addresses of the allocating backtrace, leaf frame first (same convention as `system.trace_log.trace`). "
+            "Empty if jemalloc could not unwind the stack. "
             "Symbolize with `addressToSymbol` and `demangle` (requires `allow_introspection_functions`)."},
         {"age_ns", std::make_shared<DataTypeUInt64>(),
             "Time in nanoseconds the allocation has been alive, relative to the moment the profile was flushed."},

@@ -66062,42 +66062,42 @@
       "translations": {
         "es": {
           "updatedAt": "2026-09-24T10:24:05.808Z",
-          "fileName": "es/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "es/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "cd7b9c86036821405256e32788421a3119371d6860d8d7d37ca48b3368c5fa0f"
         },
         "ja": {
           "updatedAt": "2026-09-24T10:24:05.809Z",
-          "fileName": "ja/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "ja/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "107bd2333d5c73a338ef5fb7f6a7194c3f81e8d32fe874cf69d79f72032605b3"
         },
         "ko": {
           "updatedAt": "2026-09-24T10:24:05.810Z",
-          "fileName": "ko/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "ko/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "1007fc7ce1e42738b43e9b001f1fdd5a896b39e4e8a51506b751f6ec2e1815c7"
         },
         "pt-BR": {
           "updatedAt": "2026-09-24T10:24:05.811Z",
-          "fileName": "pt-BR/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "pt-BR/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "598a0043da77eaf57731f21662e4f4bbd1b643d98ae2cb4c09cbca6d51729f86"
         },
         "ru": {
           "updatedAt": "2026-09-24T10:24:05.812Z",
-          "fileName": "ru/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "ru/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "12da3dbc3f17e35dd1742a40255d3eae7e90256b518fa0f587f5643bdb8ae403"
         },
         "zh": {
           "updatedAt": "2026-09-24T10:24:05.812Z",
-          "fileName": "zh/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "zh/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "1d970b7c6fe9b8becac508823b454d499a7d434d2202c75260a7fe08978f1cf3"
         },
         "ar": {
           "updatedAt": "2026-09-24T10:24:05.814Z",
-          "fileName": "ar/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "ar/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "cea1461e93ed2a2c1c9ecbc0b97702ffa26142accf2a3ca2be6820a240c00b2c"
         },
         "fr": {
           "updatedAt": "2026-09-24T10:24:05.814Z",
-          "fileName": "fr/reference/interfaces/specs/NativeFormat.mdx",
+          "fileName": "fr/resources/develop-contribute/native-protocol/format.mdx",
           "postProcessHash": "599cb20cc254f1fbde84df11bb4e42303f7545522706e7c097c587c92605b6b1"
         }
       },
@@ -66109,42 +66109,42 @@
       "translations": {
         "es": {
           "updatedAt": "2026-09-24T10:24:05.815Z",
-          "fileName": "es/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "es/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "94ae5ef552993853f89261cb84a6c44d0f2a26fc3c8900b0cce631168d07a7f4"
         },
         "ja": {
           "updatedAt": "2026-09-24T10:24:05.816Z",
-          "fileName": "ja/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "ja/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "84ba8b2241deb20890176f7c0ef576f759c317f569c8229737b9e3912e57669c"
         },
         "ko": {
           "updatedAt": "2026-09-24T10:24:05.817Z",
-          "fileName": "ko/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "ko/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "962f1461fe01542ed29e545ab989ac6573e0432fd960e0635125766e1f31aab5"
         },
         "pt-BR": {
           "updatedAt": "2026-09-24T10:24:05.818Z",
-          "fileName": "pt-BR/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "pt-BR/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "4beee93ed4a2d970b04047dca01ed85a6982101a6a0fc19bb27ea3c1e731e6e3"
         },
         "ru": {
           "updatedAt": "2026-09-24T10:24:05.820Z",
-          "fileName": "ru/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "ru/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "f4fc8a15a2bae14e4a446b556bd97833889636a1de17b4d8e0fc806f4d696bfc"
         },
         "zh": {
           "updatedAt": "2026-09-24T10:24:05.820Z",
-          "fileName": "zh/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "zh/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "c761024bf52b44eaa591bfd9f9fbaf6dae0929564c4f7d03d705622718c8cf6b"
         },
         "ar": {
           "updatedAt": "2026-09-24T10:24:05.822Z",
-          "fileName": "ar/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "ar/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "a7e6295864efeba7756157c82298b767a9a646edb991458b9ce77ffac9f50225"
         },
         "fr": {
           "updatedAt": "2026-09-24T10:24:05.823Z",
-          "fileName": "fr/reference/interfaces/specs/NativeProtocol.mdx",
+          "fileName": "fr/resources/develop-contribute/native-protocol/protocol.mdx",
           "postProcessHash": "d9cd93b36ae779079eee5b8b402f961087e6a38453ec2c6c73bc3a69b9b74fe5"
         }
       },
