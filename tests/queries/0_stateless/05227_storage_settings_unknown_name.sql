@@ -60,7 +60,7 @@ SETTINGS disk = 'default', param_x = 1; -- { serverError UNKNOWN_SETTING }
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV)
 SETTINGS format_csv_delimiter = ';', param_x = 1; -- { serverError UNKNOWN_SETTING }
 
--- Alone in the clause it is dropped before any engine sees it, except on the `AS SELECT` path.
+-- On the `AS SELECT` path the split does not run, so this payload reaches the check there too.
 CREATE TABLE t_unknown_setting ENGINE = TinyLog
 SETTINGS param_x = 1 AS SELECT 1 AS a; -- { serverError UNKNOWN_SETTING }
 
@@ -70,9 +70,11 @@ CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS disk = 'defa
 SHOW CREATE TABLE t_unknown_setting;
 DROP TABLE t_unknown_setting;
 
--- A reset naming a real setting is not an unknown name, in either payload.
+-- A reset naming a query setting is accepted. Where the reset itself ends up is decided by the
+-- SETTINGS split, not by this check, so only the engine setting is read back.
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS disk = 'default', max_threads = DEFAULT;
-SHOW CREATE TABLE t_unknown_setting;
+SELECT create_table_query LIKE '%SETTINGS disk = \'default\'%' FROM system.tables
+WHERE database = currentDatabase() AND name = 't_unknown_setting';
 DROP TABLE t_unknown_setting;
 
 -- A query parameter is declared by `SET` and substituted into a setting value, which is a value and not a name.
@@ -96,17 +98,24 @@ SELECT '--- a custom setting the context holds is a query setting too ---';
 
 SET custom_x = 1;
 
--- A reset is never moved to the query context, so a held custom name reaches the check in that payload.
+-- A held custom name is a query setting, so a reset naming it is accepted like any other.
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = TinyLog SETTINGS disk = 'default', custom_x = DEFAULT;
-SHOW CREATE TABLE t_unknown_setting;
+SELECT create_table_query LIKE '%SETTINGS disk = \'default\'%' FROM system.tables
+WHERE database = currentDatabase() AND name = 't_unknown_setting';
 DROP TABLE t_unknown_setting;
 
 CREATE TABLE t_unknown_setting (a UInt64) ENGINE = File(CSV) SETTINGS format_csv_delimiter = ';', custom_x = DEFAULT;
-SHOW CREATE TABLE t_unknown_setting;
+SELECT create_table_query LIKE '%SETTINGS format_csv_delimiter = \';\'%' FROM system.tables
+WHERE database = currentDatabase() AND name = 't_unknown_setting';
 DROP TABLE t_unknown_setting;
 
 -- `CREATE ... AS SELECT` skips the move entirely, so `name = value` reaches the check unsplit as well.
 CREATE TABLE t_unknown_setting ENGINE = TinyLog SETTINGS disk = 'default', custom_x = 1 AS SELECT 1 AS a;
+SHOW CREATE TABLE t_unknown_setting;
+DROP TABLE t_unknown_setting;
+
+-- The same path leaves a reset unsplit too, which is where an accepted reset is read back in full.
+CREATE TABLE t_unknown_setting ENGINE = TinyLog SETTINGS disk = 'default', custom_x = DEFAULT AS SELECT 1 AS a;
 SHOW CREATE TABLE t_unknown_setting;
 DROP TABLE t_unknown_setting;
 

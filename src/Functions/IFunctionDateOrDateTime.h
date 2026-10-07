@@ -52,7 +52,7 @@ protected:
     /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
     bool acceptsIntervalArgument() const
     {
-        IntervalKind::Kind unused = IntervalKind::Kind::Second;
+        IntervalKind unused;
         return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
     }
 

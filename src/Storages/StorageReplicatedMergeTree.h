@@ -256,7 +256,7 @@ public:
      * returns true if there are no replicas left
      */
     static bool dropReplica(zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info,
-                            LoggerPtr logger, MergeTreeSettingsPtr table_settings = nullptr, std::optional<bool> * has_metadata_out = nullptr);
+                            LoggerPtr logger, std::optional<bool> * has_metadata_out = nullptr);
 
     bool dropReplica(const String & drop_replica, LoggerPtr logger);
 
@@ -573,13 +573,6 @@ private:
         size_t max_block_size,
         size_t num_streams);
 
-    void readParallelReplicasImpl(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        SelectQueryInfo & query_info,
-        ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage);
-
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
 
@@ -639,8 +632,6 @@ private:
         Coordination::Requests & ops,
         String part_name,
         NameSet & absent_replicas_paths);
-
-    String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
     bool getOpsToCheckPartChecksumsAndCommit(const ZooKeeperWithFaultInjectionPtr & zookeeper, const MutableDataPartPtr & part,
                                              std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
@@ -758,6 +749,7 @@ private:
         bool deduplicate,
         const Names & deduplicate_by_columns,
         bool cleanup,
+        bool bypass_min_unreserved_space,
         ReplicatedMergeTreeLogEntryData * out_log_entry,
         int32_t log_version,
         MergeType merge_type);

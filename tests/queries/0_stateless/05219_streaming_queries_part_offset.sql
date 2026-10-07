@@ -2,14 +2,13 @@ SET enable_streaming_queries = 1,
     enable_parallel_replicas = 0,
     automatic_parallel_replicas_mode = 0,
     max_threads = 4,
-    max_execution_time = 20,
     use_query_condition_cache = 0;
 
 CREATE TABLE repro_offsets
 (
     x UInt64,
     payload UInt64,
-    PROJECTION commit_order INDEX * TYPE commit_order
+    PROJECTION commit_order INDEX *, _part_offset TYPE commit_order
         WITH SETTINGS (index_granularity = 1)
 )
 ENGINE = MergeTree

@@ -51,6 +51,7 @@ private:
     FileSegmentsHolderPtr segment_holder;
 
     const size_t reserve_space_lock_wait_timeout_milliseconds;
+    FileCacheReserveAhead reserve_ahead;
     size_t written_bytes = 0;
 };
 

@@ -19,7 +19,6 @@ node = cluster.add_instance(
 )
 
 settings = {
-    "s3_max_connections": "1",
     "max_insert_threads": "1",
     "s3_truncate_on_insert": "1",
     "s3_min_upload_part_size": "33554432",

@@ -1,12 +1,20 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-shared-merge-tree
+-- no-shared-merge-tree: the assertions below need the rolled back part to stay in `system.parts`, and
+-- `StorageSharedMergeTree` does not implement `ActionLocks::Cleanup`. It removes parts from
+-- `PartsKillerThread` on the server-wide `parts_kill_delay_period` instead, which a stateless test
+-- cannot pin, so neither the `SYSTEM STOP CLEANUP` below nor the pinned interval holds the part there.
 -- Test: version metadata (creation_csn, removal_tid, removal_csn) is correctly
 -- reflected in system.parts after transactional operations.
 -- This covers the refactored VersionMetadata class hierarchy and its persistence.
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (n Int64) ENGINE = MergeTree ORDER BY n
-    SETTINGS old_parts_lifetime=3600;
+    SETTINGS old_parts_lifetime=3600, merge_tree_clear_old_parts_interval_seconds=100000;
 SYSTEM STOP MERGES t;
+-- A rolled back part's `remove_time` is 0, so `old_parts_lifetime` does not hold it and the parts
+-- cleanup could delete it before the assertions below read `system.parts`. This statement cannot
+-- stop an iteration already in flight; the pinned interval above keeps that one's parts pass shut.
+SYSTEM STOP CLEANUP t;
 SET throw_on_unsupported_query_inside_transaction=0;
 
 -- 1. Non-transactional insert: creation_csn = NonTransactionalCSN = 1,

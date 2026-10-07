@@ -710,7 +710,7 @@ buildField(
                 break;
             case TypeIndex::Interval:
             {
-                const auto kind = assert_cast<const DataTypeInterval &>(*t).getKind().kind;
+                const IntervalKind::Kind kind = assert_cast<const DataTypeInterval &>(*t).getKind();
                 int unit = -1;
                 if (kind == IntervalKind::Kind::Second) unit = flatbuf::TimeUnit_SECOND;
                 else if (kind == IntervalKind::Kind::Millisecond) unit = flatbuf::TimeUnit_MILLISECOND;

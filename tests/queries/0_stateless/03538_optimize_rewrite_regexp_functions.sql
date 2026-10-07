@@ -31,15 +31,16 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT replaceRegexpAll(identity(
 -- Rule 2 (replaceRegexpOne -> extract) was removed because extract returns empty string on non-match,
 -- while replaceRegexpOne returns the original string, making them semantically different.
 
--- Rule 3: If an extract function has a regexp with some subpatterns and the regexp starts with ^.* or ending with an unescaped .*$, remove this prefix and/or suffix.
+-- Rule 3: If an extract function has a regexp with some subpatterns and the regexp ends with an unescaped .*$, remove this suffix.
+-- A leading ^.* is left alone: it is greedy, so removing it changes which occurrence is captured.
 
--- Starts with ^.* (should strip prefix)
+-- Starts with ^.* (should NOT strip the prefix)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '^.*(123)');
 
 -- Ends with unescaped .*$ (should strip suffix)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '(abc).*$');
 
--- Starts and ends (should strip both)
+-- Starts and ends (should strip only the suffix)
 EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT extract(identity('abc123'), '^.*(abc).*$');
 
 -- Starts and ends (should NOT rewrite without capture groups)

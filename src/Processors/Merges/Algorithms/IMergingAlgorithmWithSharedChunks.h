@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Processors/Merges/Algorithms/RowFilterInfo.h>
 #include <Processors/Merges/Algorithms/RowRef.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/Block_fwd.h>
@@ -77,6 +78,15 @@ protected:
     std::unique_ptr<MergedData> merged_data;
 
     using RowRef = detail::RowRefWithOwnedChunk;
+
+    /// A rejected row still writes its row source entry, left skipped, so the gather stage stays
+    /// in step with the rows that were read.
+    bool isRowFiltered(const RowRef & row) const
+    {
+        const auto * mask = row.owned_chunk->row_filter_mask;
+        return mask && !(*mask)[row.row_num];
+    }
+
     void setRowRef(RowRef & row, SortCursor & cursor) { row.set(cursor, sources[cursor.impl->order].chunk); }
     bool skipLastRowFor(size_t input_number) const { return sources[input_number].skip_last_row; }
     bool rowsHaveDifferentSortColumns(const RowRef & lhs, const RowRef & rhs)
