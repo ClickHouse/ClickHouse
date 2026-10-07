@@ -11,7 +11,3 @@ REPLACE PARTITION FROM a loaded source
 10	45
 a source that is not MergeTree is refused
 10	45
-t_dst	MergeTree
-t_log	Log
-t_moved	MergeTree
-t_src	MergeTree

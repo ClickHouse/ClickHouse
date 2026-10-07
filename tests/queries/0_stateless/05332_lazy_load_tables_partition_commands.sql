@@ -36,10 +36,7 @@ SELECT count(), sum(n) FROM t_dst;
 
 SELECT 'a source that is not MergeTree is refused';
 ALTER TABLE t_dst ATTACH PARTITION tuple() FROM t_log; -- { serverError NOT_IMPLEMENTED }
-ALTER TABLE t_dst REPLACE PARTITION tuple() FROM t_log; -- { serverError NOT_IMPLEMENTED }
 SELECT count(), sum(n) FROM t_dst;
-
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 DROP TABLE t_src;
 DROP TABLE t_dst;

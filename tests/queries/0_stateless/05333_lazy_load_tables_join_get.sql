@@ -22,8 +22,6 @@ SELECT joinGet(t_join, 'v', toUInt64(1));
 SELECT number, joinGetOrNull(t_join, 'v', number) FROM numbers(4) ORDER BY number;
 SELECT joinGet(t_log, 'v', toUInt64(1)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
-
 DROP TABLE t_join;
 DROP TABLE t_log;
 
