@@ -862,6 +862,16 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 استخدم تسلسلات الهروب ANSI في تنسيقات Pretty. 0 - معطّل، 1 - مفعّل، و&#39;auto&#39; - مفعّل إذا كان الإخراج على طرفية.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد لعرض محارف التحكم غير القابلة للطباعة على هيئة رموز Unicode \"Control Pictures\" في تنسيقات الإخراج `Vertical` و`Pretty*`."}]}]} />
+
+عند تفعيل هذا الإعداد، تُعرض محارف التحكم غير القابلة للطباعة (NUL وSOH وCR وDEL وغيرها) الواردة في القيم وأسماء الأعمدة ضمن تنسيقات الإخراج `Vertical` و`Pretty*` على هيئة رموز Unicode &quot;Control Pictures&quot; (مثل ␀ و␁ و␍ و␡)، بدلًا من طباعتها كبايتات خام تبتلعها الطرفية عادةً.
+
+ويُستثنى من ذلك `TAB` ومحرف line feed و`ESC`، إذ تُطبع دائمًا كما هي، لأن الطرفية تفسّرها ولا تبتلعها: فمحرف الجدولة ينقل المؤشر إلى موضع الجدولة التالي، وتبقى القيمة متعددة الأسطر موزّعة على عدة أسطر لتظل سهلة القراءة والنسخ واللصق، وتواصل الطرفية تفسير تسلسلات الهروب ANSI الواردة في البيانات، وهو أمر ضروري للتصورات. أما اسم العمود فيُعدّ استثناءً من هذا الاستثناء: إذ يُعرض على سطر واحد، ولذلك يُستبدل محرف line feed الوارد فيه كأي محرف تحكم آخر.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1165,7 +1175,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "إذا كانت القيمة true، فيُفلت الرمز ' باستخدام ''، وإلا فيُقتبس باستخدام \\'"}]}]} />
 
-إذا كانت القيمة true، فيُفلت الرمز &#39; باستخدام &#39;&#39;، وإلا فيُقتبس باستخدام &#92;&#39;
+إذا كانت القيمة true، فيُفلت الرمز &#39; باستخدام &#39;&#39;، وإلا فيُقتبس باستخدام \&#39;
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

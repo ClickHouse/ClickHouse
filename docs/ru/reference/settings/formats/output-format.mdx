@@ -861,6 +861,16 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать ANSI-последовательности экранирования в форматах Pretty. 0 — отключено, 1 — включено, &#39;auto&#39; — включено, если вывод идёт в терминал.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка для отображения непечатаемых управляющих символов в виде Unicode-символов \"Control Pictures\" в форматах вывода `Vertical` и `Pretty*`."}]}]} />
+
+Если настройка включена, непечатаемые управляющие символы (NUL, SOH, CR, DEL и т. д.) в значениях и именах столбцов в форматах вывода `Vertical` и `Pretty*` отображаются в виде Unicode-символов «Control Pictures» (например, ␀, ␁, ␍, ␡), а не выводятся как необработанные байты, которые терминал обычно просто «проглатывает».
+
+Исключение составляют `TAB`, перевод строки и `ESC`: они всегда выводятся как есть, поскольку терминал не проглатывает их, а интерпретирует. Табуляция перемещает курсор к следующей позиции табуляции, многострочное значение по-прежнему разбивается на несколько строк, чтобы его было удобно читать и копировать, а ANSI-последовательности экранирования в данных по-прежнему интерпретируются, что необходимо для визуализаций. Из этого исключения, в свою очередь, есть исключение — имена столбцов: они выводятся в одну строку, поэтому перевод строки в имени заменяется так же, как и любой другой управляющий символ.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1164,7 +1174,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Если true, экранировать ' как '', иначе использовать \\'"}]}]} />
 
-Если true, экранировать &#39; как &#39;&#39;, иначе использовать &#92;&#39;
+Если true, экранировать &#39; как &#39;&#39;, иначе использовать \&#39;
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

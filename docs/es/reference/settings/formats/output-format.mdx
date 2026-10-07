@@ -862,6 +862,16 @@ Escribe el índice de columna y el índice de desplazamiento (es decir, estadís
 
 Usa secuencias de escape ANSI en los formatos Pretty. 0 - deshabilitado, 1 - habilitado, &#39;auto&#39; - habilitado si la salida es un terminal.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para mostrar los caracteres de control no imprimibles como \"Control Pictures\" de Unicode en los formatos de salida `Vertical` y `Pretty*`."}]}]} />
+
+Si está habilitada, los caracteres de control no imprimibles (NUL, SOH, CR, DEL, etc.) presentes en los valores y en los nombres de columna de los formatos de salida `Vertical` y `Pretty*` se muestran como &quot;Control Pictures&quot; de Unicode (por ejemplo, ␀, ␁, ␍, ␡), en lugar de imprimirse como bytes sin procesar que el terminal suele descartar.
+
+`TAB`, el salto de línea y `ESC` son excepciones: siempre se imprimen tal cual, porque el terminal los interpreta en lugar de descartarlos. Una tabulación avanza hasta la siguiente posición de tabulación, un valor de varias líneas se sigue dividiendo en varias líneas para que resulte fácil de leer y de copiar y pegar, y las secuencias de escape ANSI contenidas en los datos se siguen interpretando, algo necesario para las visualizaciones. Los nombres de columna son la excepción a esta excepción: se representan en una sola línea, por lo que un salto de línea en un nombre se reemplaza como cualquier otro carácter de control.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1165,7 +1175,7 @@ Si se establece como true, el final de línea en formato TSV será \r\n en lugar
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Si es true, se escapa ' como ''; de lo contrario, se entrecomilla con \\'"}]}]} />
 
-Si es true, se escapa &#39; como &#39;&#39;; de lo contrario, se entrecomilla con &#92;&#39;
+Si es true, se escapa &#39; como &#39;&#39;; de lo contrario, se entrecomilla con \&#39;
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

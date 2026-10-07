@@ -862,6 +862,16 @@ Grava o índice de coluna e o índice de deslocamento (isto é, estatísticas so
 
 Use sequências de escape ANSI nos formatos Pretty. 0 - desabilitado, 1 - habilitado, &#39;auto&#39; - habilitado se for um terminal.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração para exibir caracteres de controle não imprimíveis como \"Control Pictures\" do Unicode nos formatos de saída `Vertical` e `Pretty*`."}]}]} />
+
+Quando habilitada, os caracteres de controle não imprimíveis (NUL, SOH, CR, DEL etc.) presentes nos valores e nos nomes de colunas dos formatos de saída `Vertical` e `Pretty*` são exibidos como &quot;Control Pictures&quot; do Unicode (como ␀, ␁, ␍, ␡), em vez de serem impressos como bytes brutos, que normalmente são descartados pelo terminal.
+
+`TAB`, a quebra de linha e `ESC` são exceções: eles são sempre impressos sem alteração, pois o terminal os interpreta em vez de descartá-los. Uma tabulação avança até a próxima parada de tabulação, um valor multilinha continua sendo quebrado em várias linhas para continuar fácil de ler e de copiar e colar, e as sequências de escape ANSI contidas nos dados continuam sendo interpretadas, o que é necessário para visualizações. O nome de coluna é a exceção dessa exceção: ele é renderizado em uma única linha, portanto uma quebra de linha em um nome é substituída como qualquer outro caractere de controle.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1165,7 +1175,7 @@ Se definido como true, o fim de linha no formato TSV será \r\n em vez de \n.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Se true, escapa ' como ''; caso contrário, coloca entre aspas com \\'"}]}]} />
 
-Se true, escapa &#39; como &#39;&#39;; caso contrário, coloca entre aspas com &#92;&#39;
+Se true, escapa &#39; como &#39;&#39;; caso contrário, coloca entre aspas com \&#39;
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

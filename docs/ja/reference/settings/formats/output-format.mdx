@@ -862,6 +862,16 @@ Parquet ファイル にカラムインデックスとオフセットインデ�
 
 Pretty フォーマットで ANSI エスケープシーケンスを使用します。0 - 無効、1 - 有効、&#39;auto&#39; - 端末出力の場合に有効。
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`Vertical` および `Pretty*` 出力フォーマットで、印字不可能な制御文字を Unicode の「Control Pictures」として表示する新しい設定。"}]}]} />
+
+有効にすると、`Vertical` および `Pretty*` 出力フォーマットの値とカラム名に含まれる印字不可能な制御文字 (NUL、SOH、CR、DEL など) は、raw bytes のまま出力されて通常は端末に飲み込まれてしまう代わりに、Unicode の「Control Pictures」 (␀、␁、␍、␡ など) として表示されます。
+
+ただし、`TAB`、改行、`ESC` は例外です。これらは端末に飲み込まれるのではなく解釈されるため、常にそのまま出力されます。タブは次のタブ位置まで進み、複数行の値は読みやすくコピー＆ペーストしやすいように従来どおり複数行に分けて表示されます。また、データに含まれる ANSI エスケープシーケンスは可視化に必要なため、引き続き解釈されます。なお、カラム名はこの例外のさらに例外です。カラム名は 1 行で表示されるため、名前に含まれる改行は他の制御文字と同様に置き換えられます。
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1165,7 +1175,7 @@ true に設定すると、TSV フォーマットの行末は \n ではなく \r\
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "true の場合は ' を '' にエスケープし、そうでない場合は \\' でクォートします"}]}]} />
 
-true の場合は &#39; を &#39;&#39; にエスケープし、そうでない場合は &#92;&#39; でクォートします
+true の場合は &#39; を &#39;&#39; にエスケープし、そうでない場合は \&#39; でクォートします
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

@@ -862,6 +862,16 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 在 Pretty 格式 中使用 ANSI 转义序列。0 - 禁用，1 - 启用，&#39;auto&#39; - 在输出为终端时启用。
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于在 `Vertical` 和 `Pretty*` 输出格式中将不可打印的控制字符显示为 Unicode \"Control Pictures\"。"}]}]} />
+
+启用后，`Vertical` 和 `Pretty*` 输出格式中的值和列名所含的不可打印控制字符 (NUL、SOH、CR、DEL 等) 将显示为 Unicode “Control Pictures” (例如 ␀、␁、␍、␡) ，而不是作为原始字节直接输出 (这类字节通常会被终端吞掉) 。
+
+`TAB`、换行符和 `ESC` 例外：它们始终按原样输出，因为终端会对其进行解释，而不会将其吞掉。制表符会跳到下一个制表位；多行值仍会分行显示，便于阅读和复制粘贴；数据中的 ANSI 转义序列也仍会被解释，这是可视化所必需的。列名则是例外中的例外：列名始终在单行中渲染，因此列名中的换行符会像其他控制字符一样被替换。
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1165,7 +1175,7 @@ SQLite 输出中使用的表名
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "如果为 true，则将 ' 转义为 ''；否则使用 \\' 进行转义"}]}]} />
 
-如果为 true，则将 &#39; 转义为 &#39;&#39;；否则使用 &#92;&#39; 进行转义
+如果为 true，则将 &#39; 转义为 &#39;&#39;；否则使用 \&#39; 进行转义
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

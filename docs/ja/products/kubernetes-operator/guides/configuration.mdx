@@ -48,20 +48,76 @@ spec:
 
 `replicas: 3`、`shards: 2` のクラスターでは、ClickHouse ポッドが合計 6 つ作成されます。
 
-<div id="keeper-integration">
-  ### Keeper インテグレーション {#keeper-integration}
-</div>
+### Keeper インテグレーション {#keeper-integration}
 
-すべてのClickHouseクラスターで、調整用のKeeperClusterを参照する必要があります。
+すべてのClickHouseクラスターには、協調のためのKeeperアンサンブルが必要です。`keeperClusterRef` と `externalKeeper` のいずれか一方のみを
+設定してください。両方を設定したクラスター、またはどちらも設定していないクラスターは拒否されます。
+
+このオペレーターが管理するKeeperClusterを `keeperClusterRef` で指定します。
 
 ```yaml
 spec:
   keeperClusterRef:
     name: my-keeper
-    # namespace: keeper-system  # 省略可能。デフォルトはClickHouseClusterのネームスペース
+    # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
 ```
 
 `keeperClusterRef.namespace` が設定されている場合、オペレーターは両方のネームスペースを監視する必要があります。`WATCH_NAMESPACE` が設定されている場合は、その一覧に ClickHouse と Keeper のネームスペースを含めてください。
+
+### 外部で管理される Keeper {#external-keeper}
+
+オペレーターの管理対象外の Keeper アンサンブルを使用して ClickHouse を実行するには、`externalKeeper` を使用します。たとえば、別のオペレーターが所有するアンサンブル、別の Kubernetes クラスターで稼働しているアンサンブル、仮想マシンや
+ベアメタル上で稼働しているアンサンブル、または複数のシステムで共有されているアンサンブルが該当します。
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+`port` のデフォルトは `9181` です。`host` には DNS 名または IP アドレスを指定します。IPv6 アドレスは角括弧で
+囲んでください。TLS で接続するには `tls: Enabled` を設定し、`port` にはアンサンブルがセキュア接続を待ち受ける
+ポート番号を指定します。
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+ClickHouse は、Keeper の証明書をシステムのトラストストアに加え、設定した `caBundle` を用いて検証します。
+[ClickHouse と Keeper 間の TLS 通信](#clickhouse-keeper-communication-over-tls)を参照してください。
+
+複数の ClickHouse クラスターで 1 つの Keeper アンサンブルを共有する場合は、`settings.extraConfig` を使用して各クラスターに専用のルート znode を割り当て、
+レプリケーションのメタデータ、SQL で定義されたユーザー、名前付きコレクションが
+互いに衝突しないようにしてください。znode は ClickHouse の起動前に作成し、以降は変更しないでください：
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+`zookeeper.root` を `settings.extraReloadableConfig` に含めないでください。リロードによって稼働中のクラスターのルートが切り替わり、レプリケートテーブルが読み取り専用になってしまいます。ルート znode にアクセス制御リストが設定されている場合は、
+クラスターの `keeper-identity` に子 znode の作成を許可しておく必要があります。
+
+オペレーターはこれらのサーバーに変更を加えず、ClickHouse をリコンサイルする前にこれらのサーバーの準備完了を待つこともありません。
+アンサンブルの可用性の維持は、ユーザー側の責任となります。
+
+認証の仕組みは、オペレーターが管理する Keeper の場合と同じです。オペレーターはクラスターの Secret から
+`keeper-identity` キーを読み取り、ClickHouse に渡します。Secret の構成については
+[External Secret](#external-secret) を参照してください。
 
 <div id="keepercluster-configuration">
   ## KeeperCluster の設定 {#keepercluster-configuration}
@@ -420,11 +476,10 @@ Secret には、サーバーのキーペアが含まれている必要があり�
   この形式は、cert-manager によって生成された証明書と互換性があります。
 </Note>
 
-<div id="clickhouse-keeper-communication-over-tls">
-  ### TLS を介した ClickHouse-Keeper 通信 {#clickhouse-keeper-communication-over-tls}
-</div>
+### TLS を介した ClickHouse-Keeper 通信 {#clickhouse-keeper-communication-over-tls}
 
-KeeperCluster で TLS が有効になっている場合、ClickHouseCluster は Keeper ノードへのセキュアな接続を自動的に使用します。
+`keeperClusterRef` で参照される KeeperCluster で TLS が有効になっている場合、ClickHouseCluster は Keeper ノードへのセキュアな接続を自動的に使用します。
+`externalKeeper` を使用する場合は、代わりに `tls: Enabled` を設定し、各ノードの `port` をアンサンブルのセキュアなクライアントポート (たとえば `9281`) に設定します。
 
 ClickHouseCluster は、システムのトラストストアに加えて、設定した `caBundle` を使用して Keeper ノードの証明書を検証します。
 

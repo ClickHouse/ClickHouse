@@ -299,7 +299,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 112,
+      count: 113,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
@@ -377,6 +377,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_parquet_write_checksums", path: "/output-format#output_format_parquet_write_checksums", default: "1" },
         { name: "output_format_parquet_write_page_index", path: "/output-format#output_format_parquet_write_page_index", default: "1" },
         { name: "output_format_pretty_color", path: "/output-format#output_format_pretty_color", default: "auto" },
+        { name: "output_format_pretty_display_control_characters", path: "/output-format#output_format_pretty_display_control_characters", default: "1" },
         { name: "output_format_pretty_display_footer_column_names", path: "/output-format#output_format_pretty_display_footer_column_names", default: "1" },
         { name: "output_format_pretty_display_footer_column_names_min_rows", path: "/output-format#output_format_pretty_display_footer_column_names_min_rows", default: "50" },
         { name: "output_format_pretty_fallback_to_vertical", path: "/output-format#output_format_pretty_fallback_to_vertical", default: "1" },

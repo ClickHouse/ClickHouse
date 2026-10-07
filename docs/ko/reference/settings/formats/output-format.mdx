@@ -862,6 +862,16 @@ Parquet 페이지 헤더에 crc32 체크섬을 포함합니다.
 
 Pretty 형식에서 ANSI 이스케이프 시퀀스를 사용합니다. 0 - 비활성화, 1 - 활성화, &#39;auto&#39; - 출력이 터미널인 경우 활성화됩니다.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`Vertical` 및 `Pretty*` 출력 형식에서 출력할 수 없는 제어 문자를 유니코드 \"Control Pictures\"로 표시하는 새로운 설정입니다."}]}]} />
+
+활성화하면 `Vertical` 및 `Pretty*` 출력 형식의 값과 컬럼명에 포함된 출력할 수 없는 제어 문자(NUL, SOH, CR, DEL 등)를 원시 바이트 그대로 출력하지 않고 유니코드 &quot;Control Pictures&quot;(예: ␀, ␁, ␍, ␡)로 표시합니다. 원시 바이트로 출력하면 대개 터미널에서 보이지 않게 됩니다.
+
+`TAB`, 줄 바꿈, `ESC`는 예외입니다. 터미널이 이 문자들을 보이지 않게 처리하지 않고 해석하므로 항상 그대로 출력됩니다. 탭은 다음 탭 정지 위치로 이동하고, 여러 줄로 된 값은 읽기 쉽고 복사하여 붙여 넣기 편하도록 그대로 여러 줄로 나뉘어 표시되며, 데이터에 포함된 ANSI 이스케이프 시퀀스는 시각화에 필요하므로 그대로 해석됩니다. 단, 컬럼명은 이 예외에서 다시 제외됩니다. 컬럼명은 한 줄로 렌더링되므로 이름에 포함된 줄 바꿈은 다른 제어 문자와 마찬가지로 대체됩니다.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1165,7 +1175,7 @@ true로 설정하면 TSV 포맷에서 줄 끝이 \n 대신 \r\n이 됩니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "값이 true이면 '를 ''로 이스케이프하고, 그렇지 않으면 \\'로 인용합니다"}]}]} />
 
-값이 true이면 &#39;를 &#39;&#39;로 이스케이프하고, 그렇지 않으면 &#92;&#39;로 인용합니다
+값이 true이면 &#39;를 &#39;&#39;로 이스케이프하고, 그렇지 않으면 \&#39;로 인용합니다
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

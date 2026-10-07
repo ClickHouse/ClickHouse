@@ -862,6 +862,16 @@ Insère des sommes de contrôle CRC32 dans les en-têtes de page Parquet.
 
 Utilise les séquences d’échappement ANSI dans les format Pretty. 0 - désactivé, 1 - activé, &#39;auto&#39; - activé si la sortie se fait dans un terminal.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nouveau paramètre permettant d'afficher les caractères de contrôle non imprimables sous forme de « Control Pictures » Unicode dans les formats de sortie `Vertical` et `Pretty*`."}]}]} />
+
+Lorsque ce paramètre est activé, les caractères de contrôle non imprimables (NUL, SOH, CR, DEL, etc.) présents dans les valeurs et les noms de colonnes des formats de sortie `Vertical` et `Pretty*` sont affichés sous forme de « Control Pictures » Unicode (par exemple ␀, ␁, ␍, ␡), au lieu d&#39;être écrits sous forme d&#39;octets bruts, généralement absorbés par le terminal.
+
+`TAB`, le saut de ligne et `ESC` font exception : ils sont toujours écrits tels quels, car le terminal les interprète au lieu de les absorber. Une tabulation fait avancer le curseur jusqu&#39;au taquet de tabulation suivant, une valeur multiligne reste répartie sur plusieurs lignes afin de demeurer facile à lire et à copier-coller, et les séquences d&#39;échappement ANSI contenues dans les données sont toujours interprétées, ce qui est indispensable pour les visualisations. Les noms de colonnes constituent l&#39;exception à cette exception : comme ils sont affichés sur une seule ligne, un saut de ligne dans un nom est remplacé comme n&#39;importe quel autre caractère de contrôle.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
@@ -1165,7 +1175,7 @@ Si ce paramètre est défini sur true, la fin de ligne au format TSV sera \r\n a
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Si true, échappe ' par '', sinon avec \\'"}]}]} />
 
-Si true, échappe &#39; par &#39;&#39;, sinon avec &#92;&#39;
+Si true, échappe &#39; par &#39;&#39;, sinon avec \&#39;
 
 ## output_format_write_statistics {#output_format_write_statistics}
 

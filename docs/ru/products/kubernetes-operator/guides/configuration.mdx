@@ -48,20 +48,77 @@ spec:
 
 Кластер с `replicas: 3` и `shards: 2` создаст всего 6 подов ClickHouse.
 
-<div id="keeper-integration">
-  ### Интеграция с Keeper {#keeper-integration}
-</div>
+### Интеграция с Keeper {#keeper-integration}
 
-Для координации в каждом кластере ClickHouse должен быть указан KeeperCluster:
+Для координации каждому кластеру ClickHouse требуется ансамбль Keeper. Задайте ровно один из параметров:
+`keeperClusterRef` или `externalKeeper`; кластер, в котором заданы оба параметра или не задан ни один, будет отклонён.
+
+Укажите в `keeperClusterRef` ссылку на KeeperCluster, которым управляет этот оператор:
 
 ```yaml
 spec:
   keeperClusterRef:
     name: my-keeper
-    # namespace: keeper-system  # Необязательно, по умолчанию используется пространство имён ClickHouseCluster
+    # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
 ```
 
 Когда задан `keeperClusterRef.namespace`, оператор должен отслеживать оба пространства имен. Если настроена переменная `WATCH_NAMESPACE`, включите в этот список пространства имен ClickHouse и Keeper.
+
+### Keeper с внешним управлением {#external-keeper}
+
+Используйте `externalKeeper`, чтобы подключить ClickHouse к ансамблю Keeper, которым оператор не управляет, —
+например, к ансамблю, принадлежащему другому оператору, работающему в другом кластере Kubernetes, на виртуальных машинах или
+физических серверах (bare metal) либо совместно используемому несколькими системами:
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+По умолчанию `port` равен `9181`. `host` — это DNS-имя или IP-адрес; IPv6-адреса заключайте в квадратные
+скобки. Чтобы подключаться по TLS, задайте `tls: Enabled`, а в `port` укажите порт, на котором ансамбль принимает
+защищённые соединения:
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+ClickHouse проверяет сертификаты Keeper по системному хранилищу доверенных сертификатов, а также по `caBundle`, если вы его настроили.
+См. раздел [Взаимодействие ClickHouse и Keeper по TLS](#clickhouse-keeper-communication-over-tls).
+
+Если несколько кластеров ClickHouse используют один ансамбль Keeper, задайте для каждого из них собственный корневой znode через
+`settings.extraConfig`, чтобы их метаданные репликации, пользователи, созданные через SQL, и именованные коллекции
+не конфликтовали между собой. Создайте znode до запуска ClickHouse и в дальнейшем не изменяйте его:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+Не добавляйте `zookeeper.root` в `settings.extraReloadableConfig`: при перезагрузке конфигурации корень работающего кластера изменится, а его реплицируемые таблицы перейдут в режим только для чтения. Если для корневого znode заданы ACL, они должны разрешать
+`keeper-identity` кластера создавать дочерние znode.
+
+Оператор не изменяет эти серверы и не ожидает их готовности, прежде чем выполнять сверку ClickHouse.
+За доступность ансамбля отвечает пользователь.
+
+Аутентификация выполняется так же, как и для Keeper под управлением оператора: оператор считывает
+ключ `keeper-identity` из Secret кластера и передаёт его в ClickHouse. Структура Secret описана в разделе
+[External Secret](#external-secret).
 
 <div id="keepercluster-configuration">
   ## Конфигурация KeeperCluster {#keepercluster-configuration}
@@ -424,11 +481,10 @@ spec:
   Этот формат совместим с сертификатами, созданными cert-manager.
 </Note>
 
-<div id="clickhouse-keeper-communication-over-tls">
-  ### Взаимодействие ClickHouse-Keeper по TLS {#clickhouse-keeper-communication-over-tls}
-</div>
+### Взаимодействие ClickHouse-Keeper по TLS {#clickhouse-keeper-communication-over-tls}
 
-Если в KeeperCluster включен TLS, ClickHouseCluster будет автоматически использовать защищенное соединение с узлами Keeper.
+Если в KeeperCluster, на который ссылается `keeperClusterRef`, включен TLS, ClickHouseCluster будет автоматически использовать защищенное соединение с узлами Keeper.
+При использовании `externalKeeper` вместо этого укажите `tls: Enabled`, а в поле `port` каждого узла задайте защищенный клиентский порт ансамбля (например, `9281`).
 
 ClickHouseCluster проверяет сертификаты узлов Keeper по системному хранилищу доверенных сертификатов, а также по любому настроенному вами `caBundle`.
 

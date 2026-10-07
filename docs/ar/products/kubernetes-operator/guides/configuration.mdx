@@ -48,11 +48,12 @@ spec:
 
 سيُنشئ عنقود يحتوي على `replicas: 3` و`shards: 2` ما مجموعه 6 كبسولات لـ ClickHouse.
 
-<div id="keeper-integration">
-  ### تكامل Keeper {#keeper-integration}
-</div>
+### تكامل Keeper {#keeper-integration}
 
-يجب أن يشير كل عنقود ClickHouse إلى KeeperCluster من أجل التنسيق:
+يحتاج كل عنقود ClickHouse إلى مجموعة عُقد Keeper من أجل التنسيق. عيّن حقلًا واحدًا فقط من الحقلين
+`keeperClusterRef` و`externalKeeper`؛ إذ يُرفض العنقود الذي يعيّن كليهما أو لا يعيّن أيًّا منهما.
+
+اجعل `keeperClusterRef` يشير إلى KeeperCluster يديره هذا المشغِّل:
 
 ```yaml
 spec:
@@ -61,7 +62,64 @@ spec:
     # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
 ```
 
-عند تعيين `keeperClusterRef.namespace`، يجب على المشغِّل مراقبة مساحتي الاسم كلتيهما. وإذا كان `WATCH_NAMESPACE` مُعدًّا، فأدرِج مساحتي الاسم الخاصتين بـ ClickHouse وKeeper في تلك القائمة.
+عند تعيين `keeperClusterRef.namespace`، يجب على المشغِّل مراقبة مساحتي الاسم كلتيهما. وإذا كان `WATCH_NAMESPACE` مُعدًّا، فأدرِج مساحتي الاسم الخاصتين بـ ClickHouse وKeeper في تلك القائمة.
+
+### Keeper المُدار خارجيًا {#external-keeper}
+
+استخدم `externalKeeper` لتشغيل ClickHouse مع مجموعة Keeper لا يديرها المشغّل —
+سواء كانت تابعة لمشغّل آخر، أو تعمل في عنقود Kubernetes مختلف، أو على أجهزة افتراضية أو
+خوادم فعلية (bare metal)، أو مشتركة بين عدة أنظمة:
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+القيمة الافتراضية لـ `port` هي `9181`. أما `host` فهو اسم DNS أو عنوان IP، مع وضع عناوين IPv6 بين أقواس
+مربعة. اضبط `tls: Enabled` للاتصال عبر TLS، واجعل قيمة `port` هي المنفذ الذي تستمع عليه مجموعة Keeper
+للاتصالات الآمنة:
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+يتحقق ClickHouse من شهادات Keeper بالاستناد إلى مخزن الثقة الخاص بالنظام، إضافةً إلى أي `caBundle`
+تقوم بتهيئته. راجع [الاتصال بين ClickHouse وKeeper عبر TLS](#clickhouse-keeper-communication-over-tls).
+
+عندما تتشارك عدة عناقيد ClickHouse مجموعة Keeper واحدة، خصّص لكلٍّ منها znode جذرية مستقلة عبر
+`settings.extraConfig`، كي لا تتداخل البيانات الوصفية الخاصة بالـ replication والمستخدمون المعرّفون بلغة SQL والمجموعات المسمّاة (named collections)
+فيما بينها. أنشئ الـ znode قبل بدء تشغيل ClickHouse، ولا تغيّرها بعد ذلك:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+لا تضع `zookeeper.root` في `settings.extraReloadableConfig`، إذ إن إعادة التحميل ستُبدّل جذر عنقود قيد التشغيل
+وتترك جداوله المتماثلة في وضع القراءة فقط. وإذا كانت لعقدة znode الجذرية قوائم تحكم في الوصول (ACLs)، فيجب أن تسمح
+لـ `keeper-identity` الخاصة بالعنقود بإنشاء عقد znode فرعية.
+
+لا يُجري المشغّل أي تغييرات على هذه الخوادم، ولا ينتظر جاهزيتها قبل إجراء التسوية لـ ClickHouse.
+وتقع مسؤولية الحفاظ على إتاحة مجموعة Keeper على عاتق المستخدم.
+
+تعمل المصادقة بالطريقة نفسها المتّبعة مع Keeper الذي يديره المشغّل؛ إذ يقرأ المشغّل
+المفتاح `keeper-identity` من Secret الخاص بالعنقود ويمرّره إلى ClickHouse. راجع
+[External Secret](#external-secret) للاطلاع على بنية Secret.
 
 <div id="keepercluster-configuration">
   ## إعداد KeeperCluster {#keepercluster-configuration}
@@ -424,11 +482,10 @@ spec:
   يتوافق هذا التنسيق مع الشهادات التي يُنشئها cert-manager.
 </Note>
 
-<div id="clickhouse-keeper-communication-over-tls">
-  ### اتصال ClickHouse-Keeper عبر TLS {#clickhouse-keeper-communication-over-tls}
-</div>
+### اتصال ClickHouse-Keeper عبر TLS {#clickhouse-keeper-communication-over-tls}
 
-إذا كان TLS مفعّلًا في KeeperCluster، فسيستخدم ClickHouseCluster اتصالًا آمنًا بعُقد Keeper تلقائيًا.
+إذا كان TLS مفعّلًا في KeeperCluster المُشار إليه عبر `keeperClusterRef`، فسيستخدم ClickHouseCluster اتصالًا آمنًا بعُقد Keeper تلقائيًا.
+أما عند استخدام `externalKeeper`، فاضبط `tls: Enabled` بدلًا من ذلك، واضبط `port` لكل عقدة على منفذ العميل الآمن لمجموعة Keeper (على سبيل المثال `9281`).
 
 يتحقق ClickHouseCluster من شهادات عُقد Keeper باستخدام مخزن الثقة في النظام، بالإضافة إلى أي `caBundle` تقوم بتهيئته.
 

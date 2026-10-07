@@ -48,20 +48,77 @@ spec:
 
 `replicas: 3` 및 `shards: 2`로 구성된 클러스터는 총 6개의 ClickHouse 파드를 생성합니다.
 
-<div id="keeper-integration">
-  ### Keeper 통합 {#keeper-integration}
-</div>
+### Keeper 통합 {#keeper-integration}
 
-모든 ClickHouse 클러스터는 클러스터 조정을 위해 KeeperCluster를 참조해야 합니다:
+모든 ClickHouse 클러스터는 클러스터 조정을 위해 Keeper 앙상블이 필요합니다. `keeperClusterRef`와 `externalKeeper` 중 정확히 하나만 설정하십시오. 둘 다 설정하거나 둘 다 설정하지 않은 클러스터는 거부됩니다.
+
+`keeperClusterRef`에는 이 연산자가 관리하는 KeeperCluster를 지정하십시오:
 
 ```yaml
 spec:
   keeperClusterRef:
     name: my-keeper
-    # namespace: keeper-system  # 선택 사항, 기본값은 ClickHouseCluster 네임스페이스
+    # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
 ```
 
 `keeperClusterRef.namespace`가 설정되면 연산자는 두 네임스페이스를 모두 감시해야 합니다. `WATCH_NAMESPACE`가 구성되어 있다면 해당 목록에 ClickHouse와 Keeper 네임스페이스를 모두 포함하십시오.
+
+### 외부에서 관리되는 Keeper {#external-keeper}
+
+연산자가 관리하지 않는 Keeper 앙상블(ensemble)에 ClickHouse를 연결하려면 `externalKeeper`를 사용하십시오.
+다른 연산자가 소유한 앙상블, 다른 Kubernetes 클러스터나 가상 머신 또는
+베어 메탈에서 실행되는 앙상블, 여러 시스템이 공유하는 앙상블 등이 이에 해당합니다.
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+`port`의 기본값은 `9181`입니다. `host`에는 DNS 이름 또는 IP 주소를 지정하며, IPv6 주소는 대괄호로
+묶어야 합니다. TLS로 연결하려면 `tls: Enabled`를 설정하고, `port`에는 앙상블(ensemble)이 보안 연결(secure connection)을
+수신 대기하는 포트를 지정하십시오:
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+ClickHouse는 시스템 트러스트 스토어(system trust store)와 사용자가 구성한 `caBundle`을 기준으로 Keeper 인증서를
+검증합니다. 자세한 내용은 [TLS를 통한 ClickHouse-Keeper 통신](#clickhouse-keeper-communication-over-tls)을 참조하십시오.
+
+여러 ClickHouse 클러스터가 하나의 앙상블(ensemble)을 공유한다면 `settings.extraConfig`로 클러스터마다 고유한 루트 znode를
+지정하여 복제 메타데이터, SQL로 정의된 사용자, 이름이 지정된 컬렉션이
+서로 충돌하지 않도록 하십시오. znode는 ClickHouse를 시작하기 전에 생성해야 하며, 생성한 후에는 변경하지 마십시오.
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+`zookeeper.root`를 `settings.extraReloadableConfig`에 넣지 마십시오. 설정을 다시 로드하면 실행 중인 클러스터의 루트가 바뀌어
+복제된 테이블이 읽기 전용 상태가 됩니다. 루트 znode에 ACL이 설정되어 있다면 클러스터의 `keeper-identity`가
+하위 znode를 생성할 수 있도록 허용해야 합니다.
+
+연산자는 이 서버들을 변경하지 않으며, ClickHouse를 리컨실하기 전에 이 서버들이 준비될 때까지 기다리지도 않습니다.
+앙상블(ensemble)의 가용성 유지는 사용자의 책임입니다.
+
+인증은 연산자가 관리하는 Keeper와 동일한 방식으로 동작합니다. 연산자는 클러스터 시크릿(Secret)에서
+`keeper-identity` 키를 읽어 ClickHouse에 전달합니다. 시크릿 구조는
+[외부 시크릿](#external-secret)을 참조하십시오.
 
 <div id="keepercluster-configuration">
   ## KeeperCluster 구성 {#keepercluster-configuration}
@@ -420,13 +477,12 @@ spec:
   이 포맷은 cert-manager에서 생성한 인증서와 호환됩니다.
 </Note>
 
-<div id="clickhouse-keeper-communication-over-tls">
-  ### TLS를 통한 ClickHouse-Keeper 통신 {#clickhouse-keeper-communication-over-tls}
-</div>
+### TLS를 통한 ClickHouse-Keeper 통신 {#clickhouse-keeper-communication-over-tls}
 
-KeeperCluster에서 TLS가 활성화되어 있으면 ClickHouseCluster는 자동으로 Keeper 노드에 대한 보안 연결(connection)을 사용합니다.
+`keeperClusterRef`가 참조하는 KeeperCluster에서 TLS가 활성화되어 있으면 ClickHouseCluster는 자동으로 Keeper 노드에 대한 보안 연결(connection)을 사용합니다.
+`externalKeeper`를 사용할 때는 대신 `tls: Enabled`를 설정하고, 각 노드의 `port`를 앙상블의 보안 클라이언트 포트(예: `9281`)로 지정하십시오.
 
-ClickHouseCluster는 시스템 신뢰 저장소와 구성한 모든 `caBundle`을 기준으로 Keeper 노드 인증서를 검증합니다.
+ClickHouseCluster는 시스템 트러스트 스토어와 구성한 모든 `caBundle`을 기준으로 Keeper 노드 인증서를 검증합니다.
 
 비공개 CA(예: 자체 서명 또는 내부 CA)를 신뢰하려면 사용자 지정 CA 번들 참조를 제공하십시오:
 
