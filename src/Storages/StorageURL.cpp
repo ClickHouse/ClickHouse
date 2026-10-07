@@ -2229,7 +2229,8 @@ StorageURL::StorageURL(
     const String & http_method_,
     ASTPtr partition_by_,
     bool distributed_processing_,
-    const RemoteDescriptionCaller & glob_caller_)
+    const RemoteDescriptionCaller & glob_caller_,
+    bool is_replayed_definition_)
     : IStorageURLBase(
         uri_,
         context_,
@@ -2245,6 +2246,7 @@ StorageURL::StorageURL(
         partition_by_,
         distributed_processing_,
         glob_caller_)
+    , is_replayed_definition(is_replayed_definition_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     context_->getHTTPHeaderFilter().checkHeaders(headers);
@@ -2789,17 +2791,19 @@ AzureURLParts parseAzureURL(const String & url)
 
 void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
-    TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
+    TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
+        args, "", format_name, context, /*with_structure=*/false, is_replayed_definition);
 
     /// Materialize the resolved URL into engine args so that DETACH/ATTACH and server restart
     /// reproduce the originally-resolved URL even if `url_base` is later changed or unset.
     /// `uri` is the URL after `url_base` resolution (computed by `getConfiguration`).
     /// `skip_userinfo=true` avoids persisting credentials that may originate from `url_base`
     /// into the CREATE TABLE AST.
-    overrideURLInEngineArgs(args, uri, context, /*skip_userinfo=*/ true);
+    overrideURLInEngineArgs(args, uri, context, /*skip_userinfo=*/ true, is_replayed_definition);
 }
 
-void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo)
+void StorageURL::overrideURLInEngineArgs(
+    ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo, bool is_replayed_definition)
 {
     if (args.empty())
         return;
@@ -2827,7 +2831,8 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     /// Read the `url` key directly instead of going through `processNamedCollectionResult`:
     /// this function is also called for collections of other engines (e.g. `S3`), whose keys
     /// would not pass the `URL` engine validation.
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context, /*throw_unknown_collection=*/false))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args, context, /*throw_unknown_collection=*/false, nullptr, nullptr, /* settings= */ nullptr, is_replayed_definition))
     {
         if (named_collection->getOrDefault<String>("url", "") == resolved_url)
             return;
@@ -2855,12 +2860,14 @@ void StorageURL::overrideURLInEngineArgs(ASTs & args, const String & resolved_ur
     args.push_back(makeASTOperator("equals", std::move(key_value_args)));
 }
 
-StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
+StorageURL::Configuration
+StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id, bool is_replayed_definition)
 {
     StorageURL::Configuration configuration;
     const auto & url_base = local_context->getSettingsRef()[Setting::url_base].value;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            args, local_context, true, nullptr, table_id, /* settings= */ nullptr, is_replayed_definition))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
@@ -2929,11 +2936,13 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment_,
         String resolved_url_,
-        String resolved_format_)
+        String resolved_format_,
+        bool is_replayed_definition_)
         : StorageProxy(table_id_)
         , nested(std::move(nested_))
         , resolved_url(std::move(resolved_url_))
         , resolved_format(std::move(resolved_format_))
+        , is_replayed_definition(is_replayed_definition_)
     {
         StorageInMemoryMetadata metadata;
         const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
@@ -3012,7 +3021,7 @@ public:
         /// matching the order in `StorageURL::addInferredEngineArgsToCreateQuery`.
         materializeResolvedFormatInEngineArgs(args, context);
 
-        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
+        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true, is_replayed_definition);
     }
 
     /// Preserve the `URL` engine's metadata-only rename: a plain `URL` table can be renamed without
@@ -3057,7 +3066,7 @@ private:
             return;
 
         TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(
-            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false);
+            args, /*structure_=*/"", resolved_format, context, /*with_structure=*/false, is_replayed_definition);
     }
 
     StoragePtr nested;
@@ -3065,6 +3074,7 @@ private:
     String resolved_url;
     /// The delegate's inferred data format, materialized into the persisted engine args on creation.
     String resolved_format;
+    const bool is_replayed_definition;
 };
 }
 
@@ -3083,6 +3093,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         return nullptr;
 
     auto context = args.getLocalContext();
+    const bool is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
 
     /// Resolve url/format/compression on a clone so the persisted arguments are not modified.
     /// This also handles positional, key-value and named-collection argument forms uniformly.
@@ -3094,7 +3105,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
     StorageURL::Configuration configuration;
     try
     {
-        configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id);
+        configuration = StorageURL::getConfiguration(probe_args, context, &args.table_id, is_replayed_definition);
     }
     catch (...) // NOLINT(bugprone-empty-catch) // Ok: not a URL-engine argument shape we can classify; the plain URL path below reports any errors.
     {
@@ -3221,7 +3232,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
 
     return std::make_shared<StorageURLSchemeDispatch>(
         std::move(delegate_storage), args.table_id, args.columns, args.constraints, args.comment,
-        configuration.url, std::move(resolved_format));
+        configuration.url, std::move(resolved_format), is_replayed_definition);
 }
 
 void registerStorageURL(StorageFactory & factory);
@@ -3240,12 +3251,13 @@ void registerStorageURL(StorageFactory & factory)
             ASTs & engine_args = args.engine_args;
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
+            const bool is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
 
             ASTPtr partition_by;
             if (args.storage_def->partition_by)
                 partition_by = args.storage_def->partition_by->clone();
 
-            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id);
+            auto config = StorageURL::getConfiguration(engine_args, context, &args.table_id, is_replayed_definition);
             const bool use_object_storage
                 = config.http_method.empty()
                 && urlPathHasListableGlobs(config.url);
@@ -3266,7 +3278,8 @@ void registerStorageURL(StorageFactory & factory)
                     config.http_method,
                     partition_by,
                     /* distributed_processing */ false,
-                    tableEngineURLCaller());
+                    tableEngineURLCaller(),
+                    is_replayed_definition);
             }
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)
@@ -3284,15 +3297,16 @@ void registerStorageURL(StorageFactory & factory)
             /// and the table metadata. The object storage itself has to be built from the fully
             /// resolved URL including userinfo, so it is initialized from a scratch copy of the
             /// arguments that never reaches the AST.
-            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true);
+            StorageURL::overrideURLInEngineArgs(engine_args, config.url, context, /*skip_userinfo=*/ true, is_replayed_definition);
 
             ASTs object_storage_args;
             object_storage_args.reserve(engine_args.size());
             for (const auto & engine_arg : engine_args)
                 object_storage_args.push_back(engine_arg->clone());
-            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false);
+            StorageURL::overrideURLInEngineArgs(object_storage_args, config.url, context, /*skip_userinfo=*/ false, is_replayed_definition);
 
             auto configuration = std::make_shared<StorageWebConfiguration>(tableEngineURLCaller());
+            configuration->is_replayed_definition = is_replayed_definition;
             StorageObjectStorageConfiguration::initialize(*configuration, object_storage_args, context, /* with_table_structure */ false);
 
             /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
