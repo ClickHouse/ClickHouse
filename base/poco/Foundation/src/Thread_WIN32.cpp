@@ -114,17 +114,40 @@ void ThreadImpl::startImpl(SharedPtr<Runnable> pTarget)
 
 void ThreadImpl::createImpl(Entry ent, void* pData)
 {
+	/// The thread is created suspended and only resumed once its priority is set: if that fails, the
+	/// caller gets an exception and may destroy this object and the `Runnable`, so the thread must not
+	/// have started running against them.
 #if defined(_DLL)
-	_thread = CreateThread(NULL, _stackSize, ent, pData, 0, &_threadId);
+	_thread = CreateThread(NULL, _stackSize, ent, pData, CREATE_SUSPENDED, &_threadId);
 #else
 	unsigned threadId;
-	_thread = (HANDLE) _beginthreadex(NULL, _stackSize, ent, this, 0, &threadId);
+	_thread = (HANDLE) _beginthreadex(NULL, _stackSize, ent, this, CREATE_SUSPENDED, &threadId);
 	_threadId = static_cast<DWORD>(threadId);
 #endif
 	if (!_thread)
 		throw SystemException("cannot create thread");
 	if (_prio != PRIO_NORMAL_IMPL && !SetThreadPriority(_thread, _prio))
+	{
+		discardSuspendedThread();
 		throw SystemException("cannot set thread priority");
+	}
+	if (ResumeThread(_thread) == static_cast<DWORD>(-1))
+	{
+		discardSuspendedThread();
+		throw SystemException("cannot start thread");
+	}
+}
+
+
+void ThreadImpl::discardSuspendedThread()
+{
+	/// The thread has not executed any of its code, so terminating it cannot leave anything half-done.
+	TerminateThread(_thread, 0);
+	WaitForSingleObject(_thread, INFINITE);
+	CloseHandle(_thread);
+	_thread = 0;
+	_threadId = 0;
+	_pRunnableTarget.reset();
 }
 
 

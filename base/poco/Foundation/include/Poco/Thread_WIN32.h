@@ -83,6 +83,7 @@ protected:
 
 	void createImpl(Entry ent, void* pData);
 	void threadCleanup();
+	void discardSuspendedThread();
 
 private:
 	class CurrentThreadHolder
