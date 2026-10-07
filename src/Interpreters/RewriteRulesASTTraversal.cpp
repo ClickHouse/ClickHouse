@@ -467,16 +467,28 @@ void validateQueryRulesExist(ContextPtr context)
     if (active_rule_names.empty())
         return;
 
-    std::unordered_set<String> existing_rule_names;
-    for (const auto & [rule_name, rule_object] : RewriteRules::instance().getAll())
-        existing_rule_names.insert(rule_name);
+    std::unordered_map<String, RewriteRuleObjectPtr> rules_by_name;
+    for (auto & [rule_name, rule_object] : RewriteRules::instance().getAll())
+        rules_by_name.emplace(rule_name, rule_object);
 
+    /// Mirror the checks of `astTraversal`, so the fast paths accept exactly the `query_rules`
+    /// values that ordinary SQL accepts.
     for (const auto & name : active_rule_names)
-        if (!existing_rule_names.contains(name))
+    {
+        auto rule_it = rules_by_name.find(name);
+        if (rule_it == rules_by_name.end())
             throw Exception(
                 ErrorCodes::REWRITE_RULE_DOESNT_EXIST,
                 "Rewrite rule `{}` listed in the `query_rules` setting does not exist",
                 name);
+        if (const auto & rejection = rule_it->second->getLoadRejectionReason())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Rewrite rule `{}` listed in the `query_rules` setting failed template validation "
+                "when it was loaded from storage and cannot be applied (drop or recreate the rule "
+                "to resolve this): {}",
+                name, *rejection);
+    }
 }
 
 void checkRewriteRuleTemplateLimits(const IAST & ast, const Settings & settings)
