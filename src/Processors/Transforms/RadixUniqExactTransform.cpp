@@ -217,9 +217,10 @@ constexpr size_t MAX_LOCAL_SET_BYTES = 1024 * 1024;
 /// A stream deduplicates its buffered keys once it has buffered this many keys for the first time.
 constexpr size_t INITIAL_COMPACTION_BUDGET = 64 * 1024;
 
-/// The number of buffered keys of a stream that are deduplicated first to estimate whether the deduplication of
-/// all of them is worth it.
+/// The number of buffered keys of a stream, and the number of chains, that are deduplicated first to estimate whether
+/// the deduplication of all of them is worth it.
 constexpr size_t COMPACTION_SAMPLE_KEYS = 4096;
+constexpr size_t COMPACTION_SAMPLE_CHAINS = 8;
 
 /// After a deduplication, the budget is this many times the number of keys that remain buffered. Each deduplication
 /// inserts all the buffered keys again, so a large factor makes the repeated keys cheaper, at the cost of memory.
@@ -565,33 +566,54 @@ private:
     /// of the distinct keys of the stream.
     void compactStream(Stream & stream)
     {
-        size_t sampled_before = 0;
-        size_t sampled_known_distinct = 0;
-        size_t sampled_after = 0;
+        /// The decisions are made by the medians over the sampled chains, not by the totals: a key that is repeated
+        /// much more often than the others (such as an empty string) is in a single chain, and must not make the
+        /// stream look like all its keys are repeated.
+        std::vector<double> remaining_ratios;
+        std::vector<double> new_distinct_ratios;
+        size_t sampled_keys = 0;
         size_t num_compacted = 0;
-        for (; num_compacted < num_partitions && sampled_before < COMPACTION_SAMPLE_KEYS; ++num_compacted)
+        for (; num_compacted < num_partitions && (sampled_keys < COMPACTION_SAMPLE_KEYS || num_compacted < COMPACTION_SAMPLE_CHAINS);
+             ++num_compacted)
         {
             auto & chain = stream.chains[stream.next_sample_chain];
             stream.next_sample_chain = (stream.next_sample_chain + 1) % num_partitions;
-            sampled_before += chain.size;
-            sampled_known_distinct += chain.num_distinct;
+            const size_t before = chain.size;
+            const size_t known_distinct = chain.num_distinct;
             compact(stream, chain);
-            sampled_after += chain.size;
-        }
-        stream.num_buffered -= sampled_before - sampled_after;
+            const size_t after = chain.size;
 
-        /// Whether the keys are mostly repeated is decided by the keys that were routed since the last deduplication:
-        /// once every key of the stream has been seen, the ratio of all the buffered keys to the distinct ones is
-        /// `COMPACTION_BUDGET_FACTOR` after every deduplication, whatever the number of repeats.
-        const bool mostly_repeated = (sampled_after - sampled_known_distinct) * 4 <= sampled_before - sampled_known_distinct;
-        const size_t estimated_size = stream.num_buffered * sampled_after / std::max<size_t>(sampled_before, 1) + 1;
-        if (mostly_repeated && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
+            sampled_keys += before;
+            stream.num_buffered -= before - after;
+            if (before != 0)
+                remaining_ratios.push_back(static_cast<double>(after) / static_cast<double>(before));
+            /// Whether the keys are mostly repeated is decided by the keys that were routed since the last
+            /// deduplication: once every key of the stream has been seen, the ratio of all the buffered keys to the
+            /// distinct ones is `COMPACTION_BUDGET_FACTOR` after every deduplication, whatever the number of repeats.
+            if (before != known_distinct)
+                new_distinct_ratios.push_back(
+                    static_cast<double>(after - known_distinct) / static_cast<double>(before - known_distinct));
+        }
+
+        auto median = [](std::vector<double> & values, double if_empty)
+        {
+            if (values.empty())
+                return if_empty;
+            auto middle = values.begin() + values.size() / 2;
+            std::nth_element(values.begin(), middle, values.end());
+            return *middle;
+        };
+        const double remaining_ratio = median(remaining_ratios, 1);
+        const double new_distinct_ratio = median(new_distinct_ratios, 1);
+
+        const size_t estimated_size = static_cast<size_t>(static_cast<double>(stream.num_buffered) * remaining_ratio) + 1;
+        if (new_distinct_ratio <= 0.25 && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
         {
             switchToUnboundedSetMode(stream, estimated_size);
             return;
         }
 
-        if (sampled_after * 4 > sampled_before * 3)
+        if (remaining_ratio > 0.75)
         {
             stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream.num_buffered * COMPACTION_BUDGET_FACTOR);
             return;
