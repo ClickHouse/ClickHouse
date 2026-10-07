@@ -20,6 +20,8 @@ public:
     std::string constructRootFilesDirectoryKey() const;
     std::string constructFilesDirectoryKey(const std::string & directory_remote_path) const;
     std::string constructFileObjectKey(const std::string & directory_remote_path, const std::string & file_name) const;
+    /// Object key of a blob given its key relative to the common key prefix (see `FileRemoteInfo::blob_key`).
+    std::string constructBlobObjectKey(const std::string & blob_key) const;
     std::string constructDirectoryObjectKey(const std::string & directory_remote_path) const;
 
     std::optional<std::pair<std::string, std::string>> parseFileObjectKey(const std::string & key) const;

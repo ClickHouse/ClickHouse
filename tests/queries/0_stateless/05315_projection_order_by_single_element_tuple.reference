@@ -1,0 +1,7 @@
+CREATE TABLE t\n(\n    `c0` Int32,\n    PROJECTION p\n    (\n        SELECT c0\n        ORDER BY tuple(c0)\n    )\n)\nENGINE = MergeTree\nORDER BY tuple()
+CREATE TABLE t\n(\n    `c0` Int32,\n    `c1` Int32,\n    PROJECTION p\n    (\n        SELECT c0\n        ORDER BY\n            c0,\n            c1\n    )\n)\nENGINE = MergeTree\nORDER BY tuple()
+CREATE TABLE t\n(\n    `c0` Int32,\n    `c1` Int32,\n    PROJECTION p\n    (\n        SELECT c0\n        ORDER BY\n            c0,\n            c1\n    )\n)\nENGINE = MergeTree\nORDER BY tuple()
+CREATE TABLE t\n(\n    `c0` Int32,\n    PROJECTION p\n    (\n        SELECT c0\n        ORDER BY c0\n    )\n)\nENGINE = MergeTree\nORDER BY tuple()
+1
+2
+3
