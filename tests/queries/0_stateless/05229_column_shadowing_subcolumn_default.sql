@@ -83,3 +83,18 @@ SELECT id, n.x, n.y, z FROM t_nested_compact ORDER BY id;
 SELECT id, length(n.x) FROM t_nested_compact ORDER BY id;
 
 DROP TABLE t_nested_compact;
+
+-- A skip index over `a.size0` built in a part where that name meant the sizes of `a` must not be used
+-- to prune the column of that name added later: its granules hold the sizes, not the default.
+DROP TABLE IF EXISTS t_added_size0_index;
+CREATE TABLE t_added_size0_index (a Array(UInt64), INDEX i `a.size0` TYPE minmax GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_added_size0_index VALUES ([0]), ([1, 2]);
+ALTER TABLE t_added_size0_index ADD COLUMN `a.size0` UInt64 DEFAULT 7;
+INSERT INTO t_added_size0_index (a, `a.size0`) VALUES ([3], 1);
+
+SELECT 'a skip index over the subcolumn of that name is not used for the column';
+SELECT count() FROM t_added_size0_index WHERE `a.size0` = 7;
+SELECT count() FROM t_added_size0_index WHERE `a.size0` = 7 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_added_size0_index;
