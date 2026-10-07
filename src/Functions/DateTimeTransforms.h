@@ -178,8 +178,7 @@ enum class DateRoundingInterval : UInt8
     ISOYear,
 };
 
-/// Monotonicity factor of a calendar field: the first day of its day, month or year as an unclamped day number.
-/// It must not saturate to `Date`: that would give a `DateTime` on 1969-12-31 the factor of the next period.
+/// First day of the day, month or year as an unclamped day number; saturating to `Date` would move 1969-12-31 to the next period.
 template <DateRoundingInterval interval>
 struct ToStartOfPeriodFactorImpl
 {
