@@ -109,7 +109,10 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & args) const override { return function->isSuitableForShortCircuitArgumentsExecution(args); }
 
-    bool canThrow(const DataTypesWithConstInfo & args) const override { return function->canThrow(args); }
+    /// Unlike `FunctionToExecutableFunctionAdaptor::canThrow`, it does not fall back to the approximation by
+    /// `isSuitableForShortCircuitArgumentsExecution`: it is used to reorder the arguments of `and`/`or`,
+    /// which must never introduce an exception.
+    bool canThrow(const DataTypesWithConstInfo & args) const override { return function->canThrowIfKnown(args).value_or(true); }
 
     bool isNameInsensitive() const override { return function->isNameInsensitive(); }
 

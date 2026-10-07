@@ -84,3 +84,10 @@ SELECT sum(intDiv(100, blockSize()) = 10 AND number % 2 = 1) FROM numbers(100)
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10;
 SELECT count() FROM numbers(100) WHERE intDiv(100, blockSize()) = 10 AND number % 2 = 1
 SETTINGS short_circuit_function_evaluation = 'enable', short_circuit_function_evaluation_reorder_arguments = 1, max_block_size = 10;
+
+-- A function that does not describe whether it can throw (`toBool` throws on unknown strings) is not executed before
+-- the arguments that precede it, even though it is cheap.
+SELECT sum(number >= 0 AND s != 'maybe' AND toBool(s)) FROM (SELECT arrayJoin(['true', 'maybe', 'false']) AS s, number FROM numbers(1))
+SETTINGS short_circuit_function_evaluation = 'force_enable', short_circuit_function_evaluation_reorder_arguments = 1;
+SELECT count() FROM (SELECT arrayJoin(['true', 'maybe', 'false']) AS s, number FROM numbers(1)) WHERE number >= 0 AND s != 'maybe' AND toBool(s)
+SETTINGS short_circuit_function_evaluation = 'force_enable', short_circuit_function_evaluation_reorder_arguments = 1;

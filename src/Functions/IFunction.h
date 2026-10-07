@@ -11,6 +11,8 @@
 #include <Functions/ComparisonOrderDomain.h>
 #include <Interpreters/Context_fwd.h>
 
+#include <optional>
+
 #include "config.h"
 
 #include <functional>
@@ -732,15 +734,23 @@ public:
       * cannot throw while it can, surfaces as an exception thrown for rows that the query does
       * not use at all.
       *
-      * By default it falls back to `isSuitableForShortCircuitArgumentsExecution`, which answers a
-      * different question ("is it worth to evaluate this function lazily"), and is only a rough
-      * approximation of this one: a function that is expensive but cannot throw is reported as
-      * throwing (which is safe, it just loses an optimization), while a function that is cheap
-      * and can throw is reported as not throwing (which is not safe). Override this method
-      * whenever the two properties differ.
+      * It is also used to decide whether the arguments of `and`/`or` can be executed in another order
+      * (see `IFunctionBase::canThrow`), which does not accept an approximation, so a function
+      * describes this property in `canThrowIfKnown`, and `nullopt` means that it does not.
+      *
+      * For `ColumnReplicated`, the functions that do not describe it fall back to
+      * `isSuitableForShortCircuitArgumentsExecution`, which answers a different question ("is it
+      * worth to evaluate this function lazily"), and is only a rough approximation of this one:
+      * a function that is expensive but cannot throw is reported as throwing (which is safe, it
+      * just loses an optimization), while a function that is cheap and can throw is reported as
+      * not throwing (which is not safe). Override `canThrowIfKnown` whenever possible.
       */
-    virtual bool canThrow(const DataTypesWithConstInfo & arguments) const
+    virtual std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & /*arguments*/) const { return {}; }
+
+    bool canThrow(const DataTypesWithConstInfo & arguments) const
     {
+        if (auto res = canThrowIfKnown(arguments))
+            return *res;
         return isSuitableForShortCircuitArgumentsExecution(arguments);
     }
 

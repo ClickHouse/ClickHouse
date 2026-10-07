@@ -923,6 +923,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
         {
             /// The first argument is lazy, because it is heavy while another one is cheap (see `arguments_are_commutative`).
             /// Start from the cheap one.
+            ProfileEvents::increment(ProfileEvents::ShortCircuitArgumentsReordered);
             new_args.emplace_back(std::move(arguments[last_not_short_circuit_arg_index]));
             for (const auto & index : short_circuit_args_index)
                 new_args.emplace_back(std::move(arguments[index]));

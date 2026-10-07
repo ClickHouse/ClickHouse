@@ -2347,11 +2347,38 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
-        /// `canThrow` (which falls back to this method) agrees with the execution path.
+        /// `canThrowIfKnown` (which relies on this method) agrees with the execution path.
         return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
                 && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
                     || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
+    }
+
+    /// Only the operations on native numbers that are known not to throw are described, everything else
+    /// (`Decimal` overflow, `Date` and `Interval` arithmetic, negative shifts, `intDiv` of floats, etc.) may throw.
+    std::optional<bool> canThrowIfKnown(const DataTypesWithConstInfo & arguments) const override
+    {
+        if (arguments.size() != 2 || isSuitableForShortCircuitArgumentsExecution(arguments))
+            return true;
+
+        const auto left = removeNullable(recursiveRemoveLowCardinality(arguments[0].type));
+        const auto right = removeNullable(recursiveRemoveLowCardinality(arguments[1].type));
+        if (!isNativeNumber(left) || !isNativeNumber(right))
+            return true;
+
+        constexpr std::string_view name_view = Name::name;
+        if constexpr (is_plus || is_minus || is_multiply || IsOperation<Op>::div_floating
+            || IsOperation<Op>::least || IsOperation<Op>::greatest
+            || name_view == "bitAnd" || name_view == "bitOr" || name_view == "bitXor")
+            return false;
+
+        /// The divisor is a constant here (see `isSuitableForShortCircuitArgumentsExecution`), so division by zero
+        /// does not depend on the rows. Division of the minimal signed number by minus one does, so the divisor
+        /// must be unsigned.
+        if constexpr (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo)
+            return !isNativeInteger(left) || !isNativeUInt(right);
+
+        return true;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
