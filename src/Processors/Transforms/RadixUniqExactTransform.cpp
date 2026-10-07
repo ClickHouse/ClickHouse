@@ -89,6 +89,10 @@ ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
     return (UInt128(high) << 64) | low;
 }
 
+/// When a set does not fit into the L2 cache, the cell of the key this far ahead is prefetched while a key is inserted,
+/// so that the cache misses of the inserts overlap.
+constexpr size_t PREFETCH_DISTANCE = 32;
+
 /// Open addressing set with linear probing. The zero key is kept out of the cells, because zero marks an empty cell.
 template <typename Key>
 class FlatSet
@@ -132,7 +136,58 @@ public:
         }
     }
 
-    ALWAYS_INLINE void prefetch(Key key) const { __builtin_prefetch(&cells[slotHash(key) >> shift]); }
+    /// Inserts the keys, which must fit without exceeding the load factor of 0.5. The fields are kept in local
+    /// variables, because the stores into the cells could alias them.
+    template <bool prefetch>
+    void insertMany(const Key * __restrict keys, size_t num_keys)
+    {
+        chassert((count + num_keys) * 2 <= capacity());
+        Key * __restrict data = cells.data();
+        const size_t local_mask = mask;
+        const size_t local_shift = shift;
+        size_t local_count = count;
+        bool local_has_zero = has_zero;
+
+        for (size_t i = 0; i < num_keys; ++i)
+        {
+            if (prefetch && i + PREFETCH_DISTANCE < num_keys)
+                __builtin_prefetch(&data[slotHash(keys[i + PREFETCH_DISTANCE]) >> local_shift]);
+
+            const Key key = keys[i];
+            if (key == Key{})
+            {
+                local_has_zero = true;
+                continue;
+            }
+
+            size_t place = slotHash(key) >> local_shift;
+            while (true)
+            {
+                const Key cell = data[place];
+                if (cell == key)
+                    break;
+                if (cell == Key{})
+                {
+                    data[place] = key;
+                    ++local_count;
+                    break;
+                }
+                place = (place + 1) & local_mask;
+            }
+        }
+
+        count = local_count;
+        has_zero = local_has_zero;
+    }
+
+    /// Inserts the keys, choosing whether to prefetch by the size of the set.
+    void insertMany(const Key * keys, size_t num_keys)
+    {
+        if (capacity() * sizeof(Key) > getL2CacheSize())
+            insertMany<true>(keys, num_keys);
+        else
+            insertMany<false>(keys, num_keys);
+    }
 
     size_t size() const { return count + has_zero; }
     size_t capacity() const { return mask + 1; }
@@ -155,10 +210,6 @@ private:
     size_t count = 0;
     bool has_zero = false;
 };
-
-/// When a set does not fit into the L2 cache, the cell of the key this far ahead is prefetched while a key is inserted,
-/// so that the cache misses of the inserts overlap.
-constexpr size_t PREFETCH_DISTANCE = 32;
 
 /// A stream switches from its local set to the routing once the set would outgrow this size.
 constexpr size_t MAX_LOCAL_SET_BYTES = 1024 * 1024;
@@ -244,17 +295,14 @@ public:
                 has_last_value |= !is_null;
             }
 
-            if (stream.mode == Mode::UnboundedSet && stream.local_set.capacity() * sizeof(Key) > getL2CacheSize())
+            auto & set = stream.local_set;
+            if (stream.mode != Mode::Radix && (set.numCellsInUse() + num_keys) * 2 <= set.capacity())
             {
-                for (size_t i = 0; i < num_keys; ++i)
-                {
-                    if (i + PREFETCH_DISTANCE < num_keys)
-                        stream.local_set.prefetch(keys[i + PREFETCH_DISTANCE]);
-                    insert(stream, keys[i]);
-                }
+                set.insertMany(keys.data(), num_keys);
             }
             else
             {
+                /// The set may need to grow, or the keys are routed.
                 for (size_t i = 0; i < num_keys; ++i)
                     insert(stream, keys[i]);
             }
@@ -296,24 +344,7 @@ public:
         for (const auto & stream : streams)
         {
             for (const Block * block = stream.chains[partition].head; block; block = block->next)
-            {
-                const Key * keys = block->keys();
-                const size_t size = block->size;
-                if (set.capacity() * sizeof(Key) > getL2CacheSize())
-                {
-                    for (size_t i = 0; i < size; ++i)
-                    {
-                        if (i + PREFETCH_DISTANCE < size)
-                            set.prefetch(keys[i + PREFETCH_DISTANCE]);
-                        set.insert(keys[i]);
-                    }
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        set.insert(keys[i]);
-                }
-            }
+                set.insertMany(block->keys(), block->size);
         }
 
         return set.size();
@@ -516,11 +547,7 @@ private:
         set.reset(std::bit_ceil(chain.size * 2));
 
         for (const Block * block = chain.head; block; block = block->next)
-        {
-            const Key * keys = block->keys();
-            for (size_t i = 0; i < block->size; ++i)
-                set.insert(keys[i]);
-        }
+            set.insertMany(block->keys(), block->size);
 
         /// Return all the blocks to the free lists and push the distinct keys back, reusing the same blocks.
         for (Block * block = chain.head; block;)
