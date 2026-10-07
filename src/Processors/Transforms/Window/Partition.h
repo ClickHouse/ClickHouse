@@ -24,8 +24,15 @@ public:
 
     const PartitionBounds & bounds() const;
 
+    int64_t size(const SlidingBlocks & blocks) const;
+    int64_t rowIndex(const SlidingBlocks & blocks, RowNumber row) const;
+    int64_t peerGroupIndex(const SlidingBlocks & blocks, RowNumber row) const;
+    RowPoint pointAt(const SlidingBlocks & blocks, RowNumber row) const;
+
 private:
     PartitionBounds partition_bounds;
+    int64_t first_row_index_in_input = 0;
+    int64_t first_peer_group_index_in_input = 0;
 };
 
 }
