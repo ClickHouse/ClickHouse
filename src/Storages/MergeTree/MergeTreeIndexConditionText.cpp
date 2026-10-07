@@ -1312,6 +1312,35 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         ITokenizer::Type::Array
     };
 
+    const bool can_search_substrings
+        = tokenizer->supportsStringLike() || like_optimization_supported_tokenizers.contains(tokenizer->getType());
+
+    /// Exact: a needle occurs in a value iff its `%needle%` pattern matches one of the value's tokens.
+    auto try_search_needle_by_infix_pattern = [&](std::string_view needle, bool case_insensitive)
+    {
+        const bool tokenizer_supported = like_optimization_supported_tokenizers.contains(tokenizer->getType());
+        const bool scan_enabled = settings[Setting::use_text_index_like_evaluation_by_dictionary_scan];
+        const bool processors_supported
+            = !has_postprocessor && (!has_preprocessor || (case_insensitive && preprocessor->isASCIILowerOrUpper()));
+        const bool needle_supported = UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(needle.data()), needle.size());
+
+        if (!tokenizer_supported || !scan_enabled || !processors_supported || !candidate_for_exact_mode
+            || !affix_patterns_allowed || !needle_supported)
+            return false;
+
+        auto patterns = stringLikeToPatterns(
+            "%" + escapeForLikePattern(needle) + "%", case_insensitive, /*allow_arbitrary_patterns=*/ true);
+        if (patterns.size() != 1)
+            return false;
+
+        out.function = RPNElement::FUNCTION_LIKE;
+        out.text_search_queries.emplace_back(
+            std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, TextIndexDirectReadMode::Exact,
+                VectorWithMemoryTracking<String>(), std::move(patterns)));
+        return true;
+    };
+
     if (has_map_keys_column || has_map_values_column)
     {
         if (!value_data_type.isStringOrFixedString())
@@ -1725,6 +1754,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         }
         return false;
+    }
+    if (function_name == "match" && can_search_substrings)
+    {
+        /// A pattern of ASCII letters and digits is a literal, so `match` is `LIKE '%pattern%'`.
+        const auto & pattern = value_field.safeGet<String>();
+        if (!pattern.empty() && std::ranges::all_of(pattern, isAlphaNumericASCII)
+            && try_search_needle_by_infix_pattern(pattern, /*case_insensitive=*/ false))
+            return true;
     }
     if (function_name == "match" && tokenizer->supportsStringLike())
     {
