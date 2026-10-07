@@ -1796,7 +1796,9 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
     /// at it would report an ordered input as unordered, and the runtime-filter pass would then erase the
     /// merge algorithms of the join above. `grace_hash` without a spill threshold is skipped over for the same
     /// reason: `tryCreateJoin` leaves the join to the next algorithm, and so does `tryAddJoinRuntimeFilter`.
-    /// Any other algorithm is taken as selected: its output order is not exploitable.
+    /// `ie_join` claims a join that has equality keys only when `isIEJoinPreferred` says so (listed first,
+    /// with at least two inequality predicates), and it is skipped over otherwise, like `tryAddJoinRuntimeFilter`
+    /// does. Any other algorithm is taken as selected: its output order is not exploitable.
     for (auto algorithm : join_settings.join_algorithms)
     {
         switch (algorithm)
@@ -1817,6 +1819,10 @@ std::vector<Names> JoinStepLogical::predictMergeJoinOutputOrder(const QueryPlan:
                 return {};
             case JoinAlgorithm::DIRECT:
                 continue;
+            case JoinAlgorithm::IE_JOIN:
+                if (!isIEJoinPreferred(join_operator, join_settings))
+                    continue;
+                return {};
             case JoinAlgorithm::GRACE_HASH:
                 if (isGraceHashJoinSkipped())
                     continue;
