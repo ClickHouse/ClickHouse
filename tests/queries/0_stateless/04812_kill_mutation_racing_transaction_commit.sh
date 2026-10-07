@@ -200,6 +200,7 @@ $CLICKHOUSE_CLIENT -q "
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT transaction_force_unknown_state_after_commit"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT transaction_commit_pause_before_mutation_csn"
 
+ARM4_START=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp64Micro(now64(6))")
 tx_async 4 "BEGIN TRANSACTION"
 tx_async 4 "ALTER TABLE t_kill_race_4 UPDATE v = v + 100 WHERE 1"
 tx_async 4 "COMMIT"
@@ -232,6 +233,7 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'commit_finalization_deferred', count() > 0
     FROM system.text_log
     WHERE event_date >= yesterday()
+        AND toUnixTimestamp64Micro(event_time_microseconds) >= $ARM4_START
         AND startsWith(query_id, '${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx4_')
         AND message LIKE 'Connection lost on attempt to commit transaction%will finalize it later%'
 "
