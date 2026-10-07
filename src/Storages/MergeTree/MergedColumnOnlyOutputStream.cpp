@@ -108,6 +108,15 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     }
 
     new_part->setColumns(columns, serialization_infos, metadata_snapshot->getMetadataVersion());
+
+    /// This column's key list is not on the main part writer. The part finalizer no longer reads
+    /// `<column>.key_columns.txt` back, so publish the list the column writer just built.
+    for (const auto & [name, manifest] : writer->getMapKeyColumnsManifests())
+    {
+        if (columns.contains(name))
+            new_part->map_key_columns_manifests.insert_or_assign(name, manifest);
+    }
+
     return checksums;
 }
 

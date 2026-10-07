@@ -3089,6 +3089,9 @@ void MergeTask::VerticalMergeStage::finishPerKeyMapColumn() const
         state.union_manifest,
         global_ctx->context->getWriteSettings(),
         global_ctx->gathered_data.checksums);
+    /// The part finalizer does not read this file back. The per-key piece writers are not
+    /// `with_key_columns` serializations, so they do not carry the list either.
+    global_ctx->new_data_part->map_key_columns_manifests.insert_or_assign(state.map_column_name, state.union_manifest);
     if (ctx->need_sync)
         key_columns_file->sync();
     key_columns_file->finalize();

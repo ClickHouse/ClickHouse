@@ -661,6 +661,7 @@ void MergeTreeDataPartWriterCompact::writeMapKeyColumnsFiles(MergeTreeDataPartCh
             manifest,
             settings.query_write_settings,
             checksums));
+        rememberMapKeyColumnsManifest(name, manifest);
     }
 }
 

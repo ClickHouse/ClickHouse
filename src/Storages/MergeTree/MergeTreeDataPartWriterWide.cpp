@@ -1347,6 +1347,7 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
             manifest,
             settings.query_write_settings,
             checksums));
+        rememberMapKeyColumnsManifest(column.name, manifest);
     }
 }
 
