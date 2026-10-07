@@ -120,23 +120,27 @@ def test_replicated_patch_part_lag(start_cluster):
             nodes[2].query(query.format(table=table), settings=parallel_settings)
             == updated
         )
-        assert (
-            nodes[0].query(
-                in_order_query.format(table=table),
-                settings={**parallel_settings, "optimize_read_in_order": 1},
-            )
-            == updated
-        )
         assert nodes[0].query(
             query.format(table=table),
             settings={**parallel_settings, "parallel_replicas_local_plan": 0},
         ) in (updated, not_updated)
 
-        # The in-sync replica keeps reading, the lagging one does not.
+        # The in-sync replica keeps reading, the lagging one does not, with both coordinators.
         query_id = f"patch_lag_{uuid.uuid4().hex}"
         assert (
             nodes[0].query(
                 query.format(table=table), settings=parallel_settings, query_id=query_id
+            )
+            == updated
+        )
+        assert follower_read_rows(nodes[2], query_id) > 0
+        assert follower_read_rows(nodes[1], query_id) == 0
+        query_id = f"patch_lag_in_order_{uuid.uuid4().hex}"
+        assert (
+            nodes[0].query(
+                in_order_query.format(table=table),
+                settings={**parallel_settings, "optimize_read_in_order": 1},
+                query_id=query_id,
             )
             == updated
         )
