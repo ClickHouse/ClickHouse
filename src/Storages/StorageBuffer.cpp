@@ -278,7 +278,6 @@ private:
 namespace
 {
 
-/// A column of `destination` whose conversion to its type in `declared` does not preserve the order.
 std::optional<NameAndTypePair> findOrderBreakingConversion(const ColumnsDescription & destination, const ColumnsDescription & declared)
 {
     const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
@@ -294,7 +293,6 @@ std::optional<NameAndTypePair> findOrderBreakingConversion(const ColumnsDescript
 /// Whether a read of `storage` lands on a `Merge`, through wrappers that forward both the stage and the read.
 bool readLandsOnMerge(StoragePtr storage)
 {
-    /// A chain that comes back to a storage it already passed is a cycle and reaches no `Merge`.
     std::vector<StoragePtr> passed;
     while (storage && std::find(passed.begin(), passed.end(), storage) == passed.end())
     {
@@ -394,8 +392,7 @@ void StorageBuffer::read(
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
 
-        /// The stage was chosen from an earlier, unlocked snapshot (see `getQueryProcessingStage`) and cannot
-        /// be lowered any more, so a conversion that a concurrent `ALTER` made order-breaking fails the query.
+        /// The stage was chosen from an earlier, unlocked snapshot and can no longer be lowered here.
         if (processed_stage > QueryProcessingStage::FetchColumns && readLandsOnMerge(destination))
         {
             if (auto column = findOrderBreakingConversion(destination_metadata_snapshot->getColumns(), metadata_snapshot->getColumns()))
