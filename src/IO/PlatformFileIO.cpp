@@ -41,6 +41,33 @@ DWORD clampCount(size_t bytes)
     return static_cast<DWORD>(std::min<size_t>(bytes, std::numeric_limits<DWORD>::max()));
 }
 
+/// Callers tell the benign failures from the fatal ones by `errno`: a reader that exits early (the
+/// feeder of `clickhouse-disks sed`, the `stdin` of a user-defined function driver) is `EPIPE`, which
+/// they suppress, so it must not be flattened into `EIO`.
+int writeErrorToErrno(DWORD error)
+{
+    switch (error)
+    {
+        /// `ERROR_NO_DATA` is what writing to a pipe whose read end is being closed reports.
+        case ERROR_BROKEN_PIPE:
+        case ERROR_NO_DATA:
+            return EPIPE;
+        case ERROR_DISK_FULL:
+        case ERROR_HANDLE_DISK_FULL:
+            return ENOSPC;
+        case ERROR_ACCESS_DENIED:
+        case ERROR_LOCK_VIOLATION:
+            return EACCES;
+        case ERROR_INVALID_HANDLE:
+            return EBADF;
+        case ERROR_NOT_ENOUGH_MEMORY:
+        case ERROR_OUTOFMEMORY:
+            return ENOMEM;
+        default:
+            return EIO;
+    }
+}
+
 OVERLAPPED makeOffset(size_t offset)
 {
     OVERLAPPED overlapped{};
@@ -103,7 +130,7 @@ Int64 platformWrite(int fd, const char * from, size_t bytes)
     DWORD bytes_written = 0;
     if (!WriteFile(handle, from, clampCount(bytes), &bytes_written, nullptr))
     {
-        errno = EIO;
+        errno = writeErrorToErrno(GetLastError());
         return -1;
     }
     return bytes_written;
@@ -189,7 +216,33 @@ int platformOpenReadWrite(const std::string & path)
 
 int platformOpenFile(const std::string & path, int flags, int mode)
 {
-    return ::_wopen(pathFromString(path).c_str(), flags | _O_BINARY, mode);
+    const int fd = ::_wopen(pathFromString(path).c_str(), flags | _O_BINARY, mode);
+    if (fd < 0 || !(flags & _O_APPEND))
+        return fd;
+
+    /// `_O_APPEND` is implemented by the CRT's `_write`, which seeks to the end before every write, but
+    /// `platformWrite` calls `WriteFile` on the handle directly. Reopen the file with `FILE_APPEND_DATA`
+    /// and without `FILE_WRITE_DATA`: then the kernel itself puts every write at the end of the file,
+    /// atomically, as `O_APPEND` does on POSIX. `_wopen` has already applied `_O_CREAT`, `_O_EXCL`,
+    /// `_O_TRUNC` and the mode, so the reopened handle only has to carry the access.
+    DWORD access = FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE;
+    if (flags & _O_RDWR)
+        access |= FILE_READ_DATA;
+    /// The share mode `_wopen` uses.
+    auto * append_handle = ReOpenFile(toHandle(fd), access, FILE_SHARE_READ | FILE_SHARE_WRITE, 0);
+    if (append_handle == INVALID_HANDLE_VALUE)
+    {
+        const DWORD error = GetLastError();
+        ::_close(fd);
+        errno = error == ERROR_SHARING_VIOLATION || error == ERROR_ACCESS_DENIED ? EACCES : EIO;
+        return -1;
+    }
+    ::_close(fd);
+
+    const int append_fd = ::_open_osfhandle(reinterpret_cast<intptr_t>(append_handle), _O_APPEND | _O_BINARY);
+    if (append_fd < 0)
+        CloseHandle(append_handle);
+    return append_fd;
 }
 
 int platformStat(const std::string & path, struct stat & out)
