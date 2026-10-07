@@ -198,6 +198,26 @@ def test_on_fly_mutations_differ(start_cluster):
         )
 
         check_plain_tables(table, {"apply_mutations_on_fly": 1})
+
+        # node0 gets the same pending mutation as node1: node1 keeps reading, node2 does not.
+        nodes[0].query(
+            f"ALTER TABLE {table} UPDATE b = 1 WHERE 1 SETTINGS mutations_sync = 0"
+        )
+        query_id = f"on_fly_{uuid.uuid4().hex}"
+        assert (
+            nodes[0].query(
+                plain_query.format(table=table),
+                settings={
+                    **parallel_settings,
+                    "parallel_replicas_for_non_replicated_merge_tree": 1,
+                    "apply_mutations_on_fly": 1,
+                },
+                query_id=query_id,
+            )
+            == plain_results[1]
+        )
+        assert follower_read_rows(nodes[1], query_id) > 0
+        assert follower_read_rows(nodes[2], query_id) == 0
     finally:
         for node in nodes:
             node.query(f"DROP TABLE IF EXISTS {table} SYNC")
