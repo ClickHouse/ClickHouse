@@ -17,6 +17,7 @@ DROP TABLE IF EXISTS t_local_04402;
 DROP TABLE IF EXISTS t_dist_04402;
 DROP VIEW IF EXISTS v_agg_04402;
 DROP VIEW IF EXISTS v_hav_04402;
+DROP TABLE IF EXISTS t_dates_04402;
 
 CREATE TABLE t_local_04402 (date Date, login UInt64, x Float64)
     ENGINE = MergeTree PARTITION BY date ORDER BY (date, login);
@@ -30,6 +31,9 @@ CREATE VIEW v_agg_04402 AS SELECT date, login, sum(x) AS s FROM t_dist_04402 GRO
 -- The same, but the grouping-key predicate is in the view's own HAVING.
 CREATE VIEW v_hav_04402 AS
     SELECT date, login, sum(x) AS s FROM t_dist_04402 GROUP BY date, login HAVING date = '2024-01-05';
+
+CREATE TABLE t_dates_04402 (date Date) ENGINE = MergeTree ORDER BY date;
+INSERT INTO t_dates_04402 VALUES ('2024-01-05');
 
 INSERT INTO t_local_04402
     SELECT toDate('2024-01-01') + (number % 10), number % 1000, number % 7
@@ -103,6 +107,38 @@ FROM (
     SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT toDate('2024-01-05') + rand() % 1)
 );
 
+-- Conjuncts whose result may differ between servers stay in HAVING, because HAVING is executed on the initiator:
+-- functions like `shardNum`, and subqueries reading a table or a table function.
+SELECT '--- HAVING with shardNum';
+SELECT date, count() FROM t_dist_04402 GROUP BY date HAVING date >= toDate('2024-01-01') + 5 * shardNum() ORDER BY date;
+SELECT
+    countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, count() FROM t_dist_04402 GROUP BY date HAVING date >= toDate('2024-01-01') + 5 * shardNum()
+);
+SELECT '--- HAVING with subquery reading a table';
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT date FROM t_dates_04402);
+SELECT
+    countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT date FROM t_dates_04402)
+);
+SELECT '--- HAVING with subquery reading a table function';
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date
+    HAVING date IN (SELECT toDate('2024-01-05') + x % 1 FROM generateRandom('x UInt8') LIMIT 1);
+SELECT
+    countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date
+        HAVING date IN (SELECT toDate('2024-01-05') + x % 1 FROM generateRandom('x UInt8') LIMIT 1)
+);
+
 -- The predicate is not moved for ROLLUP and TOTALS, where it would change the super-aggregate rows.
 SELECT '--- WITH ROLLUP';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date WITH ROLLUP HAVING date = '2024-01-05' ORDER BY date;
@@ -138,3 +174,4 @@ DROP VIEW v_hav_04402;
 DROP VIEW v_agg_04402;
 DROP TABLE t_dist_04402;
 DROP TABLE t_local_04402;
+DROP TABLE t_dates_04402;

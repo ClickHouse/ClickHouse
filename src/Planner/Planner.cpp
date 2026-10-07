@@ -2728,8 +2728,10 @@ void Planner::buildPlanForQueryNode()
     /// `HAVING` is not executed here: it is applied by the initiator after merging the aggregation states.
     /// Conjuncts that depend only on the aggregation keys can be applied before aggregation instead,
     /// so they can be used for partition pruning and the primary key analysis.
+    /// A conjunct moved here is evaluated on this server instead of the initiator, so the ones whose result may differ
+    /// between servers (like `shardNum()` or a subquery reading a table) stay in `HAVING`.
     if (select_query_info.need_aggregate && select_query_options.to_stage == QueryProcessingStage::WithMergeableState)
-        moveNonAggregateHavingConjunctsToWhere(query_node, query_context);
+        moveNonAggregateHavingConjunctsToWhere(query_node, query_context, /*keep_server_dependent_conjuncts=*/ true);
 
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);

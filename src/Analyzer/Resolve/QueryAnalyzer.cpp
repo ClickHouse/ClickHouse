@@ -7033,7 +7033,7 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
     if (!query_node_typed.hasGroupBy() && aggregate_function_nodes.empty())
         return;
 
-    moveNonAggregateHavingConjunctsToWhere(query_node_typed, scope.context);
+    moveNonAggregateHavingConjunctsToWhere(query_node_typed, scope.context, /*keep_server_dependent_conjuncts=*/ false);
 }
 
 }

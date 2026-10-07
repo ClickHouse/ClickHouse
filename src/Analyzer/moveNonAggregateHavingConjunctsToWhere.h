@@ -12,11 +12,14 @@ class QueryNode;
   * query analysis that ClickHouse used before v24.3.
   *
   * Conjuncts containing aggregate, `grouping`, `arrayJoin` or non-deterministic functions stay in `HAVING`,
-  * as well as conjuncts with subqueries containing non-deterministic functions.
+  * as well as conjuncts with subqueries containing non-deterministic functions or table functions.
+  * With `keep_server_dependent_conjuncts`, conjuncts whose result may differ between servers also stay in `HAVING`:
+  * the ones with functions like `shardNum` or `dictGet`, or reading a table or a table function. This is needed when
+  * the query runs on a shard, while `HAVING` would be executed on the initiator.
   * If any conjunct contains a window function or a stateful function, nothing is moved.
   * Nothing is moved for `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` and `GROUPING SETS`, because
   * there the result of `HAVING` depends on the super-aggregate rows or on the totals.
   */
-void moveNonAggregateHavingConjunctsToWhere(QueryNode & query_node, const ContextPtr & context);
+void moveNonAggregateHavingConjunctsToWhere(QueryNode & query_node, const ContextPtr & context, bool keep_server_dependent_conjuncts);
 
 }
