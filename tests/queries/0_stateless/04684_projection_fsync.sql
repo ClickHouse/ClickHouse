@@ -112,6 +112,59 @@ CHECK TABLE t_proj SETTINGS check_query_single_value_result = 1;
 DROP TABLE t_proj;
 DROP TABLE t_plain;
 
+-- A merge rebuilds a projection its source parts lack when `materialize_projections_on_merge = 1`.
+-- The rebuilt projection is written while the merge reads its rows, before the merge is finalized.
+CREATE TABLE t_rebuild (id UInt64, key String, v UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
+         max_bytes_to_merge_at_max_space_in_pool = 1, materialize_projections_on_merge = 1;
+
+CREATE TABLE t_rebuild_plain (id UInt64, key String, v UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 1, fsync_part_directory = 1,
+         min_rows_to_fsync_after_merge = 1000, min_compressed_bytes_to_fsync_after_merge = 0,
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
+         max_bytes_to_merge_at_max_space_in_pool = 1, materialize_projections_on_merge = 1;
+
+-- Both parts are written before the projection exists: parts with different projection sets are
+-- never merged together.
+INSERT INTO t_rebuild SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
+INSERT INTO t_rebuild SELECT number + 5000, concat('k', toString(number % 7)), number FROM numbers(5000);
+INSERT INTO t_rebuild_plain SELECT number, concat('k', toString(number % 7)), number FROM numbers(5000);
+INSERT INTO t_rebuild_plain SELECT number + 5000, concat('k', toString(number % 7)), number FROM numbers(5000);
+ALTER TABLE t_rebuild ADD PROJECTION pr (SELECT key, sum(v) GROUP BY key);
+
+OPTIMIZE TABLE t_rebuild FINAL SETTINGS optimize_throw_if_noop = 1, alter_sync = 2;
+OPTIMIZE TABLE t_rebuild_plain FINAL SETTINGS optimize_throw_if_noop = 1, alter_sync = 2;
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Guards the assertion below: the merge must really have rebuilt the projection.
+SELECT 'merge rebuilt projections',
+    (SELECT ProfileEvents['RebuiltProjections'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_rebuild %' AND type = 'QueryFinish');
+
+SELECT 'merge rebuilt projection adds file syncs',
+    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_rebuild %' AND type = 'QueryFinish')
+    >
+    (SELECT ProfileEvents['FileSync'] FROM system.query_log
+     WHERE current_database = currentDatabase() AND query_kind = 'Optimize'
+       AND query NOT LIKE '%query_log%' AND query LIKE '%t\_rebuild\_plain%' AND type = 'QueryFinish');
+
+SELECT sum(v) FROM t_rebuild GROUP BY key ORDER BY key SETTINGS force_optimize_projection = 1 FORMAT Null;
+SELECT 'rebuild check';
+CHECK TABLE t_rebuild SETTINGS check_query_single_value_result = 1;
+
+DROP TABLE t_rebuild;
+DROP TABLE t_rebuild_plain;
+
 -- The same directory-sync guarantee on `Packed` storage, where the whole projection is a single
 -- `data.packed` archive written only when the part's transaction is precommitted. The directory
 -- fsync has to happen after that, so cover both storage types.
@@ -265,19 +318,12 @@ ALTER TABLE t_mat_plain UPDATE v = v + 1 WHERE 1 SETTINGS mutations_sync = 2;
 SYSTEM FLUSH LOGS part_log;
 
 -- The projection rebuild the mutation performs must fsync the projection on top of everything the
--- identical projection-less mutation already syncs.
---
--- The delta is one, and stays one however many columns the projection has, because of what this
--- counter can see and not because of how much is synced: `part_log` takes its `ProfileEvents` from a
--- scope that counts the mutation thread's own events only, and `parallelSyncFiles` hands every batch
--- of two or more files to the shared IO pool. The projection's columns and its metadata files are
--- synced in such batches and are invisible here, while its primary index is synced on its own,
--- inline, and is the one fsync that reaches this counter. Asserting the exact value means a missing
--- sync and a stray extra one both redden.
+-- identical projection-less mutation already syncs. `part_log` counts only the syncs made on the
+-- mutation thread itself, so only the comparison is meaningful, not the size of the difference.
 SELECT 'mutation syncs projection files',
     (SELECT argMax(ProfileEvents['FileSync'], event_time_microseconds) FROM system.part_log
      WHERE database = currentDatabase() AND table = 't_mat' AND event_type = 'MutatePart')
-    -
+    >
     (SELECT argMax(ProfileEvents['FileSync'], event_time_microseconds) FROM system.part_log
      WHERE database = currentDatabase() AND table = 't_mat_plain' AND event_type = 'MutatePart');
 
@@ -288,3 +334,61 @@ CHECK TABLE t_mat SETTINGS check_query_single_value_result = 1;
 
 DROP TABLE t_mat;
 DROP TABLE t_mat_plain;
+
+-- A mutation writes a temporary projection part per `min_insert_block_size_rows` (1048449 for
+-- background operations) projection rows, then merges them into the final projection part. The
+-- projection is far smaller than the parent, so with the byte threshold between the two sizes that
+-- merge does not decide to sync by itself and has to inherit the mutation's decision. It is compared
+-- with an identical table whose threshold makes the projection merge sync by itself: both sides are
+-- read through the same counter, so the comparison does not depend on which syncs it can see.
+-- The data is ballast for the size threshold, so the granularity is pinned to keep the part small in
+-- granules.
+CREATE TABLE t_multi (id UInt64, v UInt8, h UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 0, fsync_part_directory = 1,
+         min_rows_to_fsync_after_merge = 0, min_compressed_bytes_to_fsync_after_merge = 4000000,
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
+         max_bytes_to_merge_at_max_space_in_pool = 1,
+         index_granularity = 8192, index_granularity_bytes = 10485760, merge_max_block_size = 8192;
+
+CREATE TABLE t_multi_own (id UInt64, v UInt8, h UInt64)
+ENGINE = MergeTree ORDER BY id
+SETTINGS fsync_after_insert = 0, fsync_part_directory = 1,
+         min_rows_to_fsync_after_merge = 0, min_compressed_bytes_to_fsync_after_merge = 1,
+         min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         min_bytes_for_full_part_storage = 0,
+         max_bytes_to_merge_at_max_space_in_pool = 1,
+         index_granularity = 8192, index_granularity_bytes = 10485760, merge_max_block_size = 8192;
+
+-- One part each: `h` keeps the parent above the byte threshold, the sorted `UInt8` projection far below it.
+INSERT INTO t_multi SELECT number, number % 7, cityHash64(number) FROM numbers(1100000)
+SETTINGS max_insert_block_size = 2000000, min_insert_block_size_rows = 2000000, min_insert_block_size_bytes = 0;
+INSERT INTO t_multi_own SELECT number, number % 7, cityHash64(number) FROM numbers(1100000)
+SETTINGS max_insert_block_size = 2000000, min_insert_block_size_rows = 2000000, min_insert_block_size_bytes = 0;
+
+ALTER TABLE t_multi ADD PROJECTION pv (SELECT v ORDER BY v);
+ALTER TABLE t_multi_own ADD PROJECTION pv (SELECT v ORDER BY v);
+ALTER TABLE t_multi MATERIALIZE PROJECTION pv SETTINGS mutations_sync = 2;
+ALTER TABLE t_multi_own MATERIALIZE PROJECTION pv SETTINGS mutations_sync = 2;
+
+SYSTEM FLUSH LOGS part_log;
+
+-- Guards the assertion below: the projection must have been merged from several temporary parts.
+SELECT 'multi-part projection merges temporary parts',
+    (SELECT ProfileEvents['MergeSourceParts'] FROM system.part_log
+     WHERE database = currentDatabase() AND table = 't_multi' AND event_type = 'MutatePart') > 1;
+
+SELECT 'multi-part projection syncs as if it decided by itself',
+    (SELECT ProfileEvents['FileSync'] FROM system.part_log
+     WHERE database = currentDatabase() AND table = 't_multi' AND event_type = 'MutatePart')
+    =
+    (SELECT ProfileEvents['FileSync'] FROM system.part_log
+     WHERE database = currentDatabase() AND table = 't_multi_own' AND event_type = 'MutatePart');
+
+SELECT count() FROM t_multi WHERE v = 3 SETTINGS force_optimize_projection = 1 FORMAT Null;
+SELECT 'multi-part check';
+CHECK TABLE t_multi SETTINGS check_query_single_value_result = 1;
+
+DROP TABLE t_multi;
+DROP TABLE t_multi_own;
