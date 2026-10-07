@@ -40,18 +40,18 @@ range default frame, block size 3: 13357263743035060102
 range default frame, block size 5: 13357263743035060102
 range default frame, block size 8: 13357263743035060102
 range default frame, block size 65505: 13357263743035060102
-range 2 preceding 2 following, block size 1: 1483019648748919594
-range 2 preceding 2 following, block size 2: 1483019648748919594
-range 2 preceding 2 following, block size 3: 1483019648748919594
-range 2 preceding 2 following, block size 5: 1483019648748919594
-range 2 preceding 2 following, block size 8: 1483019648748919594
-range 2 preceding 2 following, block size 65505: 1483019648748919594
-range 1 following 3 following, block size 1: 6835367125444773859
-range 1 following 3 following, block size 2: 6835367125444773859
-range 1 following 3 following, block size 3: 6835367125444773859
-range 1 following 3 following, block size 5: 6835367125444773859
-range 1 following 3 following, block size 8: 6835367125444773859
-range 1 following 3 following, block size 65505: 6835367125444773859
+range 2 preceding 2 following, block size 1: 10688411035020753036
+range 2 preceding 2 following, block size 2: 10688411035020753036
+range 2 preceding 2 following, block size 3: 10688411035020753036
+range 2 preceding 2 following, block size 5: 10688411035020753036
+range 2 preceding 2 following, block size 8: 10688411035020753036
+range 2 preceding 2 following, block size 65505: 10688411035020753036
+range 1 following 3 following, block size 1: 12033996426724338373
+range 1 following 3 following, block size 2: 12033996426724338373
+range 1 following 3 following, block size 3: 12033996426724338373
+range 1 following 3 following, block size 5: 12033996426724338373
+range 1 following 3 following, block size 8: 12033996426724338373
+range 1 following 3 following, block size 65505: 12033996426724338373
 range current row unbounded following, block size 1: 1532669462100361585
 range current row unbounded following, block size 2: 1532669462100361585
 range current row unbounded following, block size 3: 1532669462100361585
@@ -64,12 +64,12 @@ range desc 2 preceding 1 following, block size 3: 2404716788115669151
 range desc 2 preceding 1 following, block size 5: 2404716788115669151
 range desc 2 preceding 1 following, block size 8: 2404716788115669151
 range desc 2 preceding 1 following, block size 65505: 2404716788115669151
-range nulls last 1 preceding 1 following, block size 1: 17687872465217290607
-range nulls last 1 preceding 1 following, block size 2: 17687872465217290607
-range nulls last 1 preceding 1 following, block size 3: 17687872465217290607
-range nulls last 1 preceding 1 following, block size 5: 17687872465217290607
-range nulls last 1 preceding 1 following, block size 8: 17687872465217290607
-range nulls last 1 preceding 1 following, block size 65505: 17687872465217290607
+range nulls last 1 preceding 1 following, block size 1: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 2: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 3: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 5: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 8: 14620615442772582527
+range nulls last 1 preceding 1 following, block size 65505: 14620615442772582527
 groups 1 preceding 1 following, block size 1: 2987055642492315637
 groups 1 preceding 1 following, block size 2: 2987055642492315637
 groups 1 preceding 1 following, block size 3: 2987055642492315637
@@ -136,12 +136,12 @@ several aggregates one window, block size 3: 7815462790188342041
 several aggregates one window, block size 5: 7815462790188342041
 several aggregates one window, block size 8: 7815462790188342041
 several aggregates one window, block size 65505: 7815462790188342041
-no partition by, block size 1: 2260193094194772579
-no partition by, block size 2: 2260193094194772579
-no partition by, block size 3: 2260193094194772579
-no partition by, block size 5: 2260193094194772579
-no partition by, block size 8: 2260193094194772579
-no partition by, block size 65505: 2260193094194772579
+no partition by, block size 1: 4738754011334650202
+no partition by, block size 2: 4738754011334650202
+no partition by, block size 3: 4738754011334650202
+no partition by, block size 5: 4738754011334650202
+no partition by, block size 8: 4738754011334650202
+no partition by, block size 65505: 4738754011334650202
 no order by, block size 1: 15790117687148653428
 no order by, block size 2: 15790117687148653428
 no order by, block size 3: 15790117687148653428
