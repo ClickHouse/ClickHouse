@@ -830,23 +830,13 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
 namespace
 {
 
-/// Collect, for every plain-named column the type-checked DAG will actually reference, the set of
-/// sources that expose that unqualified name. Used to decide whether a DISTINCT / GROUP BY / LIMIT BY
-/// key can be processed shard-locally (see isShardLocalKeyExpression).
-///
-/// This mirrors how buildActionsDAGFromExpressionNode names nodes with
-/// use_column_identifier_as_action_node_name = false (see PlannerActionsVisitor::visitColumn): an
-/// expression-backed column (ALIAS column, ARRAY JOIN column) is not materialized under its own name -
-/// the builder recurses into its expression, so only the leaf physical columns reach the DAG. Recording
-/// the wrapper name here would count sources the DAG never sees and reject sound keys (e.g. grouping by
-/// `l.k_alias, r.k_alias` where the aliases wrap different physical columns from each side). A
-/// constant-backed column contributes a constant, not a column, so it and its subtree are skipped too.
+/// Maps each unqualified column name the plain-name `ActionsDAG` will reference to the sources exposing it. Like
+/// that builder, it looks through expression-backed columns (ALIAS, ARRAY JOIN) and skips constant-backed ones.
 class KeyColumnSourcesVisitor : public InDepthQueryTreeVisitor<KeyColumnSourcesVisitor>
 {
 public:
     bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & /*child*/)
     {
-        /// A constant-backed column becomes a constant in the DAG; do not descend into its expression.
         const auto * column_node = parent->as<ColumnNode>();
         return !(column_node && column_node->hasExpression()
             && column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT);
@@ -855,8 +845,6 @@ public:
     void visitImpl(QueryTreeNodePtr & node)
     {
         const auto * column_node = node->as<ColumnNode>();
-        /// Record only leaf physical columns: expression-backed columns are represented in the DAG by
-        /// their expression (visited as children), not by their own name.
         if (column_node && !column_node->hasExpression())
             name_to_sources[column_node->getColumnName()].insert(column_node->getColumnSourceOrNull().get());
     }
@@ -864,13 +852,8 @@ public:
     std::unordered_map<String, std::unordered_set<const IQueryTreeNode *>> name_to_sources;
 };
 
-/// Whether `source` is reachable in `join_tree` on a path where no join null-extends it, so its rows
-/// always carry their own column values. A RIGHT/FULL join null-extends its left side and a LEFT/FULL
-/// join its right side; INNER/CROSS/comma joins and ARRAY JOIN (incl. LEFT ARRAY JOIN) never null-extend
-/// the source's own columns. Conservative: false when `source` is not found or is only reachable through
-/// a null-extending join (its null-extended rows carry no sharding-key value and are produced on every
-/// shard, so a group keyed by them would span shards). Recurses through JoinNode, CrossJoinNode and
-/// ArrayJoinNode (a CROSS join nested under an outer JoinNode is reached this way).
+/// Whether `source` is reachable in `join_tree` without crossing a join that null-extends it: null-extended rows
+/// carry no sharding key and appear on every shard.
 bool sourceIsAlwaysPreserved(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & source)
 {
     if (join_tree.get() == source.get())
@@ -900,18 +883,8 @@ bool sourceIsAlwaysPreserved(const QueryTreeNodePtr & join_tree, const QueryTree
     return false;
 }
 
-/// Whether grouping/distinct by `expr` keeps every group's rows on a single shard.
-///
-/// The sharding key is matched against `expr` by unqualified column name, which identifies a column
-/// only within one source. Grouping stays shard-local only when this table's own sharding key pins the
-/// group, so reject when:
-///   - an unqualified name is exposed by more than one source (ambiguous, and the type-checked DAG
-///     built over plain names can collapse columns of different types and throw);
-///   - a sharding-key column name is not backed by this table's own column (another side's same-named
-///     column does not pin the shard); or
-///   - a RIGHT/FULL join can null-extend this table (unmatched rows carry no sharding key and appear on
-///     every shard).
-/// Other-side columns with distinct names only refine the grouping within a shard, so they are kept.
+/// Whether grouping by `expr` keeps each group on one shard. The sharding key is matched by unqualified name, so a
+/// name exposed by several sources, or a sharding-key column not backed by this table, does not pin the shard.
 bool isShardLocalKeyExpression(
     const QueryTreeNodePtr & expr,
     const QueryTreeNodePtr & expected_source,
@@ -951,9 +924,7 @@ bool isShardLocalKeyExpression(
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
-    /// Guard the optimization before building the type-checked DAG below: the checks match `expr` against
-    /// the sharding key by unqualified column name, which is unambiguous only within a single source (see
-    /// isShardLocalKeyExpression for the join cases this rejects).
+    /// Must run before the DAG below is built: it can throw on same-named columns of different sources.
     const auto & query_node = query_info.query_tree->as<const QueryNode &>();
     if (!isShardLocalKeyExpression(
             expr,
