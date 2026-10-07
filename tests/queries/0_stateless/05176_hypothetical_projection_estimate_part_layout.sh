@@ -145,7 +145,7 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_est_z SELECT number, number % 100, number FROM numbers(1000);
     DELETE FROM t_est_z WHERE a >= 100 SETTINGS lightweight_deletes_sync = 2;
     CREATE HYPOTHETICAL PROJECTION p_z ON t_est_z (SELECT a, b, v ORDER BY b);
-    EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE a < 100 AND b < 30 SETTINGS ${PIN}, max_rows_to_read = 300;
+    EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE a < 100 AND b < 30 SETTINGS ${PIN}, max_bytes_to_read = 10000;
     DELETE FROM t_est_z WHERE 1 SETTINGS lightweight_deletes_sync = 2;
     EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE b < 30 SETTINGS ${PIN};
 " | grep -E '^\s+(empirical_status|empirical_reason):' | awk '{$1=$1; print}'

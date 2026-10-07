@@ -76,7 +76,7 @@ ReadFromMergeTree (p_d)
 Granules: 2
 --- a part whose rows are mostly, then all deleted ---
 empirical_status: unsupported
-empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
 empirical_status: unsupported
 empirical_reason: Every row of the parts read is deleted, so the projection would store no part to read
 --- a full projection scan that is cheaper than the base read ---
