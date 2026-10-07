@@ -162,6 +162,7 @@
     M(ObjectStorageExclusiveLeasesAcquired, "Number of exclusive leases of keys, such as the compaction of an Iceberg table, acquired in object storage by this server.", ValueType::Number) \
     M(ObjectStorageExclusiveLeasesRefused, "Number of attempts to acquire an exclusive lease in object storage given up because another replica held a live lease of the key.", ValueType::Number) \
     M(ObjectStorageExpiredLeasesRemoved, "Number of expired lease objects and condemned markers removed from object storage.", ValueType::Number) \
+    M(IcebergRowEstimateSkippedPositionDeleteFiles, "Position delete files the plan-time Iceberg row estimate does not subtract because their bounds cover more than one data file.", ValueType::Number) \
     M(DeltaLakeDeltaLogExistenceChecks, "Number of object-storage listings issued to check whether a DeltaLake `_delta_log` exists (e.g. during CREATE TABLE).", ValueType::Number) \
     M(OneLakeAccessTokenRequests, "Number of access token requests issued by the OneLake catalog via the Entra ID refresh token grant.", ValueType::Number) \
     M(OneLakeAccessTokenRequestFailures, "Number of failed access token requests issued by the OneLake catalog via the Entra ID refresh token grant (including expired or revoked refresh tokens).", ValueType::Number) \

@@ -1,0 +1,20 @@
+--- T1: delete file scoped to one data file
+Join: m[1000] ⋈ t[no_stats~180]
+live rows: 180
+skipped delete files: 0
+--- T2: delete file covering two data files
+Join: m[1000] ⋈ t[no_stats~200]
+live rows: 180
+skipped delete files: 1
+--- T3: no filter
+Join: m[1000] ⋈ t[no_stats~180]
+live rows: 180
+--- T3: WHERE r = 'eu' prunes the partition with the deletes
+Join: m[1000] ⋈ t[no_stats~100]
+live rows: 100
+--- T3: WHERE r = 'us' keeps only that partition
+Join: m[1000] ⋈ t[no_stats~80]
+live rows: 80
+--- T4: 1010 rows, a live file-scoped position delete of 30, a removed one of 20, equality deletes removing 99
+Join: m[1000] ⋈ t[no_stats~980]
+live rows: 881
