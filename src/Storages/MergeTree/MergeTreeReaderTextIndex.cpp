@@ -22,6 +22,7 @@
 #include <Core/Settings.h>
 
 #include <algorithm>
+#include <numeric>
 #include <optional>
 
 namespace ProfileEvents
@@ -1276,30 +1277,39 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
             ranks.clear();
     };
 
+    /// The rarest token leads and the others follow in ascending count; the first one past the lead's document moves the lead.
     /// Each candidate arrives with its rank in every token, so the ranks cost nothing extra.
-    bool exhausted = false;
-    while (!exhausted)
-    {
-        UInt32 target = cursors[0].docId();
-        for (size_t u = 1; u < num_tokens; ++u)
-            target = std::max(target, cursors[u].docId());
+    std::vector<size_t> order(num_tokens);
+    std::iota(order.begin(), order.end(), size_t{0});
+    std::ranges::stable_sort(order, {}, [&cursors](size_t u) { return cursors[u].numDocuments(); });
 
-        bool aligned = true;
-        for (size_t u = 0; u < num_tokens && !exhausted; ++u)
+    auto & lead = cursors[order[0]];
+    bool exhausted = false;
+    while (!exhausted && lead.valid())
+    {
+        const UInt32 doc = lead.docId();
+        size_t i = 1;
+        for (; i < num_tokens; ++i)
         {
-            auto & cursor = cursors[u];
-            if (cursor.docId() < target)
-            {
-                cursor.advance(target);
-                exhausted = !cursor.valid();
-            }
-            aligned &= !exhausted && cursor.docId() == target;
+            auto & follower = cursors[order[i]];
+            if (follower.valid() && follower.docId() < doc)
+                follower.advance(doc);
+
+            exhausted = !follower.valid();
+            if (exhausted || follower.docId() > doc)
+                break;
         }
 
-        if (exhausted || !aligned)
-            continue;
+        if (exhausted)
+            break;
 
-        chunk_candidates.push_back(target);
+        if (i < num_tokens)
+        {
+            lead.advance(cursors[order[i]].docId());
+            continue;
+        }
+
+        chunk_candidates.push_back(doc);
         for (size_t u = 0; u < num_tokens; ++u)
             chunk_ranks[u].push_back(cursors[u].rank());
         ++num_candidates;
@@ -1307,11 +1317,8 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
         if (chunk_candidates.size() == PhraseChunkMatcher::CHUNK)
             match_chunk();
 
-        for (size_t u = 0; u < num_tokens; ++u)
-        {
-            cursors[u].next();
-            exhausted |= !cursors[u].valid();
-        }
+        for (auto & cursor : cursors)
+            cursor.next();
     }
     match_chunk();
 
