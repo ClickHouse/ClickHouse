@@ -15,6 +15,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -186,7 +187,8 @@ static void loadRowCountTargets(StoragePtr table)
 /// so is a materialized view with a `TO` table: its rows belong to the target table, which its
 /// drop does not touch. Likewise, dropping or detaching an `Alias` only removes the alias itself,
 /// so it holds no rows of its own; `TRUNCATE` of an alias truncates its target, so it is judged
-/// by the target's row count. A `lazy_load_tables` database hands out a `StorageTableProxy`, which
+/// by the target's row count. The same holds for dropping or detaching a `Merge` table: it only
+/// removes the wrapper, not the rows of its source tables. A `lazy_load_tables` database hands out a `StorageTableProxy`, which
 /// reports no row count until it is loaded, so the stand-in is loaded first: otherwise `IF EMPTY`
 /// would refuse to drop an empty table that nobody has touched since the database was attached.
 /// An `Alias` and a materialized view with an inner table report the row count of their target,
@@ -194,7 +196,8 @@ static void loadRowCountTargets(StoragePtr table)
 bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDropQuery::Kind kind) const
 {
     const StoragePtr table = resolveStorageProxyLoading(table_or_proxy);
-    if (kind != ASTDropQuery::Kind::Truncate && dynamic_cast<const StorageAlias *>(table.get()))
+    if (kind != ASTDropQuery::Kind::Truncate
+        && (dynamic_cast<const StorageAlias *>(table.get()) || dynamic_cast<const StorageMerge *>(table.get())))
         return true;
     if (table->isView())
     {
