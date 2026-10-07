@@ -170,6 +170,11 @@ FROM (
 )
 SETTINGS distributed_group_by_no_merge = 2;
 
+-- Without GROUP BY there are no aggregation keys: a constant HAVING must not become a shard WHERE.
+SELECT '--- no GROUP BY, constant HAVING';
+SELECT sum(x) FROM t_dist_04402 HAVING 0;
+SELECT sum(x) FROM t_dist_04402 HAVING 1;
+
 DROP VIEW v_hav_04402;
 DROP VIEW v_agg_04402;
 DROP TABLE t_dist_04402;

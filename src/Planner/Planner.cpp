@@ -2730,7 +2730,9 @@ void Planner::buildPlanForQueryNode()
     /// so they can be used for partition pruning and the primary key analysis.
     /// A conjunct moved here is evaluated on this server instead of the initiator, so the ones whose result may differ
     /// between servers (like `shardNum()` or a subquery reading a table) stay in `HAVING`.
-    if (select_query_info.need_aggregate && select_query_options.to_stage == QueryProcessingStage::WithMergeableState)
+    /// Without `GROUP BY` there are no aggregation keys, so there is nothing to prune, and an empty input still produces a row.
+    if (select_query_info.need_aggregate && query_node.hasGroupBy()
+        && select_query_options.to_stage == QueryProcessingStage::WithMergeableState)
         moveNonAggregateHavingConjunctsToWhere(query_node, query_context, /*keep_server_dependent_conjuncts=*/ true);
 
     collectSets(query_tree, *planner_context);

@@ -55,3 +55,5 @@
 --- distributed_group_by_no_merge = 2
 2024-01-05	60002
 1	0
+--- no GROUP BY, constant HAVING
+599990
