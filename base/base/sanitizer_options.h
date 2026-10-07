@@ -86,11 +86,14 @@ const char * __tsan_default_suppressions()
     /// The `tokio` I/O driver (used by the Rust `Lance` crates) publishes a freshly allocated
     /// `ScheduledIo` to its worker threads through the epoll token, and TSan does not see that
     /// handoff, so it reports the `Arc::new` write in `RegistrationSet::allocate` racing with
-    /// `ScheduledIo::set_readiness` in the driver thread. This is a known false positive.
+    /// `ScheduledIo::set_readiness` in the driver thread. This is a known false positive. With the
+    /// `v0` symbol mangling that ClickHouse uses for Rust, the frame of an inherent method demangles
+    /// as `<tokio::runtime::io::registration_set::RegistrationSet>::allocate`; the `*` also
+    /// matches the legacy `tokio::runtime::io::registration_set::RegistrationSet::allocate`.
     return "race:^NonblockingBoundedQueue<DB::KeeperRequestForSession>::tryPush\n"
            "race:^NonblockingBoundedQueue<DB::KeeperResponseForSession>::tryPush\n"
            "race:^DB::getRequestBytesCost\n"
-           "race:tokio::runtime::io::registration_set::RegistrationSet>::allocate\n";
+           "race:tokio::runtime::io::registration_set::RegistrationSet*::allocate\n";
 }
 #endif
 
