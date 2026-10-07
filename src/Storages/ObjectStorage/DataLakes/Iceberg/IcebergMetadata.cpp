@@ -1486,58 +1486,79 @@ IcebergMetadata::estimateRead(StorageMetadataPtr storage_metadata_snapshot, cons
             context,
             /* require_ready_sets */ true);
 
+    std::vector<ManifestFileCacheKey> manifests_to_decode;
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         if (manifest_list_entry.content_type == ManifestFileContentType::DATA && manifest_list_pruner
             && manifest_list_pruner->canBePruned(manifest_list_entry.partition_spec_id, manifest_list_entry.partition_summaries))
-        {
             estimate.pruned_data_files = true;
-            continue;
-        }
+        else
+            manifests_to_decode.push_back(manifest_list_entry);
+    }
 
-        auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
-
-        if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
-            || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
-            estimate.has_delete_files = true;
-
-        /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
-        std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
-        for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+    /// Decoded in parallel as in `totalRows`, consumed in order on this thread.
+    size_t next_manifest = 0;
+    bool has_negative_record_count = false;
+    Iceberg::decodeManifestsInOrder(
+        manifests_to_decode,
+        settings[Setting::iceberg_manifest_decode_concurrency],
+        getIcebergManifestDecodeThreadPool().get(),
+        DB::ThreadName::ICEBERG_ITERATOR,
+        [this, &context, &table_state_snapshot](const ManifestFileCacheKey & manifest_list_entry)
         {
-            if (pruning_filter)
-            {
-                /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
-                auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
-                if (!pruner)
-                    pruner = std::make_unique<ManifestFilesPruner>(
-                        *persistent_components.schema_processor,
-                        table_state_snapshot->schema_id,
-                        data_file->resolved_schema_id,
-                        pruning_filter,
-                        files_handle.getPartitionKeyDescription(),
-                        context,
-                        /* require_ready_sets */ true);
+            return getManifestFileEntriesHandle(
+                object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+        },
+        [&](const ManifestFileIterator::ManifestFileEntriesHandle & files_handle)
+        {
+            const auto & manifest_list_entry = manifests_to_decode[next_manifest++];
 
-                const auto hyperrectangles
-                    = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
-                if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
+            if (!files_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty()
+                || !files_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+                estimate.has_delete_files = true;
+
+            /// The pruners refer to the partition key of this manifest, so they live as long as its handle.
+            std::unordered_map<Int32, std::unique_ptr<ManifestFilesPruner>> file_pruners_by_schema_id;
+            for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
+            {
+                if (pruning_filter)
                 {
-                    estimate.pruned_data_files = true;
-                    continue;
-                }
-            }
+                    /// Keyed by the file's schema: a pruner is bound to one schema, and a merged manifest can hold files of several.
+                    auto & pruner = file_pruners_by_schema_id[data_file->resolved_schema_id];
+                    if (!pruner)
+                        pruner = std::make_unique<ManifestFilesPruner>(
+                            *persistent_components.schema_processor,
+                            table_state_snapshot->schema_id,
+                            data_file->resolved_schema_id,
+                            pruning_filter,
+                            files_handle.getPartitionKeyDescription(),
+                            context,
+                            /* require_ready_sets */ true);
 
-            /// A negative count comes from a corrupted manifest, as in `totalRows`.
-            if (data_file->parsed_entry->record_count < 0)
-            {
-                estimate.rows.reset();
-                return estimate;
+                    const auto hyperrectangles
+                        = getDataFileHyperrectangles(*data_file, pruner->getMinMaxColumnTypes(), manifest_list_entry.manifest_file_path);
+                    if (pruner->canBePruned(data_file, hyperrectangles) != PruningReturnStatus::NOT_PRUNED)
+                    {
+                        estimate.pruned_data_files = true;
+                        continue;
+                    }
+                }
+
+                /// A negative count comes from a corrupted manifest, as in `totalRows`.
+                if (data_file->parsed_entry->record_count < 0)
+                {
+                    has_negative_record_count = true;
+                    return false;
+                }
+                /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
+                *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
             }
-            /// Trusted as written, although ClickHouse before 26.5 wrote the row count of the whole commit into each file.
-            *estimate.rows += static_cast<UInt64>(data_file->parsed_entry->record_count);
-        }
+            return true;
+        });
+    if (has_negative_record_count)
+    {
+        estimate.rows.reset();
+        return estimate;
     }
     return estimate;
 }
