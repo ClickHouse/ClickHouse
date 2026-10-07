@@ -76,6 +76,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 namespace ErrorCodes
@@ -406,6 +407,7 @@ PostgreSQLHandler::PostgreSQLHandler(
         params.cipherList = config.getString(prefix + Poco::Net::SSLManager::CFG_CIPHER_LIST, Poco::Net::SSLManager::VAL_CIPHER_LIST);
         params.cipherList
             = config.getString(prefix + Poco::Net::SSLManager::CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
+        params.cipherSuites = config.getString(prefix + Poco::Net::SSLManager::CFG_CIPHER_SUITES, "");
 
         bool require_tlsv1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1, false);
         bool require_tlsv1_1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_1, false);
@@ -450,9 +452,15 @@ PostgreSQLHandler::PostgreSQLHandler(
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
+    const std::shared_ptr<ReadBufferFromPocoSocket> previous_in = in;
+
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
+
+    /// The deadline lives in the buffer, so carry it over to the replacement.
+    if (previous_in)
+        in->adoptHandshakeDeadlineFrom(*previous_in);
 }
 
 void PostgreSQLHandler::run()
@@ -468,6 +476,10 @@ void PostgreSQLHandler::run()
     /// to be reachable from the whole server for as long as this one is open.
     server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, currentQueryId());
     SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(connection_id, secret_key); });
+
+    /// The listener leaves this socket without a receive timeout, so nothing else bounds a peer
+    /// that connects and says nothing.
+    in->setHandshakeTimeout(server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds]);
 
     try
     {
@@ -628,6 +640,8 @@ bool PostgreSQLHandler::startup()
     }
 
     authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
+
+    in->clearHandshakeTimeout();
 
     try
     {
@@ -1168,10 +1182,7 @@ void PostgreSQLHandler::processQuery()
     catch (const Exception & e)
     {
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// A failed query does not terminate the session in PostgreSQL: the server
         /// sends `ErrorResponse` and returns to the `ReadyForQuery` state. This is
         /// only safe while nothing has been sent for the failed statement -
@@ -1304,10 +1315,7 @@ void PostgreSQLHandler::processParseQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1325,10 +1333,7 @@ void PostgreSQLHandler::processBindQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1345,10 +1350,7 @@ void PostgreSQLHandler::processDescribeQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1394,10 +1396,7 @@ void PostgreSQLHandler::processExecuteQuery()
     catch (const Exception & e)
     {
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Recovering to `Sync` is only safe while nothing has been sent for the
         /// failed statement - otherwise the output stream may be cut in the
         /// middle of a message and continuing would desynchronize the protocol
@@ -1461,10 +1460,7 @@ void PostgreSQLHandler::processCloseQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1486,12 +1482,25 @@ void PostgreSQLHandler::processSyncQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         throw;
     }
+}
+
+void PostgreSQLHandler::sendErrorResponseOrRethrow(const Exception & e)
+{
+    /// A failed write to the client (for example, it went away in the middle of the result) cancels
+    /// `out`, and nothing can be written into a canceled buffer any more. There is nobody to
+    /// deliver `ErrorResponse` to, so rethrow the exception being handled and tear the connection
+    /// down instead. Once `out` is canceled, no handler can recover by sending another message,
+    /// which is why this is checked in every place that reports an error to the client.
+    if (out->isCanceled())
+        throw;
+
+    message_transport->send(
+        PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+        true);
 }
 
 bool PostgreSQLHandler::isEmptyQuery(const String & query)

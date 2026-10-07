@@ -1,4 +1,5 @@
 
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageMergeTreeTextIndex.h>
 
 #include <Columns/ColumnString.h>
@@ -14,6 +15,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ITokenizer.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -59,6 +61,12 @@ public:
 
         for (const auto & substream : text_index.getSubstreams())
             index_streams[substream.type] = {text_index.getFileName() + substream.suffix, substream.extension};
+
+        if (header->has("token_key"))
+            token_key_pos = header->getPositionByName("token_key");
+
+        if (header->has("token_value"))
+            token_value_pos = header->getPositionByName("token_value");
     }
 
     String getName() const override { return "MergeTreeTextIndex"; }
@@ -73,6 +81,9 @@ protected:
         size_t total_rows = 0;
         size_t num_columns = header->columns();
         MutableColumns result_columns = header->cloneEmptyColumns();
+
+        for (auto & column : result_columns)
+            column->reserve(max_block_size);
 
         /// Total rows may overflow the max_block_size.
         /// It is considered ok because dictionary block size
@@ -94,6 +105,10 @@ protected:
                 if (column_name == "token")
                 {
                     result_columns[pos]->insertRangeFrom(*dict_block->tokens, 0, block_size);
+                }
+                else if (column_name == "token_key" || column_name == "token_value")
+                {
+                    /// Filled together below: one decode per token serves both columns.
                 }
                 else if (column_name == "cardinality")
                 {
@@ -143,6 +158,7 @@ protected:
                 }
             }
 
+            fillDecodedTokenColumns(*dict_block, result_columns);
             total_rows += block_size;
         }
 
@@ -153,6 +169,30 @@ protected:
     }
 
 private:
+    /// Fill `token_key` and `token_value` (whichever are requested) from the block's tokens.
+    /// Present only for the `keyValuePairs` tokenizer, whose every token decodes.
+    void fillDecodedTokenColumns(const DictionaryBlock & dict_block, MutableColumns & result_columns) const
+    {
+        if (!token_key_pos && !token_value_pos)
+            return;
+
+        ColumnString * key_column = token_key_pos ? &assert_cast<ColumnString &>(*result_columns[*token_key_pos]) : nullptr;
+        ColumnString * value_column = token_value_pos ? &assert_cast<ColumnString &>(*result_columns[*token_value_pos]) : nullptr;
+        const size_t block_size = dict_block.size();
+
+        for (size_t i = 0; i < block_size; ++i)
+        {
+            const std::string_view token = dict_block.tokens->getDataAt(i);
+            const auto decoded = KeyValuePairsTokenizer::decodeToken(token);
+
+            if (key_column)
+                key_column->insertData(decoded.key.data(), decoded.key.size());
+
+            if (value_column)
+                value_column->insertData(decoded.value.data(), decoded.value.size());
+        }
+    }
+
     /// Read the next dictionary block.
     /// Returns std::nullopt when all parts are exhausted.
     std::optional<DictionaryBlock> readNextDictionaryBlock()
@@ -284,6 +324,10 @@ private:
     std::shared_ptr<const KeyCondition> token_key_condition;
     std::map<MergeTreeIndexSubstream::Type, std::pair<String, String>> index_streams;
 
+    /// Positions of `token_key` / `token_value` in the header, if requested.
+    std::optional<size_t> token_key_pos;
+    std::optional<size_t> token_value_pos;
+
     /// State for current part
     String current_part_name;
     std::unique_ptr<CompressedReadBufferFromFile> dictionary_buf;
@@ -362,6 +406,7 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 void ReadFromMergeTreeTextIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// Taken at read time: the storage outlives the query in a table created from the function before that was forbidden.
+    /// NOLINT(storage-cast): the table function resolves the source table before building this.
     auto data_parts = dynamic_cast<const MergeTreeData &>(*storage->source_table).getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
     auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(data_parts, virtual_columns_filter);
@@ -410,7 +455,7 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
-    if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
+    if (!castStorage<MergeTreeData>(source_table, DeferredTable::Load))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table->getName());
 
     StorageInMemoryMetadata storage_metadata;

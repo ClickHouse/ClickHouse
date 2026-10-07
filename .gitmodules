@@ -93,7 +93,7 @@
 	url = https://github.com/ClickHouse/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
-	url = https://github.com/ClickHouse/flatbuffers
+	url = https://github.com/google/flatbuffers
 [submodule "contrib/replxx"]
 	path = contrib/replxx
 	url = https://github.com/ClickHouse/replxx
@@ -314,7 +314,7 @@
 	url = https://github.com/sqids/sqids-cpp.git
 [submodule "contrib/idna"]
 	path = contrib/idna
-	url = https://github.com/ada-url/idna.git
+	url = https://github.com/ClickHouse/idna
 [submodule "contrib/google-cloud-cpp"]
 	path = contrib/google-cloud-cpp
 	url = https://github.com/ClickHouse/google-cloud-cpp.git
@@ -359,7 +359,7 @@
 	url = https://github.com/ClickHouse/ai-sdk-cpp
 [submodule "contrib/nlohmann-json"]
 	path = contrib/nlohmann-json
-	url = https://github.com/nlohmann/json.git
+	url = https://github.com/ClickHouse/json
 [submodule "contrib/crc32c"]
 	path = contrib/crc32c
 	url = https://github.com/ClickHouse/crc32c
@@ -413,7 +413,7 @@
 	url = https://github.com/ClickHouse/geometry.hpp
 [submodule "contrib/zxc"]
 	path = contrib/zxc
-	url = https://github.com/ClickHouse/zxc
+	url = https://github.com/hellobertrand/zxc
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext

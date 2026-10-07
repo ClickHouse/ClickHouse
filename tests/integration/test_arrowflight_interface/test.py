@@ -112,10 +112,10 @@ def test_doput_nonexisting_table():
     )
 
     descriptor = flight.FlightDescriptor.for_path("nonexisting_table")
-    writer, _ = client.do_put(descriptor, schema, options)
-    writer.write_batch(batch)
 
     try:
+        writer, _ = client.do_put(descriptor, schema, options)
+        writer.write_batch(batch)
         writer.close()
         assert False, "Expected error but query succeeded: insert into nonexisting table"
     except flight.FlightServerError as e:
@@ -185,10 +185,10 @@ def test_doput_cmd_insert_invalid_format():
     )
 
     descriptor = flight.FlightDescriptor.for_command("INSERT INTO mytable FORMAT JSON")
-    writer, _ = client.do_put(descriptor, schema, options)
-    writer.write_batch(batch)
 
     try:
+        writer, _ = client.do_put(descriptor, schema, options)
+        writer.write_batch(batch)
         writer.close()
         assert False, "Expected to fail because of a wrong format but succeeded"
     except flight.FlightServerError as e:
@@ -223,10 +223,10 @@ def test_doput_cmd_insert_no_format():
     )
 
     descriptor = flight.FlightDescriptor.for_command("INSERT INTO mytable")
-    writer, _ = client.do_put(descriptor, schema, options)
-    writer.write_batch(batch)
 
     try:
+        writer, _ = client.do_put(descriptor, schema, options)
+        writer.write_batch(batch)
         writer.close()
         assert False, "Expected to fail because of no format but succeeded"
     except flight.FlightServerError as e:

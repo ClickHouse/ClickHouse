@@ -1,0 +1,7 @@
+rejected inside the window: 1
+rejected inside the window: 1
+toggle failed at the commit: 1
+rows after the failed toggle: 10
+rows left in the source: 2
+still read-only after the failed toggle: 1
+rows after the successful toggle: 11

@@ -420,11 +420,13 @@ def test_default_codec_multiple(start_cluster):
 
 
 def test_default_codec_for_compact_parts(start_cluster):
+    # The column must not be named `data`: that name coincides with the shared `data.bin` of a
+    # Compact part and made the per-column codec proof pass by accident (#118323).
     node4.query(
         """
     CREATE TABLE compact_parts_table (
         key UInt64,
-        data String
+        payload String
     )
     ENGINE MergeTree ORDER BY tuple()
     """
