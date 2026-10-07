@@ -1000,6 +1000,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (which.isNativeInteger() || which_is_enum)
         {
             converter.field_signed = which.isNativeInt() || which_is_enum;
+            converter.field_bool = isBool(type_hint ? type_hint : out_inferred_type);
             if (!stats_order_preserved(converter))
                 return false;
         }
