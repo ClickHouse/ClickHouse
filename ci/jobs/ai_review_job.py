@@ -138,6 +138,11 @@ def _run_codex_once(loom_config, commit="HEAD"):
             "LOOM_CALL_LOG": agent_log,
             **loom_config.env(),
         }
+        # The saved post-image is in the context directory, which the workspace
+        # copies to the same relative path: point the agent at its copy, not at
+        # the job's checkout.
+        if loom_config.post_image_path:
+            env["LOOM_POST_IMAGE"] = os.path.join(ws.tree, os.path.relpath(loom_config.post_image_path))
         # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
         #   read-only elsewhere; sufficient for the review output.
         # sandbox_workspace_write.network_access: the agent's commands reach
