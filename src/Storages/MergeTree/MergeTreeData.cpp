@@ -12269,7 +12269,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
                 catch (...)
                 {
                     tryLogCurrentException(
-                        data.log, fmt::format("Failed to rename rolled back part {} out of {}", part->name, previous_dir));
+                        data.log, fmt::format("Failed to rename rolled back part {} to a temporary directory", part->name));
                 }
             }
         }
