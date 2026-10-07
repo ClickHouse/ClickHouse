@@ -41,6 +41,13 @@ if (ENABLE_LANCE AND ENABLE_FUZZING)
     set (ENABLE_LANCE OFF)
 endif()
 
+# The Lance crates generate code from `.proto` files at build time, which needs the `protoc` built
+# from `contrib/google-protobuf`.
+if (ENABLE_LANCE AND NOT TARGET protoc)
+    message (STATUS "Disabling Lance because Protobuf is disabled")
+    set (ENABLE_LANCE OFF)
+endif()
+
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_LANCE)
     message(STATUS "prql, skim, polyglot, and lance are disabled")
     return()
@@ -119,10 +126,6 @@ if (ENABLE_SKIM)
 endif()
 
 if (ENABLE_LANCE)
-    if (NOT TARGET protoc)
-        message (FATAL_ERROR "Lance requires Protobuf: enable ENABLE_PROTOBUF or build with -DENABLE_LANCE=OFF")
-    endif()
-
     clickhouse_config_crate_flags(_ch_rust_lance)
     target_include_directories(_ch_rust_lance INTERFACE lance/include)
     add_library(ch_rust::lance ALIAS _ch_rust_lance)
