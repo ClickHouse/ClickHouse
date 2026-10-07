@@ -1415,9 +1415,15 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
 {
     if (filter_column_name.empty())
         return;
-    const Node * filter_node = tryFindInOutputs(filter_column_name);
-    if (!filter_node)
-        return;
+
+    const auto it = std::ranges::find_if(outputs, [&](const Node * output) { return output->result_name == filter_column_name; });
+    if (it != outputs.end())
+        foldFilterPredicateThroughMaterialize(static_cast<size_t>(it - outputs.begin()));
+}
+
+void ActionsDAG::foldFilterPredicateThroughMaterialize(size_t filter_output_position)
+{
+    const Node * filter_node = outputs.at(filter_output_position);
 
     /// A prior optimizer pass may already have folded this filter. Replacing an
     /// existing const output with another const output makes the pass report a
@@ -1435,15 +1441,8 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
     /// `removeUnusedActions` prunes the now-orphan subtree later
     const Node & new_const = addColumn(
         std::move(folded->column), filter_node->result_type,
-        std::string(filter_column_name), folded->deterministic, folded->masked_secret);
-    for (auto & out : outputs)
-    {
-        if (out == filter_node)
-        {
-            out = &new_const;
-            break;
-        }
-    }
+        filter_node->result_name, folded->deterministic, folded->masked_secret);
+    outputs[filter_output_position] = &new_const;
 }
 
 void ActionsDAG::deduplicateSubtrees()
@@ -1853,22 +1852,6 @@ ActionsDAG::MatchedInputPositions ActionsDAG::matchInputPositionsToHeader(const 
     return matchInputNodesToHeader(inputs, header);
 }
 
-ActionsDAG::SplitOutputPositions ActionsDAG::splitOutputPositions(const std::vector<size_t> & output_positions) const
-{
-    SplitOutputPositions result;
-    const size_t num_dag_outputs = outputs.size();
-
-    for (size_t pos : output_positions)
-    {
-        if (pos < num_dag_outputs)
-            result.dag_indices.push_back(pos);
-        else
-            result.passthrough_indices.push_back(pos - num_dag_outputs);
-    }
-
-    return result;
-}
-
 ColumnsWithTypeAndName ActionsDAG::evaluatePartialResult(
     IntermediateExecutionResult & node_to_column,
     const NodeRawConstPtrs & outputs,
@@ -2223,50 +2206,49 @@ bool ActionsDAG::tryRestoreColumn(const std::string & column_name)
 
 bool ActionsDAG::removeUnusedResult(const std::string & column_name)
 {
-    /// Find column in output nodes and remove.
-    const Node * col = nullptr;
+    auto output_it = std::ranges::find_if(outputs, [&](const Node * node) { return node->result_name == column_name; });
+    if (output_it == outputs.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
+
+    /// The nodes the result is computed by, each the only child of the one before, down to an input or a column.
+    std::vector<const Node *> chain;
+    for (const Node * node = *output_it;; node = node->children.front())
     {
-        auto it = outputs.begin();
-        for (; it != outputs.end(); ++it)
-            if ((*it)->result_name == column_name)
-                break;
+        if (node->children.size() > 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Result {} is not a chain of nodes down to an input or a column: {} has {} children\n{}",
+                column_name, node->result_name, node->children.size(), dumpDAG());
 
-        if (it == outputs.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Not found result {} in ActionsDAG\n{}", column_name, dumpDAG());
-
-        col = *it;
-        outputs.erase(it);
+        chain.push_back(node);
+        if (node->children.empty())
+            break;
     }
 
-    /// Check if column is in input.
-    auto it = inputs.begin();
-    for (; it != inputs.end(); ++it)
-        if (*it == col)
-            break;
+    outputs.erase(output_it);
 
-    /// Check column has no dependent.
+    std::unordered_map<const Node *, size_t> uses;
     for (const auto & node : nodes)
         for (const auto * child : node.children)
-            if (col == child)
-                return false;
+            ++uses[child];
+    for (const auto * output : outputs)
+        ++uses[output];
 
-    /// Do not remove input if it was mentioned in output nodes several times.
-    for (const auto * output_node : outputs)
-        if (col == output_node)
+    /// Remove the chain from the top while nothing else uses a node: another node, or an output of the same name or of
+    /// another one.
+    for (const auto * node : chain)
+    {
+        if (uses[node] != 0)
             return false;
 
-    /// Remove from nodes and inputs.
-    for (auto jt = nodes.begin(); jt != nodes.end(); ++jt)
-    {
-        if (&(*jt) == col)
-        {
-            nodes.erase(jt);
-            break;
-        }
+        if (!node->children.empty())
+            --uses[node->children.front()];
+
+        if (node->type == ActionType::INPUT)
+            std::erase(inputs, node);
+
+        nodes.remove_if([&](const Node & candidate) { return &candidate == node; });
     }
 
-    if (it != inputs.end())
-        inputs.erase(it);
     return true;
 }
 
@@ -3871,7 +3853,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const Names & equivalent_columns_to_push_down,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-    const NameSet & cross_type_equivalent_columns)
+    const NameSet & cross_type_equivalent_columns,
+    bool filter_is_always_false)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -4020,14 +4003,19 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const bool left_stream_push_down_enabled = !left_stream_allowed_nodes.empty();
     const bool right_stream_push_down_enabled = !right_stream_allowed_nodes.empty();
 
-    if (!left_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
-    if (!right_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
-    /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
-    /// EITHER side is disabled.
-    if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
+    /// If no row passes the filter, the join output is already empty once a side that may be filtered
+    /// receives it, so a disabled side can receive the no-input conjuncts too and is not read in vain.
+    if (!filter_is_always_false)
+    {
+        if (!left_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
+        if (!right_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
+        /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
+        /// EITHER side is disabled.
+        if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
+    }
 
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
