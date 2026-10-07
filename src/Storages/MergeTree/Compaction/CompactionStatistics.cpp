@@ -167,18 +167,20 @@ UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
 
 /// `MergedBlockOutputStream` creates one writer per physical substream of every non-text skip index.
 /// Text indexes are written by `MergeTextIndexesTask` instead and do not share this writer lifetime.
+/// With `materialize_skip_indexes_on_merge = 0` the merge (`MergeTask::prepare`) and the projection
+/// rebuild (`collectSkipIndicesToMaterialize`) write no skip indexes at all, so there is nothing to count.
 size_t countMaterializedSkipIndexStreams(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettings & settings,
     const ContextPtr & context)
 {
+    if (!settings[MergeTreeSetting::materialize_skip_indexes_on_merge])
+        return 0;
+
     std::unordered_set<String> excluded_index_names;
-    if (settings[MergeTreeSetting::materialize_skip_indexes_on_merge])
-    {
-        const auto excluded_indexes = settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
-        if (!excluded_indexes.empty())
-            excluded_index_names = parseIdentifiersOrStringLiteralsToSet(excluded_indexes, context->getSettingsRef());
-    }
+    const auto excluded_indexes = settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
+    if (!excluded_indexes.empty())
+        excluded_index_names = parseIdentifiersOrStringLiteralsToSet(excluded_indexes, context->getSettingsRef());
 
     size_t streams = 0;
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
@@ -2540,10 +2542,12 @@ UInt64 estimateNeededMemoryForMerge(
                     MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
                     projection_read_buffer_size);
                 /// `writeTempProjectionPart` materializes non-text skip indexes with the projection's
-                /// metadata and settings snapshot. Those writers live alongside the projection data writer,
-                /// so account for their eagerly allocated compressor and file buffers as well.
+                /// metadata, but decides which ones (`materialize_skip_indexes_on_merge` and its exclude
+                /// list) from the table settings snapshot, not the projection's overrides. Those writers live
+                /// alongside the projection data writer, so account for their eagerly allocated compressor
+                /// and file buffers as well.
                 const size_t projection_skip_index_streams
-                    = countMaterializedSkipIndexStreams(projection.metadata, projection_settings, context);
+                    = countMaterializedSkipIndexStreams(projection.metadata, settings, context);
                 const UInt64 projection_skip_index_eager_buffers = saturatingStreamsTimesBuffer(
                     projection_skip_index_streams, eager_stream_buffers_with_marks(projection_max_compress_block_size));
                 projection_memory = saturatingAdd(
