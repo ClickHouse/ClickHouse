@@ -3558,6 +3558,87 @@ def test_single_table_publication_recreated_after_external_drop(started_cluster)
         instance.query("DROP TABLE IF EXISTS test_single_pub SYNC")
 
 
+def test_single_table_refuses_adopted_publication_with_other_tables(started_cluster):
+    # A coordinated single-table engine adopts the existing shared publication instead of recreating it.
+    # If the publication was altered externally to publish another table as well, adopting it would
+    # break the consumer on the first change of the foreign table, so the re-elected worker must refuse
+    # it until the publication is repaired, and then resume replication.
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("test_table_foreign")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    keeper_path = "/clickhouse/mat_pg/{shard}/single_table_pub_altered"
+    demotion_line = "Keeper session expired, releasing replication leadership"
+    refusal_line = "does not publish exactly the replicated table"
+    instance.query(
+        f"CREATE TABLE test_single_pub_altered (key Int64, value Int64) "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+        f"PRIMARY KEY key "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{keeper_path}', "
+        f"materialized_postgresql_replica_name = '{{replica}}'",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+
+    def wait_for_count(expected, timeout=90):
+        for _ in range(timeout):
+            try:
+                if (
+                    int(instance.query("SELECT count() FROM test_single_pub_altered"))
+                    == expected
+                ):
+                    return
+            except Exception:
+                pass
+            time.sleep(1)
+        raise AssertionError(
+            f"test_single_pub_altered did not reach {expected} rows"
+        )
+
+    pm = PartitionManager()
+    try:
+        wait_for_count(100)
+
+        publications = pg_query(
+            "SELECT pubname FROM pg_publication WHERE pubname LIKE '%test_table%'"
+        )
+        assert len(publications) == 1, publications
+        publication_name = publications[0][0]
+        pg_query(
+            f'ALTER PUBLICATION "{publication_name}" ADD TABLE ONLY test_table_foreign'
+        )
+
+        # Re-run startSynchronization -> createPublicationIfNeeded on the adopted publication.
+        refusal_baseline = count_in_all_logs(instance, refusal_line)
+        demotion_baseline = count_in_all_logs(instance, demotion_line)
+        pm.drop_instance_zk_connections(instance)
+        wait_for_new_log_occurrence(
+            instance, demotion_line, demotion_baseline, timeout=120
+        )
+        pm.heal_all()
+        wait_for_new_log_occurrence(
+            instance, refusal_line, refusal_baseline, timeout=120
+        )
+
+        # Repair the publication: the next election attempt adopts it and replication resumes.
+        pg_query(
+            f'ALTER PUBLICATION "{publication_name}" DROP TABLE test_table_foreign'
+        )
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+        )
+        wait_for_count(200, timeout=180)
+
+        instance.query("DROP TABLE test_single_pub_altered SYNC")
+    finally:
+        pm.heal_all()
+        instance.query("DROP TABLE IF EXISTS test_single_pub_altered SYNC")
+        pg_query("DROP TABLE IF EXISTS test_table_foreign")
+
+
 def test_failed_single_table_snapshot_releases_leadership(started_cluster):
     # A coordinated single-table worker whose initial snapshot load fails must abort the startup
     # instead of constructing a consumer with no nested storage: such a consumer would keep advancing
