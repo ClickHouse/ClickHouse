@@ -333,7 +333,12 @@ bool IDataType::hasDynamicSubcolumns() const
 
 DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    return tryGetSubcolumnType(subcolumn_name, getDefaultSerialization());
+}
+
+DataTypePtr IDataType::tryGetSubcolumnType(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
     auto subcolumn_data = getSubcolumnInfo(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->data.type : nullptr;
 }
@@ -346,7 +351,12 @@ DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 
 std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name) const
 {
-    auto data = SubstreamData(getDefaultSerialization()).withType(getPtr());
+    return tryGetSubcolumnInfo(subcolumn_name, getDefaultSerialization());
+}
+
+std::optional<IDataType::SubcolumnInfo> IDataType::tryGetSubcolumnInfo(std::string_view subcolumn_name, const SerializationPtr & serialization) const
+{
+    auto data = SubstreamData(serialization).withType(getPtr());
     auto info = getSubcolumnInfo(subcolumn_name, data, {}, false);
     if (!info)
         return {};
@@ -374,7 +384,10 @@ ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnP
         return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
 
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
-    return getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    auto subcolumn = getSubcolumnInfo(subcolumn_name, data, {}, true)->data.column;
+    if (!subcolumn)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Subcolumn {} of type {} cannot be extracted from a column in memory", subcolumn_name, getName());
+    return subcolumn;
 }
 
 SerializationPtr IDataType::getSubcolumnSerialization(std::string_view subcolumn_name, const SerializationPtr & serialization) const
@@ -389,7 +402,7 @@ Names IDataType::getSubcolumnNames() const
     forEachSubcolumn([&](const auto &, const auto & name, const auto &)
     {
         res.push_back(name);
-    }, SubstreamData(getDefaultSerialization()));
+    }, SubstreamData(getDefaultSerialization()).withType(getPtr()));
     return res;
 }
 

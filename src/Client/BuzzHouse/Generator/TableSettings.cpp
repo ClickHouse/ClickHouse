@@ -703,8 +703,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
     {"use_compact_variant_discriminators_serialization", trueOrFalseSetting},
     {"use_const_adaptive_granularity", trueOrFalseSetting},
-    {"use_minimalistic_checksums_in_zookeeper", trueOrFalseSetting},
-    {"use_minimalistic_part_header_in_zookeeper", trueOrFalseSetting},
     {"use_primary_key_cache", trueOrFalseSetting},
     {"vertical_merge_algorithm_min_bytes_to_activate", bytesRangeSetting},
     {"vertical_merge_algorithm_min_columns_to_activate",

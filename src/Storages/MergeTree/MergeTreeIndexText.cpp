@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -1152,12 +1153,10 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
     {
         auto * positions = postings.getPositions();
         chassert(positions);
-        positions->finalizeOrdering();
-        const auto & position_entries = positions->getEntries();
 
         info.header |= HasPositions;
         info.position_offset = positions_stream->plain_hashing.count();
-        TextIndexBlockedPositionsCodec::encode(position_entries, positions_stream->plain_hashing);
+        positions->finalize(positions_stream->plain_hashing);
         info.position_bytes = positions_stream->plain_hashing.count() - info.position_offset;
     }
 
@@ -1899,6 +1898,83 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
     ++current_row;
 }
 
+void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
+    ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context)
+{
+    const auto * column_array = typeid_cast<const ColumnArray *>(column.get());
+    const auto & column_low_cardinality = assert_cast<const ColumnLowCardinality &>(column_array ? column_array->getData() : *column);
+    const IColumnUnique & dictionary = column_low_cardinality.getDictionary();
+    auto elements_begin = [&](size_t row) { return column_array ? column_array->getOffsets()[row - 1] : row; };
+
+    /// Values must repeat for the cache to pay off.
+    static constexpr size_t min_documents_per_value = 8;
+    /// Bounds `ranges` to 1 MiB.
+    static constexpr size_t max_dictionary_size = 65536;
+    /// Bounds `builders` to 64 MiB for long values.
+    static constexpr size_t max_cached_tokens = 1 << 23;
+    /// A stateful tokenizer may return other tokens for a value it tokenizes again, and with a drop filter `addToken`
+    /// may leave a token without a builder.
+    const bool use_cache = !tokenizer->isStateful() && !postprocessor_drop_filter && dictionary.size() <= max_dictionary_size
+        && dictionary.size() * min_documents_per_value <= elements_begin(start_row + rows_read) - elements_begin(start_row);
+
+    /// `builders[begin, end)` of each dictionary value tokenized since the map last grew, `not_seen` before that.
+    static constexpr size_t not_seen = std::numeric_limits<size_t>::max();
+    std::vector<std::pair<size_t, size_t>> ranges(use_cache ? dictionary.size() : 0, {not_seen, not_seen});
+    std::vector<PostingListBuilder *> builders;
+    size_t buffer_size = tokens_map.getBufferSizeInCells();
+
+    for (size_t row = start_row; row < start_row + rows_read; ++row)
+    {
+        for (size_t i = elements_begin(row); i < elements_begin(row + 1); ++i)
+        {
+            const size_t index = column_low_cardinality.getIndexAt(i);
+            if (dictionary.isNullAt(index))
+                continue;
+
+            if (!use_cache)
+            {
+                addDocument(dictionary.getDataAt(index), context);
+                continue;
+            }
+
+            auto & [begin, end] = ranges[index];
+            if (begin == not_seen)
+            {
+                const std::string_view value = dictionary.getDataAt(index);
+                begin = builders.size();
+                UInt32 token_position = 0;
+                forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token_start, size_t token_length)
+                {
+                    addToken({token_start, token_length}, token_position++, context);
+                    if (builders.size() < max_cached_tokens)
+                        builders.push_back(&tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}))->getMapped());
+                    return false;
+                });
+                end = builders.size();
+
+                /// A full `builders` may lack tokens of this value, so it is tokenized again at its next occurrence.
+                if (end == max_cached_tokens)
+                    begin = end = not_seen;
+
+                /// Growing the map moves the builders.
+                if (tokens_map.getBufferSizeInCells() != buffer_size)
+                {
+                    std::ranges::fill(ranges, std::pair{not_seen, not_seen});
+                    builders.clear();
+                    buffer_size = tokens_map.getBufferSizeInCells();
+                }
+            }
+            else
+            {
+                for (size_t j = begin; j < end; ++j)
+                    builders[j]->add(static_cast<UInt32>(current_row), static_cast<UInt32>(j - begin), context);
+                num_processed_tokens += end - begin;
+            }
+        }
+        incrementCurrentRow();
+    }
+}
+
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
     SortedTokens sorted_tokens;
@@ -2007,6 +2083,10 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromMap(preprocessed_column, offset, rows_read, context);
     }
+    else if (preprocessed_column->lowCardinality())
+    {
+        granule_builder.addDocumentsFromLowCardinality(preprocessed_column, offset, rows_read, context);
+    }
     else
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
@@ -2032,6 +2112,15 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     const IColumn & column_data = column_array->getData();
     const IColumn::Offsets & column_offsets = column_array->getOffsets();
     const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
+
+    if constexpr (tokenize)
+    {
+        if (column_data.lowCardinality())
+        {
+            granule_builder.addDocumentsFromLowCardinality(column, start_row, rows_read, context);
+            return;
+        }
+    }
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
