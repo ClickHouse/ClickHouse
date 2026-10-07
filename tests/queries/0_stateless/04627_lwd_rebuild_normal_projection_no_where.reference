@@ -8,6 +8,13 @@ wide base rows	90
 wide projection rows	90
 wide deleted leaked via projection	0
 wide projection == no-projection	1
+wide apply_deleted_mask = 0	56	5
+aggregate apply_deleted_mask = 0	0	4
+aggregate apply_deleted_mask = 0	1	4
+aggregate apply_deleted_mask = 0	2	4
+aggregate projection	0	2
+aggregate projection	1	2
+aggregate projection	2	2
 offset base rows	90
 offset projection rows	90
 offset deleted in projection	0

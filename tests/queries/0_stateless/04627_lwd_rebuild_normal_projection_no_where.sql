@@ -66,7 +66,31 @@ SELECT 'wide projection == no-projection',
     (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1))
   = (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 0));
 
+-- apply_deleted_mask = 0 reads the deleted rows, which the rebuilt projection does not store, so the
+-- projection is not used.
+SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20
+SETTINGS apply_deleted_mask = 0, optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+SELECT 'wide apply_deleted_mask = 0', count(), countIf(id % 11 = 0)
+FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 SETTINGS apply_deleted_mask = 0;
+
 DROP TABLE t_lwd_norm_proj_wide;
+
+DROP TABLE IF EXISTS t_lwd_agg_proj;
+CREATE TABLE t_lwd_agg_proj (id UInt64, g UInt8, PROJECTION p (SELECT g, count() GROUP BY g))
+ENGINE = MergeTree ORDER BY id
+SETTINGS lightweight_mutation_projection_mode = 'rebuild', index_granularity = 4;
+
+INSERT INTO t_lwd_agg_proj SELECT number, number % 3 FROM numbers(12);
+DELETE FROM t_lwd_agg_proj WHERE id % 2 = 0;
+
+SELECT g, count() FROM t_lwd_agg_proj GROUP BY g ORDER BY g
+SETTINGS apply_deleted_mask = 0, optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+SELECT 'aggregate apply_deleted_mask = 0', g, count() FROM t_lwd_agg_proj GROUP BY g ORDER BY g SETTINGS apply_deleted_mask = 0;
+SELECT 'aggregate projection', g, count() FROM t_lwd_agg_proj GROUP BY g ORDER BY g SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_lwd_agg_proj;
 
 -- Projection storing the parent `_part_offset` (with_parent_part_offset path). The deletion mask
 -- must filter the generated offset column too, so surviving rows keep their original parent offsets.
