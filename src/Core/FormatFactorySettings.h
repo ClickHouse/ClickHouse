@@ -1571,7 +1571,7 @@ Suffix after result set (for CustomSeparated format)
 Regular expression (for Regexp format)
 )", 0) \
     DECLARE(EscapingRule, format_regexp_escaping_rule, "Raw", R"(
-Field escaping rule (for Regexp format)
+Sets the escaping rule applied to each field captured by the regular expression of the Regexp format. It decides how a captured string is turned into a value for a column. Possible values: 'Raw' (default, the captured text is used as-is), 'Escaped' (backslash escape sequences are unescaped), 'Quoted' (parsed as a quoted string), 'CSV' (parsed using the CSV rules), 'JSON' (parsed as a JSON value), 'XML' (parsed as an XML value) and 'None' (the field is ignored and produces no value).
 )", 0, \
         {"20.10", "Escaped", "Raw", "Use Raw as default escaping rule for Regexp format to male the behaviour more like to what users expect"}) \
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
