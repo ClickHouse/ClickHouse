@@ -432,11 +432,18 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 bool plan_as_single_clause = with_key_expression != 0 && with_key_expression < result.size();
                 /// Without key expressions a clause narrows the candidate pairs only by the conditions evaluated before
                 /// matching. If one clause has none, splitting cannot narrow what an ALL join matches.
+                /// An ALL INNER join is never split: every join algorithm evaluates the whole `OR` after matching on the keys of the enclosing `AND`, while splitting hides these keys inside one `or` predicate from join reordering.
+                /// An outer join is split if every clause has a condition evaluated before matching, because a single clause with a condition on both tables requires the `hash` or `grace_hash` algorithm.
                 if (with_key_expression == 0 && builder_context.join_operator.strictness == JoinStrictness::All)
-                    plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
-                    {
-                        return hasPreJoinCondition(clause, builder_context.expression_actions);
-                    });
+                {
+                    if (builder_context.join_operator.kind == JoinKind::Inner)
+                        plan_as_single_clause = true;
+                    else
+                        plan_as_single_clause = !std::ranges::all_of(result, [&](const JoinCondition & clause)
+                        {
+                            return hasPreJoinCondition(clause, builder_context.expression_actions);
+                        });
+                }
 
                 if (result.size() > 1 && plan_as_single_clause)
                 {

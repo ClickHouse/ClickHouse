@@ -56,3 +56,31 @@ DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
 DROP TABLE t4;
+
+DROP TABLE IF EXISTS t5;
+DROP TABLE IF EXISTS t6;
+DROP TABLE IF EXISTS t7;
+
+CREATE TABLE t5 (xk UInt64, xa UInt64) ENGINE = MergeTree ORDER BY xk SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE t6 (yk UInt64, yb UInt64, yz UInt64) ENGINE = MergeTree ORDER BY yk SETTINGS auto_statistics_types = 'basic, uniq_v2';
+CREATE TABLE t7 (zk UInt64, zc UInt64) ENGINE = MergeTree ORDER BY zk SETTINGS auto_statistics_types = 'basic, uniq_v2';
+
+INSERT INTO t5 SELECT number, number % 7 FROM numbers(20000);
+INSERT INTO t6 SELECT number, number % 11, number % 3 FROM numbers(20000);
+INSERT INTO t7 SELECT number, number FROM numbers(3);
+
+-- In an inner join, an equality next to an OR of conditions on one table each, or on no table, stays a join key.
+SELECT count() FROM (EXPLAIN SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc) WHERE match(explain, 'Join conditions: .*(xk = yk|yk = xk)') AND explain NOT LIKE '% OR %';
+SELECT count() FROM (EXPLAIN SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(1)) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc) WHERE match(explain, 'Join conditions: .*(xk = yk|yk = xk)') AND explain NOT LIKE '% OR %';
+SELECT count() FROM (EXPLAIN SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(NULL)) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc) WHERE match(explain, 'Join conditions: .*(xk = yk|yk = xk)') AND explain NOT LIKE '% OR %';
+SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc;
+SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(1)) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc;
+SELECT count() FROM t5 JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(NULL)) JOIN t7 ON t6.yz = t7.zk AND t5.xa = t7.zc;
+
+-- In an outer join, an OR of conditions on one table each, or on no table, keeps working with join_algorithm = 'auto'.
+SELECT count(), sum(t6.yb) FROM t5 LEFT JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(1)) SETTINGS join_algorithm = 'auto';
+SELECT count(), sum(t6.yb) FROM t5 FULL JOIN t6 ON t5.xk = t6.yk AND (t5.xa > 1 OR t6.yb > 5 OR materialize(NULL)) SETTINGS join_algorithm = 'auto';
+
+DROP TABLE t5;
+DROP TABLE t6;
+DROP TABLE t7;
