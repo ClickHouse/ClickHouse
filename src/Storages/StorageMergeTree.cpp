@@ -342,8 +342,7 @@ void StorageMergeTree::shutdown(bool)
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
+    stopStatisticsCache();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
