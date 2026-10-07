@@ -2721,8 +2721,8 @@ size_t Reader::memoryEstimateLimit() const
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     /// Allocate columns for values, null map, and array offsets.
-    /// Size hints from the metadata that exceed the reader's memory budget are not trusted.
-    const double estimate_limit = static_cast<double>(memoryEstimateLimit());
+    /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
+    constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE / 4);
 
     size_t output_num_values_estimate = 0;
     if (column_info.levels.back().rep == 0)

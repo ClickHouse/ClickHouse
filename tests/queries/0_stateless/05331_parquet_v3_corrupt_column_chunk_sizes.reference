@@ -20,4 +20,4 @@ strdict_huge --input_format_parquet_memory_low_watermark=9223372036854775808: sa
 wide_huge --input_format_parquet_memory_low_watermark=9223372036854775808: same as wide
 wide_huge --input_format_parquet_memory_low_watermark=18446744073709551615: same as wide
 arr_2e59 --input_format_parquet_memory_low_watermark=9223372036854775808: same as arr
-arr_4g --input_format_parquet_memory_low_watermark=8589934592: same as arr
+arr_2e58: same as arr

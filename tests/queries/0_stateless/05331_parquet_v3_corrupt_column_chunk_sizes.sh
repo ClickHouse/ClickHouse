@@ -4,8 +4,8 @@
 
 # The Parquet reader derives its memory estimates and pre-allocations from ColumnMetaData.num_values,
 # total_uncompressed_size and size_statistics.unencoded_byte_array_data_bytes. A negative value must be
-# rejected with INCORRECT_DATA. An estimate above the reader's memory budget (the larger memory watermark,
-# at most 2^61 bytes) must be ignored, so such a file still reads correctly.
+# rejected with INCORRECT_DATA. An estimate too large to ever be allocated (2^61 bytes or more) must neither
+# overflow the reader's memory accounting nor reach the allocator, so such a file still reads correctly.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -92,8 +92,8 @@ rewrite("i64_huge", "i64", [(M(0, 5), 2 ** 62)], old=rows(100))
 rewrite("str_bytes_huge", "str", [(M(0, 16, 1), 2 ** 63 - 1)], old=positive)
 rewrite("str_size_huge", "str", [(M(0, 6), 2 ** 63 - 1)], drop=[M(0, 16)], old=positive)
 rewrite("arr_huge", "arr", [(M(0, 5), 2 ** 60)], old=rows(200))
-rewrite("arr_4g", "arr", [(M(0, 5), 2 ** 32)], old=rows(200))
 rewrite("arr_2e59", "arr", [(M(0, 5), 2 ** 59)], old=rows(200))
+rewrite("arr_2e58", "arr", [(M(0, 5), 2 ** 58)], old=rows(200))
 rewrite("strdict_huge", "strdict", [(M(0, 5), 2 ** 62)], drop=[M(0, 16)], old=rows(100))
 rewrite("wide_huge", "wide", [(M(c, 5), 2 ** 62) for c in range(5)], old=rows(100))
 rewrite("wide_neg", "wide", [(M(1, 5), -1)], old=rows(100))
@@ -132,4 +132,4 @@ for setting in "" "$low=9223372036854775808"; do
 done
 for setting in "$low=9223372036854775808" "$low=18446744073709551615"; do same wide_huge wide $setting; done
 same arr_2e59 arr "$low=9223372036854775808"
-same arr_4g arr "$low=8589934592" --max_memory_usage=8000000000
+same arr_2e58 arr
