@@ -26,8 +26,8 @@ set(SRCS
 
 add_library(_roaring ${SRCS})
 
-# Page-align roaring_bitmap_and_cardinality, see page_aligned_functions.h.
-set_source_files_properties("${LIBRARY_DIR}/src/roaring.c" PROPERTIES
+# Page-align roaring_bitmap_and_cardinality and array_array_container_inplace_union, see page_aligned_functions.h.
+set_source_files_properties("${LIBRARY_DIR}/src/roaring.c" "${LIBRARY_DIR}/src/containers/mixed_union.c" PROPERTIES
     COMPILE_OPTIONS "-include;${CMAKE_CURRENT_SOURCE_DIR}/page_aligned_functions.h")
 
 # croaring expects bswap64() in portability.h from FreeBSD's byteswap.h,
