@@ -91,6 +91,7 @@
     {"prefix":"query_profiler","mode":"token","target":"/reference/settings/session-settings/query-profiler"},
     {"prefix":"use_statistics","mode":"token","target":"/reference/settings/session-settings/use-statistics"},
     {"prefix":"cluster_table","mode":"token","target":"/reference/settings/session-settings/cluster-table"},
+    {"prefix":"columns_cache","mode":"token","target":"/reference/settings/session-settings/columns-cache"},
     {"prefix":"compatibility","mode":"token","target":"/reference/settings/session-settings/compatibility"},
     {"prefix":"function_json","mode":"token","target":"/reference/settings/session-settings/function-json"},
     {"prefix":"http_response","mode":"token","target":"/reference/settings/session-settings/http-response"},

@@ -55,6 +55,20 @@ If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x
 
 When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
 
+## anti_join_include_columns_from_both_sides {#anti_join_include_columns_from_both_sides}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting. Disable it to restrict `ANTI JOIN` column access to the preserved side except in `JOIN ON` expressions"}]}]}/>
+
+When enabled (the default), `ANTI` JOIN keeps columns from both sides accessible in the joined result, and `SELECT *` returns columns from both sides. This is the legacy ClickHouse behavior.
+When disabled, the analyzer restricts `ANTI` JOIN column access to the preserved side in accordance with the SQL standard.
+For `LEFT ANTI JOIN` only left table columns are accessible, for `RIGHT ANTI JOIN` only right table columns.
+This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
+An explicit reference to a non-preserved side column raises the `SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED` exception. This covers qualified references such as `t2.b`, qualified wildcards like `t2.*`, `USING` columns like `d.id`, and fully qualified references like `db.table.column`, and it is enforced even inside statically-dead branches such as `if(false, t2.b, 42)`. An unqualified identifier that does not match any accessible column still falls back to the generic `UNKNOWN_IDENTIFIER` exception.
+The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
+    
+
 ## any_join_distinct_right_table_keys {#any_join_distinct_right_table_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -791,6 +805,23 @@ If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle
 
 Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
 
+## get_zookeeper_lock_acquire_timeout_ms {#get_zookeeper_lock_acquire_timeout_ms}
+
+<SettingsInfoBlock type="Milliseconds" default_value="120000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "120000"},{"label": "New setting"}]}]}/>
+
+Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
+
+The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead.
+`SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
+
+Possible values:
+
+- Positive integer (in milliseconds).
+- 0 — No locking timeout.
+
 ## glob_expansion_max_elements {#glob_expansion_max_elements}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
@@ -1485,6 +1516,20 @@ See also:
 - [insert_quorum](/reference/settings/session-settings/insert-quorum#insert_quorum)
 - [insert_quorum_timeout](/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 - [insert_quorum_parallel](/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## semi_join_include_columns_from_both_sides {#semi_join_include_columns_from_both_sides}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting. Disable it to restrict `SEMI JOIN` column access to the preserved side except in `JOIN ON` expressions"}]}]}/>
+
+When enabled (the default), `SEMI` JOIN keeps columns from both sides accessible in the joined result, and `SELECT *` returns columns from both sides. This is the legacy ClickHouse behavior.
+When disabled, the analyzer restricts `SEMI` JOIN column access to the preserved side in accordance with the SQL standard.
+For `LEFT SEMI JOIN` only left table columns are accessible, for `RIGHT SEMI JOIN` only right table columns.
+This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
+An explicit reference to a non-preserved side column raises the `SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED` exception. This covers qualified references such as `t2.b`, qualified wildcards like `t2.*`, `USING` columns like `d.id`, and fully qualified references like `db.table.column`, and it is enforced even inside statically-dead branches such as `if(false, t2.b, 42)`. An unqualified identifier that does not match any accessible column still falls back to the generic `UNKNOWN_IDENTIFIER` exception.
+The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
+    
 
 ## session_query_ids_history_size {#session_query_ids_history_size}
 
