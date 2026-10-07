@@ -20,6 +20,8 @@ struct IcebergTablePointer
 {
     String uuid;
     String metadata_location;
+    /// Znode version of the uuid node. Set by `getTable`, checked by `updateTable`.
+    int32_t version = -1;
 };
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
@@ -31,6 +33,7 @@ struct IcebergTablePointer
 ///   <root>/namespaces/<level>/tables       one child per table
 ///   <root>/namespaces/<level>/tables/<t>        data: table uuid, written once at create
 ///   <root>/namespaces/<level>/tables/<t>/<uuid> data: metadata location, the node a commit updates
+/// A table commit replaces the uuid node data with a version check, so concurrent commits are serialized by Keeper.
 /// Namespace levels and table names are encoded with `escapeForFileName`.
 class KeeperIcebergRESTCatalogStore
 {
@@ -64,6 +67,21 @@ public:
     std::optional<Strings> listTables(const IcebergNamespaceName & ns) const;
 
     bool dropTable(const IcebergNamespaceName & ns, const String & table);
+
+    enum class UpdateTableResult
+    {
+        Updated,
+        /// The node changed since `expected` was read.
+        VersionMismatch,
+        TableMissing,
+        /// The name exists, but it was dropped and re-created with another uuid.
+        UuidMismatch,
+    };
+
+    /// Replaces the metadata location only if the uuid node still has `expected.version`.
+    /// Throws `KeeperException` for session or hardware errors. The caller must treat those as an unknown outcome.
+    UpdateTableResult updateTable(
+        const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer);
 
 private:
     /// Returns the current session. Runs `initRoot` once per new session.
