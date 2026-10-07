@@ -3929,7 +3929,7 @@ TEST(PostingListCursorTest, RankCursorRejectsEmptyPostingList)
 
     try
     {
-        TextIndexPostingsRankCursor cursor(*data.stream, data.info);
+        TextIndexPostingsRankCursor cursor(std::make_shared<PostingListCursor>(*data.stream, data.info), data.info);
         FAIL() << "Expected CORRUPTED_DATA";
     }
     catch (const Exception & e)

@@ -12,8 +12,8 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_)
-    : cursor(std::make_shared<PostingListCursor>(stream_, info_))
+TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(PostingListCursorPtr cursor_, const TokenPostingsInfo & info_)
+    : cursor(std::move(cursor_))
     , info(&info_)
 {
     if (!(info->header & PostingsSerialization::Flags::HasBlockIndex))
@@ -50,10 +50,10 @@ TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(MergeTreeReaderStream &
     num_documents = cardinality;
 }
 
-TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(FlatPostingsPtr docs)
-    : num_documents(docs->size())
+TextIndexPostingsRankCursor::TextIndexPostingsRankCursor(PostingListCursorPtr cursor_)
+    : cursor(std::move(cursor_))
+    , num_documents(cursor->cardinality())
 {
-    cursor = std::make_shared<PostingListCursor>(std::move(docs));
 }
 
 UInt64 TextIndexPostingsRankCursor::rank()

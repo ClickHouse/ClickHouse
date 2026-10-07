@@ -118,7 +118,9 @@ private:
     /// Candidates from the tokens' full posting lists, intersected as bitmaps.
     PaddedPODArray<UInt32> phraseSearchBlocked(const PhraseTokens & phrase);
     /// Candidates from a leapfrog over the tokens' posting lists, which also yields their ranks.
-    PaddedPODArray<UInt32> phraseSearchBlockedCursors(const PhraseTokens & phrase);
+    PaddedPODArray<UInt32> phraseSearchBlockedCursors(const PhraseTokens & phrase, std::vector<PostingListCursorPtr> postings_cursors);
+    /// One cursor per unique token.
+    std::vector<PostingListCursorPtr> makePhraseCursors(const PhraseTokens & phrase);
     /// One token's full posting list — the rank space the blocked position stream is addressed in.
     PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
 

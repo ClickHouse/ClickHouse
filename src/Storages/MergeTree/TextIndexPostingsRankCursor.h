@@ -8,15 +8,13 @@
 namespace DB
 {
 
-class MergeTreeReaderStream;
-
 /// Walks a token's posting list, reporting each document's rank (its ordinal in the list) without materialising the list.
 class TextIndexPostingsRankCursor
 {
 public:
-    TextIndexPostingsRankCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_);
+    TextIndexPostingsRankCursor(PostingListCursorPtr cursor_, const TokenPostingsInfo & info_);
     /// Over a flat posting list (embedded or raw), where a document's rank is its index.
-    explicit TextIndexPostingsRankCursor(FlatPostingsPtr docs);
+    explicit TextIndexPostingsRankCursor(PostingListCursorPtr cursor_);
 
     bool valid() const { return cursor->valid(); }
     UInt32 docId() const { return cursor->value(); }

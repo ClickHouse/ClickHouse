@@ -950,52 +950,12 @@ std::optional<PhraseTokens> resolvePhraseTokens(
     return phrase;
 }
 
-double postingsDensity(const TokenPostingsInfo & info)
+bool canUseRankCursors(const PhraseTokens & phrase)
 {
-    UInt64 first = 0;
-    UInt64 last = 0;
-    if (!info.ranges.empty())
+    return std::ranges::all_of(phrase.unique_infos, [](const TokenPostingsInfo * info)
     {
-        first = info.ranges.front().begin;
-        last = info.ranges.back().end;
-    }
-    else if (!info.embedded_postings.empty())
-    {
-        first = info.embedded_postings.front();
-        last = info.embedded_postings.back();
-    }
-    else
-        return 0.0;
-
-    return static_cast<double>(info.cardinality) / static_cast<double>(last - first + 1);
-}
-
-/// Same rule as the postings intersection: the leapfrog pays off only when the sparsest list can skip
-/// whole blocks of the densest one, otherwise every posting block is decoded anyway.
-bool useRankCursors(const PhraseTokens & phrase, TextIndexPostingsIntersectionAlgorithm algorithm)
-{
-    /// A single-token phrase needs no intersection: every row holding the token matches.
-    if (phrase.term_to_unique.size() == 1 || algorithm == TextIndexPostingsIntersectionAlgorithm::BruteForce)
-        return false;
-
-    double min_density = std::numeric_limits<double>::max();
-    double max_density = 0.0;
-    for (const auto * info : phrase.unique_infos)
-    {
-        /// A flat list (embedded or raw) is walked by index; anything else needs the block index to seek in.
-        const bool is_flat = info->header & PostingsSerialization::Flags::RawPostings;
-        if (!is_flat && !(info->header & PostingsSerialization::Flags::HasBlockIndex))
-            return false;
-
-        const double density = postingsDensity(*info);
-        min_density = std::min(min_density, density);
-        max_density = std::max(max_density, density);
-    }
-
-    if (algorithm == TextIndexPostingsIntersectionAlgorithm::Leapfrog)
-        return true;
-
-    return min_density * static_cast<double>(IPostingListBlockCodec::BLOCK_SIZE) < max_density;
+        return (info->header & PostingsSerialization::Flags::RawPostings) || (info->header & PostingsSerialization::Flags::HasBlockIndex);
+    });
 }
 
 TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(
@@ -1214,7 +1174,30 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlocked(const Phras
     return matching;
 }
 
-PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(const PhraseTokens & phrase)
+std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(const PhraseTokens & phrase)
+{
+    std::vector<PostingListCursorPtr> cursors;
+    cursors.reserve(phrase.unique_tokens.size());
+    for (size_t u = 0; u < phrase.unique_tokens.size(); ++u)
+    {
+        const auto & token = phrase.unique_tokens[u];
+        const auto & token_info = *phrase.unique_infos[u];
+        if (token_info.header & PostingsSerialization::Flags::RawPostings)
+        {
+            const PostingList postings = readAllPostingsForToken(token, token_info);
+            auto docs = std::make_shared<PaddedPODArray<UInt32>>(postings.cardinality());
+            postings.toUint32Array(docs->data());
+            cursors.push_back(std::make_shared<PostingListCursor>(std::move(docs)));
+        }
+        else
+        {
+            cursors.push_back(std::make_shared<PostingListCursor>(getPostingsStream(token, token_info), token_info));
+        }
+    }
+    return cursors;
+}
+
+PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(const PhraseTokens & phrase, std::vector<PostingListCursorPtr> postings_cursors)
 {
     const auto & unique_tokens = phrase.unique_tokens;
     const auto & unique_infos = phrase.unique_infos;
@@ -1224,23 +1207,14 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
 
     Stopwatch candidates_watch;
 
-    /// Sharing one stream is safe: every cursor read reseeks and serves blocks from its own buffer.
     std::vector<TextIndexPostingsRankCursor> cursors;
     cursors.reserve(num_tokens);
     for (size_t u = 0; u < num_tokens; ++u)
     {
-        const auto & token_info = *unique_infos[u];
-        if (token_info.header & PostingsSerialization::Flags::RawPostings)
-        {
-            const PostingList postings = readAllPostingsForToken(unique_tokens[u], token_info);
-            auto docs = std::make_shared<PaddedPODArray<UInt32>>(postings.cardinality());
-            postings.toUint32Array(docs->data());
-            cursors.emplace_back(std::move(docs));
-        }
+        if (unique_infos[u]->header & PostingsSerialization::Flags::RawPostings)
+            cursors.emplace_back(std::move(postings_cursors[u]));
         else
-        {
-            cursors.emplace_back(getPostingsStream(unique_tokens[u], token_info), token_info);
-        }
+            cursors.emplace_back(std::move(postings_cursors[u]), *unique_infos[u]);
 
         if (!cursors.back().valid())
             return {};
@@ -1337,10 +1311,20 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearch(const TextSearchQu
     if (!phrase)
         return {};
 
-    if (useRankCursors(*phrase, intersection_algorithm))
-        return phraseSearchBlockedCursors(*phrase);
+    /// A single-token phrase needs no intersection: every row holding the token matches.
+    if (phrase->term_to_unique.size() == 1 || !canUseRankCursors(*phrase))
+        return phraseSearchBlocked(*phrase);
 
-    return phraseSearchBlocked(*phrase);
+    auto cursors = makePhraseCursors(*phrase);
+    std::vector<PostingListCursor *> cursor_ptrs;
+    cursor_ptrs.reserve(cursors.size());
+    for (const auto & cursor : cursors)
+        cursor_ptrs.push_back(cursor.get());
+
+    if (chooseIntersectionAlgorithm(cursor_ptrs, intersection_algorithm) == TextIndexPostingsIntersectionAlgorithm::BruteForce)
+        return phraseSearchBlocked(*phrase);
+
+    return phraseSearchBlockedCursors(*phrase, std::move(cursors));
 }
 
 void MergeTreeReaderTextIndex::applyPostingsPhrase(
