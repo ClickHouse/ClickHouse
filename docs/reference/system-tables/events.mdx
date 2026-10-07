@@ -2182,7 +2182,7 @@ Number of file segments which unexpectedly failed to be evicted during dynamic f
 
 ### FilesystemCacheFailedReserveAttempts {#filesystemcachefailedreserveattempts}
 
-Number of failed file cache space reservation attempts.
+Number of failed file cache space reservation attempts, including reserve-ahead attempts that were retried with the exact size (see FilesystemCacheReserveAheadRetries).
 
 ### FilesystemCacheFailToReserveSpaceBecauseOfCacheResize {#filesystemcachefailtoreservespacebecauseofcacheresize}
 
@@ -2251,6 +2251,10 @@ Lock filesystem cache time for read in priority queue
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 Lock filesystem cache time for write to priority queue
+
+### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
+
+Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size
 
 ### FilesystemCacheReserveAttempts {#filesystemcachereserveattempts}
 
@@ -5976,13 +5980,17 @@ Number of times a header has not been found in the cache.
 
 Number of advance operations performed in lazy posting list mode.
 
+### TextIndexLazyBlocksSkippedDense {#textindexlazyblocksskippeddense}
+
+Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.
+
 ### TextIndexLazyBlocksSkippedResolved {#textindexlazyblocksskippedresolved}
 
-Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
 
 ### TextIndexLazyBruteForceEarlyExits {#textindexlazybruteforceearlyexits}
 
-Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.
+Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.
 
 ### TextIndexLazyBruteForceIntersections {#textindexlazybruteforceintersections}
 
@@ -6010,7 +6018,7 @@ Number of fully-dense segments padded as a whole (memset for OR, increment for A
 
 ### TextIndexLazySegmentsSkippedResolved {#textindexlazysegmentsskippedresolved}
 
-Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
 
 ### TextIndexPatternBypassCacheHits {#textindexpatternbypasscachehits}
 
