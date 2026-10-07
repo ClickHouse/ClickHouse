@@ -13,6 +13,7 @@ namespace DB
 {
 
 class JoinStepLogical;
+class ReadFromMergeTree;
 
 class FutureSetFromSubquery;
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
@@ -70,6 +71,7 @@ struct Optimization
 
         bool enable_group_by_top_k_optimization{};
         UInt64 top_k_optimization_observation_rows{};
+        bool top_k_optimization_shared_boundary{};
         bool is_explain{};
 
         size_t max_block_size{};
@@ -97,7 +99,9 @@ struct Optimization
         /// AND in this mode.
         bool short_circuit_function_evaluation_disabled = false;
         bool lower_array_join_function = false;
+        bool legacy_array_join_function_nondeterministic_evaluation = false;
         bool enable_lazy_columns_replication = false;
+        bool filter_push_down_below_limit_by = true;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -233,10 +237,16 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// Push LIMIT into GROUP BY via bounded heap when GROUP BY matches or is a prefix of ORDER BY keys
 size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Let an aggregation's output conversion skip the keys of the groups a HAVING count() bound above it rejects
+size_t tryPushHavingPrefilterIntoAggregation(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
 /// Push ORDER BY ... LIMIT n down through a Join when the sort key only references
 /// columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
+
+/// Whether the plan-based parallel replicas may make this `MergeTree` read part of a shipped fragment.
+bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read);
 
 inline const auto & getOptimizations()
 {
@@ -292,6 +302,7 @@ void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
+void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
@@ -308,6 +319,7 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
 void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeCreatingSetPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
+void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, size_t max_limit_for_lazy_materialization);
 /// Replaces a `CommonSubplanReferenceStep` with a clone of the subplan it references. The subplan's
@@ -348,6 +360,12 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
+
+/// Convert an OUTER join whose null-extended rows cannot survive above it, when the proof comes from
+/// arbitrarily higher in the plan (a filter, or the conditions of an enclosing INNER/SEMI join).
+/// This pass is complementary to `tryConvertOuterJoinToInnerJoin`, which only sees the filter directly
+/// above but handles all filter shapes where this one matches a subset.
+void convertOuterJoinToInnerJoinTransitively(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);

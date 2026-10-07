@@ -1,0 +1,188 @@
+---
+title: 'Provision AWS infrastructure with Terraform'
+sidebarTitle: 'Terraform on AWS'
+slug: /products/bring-your-own-cloud/connector/terraform-aws
+description: 'Create an Amazon EKS cluster for managed mode, or add what it needs to a VPC or cluster you already have, with Terraform or OpenTofu'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'terraform', 'opentofu', 'EKS', 'AWS']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+Managed mode runs on an Amazon EKS cluster you own. Each release ships four Terraform root modules (roots, below) that either create a cluster meeting its requirements or add what it needs to a VPC or cluster you already have. The roots create the cluster with its system node group and managed addons (`vpc-cni`, `kube-proxy`, `coredns`, `aws-ebs-csi-driver`), plus IAM roles, KMS keys, and tags; `existing-eks` installs only the addons you name in `install_addons`. On the Helm target, `clicklink clctl init` then installs the platform layer from the outputs and a platform bundle: Karpenter, the AWS Load Balancer controller, the StorageClass, and the pinned components (see [initialize the connector from Terraform outputs](#hand-off)). The roots need Terraform 1.10+ or OpenTofu 1.12+ and the AWS provider `~> 6.0`. `tofu` works in place of `terraform` in every command on this page.
+
+<Image img="/images/cloud/reference/byoc-connector-terraform-flow.svg" size="lg" alt="Terraform provisioning flow for the ClickHouse Connector on AWS" />
+
+## Before you begin {#before-you-begin}
+
+You need:
+
+- Terraform 1.10+ or OpenTofu 1.12+, plus the AWS provider `~> 6.0`.
+- An AWS identity authorized to create and modify the resources required by your selected root.
+- `curl`, a SHA-256 tool (`sha256sum` or `shasum`), and `cosign` to download and verify the release archive.
+- From [registration](/products/bring-your-own-cloud/connector/onboarding#registration): the `chart_repository_arn` every root requires, plus your connector endpoint, the enrollment token, and the platform bundle for the `init` hand-off at the end.
+
+For `production` and `existing-vpc`, plan how the machine running `clicklink clctl init` and `kubectl` will reach the private EKS API, for example through a VPN, a bastion, a peered network, or an SSM port forward.
+
+<Steps titleSize="h2">
+
+<Step title="Choose the Terraform root for your environment" id="choose-a-root">
+
+All four roots emit the same `clicklink` output. The hand-off to `clicklink clctl init` is the same whichever you apply.
+
+| Root | Start from | Creates |
+|---|---|---|
+| `minimal` | Development and proof-of-concept clusters | Same, one zone, public endpoint, no endpoints or CMKs |
+| `production` | An empty account and region | VPC, EKS cluster, node group, IAM, KMS |
+| `existing-vpc` | A VPC you already have | EKS cluster, node group, IAM, KMS, subnet tags |
+| `existing-eks` | A cluster you already run | IAM, named addons, key grants, discovery tags |
+
+### `minimal` {#minimal}
+
+`minimal` relaxes the public endpoint, the interface endpoints, flow logs, log retention, and the system pool size. Every relaxed variable exists in both roots under the same name. Moving one to its production value is a `terraform.tfvars` change and a re-apply. The single workload zone and the missing KMS keys are fixed: subnets cannot change zone, and the root has no variable for EKS secrets encryption. Closing those means applying `production` as a new cluster.
+
+### `production` {#production}
+
+The VPC spans three zones (`availability_zone_count`, 2 to 4) with a private `/19` and a public `/21` per zone, one NAT gateway per zone, an S3 gateway endpoint, interface endpoints for ECR, STS, EKS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB, and VPC flow logs. The EKS cluster has a private API endpoint, access-entries authentication, all control-plane log types in a log group the root owns, and secrets encrypted with a customer-managed KMS key. The cluster gets the managed addons `vpc-cni`, `kube-proxy`, `coredns`, and `aws-ebs-csi-driver`, and one untainted system node group labeled `clickhouseGroup=system` (two to four `m7g.large` nodes by default). The root also creates Karpenter IAM with an interruption queue and `karpenter.sh/discovery` tags, IRSA roles for the AWS Load Balancer controller and for the connector's executor, and KMS keys for EBS volumes and for the object storage buckets.
+
+### `existing-vpc` and `existing-eks` {#existing-infrastructure}
+
+Neither root changes what it did not create: route tables, NAT gateways, endpoints, security group rules, node groups, launch templates, the cluster configuration, or KMS keys. Both tag the private subnets with `karpenter.sh/discovery=<cluster_name>` and `kubernetes.io/role/internal-elb=1`; `existing-vpc` also tags public subnets with `kubernetes.io/role/elb=1`, and `existing-eks` tags the cluster security group.
+
+For `existing-vpc`, the VPC must already provide:
+
+- DNS support and DNS hostnames enabled.
+- Two to four private subnets in at least two availability zones, with `map_public_ip_on_launch` off, routing to a NAT gateway or to interface endpoints for ECR, STS, EKS, EC2, CloudWatch Logs, SSM, SQS, KMS, and ELB. Add an S3 gateway endpoint; without it object storage traffic crosses the NAT gateways.
+- Public subnets only if you want internet-facing load balancers. Leave `public_subnet_ids` empty when the VPC has no public tier.
+
+For `existing-eks`, the cluster must already have:
+
+- Kubernetes 1.34 or newer.
+- Authentication mode `API` or `API_AND_CONFIG_MAP`. The plan prints the switch command for a `CONFIG_MAP` cluster.
+- An IAM OIDC provider for the cluster's issuer.
+- Private subnets in at least two availability zones with egress to AWS APIs through NAT or interface endpoints. By default the root derives them from the cluster's subnets by dropping any whose route table reaches an internet gateway. Set `private_subnet_ids` when the cluster's subnets are control-plane-only `/28`s or the nodes belong in other subnets.
+- No Karpenter installed; this root creates the Karpenter IAM and interruption queue. The queue is named `<cluster_name>-clicklink`, so it cannot collide with one left over from a removed Karpenter install.
+- Untainted system nodes carrying the labels in `system_node_selector` (`clickhouseGroup=system` by default). This root creates no node group.
+
+`terraform plan` fails when any of these is missing.
+
+If an addon in `install_addons` is already running as a self-managed install, EKS returns `Conflicts found when trying to apply`. Set `addon_resolve_conflicts_on_create = "OVERWRITE"` to let the managed addon take over, or drop it from `install_addons`.
+
+</Step>
+
+<Step title="Download and verify the Terraform release archive" id="download-the-release-archive">
+
+The roots ship as one archive per release, versioned with the `clicklink` binary. Fetch the archive for the current release with its checksum and cosign bundle:
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+# Or pin a specific release: CLICKLINK_VERSION='vX.Y.Z'
+TERRAFORM_TARBALL="clicklink-terraform-${CLICKLINK_VERSION}.tar.gz"
+for suffix in '' .sha256 .bundle; do
+  curl -fsSLO "https://releases.clicklink.clickhouse.com/${TERRAFORM_TARBALL}${suffix}"
+done
+if command -v sha256sum >/dev/null; then
+  sha256sum -c "${TERRAFORM_TARBALL}.sha256"
+else
+  shasum -a 256 -c "${TERRAFORM_TARBALL}.sha256"
+fi
+```
+
+Verify the signature with cosign before extracting:
+
+```bash
+cosign verify-blob \
+  --bundle "${TERRAFORM_TARBALL}.bundle" \
+  --certificate-identity-regexp '^https://github\.com/ClickHouse/data-plane-clicklink/\.github/workflows/release\.yaml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-.*)?$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  "${TERRAFORM_TARBALL}"
+```
+
+Then extract it:
+
+```bash
+tar -xzf "${TERRAFORM_TARBALL}"
+cd "clicklink-terraform-${CLICKLINK_VERSION}"
+```
+
+The archive extracts to one directory with `aws/production`, `aws/minimal`, `aws/existing-vpc`, `aws/existing-eks`, and `aws/modules`. The roots reference the modules as `../modules`. Keep the extracted tree together rather than copying one root out of it. The root READMEs in the archive may show the `init` hand-off without `--platform-bundle`; the command in [initialize the connector from Terraform outputs](#hand-off) is the supported one.
+
+</Step>
+
+<Step title="Configure and apply the selected root" id="apply">
+
+From the root's directory, copy the example variables file and fill it in:
+
+```bash
+cp terraform.tfvars.example terraform.tfvars
+```
+
+Every root requires `region`, `cluster_name`, and `chart_repository_arn`. `cluster_name` names the cluster, prefixes every resource, and is the discovery tag value. In `production`, `minimal`, and `existing-vpc` it is 3 to 32 lowercase letters, digits, and hyphens, starting with a letter and not ending with a hyphen. `existing-eks` takes the name of the cluster you already run, up to 32 characters. `chart_repository_arn` is the ECR repository of the ClickHouse cluster chart, which your account team provides at [registration](/products/bring-your-own-cloud/connector/onboarding#registration). The roots that create a cluster also require `cluster_admin_principal_arns`, the principals that get cluster admin through EKS access entries. The identity that runs the root must be in that list or it cannot reach the cluster afterwards. The cluster creator gets no implicit access. Per root:
+
+- `minimal` requires `endpoint_public_access_cidrs`, the IPv4 allowlist for the public API endpoint. The network you run `init` and `kubectl` from must be in it. A `/0` is refused unless `allow_public_endpoint_from_anywhere = true`. With `endpoint_public_access = false` the list may be empty and the endpoint is private only, as in `production`.
+- `existing-vpc` requires `vpc_id` and `private_subnet_ids`. `public_subnet_ids` is optional, for internet-facing load balancers.
+- `existing-eks` has no further required variables. `install_addons` names the managed addons the cluster lacks, and `ebs_kms_key_arn` supplies a key for service volumes.
+
+Then initialize, plan, and apply:
+
+```bash
+terraform init
+terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+terraform plan
+terraform apply
+```
+
+The archive has no provider lock file. `terraform providers lock` generates one for you to commit in your copy. State is local by default. `versions.tf` carries a commented `backend "s3"` block that shows the shared-state shape.
+
+<Note>
+The `production` and `existing-vpc` API endpoints are private. Run `init` and `kubectl` from inside the VPC (an SSM port forward to a system node, a bastion, a VPN, or a peered network), or opt in with `endpoint_public_access = true` and an allowlist in `endpoint_public_access_cidrs`.
+</Note>
+
+</Step>
+
+<Step title="Initialize the connector from Terraform outputs" id="hand-off">
+
+Export the outputs, then pass them to `init` together with the platform bundle, from a machine whose kube context points at the new cluster:
+
+```bash
+terraform output -json > outputs.json
+clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --managed \
+  --from-terraform outputs.json --platform-bundle bundle.yaml
+```
+
+The roots support the Helm target only. On a VM (`--target systemd`) `init` refuses `--platform-bundle`, and `clicklink clctl platform approve --bundle` installs only the pinned components, so the cluster has no node provisioner. Use `--target systemd` only for connectors that register ClickHouse you run yourself; it is not supported with these roots.
+
+`--platform-bundle` installs what the roots leave out: Karpenter with an `EC2NodeClass` and the `clickhouse-server` and `clickhouse-keeper` NodePools, the AWS Load Balancer controller, the `gp3-encrypted` StorageClass (encrypted with the EBS key when the outputs carry one), and the platform components the bundle pins: the snapshot controller, the ClickHouse operator, and the monitoring collectors. The bundle is the platform manifest ClickHouse Cloud renders for your environment; your account team delivers it during onboarding, and its `cluster:` section pins the Karpenter and load balancer controller versions. The flag needs `--target helm`, `--managed`, and `--from-terraform`. A component that is already present is left as it is, so re-running the command is safe, and `init` prints a report of what it installed, what it skipped, and why. Without the flag, `init` enrolls the connector but installs none of these, and the cluster cannot run a service until they are in place. Later [platform updates](/products/bring-your-own-cloud/connector/platform-updates) change the snapshot controller, the operator, and the collectors; Karpenter, the load balancer controller, and the StorageClass stay as `init` installed them.
+
+`--from-terraform` accepts either the full document `terraform output -json` prints or the bare object from `terraform output -json clicklink`. The `clicklink` output carries the cluster identity (`account_id`, `region`, `cluster_name`, `cluster_endpoint`, `cluster_ca`), the OIDC provider, the connector namespace, the executor's IAM role (`executor_role_arn`), the EBS key, the Karpenter node role and queue, the load balancer controller role, and `system_node_selector`. `init` reads the cluster identity and the connector namespace from the file. It sets `executor_role_arn` as the IRSA annotation on the connector's `pcm-executor` ServiceAccount and gives the connector pods the node selector. Managed services do not share that role: `clicklink clctl executor prepare` creates one role per service (`CH-S3-<service>-<region>-00-Role` by default), bound to the service when it is created; see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model#identities).
+
+`init` refuses a flag such as `--cluster-name` or `--target-namespace` that disagrees with the file, naming both values. Drop the flag or fix the outputs. It also refuses a kube context whose API server is not `cluster_endpoint`, or whose EKS ARN names another cluster. The output has a `schema` field, currently `1`. `clctl` refuses a file whose `schema` it does not support.
+
+The rest of the enrollment is the standard flow in [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
+
+</Step>
+</Steps>
+
+## KMS keys and required grants {#keys}
+
+`production` and `existing-vpc` create three customer-managed KMS keys with rotation on, for EKS secrets, EBS volumes, and the object storage buckets, unless you pass ARNs in `kms`. `existing-eks` creates the storage key unless you set `storage_kms_key_arn`, and takes `ebs_kms_key_arn` for service volumes without creating one. `minimal` creates none; without `storage_kms_key_arn` its buckets stay on SSE-S3. A created key carries one account-root statement that delegates access to IAM. A key you supply needs the same delegation, or these grants in its key policy:
+
+| Key | Principal | Actions |
+|---|---|---|
+| EKS secrets | `<cluster_name>-cluster` | `kms:Encrypt`, `kms:Decrypt`, `kms:DescribeKey` |
+| EBS | `<cluster_name>-ebs-csi-driver`, `<cluster_name>-karpenter-controller` | `kms:Encrypt`, `kms:Decrypt`, `kms:ReEncrypt*`, `kms:GenerateDataKey*`, `kms:DescribeKey`, `kms:CreateGrant` with the `kms:GrantIsForAWSResource = true` condition |
+| Storage | Each `CH-S3-<service>-<region>-00-Role` that `clicklink clctl executor prepare --storage-kms-key-arn` creates | `kms:Decrypt`, `kms:GenerateDataKey`, `kms:DescribeKey` |
+| Storage | `<cluster_name>-clicklink-executor`, for the `_tde/` key record beside a service's backups | `kms:GenerateDataKey`, `kms:Decrypt` |
+
+The roots attach the IAM role policies for the EKS secrets and EBS keys either way, and the executor's storage key policy whenever the root has a storage key; `executor prepare` attaches each service role's policy. System node root volumes hold images and kubelet logs, not service data, and use the account's default EBS key.
+
+## Destroy Terraform-managed infrastructure {#destroy}
+
+`terraform destroy` removes what the root created. Created KMS keys enter a 30-day deletion window. Log groups are deleted with their retained logs, so export what you need first. Instances Karpenter launched and volumes the ClickHouse operator created are not in Terraform state; delete your services and uninstall Karpenter first, or the VPC and node role deletions fail.
+
+`existing-eks` leaves the cluster in place. It removes the roles, the interruption queue and rules, the access entry, and the tags it added. The `vpc-cni`, `kube-proxy`, and `coredns` addons it installed are released from EKS management, and their pods keep running. An EBS CSI driver addon it installed goes with the root, because its IRSA role is destroyed too. To keep the driver, re-create the addon with your own role before the destroy.
+
+Destroy removes every tag these roots added, including a `kubernetes.io/role/internal-elb` tag that existed before the root, because `aws_ec2_tag` takes ownership of an existing tag. To keep them, set `manage_subnet_tags = false` (`existing-vpc`) or `manage_discovery_tags = false` (`existing-eks`) and apply before destroying, or `terraform state rm` the `aws_ec2_tag` resources.

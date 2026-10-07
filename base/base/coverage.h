@@ -81,4 +81,8 @@ using CoverageFlushCallback = std::function<void(
 /// Thread-safe.
 void registerCoverageFlushCallback(CoverageFlushCallback cb);
 
+/// Register a function that dumpCoverageReportIfPossible calls first, so that the
+/// forced-exit paths, which skip atexit handlers, also flush the per-test coverage.
+void setCoverageDumpHook(void (*hook)() noexcept);
+
 #endif

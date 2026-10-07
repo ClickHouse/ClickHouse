@@ -6,7 +6,6 @@ SET optimize_read_in_order = 1;
 SET optimize_use_projections = 1;
 SET optimize_use_projection_filtering = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET read_in_order_use_virtual_row = 1;
 SET enable_parallel_replicas = 0;
 SET parallel_replicas_for_non_replicated_merge_tree = 0;
@@ -93,9 +92,9 @@ SETTINGS index_granularity = 4;
 INSERT INTO mt_alias SELECT number % 4, number FROM numbers(64);
 
 SELECT 'an aliased filter column in a filter step, no projection involved';
-SELECT count() FROM (EXPLAIN actions = 1 SELECT c FROM mt_alias WHERE f ORDER BY c LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0) WHERE explain LIKE '%ReadType: InOrder%';
+SELECT count() FROM (EXPLAIN actions = 1 SELECT c FROM mt_alias WHERE f ORDER BY c LIMIT 5 SETTINGS optimize_move_to_prewhere = 0) WHERE explain LIKE '%ReadType: InOrder%';
 
 SELECT 'same rows and same order as reading the table, aliased filter column';
-SELECT groupArray(c) = (SELECT groupArray(c) FROM (SELECT c FROM mt_alias WHERE f ORDER BY c LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0, optimize_read_in_order = 0)) FROM (SELECT c FROM mt_alias WHERE f ORDER BY c LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, query_plan_optimize_prewhere = 0);
+SELECT groupArray(c) = (SELECT groupArray(c) FROM (SELECT c FROM mt_alias WHERE f ORDER BY c LIMIT 5 SETTINGS optimize_move_to_prewhere = 0, optimize_read_in_order = 0)) FROM (SELECT c FROM mt_alias WHERE f ORDER BY c LIMIT 5 SETTINGS optimize_move_to_prewhere = 0);
 
 DROP TABLE mt_alias SYNC;

@@ -12,6 +12,9 @@
 
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+
 namespace DB
 {
 namespace Setting
@@ -107,6 +110,17 @@ public:
         if (!left_argument_constant_node && !right_argument_constant_node)
             return;
 
+        /** Arithmetic with a `Decimal` operand does not distribute over these aggregate functions. It computes
+          * in the native width of the decimal, into which the other operand is truncated, with an overflow
+          * check on every row, and `divide` drops the fractional digits beyond the scale of the decimal on
+          * every row. The hoisted operation runs once, on the aggregate, often in a wider type: for
+          * `a Decimal32(0)`, `sum(a / 2)` over `{1, 1}` is `0`, but `sum(a) / 2` is `1`, and `sum(a * 3)`
+          * throws `DECIMAL_OVERFLOW` for a row `999999999`, but `sum(a) * 3` does not.
+          */
+        for (const auto & argument : arithmetic_function_arguments_nodes)
+            if (isDecimal(removeNullable(removeLowCardinality(argument->getResultType()))))
+                return;
+
         /** Need reverse max <-> min for:
           *
           * max(-1*value) -> -1*min(value)
@@ -132,6 +146,7 @@ public:
 
             /// Rewrite `aggregate_function(inner_function(constant, argument))` into `inner_function(constant, aggregate_function(argument))`
             const auto & left_argument_constant_value_literal = left_argument_constant_node->getValue();
+
             bool need_reverse = (arithmetic_function_name == "multiply" && left_argument_constant_value_literal < zeroField(left_argument_constant_value_literal))
                 || (arithmetic_function_name == "minus");
 
@@ -144,6 +159,7 @@ public:
         {
             /// Rewrite `aggregate_function(inner_function(argument, constant))` into `inner_function(aggregate_function(argument), constant)`
             const auto & right_argument_constant_value_literal = right_argument_constant_node->getValue();
+
             bool need_reverse = (arithmetic_function_name == "multiply" || arithmetic_function_name == "divide") && right_argument_constant_value_literal < zeroField(right_argument_constant_value_literal);
 
             if (need_reverse)

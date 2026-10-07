@@ -2540,6 +2540,9 @@ def test_structure_only_restores_access_entities_and_udfs():
     )
 
     assert instance.query("EXISTS test.table") == "1\n"
+    # The restored row policy applies right away and admits `u1` only, so `default` cannot read the
+    # table until it is gone.
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     assert instance.query("SELECT count() FROM test.table") == "0\n"
     assert (
         instance.query("SHOW CREATE USER u1")
@@ -2548,7 +2551,6 @@ def test_structure_only_restores_access_entities_and_udfs():
     assert instance.query("SELECT linear_equation(2, 3, 1)") == "7\n"
 
     instance.query("DROP FUNCTION linear_equation")
-    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     instance.query("DROP DATABASE test")
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")
@@ -2605,11 +2607,20 @@ def test_structure_only_restores_access_entities_and_udfs():
         f" SETTINGS structure_only=true, restore_access_entities='true', restore_functions='1'"
     )
 
-    # Table exists but has no data
     assert instance.query("EXISTS test.table") == "1\n"
-    assert instance.query("SELECT count() FROM test.table") == "0\n"
 
     # All access entity types were restored
+    assert (
+        instance.query("SHOW CREATE ROW POLICY rowpol1")
+        == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
+    )
+    # The restored row policy applies right away and admits `u1` only, so `default` cannot read the
+    # table until it is gone.
+    instance.query("DROP ROW POLICY rowpol1 ON test.table")
+
+    # Table exists but has no data
+    assert instance.query("SELECT count() FROM test.table") == "0\n"
+
     assert (
         instance.query("SHOW CREATE USER u1")
         == "CREATE USER u1 IDENTIFIED WITH sha256_password SETTINGS custom_a = 1\n"
@@ -2620,10 +2631,6 @@ def test_structure_only_restores_access_entities_and_udfs():
         instance.query("SHOW CREATE SETTINGS PROFILE prof1")
         == "CREATE SETTINGS PROFILE `prof1` SETTINGS custom_b = 2 TO u1\n"
     )
-    assert (
-        instance.query("SHOW CREATE ROW POLICY rowpol1")
-        == "CREATE ROW POLICY rowpol1 ON test.`table` FOR SELECT USING x < 50 TO u1\n"
-    )
     assert instance.query("SHOW CREATE QUOTA q1") == "CREATE QUOTA q1 TO r1\n"
 
     # UDF was restored
@@ -2631,7 +2638,6 @@ def test_structure_only_restores_access_entities_and_udfs():
 
     instance.query("DROP FUNCTION linear_equation")
 
-    instance.query("DROP ROW POLICY rowpol1 ON test.table")
     instance.query("DROP DATABASE test")
     instance.query("DROP USER u1")
     instance.query("DROP ROLE r1")

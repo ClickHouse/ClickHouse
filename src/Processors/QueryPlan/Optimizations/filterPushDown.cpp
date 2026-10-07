@@ -8,6 +8,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -24,6 +25,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -752,12 +754,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// algorithm joins on, so a bit-sensitive predicate disagrees between the two sides. The supertype is what the JOIN
             /// compares in, and a nested float is no different. A `Dynamic` or `JSON` supertype describes neither the runtime
             /// contents nor the representation, and a predicate can read either, so both are declined outright.
-            bool supertype_is_unsafe = false;
-            auto check_type = [&](const IDataType & type)
-            { supertype_is_unsafe |= isFloat(type) || isDynamic(type) || isObject(type); };
-            check_type(*supertype);
-            supertype->forEachChild(check_type);
-            if (supertype_is_unsafe)
+            if (anyInTypeTree(*supertype, [](const IDataType & type) { return isFloat(type) || isDynamic(type) || isObject(type); }))
                 return;
 
             /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
@@ -861,6 +858,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (is_filter_column_const_before)
         original_filter_const_column = filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column;
 
+    /// With no input given only the conjuncts that read no column are evaluated, so FALSE means no row passes.
+    const bool filter_is_always_false
+        = (left_stream_filter_push_down_input_columns_available || right_stream_filter_push_down_input_columns_available)
+        && !isSensitiveToEvaluationCount(filter->getExpression())
+        && filterResultForNotMatchedRows(filter->getExpression(), filter->getFilterColumnName(), Block{}) == FilterResult::FALSE;
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -871,7 +874,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column,
-        cross_type_equivalent_columns);
+        cross_type_equivalent_columns,
+        filter_is_always_false);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
@@ -1001,7 +1005,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.left_stream_filter_removes_filter = true;
         }
 
-        const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
+        /// prune the very node this name belongs to, leaving a reference dangling.
+        const String result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1036,7 +1042,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.right_stream_filter_removes_filter = true;
         }
 
-        const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
+        /// prune the very node this name belongs to, leaving a reference dangling.
+        const String result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1232,6 +1240,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
     {
+        if (!settings.filter_push_down_below_limit_by)
+            return 0;
+
         /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
         /// per-group rows (and therefore the result) are identical whether it runs above or
         /// below the LIMIT BY. But it is only safe to push when every non-empty input group
