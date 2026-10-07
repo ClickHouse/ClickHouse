@@ -2722,7 +2722,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 {
     /// Allocate columns for values, null map, and array offsets.
     /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
-    constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE / 4);
+    constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE) / 4;
 
     size_t output_num_values_estimate = 0;
     if (column_info.levels.back().rep == 0)
