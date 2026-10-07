@@ -12251,10 +12251,13 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
                 try
                 {
                     /// A part storage transaction that has not been committed still holds its `moveDirectory`,
-                    /// so on an object storage disk the new directory is not there; on a local disk the move
-                    /// already ran.
+                    /// so on an object storage disk the new directory is not there and only its uploaded blobs
+                    /// are left to remove; on a local disk the move already ran.
                     if (!part->getDataPartStorage().exists())
+                    {
+                        part->getDataPartStorage().undoTransaction();
                         continue;
+                    }
                     if (part->getDataPartStorage().getPartDirectory() == previous_dir)
                         continue;
 
