@@ -16,6 +16,7 @@ namespace DB
 
 class StorageMergeTree;
 class MergedPartOffsets;
+class ReadSnapshot;
 
 struct UniqueKeyInsertOutcome
 {
@@ -51,11 +52,11 @@ public:
     struct MergeRequest
     {
         MergeTreeTransactionHolder & transaction;
-        /// `snapshot_bitmaps` and `merged_part_offsets` are indexed like this.
+        /// `merged_part_offsets` is indexed like this.
         const MergeTreeData::DataPartsVector & source_parts;
         MergeTreeMutableDataPartPtr merged_part;
-        /// The bitmaps the merge's input filter dropped rows by.
-        const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps;
+        /// The snapshot the merge's input filter read the sources' bitmaps at.
+        const ReadSnapshot & read_snapshot;
         /// Where each row the input filter let through landed in `merged_part`.
         const MergedPartOffsets & merged_part_offsets;
     };

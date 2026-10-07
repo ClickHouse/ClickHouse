@@ -44,7 +44,7 @@ namespace
 /// ---------- primitive ----------
 ///
 /// One smoke test gates the wrapper layer; the rest of the suite exercises
-/// our own logic: `buildKeepFilterRange`, `rangeCardinality`, the dynamic-width
+/// our own logic: `clearInFilter`, `rangeCardinality`, the dynamic-width
 /// upgrade, serialize/deserialize invariants, and filename helpers.
 
 TEST(DeleteBitmapTest, WrapperSmoke)
@@ -595,52 +595,6 @@ TEST(DeleteBitmapInspectTest, FlippedBodyByteIsCorruptNotThrowing)
     EXPECT_TRUE(info.magic_ok);
     EXPECT_FALSE(info.crc_ok);
     EXPECT_NE(info.crc_stored, info.crc_computed);
-}
-
-/// ---------- buildKeepFilter / buildKeepFilterRange ----------
-
-TEST(DeleteBitmapTest, KeepFilterRangeOverEmptyBitmapKeepsEverything)
-{
-    DeleteBitmap bm;
-    std::vector<UInt8> keep(5, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 5u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{1, 1, 1, 1, 1}));
-
-    /// An empty range is a no-op, not a read of `out_keep`.
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, 0, nullptr), 0u);
-}
-
-TEST(DeleteBitmapTest, KeepFilterRangeIsOffsetByBegin)
-{
-    DeleteBitmap bm;
-    bm.addMany({11, 13});
-
-    /// Rows 10..14, so the deleted ones land at indices 1 and 3 of the mask.
-    std::vector<UInt8> keep(5, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/10, keep.size(), keep.data()), 3u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{1, 0, 1, 0, 1}));
-
-    /// A range entirely past the set rows keeps all of them.
-    std::vector<UInt8> after(3, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/20, after.size(), after.data()), 3u);
-    EXPECT_EQ(after, (std::vector<UInt8>{1, 1, 1}));
-}
-
-TEST(DeleteBitmapTest, KeepFilterRangeOnWideRepresentation)
-{
-    /// Above `UInt32` the bitmap switches representation, and the range walk has its own overload
-    /// per width -- a mis-dispatch would answer for the truncated row number instead.
-    constexpr UInt64 kAboveU32 = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 5;
-    DeleteBitmap bm;
-    bm.addMany({kAboveU32, kAboveU32 + 2});
-
-    std::vector<UInt8> keep(4, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(kAboveU32, keep.size(), keep.data()), 2u);
-    EXPECT_EQ(keep, (std::vector<UInt8>{0, 1, 0, 1}));
-
-    /// The truncated row numbers are not deleted, so the narrow window is untouched.
-    std::vector<UInt8> narrow(6, 0);
-    EXPECT_EQ(bm.buildKeepFilterRange(/*begin=*/0, narrow.size(), narrow.data()), 6u);
 }
 
 /// ---------- clearInFilter ----------

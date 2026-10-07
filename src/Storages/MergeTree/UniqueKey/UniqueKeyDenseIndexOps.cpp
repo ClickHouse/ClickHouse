@@ -227,11 +227,12 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
 #if USE_ROCKSDB
         Stopwatch rebuild_watch;
         Block accumulated = readUniqueKeyColumns(data, part, metadata_snapshot, uk_names);
-        if (accumulated.rows() == 0)
+        /// A merge checks each source's entry count against `rows_count`, so the index must hold every row.
+        if (accumulated.rows() != part->rows_count)
             throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "ensureValidDenseIndex: part {} has rows_count={} but sequential read yielded 0 rows; "
+                "ensureValidDenseIndex: part {} has rows_count={} but sequential read yielded {} rows; "
                 "cannot rebuild dense index",
-                part->name, part->rows_count);
+                part->name, part->rows_count, accumulated.rows());
 
         const UInt64 rows = accumulated.rows();
         /// Densify the accumulated UK columns: chunk columns are densified in

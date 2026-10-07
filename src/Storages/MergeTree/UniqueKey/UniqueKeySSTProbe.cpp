@@ -39,6 +39,18 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Decode the 4-byte big-endian row number written by `SSTIndexWriter`
+/// (`encodeRowNumberBE`), widened to UInt64 (== `_part_offset`). The writer
+/// always emits exactly 4 bytes; any other size is a corrupt or
+/// incompatible sidecar, so fail closed rather than decode a prefix.
+UInt64 decodeRowNumberBE(const char * data, size_t size)
+{
+    if (size != sizeof(UInt32))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "UNIQUE KEY SST value has {} bytes, expected exactly 4", size);
+    return unalignedLoadBigEndian<UInt32>(data);
+}
+
 /// Declares a `rocksdb::FileSystem` method override that unconditionally
 /// returns `NotSupported`. `ReadBufferFileSystem` implements only the read-only,
 /// random-access operations the SST reader needs; everything else is
@@ -48,18 +60,6 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Decode the 4-byte big-endian row number written by `SSTIndexWriter`
-    /// (`encodeRowNumberBE`), widened to UInt64 (== `_part_offset`). The writer
-    /// always emits exactly 4 bytes; any other size is a corrupt or
-    /// incompatible sidecar, so fail closed rather than decode a prefix.
-    UInt64 decodeRowNumberBE(const char * data, size_t size)
-    {
-        if (size != sizeof(UInt32))
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "UNIQUE KEY SST value has {} bytes, expected exactly 4", size);
-        return unalignedLoadBigEndian<UInt32>(data);
-    }
-
     /// `FSRandomAccessFile` backed by a `ReadBuffer`. `readBigAt` is positional
     /// and lock-free, so concurrent RocksDB reads need no serialization. The
     /// buffer must support positional reads; that is enforced at open time by
@@ -289,6 +289,13 @@ std::vector<rocksdb::Status> SSTFileReader::multiGet(
 std::shared_ptr<const rocksdb::TableProperties> SSTFileReader::getProperties() const
 {
     return index_reader->GetTableProperties();
+}
+
+std::unique_ptr<rocksdb::Iterator> SSTFileReader::newIterator() const
+{
+    rocksdb::ReadOptions options;
+    options.fill_cache = false;
+    return std::unique_ptr<rocksdb::Iterator>(index_reader->NewIterator(options));
 }
 
 rocksdb::Status SSTFileReader::verifyChecksum() const

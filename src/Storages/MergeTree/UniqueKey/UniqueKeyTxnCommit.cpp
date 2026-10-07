@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeCommittingBlock.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -15,7 +14,9 @@
 #include <Storages/MergeTree/UniqueKey/BlockAllocation.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
+#include <Storages/MergeTree/UniqueKey/ReadSnapshot.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyMergedIndex.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
 #include <Storages/StorageMergeTree.h>
 
@@ -181,18 +182,6 @@ protected:
                 prepared.emplace(part_info, kill);
 
         return prepared;
-    }
-
-    static void rejectUndeterminedTransactions(std::string_view what)
-    {
-        if (!TransactionManager::instance().hasUnknownStateTransactions())
-            return;
-
-        throw Exception(
-            ErrorCodes::ABORTED,
-            "UNIQUE KEY {}: a transaction is in an undetermined state, so the delete bitmaps it "
-            "wrote cannot be told apart from ones that will never exist; retrying after it resolves",
-            what);
     }
 
     DeleteBitmapStore & delete_bitmap_store;
@@ -515,8 +504,6 @@ protected:
 
     bool resolveConflicts() override
     {
-        rejectUndeterminedTransactions("merge late-kill reconciliation");
-
         own_kills = computeMergeLateKills();
         own_part = request.merged_part;
 
@@ -530,6 +517,7 @@ protected:
         storage.merger_mutator.renameMergedTemporaryPart(
             own_part, request.source_parts, commit_txn, transaction);
         transaction.commit();
+
         return *own_part;
     }
 
@@ -542,26 +530,13 @@ private:
 };
 
 /// A late kill is a source row killed after the merge's snapshot: the merged part still holds it
-/// live, so it has to be killed there. The merge dropped the rows dead at the snapshot, so its row
-/// mapping indexes the rows each source sent, not their raw offsets: source offset `o` is the
-/// `o - rank(o)`-th row sent, where `rank(o)` counts the rows of `prev_snapshot` before `o` -- the
-/// source's bitmap at the merge's snapshot, i.e. the rows the merge skipped.
-///
-/// Example: source A holds ids 10 20 30 40 50 and 20 (offset 1) is dead at the snapshot, so A
-/// sends 10 30 40 50. Merged with B's 15 35 45 55, A's rows land at 0 2 4 6 and B's at 1 3 5 7.
-/// If 40 (offset 3) is killed during the merge, it was A's sent row 3 - 1 = 2 (0-based), which
-/// landed at merged row 4. Without the subtraction, row 6 (id 50, live) would be killed instead.
-///
-/// Without a sorting key the merge appends the sources in order, so the merged row is the rows
-/// the earlier sources sent plus that index.
+/// live, so it has to be killed there, at the row `UniqueKeyMergeRowMap::toMergedRow` maps it to.
 DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
 {
     const auto & sources = request.source_parts;
-    const auto & snapshot_bitmaps = request.snapshot_bitmaps;
+    const auto & read_snapshot = request.read_snapshot;
     const auto & offsets = request.merged_part_offsets;
     const IMergeTreeDataPart & merged_part = *request.merged_part;
-
-    chassert(sources.size() == snapshot_bitmaps.size());
 
     if (merged_part.rows_count == 0)
         return nullptr;
@@ -570,35 +545,30 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "UNIQUE KEY merge into {}: the row mapping is not finalized at the commit", merged_part.name);
 
+    const UniqueKeyMergeRowMap row_map(sources, read_snapshot, offsets);
+    if (!offsets.isMappingEnabled() && row_map.mergedRowsCount() != merged_part.rows_count)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY merge into {}: {} row(s) of the sources were live at the snapshot, but the merged part has {}",
+            merged_part.name, row_map.mergedRowsCount(), merged_part.rows_count);
+
     auto late_kills = std::make_shared<DeleteBitmap>();
-    UInt64 source_start = 0;
 
     for (size_t i = 0; i < sources.size(); ++i)
     {
-        const DeleteBitmap & prev_snapshot = *snapshot_bitmaps[i];
-        const UInt64 live_at_snapshot = sources[i]->rows_count - prev_snapshot.cardinality();
-        if (offsets.isMappingEnabled() && offsets.getPartRowsCount(i) != live_at_snapshot)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "UNIQUE KEY merge into {}: mapped {} row(s) of source part {}, which had {} live at the snapshot",
-                merged_part.name, offsets.getPartRowsCount(i), sources[i]->name, live_at_snapshot);
-
         DeleteBitmap newly_dead;
         newly_dead.merge(*delete_bitmap_store.readLatestBitmap(sources[i]->info));
-        newly_dead.subtract(prev_snapshot);
+        newly_dead.subtract(*read_snapshot.bitmapAt(sources[i]->info));
 
         for (const UInt64 source_offset : newly_dead.toVector())
         {
-            const UInt64 input_offset = source_offset - prev_snapshot.rangeCardinality(0, source_offset);
-            late_kills->add(offsets.isMappingEnabled() ? offsets[i, input_offset] : source_start + input_offset);
+            const auto merged_row = row_map.toMergedRow(i, source_offset);
+            if (!merged_row)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "UNIQUE KEY merge into {}: late-killed row {} of {} has no merged row",
+                    merged_part.name, source_offset, sources[i]->name);
+            late_kills->add(*merged_row);
         }
-
-        source_start += live_at_snapshot;
     }
-
-    if (!offsets.isMappingEnabled() && source_start != merged_part.rows_count)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "UNIQUE KEY merge into {}: {} row(s) of the sources were live at the snapshot, but the merged part has {}",
-            merged_part.name, source_start, merged_part.rows_count);
 
     return late_kills->empty() ? nullptr : late_kills;
 }
