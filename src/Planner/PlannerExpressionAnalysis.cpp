@@ -305,7 +305,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
     }
 
-    if (aggregation_keys.empty() && aggregates_descriptions.empty())
+    if (aggregation_keys.empty() && aggregates_descriptions.empty() && grouping_sets_parameters_list.empty())
         return {};
 
     /** For non ordinary GROUP BY we add virtual __grouping_set column

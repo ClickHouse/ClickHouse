@@ -335,6 +335,11 @@ public:
         if (!expr_usage || !expr_usage->pruned_type)
             return;
 
+        /// The same node can be reached from several clauses (e.g. ORDER BY ALL shares the projection node),
+        /// and the index remap must be applied to it once.
+        if (!processed_nodes.insert(function_node).second)
+            return;
+
         /// Rewrite numeric tupleElement index if pruning changed positions.
         auto * constant_node = arguments[1]->as<ConstantNode>();
         if (constant_node)
@@ -360,6 +365,7 @@ public:
 
 private:
     ArrayJoinUsageMap & usage_map;
+    std::unordered_set<const FunctionNode *> processed_nodes;
 };
 
 }

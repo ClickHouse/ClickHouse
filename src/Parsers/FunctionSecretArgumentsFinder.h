@@ -84,6 +84,13 @@ public:
         {
             return count != 0 || !nested_maps.empty() || !replaced_arguments.empty() || !masked_arguments.empty();
         }
+
+        /// Whether the argument at raw index `n` is hidden: by the span, individually or by a partial
+        /// replacement. The nested maps are not positional: their entries are matched by name.
+        bool isSecretArgument(size_t n) const
+        {
+            return (n >= start && n - start < count) || masked_arguments.contains(n) || replaced_arguments.contains(n);
+        }
     };
 
     explicit FunctionSecretArgumentsFinder(std::unique_ptr<AbstractFunction> && function_) : function(std::move(function_)) {}
@@ -181,6 +188,8 @@ protected:
 
     void findOrdinaryFunctionSecretArguments();
     void findMongoDBSecretArguments();
+    /// The secret options of a MongoDB connection string or option list, after `findMongoDBSecretArguments`.
+    void findMongoDBConnectionStringSecretArguments();
     void findXDBCSecretArguments();
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
