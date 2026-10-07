@@ -47,7 +47,7 @@ TEST(UniversalHash128, MatchesReference)
     if constexpr (!UniversalHash128::is_universal)
         GTEST_SKIP() << "No carry-less multiplication";
 
-    std::mt19937_64 rng(42);
+    std::mt19937_64 rng(42); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic test data
     std::vector<char> buffer(400 + 15);
     for (int iteration = 0; iteration < 10; ++iteration)
     {

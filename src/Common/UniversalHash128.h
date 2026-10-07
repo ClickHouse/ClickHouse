@@ -61,8 +61,8 @@ private:
 #endif
 
     /// The powers of the key: key^1, ..., key^MAX_BLOCKS_PER_REDUCTION, and the XOR of the words of each of them.
-    std::array<Vector, MAX_BLOCKS_PER_REDUCTION> powers;
-    std::array<Vector, MAX_BLOCKS_PER_REDUCTION> folded_powers;
+    std::array<Vector, MAX_BLOCKS_PER_REDUCTION> powers{};
+    std::array<Vector, MAX_BLOCKS_PER_REDUCTION> folded_powers{};
 #endif
 };
 
