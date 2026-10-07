@@ -73,8 +73,13 @@ MergeTreeReadPool::MergeTreeReadPool(
     if (owned_columns_cache && (reader_settings.enable_columns_cache_reads || reader_settings.enable_columns_cache_writes))
     {
         for (size_t i = 0; i < parts_ranges.size(); ++i)
-            if (isWidePart(parts_ranges[i].data_part))
-                columns_cache_stripe_marks[i] = ColumnsCacheStripes::forPart(*parts_ranges[i].data_part->index_granularity).stripe_marks;
+        {
+            /// Only the parts the reader caches, see `MergeTreeReaderWide`: for the others an aligned cut only
+            /// moves the boundaries of the tasks.
+            const auto & part = parts_ranges[i].data_part;
+            if (isWidePart(part) && canUseColumnsCacheForPart(part->storage.getStorageID().uuid, part->isProjectionPart()))
+                columns_cache_stripe_marks[i] = ColumnsCacheStripes::forPart(*part->index_granularity).stripe_marks;
+        }
     }
 
     fillPerThreadInfo(pool_settings.threads, pool_settings.sum_marks);

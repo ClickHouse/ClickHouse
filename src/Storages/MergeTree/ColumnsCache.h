@@ -70,6 +70,14 @@ struct ColumnsCacheKeyHash
 /// reads find their entries.
 UInt128 getColumnsCacheColumnIdentity(const UUID & table_uuid, const String & part_name, const String & column_name, UInt64 schema_identity);
 
+/// Whether the columns cache can hold the columns of a part: entries are keyed by the table's UUID, which only
+/// the tables of `Atomic` and `Replicated` databases have, and the name of a projection part (the name of the
+/// projection) is not unique across its parent parts.
+inline bool canUseColumnsCacheForPart(const UUID & table_uuid, bool is_projection_part)
+{
+    return table_uuid != UUIDHelpers::Nil && !is_projection_part;
+}
+
 /// How the marks of a part are cut into stripes: `stripe_marks` consecutive granules each, the
 /// last stripe shorter. The same for every reader of the part, since it depends only on the
 /// average size of a granule of the part.
