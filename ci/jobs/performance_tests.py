@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import shutil
@@ -13,6 +14,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from shlex import quote
 from threading import Thread
 
 import yaml
@@ -69,6 +71,7 @@ FROM query_metrics_v2
 WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
+    AND workflow_name = 'MasterCI'
 -- The display name is part of the key: compare.sh joins this file on all three.
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
@@ -1667,6 +1670,7 @@ def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
                 "diff_percent": row.get("diffPercent"),
                 "tier": confidence.get("tier") or "unknown",
                 "reason": confidence.get("reason") or "",
+                "confirmation_threshold": confidence.get("confirmationThreshold"),
                 "link": dashboard_query_link(
                     run_id, row.get("test"), row.get("queryIndex")
                 ),
@@ -1723,16 +1727,151 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     return [row for row in rows if row["tier"] in DASHBOARD_BLOCKING_TIERS]
 
 
+def confirm_dashboard_regressions(regressions, pr_number, workdir):
+    """Rerun dashboard blockers once on fresh servers; missing evidence stays blocking.
+
+    Reuse the shard confirmation measurements/randomization test, but carry the
+    dashboard's practical threshold instead of the shard's 15%/per-test floor.
+    Original samples and the dashboard classification are left intact.
+    """
+    rows = [dict(row, confirmation_passed=False) for row in regressions]
+    if not rows:
+        return rows
+    if len(rows) > 100:
+        for row in rows:
+            row["confirmation"] = "Not rerun: exceeds the 100-query confirmation limit"
+        return rows
+
+    selected = {}
+    for row in rows:
+        threshold = row.get("confirmation_threshold")
+        if (
+            not isinstance(threshold, (int, float))
+            or isinstance(threshold, bool)
+            or not math.isfinite(threshold)
+            or threshold <= 0
+        ):
+            row["confirmation"] = (
+                "Not rerun: dashboard confirmationThreshold unavailable"
+            )
+            continue
+        test, index = row["test"], row["query_index"]
+        diff = row["diff_percent"]
+        if (
+            not isinstance(test, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", test)
+            or type(index) is not int
+            or index < 0
+            or not isinstance(diff, (int, float))
+            or not math.isfinite(diff)
+            or diff <= 0
+            or (test, index) in selected
+        ):
+            raise PerfDashboardError("Invalid dashboard confirmation query")
+        row["confirmation"] = (
+            "Confirmation unavailable: missing or failed rerun; remains blocking"
+        )
+        selected[test, index] = row
+    if not selected:
+        return rows
+
+    workdir = Path(workdir).resolve()
+    output_dir = workdir / "analyze-dashboard-confirm"
+    # Remove stale results before starting: an interrupted/resumed job must not
+    # accept the previous attempt's successful measurements.
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    query_file = workdir / "dashboard-confirm-queries.tsv"
+    with query_file.open("w", encoding="utf-8") as out:
+        for (test, index), row in selected.items():
+            out.write(
+                f"{test}\t{index}\t{row['diff_percent']}\t0\t{row['confirmation_threshold']}\n"
+            )
+
+    script = Path(__file__).resolve().parent / "scripts/perf/compare.sh"
+    env = dict(
+        os.environ,
+        stage="confirm_dashboard",
+        PR_TO_TEST=str(pr_number),
+        CHPC_CONFIRM_QUERIES=str(query_file),
+    )
+    exit_code = Shell.run(
+        quote(str(script)),
+        cwd=str(workdir),
+        env=env,
+        log_file=str(workdir / "dashboard-confirm.log"),
+        timeout=1500,
+    )
+    if exit_code:
+        for row in selected.values():
+            row["confirmation"] = (
+                f"Confirmation failed (exit {exit_code}); remains blocking"
+            )
+        return rows
+
+    stats_file = output_dir / "query-metric-stats.tsv"
+    if not stats_file.exists():
+        return rows
+    stats = {}
+    invalid = set()
+    with stats_file.open(encoding="utf-8") as source:
+        for fields in csv.reader(source, delimiter="\t"):
+            # Malformed/unattributable output cannot clear any failures.
+            if len(fields) != 6:
+                raise PerfDashboardError("Malformed dashboard confirmation statistics")
+            try:
+                key = (fields[4], int(fields[5]))
+                arrays = [json.loads(value) for value in fields[:4]]
+                if any(
+                    not isinstance(value, list) or len(value) != 1 for value in arrays
+                ):
+                    raise ValueError("Expected one client_time metric")
+                values = [value[0] for value in arrays]
+                if any(
+                    type(value) not in (int, float) or not math.isfinite(value)
+                    for value in values
+                ):
+                    raise ValueError("Non-finite confirmation statistics")
+                left, right, diff, noise = values
+                if left <= 0 or right <= 0 or diff <= -1 or noise < 0:
+                    raise ValueError("Invalid confirmation statistics")
+            except (ValueError, TypeError) as e:
+                raise PerfDashboardError(
+                    f"Invalid dashboard confirmation statistics: {e}"
+                ) from e
+            if key in stats:
+                invalid.add(key)
+            stats[key] = (diff, noise)
+    for key, row in selected.items():
+        if key not in stats or key in invalid:
+            continue
+        diff, noise = stats[key]
+        reproduced = diff > row["confirmation_threshold"] and diff >= noise
+        row["confirmation_passed"] = not reproduced
+        verdict = "Reproduced" if reproduced else "Did not reproduce; non-blocking"
+        row["confirmation"] = (
+            f"{verdict} after server restart: {diff * 100:+.1f}%, "
+            f"dashboard threshold {row['confirmation_threshold'] * 100:.1f}%, "
+            f"rerun statistical threshold {noise * 100:.1f}%"
+        )
+    return rows
+
+
 def build_dashboard_results_children(regressions):
-    """One failed row per confirmed regression, linking the dashboard's query page."""
+    """Keep every dashboard blocker visible, including those cleared by a rerun."""
     children = []
     for row in regressions:
         sub = Result(
             name=f"{row['test']} #{row['query_index']}",
-            status=Result.Status.FAIL,
+            status=(
+                Result.Status.OK
+                if row.get("confirmation_passed")
+                else Result.Status.FAIL
+            ),
             info=(
                 f"{DASHBOARD_GATE_METRIC} {row['old']} -> {row['new']} "
                 f"({row['diff_percent'] * 100:+.1f}%), {row['tier']}: {row['reason']}"
+                + (f". {row['confirmation']}" if row.get("confirmation") else "")
             ),
         )
         sub.set_label(
@@ -2853,18 +2992,23 @@ def main():
                         upload_deadline,
                         missing_dashboard_inputs,
                     )
+                    dashboard_regressions = confirm_dashboard_regressions(
+                        dashboard_regressions, info.pr_number, perf_wd
+                    )
                 except PerfDashboardError as e:
                     print(f"ERROR: {e}")
                     status = Result.Status.FAIL
-                    message += (
-                        f"; performance dashboard verdict unavailable: {e}"
-                    )
+                    message += f"; performance dashboard verdict unavailable: {e}"
                 else:
-                    if dashboard_regressions:
+                    blocking_count = sum(
+                        not row["confirmation_passed"] for row in dashboard_regressions
+                    )
+                    if blocking_count:
                         status = Result.Status.FAIL
+                    if dashboard_regressions:
                         message += (
-                            f"; {len(dashboard_regressions)} confirmed regression(s) "
-                            "on the performance dashboard"
+                            f"; {blocking_count}/{len(dashboard_regressions)} dashboard "
+                            "regression(s) remain blocking after confirmation"
                         )
             # TODO: Remove until here
         except Exception:

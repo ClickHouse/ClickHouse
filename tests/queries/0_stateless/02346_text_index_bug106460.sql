@@ -7,6 +7,9 @@
 
 SET query_plan_direct_read_from_text_index = 1;
 SET enable_lightweight_update = 1;
+-- A bare count() over a text-index predicate is answered from the posting lists
+-- (ReadFromTextIndexCount), which replaces the read step and takes the virtual column out of the plan.
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 

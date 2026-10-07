@@ -465,6 +465,8 @@ public:
     /// `ReadBufferFromS3` / `getObjectMetadata` error handlers that normally invoke this.
     virtual bool tryRefreshCredentialsViaCallback() { return false; }
 
+    virtual bool hasCredentialsRefreshCallback() const { return false; }
+
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
     virtual void tagObjects( /// NOLINT
