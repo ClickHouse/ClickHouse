@@ -895,6 +895,8 @@ void applyForceReverseOrder(ASTStorage * storage)
     if (!storage->order_by && storage->primary_key && storage->engine && storage->engine->name.ends_with("MergeTree"))
         storage->set(storage->order_by, storage->primary_key->clone());
 
+    /// The deprecated `MergeTree` syntax keeps the sorting key in the engine arguments, e.g. `MergeTree(date, key, 8192)`.
+    /// It is left as is: that syntax has no way to express `DESC`, and a rewritten engine argument could not be parsed back.
     if (!storage->order_by)
         return;
 

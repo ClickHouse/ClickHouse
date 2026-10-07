@@ -6937,6 +6937,8 @@ When enabled, every column in ORDER BY will be set to DESC regardless of origina
 This is useful for stress-testing the reverse key functionality across all functional tests.
 The rewrite is skipped for `CREATE TABLE ... CLONE AS ...` and for restoring from a backup, because
 those attach existing data parts that are physically sorted in the original order.
+Tables created with the deprecated `MergeTree` syntax, where the sorting key is an engine argument
+(e.g. `MergeTree(date, key, 8192)`), are not affected, because that syntax does not support `DESC` keys.
 )", 0, \
         {"26.10", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"}) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
