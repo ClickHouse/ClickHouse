@@ -207,6 +207,38 @@ SELECT count() > 0 FROM (
 
 SELECT '---';
 
+-- A non-GLOBAL RIGHT / FULL JOIN with a local right table runs on every shard against the whole table, so an
+-- unmatched right row gets a default l.k on each shard. Grouping by l.k alone has no name collision, so only the
+-- null-extension check keeps the merge on the initiator. A LEFT JOIN cannot null-extend dsl and stays shard-local.
+CREATE TABLE lr (a UInt32, v Int64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO lr SELECT number, 7 FROM numbers(10);
+INSERT INTO lr VALUES (100, 7), (101, 7);
+
+SELECT groupArray((lk, c)) = (
+    SELECT groupArray((lk, c)) FROM (
+        SELECT l.k AS lk, count() AS c FROM dsl AS l RIGHT JOIN lr AS r ON l.a = r.a
+        GROUP BY l.k ORDER BY lk, c SETTINGS optimize_distributed_group_by_sharding_key = 0))
+FROM (
+    SELECT l.k AS lk, count() AS c FROM dsl AS l RIGHT JOIN lr AS r ON l.a = r.a
+    GROUP BY l.k ORDER BY lk, c SETTINGS optimize_distributed_group_by_sharding_key = 1)
+SETTINGS optimize_skip_unused_shards = 1, prefer_global_in_and_join = 0;
+
+SELECT count() > 0 FROM (
+    EXPLAIN distributed = 1
+    SELECT l.k FROM dsl AS l FULL JOIN lr AS r ON l.a = r.a
+    GROUP BY l.k
+    SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1, prefer_global_in_and_join = 0
+) WHERE explain ILIKE '%MergingAggregated%';
+
+SELECT count() = 0 FROM (
+    EXPLAIN distributed = 1
+    SELECT l.k FROM dsl AS l LEFT JOIN lr AS r ON l.a = r.a
+    GROUP BY l.k
+    SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1, prefer_global_in_and_join = 0
+) WHERE explain ILIKE '%MergingAggregated%';
+
+SELECT '---';
+
 -- The shard-local precheck must follow the same column visibility as the type-checked DAG it guards:
 -- an ALIAS column is represented by its expression, not its own name (see PlannerActionsVisitor). `k_alias`
 -- on the left is `ALIAS k` (the sharding key) and reduces to `k`; the right table has a distinct physical
@@ -270,5 +302,6 @@ DROP TABLE nb_dl;
 DROP TABLE nb_dr;
 DROP TABLE dsl;
 DROP TABLE dsr;
+DROP TABLE lr;
 DROP DATABASE shard_0;
 DROP DATABASE shard_1;
