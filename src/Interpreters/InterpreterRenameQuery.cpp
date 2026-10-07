@@ -9,6 +9,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -42,6 +44,26 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// The names of the tables that `table` created and owns, whose definitions are derived from its own.
+Strings getInnerTableNames(const IStorage & table, const ContextPtr & context)
+{
+    Strings res;
+    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(&table))
+    {
+        if (materialized_view->hasInnerTable())
+            if (auto inner_table = materialized_view->tryGetTargetTable())
+                res.push_back(inner_table->getStorageID().table_name);
+    }
+    else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&table))
+    {
+        for (auto kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->hasTarget(kind) && time_series->isInnerTable(kind))
+                if (auto inner_table = time_series->tryGetTargetTable(kind, context))
+                    res.push_back(inner_table->getStorageID().table_name);
+    }
+    return res;
+}
 
 /// Rewrites the definitions of the views and TimeSeries tables of all databases that refer to tables of a renamed
 /// database by its name. Every refusal happens in `prepare`, before anything is changed.
@@ -126,7 +148,19 @@ void ViewDefinitionsRenaming::checkDetachedTables() const
 {
     for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
     {
-        for (auto it = database->getDetachedTablesIterator(context, {}, false); it->isValid(); it->next())
+        DatabaseDetachedTablesSnapshotIteratorPtr it;
+        try
+        {
+            it = database->getDetachedTablesIterator(context, {}, false);
+        }
+        catch (const Exception & e)
+        {
+            /// The engine has no detached tables.
+            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                continue;
+            throw;
+        }
+        for (; it->isValid(); it->next())
         {
             ASTPtr definition;
             if (dynamic_cast<const DatabaseOnDisk *>(database.get()))
@@ -154,6 +188,8 @@ void ViewDefinitionsRenaming::prepare()
     /// Guards are keyed by name, so both names are guarded until the end.
     for (const auto & database_name : std::set<String>{old_database_name, new_database_name})
         database_guards.push_back(catalog.getExclusiveDDLGuardForDatabase(database_name));
+
+    checkDetachedTables();
 
     /// The tables of other databases are guarded one by one, so scan again until no new table is found.
     while (true)
@@ -217,6 +253,16 @@ void ViewDefinitionsRenaming::stage()
                 "Cannot rename database {} to {}, because {} refers to it and database engine {} cannot rewrite its definition. "
                 "Drop it or rewrite it before renaming",
                 backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), view.name.getFullName(), view.owner->getEngineName());
+
+        for (const auto & inner_table_name : getInnerTableNames(*view.table, context))
+        {
+            auto inner_definition = view.owner->tryGetCreateTableQuery(inner_table_name, context);
+            if (inner_definition && rename(inner_definition, {view.name.database, inner_table_name}, nullptr))
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot rename database {} to {}, because the inner table {} of {} refers to it. Drop or rewrite it before renaming",
+                    backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), backQuoteIfNeed(inner_table_name),
+                    view.name.getFullName());
+        }
 
         staged.push_back(view);
     }

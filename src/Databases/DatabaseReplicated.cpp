@@ -2791,14 +2791,24 @@ void DatabaseReplicated::commitAlterTableDefinition(const StorageID & table_id,
 
     String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(table_id.table_name);
     auto zookeeper = getZooKeeper();
-    String zk_statement;
-    Coordination::Stat stat;
-    Coordination::Requests ops;
-    /// Keeper is rewritten only from the definition this replica has applied, so a newer one written by another replica is kept.
-    if (zookeeper->tryGet(metadata_zk_path, zk_statement, &stat) && zk_statement == local_statement)
-        ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, stat.version));
-    ops.emplace_back(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
-    zookeeper->multi(ops);
+    for (int attempts = 10; attempts > 0; --attempts)
+    {
+        String zk_statement;
+        Coordination::Stat stat;
+        Coordination::Requests ops;
+        /// Keeper is rewritten only from the definition this replica has applied, so a newer one written by another replica is kept.
+        bool set_metadata = zookeeper->tryGet(metadata_zk_path, zk_statement, &stat) && zk_statement == local_statement;
+        if (set_metadata)
+            ops.emplace_back(zkutil::makeSetRequest(metadata_zk_path, statement, stat.version));
+        ops.emplace_back(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
+        Coordination::Responses responses;
+        auto code = zookeeper->tryMulti(ops, responses);
+        /// Another replica changed the definition after it was read.
+        if (code == Coordination::Error::ZBADVERSION && set_metadata && attempts > 1)
+            continue;
+        zkutil::KeeperMultiException::check(code, ops, responses);
+        break;
+    }
 
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;

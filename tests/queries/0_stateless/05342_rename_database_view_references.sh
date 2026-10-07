@@ -13,6 +13,7 @@ SRC="${CLICKHOUSE_DATABASE}_src"
 DST="${CLICKHOUSE_DATABASE}_dst"
 EXT="${CLICKHOUSE_DATABASE}_ext"
 MEM="${CLICKHOUSE_DATABASE}_mem"
+DICTDB="${CLICKHOUSE_DATABASE}_dictdb"
 
 function rows()
 {
@@ -33,6 +34,7 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE DATABASE ${SRC} ENGINE = Atomic;
     CREATE DATABASE ${EXT} ENGINE = Atomic;
     CREATE DATABASE ${MEM} ENGINE = Memory;
+    CREATE DATABASE ${DICTDB} ENGINE = Dictionary;
 
     CREATE TABLE ${SRC}.sample (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE ${SRC}.other (a UInt64, b String) ENGINE = MergeTree ORDER BY a;
@@ -183,6 +185,10 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE VIEW ${DICT_A}.cv (a UInt64, d String ALIAS dictGet('${DICT_A}.dict', 'v', a)) AS SELECT a FROM ${DICT_A}.t;
     CREATE VIEW ${DICT_A}.dict_v AS SELECT v FROM dictionary('${DICT_A}.dict');
 "
+${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW ${DICT_A}.inner_mv (a UInt64, d String DEFAULT dictGet('${DICT_A}.dict', 'v', a)) ENGINE = MergeTree ORDER BY a AS SELECT a FROM ${DICT_A}.t"
+${CLICKHOUSE_CLIENT} --check_table_dependencies=0 -q "RENAME DATABASE ${DICT_A} TO ${DICT_B}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DICT_A}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DICT_A}.inner_mv SYNC"
 # The dictionary has dependents, which the default check refuses to rename.
 ${CLICKHOUSE_CLIENT} --check_table_dependencies=0 -q "RENAME DATABASE ${DICT_A} TO ${DICT_B}"
 ${CLICKHOUSE_CLIENT} -q "SELECT d FROM ${DICT_B}.cv; SELECT v FROM ${DICT_B}.dict_v"
@@ -208,7 +214,11 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 ${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${TA} TO ${TB}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${TA}"
-${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${TA}.dv; ATTACH TABLE ${TM}.dv; RENAME DATABASE ${TA} TO ${TB}; SELECT count() FROM ${TB}.dv; SELECT count() FROM ${TM}.dv"
+# Only the view of the Memory database is detached now.
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${TA}.dv"
+${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${TA} TO ${TB}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${TA}"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${TM}.dv; RENAME DATABASE ${TA} TO ${TB}; SELECT count() FROM ${TB}.dv; SELECT count() FROM ${TM}.dv"
 
 echo "-- clickhouse-local, a view in the default (Overlay) database"
 LOCAL_DIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local"
@@ -232,6 +242,6 @@ ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" -m -q "
 "
 rm -rf "${LOCAL_DIR}"
 
-for db in ${DICT_B} ${DST} ${EXT} ${MEM} ${RN} ${C0} ${GB} ${TB} ${TM}; do
+for db in ${DICT_B} ${DST} ${EXT} ${MEM} ${DICTDB} ${RN} ${C0} ${GB} ${TB} ${TM}; do
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db} SYNC"
 done

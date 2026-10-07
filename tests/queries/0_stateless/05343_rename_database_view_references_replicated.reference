@@ -17,3 +17,7 @@ _ext.d: 4
 the definition in Keeper is unchanged
 _u2.v: 4
 1
+-- Keeper holds a definition this replica has not applied yet
+the newer definition in Keeper is kept
+_nw.v: 1
+1

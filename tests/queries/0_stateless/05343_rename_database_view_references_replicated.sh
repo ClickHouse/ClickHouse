@@ -94,6 +94,29 @@ after=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.zookeeper WHERE path =
 rows "${U2}.v"
 probe "${U2}" 1
 
-for db in ${R2} ${EXT} ${B} ${U2}; do
+echo "-- Keeper holds a definition this replica has not applied yet"
+C="${CLICKHOUSE_DATABASE}_c"
+D="${CLICKHOUSE_DATABASE}_d"
+NW="${CLICKHOUSE_DATABASE}_nw"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE DATABASE ${C} ENGINE = Atomic;
+    CREATE TABLE ${C}.t (x UInt64) ENGINE = MergeTree ORDER BY x;
+    CREATE DATABASE ${NW} ENGINE = Replicated('${ZK_PATH}/nw', 's1', 'r1');
+"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "CREATE VIEW ${NW}.v AS SELECT * FROM ${C}.t"
+# Simulates a newer definition that another replica has written to Keeper.
+${CLICKHOUSE_CLIENT} -q "
+    INSERT INTO system.zookeeper (path, name, value)
+    SELECT path, name, replaceOne(value, 'SELECT *', 'SELECT x') FROM system.zookeeper
+    WHERE path = '${ZK_PATH}/nw/metadata' AND name = 'v'"
+newer=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.zookeeper WHERE path = '${ZK_PATH}/nw/metadata' AND name = 'v'")
+${CLICKHOUSE_CLIENT} -q "RENAME DATABASE ${C} TO ${D}"
+after=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.zookeeper WHERE path = '${ZK_PATH}/nw/metadata' AND name = 'v'")
+[ -n "$newer" ] && [ "$newer" = "$after" ] && echo "the newer definition in Keeper is kept"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${D}.t VALUES (1)"
+rows "${NW}.v"
+probe "${NW}" 1
+
+for db in ${R2} ${EXT} ${B} ${U2} ${D} ${NW}; do
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${db} SYNC"
 done
