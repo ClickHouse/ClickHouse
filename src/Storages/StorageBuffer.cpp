@@ -294,10 +294,13 @@ std::optional<NameAndTypePair> findOrderBreakingConversion(const ColumnsDescript
 /// Whether a read of `storage` lands on a `Merge`, through wrappers that forward both the stage and the read.
 bool readLandsOnMerge(StoragePtr storage)
 {
-    for (size_t depth = 0; storage && depth < max_storage_proxy_depth; ++depth)
+    /// A chain that comes back to a storage it already passed is a cycle and reaches no `Merge`.
+    std::vector<StoragePtr> passed;
+    while (storage && std::find(passed.begin(), passed.end(), storage) == passed.end())
     {
         if (dynamic_cast<const StorageMerge *>(storage.get()))
             return true;
+        passed.push_back(storage);
         if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
             storage = proxy->getNested();
         else if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
