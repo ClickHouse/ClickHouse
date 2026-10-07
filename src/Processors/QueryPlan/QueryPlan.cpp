@@ -979,9 +979,13 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
         ExchangeDescription final_result_exchange
         {
             .name = "final_result",
+            .id = 0,
             .kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ? ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming,
             .source_bucket_count = 1,
-            .destination_bucket_count = 1
+            .destination_bucket_count = 1,
+            .exchange_step_name = {},
+            .keys = {},
+            .sort_description = {},
         };
         auto result_stream_id = ExchangeStreamId(final_result_exchange.name, 0, 0);
 

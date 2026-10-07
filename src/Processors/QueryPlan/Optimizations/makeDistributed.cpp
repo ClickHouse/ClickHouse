@@ -1590,11 +1590,18 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     const String stage_name = "stage_" + std::to_string(exchange_id);
                     ExchangeDescription exchange_description;
                     exchange_description.name = "exchange_" + std::to_string(exchange_id);
+                    exchange_description.id = static_cast<UInt32>(exchange_id);
                     ++exchange_id;
                     exchange_description.kind = optimization_settings.distributed_plan_force_exchange_kind == "Persisted" ?
                         ExchangeDescription::Kind::Persisted : ExchangeDescription::Kind::Streaming;
                     exchange_description.source_bucket_count = frame.list_of_shards.size();
                     exchange_description.destination_bucket_count = exchange_step->getResultBucketCount();
+                    exchange_description.exchange_step_name = exchange_step->getName();
+                    if (const auto * shuffle_step = typeid_cast<const ShuffleExchangeStep *>(exchange_step))
+                        exchange_description.keys = shuffle_step->getKeys();
+                    else if (const auto * scatter_step = typeid_cast<const ScatterExchangeStep *>(exchange_step))
+                        exchange_description.keys = scatter_step->getKeys();
+                    exchange_description.sort_description = exchange_step->getMaintainSortDescription();
 
                     distributed_plan.exchange_descriptions[exchange_description.name] = exchange_description;
 
@@ -1616,6 +1623,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// Create stage with the current plan fragment
                     {
                         DistributedQueryStage stage;
+                        stage.id = exchange_description.id;
 
                         /// Create a task for each of the current shards
                         for (auto & [source_shard, source_task] : frame.list_of_shards)
@@ -1757,6 +1765,8 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
     /// Add last plan fragment as the main stage
     {
         DistributedQueryStage stage;
+        /// The initiator stage takes the number after the last worker stage.
+        stage.id = static_cast<UInt32>(exchange_id);
         stage.query_plan_fragment = std::move(plan_fragment);
 
         main_task.task_id = "main";
