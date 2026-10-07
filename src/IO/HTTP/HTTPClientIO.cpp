@@ -300,12 +300,12 @@ HTTPResponseReadBuffer::HTTPResponseReadBuffer(
     HTTPSessionPtr session_holder_,
     Poco::Net::HTTPClientSession::BodyInfo body_info_,
     size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(
-          body_info_.encoding == Poco::Net::HTTPClientSession::BodyEncoding::NoBody ? 0 : buf_size)
+    : BufferWithOwnMemory<ReadBuffer>(0)
     , session(&session_)
     , session_holder(std::move(session_holder_))
     , encoding(body_info_.encoding)
     , content_length(body_info_.content_length)
+    , own_buffer_size(encoding == Poco::Net::HTTPClientSession::BodyEncoding::NoBody ? 0 : buf_size)
 {
     /// A response without a body, or with an empty one, is complete as soon as its headers have
     /// been read; a caller is not required to read from a buffer that has nothing in it.
@@ -352,12 +352,15 @@ bool HTTPResponseReadBuffer::nextImpl()
         return false;
 
     /// A response with a body is read into this buffer's own memory, or into the memory the
-    /// caller substituted with `set()`. Reading before any was provided - draining the body of
-    /// an error response before it reaches the caller of the external buffer mode - falls back
-    /// to a small scratch buffer.
+    /// caller substituted with `set()`. The own memory is allocated only here, on the first read
+    /// that arrives without the caller's memory: the S3 readers never read into it - they pass
+    /// their own memory with `set()` or read with `readBig` - so allocating it in advance would
+    /// only charge an unused buffer to the query. Reading with no own memory at all - draining
+    /// the body of an error response before it reaches the caller of the external buffer mode -
+    /// falls back to a small scratch buffer.
     if (internal_buffer.empty())
     {
-        memory.resize(scratch_buffer_size);
+        memory.resize(own_buffer_size ? own_buffer_size : scratch_buffer_size);
         internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
     }
 

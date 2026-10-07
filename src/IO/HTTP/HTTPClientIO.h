@@ -103,6 +103,8 @@ private:
     HTTPSessionPtr session_holder;
     const Poco::Net::HTTPClientSession::BodyEncoding encoding;
     const UInt64 content_length;
+    /// The size of the own memory, allocated on the first read that needs it.
+    const size_t own_buffer_size;
 
     UInt64 bytes_read = 0;
     UInt64 chunk_left = 0;
