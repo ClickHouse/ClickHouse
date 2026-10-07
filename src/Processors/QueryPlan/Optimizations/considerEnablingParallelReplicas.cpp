@@ -32,6 +32,11 @@
 
 using namespace DB::QueryPlanOptimizations;
 
+namespace ProfileEvents
+{
+extern const Event ParallelReplicasPlanNotBuilt;
+}
+
 namespace DB
 {
 
@@ -187,15 +192,78 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
 /// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
-std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
-    const QueryPlan::Node & final_node_in_replica_plan,
-    QueryPlan::Node & parallel_replicas_plan_root,
-    QueryPlan::Node & single_replica_plan_root)
+/// The cost model's two estimates. Factored out so the decision taken from cached statistics before a
+/// parallel-replicas plan exists and the decision taken after one is built cannot drift apart: they are
+/// the same comparison over the same inputs.
+struct ReplicasCostEstimate
 {
-    auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
-    if (auto it = pr_node_hashes.find(&final_node_in_replica_plan); it != pr_node_hashes.end())
+    size_t local = 0;
+    size_t replicas = 0;
+    size_t effective_max_reading_threads = 0;
+    size_t output_replicas_divisor = 1;
+
+    bool replicasWin() const { return local > replicas; }
+};
+
+ReplicasCostEstimate estimateReplicasCost(
+    const RuntimeDataflowStatistics & stats,
+    const IQueryPlanStep * boundary_step,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    ReplicasCostEstimate estimate;
+    const auto max_threads = optimization_settings.max_threads;
+    // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
+    // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
+    estimate.effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
+        ? stats.input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
+        : SIZE_MAX;
+    const auto num_replicas = optimization_settings.max_parallel_replicas;
+    /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
+    /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
+    /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
+    /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
+    /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
+    const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
+    const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
+        || typeid_cast<const NegativeLimitStep *>(boundary_step)
+        || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
+    estimate.output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
+    estimate.local = stats.input_bytes / std::min<size_t>(max_threads, estimate.effective_max_reading_threads);
+    estimate.replicas = (stats.input_bytes / std::min<size_t>(max_threads * num_replicas, estimate.effective_max_reading_threads))
+        + stats.output_bytes / estimate.output_replicas_divisor;
+    return estimate;
+}
+
+void logReplicasCostFormula(
+    const RuntimeDataflowStatistics & stats,
+    const ReplicasCostEstimate & estimate,
+    const QueryPlanOptimizationSettings & optimization_settings)
+{
+    const auto max_threads = optimization_settings.max_threads;
+    const auto num_replicas = optimization_settings.max_parallel_replicas;
+    LOG_DEBUG(
+        getLogger("optimizeTree"),
+        "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
+        stats.input_bytes,
+        std::min<size_t>(max_threads, estimate.effective_max_reading_threads),
+        stats.input_bytes,
+        std::min<size_t>(max_threads * num_replicas, estimate.effective_max_reading_threads),
+        stats.output_bytes,
+        estimate.output_replicas_divisor,
+        estimate.local,
+        estimate.replicas);
+}
+
+/// The node of this plan that answers to `wanted_hash`, normalized the way the statistics were recorded
+/// against it. Shared by the hash match against a built parallel-replicas plan and by the decision taken
+/// from cached statistics before any such plan exists.
+const QueryPlan::Node * findBoundaryNodeForHash(
+    QueryPlan::Node & single_replica_plan_root,
+    const std::unordered_map<const QueryPlan::Node *, UInt64> & nopr_node_hashes,
+    UInt64 wanted_hash)
+{
     {
-        auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
+        const auto & it_value = wanted_hash;
 
         /// A step that contributes nothing to the key adopts its child's key (see
         /// `calculateHashTableCacheKeys`), so a whole chain of them answers to one hash. Find any member
@@ -217,14 +285,14 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
             single_replica_plan_root,
             [&](auto & frame_node)
             {
-                if (!matched_node && key_of(frame_node) == it->second)
+                if (!matched_node && key_of(frame_node) == it_value)
                     matched_node = &frame_node;
             });
 
         if (matched_node)
         {
             const QueryPlan::Node * above = nullptr;
-            while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == it->second)
+            while (matched_node->children.size() == 1 && key_of(*matched_node->children.front()) == it_value)
             {
                 above = matched_node;
                 matched_node = matched_node->children.front();
@@ -241,7 +309,7 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
         if (!matched_node)
         {
             LOG_DEBUG(getLogger("optimizeTree"), "Cannot find step with matching hash in single-node plan");
-            return std::make_pair(nullptr, 0);
+            return nullptr;
         }
 
         if (!matched_node->step->supportsDataflowStatisticsCollection())
@@ -250,16 +318,27 @@ std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan
                 getLogger("optimizeTree"),
                 "Step ({}) doesn't support dataflow statistics collection. Skipping statistics collection",
                 matched_node->step->getName());
-            return std::make_pair(nullptr, 0);
+            return nullptr;
         }
 
         LOG_DEBUG(getLogger("optimizeTree"), "Found matching node in original plan: {}", matched_node->step->getName());
-        return std::make_pair(matched_node, it->second);
+        return matched_node;
     }
-    else
-    {
+}
+
+std::pair<const QueryPlan::Node *, size_t> findCorrespondingNodeInSingleNodePlan(
+    const QueryPlan::Node & final_node_in_replica_plan,
+    QueryPlan::Node & parallel_replicas_plan_root,
+    QueryPlan::Node & single_replica_plan_root)
+{
+    auto pr_node_hashes = calculateHashTableCacheKeys(parallel_replicas_plan_root);
+    auto it = pr_node_hashes.find(&final_node_in_replica_plan);
+    if (it == pr_node_hashes.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find replicas_plan_top_node in hash table");
-    }
+
+    const auto nopr_node_hashes = calculateHashTableCacheKeys(single_replica_plan_root);
+    const auto * matched = findBoundaryNodeForHash(single_replica_plan_root, nopr_node_hashes, it->second);
+    return std::make_pair(matched, matched ? it->second : 0);
 }
 
 /// Collect the lazy reads inside one lazy-materialization branch, i.e. the branch of a
@@ -574,7 +653,99 @@ void moveSetsFromLocalPlanToReplicasPlan(const QueryPlan & single_replica_plan, 
             return false;
         });
 }
+
+/// Decide against parallel replicas from the cached statistics alone, before a parallel-replicas plan is
+/// built. Building one is the expensive half of this optimization - it re-derives the query tree from the
+/// AST, builds a plan and optimizes it - and on a plan the model declines it is thrown away unused.
+///
+/// Nothing in the decision needs that plan. The statistics are keyed by the hash of a node of *this* plan,
+/// so an entry identifies the boundary the hash match would have found, and the reading step, the index
+/// analysis and the cost comparison all come from this plan too. The plan is only needed to *apply* the
+/// decision.
+///
+/// Returns true when the model declines, which is the caller's licence to skip the build entirely. A
+/// verdict of "replicas win" returns false: the caller then builds the plan and takes the real decision
+/// through the matching path, so a wrong guess here can only cost a skipped optimization, never enable
+/// parallel replicas on statistics that were not matched properly.
+bool cachedStatisticsDeclineParallelReplicas(
+    const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root)
+{
+    /// Mode 2 collects statistics on purpose, so it must reach the collection path below.
+    if (optimization_settings.automatic_parallel_replicas_mode == 2)
+        return false;
+
+    const auto nopr_node_hashes = calculateHashTableCacheKeys(root);
+    const auto & stats_cache = getRuntimeDataflowStatisticsCache();
+
+    /// Walk the plan rather than the hash map, whose order is unspecified, and take the hashes that the
+    /// cache knows. More than one is ambiguous - the boundary cannot be told apart without the matching -
+    /// so leave those to the full path.
+    std::optional<UInt64> only_known_hash;
+    bool several_known_hashes = false;
+    Stack traversal_stack;
+    traverseQueryPlan(
+        traversal_stack,
+        root,
+        [&](auto & frame_node)
+        {
+            const auto hash_it = nopr_node_hashes.find(&frame_node);
+            if (hash_it == nopr_node_hashes.end())
+                return;
+            if (!stats_cache.getStats(hash_it->second))
+                return;
+            if (only_known_hash && *only_known_hash != hash_it->second)
+                several_known_hashes = true;
+            else
+                only_known_hash = hash_it->second;
+        });
+
+    if (!only_known_hash || several_known_hashes)
+        return false;
+
+    const auto stats = stats_cache.getStats(*only_known_hash);
+    if (!stats)
+        return false;
+
+    const auto * boundary = findBoundaryNodeForHash(root, nopr_node_hashes, *only_known_hash);
+    if (!boundary)
+        return false;
+
+    /// The same fail-close checks the full path applies, for the same reasons: a boundary that is the read
+    /// itself has no output bytes to price, and without an index analysis there is nothing to compare the
+    /// recorded row count against.
+    LazilyReadFromMergeTree * lazy_reading_step = nullptr;
+    const auto * source_reading_step = findReadingStep(const_cast<QueryPlan::Node &>(*boundary), &lazy_reading_step);
+    if (!source_reading_step || boundary->step.get() == source_reading_step)
+        return false;
+
+    const auto analysis = source_reading_step->getAnalyzedResult();
+    if (!analysis || analysis->readFromProjection())
+        return false;
+    const auto rows_to_read = analysis->selected_rows;
+    if (!rows_to_read)
+        return false;
+
+    /// Drifted data must be measured again, so it belongs to the collection path.
+    if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
+        return false;
+
+    const auto estimate = estimateReplicasCost(*stats, boundary->step.get(), optimization_settings);
+    if (estimate.replicasWin()
+        && !(optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
+             && stats->input_bytes / optimization_settings.max_parallel_replicas
+                 < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica))
+        return false;
+
+    logReplicasCostFormula(*stats, estimate, optimization_settings);
+    LOG_DEBUG(
+        getLogger("optimizeTree"),
+        "Parallel replicas are not used: decided from the statistics of {}, so no plan with parallel replicas was built",
+        boundary->step->getName());
+    ProfileEvents::increment(ProfileEvents::ParallelReplicasPlanNotBuilt);
+    return true;
 }
+}
+
 
 namespace QueryPlanOptimizations
 {
@@ -732,6 +903,12 @@ void considerEnablingParallelReplicas(
         }
     }
 
+    /// The expensive half of this optimization is building a plan with parallel replicas, and on a plan
+    /// the model declines it is built only to be discarded. When the statistics already describe this
+    /// shape, the decision needs none of it, so take it first and leave before building anything.
+    if (cachedStatisticsDeclineParallelReplicas(optimization_settings, root))
+        return;
+
     /// Hand the probe plan the sets this plan has already filled. It is built and optimized purely to
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     ///
@@ -835,39 +1012,11 @@ void considerEnablingParallelReplicas(
 
         if (apply_plan_with_parallel_replicas)
         {
-            const auto max_threads = optimization_settings.max_threads;
-            // This value is an upper bound on the number of threads that can be used for reading (we simply don't have enough data to utilize more threads).
-            // Since the Auto PR optimization is currently estimates only reading, it is better to use this value to avoid overestimating the benefits of PRs.
-            const auto effective_max_reading_threads = optimization_settings.min_bytes_per_task_for_reading
-                ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
-                : SIZE_MAX;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
-            /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
-            /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
-            /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
-            /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
-            /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
-            const auto * boundary_step = corresponding_node_in_single_replica_plan->step.get();
-            const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
-            const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
-                || typeid_cast<const NegativeLimitStep *>(boundary_step)
-                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
-            const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
-            const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
-            const auto replicas_plan_cost_estimation
-                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
-            LOG_DEBUG(
-                getLogger("optimizeTree"),
-                "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
-                stats->input_bytes,
-                std::min<size_t>(max_threads, effective_max_reading_threads),
-                stats->input_bytes,
-                std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads),
-                stats->output_bytes,
-                output_replicas_divisor,
-                local_plan_cost_estimation,
-                replicas_plan_cost_estimation);
-            if (local_plan_cost_estimation > replicas_plan_cost_estimation)
+            const auto estimate
+                = estimateReplicasCost(*stats, corresponding_node_in_single_replica_plan->step.get(), optimization_settings);
+            logReplicasCostFormula(*stats, estimate, optimization_settings);
+            if (estimate.replicasWin())
             {
                 if (optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
                     && stats->input_bytes / num_replicas < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica)
