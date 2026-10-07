@@ -554,8 +554,7 @@ static const std::vector<String> distributed_cache_force_setting_names
 class ZooKeeperConnectionAttempt
 {
 public:
-    /// Called by reconnectZooKeeper with the client mutex held: the connector must not publish its client.
-    /// The attempt stays registered until its connector finishes.
+    /// The connector discards its client instead of publishing it; the attempt stays registered until it finishes.
     void supersede() { superseded = true; }
     bool isSuperseded() const { return superseded; }
 
@@ -6587,9 +6586,8 @@ void recordZooKeeperConnectionLoss()
     );
 }
 
-/// The waits of a caller of the `Context` Keeper getters. A caller with a query context stops waiting for the client
-/// mutex or for another thread's connection attempt after `get_zookeeper_lock_acquire_timeout_ms` or when the query is
-/// cancelled; other callers wait until the mutex is free or the attempt ends.
+/// Waits for the client mutex or another thread's connection attempt. With a query context they end at
+/// `get_zookeeper_lock_acquire_timeout_ms` or on cancellation; without one they are unbounded.
 class ZooKeeperWaitLimit
 {
 public:
