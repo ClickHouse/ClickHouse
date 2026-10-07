@@ -304,7 +304,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
 
         const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
         return RelationStats{
-            .estimated_rows = *estimate->rows,
+            .estimated_rows = estimate->rows,
             .table_name = table_display_name,
             .imprecise_estimate = !exact,
             .source = RowEstimateSource::DataLakeMetadata};

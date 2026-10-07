@@ -12,6 +12,9 @@ Join: m[1000] ⋈ p
 ResultRows: unknown
 --- T1: rows of the join
 15
+--- T1: PREWHERE p.r = 'us'
+Join: m[1000] ⋈ p[no_stats~15]
+ResultRows: ~~15
 --- T2: min/max pruning, WHERE p.k >= 100
 Join: m[1000] ⋈ p[no_stats~10]
 ResultRows: ~~10
