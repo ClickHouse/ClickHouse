@@ -9,7 +9,7 @@
 namespace DB::IcebergRESTCatalog
 {
 
-/// Builds the `metadata.json` of a new table from a CreateTableRequest. Throws `BAD_ARGUMENTS` for an invalid request.
+/// Builds the `metadata.json` of a new table from a CreateTableRequest.
 /// `partition_spec` and `write_order` may be nullptr.
 Poco::JSON::Object::Ptr buildInitialTableMetadata(
     const String & uuid,

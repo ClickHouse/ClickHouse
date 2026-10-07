@@ -17,13 +17,13 @@ namespace IcebergRESTCatalog
 /// `indent = 0` gives a single line.
 String toJSONString(const Poco::JSON::Object & json, unsigned indent = 0);
 
-/// Throws `INCORRECT_DATA` if `data` is not a JSON object. `what` names the data for the message, e.g. "Table pointer at /path".
+/// `what` names the data for the message, e.g. "Table pointer at /path".
 Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what);
 
 /// Current time in the unit of Iceberg metadata timestamps.
 Int64 nowMs();
 
-/// Helpers to validate client requests. They throw `BAD_ARGUMENTS` for a missing or wrong-typed key.
+/// Helpers to validate client requests.
 
 Int64 getInteger(const Poco::JSON::Object & object, const String & key);
 /// Returns nullopt for an absent or null key.

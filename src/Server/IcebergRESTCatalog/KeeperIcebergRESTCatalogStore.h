@@ -41,7 +41,7 @@ class KeeperIcebergRESTCatalogStore
 public:
     KeeperIcebergRESTCatalogStore(zkutil::GetZooKeeper get_zookeeper_, String root_path_);
 
-    /// Returns false if the namespace already exists. Any other failure throws.
+    /// Returns false if the namespace already exists.
     bool createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties);
 
     bool namespaceExists(const IcebergNamespaceName & name) const;
