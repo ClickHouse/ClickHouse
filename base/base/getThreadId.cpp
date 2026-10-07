@@ -1,4 +1,5 @@
 #include <base/getThreadId.h>
+#include <base/defines.h>
 
 #if defined(OS_ANDROID)
     #include <sys/types.h>
@@ -16,7 +17,7 @@
 #endif
 
 
-static thread_local uint64_t current_tid = 0;
+SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN static thread_local uint64_t current_tid = 0;
 
 static void setCurrentThreadId()
 {

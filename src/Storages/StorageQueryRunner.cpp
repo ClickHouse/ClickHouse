@@ -439,7 +439,7 @@ private:
             /// DEFINER/NONE cases (a no-op).
             job_context->setUser(*job.origin->user_id, job.origin->external_roles, job.origin->authentication_grants, job.origin->authentication_valid_until);
         }
-        if (job.origin->roles)
+        if (job.origin->user_id && job.origin->roles)
         {
             chassert(cluster_name.empty());
             /// These are the session's *effective* current roles, which already include the external

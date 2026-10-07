@@ -1,9 +1,11 @@
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constant.h>
+#include <llvm/IR/Constants.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/Intrinsics.h>
@@ -20,12 +22,14 @@ namespace
 
 constexpr llvm::StringLiteral hook_name = "silk_thread_local_storage_sanitizer_access_hook";
 constexpr llvm::StringLiteral storage_symbol = "FiberLocalStorageThreadStorage";
+constexpr llvm::StringLiteral benign_annotation = "silk_thread_local_storage_sanitizer_benign";
 
 constexpr llvm::StringLiteral excluded_modules[] =
 {
     "contrib/silk",
     "contrib/jemalloc",
     "contrib/llvm-project/libcxxabi",
+    "contrib/re2",
     "src/Common/SilkThreadLocalStorageSanitizer.cpp",
 };
 
@@ -38,6 +42,28 @@ bool isExcludedModule(const llvm::Module & module)
     return false;
 }
 
+
+/// Variables marked with SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN.
+llvm::SmallPtrSet<const llvm::GlobalValue *, 8> collectBenignVariables(const llvm::Module & module)
+{
+    llvm::SmallPtrSet<const llvm::GlobalValue *, 8> benign;
+    const auto * annotations = module.getGlobalVariable("llvm.global.annotations");
+    if (!annotations)
+        return benign;
+
+    for (const llvm::Use & entry : llvm::cast<llvm::ConstantArray>(annotations->getInitializer())->operands())
+    {
+        const auto * fields = llvm::cast<llvm::ConstantStruct>(entry.get());
+        const auto * variable = llvm::dyn_cast<llvm::GlobalValue>(fields->getOperand(0)->stripPointerCasts());
+        const auto * annotation = llvm::dyn_cast<llvm::GlobalVariable>(fields->getOperand(1)->stripPointerCasts());
+        if (!variable || !annotation || !annotation->hasInitializer())
+            continue;
+        const auto * text = llvm::dyn_cast<llvm::ConstantDataArray>(annotation->getInitializer());
+        if (text && text->isCString() && text->getAsCString() == benign_annotation)
+            benign.insert(variable);
+    }
+    return benign;
+}
 
 /// A weak no-op ({ return; }) definition of the hook.
 /// If we added a declaration of the hook instead, non-clickhouse binaries
@@ -63,6 +89,7 @@ bool injectAccessChecks(llvm::Module & module)
     if (!intrinsic)
         return false;
 
+    const llvm::SmallPtrSet<const llvm::GlobalValue *, 8> benign = collectBenignVariables(module);
     llvm::Function * hook = nullptr;
     llvm::DenseMap<const llvm::GlobalValue *, llvm::Constant *> variable_names;
     for (llvm::User * user : intrinsic->users())
@@ -74,6 +101,9 @@ bool injectAccessChecks(llvm::Module & module)
         /// The same fiber benignly touches multiple FiberLocalStorageThreadStorage instances
         /// as on each context switch we do FiberLocalStorage::swap.
         if (variable->getName() == storage_symbol)
+            continue;
+
+        if (benign.contains(variable))
             continue;
 
         if (!hook)
