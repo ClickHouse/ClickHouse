@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 class Set;
 using ConstSetPtr = std::shared_ptr<const Set>;
 
@@ -34,34 +29,13 @@ public:
     TypeIndex getDataType() const override { return TypeIndex::Set; }
     MutableColumnPtr cloneDummy(size_t s_) const override { return ColumnSet::create(s_, data); }
 
-    /// `insertFrom` and `insertRangeFrom` only grow the size and keep the destination `FutureSet`, so only columns
-    /// holding the same set instance can be concatenated.
+    /// insertRangeFrom only grows size and keeps the destination FutureSet. Same set instance only.
     bool structureEquals(const IColumn & rhs) const override
     {
         const auto * rhs_set = typeid_cast<const ColumnSet *>(&rhs);
         if (!rhs_set)
             return false;
         return data.get() == rhs_set->data.get();
-    }
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertFrom(const IColumn & src, size_t /*n*/) override
-#else
-    void doInsertFrom(const IColumn & src, size_t /*n*/) override
-#endif
-    {
-        checkSameSet(src);
-        ++s;
-    }
-
-#if !defined(DEBUG_OR_SANITIZER_BUILD)
-    void insertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
-#else
-    void doInsertRangeFrom(const IColumn & src, size_t /*start*/, size_t length) override
-#endif
-    {
-        checkSameSet(src);
-        s += length;
     }
 
     FutureSetPtr getData() const { return data; }
@@ -72,13 +46,6 @@ public:
 
 private:
     FutureSetPtr data;
-
-    /// The appended rows would otherwise silently be checked against the destination set instead of their own.
-    void checkSameSet(const IColumn & src) const
-    {
-        if (!structureEquals(src))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert into {} from {} holding a different set", getName(), src.getName());
-    }
 };
 
 }
