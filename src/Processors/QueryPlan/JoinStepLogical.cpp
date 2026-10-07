@@ -35,7 +35,6 @@
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>

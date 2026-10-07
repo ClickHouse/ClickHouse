@@ -180,6 +180,9 @@ constexpr bool hasNonJoinedBlocks(JoinKind kind, JoinStrictness strictness)
 
 bool hasNonJoinedBlocks(const TableJoin & table_join);
 
+bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
+bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
+
 /// Insert default values for rows marked in filter
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false);
 

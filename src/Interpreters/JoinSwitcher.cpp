@@ -5,7 +5,7 @@
 
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
@@ -60,7 +60,7 @@ JoinSwitcher::JoinSwitcher(
     , max_threads(std::max<size_t>(1, max_threads_))
 {
     /// No memory budget: the limits of `table_join` decide the switch, and there is no join to spill into.
-    join = std::make_shared<PartitionedHashJoin>(
+    join = std::make_shared<HashJoin>(
         table_join,
         right_sample_block_,
         max_threads,
@@ -95,7 +95,7 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t w
         }
 
         join->addBlockToJoin(block, num_rows, worker_id, false);
-        const size_t rows = assert_cast<const PartitionedHashJoin &>(*join).rowCountForLimit(limits.max_rows);
+        const size_t rows = assert_cast<const HashJoin &>(*join).rowCountForLimit(limits.max_rows);
         over_limit = !limits.softCheck(rows, join->getTotalByteCount());
     }
 
@@ -145,7 +145,7 @@ bool JoinSwitcher::switchJoin()
     switched.store(true, std::memory_order_release);
     join = merge_join;
 
-    BlocksList right_blocks = assert_cast<PartitionedHashJoin *>(old_join.get())->releaseJoinedBlocks(/*restructure=*/true);
+    BlocksList right_blocks = assert_cast<HashJoin *>(old_join.get())->releaseJoinedBlocks(/*restructure=*/true);
 
     fiu_do_on(FailPoints::join_switcher_throw_after_hash_release, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the in-memory join's data was released");

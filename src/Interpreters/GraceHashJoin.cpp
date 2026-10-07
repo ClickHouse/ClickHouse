@@ -6,7 +6,6 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <base/FnTraits.h>
@@ -600,13 +599,13 @@ void GraceHashJoin::GraceHashJoinStats::foldIn(UInt64 right_table_rows, UInt64 k
     }
 }
 
-void GraceHashJoin::finishInMemoryBuild(PartitionedHashJoin & join)
+void GraceHashJoin::finishInMemoryBuild(HashJoin & join)
 {
     join.onBuildPhaseFinish();
     join.runPostBuildPhase();
 }
 
-void GraceHashJoin::foldInMemoryJoin(GraceHashJoinStats & into, const PartitionedHashJoin & join) const
+void GraceHashJoin::foldInMemoryJoin(GraceHashJoinStats & into, const HashJoin & join) const
 {
     into.foldIn(join.getRightTableRowCount(), join.getTotalRowCount(), join.getTotalByteCount(), join.getMatchStats());
 }
@@ -902,7 +901,7 @@ GraceHashJoin::InMemoryJoinPtr GraceHashJoin::makeInMemoryJoin() const
     /// row arrives. Under a tight threshold every bucket would then rebucket at once. Sized at the
     /// barrier from its own rows, the prediction grows with the rows. No memory budget either: the
     /// bucket count is how this join bounds memory.
-    auto join = std::make_shared<PartitionedHashJoin>(
+    auto join = std::make_shared<HashJoin>(
         table_join,
         right_sample_block,
         max_threads,

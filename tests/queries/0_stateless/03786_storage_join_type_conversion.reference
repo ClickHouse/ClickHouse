@@ -43,7 +43,7 @@ Positions: 0 3 1
                 __table2.x UInt32
         Type: RIGHT
         Strictness: ALL
-        Algorithm: PartitionedHashJoin
+        Algorithm: HashJoin
         Clauses: [(__table1.x) = (x)]
           Expression (Left Join Actions)
           Header: __table1.x Nullable(UInt32)

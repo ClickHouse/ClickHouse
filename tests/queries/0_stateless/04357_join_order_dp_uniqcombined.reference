@@ -4,7 +4,7 @@ Output: A_Description, B_Data, C_Value, D_LookupCode
 
 Join (JOIN FillRightFirst)
 │  T3[1000] ⋈ T4[1] ⋈ (T2[1000] ⋈ T1[1])
-│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(PartitionedHashJoin)
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Cost: estimated 1.20 thousand
 │  Selectivity: estimated (NDV) 0.1
 │  Output rows: estimated 1.00 thousand
@@ -15,7 +15,7 @@ Join (JOIN FillRightFirst)
 │  Input (right): A_ID, A_Description, B_Data
 ├──Join (JOIN FillRightFirst)
 │  │  T3[1000] ⋈ T4[1]
-│  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(PartitionedHashJoin)
+│  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  │  Cost: estimated 100.00
 │  │  Selectivity: estimated (NDV) 0.1
 │  │  Output rows: estimated 100.00
@@ -36,7 +36,7 @@ Join (JOIN FillRightFirst)
 │        Prewhere filter column:  D_LookupCode = \'Lookup S\'
 └──Join (JOIN FillRightFirst)
    │  T2[1000] ⋈ T1[1]
-   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(PartitionedHashJoin)
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
    │  Cost: estimated 100.00
    │  Selectivity: estimated (NDV) 0.1
    │  Output rows: estimated 100.00
@@ -62,7 +62,7 @@ Output: A_Description, B_Data, C_Value, D_LookupCode
 
 Join (JOIN FillRightFirst)
 │  T2[1000] ⋈ (T3[1000] ⋈ T1[1] ⋈ T4[1])
-│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(PartitionedHashJoin)
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Cost: estimated 1.11 thousand
 │  Selectivity: estimated (NDV) 0.1
 │  Output rows: estimated 1.00 thousand
@@ -77,7 +77,7 @@ Join (JOIN FillRightFirst)
 │     Output: B_Data, R1_A_ID
 └──Join (JOIN FillRightFirst)
    │  T3[1000] ⋈ T1[1] ⋈ T4[1]
-   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(PartitionedHashJoin)
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
    │  Cost: estimated 110.00
    │  Selectivity: estimated (NDV) 0.1
    │  Output rows: estimated 10.00
@@ -88,7 +88,7 @@ Join (JOIN FillRightFirst)
    │  Input (right): D_ID, D_LookupCode
    ├──Join (JOIN FillRightFirst)
    │  │  T3[1000] ⋈ T1[1]
-   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(PartitionedHashJoin)
+   │  │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
    │  │  Cost: estimated 100.00
    │  │  Selectivity: estimated (NDV) 0.1
    │  │  Output rows: estimated 100.00

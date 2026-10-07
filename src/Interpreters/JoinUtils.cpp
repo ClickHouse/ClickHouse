@@ -818,6 +818,18 @@ bool hasNonJoinedBlocks(const TableJoin & table_join)
     return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
+bool isUsedByAnotherAlgorithm(const TableJoin & table_join)
+{
+    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
+        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
+        || table_join.maxBytesBeforeExternalJoin() > 0;
+}
+
+bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
+{
+    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
+}
+
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();

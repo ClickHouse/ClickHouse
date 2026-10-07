@@ -42,7 +42,7 @@
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/PasteJoin.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
@@ -1079,7 +1079,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     HashJoinStatsCollectingParams{},
                     /*any_take_last_row_=*/false,
                     rhs_size_estimation);
-        return std::make_shared<PartitionedHashJoin>(
+        return std::make_shared<HashJoin>(
             analyzed_join,
             right_sample_block,
             settings[Setting::max_threads],
@@ -1095,7 +1095,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (PartitionedHashJoin::isSupported(*analyzed_join))
+        if (HashJoin::isSupported(*analyzed_join))
             return make_hash_join();
     }
 
@@ -1140,7 +1140,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        if (!PartitionedHashJoin::isSupported(*analyzed_join))
+        if (!HashJoin::isSupported(*analyzed_join))
             return nullptr;
 
         if (spill_to_disk)
@@ -2314,7 +2314,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         {
             /// You may find it strange but we support read_in_order for the hash join and do not support for MergeJoin.
             join_has_delayed_stream = query_analyzer.analyzedJoin().needStreamWithNonJoinedRows();
-            join_allow_read_in_order = typeid_cast<PartitionedHashJoin *>(join.get()) && !join_has_delayed_stream;
+            join_allow_read_in_order = typeid_cast<HashJoin *>(join.get()) && !join_has_delayed_stream;
         }
 
         optimize_read_in_order = settings[Setting::optimize_read_in_order] && (!settings[Setting::query_plan_read_in_order]) && storage && query.orderBy()

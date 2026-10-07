@@ -17,7 +17,7 @@ namespace DB
 
 /// Used when setting 'join_algorithm' set to JoinAlgorithm::AUTO.
 /// Starts JOIN with join-in-memory algorithm and switches to join-on-disk on the fly if there's no memory to place right table.
-/// The in-memory join is a `PartitionedHashJoin`; the on-disk join is `MergeJoin`
+/// The in-memory join is a `HashJoin`; the on-disk join is `MergeJoin`
 /// (JoinAlgorithm::PARTIAL_MERGE).
 ///
 /// The hash phase decides its parallelism from `parallel_hash_join_threshold` as a bare `hash` join does.

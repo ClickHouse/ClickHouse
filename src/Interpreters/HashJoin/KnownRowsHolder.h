@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/RowRefs.h>
 #include <Common/HashTable/HashMap.h>
