@@ -716,20 +716,13 @@ void RadixUniqExactState<UInt64>::route(size_t stream, const IColumn & column, c
 template <>
 void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
-    auto sip_hash = [](const char * data, size_t size)
-    {
-        SipHash hash;
-        hash.update(data, size);
-        return hash.get128();
-    };
-
     if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
     {
         const char * chars = reinterpret_cast<const char *>(column_string->getChars().data());
         const auto * offsets = column_string->getOffsets().data();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return sip_hash(chars + offsets[row - 1], offsets[row] - offsets[row - 1]); },
+            [&](size_t row) { return sipHash128Padded(chars + offsets[row - 1], offsets[row] - offsets[row - 1]); },
             [&](size_t lhs, size_t rhs)
             {
                 const size_t size = offsets[lhs] - offsets[lhs - 1];
@@ -743,7 +736,7 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         const size_t n = column_fixed_string->getN();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return sip_hash(chars + row * n, n); },
+            [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
             [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; });
     }
     else if (const auto * column_ipv6 = typeid_cast<const ColumnIPv6 *>(&column))
@@ -751,7 +744,7 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         const auto & data = column_ipv6->getData();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return sip_hash(reinterpret_cast<const char *>(&data[row]), sizeof(IPv6)); },
+            [&](size_t row) { return sipHash128Padded(reinterpret_cast<const char *>(&data[row]), sizeof(IPv6)); },
             [&](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; });
     }
     else if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() == sizeof(UInt128))
