@@ -20,8 +20,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # The squash thresholds are query-level settings the merge picks up from its background context; setting them
 # this small makes the rebuild flush ~1 MB Compact chunks while the whole projection volume (~14 MB) stays
-# well above the default min_bytes_for_wide_part (10 MiB), so the read-back merges the Compact temporary
-# parts into a Wide projection part.
+# well above min_bytes_for_wide_part (10 MiB), so the read-back merges the Compact temporary parts into a Wide
+# projection part. The wide-part thresholds are pinned on the table (the projection inherits them) because their
+# defaults differ between builds - ClickHouse Cloud defaults min_bytes_for_wide_part to 1 GiB.
 ${CLICKHOUSE_LOCAL} --min_insert_block_size_rows=2000 --min_insert_block_size_bytes=1000000 -q "
     CREATE TABLE t_merge_mem_wide_read_back
     (
@@ -29,7 +30,7 @@ ${CLICKHOUSE_LOCAL} --min_insert_block_size_rows=2000 --min_insert_block_size_by
         v String
     )
     ENGINE = MergeTree ORDER BY k
-    SETTINGS materialize_projections_on_merge = 1;
+    SETTINGS materialize_projections_on_merge = 1, min_bytes_for_wide_part = 10485760, min_rows_for_wide_part = 0;
 
     SYSTEM STOP MERGES t_merge_mem_wide_read_back;
     INSERT INTO t_merge_mem_wide_read_back SELECT number, repeat('a', 600) FROM numbers(8000);
