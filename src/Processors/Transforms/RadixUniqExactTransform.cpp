@@ -778,11 +778,12 @@ private:
     }
 
     /// The key of the hash of strings is random, so that the strings cannot be chosen to collide. The keys never
-    /// leave the query, so they may differ between the queries.
+    /// leave the query, so they may differ between the queries. Any fixed key has colliding strings, and every key
+    /// is as likely as any other, but with the key 1 the hash is just the XOR of the blocks, so 0 and 1 are skipped.
     static UInt128 randomKey()
     {
         UInt128 key = 0;
-        while (key == 0)
+        while (key == 0 || key == 1)
             key = (UInt128(thread_local_rng()) << 64) | thread_local_rng();
         return key;
     }
@@ -839,21 +840,25 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
     {
         const char * chars = reinterpret_cast<const char *>(column_string->getChars().data());
         const auto * offsets = column_string->getOffsets().data();
+        /// The offsets are padded on the left, and the offset before the first row is 0, as in `ColumnString::offsetAt`;
+        /// the index is signed so that the row 0 does not wrap around.
+        auto start_of = [offsets](size_t row) { return offsets[static_cast<ssize_t>(row) - 1]; };
+        auto size_of = [offsets, start_of](size_t row) { return offsets[row] - start_of(row); };
         bool & routed_empty_string = streams[stream].routed_empty_string;
         routeRows(
             stream, column.size(), null_map,
             [&](size_t row)
             {
-                const size_t size = offsets[row] - offsets[row - 1];
+                const size_t size = size_of(row);
                 routed_empty_string |= size == 0;
-                return stringKey(chars + offsets[row - 1], size);
+                return stringKey(chars + start_of(row), size);
             },
             [&](size_t lhs, size_t rhs)
             {
-                const size_t size = offsets[rhs] - offsets[rhs - 1];
+                const size_t size = size_of(rhs);
                 if (size == 0)
-                    return routed_empty_string || offsets[lhs] == offsets[lhs - 1];
-                return size == offsets[lhs] - offsets[lhs - 1] && memcmp(chars + offsets[lhs - 1], chars + offsets[rhs - 1], size) == 0;
+                    return routed_empty_string || size_of(lhs) == 0;
+                return size == size_of(lhs) && memcmp(chars + start_of(lhs), chars + start_of(rhs), size) == 0;
             });
     }
     else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&column))
