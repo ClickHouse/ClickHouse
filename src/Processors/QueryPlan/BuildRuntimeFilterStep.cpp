@@ -51,6 +51,19 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
+BuildRuntimeFilterStep::RuntimeBloomFilterSettings BuildRuntimeFilterStep::normalizeBloomFilterSettings(
+    UInt64 bloom_filter_bytes,
+    UInt64 bloom_filter_hash_functions)
+{
+    const auto parameters = resolveRuntimeBloomFilterDefaults({bloom_filter_bytes, bloom_filter_hash_functions});
+    validateRuntimeBloomFilterParameters(parameters);
+    return RuntimeBloomFilterSettings
+    {
+        .bytes = parameters.bytes,
+        .hash_functions = parameters.hash_functions,
+    };
+}
+
 BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     const SharedHeader & input_header_,
     String filter_column_name_,
