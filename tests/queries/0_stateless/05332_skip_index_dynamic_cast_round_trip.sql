@@ -17,7 +17,7 @@ CREATE TABLE t_dynamic_round_trip
     INDEX idx_doc_name doc.name TYPE bloom_filter GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS index_granularity = 1, index_granularity_bytes = 0;
+SETTINGS index_granularity = 1;
 
 INSERT INTO t_dynamic_round_trip SELECT
     number,
