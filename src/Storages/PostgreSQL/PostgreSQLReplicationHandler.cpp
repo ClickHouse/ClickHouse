@@ -1683,7 +1683,12 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     CompletedPipelineExecutor executor(block_io.pipeline);
     executor.execute();
 
-    materialized_storage->set(nested_storage);
+    /// In coordinated mode the table must not become available yet, even on the active worker: the snapshot is
+    /// complete only once every table is loaded and the snapshot_completed marker is published, and until then
+    /// the database engine would expose a prefix of the table set (and the leader would expose a table that a
+    /// failover may still truncate and reload). `markCaughtUpNestedTablesAvailable` publishes it afterwards.
+    if (!coordination_enabled)
+        materialized_storage->set(nested_storage);
     auto nested_table_id = nested_storage->getStorageID();
 
     LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})",
@@ -3374,8 +3379,40 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
     }
     else
     {
+        /// The database engine reconciles an adopted publication with its expected table set in
+        /// `fetchRequiredTables`. The single-table engine has no such pass, so check here that the shared
+        /// publication still publishes exactly this table. An extra table would break the consumer on its
+        /// first foreign `Relation` message, and a publication without this table would silently stop
+        /// delivering its changes. Fail closed: the coordination task releases the leadership and retries,
+        /// so replication resumes once the publication is repaired (e.g. with `ALTER PUBLICATION`).
+        if (coordination_enabled && !is_materialized_postgresql_database)
+            assertPublicationPublishesOnlyTable(tx, tables_list);
+
         LOG_DEBUG(log, "Using existing publication ({}) version", doubleQuoteString(publication_name));
     }
+}
+
+
+void PostgreSQLReplicationHandler::assertPublicationPublishesOnlyTable(pqxx::nontransaction & tx, const String & table_name)
+{
+    /// Compare relations by OID, so that PostgreSQL resolves the schema (including the `search_path` default
+    /// for a table name without a schema) exactly as it did for `CREATE PUBLICATION`.
+    std::string query_str = fmt::format(
+        "SELECT count(*), count(*) FILTER (WHERE to_regclass(format('%I.%I', schemaname, tablename)) = to_regclass({})), "
+        "coalesce(string_agg(format('%I.%I', schemaname, tablename), ', '), '') "
+        "FROM pg_publication_tables WHERE pubname = {}",
+        quoteStringPostgreSQL(doubleQuoteWithSchema(table_name)), quoteStringPostgreSQL(publication_name));
+    pqxx::result result{tx.exec(query_str)};
+    chassert(!result.empty());
+
+    auto published_tables_count = result[0][0].as<UInt64>();
+    auto matching_tables_count = result[0][1].as<UInt64>();
+    if (published_tables_count != 1 || matching_tables_count != 1)
+        throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "The shared publication {} of the coordinated MaterializedPostgreSQL table does not publish exactly the "
+            "replicated table {} (it publishes: [{}]). It was most likely altered externally. Refusing to adopt it; "
+            "make it publish only this table again (e.g. with ALTER PUBLICATION ... SET TABLE ONLY ...)",
+            doubleQuoteString(publication_name), doubleQuoteWithSchema(table_name), result[0][2].as<std::string>());
 }
 
 

@@ -178,6 +178,9 @@ private:
 
     std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
+    /// Coordinated single-table engine: throws unless the existing publication publishes exactly `table_name`.
+    void assertPublicationPublishesOnlyTable(pqxx::nontransaction & tx, const String & table_name);
+
     void dropPublication(pqxx::nontransaction & ntx);
 
     void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
