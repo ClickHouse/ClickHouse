@@ -274,6 +274,9 @@ public:
     /// Whether this table has a unique-key constraint.
     virtual bool hasUniqueKey() const;
 
+    /// A synchronous `DELETE FROM` on a unique-key table; the base throws.
+    virtual void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr context);
+
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without
     /// any locks.

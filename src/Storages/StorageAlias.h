@@ -138,6 +138,8 @@ public:
     /// Lightweight update on target table
     QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr local_context) override;
 
+    void deleteByUniqueKey(const ASTPtr & query_ptr, ContextPtr local_context) override;
+
     CancellationCode killMutation(const String & mutation_id) override;
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;
     void setMutationCSN(const String & mutation_id, UInt64 csn) override;

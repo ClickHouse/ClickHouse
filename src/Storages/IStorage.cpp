@@ -42,6 +42,7 @@ namespace ErrorCodes
 {
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int DEADLOCK_AVOIDED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_RESTORE_TABLE;
@@ -412,6 +413,12 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 bool IStorage::hasUniqueKey() const
 {
     return metadata.get()->hasUniqueKey();
+}
+
+void IStorage::deleteByUniqueKey(const ASTPtr &, ContextPtr)
+{
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+        "DELETE on a UNIQUE KEY table is not supported by engine {}", getName());
 }
 
 VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
