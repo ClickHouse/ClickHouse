@@ -239,21 +239,9 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     CacheChain cache_chain;
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
-        /// The executor skips opening zero-size objects. Use the legacy path so empty local
-        /// files are opened too, preserving errors if the path disappeared after `prepareRead`.
-        for (const auto & object : source->objects)
-        {
-            if (object.bytes_size == 0)
-            {
-                LOG_DEBUG(log,
-                    "use_reader_executor: falling back to the legacy read path (empty local file must be opened)");
-                return nullptr;
-            }
-        }
-
         LOG_DEBUG(log, "build: using ReaderExecutor for local file, {} objects, path={}",
             source->objects.size(), local_src->path);
-        source_reader = std::make_shared<LocalSourceReader>(settings, local_src->read_hint);
+        source_reader = std::make_shared<LocalSourceReader>(settings);
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
@@ -705,9 +693,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         },
         [&](const LocalFileSource & s) -> std::unique_ptr<ReadBufferFromFileBase>
         {
-            /// Preserve the open-time errors of empty files rather than returning `ReadBufferFromEmptyFile`.
             std::optional<size_t> file_size;
-            if (object.bytes_size != StoredObject::UnknownSize && object.bytes_size != 0)
+            if (object.bytes_size != StoredObject::UnknownSize)
                 file_size = object.bytes_size;
 
             return createReadBufferFromFileBase(
