@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <Common/HashTable/HashTable.h>
 
 namespace DB
@@ -125,7 +124,7 @@ class FixedHashTable : private boost::noncopyable, protected Allocator, protecte
     static constexpr size_t NUM_CELLS = 1ULL << size_bits;
 
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
-    /// False after a path other than `emplace` or `restoreMinMaxOptimization` wrote cells, so the bounds may be stale.
+    /// False after a path other than `emplace` wrote cells, so the bounds may be stale.
     bool can_trust_min_max_values = true;
     bool disable_min_max_optimization = false;
     size_t min = NUM_CELLS - 1;
@@ -398,7 +397,7 @@ public:
     bool ALWAYS_INLINE has(const Key &, size_t hash_value) const { return !buf[hash_value].isZero(*this); }
 
     /// `max < min` means the table is empty. `can_trust_min_max_values` is false when the bounds were not maintained.
-    /// `disable_min_max_optimization` keeps the bounds off until `restoreMinMaxOptimization`.
+    /// `disable_min_max_optimization` turns the bounds off, and nothing turns them back on.
     bool ALWAYS_INLINE canUseMinMaxOptimization() const
     {
         return (max >= min) && can_trust_min_max_values && !disable_min_max_optimization;
@@ -407,30 +406,6 @@ public:
     /// min/max optimization has to be disabled when FixedHashTable is used concurrently in certain scenarios.
     /// For example, when aggregator merges single level aggregation state in parallel.
     void ALWAYS_INLINE disableMinMaxOptimization() { disable_min_max_optimization = true; }
-
-    /// Derive the bounds from the cells and enable the optimization again, once no concurrent writer
-    /// is left. An empty table keeps `max < min`, which is how iteration finds nothing.
-    void restoreMinMaxOptimization()
-    {
-        if (!disable_min_max_optimization)
-            return;
-
-        min = NUM_CELLS - 1;
-        max = 0;
-        if (buf)
-        {
-            for (size_t i = 0; i < NUM_CELLS; ++i)
-            {
-                if (!buf[i].isZero(*this))
-                {
-                    min = std::min(i, min);
-                    max = std::max(i, max);
-                }
-            }
-        }
-        disable_min_max_optimization = false;
-        can_trust_min_max_values = true;
-    }
 
     const Cell * ALWAYS_INLINE firstPopulatedCell() const
     {

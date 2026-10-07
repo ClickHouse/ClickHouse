@@ -9,7 +9,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
@@ -348,7 +348,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 /// * no steps from source to JOIN can break sharding
 ///
 /// The last criteria
-/// * true for Expression, Filter, HashJoin steps
+/// * true for Expression, Filter, hash join steps
 /// * can be enforced for fill_sorting_merge JOIN and Sorting step added for it
 ///
 /// The algorithm finds as many JOIN steps as it can and apply optimization for the minimum possible prefix.
@@ -393,7 +393,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         {
             const auto & join = join_step->getJoin();
 
-            auto * hash_join = typeid_cast<HashJoin *>(join.get());
+            auto * hash_join = typeid_cast<PartitionedHashJoin *>(join.get());
             auto * full_sorting_merge_join = typeid_cast<FullSortingMergeJoin *>(join.get());
             bool is_algo_supported = hash_join || full_sorting_merge_join;
 

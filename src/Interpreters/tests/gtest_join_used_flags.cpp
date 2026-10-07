@@ -46,60 +46,18 @@ TEST(JoinUsedFlags, AllOffsetFlagsSetEmptyCount)
     EXPECT_TRUE(flags.allOffsetFlagsSet());
 }
 
-/// Concurrent `reinit` from different workers must not share a mutated container.
-TEST(JoinUsedFlags, PendingPerRowFlagsMergeAcrossWorkers)
+TEST(JoinUsedFlags, PerRowFlagsMarkRowsOutsideSelectorAsUsed)
 {
     JoinStuff::JoinUsedFlags flags;
-    flags.setPendingFlagWorkers(/*num_workers=*/2, /*need_flags_=*/true);
-
-    flags.reinit<KIND, STRICTNESS, MAPS_KIND>(/*worker_id=*/0, /*block_no=*/0, /*rows=*/3, ScatteredBlock::Selector(3));
-    flags.reinit<KIND, STRICTNESS, MAPS_KIND>(/*worker_id=*/1, /*block_no=*/1, /*rows=*/2, ScatteredBlock::Selector(2));
-
-    flags.finalizePerRowFlags(/*num_blocks=*/2);
-
-    EXPECT_FALSE(flags.getUsedSafe(0, 0));
-    EXPECT_FALSE(flags.getUsedSafe(0, 1));
-    EXPECT_FALSE(flags.getUsedSafe(0, 2));
-    EXPECT_FALSE(flags.getUsedSafe(1, 0));
-    EXPECT_FALSE(flags.getUsedSafe(1, 1));
-
-    /// A second finalize (e.g. if onBuildPhaseFinish ran twice) must be a no-op, not a re-throw.
-    flags.finalizePerRowFlags(/*num_blocks=*/2);
-    EXPECT_FALSE(flags.getUsedSafe(0, 0));
-}
-
-TEST(JoinUsedFlags, PendingPerRowFlagsMarksRowsOutsideSelectorAsUsed)
-{
-    JoinStuff::JoinUsedFlags flags;
-    flags.setPendingFlagWorkers(/*num_workers=*/1);
 
     /// Rows outside the selector must come out pre-marked, or RIGHT/FULL emits them twice.
     auto indexes = ScatteredBlock::Selector::Indexes::create();
     indexes->insertValue(1);
     indexes->insertValue(3);
-    flags.reinit<KIND, STRICTNESS, MAPS_KIND>(
-        /*worker_id=*/0, /*block_no=*/0, /*rows=*/4, ScatteredBlock::Selector(std::move(indexes)));
-
-    flags.finalizePerRowFlags(/*num_blocks=*/1);
+    flags.reinit<KIND, STRICTNESS, MAPS_KIND>(/*block_no=*/0, /*rows=*/4, ScatteredBlock::Selector(std::move(indexes)));
 
     EXPECT_TRUE(flags.getUsedSafe(0, 0));
     EXPECT_FALSE(flags.getUsedSafe(0, 1));
     EXPECT_TRUE(flags.getUsedSafe(0, 2));
     EXPECT_FALSE(flags.getUsedSafe(0, 3));
-}
-
-TEST(JoinUsedFlags, PendingPerRowFlagsDuplicateBlockNoAcrossWorkersThrows)
-{
-#ifdef DEBUG_OR_SANITIZER_BUILD
-    GTEST_SKIP() << "LOGICAL_ERROR aborts in debug and sanitizer builds";
-#else
-    JoinStuff::JoinUsedFlags flags;
-    flags.setPendingFlagWorkers(/*num_workers=*/2);
-
-    /// `StoredColumnsIndex::add` assigns each `block_no` once; a duplicate must not overwrite.
-    flags.reinit<KIND, STRICTNESS, MAPS_KIND>(/*worker_id=*/0, /*block_no=*/5, /*rows=*/1, ScatteredBlock::Selector(1));
-    flags.reinit<KIND, STRICTNESS, MAPS_KIND>(/*worker_id=*/1, /*block_no=*/5, /*rows=*/1, ScatteredBlock::Selector(1));
-
-    EXPECT_THROW(flags.finalizePerRowFlags(/*num_blocks=*/6), Exception);
-#endif
 }

@@ -2,8 +2,6 @@
 
 #include <Common/HashTable/BucketPartitionedTable.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/PartitionedFixedHashMap.h>
-#include <Common/HashTable/PartitionedFixedHashSet.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -32,8 +30,6 @@ using DefaultMap = MapWithBits<8>;
 
 static_assert(BucketPartitionedMap<OneBucketMap>);
 static_assert(BucketPartitionedMap<DefaultMap>);
-static_assert(BucketPartitionedMap<PartitionedFixedHashMap<UInt16, UInt64>>);
-static_assert(BucketPartitionedMap<PartitionedFixedHashSet<UInt16>>);
 
 template <typename Map>
 void insertKeyValue(Map & map, typename Map::key_type key, UInt64 value)
@@ -51,7 +47,7 @@ void insertKeyValue(Map & map, typename Map::key_type key, UInt64 value)
 template <typename Map>
 size_t routedBucket(typename Map::key_type key)
 {
-    return Map::getBucketFromHash(Map::bucketRoutingHash(key, Map::hash(key)));
+    return Map::getBucketFromHash(Map::hash(key));
 }
 
 template <typename Map>

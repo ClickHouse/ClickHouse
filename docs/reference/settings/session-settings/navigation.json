@@ -83,6 +83,7 @@
     "reference/settings/session-settings/function-json",
     "reference/settings/session-settings/grace-hash",
     "reference/settings/session-settings/group-by",
+    "reference/settings/session-settings/hash-join",
     "reference/settings/session-settings/hdfs",
     "reference/settings/session-settings/http",
     "reference/settings/session-settings/http-headers",

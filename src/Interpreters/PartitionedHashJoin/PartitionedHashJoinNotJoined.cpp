@@ -20,7 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 /** RIGHT/FULL non-joined rows of the shared table; counterpart of `NotJoinedHash`. With per-offset
@@ -84,11 +83,6 @@ public:
     case HashJoin::Type::TYPE: return fillFromTable<with_row_store, with_columns>(columns_right, *shape.TYPE);
                             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-                            default:
-                                throw Exception(
-                                    ErrorCodes::UNSUPPORTED_JOIN_KEYS,
-                                    "Unsupported JOIN keys for the partitioned join (type: {})",
-                                    type);
                         }
                     },
                     parent.clauses.front().tableMaps().maps);
@@ -333,7 +327,8 @@ bool PartitionedHashJoin::supportParallelNonJoinedBlocksProcessing() const
     /// be split (`HashJoin::anyClauseHasRightKeys`).
     const bool any_clause_has_right_keys = std::ranges::any_of(
         table_join->getClauses(), [](const TableJoin::JoinOnClause & on_clause) { return !on_clause.key_names_right.empty(); });
-    return table_join->allowParallelNonJoinedRowsProcessing() && JoinCommon::hasNonJoinedBlocks(*table_join) && any_clause_has_right_keys;
+    return parallel_non_joined_allowed && table_join->allowParallelNonJoinedRowsProcessing()
+        && JoinCommon::hasNonJoinedBlocks(*table_join) && any_clause_has_right_keys;
 }
 
 IBlocksStreamPtr

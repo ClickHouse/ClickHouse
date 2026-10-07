@@ -189,7 +189,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     /// `SharedFixedHashTableRuntimeFilter` when its build side ends up as a `FixedHashMap`;
     /// otherwise the `Set`/`BloomFilter` stays active. Carry the rendezvous key (`id.key`),
     /// NOT the stable display name: the filter is registered in the lookup under that key, so
-    /// `HashJoin::publishSharedRuntimeFilters` must find/replace it under the same key. Also
+    /// `publishSharedFixedHashTableFilters` must find/replace it under the same key. Also
     /// carry `common_type`, because it is the type used both by the probe-side cast before
     /// `__applyFilter` and by `BuildRuntimeFilterStep`.
     if (join_step.getJoinSettings().join_runtime_filter_from_fixed_hash_table && !check_left_does_not_contain)
@@ -207,7 +207,6 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
     return
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
-        join_algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         join_algorithm == JoinAlgorithm::GRACE_HASH;
 }
 

@@ -1,0 +1,10 @@
+-- hash serves the dictionary when direct is not listed
+1
+-- the same rows as direct
+1
+1
+-- a mixed ON condition, which direct declines, runs on the hash join
+1
+1832	2234639	9851390
+1833	2234639	9851390
+3001	4498500	9851390

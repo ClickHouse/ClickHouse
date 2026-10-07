@@ -98,8 +98,8 @@ struct JoinSettings
     UInt64 grace_hash_join_max_buckets;
 
     /* Partitioned hash join settings */
-    UInt64 partitioned_hash_join_max_fanout_per_pass;
-    bool partitioned_hash_join_cap_partitions_by_l1_descriptors;
+    UInt64 hash_join_max_fanout_per_pass;
+    bool hash_join_cap_partitions_by_l1_descriptors;
 
     /* Spilling hash join settings */
     UInt64 max_bytes_before_external_join = 0;

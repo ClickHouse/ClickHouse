@@ -3,11 +3,9 @@
 #include <concepts>
 #include <base/types.h>
 
-/** What a caller that fills a table bucket by bucket relies on, whether the table is a `TwoLevelHashTable`
-  * or a `PartitionedFixedHashTable`.
+/** What a caller that fills a table bucket by bucket relies on.
   *
-  * The bucket of a key is `getBucketFromHash(bucketRoutingHash(key, hash(key)))`, in that order.
-  * The hash a table places its cells by is not always the one it routes by.
+  * The bucket of a key is `getBucketFromHash(hash(key))`.
   * An iterator's `getBucket` is the bucket of the key it points to.
   * `offsetInternal` numbers cells across all buckets once `computeBucketPrefix` has run.
   */
@@ -31,7 +29,6 @@ concept BucketPartitionedTable = requires(
     typename Map::const_iterator;
 
     { const_map.hash(key) } -> std::convertible_to<size_t>;
-    { const_map.bucketRoutingHash(key, hash_value) } -> std::convertible_to<size_t>;
     { const_map.getBucketFromHash(hash_value) } -> std::convertible_to<size_t>;
     { Map::NUM_BUCKETS } -> std::convertible_to<UInt32>;
 

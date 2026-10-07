@@ -38,18 +38,17 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 
 <SettingsInfoBlock type="UInt64" default_value="100000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100000"},{"label": "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used, it decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "100000"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-4","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "100000"},{"label": "The threshold no longer chooses between the `hash` and `parallel_hash` algorithms. When a hash join is used, it decides whether the join may run in parallel. Below the threshold with a right-table estimate, single-threaded execution; at or above it, and also when there is no estimate, multiple threads when `max_threads` > 1. The default is unchanged."}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "100000"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-4","items": [{"label": "25.3"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-When a hash join is used, this threshold decides whether the join may run in parallel.
-If an estimate of the right table size is available and it is below the threshold, the join uses a simpler single-threaded layout.
-At or above the threshold, and also when there is no row-count estimate, the join can use multiple threads (when `max_threads` > 1).
-Without an estimate the right side cannot be ruled small, so a large value of this setting does not force a serial build.
+When a hash join is used, this threshold decides whether the join builds its hash table in parallel.
+If an estimate of the right table size is available and it is below the threshold, one thread builds the hash table as the rows arrive.
+At or above the threshold, and also when there is no row-count estimate, the build uses at least one partition per thread (when `max_threads` > 1).
 
 ## parallel_non_joined_rows_processing {#parallel_non_joined_rows_processing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Applies to RIGHT\/FULL hash joins, not specifically `parallel_hash`. The default is unchanged. Setting it to 0 does not restore serial unmatched-row order; use `ORDER BY`."}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "New setting to enable parallel processing of non-joined rows in RIGHT\/FULL parallel_hash joins."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "New setting to enable parallel processing of non-joined rows in RIGHT\/FULL parallel_hash joins."}]}, {"id": "row-2","items": [{"label": "26.10"},{"label": "1"},{"label": "Applies to RIGHT\/FULL hash joins, not specifically `parallel_hash`. The default is unchanged. Setting it to 0 does not restore serial unmatched-row order; use `ORDER BY`."}]}]}/>
 
 Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
 This can speed up the non-joined phase of hash joins with large right tables.

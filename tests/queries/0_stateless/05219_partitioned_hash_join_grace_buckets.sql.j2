@@ -1,7 +1,7 @@
 -- `GraceHashJoin` builds every bucket in an in-memory join. When `join_algorithm` lists
--- `partitioned_hash` and the shape allows it, that join is a `PartitionedHashJoin`: when `grace_hash`
--- is chosen outright, and when the spilling wrapper of `partitioned_hash` switches to grace under
--- `max_bytes_before_external_join`. Either way the result must be what `hash` returns. The bucket
+-- `hash` and the shape allows it, that join is a `PartitionedHashJoin`: when `grace_hash`
+-- is chosen outright, and when the spilling wrapper of `hash` switches to grace under
+-- `max_bytes_before_external_join`. Either way the result must be what the in-memory join returns. The bucket
 -- limits are tight enough to make the first bucket rebucket (which hands its blocks back out of the
 -- partitioned join) and every later bucket load from disk; the query log check at the end asserts
 -- that buckets were written and that partitioned joins built them.
@@ -33,21 +33,18 @@ SELECT '-- grace_hash chosen outright, buckets on the partitioned join';
     ('RIGHT', 'a.k, a.v, b.x', 'a.k = b.k AND a.v * 2 < b.x'),
     ('SEMI LEFT', 'a.k, a.v', 'a.k = b.k AND a.v * 2 < b.x')] -%}
 {% for initial_buckets in [1, 4] -%}
-SELECT '{{ join_type }} | {{ condition }} | initial buckets {{ initial_buckets }}', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON {{ condition }} SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON {{ condition }} SETTINGS join_algorithm = 'grace_hash,partitioned_hash', max_bytes_in_join = 300000, grace_hash_join_initial_buckets = {{ initial_buckets }}) AS pa)
+SELECT '{{ join_type }} | {{ condition }} | initial buckets {{ initial_buckets }}', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64({{ projection }}))) FROM (SELECT number % 5000 AS k, number AS v FROM numbers(20000)) AS a {{ join_type }} JOIN (SELECT number AS k, number * 7 AS x FROM numbers(6000)) AS b ON {{ condition }} SETTINGS join_algorithm = 'grace_hash,hash', max_bytes_in_join = 300000, grace_hash_join_initial_buckets = {{ initial_buckets }}) AS pa)
 SETTINGS log_comment = '05219 grace buckets';
 {% endfor -%}
 {% endfor -%}
 
-SELECT '-- the spilling wrapper of partitioned_hash switches to grace, whose buckets are partitioned joins';
-SELECT 'INNER | spill switch', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(a.k, b.x))) FROM (SELECT number AS k FROM numbers(30000)) AS a INNER JOIN (SELECT number AS k, number * 7 AS x FROM numbers(30000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(a.k, b.x))) FROM (SELECT number AS k FROM numbers(30000)) AS a INNER JOIN (SELECT number AS k, number * 7 AS x FROM numbers(30000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 100000, grace_hash_join_initial_buckets = 1) AS pa)
+SELECT '-- the spilling wrapper of hash switches to grace, whose buckets are partitioned joins';
+SELECT 'INNER | spill switch', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(a.k, b.x))) FROM (SELECT number AS k FROM numbers(30000)) AS a INNER JOIN (SELECT number AS k, number * 7 AS x FROM numbers(30000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 100000, grace_hash_join_initial_buckets = 1) AS pa)
 SETTINGS log_comment = '05219 spill switch';
-SELECT 'FULL | spill switch', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(a.k, b.x))) FROM (SELECT number * 2 AS k FROM numbers(30000)) AS a FULL JOIN (SELECT number * 3 AS k, number * 7 AS x FROM numbers(30000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(a.k, b.x))) FROM (SELECT number * 2 AS k FROM numbers(30000)) AS a FULL JOIN (SELECT number * 3 AS k, number * 7 AS x FROM numbers(30000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_bytes_before_external_join = 100000, grace_hash_join_initial_buckets = 1) AS pa)
+SELECT 'FULL | spill switch', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(a.k, b.x))) FROM (SELECT number * 2 AS k FROM numbers(30000)) AS a FULL JOIN (SELECT number * 3 AS k, number * 7 AS x FROM numbers(30000)) AS b ON a.k = b.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 100000, grace_hash_join_initial_buckets = 1) AS pa)
 SETTINGS log_comment = '05219 spill switch';
 
 SYSTEM FLUSH LOGS query_log;

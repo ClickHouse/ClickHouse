@@ -2280,21 +2280,9 @@ Total time spent waiting for new threads to start.
 
 The number of hard page faults in query execution threads. High values indicate either that you forgot to turn off swap on your server, or eviction of memory pages of the ClickHouse binary during very high memory pressure, or successful usage of the 'mmap' read method for the tables data.
 
-### HashJoinBuildInsertMicroseconds {#hashjoinbuildinsertmicroseconds}
-
-HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of `HashJoinBuildMicroseconds`.
-
-### HashJoinBuildLockWaitMicroseconds {#hashjoinbuildlockwaitmicroseconds}
-
-HashJoin build-side: time spent yielding in `insertIntoSlots` while waiting for a slot mutex. A subset of `HashJoinBuildInsertMicroseconds`.
-
 ### HashJoinBuildMicroseconds {#hashjoinbuildmicroseconds}
 
 Time spent in the `HashJoin` build phase (adding right-side blocks plus `onBuildPhaseFinish`), summed over all build threads.
-
-### HashJoinBuildScatterMicroseconds {#hashjoinbuildscattermicroseconds}
-
-HashJoin build-side sub-phase: time spent in `scatterBlockBySlot` routing right-side rows into per-slot selectors. A subset of `HashJoinBuildMicroseconds`. Zero when the join uses a single slot.
 
 ### HashJoinPreallocatedElementsInHashTables {#hashjoinpreallocatedelementsinhashtables}
 

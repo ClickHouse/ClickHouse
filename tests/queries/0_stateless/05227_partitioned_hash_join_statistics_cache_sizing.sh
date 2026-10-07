@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: long
 
-# A `partitioned_hash` build sizes its hash table from the hash table statistics cache, as `hash` does. The first
+# A `hash` build sizes its hash table from the hash table statistics cache, as `hash` does. The first
 # run of a query publishes its exact distinct-key count; the second run reads that count back, counts it in
 # `HashJoinPreallocatedElementsInHashTables` (0 on the first run, exactly the key count on the second) and starts
 # from a table that holds every key, so the table never grows during that build.
@@ -12,7 +12,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 opts=(
     --enable_analyzer=1
-    --join_algorithm='partitioned_hash'
+    --join_algorithm='hash'
     --max_bytes_before_external_join=0
     --max_bytes_ratio_before_external_join=0
     # Cache keys are stamped by join-order optimization; keep its plan stable across both runs.

@@ -1,8 +1,8 @@
 -- ASOF joins, ON-clause filter conditions on one side, and multi-disjunct ON (`OR` of key sets)
--- under `partitioned_hash`, against `hash` and `parallel_hash`. ASOF and multi-disjunct builds use
--- one partition by design. The query log check at the end asserts that. The ON-filter builds
--- partition as usual. Right rows the filter removed still appear as non-joined rows of RIGHT and
--- FULL joins. Mixed non-equi ON conditions fall back at plan time (04926 asserts that).
+-- on the partitioned hash join. ASOF and multi-disjunct builds use one partition by design. The
+-- query log check at the end asserts that. The ON-filter builds partition as usual. Right rows the
+-- filter removed still appear as non-joined rows of RIGHT and FULL joins. Mixed non-equi ON
+-- conditions fall back at plan time (04926 asserts that).
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -37,67 +37,48 @@ SELECT
     number + 2000000000 AS pv
 FROM numbers(400000);
 
-SELECT 'asof inner >=', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.ts SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'asof inner >=', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '04929 asof inner ge';
 
-SELECT 'asof left > string equi key', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF LEFT JOIN t_ab AS b ON p.ks = b.ks AND p.ts > b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF LEFT JOIN t_ab AS b ON p.ks = b.ks AND p.ts > b.ts SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF LEFT JOIN t_ab AS b ON p.ks = b.ks AND p.ts > b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'asof left > string equi key', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF LEFT JOIN t_ab AS b ON p.ks = b.ks AND p.ts > b.ts SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '04929 asof left gt string';
 
-SELECT 'asof inner <=', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts <= b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts <= b.ts SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts <= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'asof inner <=', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts <= b.ts SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '04929 asof inner le';
 
-SELECT 'asof inner nullable asof key', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.tsnull SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.tsnull SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.tsnull SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'asof inner nullable asof key', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p ASOF JOIN t_ab AS b ON p.k64 = b.k64 AND p.ts >= b.tsnull SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '04929 asof inner nullable';
 
-SELECT 'on filter right side left join', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p LEFT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p LEFT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p LEFT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'on filter right side left join', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p LEFT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 0) AS pa)
 SETTINGS log_comment = '04929 filter left rhs';
 
-SELECT 'on filter right side right join (filtered rows are non-joined)', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'on filter right side right join (filtered rows are non-joined)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.kbig = b.kbig AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 0) AS pa)
 SETTINGS log_comment = '04929 filter right rhs';
 
-SELECT 'on filter left side inner join', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p INNER JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p INNER JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p INNER JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'on filter left side inner join', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p INNER JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 0) AS pa)
 SETTINGS log_comment = '04929 filter inner lhs';
 
-SELECT 'on filter both sides full join', h.1, h = ph, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p FULL JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p FULL JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 AND b.v % 3 = 0 SETTINGS join_algorithm = 'parallel_hash') AS ph,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p FULL JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 AND b.v % 3 = 0 SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'on filter both sides full join', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p FULL JOIN t_ab AS b ON p.kbig = b.kbig AND p.pv % 5 = 0 AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash', parallel_hash_join_threshold = 0) AS pa)
 SETTINGS log_comment = '04929 filter full both';
 
-SELECT 'multi-disjunct inner', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p INNER JOIN t_ab AS b ON p.k64 = b.k64 OR p.pv = b.v SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p INNER JOIN t_ab AS b ON p.k64 = b.k64 OR p.pv = b.v SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'multi-disjunct inner', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p INNER JOIN t_ab AS b ON p.k64 = b.k64 OR p.pv = b.v SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '04929 or inner';
 
-SELECT 'multi-disjunct left join_use_nulls', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(ifNull(p.pv, 1), ifNull(b.v, 2)))) FROM t_ap AS p LEFT JOIN t_ab AS b ON p.k64 = b.k64 OR p.ks = b.ks SETTINGS join_algorithm = 'hash', join_use_nulls = 1) AS h,
-    (SELECT (count(), sum(cityHash64(ifNull(p.pv, 1), ifNull(b.v, 2)))) FROM t_ap AS p LEFT JOIN t_ab AS b ON p.k64 = b.k64 OR p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash', join_use_nulls = 1) AS pa)
+SELECT 'multi-disjunct left join_use_nulls', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(ifNull(p.pv, 1), ifNull(b.v, 2)))) FROM t_ap AS p LEFT JOIN t_ab AS b ON p.k64 = b.k64 OR p.ks = b.ks SETTINGS join_algorithm = 'hash', join_use_nulls = 1) AS pa)
 SETTINGS log_comment = '04929 or left join_use_nulls';
 
-SELECT 'multi-disjunct right (used flags kept per row)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.k64 = b.k64 OR p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.k64 = b.k64 OR p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'multi-disjunct right (used flags kept per row)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.pv, b.v))) FROM t_ap AS p RIGHT JOIN t_ab AS b ON p.k64 = b.k64 OR p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '04929 or right';
 
 -- ASOF builds use one partition by design; the ON-filter and multi-disjunct builds partition as usual (a

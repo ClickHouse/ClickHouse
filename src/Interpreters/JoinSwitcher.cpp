@@ -3,7 +3,6 @@
 #include <mutex>
 #include <shared_mutex>
 
-#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
@@ -54,41 +53,21 @@ JoinSwitcher::JoinSwitcher(
     const bool any_take_last_row_,
     const HashJoinStatsCollectingParams & stats_collecting_params_,
     size_t max_threads_,
-    bool use_parallel_layout_,
-    bool use_partitioned_join_,
     std::optional<size_t> build_rows_hint_)
     : limits(table_join_->sizeLimits())
     , table_join(table_join_)
     , right_sample_block(right_sample_block_->cloneEmpty())
     , max_threads(std::max<size_t>(1, max_threads_))
-    , use_partitioned_join(use_partitioned_join_)
 {
-    if (use_partitioned_join)
-    {
-        /// No memory budget: the limits of `table_join` decide the switch, and there is no join to spill into.
-        join = std::make_shared<PartitionedHashJoin>(
-            table_join,
-            right_sample_block_,
-            max_threads,
-            any_take_last_row_,
-            stats_collecting_params_,
-            /*max_bytes_before_external_join_=*/0,
-            build_rows_hint_);
-    }
-    else
-    {
-        join = std::make_shared<HashJoin>(
-            table_join,
-            right_sample_block_,
-            any_take_last_row_,
-            /*reserve_num_=*/0,
-            /*instance_id_=*/"",
-            stats_collecting_params_,
-            max_threads,
-            use_parallel_layout_);
-        /// Until the build phase ends this join may have to hand its right blocks to `MergeJoin`.
-        assert_cast<HashJoin *>(join.get())->keepRightBlocksForAnotherAlgorithm();
-    }
+    /// No memory budget: the limits of `table_join` decide the switch, and there is no join to spill into.
+    join = std::make_shared<PartitionedHashJoin>(
+        table_join,
+        right_sample_block_,
+        max_threads,
+        any_take_last_row_,
+        stats_collecting_params_,
+        /*max_bytes_before_external_join_=*/0,
+        build_rows_hint_);
     supports_parallel_join = join->supportParallelJoin();
     supports_parallel_non_joined_blocks_processing = join->supportParallelNonJoinedBlocksProcessing();
 
@@ -116,7 +95,8 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t w
         }
 
         join->addBlockToJoin(block, num_rows, worker_id, false);
-        over_limit = !limits.softCheck(join->getTotalRowCount(), join->getTotalByteCount());
+        const size_t rows = assert_cast<const PartitionedHashJoin &>(*join).rowCountForLimit(limits.max_rows);
+        over_limit = !limits.softCheck(rows, join->getTotalByteCount());
     }
 
     if (!over_limit)
@@ -143,17 +123,8 @@ JoinResultPtr JoinSwitcher::joinBlock(Block block)
 
 void JoinSwitcher::onBuildPhaseFinish()
 {
-    {
-        std::shared_lock lock(switch_mutex);
-        join->onBuildPhaseFinish();
-    }
-
-    /// The switch to `MergeJoin` only happens while blocks are being added, and that is over: if it
-    /// did not happen, nothing will take the right blocks now, so a join that stores only the keys
-    /// can drop them.
-    std::lock_guard lock(switch_mutex);
-    if (!switched && !use_partitioned_join)
-        assert_cast<HashJoin *>(join.get())->dropRightBlocksKeptForAnotherAlgorithm();
+    std::shared_lock lock(switch_mutex);
+    join->onBuildPhaseFinish();
 }
 
 bool JoinSwitcher::switchJoin()
@@ -174,8 +145,7 @@ bool JoinSwitcher::switchJoin()
     switched.store(true, std::memory_order_release);
     join = merge_join;
 
-    BlocksList right_blocks = use_partitioned_join ? assert_cast<PartitionedHashJoin *>(old_join.get())->releaseJoinedBlocks(true)
-                                                   : assert_cast<HashJoin *>(old_join.get())->releaseJoinedBlocks(true);
+    BlocksList right_blocks = assert_cast<PartitionedHashJoin *>(old_join.get())->releaseJoinedBlocks(/*restructure=*/true);
 
     fiu_do_on(FailPoints::join_switcher_throw_after_hash_release, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after the in-memory join's data was released");

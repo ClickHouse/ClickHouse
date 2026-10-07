@@ -1,11 +1,10 @@
 -- The old default listed `parallel_hash`; the new one does not. `hash` and
--- `parallel_hash` must still physicalize the same HashJoin: same pipeline, same
--- plan actions, and the same parallel vs serial fill layout. This is not a
--- result check.
+-- `parallel_hash` must still physicalize the same join: same pipeline, same
+-- plan actions, and the same number of fill threads. This is not a result check.
 --
 -- Join-order stats must stay on (`query_plan_optimize_join_order_limit` default
--- is 10) so MergeTree `totalRows` reaches `preferParallelHashLayout`. Pinning
--- that setting to 0 drops the estimate and both layouts collapse to parallel.
+-- is 10) so MergeTree `totalRows` reaches the join as its build-rows estimate.
+-- Pinning that setting to 0 drops the estimate and both fills become parallel.
 
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
@@ -103,8 +102,7 @@ INSERT INTO t05024_al SELECT number, toDateTime(number) FROM numbers(100);
 INSERT INTO t05024_ar SELECT number, toDateTime(number) FROM numbers(200);
 
 SELECT 'pipeline_asof_parallel';
--- ASOF is `JoinKind::Left` here. `preferParallelHashLayout` keys off kind, so ASOF (and SEMI / ANTI)
--- use the parallel layout when the threshold allows it.
+-- ASOF is `JoinKind::Left` here; ASOF (and SEMI / ANTI) fill in parallel when the threshold allows it.
 SELECT equals(
     (SELECT groupArray(explain) FROM (
         EXPLAIN PIPELINE

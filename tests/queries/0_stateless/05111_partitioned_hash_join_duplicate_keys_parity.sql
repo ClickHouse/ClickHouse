@@ -1,8 +1,8 @@
--- Result parity of `join_algorithm = 'partitioned_hash'` with `hash` over a duplicate-heavy build.
--- Keys carry 1, 2, 3, 7, 8, 9 and 300 rows each, spread over blocks. Every duplicate layout of the
--- shared hash table is produced and read back: inline, pair, run, and run list. Coverage includes
--- join kinds and strictnesses, key types, ON filters, USING, `join_use_nulls`, thread counts, and
--- empty or all-miss inputs. Each line prints the row count and whether the two results are equal.
+-- Results of the partitioned hash join over a duplicate-heavy build. Keys carry 1, 2, 3, 7, 8, 9
+-- and 300 rows each, spread over blocks. Every duplicate layout of the shared hash table is produced
+-- and read back: inline, pair, run, and run list. Coverage includes join kinds and strictnesses, key
+-- types, ON filters, USING, `join_use_nulls`, thread counts, and empty or all-miss inputs. Each line
+-- prints the row count.
 
 SET enable_analyzer = 1;
 SET query_plan_join_swap_table = 0;
@@ -60,200 +60,155 @@ SELECT
     number AS p
 FROM numbers(450000);
 
-SELECT 'partitioned_hash is selected', count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+SELECT 'hash is selected', count() > 0 FROM (EXPLAIN actions = 1 SELECT p.p FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
 
-SELECT 'inner all uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa)
+SELECT 'inner all uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa)
 SETTINGS log_comment = '05111 inner all uint64';
 
-SELECT 'left all uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left all uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right all uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right all uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'full all uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'full all uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'full all uint64 join_use_nulls', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(ifNull(p.p, 0), ifNull(b.v, 0)))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', join_use_nulls = 1) AS h,
-    (SELECT (count(), sum(cityHash64(ifNull(p.p, 0), ifNull(b.v, 0)))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', join_use_nulls = 1) AS pa);
+SELECT 'full all uint64 join_use_nulls', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(ifNull(p.p, 0), ifNull(b.v, 0)))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', join_use_nulls = 1) AS pa);
 
 -- ANY picks an arbitrary row per key, so only key-determined expressions are compared.
-SELECT 'inner any uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner any uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'left any uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left any uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right any uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(b.v))) FROM t_ir_probe AS p ANY RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(b.v))) FROM t_ir_probe AS p ANY RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right any uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(b.v))) FROM t_ir_probe AS p ANY RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'left semi uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p SEMI LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p SEMI LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left semi uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p SEMI LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'left anti uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_ir_probe AS p ANTI LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p))) FROM t_ir_probe AS p ANTI LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left anti uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p))) FROM t_ir_probe AS p ANTI LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right semi uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(b.v))) FROM t_ir_probe AS p SEMI RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(b.v))) FROM t_ir_probe AS p SEMI RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right semi uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(b.v))) FROM t_ir_probe AS p SEMI RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right anti uint64', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT * FROM t_ir_probe WHERE k % 2 = 0) AS p ANTI RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT * FROM t_ir_probe WHERE k % 2 = 0) AS p ANTI RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right anti uint64', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT * FROM t_ir_probe WHERE k % 2 = 0) AS p ANTI RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'inner all string', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all string', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right all string', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right all string', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'inner all fixedstring', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.kfs = b.kfs SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.kfs = b.kfs SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all fixedstring', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.kfs = b.kfs SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'full all nullable', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.knull = b.knull SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.knull = b.knull SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'full all nullable', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p FULL JOIN t_ir_build AS b ON p.knull = b.knull SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'inner all lowcardinality build vs plain probe', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.klc = b.klc SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.klc = b.klc SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all lowcardinality build vs plain probe', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.klc = b.klc SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'inner all two keys (keys128)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all two keys (keys128)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right all three keys (keys256)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k AND p.k2 = b.k2 AND p.k3 = b.k3 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k AND p.k2 = b.k2 AND p.k3 = b.k3 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right all three keys (keys256)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k AND p.k2 = b.k2 AND p.k3 = b.k3 SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'inner all string plus uint64 (hashed)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.ks = b.ks AND p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.ks = b.ks AND p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all string plus uint64 (hashed)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.ks = b.ks AND p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'inner all using', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b USING (k) SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b USING (k) SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all using', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b USING (k) SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'left all on filter right side', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k AND b.v % 3 = 0 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left all on filter right side', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right all on filter right side (filtered rows are non-joined)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k AND b.v % 3 = 0 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right all on filter right side (filtered rows are non-joined)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k AND b.v % 3 = 0 SETTINGS join_algorithm = 'hash') AS pa);
 
 -- `UInt8` and `UInt16` keys use a direct-index table, which is never partitioned and stores duplicates
 -- without runs.
-SELECT 'inner all uint16 (fixed map)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p INNER JOIN t_ir_build AS b ON p.k16 = b.k16 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p INNER JOIN t_ir_build AS b ON p.k16 = b.k16 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all uint16 (fixed map)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p INNER JOIN t_ir_build AS b ON p.k16 = b.k16 SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right all uint8 (fixed map)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p RIGHT JOIN (SELECT * FROM t_ir_build WHERE k < 3000) AS b ON p.k8 = b.k8 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p RIGHT JOIN (SELECT * FROM t_ir_build WHERE k < 3000) AS b ON p.k8 = b.k8 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right all uint8 (fixed map)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p RIGHT JOIN (SELECT * FROM t_ir_build WHERE k < 3000) AS b ON p.k8 = b.k8 SETTINGS join_algorithm = 'hash') AS pa);
 
 -- ASOF picks among equal `ts` values in insertion order. That order depends on the block arrival
 -- order. The narrow-key builds are therefore restricted to ranges where the narrow key is unique
 -- per `k` (no ties).
-SELECT 'asof inner >= uint16 (fixed map)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p ASOF JOIN (SELECT * FROM t_ir_build WHERE k < 50000) AS b ON p.k16 = b.k16 AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p ASOF JOIN (SELECT * FROM t_ir_build WHERE k < 50000) AS b ON p.k16 = b.k16 AND p.ts >= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'asof inner >= uint16 (fixed map)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 20000) AS p ASOF JOIN (SELECT * FROM t_ir_build WHERE k < 50000) AS b ON p.k16 = b.k16 AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'asof left < uint8 (fixed map)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p ASOF LEFT JOIN (SELECT * FROM t_ir_build WHERE k < 200) AS b ON p.k8 = b.k8 AND p.ts < b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p ASOF LEFT JOIN (SELECT * FROM t_ir_build WHERE k < 200) AS b ON p.k8 = b.k8 AND p.ts < b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'asof left < uint8 (fixed map)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 300) AS p ASOF LEFT JOIN (SELECT * FROM t_ir_build WHERE k < 200) AS b ON p.k8 = b.k8 AND p.ts < b.ts SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'asof inner >=', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.k = b.k AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.k = b.k AND p.ts >= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'asof inner >=', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.k = b.k AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'asof left <', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.ts < b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.ts < b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'asof left <', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.ts < b.ts SETTINGS join_algorithm = 'hash') AS pa);
 
 -- Two narrow keys pack into one word (`keys32`, `keys64`).
-SELECT 'inner all packed keys32 (uint16, uint8)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 60000) AS p INNER JOIN t_ir_build AS b ON p.k16 = b.k16 AND p.k8 = b.k8 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 60000) AS p INNER JOIN t_ir_build AS b ON p.k16 = b.k16 AND p.k8 = b.k8 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all packed keys32 (uint16, uint8)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE k < 60000) AS p INNER JOIN t_ir_build AS b ON p.k16 = b.k16 AND p.k8 = b.k8 SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right all packed keys64 (uint32, uint16)', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k32 = b.k32 AND p.k16 = b.k16 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k32 = b.k32 AND p.k16 = b.k16 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right all packed keys64 (uint32, uint16)', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k32 = b.k32 AND p.k16 = b.k16 SETTINGS join_algorithm = 'hash') AS pa);
 
 -- The zero key (kept in the table's separate zero cell) with many duplicates, probed many times, and as a
 -- non-joined key; the same for the empty string.
-SELECT 'inner all zero key with duplicates', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT if(k % 991 = 0, 0, k) AS k, p FROM t_ir_probe) AS p INNER JOIN (SELECT if(k % 977 = 0, 0, k) AS k, v FROM t_ir_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT if(k % 991 = 0, 0, k) AS k, p FROM t_ir_probe) AS p INNER JOIN (SELECT if(k % 977 = 0, 0, k) AS k, v FROM t_ir_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'inner all zero key with duplicates', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT if(k % 991 = 0, 0, k) AS k, p FROM t_ir_probe) AS p INNER JOIN (SELECT if(k % 977 = 0, 0, k) AS k, v FROM t_ir_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right anti zero key with duplicates', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT k, p FROM t_ir_probe WHERE k % 2 = 1) AS p ANTI RIGHT JOIN (SELECT if(k % 977 = 0, 0, k) AS k, v FROM t_ir_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT k, p FROM t_ir_probe WHERE k % 2 = 1) AS p ANTI RIGHT JOIN (SELECT if(k % 977 = 0, 0, k) AS k, v FROM t_ir_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'right anti zero key with duplicates', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(b.v))) FROM (SELECT k, p FROM t_ir_probe WHERE k % 2 = 1) AS p ANTI RIGHT JOIN (SELECT if(k % 977 = 0, 0, k) AS k, v FROM t_ir_build) AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'left all empty-string key with duplicates', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT if(k % 991 = 0, '', ks) AS ks, p FROM t_ir_probe) AS p LEFT JOIN (SELECT if(k % 977 = 0, '', ks) AS ks, v FROM t_ir_build) AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT if(k % 991 = 0, '', ks) AS ks, p FROM t_ir_probe) AS p LEFT JOIN (SELECT if(k % 977 = 0, '', ks) AS ks, v FROM t_ir_build) AS b ON p.ks = b.ks SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left all empty-string key with duplicates', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT if(k % 991 = 0, '', ks) AS ks, p FROM t_ir_probe) AS p LEFT JOIN (SELECT if(k % 977 = 0, '', ks) AS ks, v FROM t_ir_build) AS b ON p.ks = b.ks SETTINGS join_algorithm = 'hash') AS pa);
 
 -- Probe-side filter in the ON clause; the legacy distinct-right-keys ANY and the take-last-row ANY
 -- (key-determined expressions, the chosen row is arbitrary).
-SELECT 'left all on filter left side', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.p % 3 = 0 SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.p % 3 = 0 SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'left all on filter left side', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.p % 3 = 0 SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'right any distinct right keys', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', any_join_distinct_right_table_keys = 1) AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', any_join_distinct_right_table_keys = 1) AS pa);
+SELECT 'right any distinct right keys', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', any_join_distinct_right_table_keys = 1) AS pa);
 
-SELECT 'left any take last row', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', join_any_take_last_row = 1) AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', join_any_take_last_row = 1) AS pa);
+SELECT 'left any take last row', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.k))) FROM t_ir_probe AS p ANY LEFT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', join_any_take_last_row = 1) AS pa);
 
 -- The other ASOF directions and a String equi-key (`ts` is distinct within a key: no ties).
-SELECT 'asof inner >', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.k = b.k AND p.ts > b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.k = b.k AND p.ts > b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'asof inner >', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.k = b.k AND p.ts > b.ts SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'asof left <=', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.ts <= b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.ts <= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'asof left <=', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF LEFT JOIN t_ir_build AS b ON p.k = b.k AND p.ts <= b.ts SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'asof inner >= string key', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.ks = b.ks AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.ks = b.ks AND p.ts >= b.ts SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'asof inner >= string key', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p ASOF JOIN t_ir_build AS b ON p.ks = b.ks AND p.ts >= b.ts SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'inner all uint64 max_threads 1', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_threads = 1) AS pa);
+SELECT 'inner all uint64 max_threads 1', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p INNER JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_threads = 1) AS pa);
 
-SELECT 'right all uint64 max_threads 16', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash', max_threads = 16) AS pa);
+SELECT 'right all uint64 max_threads 16', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', max_threads = 16) AS pa);
 
-SELECT 'empty build', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN (SELECT * FROM t_ir_build WHERE 0) AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN (SELECT * FROM t_ir_build WHERE 0) AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'empty build', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN (SELECT * FROM t_ir_build WHERE 0) AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'empty probe', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE 0) AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE 0) AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'empty probe', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM (SELECT * FROM t_ir_probe WHERE 0) AS p RIGHT JOIN t_ir_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
-SELECT 'all-miss probe', h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k + 10000000 = b.k SETTINGS join_algorithm = 'hash') AS h,
-    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k + 10000000 = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
+SELECT 'all-miss probe', pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_ir_probe AS p LEFT JOIN t_ir_build AS b ON p.k + 10000000 = b.k SETTINGS join_algorithm = 'hash') AS pa);
 
 SYSTEM FLUSH LOGS query_log;
 

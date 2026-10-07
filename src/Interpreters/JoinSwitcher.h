@@ -17,11 +17,10 @@ namespace DB
 
 /// Used when setting 'join_algorithm' set to JoinAlgorithm::AUTO.
 /// Starts JOIN with join-in-memory algorithm and switches to join-on-disk on the fly if there's no memory to place right table.
-/// The in-memory join is a `HashJoin`, or a `PartitionedHashJoin` when the planner says so
-/// (`use_partitioned_join_`: `join_algorithm` lists `partitioned_hash` and the shape allows it).
-/// The on-disk join is `MergeJoin` (JoinAlgorithm::PARTIAL_MERGE).
+/// The in-memory join is a `PartitionedHashJoin`; the on-disk join is `MergeJoin`
+/// (JoinAlgorithm::PARTIAL_MERGE).
 ///
-/// The hash phase uses the same `parallel_hash_join_threshold` layout as a bare `HashJoin`.
+/// The hash phase decides its parallelism from `parallel_hash_join_threshold` as a bare `hash` join does.
 /// Concurrent fill takes a shared lock. Draining onto `MergeJoin` takes an exclusive lock
 /// because `MergeJoin::addBlockToJoin` is not concurrent.
 ///
@@ -42,8 +41,6 @@ public:
         bool any_take_last_row_,
         const HashJoinStatsCollectingParams & stats_collecting_params_,
         size_t max_threads_,
-        bool use_parallel_layout_,
-        bool use_partitioned_join_,
         std::optional<size_t> build_rows_hint_);
 
     std::string getName() const override { return "JoinSwitcher"; }
@@ -182,14 +179,12 @@ public:
 private:
     JoinPtr join;
     SizeLimits limits;
-    /// True once HashJoin is no longer concurrently fillable (drain has started).
+    /// True once the in-memory join is no longer concurrently fillable (drain has started).
     std::atomic<bool> switched{false};
     mutable SharedMutex switch_mutex;
     std::shared_ptr<TableJoin> table_join;
     const Block right_sample_block;
     const size_t max_threads;
-    /// Which in-memory join `join` holds until a switch.
-    const bool use_partitioned_join;
     bool supports_parallel_join = false;
     bool supports_parallel_non_joined_blocks_processing = false;
 

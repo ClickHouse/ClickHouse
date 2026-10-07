@@ -1,4 +1,4 @@
--- At `max_threads = 1` a `partitioned_hash` build runs on one fill thread: every right block is stored and inserted
+-- At `max_threads = 1` a `hash` build runs on one fill thread: every right block is stored and inserted
 -- as it arrives into a table that starts at 2^8 cells when no earlier run of the query has left a distinct-key count
 -- in the hash table statistics cache, and doubles as the keys come, as the `hash` build does. Under
 -- `max_bytes_before_external_join` those doublings must not be refused by the budget: the spilling wrapper
@@ -16,7 +16,7 @@ SET max_bytes_in_join = 0;
 SET grace_hash_join_initial_buckets = 1;
 SET grace_hash_join_max_buckets = 1024;
 SET max_threads = 1;
-SET join_algorithm = 'partitioned_hash';
+SET join_algorithm = 'hash';
 -- A distinct-key count published by an earlier run of the same query must not pre-size the table; every
 -- query must start from the smallest table.
 SET collect_hash_table_stats_during_joins = 0;

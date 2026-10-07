@@ -1,4 +1,4 @@
-SET join_algorithm = 'partitioned_hash';
+SET join_algorithm = 'hash';
 SET max_threads = 1, max_block_size = 1024;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0;
 SET enable_join_runtime_filters = 0, query_plan_join_swap_table = 'false';
