@@ -59,7 +59,9 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <base/sleep.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -98,7 +100,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
-    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -122,6 +123,11 @@ namespace Setting
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+}
+
+namespace FailPoints
+{
+    extern const char slowdown_index_analysis_per_part[];
 }
 
 namespace ErrorCodes
@@ -1189,6 +1195,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         auto process_part = [&](size_t part_index)
         {
+            fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
+
             if (query_status)
                 query_status->checkTimeLimit();
 
@@ -1384,6 +1392,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
         else
         {
+            /// Outlives `pool`, whose destructor joins the jobs that still read it when scheduling throws.
+            std::atomic<size_t> next_part_index = 0;
+
             /// Parallel loading and filtering of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
@@ -1391,24 +1402,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
-
-            /// Instances of ThreadPool "borrow" threads from the global thread pool.
-            /// We intentionally use scheduleOrThrow here to avoid a deadlock.
-            /// For example, queries can already be running with threads from the
-            /// global pool, and if we saturate max_thread_pool_size whilst requesting
-            /// more in this loop, queries will block infinitely.
-            /// So we wait until lock_acquire_timeout, and then raise an exception.
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+            const size_t num_jobs = std::min(num_threads, parts_with_ranges.size());
+            for (size_t job = 0; job < num_jobs; ++job)
             {
-                pool.scheduleOrThrow(
-                    [&, part_index, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrowOnError(
+                    [&, thread_group = CurrentThread::getGroup()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
 
-                        process_part(part_index);
-                    },
-                    Priority{},
-                    context->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+                        /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
+                        while (!pool.isFinished())
+                        {
+                            const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+                            if (part_index >= parts_with_ranges.size())
+                                break;
+
+                            process_part(part_index);
+                        }
+                    });
             }
 
             pool.wait();
