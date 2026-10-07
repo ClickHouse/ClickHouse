@@ -274,8 +274,9 @@ public:
     }
 
     /// Inserts the keys of the rows (after skipping NULLs and consecutive duplicates) of the column. `extract` maps
-    /// the row number to the key, `same` compares two rows. The rows are compared before the keys are computed,
-    /// because computing a key (hashing a string) is more expensive.
+    /// the row number to the key, `same(last_row, row)` tells whether the key of `row` is known to be routed already,
+    /// such as when the row equals the last routed row. The rows are compared before the keys are computed, because
+    /// computing a key (hashing a string) is more expensive.
     template <typename Extract, typename Same>
     ALWAYS_INLINE void routeRows(size_t stream_index, size_t num_rows, const UInt8 * null_map, Extract && extract, Same && same)
     {
@@ -515,6 +516,9 @@ private:
         size_t compaction_budget = INITIAL_COMPACTION_BUDGET;
         /// The chain where the next sample for the deduplication starts.
         size_t next_sample_chain = 0;
+        /// Whether the empty string is routed already, so that it is not routed again: it is often the most frequent
+        /// value of a `String` column, and it is not consecutive to itself when it alternates with other values.
+        bool routed_empty_string = false;
         /// The ratio of the keys that remained after the last deduplication in its sample.
         double remaining_ratio = 1;
 
@@ -834,14 +838,21 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
     {
         const char * chars = reinterpret_cast<const char *>(column_string->getChars().data());
         const auto * offsets = column_string->getOffsets().data();
+        bool & routed_empty_string = streams[stream].routed_empty_string;
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return stringKey(chars + offsets[row - 1], offsets[row] - offsets[row - 1]); },
+            [&](size_t row)
+            {
+                const size_t size = offsets[row] - offsets[row - 1];
+                routed_empty_string |= size == 0;
+                return stringKey(chars + offsets[row - 1], size);
+            },
             [&](size_t lhs, size_t rhs)
             {
-                const size_t size = offsets[lhs] - offsets[lhs - 1];
-                return size == offsets[rhs] - offsets[rhs - 1]
-                    && (size == 0 || memcmp(chars + offsets[lhs - 1], chars + offsets[rhs - 1], size) == 0);
+                const size_t size = offsets[rhs] - offsets[rhs - 1];
+                if (size == 0)
+                    return routed_empty_string || offsets[lhs] == offsets[lhs - 1];
+                return size == offsets[lhs] - offsets[lhs - 1] && memcmp(chars + offsets[lhs - 1], chars + offsets[rhs - 1], size) == 0;
             });
     }
     else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&column))
