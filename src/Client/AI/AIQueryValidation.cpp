@@ -182,6 +182,10 @@ bool isDeniedScalarFunction(const String & name)
         "aitranslate",
         "aiembed",
         "aisimilarity",
+        /// Not external, but it returns the values of the server settings as they are, the
+        /// secrets among them unmasked, and it reveals the server configuration even when
+        /// the schema access of the agent is disabled.
+        "getserversetting",
     };
     const String lowercase_name = Poco::toLower(name);
     return denied.contains(lowercase_name)
@@ -594,6 +598,9 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "settings_profile_elements",
         "row_policies",
         "user_directories",
+        /// Shows the values of the server settings with the secrets unmasked: it does not obey
+        /// `format_display_secrets_in_show_and_select`.
+        "server_settings",
     };
     if (disallowed_system_tables.contains(table))
         return false;

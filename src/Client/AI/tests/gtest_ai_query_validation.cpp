@@ -183,6 +183,8 @@ TEST(AIQueryValidation, RejectsRunningQueriesAndAccessMetadata)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "errors"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "users"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "grants"));
+    /// The values of the server settings are shown there with the secrets unmasked.
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "server_settings"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "columns"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "parts"));
 }
@@ -655,3 +657,12 @@ TEST(AIQueryValidation, DetectsSettingChanges)
 }
 
 #endif
+
+TEST(AIQueryValidation, RejectsGetServerSetting)
+{
+    /// `getServerSetting` returns the value of a server setting as it is, a secret unmasked,
+    /// and it reveals the server configuration without naming any table.
+    EXPECT_FALSE(isAllowed("SELECT getServerSetting('max_connections')"));
+    EXPECT_FALSE(isAllowed("SELECT getserversetting('max_connections')"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT getServerSetting('max_connections')"));
+}
