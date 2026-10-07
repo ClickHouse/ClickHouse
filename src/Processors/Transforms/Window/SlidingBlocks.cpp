@@ -10,14 +10,9 @@ SlidingBlock & SlidingBlocks::add(Chunk chunk, Columns materialized_columns, Sli
     int64_t rows_count = chunk.getNumRows();
     Columns input_columns = chunk.detachColumns();
 
-    return blocks.emplace_back(SlidingBlock{
-        .input_columns = std::move(input_columns),
-        .materialized_columns = std::move(materialized_columns),
-        .rows_count = rows_count,
-        .block_number = next_block_number++,
-        .index = std::move(index),
-        .result_columns = {},
-    });
+    SlidingBlock & block = blocks.emplace_back(std::move(input_columns), std::move(materialized_columns), rows_count, next_block_number++, rows_total, std::move(index));
+    rows_total += rows_count;
+    return block;
 }
 
 void SlidingBlocks::pop()
@@ -85,6 +80,14 @@ std::optional<RowNumber> SlidingBlocks::move(RowNumber row, int64_t offset) cons
         return std::nullopt;
 
     return RowNumber{row.block, target};
+}
+
+int64_t SlidingBlocks::rowIndex(RowNumber row) const
+{
+    if (row == end())
+        return rows_total;
+
+    return blockAt(row.block).first_row_index_in_input + row.row;
 }
 
 }
