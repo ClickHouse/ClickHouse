@@ -260,6 +260,7 @@
     "reference/settings/session-settings/vector-search",
     "reference/settings/session-settings/wait-for",
     "reference/settings/session-settings/webassembly-udf",
+    "reference/settings/session-settings/weight-lowering",
     "reference/settings/session-settings/write-through-distributed-cache",
     "reference/settings/session-settings/other"
   ]
