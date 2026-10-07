@@ -192,9 +192,9 @@ namespace
         return false;
     }
 
-    /// Throws if `key` replaces a stored key that is `NOT OVERRIDABLE`.
+    /// Throws if `key` replaces a stored key that is `NOT OVERRIDABLE`, unless a replayed definition replaces a stored `'auto'`.
     /// Returns whether `key` replaces a stored key that requires the privilege `SHOW NAMED COLLECTIONS SECRETS`.
-    bool checkOverrideLockAndFindStoredKey(const NamedCollection & collection, const std::string & key)
+    bool checkOverrideLockAndFindStoredKey(const NamedCollection & collection, const std::string & key, bool is_replayed_definition)
     {
         bool overrides_stored_key = false;
         const auto normalized_key = normalizeKey(key);
@@ -203,12 +203,15 @@ namespace
             if (!areEquivalentKeys(normalized_key, normalizeKey(stored_key)))
                 continue;
 
-            if (!collection.isOverridable(stored_key, /* default_value= */ true))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", stored_key);
-
             /// ClickHouse appends the inferred `format` and `structure` to the arguments and parses them again.
             /// Replacing the stored value `'auto'` neither hides a stored value nor redirects credentials, so it is not an override.
-            if ((stored_key == "format" || stored_key == "structure") && collection.getOrDefault<String>(stored_key, "") == "auto")
+            const bool replaces_auto = (stored_key == "format" || stored_key == "structure")
+                && collection.getOrDefault<String>(stored_key, "") == "auto";
+
+            if (!collection.isOverridable(stored_key, /* default_value= */ true) && !(replaces_auto && is_replayed_definition))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", stored_key);
+
+            if (replaces_auto)
                 continue;
 
             overrides_stored_key = true;
@@ -219,14 +222,14 @@ namespace
 
 void checkNamedCollectionOverrideLock(const NamedCollection & collection, const std::string & key)
 {
-    checkOverrideLockAndFindStoredKey(collection, key);
+    checkOverrideLockAndFindStoredKey(collection, key, /* is_replayed_definition= */ false);
 }
 
-void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context)
+void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context, bool is_replayed_definition)
 {
     if (!context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Checking an override of named collection key '{}' requires a context", key);
-    if (checkOverrideLockAndFindStoredKey(collection, key))
+    if (checkOverrideLockAndFindStoredKey(collection, key, is_replayed_definition))
         context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, collection.getName());
 }
 
@@ -287,7 +290,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
     const StorageID * dependent_table_id,
     const ASTSetQuery * settings,
-    String * used_named_collection_name)
+    String * used_named_collection_name,
+    bool is_replayed_definition)
 {
     if (asts.empty())
         return nullptr;
@@ -339,7 +343,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
             checkNamedCollectionOverride(*collection, function->name, context);
             continue;
         }
-        checkNamedCollectionOverride(*collection, value_override->first, context);
+        checkNamedCollectionOverride(*collection, value_override->first, context, is_replayed_definition);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
