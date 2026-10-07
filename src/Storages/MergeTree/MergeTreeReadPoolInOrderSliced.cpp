@@ -410,7 +410,13 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, Me
             ranges = std::move(lane_state.slices.at(first_mark).ranges);
             info = per_part_infos[lane];
             if (ranges_refiner && !lane_state.refined)
+            {
+                /// Everything the lane still has to read: its unread marks and the slices cut from them
+                /// that no source has taken yet. A slice left out here would be emptied below.
                 lane_to_refine = lane_state.unread;
+                for (const auto & [_, other] : lane_state.slices)
+                    *lane_to_refine = unionRanges(*lane_to_refine, other.ranges);
+            }
         }
 
         if (lane_to_refine)
