@@ -6,7 +6,9 @@
 # backend understands -- the `google_adc_*` refresh-token triple and `use_environment_credentials` -- exactly
 # like a named collection does, instead of silently dropping them and falling back to Application Default
 # Credentials. With the default `s3_allow_server_credentials_in_user_queries = 0`, falling back is refused,
-# so each case records which layer answered. `EXPLAIN` builds the object storage, where all of these
+# so each case records which layer answered. The test server sets `<s3><use_environment_credentials>0` (see
+# `tests/config/config.d/disable_s3_env_credentials.xml`), so a request without any credential argument reads
+# anonymously instead of falling back. `EXPLAIN` builds the object storage, where all of these
 # decisions are made, without sending a request, so the test never touches the network.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -38,7 +40,7 @@ if [ "$native_gcs_available" = "1" ]; then
         ", google_adc_client_id = 'client-id', google_adc_client_secret = 'client-secret', google_adc_refresh_token = 'refresh-token'")")"
     echo "partial_triple: $(classify "$(explain_gcs ", google_adc_client_id = 'client-id'")")"
 else
-    echo "no_credentials: refused_for_credentials"
+    echo "no_credentials: accepted"
     echo "environment_credentials_off: accepted"
     echo "environment_credentials_on: refused_for_credentials"
     echo "complete_triple: accepted"
