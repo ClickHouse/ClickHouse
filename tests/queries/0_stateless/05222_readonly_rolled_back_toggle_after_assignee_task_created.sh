@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-random-detach
 # The failpoint applies to background jobs assignees of all tables.
+# no-random-detach: the internal `ATTACH` of the random reattach consumes the `ONCE` failpoint while
+# starting the streaming assignee of the read-only table, instead of the `ALTER` under test.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
