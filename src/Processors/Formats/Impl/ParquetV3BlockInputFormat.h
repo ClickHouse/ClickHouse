@@ -65,6 +65,10 @@ public:
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
 
+    std::optional<std::vector<bool>> getMatchedRowBlocks() const override;
+
+    void setRowBlocksToRead(std::shared_ptr<const std::vector<bool>> row_blocks) override;
+
 private:
     Chunk read() override;
 
@@ -90,6 +94,7 @@ private:
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    std::shared_ptr<const std::vector<bool>> row_blocks_to_read;
 
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
