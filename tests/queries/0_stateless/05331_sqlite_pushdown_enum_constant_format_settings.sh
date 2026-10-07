@@ -7,7 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # An `IN` set holding an `Enum` is rendered for the external database as the local query builds it. A member
-# converted to `String` next to the `Enum` must get the query's format settings there too, like `CAST` does.
+# converted to `String` next to the `Enum` must get the query's format settings there too, like `CAST` does. So must a
+# `Bool` member of a set without an `Enum`.
 
 BASE="${USER_FILES_PATH}/05331_sqlite_enum_constant_${CLICKHOUSE_DATABASE}"
 DB_PATH="${BASE}/data.sqlite"
@@ -43,3 +44,5 @@ function check()
 
 check '(s, b) IN ((E, true))' "(s, b) IN (($E, true))"
 check '(s, b) IN ((E, true), (x, true))' "(s, b) IN (($E, true), ('x', true))"
+check 'b IN (true)' "b IN (true)"
+check '(s, b) IN ((x, true))' "(s, b) IN (('x', true))"
