@@ -32,6 +32,7 @@ SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Va
 SELECT count() FROM t_deterministic WHERE s = CAST(toFixedString('abc', 4) AS Dynamic);
 SELECT count() FROM t_bare WHERE s IN (SELECT toFixedString('abc', 4));
 SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)));
+SELECT count() FROM t_bare WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Dynamic));
 SELECT count() FROM t_array WHERE s IN (SELECT [toFixedString('abc', 4)]);
 
 DROP TABLE t_monotonic;

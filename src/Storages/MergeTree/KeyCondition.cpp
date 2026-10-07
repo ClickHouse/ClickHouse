@@ -1876,21 +1876,28 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
 
 /// A cast of a `FixedString` to `String` drops its trailing zero bytes, which changes how it compares. This also
 /// holds for a `FixedString` nested in an `Array`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
-static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type)
+/// `from_column`, if given, narrows a top-level `Dynamic` to the types it actually stores. Pass it only for the very
+/// values the condition compares with, like set elements: a `Dynamic` constant rebuilt from a `Field` loses its type.
+static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr)
 {
-    const auto from = removeLowCardinalityAndNullable(from_type);
+    auto from = removeLowCardinalityAndNullable(from_type);
     const auto to = removeLowCardinalityAndNullable(to_type);
     if (from->equals(*to))
         return false;
 
-    auto contains = [](const IDataType & type, auto predicate)
+    if (!anyInTypeTree(*to, [](const IDataType & type) { return isString(type); }))
+        return false;
+
+    if (from_column && isDynamic(from))
     {
-        bool found = predicate(type);
-        type.forEachChild([&](const IDataType & child) { found |= predicate(child); });
-        return found;
-    };
-    return contains(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); })
-        && contains(*to, [](const IDataType & type) { return isString(type); });
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*from_column);
+        /// The shared variant holds values of any type in serialized form.
+        if (!dynamic_column.getSharedVariant().empty())
+            return true;
+        from = dynamic_column.getVariantInfo().variant_type;
+    }
+
+    return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
 }
 
 /// Sequentially applies functions to the column, returns `true`
@@ -3166,7 +3173,7 @@ static bool tryPrepareSetColumnsForIndex(
             set_element_type = transformed_set_type;
         }
 
-        if (castMayDropFixedStringPadding(set_element_type, key_column_type))
+        if (castMayDropFixedStringPadding(set_element_type, key_column_type, set_column.get()))
             return false;
 
         if (canBeSafelyCast(set_element_type, key_column_type))

@@ -14,6 +14,8 @@ SELECT count() FROM t_bare WHERE s IN (SELECT toFixedString('abc', 4));
 3
 SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)));
 3
+SELECT count() FROM t_bare WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Dynamic));
+0
 SELECT count() FROM t_array WHERE s IN (SELECT [toFixedString('abc', 4)]);
 3
 DROP TABLE t_monotonic;
