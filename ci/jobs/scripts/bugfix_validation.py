@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell, Utils
 
@@ -38,8 +40,32 @@ def find_master_builds(build_types=None):
             bt: f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/REFs/master/{sha}/{workflow}/build_{bt}/clickhouse"
             for bt in build_types
         }
+        # curl's native --retry only retries transient failures (5xx, timeouts,
+        # refused connections), not a genuine 404, so a partially-built older
+        # commit is still skipped fast while a transient S3 5xx on the newest
+        # commit is retried instead of silently falling back to an older binary.
         if all(
-            Shell.check(f"curl -sfI {url} > /dev/null") for url in urls.values()
+            Shell.check(f"curl -sfI --retry 5 --retry-connrefused {url} > /dev/null")
+            for url in urls.values()
         ):
             return urls
     return None
+
+
+def download_master_builds(build_urls, bt_paths, is_local_run=False):
+    """Download the reference master-HEAD binaries listed in `build_urls`.
+
+    Retries each download so a transient S3 5xx does not abort the whole job;
+    `find_master_builds` already probed that the artifact exists, so a failure
+    here is treated as transient. Still strict: a persistent failure raises
+    after exhausting retries. Shared by the functional- and integration-test
+    bugfix-validation callers so the retry lives in one place.
+    """
+    for bt, url in build_urls.items():
+        bt_path = bt_paths[bt]
+        if not is_local_run or not Path(bt_path).is_file():
+            print(f"NOTE: Downloading {bt} build to [{bt_path}]")
+            Shell.run(
+                f"wget -nv -O {bt_path} {url}", verbose=True, strict=True, retries=5
+            )
+            Shell.run(f"chmod +x {bt_path}", verbose=True)

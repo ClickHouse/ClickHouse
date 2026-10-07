@@ -133,7 +133,6 @@
             --optimize_use_implicit_projections True \
             --optimize_use_projection_filtering True \
             --query_plan_optimize_lazy_materialization True \
-            --query_plan_optimize_prewhere True \
             --use_async_executor_for_materialized_views 1 \
             --use_query_condition_cache 0 \
             --secondary_indices_enable_bulk_filtering 0 \

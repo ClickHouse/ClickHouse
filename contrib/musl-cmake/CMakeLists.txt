@@ -1683,6 +1683,25 @@ target_compile_options(musl PRIVATE
     -Werror=pointer-arith
 )
 
+if (ENABLE_XRAY)
+    # Emit XRay sleds in libc too, so `SYSTEM INSTRUMENT` can patch musl
+    # functions. Sleds are inert nops until patched, so early-init code is
+    # unaffected. The dispatch handler's thread-local reentrancy guard makes
+    # patching functions the handler itself calls safe. CRT objects stay
+    # uninstrumented. Note this only covers C sources - the hot asm routines
+    # (memcpy and friends) have no sleds.
+    #
+    # Flags mirror cmake/xray_instrumentation.cmake, which activates XRay for
+    # the rest of the tree only if LLVM is built along (ch_contrib::llvm
+    # exists). It runs after contrib is configured, and so does
+    # contrib/llvm-project-cmake, so the same condition is applied here through
+    # a generator expression, evaluated at generate time when the target's
+    # existence is known.
+    target_compile_options(musl PRIVATE
+        "$<$<TARGET_EXISTS:ch_contrib::llvm>:-fxray-instrument;-fxray-modes=none;-fxray-instrumentation-bundle=function>"
+    )
+endif ()
+
 # Suppress warnings expected in musl's own code
 target_compile_options(musl PRIVATE
     -Wno-unused-function

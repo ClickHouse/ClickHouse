@@ -8,9 +8,7 @@ doc_type: 'مرجع'
 
 يحوّل ClickHouse المعاملات إلى الدوال المقابلة لها في مرحلة تحليل الاستعلام وفقًا لأولويتها وأسبقيتها وترابطها.
 
-<div id="access-operators">
-  ## معاملات الوصول
-</div>
+## معاملات الوصول {#access-operators}
 
 `a[N]` – الوصول إلى عنصر في مصفوفة. دالة `arrayElement(a, N)`.
 يمكن أن تكون `N` أيضًا مصفوفة من الأعداد الصحيحة، وعندئذٍ تُعاد العناصر الموجودة في جميع هذه المواضع ضمن مصفوفة،
@@ -20,17 +18,13 @@ doc_type: 'مرجع'
 
 `a.N` – الوصول إلى عنصر في tuple. دالة `tupleElement(a, N)`.
 
-<div id="numeric-negation-operator">
-  ## معامل النفي العددي
-</div>
+## معامل النفي العددي {#numeric-negation-operator}
 
 `-a` – الدالة `negate (a)`.
 
 لنفي `tuple`: [tupleNegate](/ar/reference/functions/regular-functions/tuple-functions#tupleNegate).
 
-<div id="multiplication-and-division-operators">
-  ## معاملات الضرب والقسمة
-</div>
+## معاملات الضرب والقسمة {#multiplication-and-division-operators}
 
 `a * b` – الدالة `multiply (a, b)`.
 
@@ -42,9 +36,7 @@ doc_type: 'مرجع'
 
 `a % b` – الدالة `modulo(a, b)`.
 
-<div id="addition-and-subtraction-operators">
-  ## معاملات الجمع والطرح
-</div>
+## معاملات الجمع والطرح {#addition-and-subtraction-operators}
 
 `a + b` – الدالة `plus(a, b)`.
 
@@ -54,105 +46,73 @@ doc_type: 'مرجع'
 
 لطرح قيم Tuple: [tupleMinus](/ar/reference/functions/regular-functions/tuple-functions#tupleMinus).
 
-<div id="comparison-operators">
-  ## معاملات المقارنة
-</div>
+## معاملات المقارنة {#comparison-operators}
 
-<div id="equals-function">
-  ### دالة equals
-</div>
+### دالة equals {#equals-function}
 
 `a = b` – دالة `equals(a, b)`.
 
 `a == b` – دالة `equals(a, b)`.
 
-<div id="notequals-function">
-  ### دالة notEquals
-</div>
+### دالة notEquals {#notequals-function}
 
 `a != b` – الدالة `notEquals(a, b)`.
 
 `a <> b` – الدالة `notEquals(a, b)`.
 
-<div id="lessorequals-function">
-  ### دالة lessOrEquals
-</div>
+### دالة lessOrEquals {#lessorequals-function}
 
 `a <= b` – هي الدالة `lessOrEquals(a, b)`.
 
-<div id="greaterorequals-function">
-  ### دالة greaterOrEquals
-</div>
+### دالة greaterOrEquals {#greaterorequals-function}
 
 `a >= b` – تمثلها الدالة `greaterOrEquals(a, b)`.
 
-<div id="less-function">
-  ### دالة less
-</div>
+### دالة less {#less-function}
 
 `a < b` – الدالة `less(a, b)`.
 
-<div id="greater-function">
-  ### الدالة greater
-</div>
+### الدالة greater {#greater-function}
 
 `a > b` – الدالة `greater(a, b)`.
 
-<div id="like-function">
-  ### الدالة like
-</div>
+### الدالة like {#like-function}
 
 `a LIKE b` – الدالة `like(a, b)`.
 
-<div id="notlike-function">
-  ### دالة notLike
-</div>
+### دالة notLike {#notlike-function}
 
 `a NOT LIKE b` – الدالة `notLike(a, b)`.
 
-<div id="ilike-function">
-  ### دالة ilike
-</div>
+### دالة ilike {#ilike-function}
 
 `a ILIKE b` – هي الدالة `ilike(a, b)`.
 
-<div id="match-function">
-  ### دالة match
-</div>
+### دالة match {#match-function}
 
 `a REGEXP b` – دالة `match(a, b)`.
 
 `a ~ b` – دالة `match(a, b)` (مطابقة باستخدام تعبير نمطي على نمط PostgreSQL).
 
-<div id="notmatch-function">
-  ### دالة notMatch
-</div>
+### دالة notMatch {#notmatch-function}
 
 `a !~ b` – الدالة `notMatch(a, b)` (تتحقق من أن `a` لا يتطابق مع التعبير النمطي `b`).
 
-<div id="matchcaseinsensitive-function">
-  ### دالة matchCaseInsensitive
-</div>
+### دالة matchCaseInsensitive {#matchcaseinsensitive-function}
 
 `a ~* b` – الدالة `matchCaseInsensitive(a, b)` (مطابقة تعبير نمطي غير حساسة لحالة الأحرف).
 
-<div id="notmatchcaseinsensitive-function">
-  ### دالة notMatchCaseInsensitive
-</div>
+### دالة notMatchCaseInsensitive {#notmatchcaseinsensitive-function}
 
 `a !~* b` – دالة `notMatchCaseInsensitive(a, b)` (تتحقق من أن `a` لا يطابق التعبير النمطي `b` بغض النظر عن حالة الأحرف).
 
-<div id="between-function">
-  ### دالة BETWEEN
-</div>
+### دالة BETWEEN {#between-function}
 
 `a BETWEEN b AND c` – تعادل `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – تعادل `a < b OR a > c`.
 
-<div id="is-not-distinct-from">
-  ### معامل &quot;ليس مختلفًا عن&quot; (`<=>`)
-</div>
+### معامل &quot;ليس مختلفًا عن&quot; (`<=>`) {#is-not-distinct-from}
 
 <Note>
   اعتبارًا من الإصدار 25.10، يمكنك استخدام `<=>` بالطريقة نفسها التي تستخدم بها أي معامل آخر.
@@ -186,70 +146,48 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-<div id="operators-for-working-with-strings">
-  ## المعاملات الخاصة بالتعامل مع السلاسل النصية
-</div>
+## المعاملات الخاصة بالتعامل مع السلاسل النصية {#operators-for-working-with-strings}
 
-<div id="overlay">
-  ### OVERLAY
-</div>
+### OVERLAY {#overlay}
 
 * `OVERLAY(string PLACING replacement FROM offset)` - الدالة `overlay(string, replacement, offset)`.
 * `OVERLAY(string PLACING replacement FROM offset FOR length)` - الدالة `overlay(string, replacement, offset, length)`.
 * `OVERLAYUTF8(string PLACING replacement FROM offset)` - الدالة `overlayUTF8(string, replacement, offset)`.
 * `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - الدالة `overlayUTF8(string, replacement, offset, length)`.
 
-<div id="operators-for-working-with-data-sets">
-  ## المعاملات الخاصة بالعمل مع مجموعات البيانات
-</div>
+## المعاملات الخاصة بالعمل مع مجموعات البيانات {#operators-for-working-with-data-sets}
 
 راجع [معاملات IN](/ar/reference/statements/in) و[المعامل EXISTS](/ar/reference/operators/exists).
 
-<div id="in-function">
-  ### الدالة in
-</div>
+### الدالة in {#in-function}
 
 `a IN ...` – الدالة `in(a, b)`.
 
-<div id="notin-function">
-  ### دالة notIn
-</div>
+### دالة notIn {#notin-function}
 
 `a NOT IN ...` – الدالة `notIn(a, b)`.
 
-<div id="globalin-function">
-  ### دالة globalIn
-</div>
+### دالة globalIn {#globalin-function}
 
 `a GLOBAL IN ...` – الدالة `globalIn(a, b)`.
 
-<div id="globalnotin-function">
-  ### دالة globalNotIn
-</div>
+### دالة globalNotIn {#globalnotin-function}
 
 `a GLOBAL NOT IN ...` – الدالة `globalNotIn(a, b)`.
 
-<div id="in-subquery-function">
-  ### دالة in للاستعلامات الفرعية
-</div>
+### دالة in للاستعلامات الفرعية {#in-subquery-function}
 
 `a = ANY (subquery)` – وهي الدالة `in(a, subquery)`.
 
-<div id="notin-subquery-function">
-  ### notIn استعلام فرعي function
-</div>
+### notIn استعلام فرعي function {#notin-subquery-function}
 
 `a != ANY (subquery)` – وهو مماثل لـ `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-<div id="in-subquery-function-1">
-  ### دالة in استعلام فرعي
-</div>
+### دالة in استعلام فرعي {#in-subquery-function-1}
 
 `a = ALL (subquery)` – هي نفسها `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-<div id="notin-subquery-function-1">
-  ### دالة notIn للاستعلام الفرعي
-</div>
+### دالة notIn للاستعلام الفرعي {#notin-subquery-function-1}
 
 `a != ALL (subquery)` – الدالة `notIn(a, subquery)`.
 
@@ -287,9 +225,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
-<div id="some-all-on-arrays">
-  ### `SOME` / `ALL` على المصفوفات
-</div>
+### `SOME` / `ALL` على المصفوفات {#some-all-on-arrays}
 
 بالإضافة إلى صيغة الاستعلام الفرعي الموضحة أعلاه، يمكن أن يكون الطرف الأيمن من `SOME` / `ALL` تعبيرَ مصفوفة (قيمة حرفية لمصفوفة، أو عمودًا من نوع مصفوفة، أو أي تعبير يُرجع مصفوفة). هذه هي صيغة مكمِّم المصفوفة بأسلوب PostgreSQL. ويُتعرَّف عليها أثناء التحليل وتُعاد كتابتها إلى دوال المصفوفات، لذلك لا حاجة إلى إعادة كتابتها يدويًا:
 
@@ -339,13 +275,9 @@ SELECT
   ```
 </Info>
 
-<div id="operators-for-working-with-dates-and-times">
-  ## المعاملات للعمل مع التواريخ والأوقات
-</div>
+## المعاملات للعمل مع التواريخ والأوقات {#operators-for-working-with-dates-and-times}
 
-<div id="extract">
-  ### EXTRACT
-</div>
+### EXTRACT {#extract}
 
 ```sql
 EXTRACT(part FROM date);
@@ -431,9 +363,7 @@ FROM test.Orders;
 
 يمكنك الاطلاع على المزيد من الأمثلة في [الاختبارات](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
 
-<div id="interval">
-  ### INTERVAL
-</div>
+### INTERVAL {#interval}
 
 ينشئ قيمة من نوع [Interval](/ar/reference/data-types/special-data-types/interval) ينبغي استخدامها في العمليات الحسابية مع قيم من النوعين [Date](/ar/reference/data-types/date) و[DateTime](/ar/reference/data-types/datetime).
 
@@ -507,9 +437,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 * [Interval](/ar/reference/data-types/special-data-types/interval) نوع البيانات
 * [toInterval](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) دوال تحويل الأنواع
 
-<div id="date-time-addition">
-  ### إضافة التاريخ والوقت
-</div>
+### إضافة التاريخ والوقت {#date-time-addition}
 
 يمكن إضافة قيمة [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) إلى قيمة [Time](/ar/reference/data-types/time) أو [Time64](/ar/reference/data-types/time64) باستخدام المعامل `+`. وتكون النتيجة [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64)، وتمثل التاريخ عند الوقت المحدد من اليوم. هذه العملية إبدالية.
 
@@ -559,9 +487,7 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
-<div id="at-time-zone">
-  ### AT TIME ZONE وAT LOCAL
-</div>
+### AT TIME ZONE وAT LOCAL {#at-time-zone}
 
 تحوِّل المعاملات اللاحقة `AT TIME ZONE` و`AT LOCAL` قيمة من النوع `DateTime` أو `DateTime64` إلى منطقة زمنية مختلفة. وهما اختصار نحوي للدالة الحالية [`toTimeZone`](/ar/reference/functions/regular-functions/date-time-functions#toTimezone):
 
@@ -616,27 +542,19 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 * [`toTimeZone`](/ar/reference/functions/regular-functions/date-time-functions#toTimezone)
 * [`timeZone`](/ar/reference/functions/regular-functions/date-time-functions#timezone)
 
-<div id="logical-and-operator">
-  ## المعامل المنطقي AND
-</div>
+## المعامل المنطقي AND {#logical-and-operator}
 
 الصياغة `SELECT a AND b` — تحسب الاقتران المنطقي لـ `a` و`b` باستخدام الدالة [and](/ar/reference/functions/regular-functions/logical-functions#and).
 
-<div id="logical-or-operator">
-  ## معامل OR المنطقي
-</div>
+## معامل OR المنطقي {#logical-or-operator}
 
 الصياغة `SELECT a OR b` — يحسب الفصل المنطقي لـ `a` و`b` باستخدام الدالة [or](/ar/reference/functions/regular-functions/logical-functions#or).
 
-<div id="logical-negation-operator">
-  ## معامل النفي المنطقي
-</div>
+## معامل النفي المنطقي {#logical-negation-operator}
 
 الصياغة `SELECT NOT a` — تحسب النفي المنطقي لـ `a` باستخدام الدالة [not](/ar/reference/functions/regular-functions/logical-functions#not).
 
-<div id="conditional-operator">
-  ## المعامل الشرطي
-</div>
+## المعامل الشرطي {#conditional-operator}
 
 `a ? b : c` – الدالة `if(a, b, c)`.
 
@@ -644,9 +562,7 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 
 يحسب المعامل الشرطي قيمتَي b و c، ثم يتحقق مما إذا كان الشرط a متحققًا، ثم يعيد القيمة المقابلة. إذا كانت `b` أو `C` دالة [arrayJoin()](/ar/reference/functions/regular-functions/array-join)، فسيُكرَّر كل صف بغض النظر عن الشرط &quot;a&quot;.
 
-<div id="conditional-expression">
-  ## التعبير الشرطي
-</div>
+## التعبير الشرطي {#conditional-expression}
 
 ```sql
 CASE [x]
@@ -662,57 +578,43 @@ END
 
 لا تعمل الدالة `transform` مع `NULL`.
 
-<div id="concatenation-operator">
-  ## معامل ربط السلاسل
-</div>
+## معامل ربط السلاسل {#concatenation-operator}
 
 `s1 || s2` – دالة `concat(s1, s2)`.
 
-<div id="lambda-creation-operator">
-  ## معامل إنشاء Lambda
-</div>
+## معامل إنشاء Lambda {#lambda-creation-operator}
 
 `x -> expr` – الدالة `lambda(x, expr)`.
 
 لا أولوية للمعاملات التالية لأنها أقواس:
 
-<div id="array-creation-operator">
-  ## معامل إنشاء المصفوفة
-</div>
+## معامل إنشاء المصفوفة {#array-creation-operator}
 
 `[x1, ...]` – الدالة `array(x1, ...)`.
 
-<div id="tuple-creation-operator">
-  ## معامل إنشاء Tuple
-</div>
+## معامل إنشاء Tuple {#tuple-creation-operator}
 
 `(x1, x2, ...)` – الدالة `tuple(x2, x2, ...)`.
 
-<div id="associativity">
-  ## الترابطية
-</div>
+## الترابطية {#associativity}
 
 تتمتع جميع المعاملات الثنائية بترابطية يسارية. على سبيل المثال، يُحوَّل `1 + 2 + 3` إلى `plus(plus(1, 2), 3)`.
 وأحيانًا لا يعمل ذلك بالطريقة التي قد تتوقعها. فعلى سبيل المثال، تكون نتيجة `SELECT 4 > 2 > 3` هي 0.
 
 ولتحسين الكفاءة، تقبل الدالتان `and` و`or` أي عدد من الوسائط. وتُحوَّل سلاسل المعاملات `AND` و`OR` المقابلة إلى استدعاء واحد لهاتين الدالتين.
 
-<div id="checking-for-null">
-  ## التحقق من وجود `NULL`
-</div>
+## التحقق من وجود `NULL` {#checking-for-null}
 
 يدعم ClickHouse العاملين `IS NULL` و`IS NOT NULL`.
 
-<div id="is_null">
-  ### IS NULL
-</div>
+### IS NULL {#is_null}
 
 * بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المعامل `IS NULL` ما يلي:
   * `1` إذا كانت القيمة `NULL`.
   * `0` بخلاف ذلك.
 * بالنسبة إلى القيم الأخرى، يعيد المعامل `IS NULL` دائمًا القيمة `0`.
 
-يمكن تحسين ذلك بتمكين الإعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NULL FROM table` إلى `SELECT n.null FROM TABLE`.
+يمكن تحسين ذلك بتمكين الإعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NULL FROM table` إلى `SELECT n.null != 0 FROM TABLE`.
 
 {/* */}
 
@@ -726,9 +628,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-<div id="is_not_null">
-  ### IS NOT NULL
-</div>
+### IS NOT NULL {#is_not_null}
 
 * بالنسبة إلى القيم من النوع [Nullable](/ar/reference/data-types/nullable)، يعيد المعامل `IS NOT NULL` ما يلي:
   * `0` إذا كانت القيمة `NULL`.
@@ -749,9 +649,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 
 يمكن تحسين ذلك عبر تفعيل إعداد [optimize&#95;functions&#95;to&#95;subcolumns](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). عند ضبط `optimize_functions_to_subcolumns = 1`، لا تقرأ الدالة سوى العمود الفرعي [null](/ar/reference/data-types/nullable#finding-null) بدلًا من قراءة بيانات العمود بالكامل ومعالجتها. ويتحوّل الاستعلام `SELECT n IS NOT NULL FROM table` إلى `SELECT NOT n.null FROM TABLE`.
 
-<div id="checking-boolean-values">
-  ## التحقق من القيم المنطقية
-</div>
+## التحقق من القيم المنطقية {#checking-boolean-values}
 
 يدعم ClickHouse المعاملات `IS TRUE` و`IS FALSE` و`IS UNKNOWN` و`IS NOT TRUE` و`IS NOT FALSE` و`IS NOT UNKNOWN`.
 تُستخدم هذه المعاملات مع تعبيرات [Bool](/ar/reference/data-types/boolean) و`Nullable(Bool)`.
