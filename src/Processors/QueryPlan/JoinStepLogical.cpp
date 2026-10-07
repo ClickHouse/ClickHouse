@@ -1722,7 +1722,7 @@ static NestedMergeJoinOrder findNestedMergeJoinOrder(const QueryPlan::Node & inp
 /// time, which happens during plan physicalization - several passes before `optimizeReadInOrder` runs and
 /// before the sorting step even exists. So this is a prediction: it finds the step providing the order the
 /// same way `findReadingStep` in `optimizeReadInOrder.cpp` does. For a `ReadFromMergeTree` it probes the
-/// actual read-in-order matcher (`wouldReadInOrderBeUseful`) with the join-key sort the physicalization is
+/// actual read-in-order matcher (`getInputOrderIfReadInOrderIsUseful`) with the join-key sort the physicalization is
 /// about to build. A false positive (a later pass declines what was predicted here, e.g.
 /// `requestReadingInOrder` refusing a `FINAL` read) degrades gracefully - the join runs like
 /// `full_sorting_merge` with a full sort; a false negative just makes the selection fall through to the
@@ -1743,7 +1743,7 @@ static NestedMergeJoinOrder findNestedMergeJoinOrder(const QueryPlan::Node & inp
 /// The gate is also deliberately narrower than `checkSupportedReadingStep` in what it reads from:
 /// only a direct `ReadFromMergeTree` qualifies, while `optimizeReadInOrder` can additionally exploit
 /// the order of `ReadFromMerge` and `ReadFromObjectStorageStep`. A `Merge` table has no single sorting
-/// key to probe `wouldReadInOrderBeUseful` with (only a common prefix computed across the selected
+/// key to probe `getInputOrderIfReadInOrderIsUseful` with (only a common prefix computed across the selected
 /// tables at optimization time), and an in-order object-storage read is a much rarer and less tested
 /// combination - so for now these sources conservatively fall through to the next algorithm in the
 /// `join_algorithm` list, which is the documented contract of `sorted_merge` selection.
@@ -1792,7 +1792,7 @@ static bool joinInputCanBeReadInJoinKeyOrder(
     SortingStep probe_sorting_step(
         input_header, std::move(sort_description), 0 /*limit*/, sorting_settings, true /*is_sorting_for_merge_join*/);
 
-    return QueryPlanOptimizations::wouldReadInOrderBeUseful(probe_sorting_step, sorting_key, input);
+    return QueryPlanOptimizations::getInputOrderIfReadInOrderIsUseful(probe_sorting_step, sorting_key, input) != nullptr;
 }
 
 bool JoinStepLogical::collectMergeJoinKeys(Names & left_keys, Names & right_keys) const
