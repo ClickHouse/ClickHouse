@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <algorithm>
 #include <compare>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
@@ -62,6 +63,74 @@ std::weak_ordering operator<=>(const ProcessedManifestFileEntryPtr & lhs, const 
 {
     return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value, lhs->sequence_number)
         <=> std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value, rhs->sequence_number);
+}
+
+std::span<const ProcessedManifestFileEntryPtr> defineDeletesSpan(
+    ProcessedManifestFileEntryPtr data_object_,
+    const std::vector<ProcessedManifestFileEntryPtr> & deletes_objects,
+    bool is_equality_delete,
+    LoggerPtr logger)
+{
+    if (deletes_objects.empty())
+    {
+        return {};
+    }
+    /// Objects in deletes_objects are sorted by common_partition_specification, partition_key_value and added_sequence_number.
+    /// It is done to have an invariant that position deletes objects which corresponds
+    /// to the data object form a subsegment in a deletes_objects vector.
+    /// We need to take all position deletes objects which has the same partition schema and value and has added_sequence_number
+    /// greater than or equal to the data object added_sequence_number (https://iceberg.apache.org/spec/#scan-planning)
+    /// ManifestFileEntry has comparator by default which helps to do that.
+    auto beg_it = is_equality_delete ?
+        std::upper_bound(deletes_objects.begin(), deletes_objects.end(), data_object_)
+        : std::lower_bound(deletes_objects.begin(), deletes_objects.end(), data_object_);
+    auto end_it = std::upper_bound(
+        deletes_objects.begin(),
+        deletes_objects.end(),
+        data_object_,
+        [](const ProcessedManifestFileEntryPtr & lhs, const ProcessedManifestFileEntryPtr & rhs)
+        {
+            return std::tie(*lhs->common_partition_specification, lhs->normalized_partition_key_value)
+                < std::tie(*rhs->common_partition_specification, rhs->normalized_partition_key_value);
+        });
+    if (beg_it - deletes_objects.begin() > end_it - deletes_objects.begin())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "{} deletes objects are not sorted by common_partition_specification and partition_key_value, "
+            "beginning: {}, end: {}, position_deletes_objects size: {}",
+            is_equality_delete ? "Equality" : "Position",
+            beg_it - deletes_objects.begin(),
+            end_it - deletes_objects.begin(),
+            deletes_objects.size());
+    }
+    if (beg_it != end_it)
+    {
+        auto previous_it = std::prev(end_it);
+        chassert(*beg_it);
+        chassert(*previous_it);
+        LOG_DEBUG(
+            logger,
+            "Preliminary check got {} {} delete elements for data file {}, taken data file object info: {}, first taken delete object info is "
+            "{}, last taken "
+            "delete object info is {}",
+            std::distance(beg_it, end_it),
+            is_equality_delete ? "equality" : "position",
+            data_object_->parsed_entry->file_path_key,
+            data_object_->dumpDeletesMatchingInfo(),
+            (*beg_it)->dumpDeletesMatchingInfo(),
+            (*previous_it)->dumpDeletesMatchingInfo());
+    }
+    else
+    {
+        LOG_DEBUG(
+            logger,
+            "No {} delete elements for data file {}, taken data file object info: {}",
+            is_equality_delete ? "equality" : "position",
+            data_object_->parsed_entry->file_path_key,
+            data_object_->dumpDeletesMatchingInfo());
+    }
+    return {beg_it, end_it};
 }
 
 static String dumpPartitionSpecification(const PartitionSpecification & partition_specification)
