@@ -18,8 +18,6 @@ namespace DB
 class TextIndexAnalyzer;
 class MergeTreeIndexConditionText;
 
-struct PhraseTokens;
-
 using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<size_t, PostingListPtr>>;
 
 /// A part of "direct read from text index" optimization.
@@ -112,6 +110,8 @@ private:
     /// via phrase intersection (cached per granule).
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
+
+    struct PhraseTokens;
 
     /// Finds the documents holding every phrase token, then decodes only the position blocks covering them.
     PaddedPODArray<UInt32> phraseSearch(const TextSearchQuery & search_query);

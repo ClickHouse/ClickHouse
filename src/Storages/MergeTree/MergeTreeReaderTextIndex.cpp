@@ -915,48 +915,48 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
 }
 
 /// Repeated tokens reuse one posting list and one position stream.
-struct PhraseTokens
+struct MergeTreeReaderTextIndex::PhraseTokens
 {
     std::vector<std::string_view> unique_tokens;
     std::vector<const TokenPostingsInfo *> unique_infos;
     std::vector<size_t> term_to_unique;
+
+    /// Nothing to match if a token is missing from the granule or carries no positions.
+    static std::optional<PhraseTokens> resolve(
+        const TokenToPostingsInfosMap & all_token_infos, const VectorWithMemoryTracking<String> & phrase_tokens)
+    {
+        PhraseTokens phrase;
+        phrase.term_to_unique.reserve(phrase_tokens.size());
+        for (const auto & token : phrase_tokens)
+        {
+            auto it = all_token_infos.find(token);
+            if (it == all_token_infos.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
+                return {};
+
+            size_t unique_idx = 0;
+            while (unique_idx < phrase.unique_tokens.size() && phrase.unique_tokens[unique_idx] != token)
+                ++unique_idx;
+            if (unique_idx == phrase.unique_tokens.size())
+            {
+                phrase.unique_tokens.emplace_back(it->first);
+                phrase.unique_infos.push_back(it->second.get());
+            }
+            phrase.term_to_unique.push_back(unique_idx);
+        }
+        return phrase;
+    }
+
+    bool canUseRankCursors() const
+    {
+        return std::ranges::all_of(unique_infos, [](const TokenPostingsInfo * info)
+        {
+            return (info->header & PostingsSerialization::Flags::RawPostings) || (info->header & PostingsSerialization::Flags::HasBlockIndex);
+        });
+    }
 };
 
 namespace
 {
-
-/// Nothing to match if a token is missing from the granule or carries no positions.
-std::optional<PhraseTokens> resolvePhraseTokens(
-    const TokenToPostingsInfosMap & all_token_infos, const VectorWithMemoryTracking<String> & phrase_tokens)
-{
-    PhraseTokens phrase;
-    phrase.term_to_unique.reserve(phrase_tokens.size());
-    for (const auto & token : phrase_tokens)
-    {
-        auto it = all_token_infos.find(token);
-        if (it == all_token_infos.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
-            return {};
-
-        size_t unique_idx = 0;
-        while (unique_idx < phrase.unique_tokens.size() && phrase.unique_tokens[unique_idx] != token)
-            ++unique_idx;
-        if (unique_idx == phrase.unique_tokens.size())
-        {
-            phrase.unique_tokens.emplace_back(it->first);
-            phrase.unique_infos.push_back(it->second.get());
-        }
-        phrase.term_to_unique.push_back(unique_idx);
-    }
-    return phrase;
-}
-
-bool canUseRankCursors(const PhraseTokens & phrase)
-{
-    return std::ranges::all_of(phrase.unique_infos, [](const TokenPostingsInfo * info)
-    {
-        return (info->header & PostingsSerialization::Flags::RawPostings) || (info->header & PostingsSerialization::Flags::HasBlockIndex);
-    });
-}
 
 TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(
     MergeTreeReaderStream & stream, const TokenPostingsInfo & token_info, UInt64 expected_num_docs)
@@ -1289,12 +1289,12 @@ PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(cons
 
 PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearch(const TextSearchQuery & search_query)
 {
-    auto phrase = resolvePhraseTokens(granule->getAnalyzer().getAllTokenInfos(), search_query.getPhraseTokens());
+    auto phrase = PhraseTokens::resolve(granule->getAnalyzer().getAllTokenInfos(), search_query.getPhraseTokens());
     if (!phrase)
         return {};
 
     /// A single-token phrase needs no intersection: every row holding the token matches.
-    if (phrase->term_to_unique.size() == 1 || !canUseRankCursors(*phrase))
+    if (phrase->term_to_unique.size() == 1 || !phrase->canUseRankCursors())
         return phraseSearchBlocked(*phrase);
 
     auto cursors = makePhraseCursors(*phrase);
