@@ -662,6 +662,11 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     }
 }
 
+void ConditionSelectivityEstimatorBuilder::setCardinality(const String & column_name, UInt64 cardinality)
+{
+    estimator->column_estimators.at(column_name).stats->setCardinality(cardinality);
+}
+
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
     return has_data ? estimator : nullptr;
