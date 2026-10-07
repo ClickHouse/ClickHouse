@@ -381,6 +381,27 @@ namespace
         if (found)
             return found;
 
+        /// The values of `CREATE` / `ALTER NAMED COLLECTION` are parsed by
+        /// `ParserSetQuery::parseNameValuePair`, which keeps an AST-valued one (e.g.
+        /// `storage = disk(path = {p:String})`) as a `Field` wrapping the AST (`FieldFromASTImpl`),
+        /// outside both `children` and `forEachNonChildSemanticAST`. A placeholder there can be
+        /// neither bound nor substituted either.
+        const SettingsChanges * collection_changes = nullptr;
+        if (const auto * create_collection = ast->as<ASTCreateNamedCollectionQuery>())
+            collection_changes = &create_collection->changes;
+        else if (const auto * alter_collection = ast->as<ASTAlterNamedCollectionQuery>())
+            collection_changes = &alter_collection->changes;
+        if (collection_changes)
+        {
+            for (const auto & change : *collection_changes)
+            {
+                CustomType custom;
+                if (change.value.tryGet<CustomType>(custom) && std::string_view(custom.getTypeName()) == FieldFromASTImpl::name)
+                    if (auto nested = findQueryParameterInNonChildMember(dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast, true))
+                        return nested;
+            }
+        }
+
         for (const auto & child : ast->children)
             if (auto nested = findQueryParameterInNonChildMember(child, inside_non_child))
                 return nested;
