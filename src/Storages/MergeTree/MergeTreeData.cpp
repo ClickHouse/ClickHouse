@@ -13554,6 +13554,16 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
     return true;
 }
 
+void MergeTreeData::checkTableCanBeRenamed(const StorageID & new_name) const
+{
+    if (new_name.getDatabaseName() == getStorageID().getDatabaseName())
+        return;
+    const auto metadata = getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/ false);
+    if (std::ranges::any_of(metadata->getSecondaryIndices(), isVectorSimilarityIvfIndex))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} with an IVF vector similarity index can not be moved to another database", getStorageID().getNameForLogs());
+}
+
 void MergeTreeData::checkTableCanBeDropped(ContextPtr query_context) const
 {
     checkTableSizeBelowDropLimit(query_context);

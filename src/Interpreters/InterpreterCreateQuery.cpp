@@ -2201,6 +2201,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "CREATE OR REPLACE, REPLACE and CREATE ... AS SELECT are not supported for tables with an IVF vector similarity index");
 
+        /// A copy would get its own centroids, but keep the cluster ids (CLONE AS) and the assignCentroid references of the source.
+        if (!as_table_saved.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE TABLE ... AS and CREATE TABLE ... CLONE AS are not supported for tables with an IVF vector similarity index");
+
         /// The hidden objects are created by internal DDL, supported in Atomic and Shared (Cloud) databases only.
         if (create.isTemporary())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IVF vector similarity indexes are not supported for temporary tables");
@@ -2506,6 +2511,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
     assertOrSetUUID(create, database);
 
+    /// References of the table to itself in assignCentroid are replaced by its IVF centroids dictionary, which needs the UUID.
+    ColumnsDescription columns = properties.columns;
+    if (!create.attach && create.columns_list && create.columns_list->columns
+        && rewriteVectorSimilarityIvfSelfReferences(
+            StorageID(create.getDatabase(), create.getTable(), create.uuid), getVectorSimilarityIvfIndexNames(create), columns))
+        create.columns_list->setOrReplace(create.columns_list->columns, formatColumns(columns));
+
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
     auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
 
@@ -2703,7 +2715,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             data_path,
             getContext(),
             getContext()->getGlobalContext(),
-            properties.columns,
+            columns,
             properties.constraints,
             mode,
             is_restore_from_backup);

@@ -33,6 +33,9 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageProxy.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <set>
 
@@ -309,7 +312,7 @@ void MergeTreeIndexAggregatorVectorSimilarityIvf::update(const Block & block, si
     const auto & offsets = column_array->getOffsets();
     for (size_t row = *pos; row < end; ++row)
     {
-        const size_t vector_dimensions = offsets[row] - offsets[row - 1];
+        const size_t vector_dimensions = offsets[row] - (row ? offsets[row - 1] : 0);
         if (vector_dimensions != dimensions)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Array values in column with IVF vector similarity index have {} elements, expects {} elements", vector_dimensions, dimensions);
@@ -519,16 +522,35 @@ StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id
     return StorageID(table_id.getDatabaseName(), getInnerObjectName("ivf_centroids_dict", table_id, index_name));
 }
 
-std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const String & table_name, const ContextPtr & context)
+std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const String & name, const ContextPtr & context)
 {
-    auto qualified_name = QualifiedTableName::tryParseFromString(table_name);
+    auto qualified_name = QualifiedTableName::tryParseFromString(name);
     if (!qualified_name)
         return {};
+
+    /// The dictionary of an IVF index is found through the table UUID in its name, in the current database of the table. So a
+    /// reference to it (e.g. in the DEFAULT expression of the cluster id column) is not affected by RENAME or EXCHANGE.
+    static constexpr std::string_view dictionary_prefix = "_ivf_centroids_dict_";
+    static constexpr size_t uuid_length = 36;
+    const String & object_name = qualified_name->table;
+    if (object_name.starts_with(dictionary_prefix))
+    {
+        UUID table_uuid;
+        if (object_name.size() <= dictionary_prefix.size() + uuid_length + 1 || object_name[object_name.size() - uuid_length - 1] != '_'
+            || !tryParse(table_uuid, object_name.substr(object_name.size() - uuid_length)))
+            return {};
+        auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(table_uuid);
+        if (!database)
+            return {};
+        return database->getDatabaseName() + "." + object_name;
+    }
+
     if (qualified_name->database.empty())
         qualified_name->database = context->getCurrentDatabase();
 
+    /// Only MergeTree tables can have an IVF index; the metadata of other storages may resolve other tables (e.g. aliases).
     auto table = DatabaseCatalog::instance().tryGetTable(StorageID(qualified_name->database, qualified_name->table), context);
-    if (!table)
+    if (!castStorage<MergeTreeData>(table, DeferredTable::Load))
         return {};
 
     const auto metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
@@ -660,14 +682,20 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
         /// Single level for now: leaf centroids get level 0, cid = position, no parent, no radius, generation 0 of size k. For cosine distance they
         /// are normalized, because rows are assigned by L2 distance, which agrees with cosine distance only for unit vectors.
         const String centroid = arguments.distance_function == "cosineDistance" ? "L2Normalize(centroid)" : "centroid";
+        /// The result of the clustering function is checked as a whole before it is written: k centroids of the declared
+        /// dimensions. Otherwise nothing is written, so the table keeps reading all rows instead of using wrong centroids.
+        const UInt64 num_clusters = arguments.clustering_parameters[0].safeGet<UInt64>();
         const String insert_query = fmt::format(
             "INSERT INTO {} (level, cid, parent, vec, active, radius, generation, generation_size) "
             "SELECT 0, toUInt32(position - 1), 0, {}, true, 0, 0, {} "
-            "FROM (SELECT {}({})({}) AS centroids FROM {}) "
+            "FROM (SELECT {}({})({}) AS centroids FROM {} "
+            "HAVING throwIf(length(centroids) != {} OR NOT arrayAll(c -> length(c) = {}, centroids), "
+            "'The clustering function must return {} centroids with {} dimensions') = 0) "
             "ARRAY JOIN centroids AS centroid, arrayEnumerate(centroids) AS position",
-            centroids_table_id.getFullTableName(), centroid, arguments.clustering_parameters[0].safeGet<UInt64>(),
+            centroids_table_id.getFullTableName(), centroid, num_clusters,
             backQuoteIfNeed(arguments.clustering_function), fmt::join(clustering_parameters, ", "),
-            backQuoteIfNeed(index.column_names[0]), samples_table.getFullName());
+            backQuoteIfNeed(index.column_names[0]), StorageID(samples_table.database, samples_table.table).getFullTableName(),
+            num_clusters, arguments.dimensions, num_clusters, arguments.dimensions);
         const String reload_query = fmt::format("SYSTEM RELOAD DICTIONARY {}", centroids_dictionary_id.getFullTableName());
 
         /// The training runs after CREATE returns and outlives the session, so it gets a context of its own, with the user,
@@ -704,6 +732,48 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
             }
         });
     }
+}
+
+bool rewriteVectorSimilarityIvfSelfReferences(const StorageID & table_id, const Strings & index_names, ColumnsDescription & columns)
+{
+    if (table_id.uuid == UUIDHelpers::Nil || index_names.size() != 1)
+        return false;
+    const String dictionary_name = getVectorSimilarityIvfCentroidsDictionaryID(table_id, index_names.front()).getTableName();
+
+    /// Replaces the name of this table in assignCentroid(..., 'table') by the name of its centroids dictionary.
+    std::function<bool(const ASTPtr &)> rewrite = [&](const ASTPtr & ast)
+    {
+        bool changed = false;
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "assignCentroid" && function->arguments
+            && function->arguments->children.size() == 2)
+        {
+            if (auto * literal = function->arguments->children[1]->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            {
+                auto name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
+                if (name && name->table == table_id.getTableName() && (name->database.empty() || name->database == table_id.getDatabaseName()))
+                {
+                    literal->value = dictionary_name;
+                    changed = true;
+                }
+            }
+        }
+        for (const auto & child : ast->children)
+            changed |= rewrite(child);
+        return changed;
+    };
+
+    std::vector<std::pair<String, ASTPtr>> rewritten;
+    for (const auto & column : columns)
+    {
+        if (!column.default_desc.expression)
+            continue;
+        ASTPtr expression = column.default_desc.expression->clone();
+        if (rewrite(expression))
+            rewritten.emplace_back(column.name, expression);
+    }
+    for (const auto & [name, expression] : rewritten)
+        columns.modify(name, [&](ColumnDescription & description) { description.default_desc.expression = expression; });
+    return !rewritten.empty();
 }
 
 }

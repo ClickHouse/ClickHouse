@@ -65,6 +65,12 @@ CREATE TABLE tab (id UInt64, cid UInt32, vec Array(Float32)) ENGINE = MergeTree 
 REPLACE TABLE tab (id UInt64, cid UInt32, vec Array(Float32), INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 2, samples = 'samples', clustering = hierarchicalKMeans(4))) ENGINE = MergeTree ORDER BY (cid, id); -- { serverError NOT_IMPLEMENTED }
 DROP TABLE tab;
 
+SELECT 'No CREATE TABLE ... AS or CLONE AS';
+CREATE TABLE tab (id UInt64, cid UInt32, vec Array(Float32), INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 2, samples = 'samples', clustering = hierarchicalKMeans(4))) ENGINE = MergeTree ORDER BY (cid, id);
+CREATE TABLE tab_copy AS tab; -- { serverError NOT_IMPLEMENTED }
+CREATE TABLE tab_copy CLONE AS tab; -- { serverError NOT_IMPLEMENTED }
+DROP TABLE tab;
+
 SELECT 'Cluster id column must be in the primary key';
 CREATE TABLE tab (id UInt64, cid UInt32, vec Array(Float32), INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 2, samples = 'samples', clustering = hierarchicalKMeans(4))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE tab (id UInt64, cid UInt32, vec Array(Float32), INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 2, samples = 'samples', clustering = hierarchicalKMeans(4))) ENGINE = MergeTree ORDER BY (intHash32(cid), id); -- { serverError BAD_ARGUMENTS }

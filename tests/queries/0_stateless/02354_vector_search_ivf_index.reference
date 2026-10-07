@@ -5,6 +5,7 @@ Invalid columns
 At most one IVF index per table
 IVF index can not be added to an existing table
 No CREATE OR REPLACE, REPLACE or CREATE ... AS SELECT
+No CREATE TABLE ... AS or CLONE AS
 Cluster id column must be in the primary key
 Samples table must exist
 Samples table must have the vector column

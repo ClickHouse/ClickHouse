@@ -9,6 +9,7 @@ namespace DB
 {
 
 class ASTCreateQuery;
+class ColumnsDescription;
 
 /// IVF index: INDEX name (vec, cid) TYPE vector_similarity('ivf', distance, dimensions, samples = ..., clustering = f(k, ...)).
 /// The table is sorted by cid, so clusters are primary key ranges; each granule stores the row count per cid.
@@ -114,8 +115,14 @@ void checkVectorSimilarityIvfIndexForTable(
 StorageID getVectorSimilarityIvfCentroidsTableID(const StorageID & table_id, const String & index_name);
 StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id, const String & index_name);
 
-/// If the name refers to a table with an IVF index, returns the qualified name of its centroids dictionary.
-std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const String & table_name, const ContextPtr & context);
+/// If the name refers to a table with an IVF index or to the centroids dictionary of an IVF index, returns the qualified name
+/// of the dictionary. The dictionary is found through the table UUID in its name, so it does not depend on the table name.
+std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const String & name, const ContextPtr & context);
+
+/// In a new table, replaces references to the table itself in assignCentroid(..., 'table') (e.g. in the DEFAULT expression of the
+/// cluster id column) by the name of its centroids dictionary, which stays valid after RENAME and EXCHANGE. Returns whether
+/// anything was replaced.
+bool rewriteVectorSimilarityIvfSelfReferences(const StorageID & table_id, const Strings & index_names, ColumnsDescription & columns);
 
 /// Creates the hidden objects of a newly created "IVF" table (not on ATTACH).
 void createVectorSimilarityIvfInnerObjects(

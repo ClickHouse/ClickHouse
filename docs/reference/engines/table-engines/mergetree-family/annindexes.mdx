@@ -866,7 +866,7 @@ CREATE TABLE docs
 (
     id  UInt64,
     vec Array(BFloat16) CODEC(Quantized('rabitq', 768)),
-    cid UInt32 DEFAULT assignCentroid(vec, 'mydb.docs'),
+    cid UInt32 DEFAULT assignCentroid(vec, 'docs'),
     INDEX ivf (vec, cid) TYPE vector_similarity(
         'ivf', 'cosineDistance', 768,
         samples    = 'docs_sample',
@@ -904,6 +904,7 @@ It shows up in [system.query_log](/reference/system-tables/query_log) as an inte
 
 Each row needs a cluster id.
 `assignCentroid(vec, 'table')` returns the id of the nearest centroid of an IVF table; it rejects the insert if the centroids are missing or incomplete.
+When a column expression of an IVF table refers to the table itself this way, the table name is replaced by the name of its internal centroids dictionary at creation, so that the expression stays valid after `RENAME TABLE` and `EXCHANGE TABLES`.
 
 Either let the `DEFAULT` expression compute the cluster id, using several threads:
 
@@ -917,7 +918,7 @@ Or compute it in the `SELECT`, for example for bulk loads or precomputed ids:
 
 ```sql
 INSERT INTO docs (id, vec, cid)
-SELECT id, vec, assignCentroid(vec, 'mydb.docs') FROM docs_source;
+SELECT id, vec, assignCentroid(vec, 'docs') FROM docs_source;
 ```
 
 #### Searching {#ivf-searching}
@@ -950,11 +951,11 @@ They are dropped together with the table and cannot be dropped or renamed on the
 #### Limitations {#ivf-limitations}
 
 - Only databases with the `Atomic` engine are supported.
-- Not supported: `Replicated` databases, `ReplicatedMergeTree` tables, temporary tables, `CREATE OR REPLACE TABLE`, `REPLACE TABLE` and `CREATE TABLE ... AS SELECT`.
+- Not supported: `Replicated` databases, `ReplicatedMergeTree` tables, temporary tables, `CREATE OR REPLACE TABLE`, `REPLACE TABLE`, `CREATE TABLE ... AS SELECT`, `CREATE TABLE ... AS other_table` and `CREATE TABLE ... CLONE AS`.
 - A table can have at most one IVF index. It can only be declared in `CREATE TABLE`; it cannot be added or dropped with `ALTER TABLE`.
 - Columns before `cid` in the primary key should have few distinct values and be filtered in queries, for example `ORDER BY (tenant_id, cid, id)` with `WHERE tenant_id = ...`.
-- A table name in a `DEFAULT` expression must be qualified with the database and is not updated by `RENAME TABLE`.
-- If training fails, drop and recreate the table.
+- An IVF table can be renamed or exchanged with `EXCHANGE TABLES` within its database, for example to replace it by a re-indexed copy. It cannot be moved to another database, and its database cannot be renamed.
+- Training is not resumed after a server restart. If training fails or the server restarts before training completes, drop and recreate the table.
 - Cluster ids supplied by `INSERT` are not checked against the centroids.
 
 ### References {#references}
