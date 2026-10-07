@@ -251,8 +251,25 @@ void AIAgent::chat(const String & user_text)
 
         std::vector<ai::ToolResultContentPart> result_parts;
         result_parts.reserve(step.tool_calls.size());
+        bool after_run_query = false;
         for (const auto & call : step.tool_calls)
         {
+            /// `run_query` is a barrier: it needs the confirmation of the user, can be declined or
+            /// fail, and can change the session (`USE`, `SET`, a temporary table). The calls the
+            /// model queued after it in the same step were planned without knowing its outcome,
+            /// so they are not executed; the model sees why and can issue them again.
+            if (after_run_query)
+            {
+                result_parts.emplace_back(
+                    call.id,
+                    ai::JsonValue{{"error",
+                        "Not executed: a run_query call earlier in the same step must complete first. "
+                        "Look at its result and issue this call again in a separate step if it is still needed."}},
+                    true);
+                continue;
+            }
+            after_run_query = call.tool_name == "run_query";
+
             display.showToolCall(call.tool_name, summarizeArguments(call));
 
             ai::ToolResult result = executeToolCall(call);

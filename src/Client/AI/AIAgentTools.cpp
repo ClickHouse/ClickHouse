@@ -258,7 +258,8 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
         "exceed the limits of run_readonly_query. The user is asked to confirm the call, so prefer "
         "run_readonly_query when possible. A query the session "
         "does not allow at all is refused without asking them. The query and its output are displayed in the user's "
-        "terminal exactly as if the user ran it; you receive a summary truncated to the first and last rows.",
+        "terminal exactly as if the user ran it; you receive a summary truncated to the first and last rows. "
+        "Tool calls after run_query in the same reply are not executed: wait for its result first.",
         ai::JsonValue{{"query", stringParameter("The SQL to run (may contain several statements)")}},
         {"query"},
         [hooks, enable_schema_access](const ai::JsonValue & args, const ai::ToolExecutionContext &)

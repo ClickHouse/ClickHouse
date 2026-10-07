@@ -418,6 +418,39 @@ TEST(AIAgent, HistoryIsTrimmedWithinOneTurn)
     EXPECT_FALSE(last.back().get_tool_results().at(0).result.contains("elided"));
 }
 
+TEST(AIAgent, CallsAfterRunQueryInTheSameStepAreNotExecuted)
+{
+    /// `run_query` can be declined or fail, and it can change the session (`USE`, a temporary
+    /// table), so the calls queued after it in the same step were planned without knowing its
+    /// outcome: they are answered with an error instead of being executed.
+    std::vector<String> ran;
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &) { return AIQueryRunDecision{}; };
+    hooks.confirm_query = [](const String &) { return false; };
+    hooks.run_visible = [&ran](const String & query, bool, bool) { ran.push_back(query); return String("ok"); };
+
+    AIAgentStep step;
+    step.tool_calls.emplace_back("call_1", "run_readonly_query", ai::JsonValue{{"query", "SELECT 1"}});
+    step.tool_calls.emplace_back("call_2", "run_query", ai::JsonValue{{"query", "USE db2"}});
+    step.tool_calls.emplace_back("call_3", "run_readonly_query", ai::JsonValue{{"query", "SELECT 3"}});
+
+    AgentWithMock harness({step, textStep("done")}, hooks);
+    harness.agent->chat("switch and read");
+
+    /// The declined `USE` did not run, and neither did the read planned after it.
+    ASSERT_EQ(ran.size(), 1u);
+    EXPECT_EQ(ran[0], "SELECT 1");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 2u);
+    const auto & last = harness.transport->conversations.back();
+    ASSERT_TRUE(last.back().has_tool_results());
+    const auto results = last.back().get_tool_results();
+    ASSERT_EQ(results.size(), 3u);
+    EXPECT_FALSE(results[0].is_error);
+    EXPECT_TRUE(results[2].is_error);
+    EXPECT_NE(results[2].result.dump().find("Not executed"), String::npos);
+}
+
 TEST(AIAgent, HistoryIsTrimmedWhenOneStepReturnsManyLargeResults)
 {
     /// One step may return several tool calls at once, so the newest tool-results message alone
@@ -435,7 +468,7 @@ TEST(AIAgent, HistoryIsTrimmedWhenOneStepReturnsManyLargeResults)
 
     AIAgentStep many_calls;
     for (size_t i = 0; i < 12; ++i)
-        many_calls.tool_calls.emplace_back("call_" + std::to_string(i), "run_query", ai::JsonValue{{"query", "SELECT 1"}});
+        many_calls.tool_calls.emplace_back("call_" + std::to_string(i), "run_readonly_query", ai::JsonValue{{"query", "SELECT 1"}});
 
     AgentWithMock harness({many_calls, textStep("done")}, hooks, /*max_steps=*/ 2);
     harness.agent->chat("read a lot at once");
