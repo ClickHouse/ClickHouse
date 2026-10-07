@@ -255,7 +255,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             /// `profile.rows` does not take into account deleted rows, and estimationProfile scales estimate->rows to the filter
             /// To include deleted rows in the filter scaled rows we additionally scale the result with deleted rows,
             /// so complete formula is: ((rows - deleted rows) / rows) * (rows * filter_selectivity)
-            /// which is: rows * filter_selecivity * delete_scale
+            /// which is: rows * filter_selectivity * delete_scale
             UInt64 estimated_rows = *estimate->rows - estimate->deleted_rows;
             if (estimate_filter)
                 estimated_rows = static_cast<UInt64>(
