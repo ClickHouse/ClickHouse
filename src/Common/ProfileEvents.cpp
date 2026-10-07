@@ -1411,6 +1411,7 @@ The server successfully detected this situation and will download merged part fr
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces", ValueType::Bytes) \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas", ValueType::Number) \
+    M(ParallelReplicasPlanNotBuilt, "Number of queries where automatic parallel replicas decided against distributing the query from the statistics of a previous execution, so no plan with parallel replicas was built at all. Counts the planning work this saves: building that plan re-derives the query tree and optimizes a second plan, and on a declined query it was discarded unused.", ValueType::Number) \
     M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas", ValueType::Number) \
     M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas", ValueType::Number) \
     \
