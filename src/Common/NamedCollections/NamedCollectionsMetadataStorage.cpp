@@ -509,6 +509,18 @@ MutableNamedCollectionPtr NamedCollectionsMetadataStorage::create(const ASTCreat
     return collection_ptr;
 }
 
+MutableNamedCollectionPtr NamedCollectionsMetadataStorage::createOrReplace(const ASTCreateNamedCollectionQuery & create_query)
+{
+    /// Persist a plain CREATE so that the stored statement stays parseable by older versions.
+    auto normalized_ast = create_query.clone();
+    auto & normalized_query = normalized_ast->as<ASTCreateNamedCollectionQuery &>();
+    normalized_query.or_replace = false;
+
+    auto collection_ptr = NamedCollectionFromSQL::create(normalized_query);
+    writeCreateQuery(create_query.collection_name, collection_ptr->getCreateStatement(true), /*replace=*/true);
+    return collection_ptr;
+}
+
 void NamedCollectionsMetadataStorage::remove(const std::string & collection_name)
 {
     storage->remove(getFileName(collection_name));

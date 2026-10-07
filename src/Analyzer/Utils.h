@@ -162,6 +162,12 @@ void rerunFunctionResolve(FunctionNode * function_node, ContextPtr context);
 /// Just collect all identifiers from query tree
 NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node);
 
+/// Create and resolve an ordinary function node from already-resolved argument expressions.
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments);
+
+/// Create a resolved `tupleElement` expression using a one-based element index.
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index);
+
 /// Wrap node into `_CAST` function
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context);
 
@@ -198,6 +204,7 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 
 /// Resolves function node as aggregate function with given name.
 /// Arguments and parameters are taken from the node.
+/// A node that carries a window definition stays a window function.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
 /// Returns the types the arguments of a window function must be cast to before it is resolved.
@@ -207,6 +214,12 @@ DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataType
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
 /// Second element of pair is true if there is at most one source, false if there are multiple sources.
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
+
+/** Return the table or table function that a `PREWHERE` expression's columns come from, or nullptr
+  * when the expression has no such column (a constant `PREWHERE`). Nested `QUERY` / `UNION` / `LAMBDA`
+  * nodes are not visited, so a set subquery does not hide the outer column source.
+  */
+TableExpressionNodePtr getPrewhereTableExpression(const QueryTreeNodePtr & prewhere);
 
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);

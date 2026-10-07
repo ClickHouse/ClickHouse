@@ -13,8 +13,8 @@ TEST(SchedulerFairPolicy, FairnessWeights)
     ResourceTest t;
 
     t.add<FairPolicy>("/");
-    t.add<FifoQueue>("/A", SchedulerNodeInfo(1.0));
-    t.add<FifoQueue>("/B", SchedulerNodeInfo(3.0));
+    t.add<RequestQueue>("/A", SchedulerNodeInfo(1.0));
+    t.add<RequestQueue>("/B", SchedulerNodeInfo(3.0));
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10, 10, 10});
     t.enqueue("/B", {10, 10, 10, 10, 10, 10, 10, 10});
@@ -37,9 +37,9 @@ TEST(SchedulerFairPolicy, Activation)
     ResourceTest t;
 
     t.add<FairPolicy>("/");
-    t.add<FifoQueue>("/A");
-    t.add<FifoQueue>("/B");
-    t.add<FifoQueue>("/C");
+    t.add<RequestQueue>("/A");
+    t.add<RequestQueue>("/B");
+    t.add<RequestQueue>("/C");
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10, 10, 10});
     t.enqueue("/B", {10});
@@ -73,8 +73,8 @@ TEST(SchedulerFairPolicy, FairnessMaxMin)
     ResourceTest t;
 
     t.add<FairPolicy>("/");
-    t.add<FifoQueue>("/A");
-    t.add<FifoQueue>("/B");
+    t.add<RequestQueue>("/A");
+    t.add<RequestQueue>("/B");
 
     t.enqueue("/A", {10, 10}); // make sure A is never empty
 
@@ -99,10 +99,10 @@ TEST(SchedulerFairPolicy, HierarchicalFairness)
     t.add<FairPolicy>("/");
     t.add<FairPolicy>("/X");
     t.add<FairPolicy>("/Y");
-    t.add<FifoQueue>("/X/A");
-    t.add<FifoQueue>("/X/B");
-    t.add<FifoQueue>("/Y/C");
-    t.add<FifoQueue>("/Y/D");
+    t.add<RequestQueue>("/X/A");
+    t.add<RequestQueue>("/X/B");
+    t.add<RequestQueue>("/Y/C");
+    t.add<RequestQueue>("/Y/D");
 
     t.enqueue("/X/A", {10, 10, 10, 10, 10, 10, 10, 10});
     t.enqueue("/X/B", {10, 10, 10, 10, 10, 10, 10, 10});

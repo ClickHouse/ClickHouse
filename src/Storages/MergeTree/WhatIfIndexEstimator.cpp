@@ -9,11 +9,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
@@ -25,6 +27,7 @@
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -35,8 +38,8 @@ namespace Setting
     extern const SettingsBool use_skip_indexes;
     extern const SettingsBool use_skip_indexes_if_final;
     extern const SettingsBool use_skip_indexes_for_disjunctions;
-    extern const SettingsString ignore_data_skipping_indices;
-    extern const SettingsString force_data_skipping_indices;
+    extern const SettingsString ignore_data_skipping_indexes;
+    extern const SettingsString force_data_skipping_indexes;
 }
 
 namespace ErrorCodes
@@ -48,16 +51,26 @@ namespace ErrorCodes
 namespace
 {
 
-void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTree *> & steps)
+void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTree *> & steps, bool skip_sets)
 {
-    if (!node)
+    if (!node || (skip_sets && typeid_cast<const CreatingSetStep *>(node->step.get())))
         return;
 
     if (auto * read_step = dynamic_cast<ReadFromMergeTree *>(node->step.get()))
         steps.push_back(read_step);
 
     for (const auto & child : node->children)
-        collectReadSteps(child, steps);
+        collectReadSteps(child, steps, skip_sets);
+}
+
+/// a subquery that only builds a set for `IN` holds the read to estimate only when the query reads no other table
+std::vector<ReadFromMergeTree *> collectReadSteps(const QueryPlan::Node * root)
+{
+    std::vector<ReadFromMergeTree *> steps;
+    collectReadSteps(root, steps, /* skip_sets */ true);
+    if (steps.empty())
+        collectReadSteps(root, steps, /* skip_sets */ false);
+    return steps;
 }
 
 /// Resolve the source table from the query
@@ -132,14 +145,13 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
             if (auto * set_query = settings_ast->as<ASTSetQuery>())
                 std::erase_if(set_query->changes, [&](const auto & change)
                 {
-                    if (change.name == "force_data_skipping_indices")
+                    if (change.name == "force_data_skipping_indexes" || change.name == "force_data_skipping_indices")
                     {
                         removed_force.push_back(change.value.template safeGet<String>());
                         return true;
                     }
                     /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
-                    return change.name == "force_optimize_projection"
-                        || change.name == "force_optimize_projection_name"
+                    return change.name == "force_optimize_projection_name"
                         || change.name == "preferred_optimize_projection_name"
                         || change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
@@ -182,10 +194,10 @@ WhatIfCandidateResult evaluateIndex(
     /// CANNOT_PARSE_TEXT) and skip the candidate if it's named
     {
         const auto & user_settings = context->getSettingsRef();
-        if (user_settings[Setting::ignore_data_skipping_indices].changed)
+        if (user_settings[Setting::ignore_data_skipping_indexes].changed)
         {
             auto ignored_names = parseIdentifiersOrStringLiteralsToSet(
-                user_settings[Setting::ignore_data_skipping_indices].toString(), user_settings);
+                user_settings[Setting::ignore_data_skipping_indexes].toString(), user_settings);
             if (ignored_names.contains(index_desc.name))
             {
                 result.status = WhatIfCandidateResult::NotApplicable;
@@ -318,7 +330,6 @@ WhatIfResult estimateHypotheticalIndexes(
     /// Grab the forced index names, drop them for baseline planning, re-check them at the end
     local_context->resetSettingsToDefaultValue(
         {"force_data_skipping_indices",
-         "force_optimize_projection",
          "force_optimize_projection_name",
          "preferred_optimize_projection_name"});
 
@@ -326,8 +337,11 @@ WhatIfResult estimateHypotheticalIndexes(
     std::vector<String> forced_strings;
     stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
-    if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
-        forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
+    /// the plans of the statement cannot see hypothetical projections, so a forced projection must not fail them
+    local_context->setSkipForcedProjectionCheck();
+
+    if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
+        forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indexes]);
 
     SelectQueryOptions query_options;
     query_options.setExplain();
@@ -343,14 +357,13 @@ WhatIfResult estimateHypotheticalIndexes(
 
     plan.optimize(QueryPlanOptimizationSettings(plan_context));
 
-    std::vector<ReadFromMergeTree *> read_steps;
-    collectReadSteps(plan.getRootNode(), read_steps);
+    const auto read_steps = collectReadSteps(plan.getRootNode());
 
     if (read_steps.empty())
     {
         auto storage = tryResolveSingleTable(select_query, local_context);
         const auto & store = local_context->getHypotheticalObjectStore();
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
+        if (const auto * mt = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)
@@ -550,7 +563,8 @@ WhatIfResult estimateHypotheticalIndexes(
 
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
+            evaluateProjection(
+                projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);

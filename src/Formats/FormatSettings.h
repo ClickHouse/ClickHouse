@@ -59,6 +59,9 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
+    /// The maximum number of steps of the search for the structure of a `Freeform` row, 0 means unlimited.
+    UInt64 freeform_max_search_steps = 4096;
+
     bool allow_special_serialization_kinds = false;
 
     /// Infers a number, not a `String`, for an integer with leading zeros
@@ -393,6 +396,7 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         size_t dictionary_filter_push_down = 1024 * 1024;
+        size_t footer_read_size = 0;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
 
@@ -464,6 +468,7 @@ struct FormatSettings
         UInt64 fallback_to_vertical_min_table_width = 250;
 
         bool named_tuples_as_json = true;
+        bool named_tuples_as_subcolumns = true;
 
         bool use_nbsp_for_padding = false;
 
@@ -639,6 +644,12 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert{};
+
+    struct
+    {
+        String input_table_name;
+        String output_table_name = "table";
+    } sqlite{};
 
     struct
     {

@@ -20,7 +20,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 #include <unordered_set>
 
@@ -238,9 +238,15 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
 
     if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
+        const auto & table_join = join->getTableJoin();
+        const size_t max_rows = table_join.maxJoinedBlockRows();
+        const size_t max_bytes = table_join.maxJoinedBlockBytes();
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
+            {
+                return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(
+                    header, min_block_size_rows, min_block_size_bytes, max_rows, max_bytes));
+            });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
