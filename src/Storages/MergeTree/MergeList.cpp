@@ -27,7 +27,7 @@ const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"al
 
 MergeListElement::MergeListElement(
     const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context,
-    std::function<bool()> operation_is_canceled_)
+    std::function<bool()> operation_is_canceled_, ThreadGroupPtr foreground_group)
     : table_id{table_id_}
     , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
@@ -79,7 +79,7 @@ MergeListElement::MergeListElement(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = ThreadGroup::createForMergeMutate(context, getCancellationPredicate());
+    thread_group = ThreadGroup::createForMergeMutate(context, getCancellationPredicate(), std::move(foreground_group));
 }
 
 std::function<bool()> MergeListElement::getCancellationPredicate() const

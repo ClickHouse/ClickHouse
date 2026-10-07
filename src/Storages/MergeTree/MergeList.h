@@ -142,7 +142,8 @@ struct MergeListElement : boost::noncopyable
         const StorageID & table_id_,
         FutureMergedMutatedPartPtr future_part,
         const ContextPtr & context,
-        std::function<bool()> operation_is_canceled_ = {});
+        std::function<bool()> operation_is_canceled_ = {},
+        ThreadGroupPtr foreground_group = {});
 
     std::function<bool()> getCancellationPredicate() const;
 

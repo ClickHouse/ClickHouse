@@ -369,7 +369,7 @@ TEST(OperationCancellation, CancellationAfterRetryDecisionPreventsNextTransportA
                 {
                 }
 
-                long CalculateDelayBeforeNextRetry(
+                long CalculateDelayBeforeNextRetry( // NOLINT(google-runtime-int)
                     const Aws::Client::AWSError<Aws::Client::CoreErrors> &, long) const override // NOLINT(google-runtime-int)
                 {
                     /// The SDK already decided to retry. A zero delay makes cancellation at its tail deterministic.
