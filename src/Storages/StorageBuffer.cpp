@@ -34,10 +34,12 @@
 #include <Processors/Transforms/ReverseTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/Utils.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
@@ -102,6 +104,7 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
@@ -270,16 +273,41 @@ private:
 };
 
 
+namespace
+{
+
+/// A column of `destination` whose conversion to its type in `declared` does not preserve the order.
+std::optional<NameAndTypePair> findOrderBreakingConversion(const ColumnsDescription & destination, const ColumnsDescription & declared)
+{
+    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+    for (const auto & destination_column : destination.get(order_relevant_columns))
+    {
+        auto declared_column = declared.tryGetColumn(order_relevant_columns, destination_column.name);
+        if (declared_column && !conversionPreservesOrder(*destination_column.type, *declared_column->type))
+            return destination_column;
+    }
+    return {};
+}
+
+}
+
 QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
+    const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info) const
 {
     if (auto destination = getDestinationTable())
     {
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        const auto stage = destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+
+        /// `read` casts the destination's result to these types above `stage`. A `Merge` can be read at
+        /// `FetchColumns` instead (its header is plain names); a `Distributed` there returns identifiers.
+        if (stage > QueryProcessingStage::FetchColumns && dynamic_cast<const StorageMerge *>(destination.get())
+            && findOrderBreakingConversion(destination_metadata->getColumns(), storage_snapshot->metadata->getColumns()))
+            return QueryProcessingStage::FetchColumns;
+        return stage;
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -339,6 +367,21 @@ void StorageBuffer::read(
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
         auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
+
+        /// The stage was chosen from an earlier, unlocked snapshot (see `getQueryProcessingStage`) and cannot
+        /// be lowered any more, so a conversion that a concurrent `ALTER` made order-breaking fails the query.
+        if (processed_stage > QueryProcessingStage::FetchColumns && dynamic_cast<const StorageMerge *>(destination.get()))
+        {
+            if (auto column = findOrderBreakingConversion(destination_metadata_snapshot->getColumns(), metadata_snapshot->getColumns()))
+                throw Exception(
+                    ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Column {} of table {} has type {}, which does not preserve the order when converted to the type {} "
+                    "declared by {}. The query processing stage was chosen before this type was visible, most likely "
+                    "because the table was altered while the query was being planned. Retry the query",
+                    backQuoteIfNeed(column->name), destination->getStorageID().getNameForLogs(), column->type->getName(),
+                    metadata_snapshot->getColumns().get(column->name).type->getName(), getStorageID().getNameForLogs());
+        }
+
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto destination_columns = destination_snapshot->getColumns(get_columns_options);
