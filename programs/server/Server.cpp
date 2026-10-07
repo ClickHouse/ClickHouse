@@ -952,7 +952,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
                 auto condition_read_buffer = ReadBufferFromString(condition);
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
-                LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
+                LOG_DEBUG(log, "Checking startup query condition `{}`", formatQueryForLogging(condition, startup_context->getSettingsRef()));
                 startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
                 startup_context->setCurrentQueryId("");
 
@@ -986,7 +986,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, const 
             auto read_buffer = ReadBufferFromString(query);
             auto write_buffer = WriteBufferFromOwnString();
 
-            LOG_DEBUG(log, "Executing query `{}`", query);
+            LOG_DEBUG(log, "Executing query `{}`", formatQueryForLogging(query, startup_context->getSettingsRef()));
             startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
             startup_context->setCurrentQueryId("");
 
