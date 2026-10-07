@@ -31,6 +31,11 @@ opts=(
     # which keeps the original left-deep tree and yields prealloc=0 even with the fix.
     --query_plan_optimize_join_order_limit=64
     --query_plan_optimize_join_order_randomize=0
+    # The assertion below is an exact equality on the elements preallocated across the three
+    # sub-join builds, which only holds when all three are built on this node. With parallel
+    # replicas the builds are spread over the replicas and the initiator accounts for an
+    # arbitrary share of them, so the sum lands anywhere below `3 * N`.
+    --enable_parallel_replicas=0
 )
 
 # Use unique table names to avoid colliding with other tests sharing the test database.
