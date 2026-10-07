@@ -572,6 +572,11 @@ public:
     /// Returns a list of nodes representing atomic predicates.
     static NodeRawConstPtrs extractConjunctionAtoms(const Node * predicate);
 
+    /// Whether the conjunct has a value for every value of its argument types, so a caller that also
+    /// evaluates it on rows it was not evaluated on cannot make it throw. False whenever that cannot be
+    /// established.
+    static bool conjunctIsTotal(const Node & conjunct);
+
     UInt64 getHash() const;
     /// With `with_variable_size_constant_values = false` a constant whose value has no fixed size
     /// (`IColumn::valuesHaveFixedSize` is false: a string, an array, an aggregate function state) is
