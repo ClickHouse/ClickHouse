@@ -117,7 +117,8 @@ public:
     void checkRemovedSettings(const SettingsProfileElements & old_elements, const SettingsProfileElements & new_elements) const;
 
     /// Checks whether resetting the specified settings to their defaults violates these constraints.
-    void checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
+    /// `after_reset` holds the values the resets land on, which `compatibility` may have derived.
+    void checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const;
 
     /// Clamping counterpart of `checkResetToDefault`, for a reset crossing an execution context (a nested
     /// `SETTINGS name = DEFAULT`), where a violation must not throw. `names` is reduced to the resets that

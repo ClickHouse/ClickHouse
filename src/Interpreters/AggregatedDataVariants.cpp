@@ -126,7 +126,7 @@ bool AggregatedDataVariants::topKHeapInactive() const
 
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
-            return (NAME)->top_k_heap.frozen || (NAME)->top_k_heap.shouldFreeze();
+            return (NAME)->top_k_heap.willBeInactive();
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }

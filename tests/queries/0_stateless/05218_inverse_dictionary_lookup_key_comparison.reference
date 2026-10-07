@@ -1,0 +1,15 @@
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(__table1.k, _CAST(3, \'UInt16\'))
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(__table1.narrow, _CAST((3, \'a\'), \'Tuple(UInt16, String)\'))
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(__table1.w, _CAST(3, \'UInt64\'))
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(dictGet(\'default.comparison_single\', \'attr\', tuple(__table1.w)), \'other\')
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(dictGet(\'default.comparison_first\', \'attr\', tuple(__table1.w, __table1.s)), \'other\')
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(dictGet(\'default.comparison_first\', \'attr\', __table1.wide), \'other\')
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(dictGet(\'default.comparison_second\', \'attr\', tuple(__table1.s, __table1.w)), \'other\')
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(dictGet(\'default.comparison_second\', \'attr\', __table1.reversed), \'other\')
+SELECT __table1.k AS k\nFROM default.comparison_probes AS __table1\nWHERE equals(dictGet(\'default.comparison_simple\', \'attr\', toString(__table1.k)), \'other\')
+1	1	1	1	1	1	1	1
+2	1	1	1	1	1	1	1
+4	0	0	0	0	0	0	0
+1	1	1	1	1	1	1	1
+2	1	1	1	1	1	1	1
+4	0	0	0	0	0	0	0
