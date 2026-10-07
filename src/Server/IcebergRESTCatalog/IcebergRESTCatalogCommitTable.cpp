@@ -5,8 +5,11 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogWarehouse.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
@@ -42,7 +45,7 @@ using RequirementCheck = std::function<std::expected<void, String>(const Poco::J
 /// Verify table does not yet exist.
 std::expected<void, String> checkCreate(const Poco::JSON::Object &, const Poco::JSON::Object &)
 {
-    /// Stage-create is not supported, so the table always exists at this point.
+    /// `handleUpdateTable` checks requirements only against an existing table.
     return std::unexpected("Table already exists");
 }
 
@@ -106,6 +109,21 @@ const std::unordered_map<String, RequirementCheck> REQUIREMENT_CHECKS = {
      [](const auto & metadata, const auto & requirement) { return checkInteger(metadata, requirement, "default-sort-order-id", f_default_sort_order_id); }},
 };
 
+}
+
+bool isCreateCommit(const Poco::JSON::Array & requirements)
+{
+    size_t assert_create_count = 0;
+    for (const auto & requirement : requirements)
+    {
+        if (requirement.type() != typeid(Poco::JSON::Object::Ptr))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every requirement must be an object");
+        if (getString(*requirement.extract<Poco::JSON::Object::Ptr>(), f_type) == "assert-create")
+            ++assert_create_count;
+    }
+    if (assert_create_count && assert_create_count != requirements.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A create commit cannot have requirements other than 'assert-create'");
+    return assert_create_count;
 }
 
 std::expected<void, String> checkTableRequirements(const Poco::JSON::Object & metadata, const Poco::JSON::Array & requirements)
@@ -307,22 +325,18 @@ void appendMetadataLog(Poco::JSON::Object & metadata, const String & previous_me
         LOG_TRACE(getLogger("IcebergRESTCatalogCommitTable"), "Removed {} oldest entries from metadata-log, keeping {}", removed, max_entries);
 }
 
+Poco::JSON::Object::Ptr getUpdateObject(const Poco::Dynamic::Var & update)
+{
+    if (update.type() != typeid(Poco::JSON::Object::Ptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every update must be an object");
+    return update.extract<Poco::JSON::Object::Ptr>();
 }
 
-void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Array & updates, const String & current_metadata_location)
+void applyUpdates(Poco::JSON::Object & metadata, const Poco::JSON::Array & updates)
 {
-    /// Read before the updates, which change the metadata in place.
-    const auto previous_last_updated_ms = getInteger(metadata, f_last_updated_ms);
-    const auto previous_current_snapshot_id = getInteger(metadata, f_current_snapshot_id);
-    /// The commit time. Never earlier than the previous commit, because clocks differ between catalog servers.
-    metadata.set(f_last_updated_ms, std::max(nowMs(), previous_last_updated_ms + 1));
-
     for (const auto & update : updates)
     {
-        /// Get update action.
-        if (update.type() != typeid(Poco::JSON::Object::Ptr))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Every update must be an object");
-        const auto & update_object = update.extract<Poco::JSON::Object::Ptr>();
+        const auto update_object = getUpdateObject(update);
 
         /// Validate action is supported.
         const auto action = getString(*update_object, "action");
@@ -337,9 +351,96 @@ void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Ar
         /// Apply update.
         it->second(metadata, *update_object);
     }
+}
+
+void checkSetsMostRecent(const Poco::JSON::Object & update, const String & key)
+{
+    /// A create commit sends `add-schema`, then `set-current-schema` with `schema-id: -1`. `-1` means the schema added in this commit.
+    /// `buildInitialTableMetadata` already makes the added schema, spec and sort order current. So `-1` is the only value this accepts.
+    if (getInteger(update, key) != -1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "In a create commit, '{}' must be -1", key);
+}
+
+void setOnce(Poco::JSON::Object::Ptr & target, Poco::JSON::Object::Ptr value, const String & action)
+{
+    if (target)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "A create commit with more than one '{}' is not supported", action);
+    target = std::move(value);
+}
+
+}
+
+void applyTableUpdatesToJSON(Poco::JSON::Object & metadata, const Poco::JSON::Array & updates, const String & current_metadata_location)
+{
+    /// Read before the updates, which change the metadata in place.
+    const auto previous_last_updated_ms = getInteger(metadata, f_last_updated_ms);
+    const auto previous_current_snapshot_id = getInteger(metadata, f_current_snapshot_id);
+    /// The commit time. Never earlier than the previous commit, because clocks differ between catalog servers.
+    metadata.set(f_last_updated_ms, std::max(nowMs(), previous_last_updated_ms + 1));
+
+    applyUpdates(metadata, updates);
 
     appendSnapshotLog(metadata, previous_current_snapshot_id);
     appendMetadataLog(metadata, current_metadata_location, previous_last_updated_ms);
+}
+
+Poco::JSON::Object::Ptr buildMetadataFromStagedCreateCommit(const Poco::JSON::Array & updates)
+{
+    String uuid;
+    String location;
+    Poco::JSON::Object::Ptr schema;
+    Poco::JSON::Object::Ptr partition_spec;
+    Poco::JSON::Object::Ptr write_order;
+    Poco::JSON::Array other_updates;
+
+    /// Collect the updates that describe the table.
+    for (const auto & update : updates)
+    {
+        const auto update_object = getUpdateObject(update);
+        const auto action = getString(*update_object, "action");
+        if (action == "assign-uuid")
+        {
+            uuid = getString(*update_object, f_uuid);
+            UUID parsed;
+            if (!tryParse(parsed, uuid))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'{}' is not a valid uuid", uuid);
+            uuid = toString(parsed);
+        }
+        else if (action == "upgrade-format-version")
+        {
+            /// TODO: support format version 3.
+            const auto format_version = getInteger(*update_object, f_format_version);
+            if (format_version != 2)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only format-version 2 is supported, got {}", format_version);
+        }
+        else if (action == "add-schema")
+            setOnce(schema, getObject(*update_object, "schema"), action);
+        else if (action == "add-spec")
+            setOnce(partition_spec, getObject(*update_object, "spec"), action);
+        else if (action == "add-sort-order")
+            setOnce(write_order, getObject(*update_object, "sort-order"), action);
+        else if (action == "set-current-schema")
+            checkSetsMostRecent(*update_object, f_schema_id);
+        else if (action == "set-default-spec")
+            checkSetsMostRecent(*update_object, f_spec_id);
+        else if (action == "set-default-sort-order")
+            checkSetsMostRecent(*update_object, "sort-order-id");
+        else if (action == "set-location")
+            location = stripTrailingSlashes(getString(*update_object, f_location));
+        else
+            other_updates.add(update);
+    }
+
+    if (uuid.empty() || location.empty() || !schema)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "A create commit must assign a uuid, set a location and add a schema");
+
+    /// Partition field ids start at 1000 again, as in the staged response. So the client and the catalog agree on them.
+    auto metadata = buildInitialTableMetadata(uuid, location, schema, partition_spec, write_order, /*properties*/ {});
+    applyUpdates(*metadata, other_updates);
+    /// The commit may also write data and move `main` to a new snapshot. Record that in `snapshot-log`.
+    /// Before the commit, the table had no snapshot, so the previous snapshot id is `-1`.
+    appendSnapshotLog(*metadata, -1);
+    return metadata;
 }
 
 String nextMetadataLocation(
