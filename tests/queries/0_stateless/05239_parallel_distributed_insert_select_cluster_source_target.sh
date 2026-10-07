@@ -52,9 +52,11 @@ for target in dst_plain dst_view al al_bare; do
     SETTINGS parallel_distributed_insert_select = 2, enable_analyzer = 1, log_comment = '05239_${target}'"
 done
 
+# One insert stream: each parallel Iceberg sink commits on its own, and a commit that loses the race to
+# a sibling sink is logged as an error before it is retried.
 ${CLICKHOUSE_CLIENT} -q "
 INSERT INTO dst_iceberg SELECT k FROM ${SRC}
-SETTINGS parallel_distributed_insert_select = 2, enable_analyzer = 1,
+SETTINGS parallel_distributed_insert_select = 2, enable_analyzer = 1, max_insert_threads = 1,
     allow_experimental_insert_into_iceberg = 1, log_comment = '05239_dst_iceberg'"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
