@@ -2,7 +2,9 @@
 
 #if USE_LANCE
 
+#include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceScanDescription.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceWrapper.h>
@@ -51,6 +53,11 @@ extern const int MEMORY_LIMIT_EXCEEDED;
 extern const int QUERY_WAS_CANCELLED;
 extern const int S3_ERROR;
 extern const int UNKNOWN_EXCEPTION;
+}
+
+namespace Setting
+{
+extern const SettingsUInt64 lance_runtime_threads;
 }
 }
 
@@ -213,6 +220,19 @@ void ensureRuntime(UInt32 worker_threads)
         throwLanceError(error, "Cannot initialize Lance runtime");
 }
 
+UInt32 runtimeThreadsFromSettings(const Settings & settings)
+{
+    const UInt64 threads = settings[Setting::lance_runtime_threads];
+    if (threads > std::numeric_limits<UInt32>::max())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting lance_runtime_threads is too large: {}", threads);
+    return static_cast<UInt32>(threads);
+}
+
+void ensureRuntime(const Settings & settings)
+{
+    ensureRuntime(runtimeThreadsFromSettings(settings));
+}
+
 RuntimeStats runtimeStats()
 {
     ch_lance_runtime_stats stats{};
@@ -280,7 +300,14 @@ DatasetHandle DatasetHandle::open(const DatasetOptions & options, const CancelHa
 
 DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options, const CancelHandlePtr & cancel)
 {
-    ensureRuntime();
+    /// Paths without a query context (`ATTACH`, background metadata reload) may be the first to
+    /// initialize the process-wide runtime, so size it by the server default profile rather than
+    /// by the automatic default, which would make `lance_runtime_threads` ineffective afterwards.
+    /// Query paths already initialized it from the query settings in `QuerySession::get`.
+    if (auto global_context = Context::getGlobalContextInstance())
+        ensureRuntime(global_context->getSettingsRef());
+    else
+        ensureRuntime();
 
     const auto before_init = runtimeStats().runtime_initialized;
 

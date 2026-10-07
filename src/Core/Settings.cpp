@@ -6639,7 +6639,8 @@ Lance and ClickHouse evaluates the complete residual filter.
         {"26.10", false, true, "New setting to disable Lance predicate pushdown while retaining the complete ClickHouse filter."}) \
     DECLARE(UInt64, lance_runtime_threads, 0, R"(
 Number of worker threads for the process-wide Lance Tokio runtime. 0 means an automatic bounded default
-(at most 8). Only the first initialization is effective.
+(at most 8). Only the first initialization is effective. Operations without a query context, such as `ATTACH`
+of a `Lance` table, use the value from the default settings profile.
 )", 0, \
         {"26.10", 0, 0, "New setting for the process-wide Lance Tokio runtime worker thread count (0 = automatic bounded default)."}) \
     DECLARE(Bool, lance_scan_in_order, false, R"(

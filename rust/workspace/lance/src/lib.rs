@@ -35,8 +35,9 @@ compile_error!(
 
 /// Process-wide multi-thread Tokio runtime shared by all Lance FFI calls.
 static LANCE_RUNTIME: OnceLock<Runtime> = OnceLock::new();
-/// Worker threads requested before first init; 0 means automatic bounded default.
-static LANCE_RUNTIME_WORKER_THREADS: AtomicU32 = AtomicU32::new(0);
+/// Serializes the first initialization of `LANCE_RUNTIME`, so the configuration of the call that
+/// builds the runtime is the one it is built with.
+static LANCE_RUNTIME_INIT_LOCK: Mutex<()> = Mutex::new(());
 static LANCE_RUNTIME_INITIALIZED: AtomicU64 = AtomicU64::new(0);
 static LANCE_OPEN_DATASET_CALLS: AtomicU64 = AtomicU64::new(0);
 static LANCE_PLAN_SCAN_CALLS: AtomicU64 = AtomicU64::new(0);
@@ -68,33 +69,32 @@ fn build_lance_runtime(worker_threads: usize) -> Result<Runtime, String> {
 }
 
 fn ensure_lance_runtime() -> Result<&'static Runtime, FfiError> {
+    ensure_lance_runtime_with(0)
+}
+
+/// Returns the runtime, building it with `configured` worker threads (0 means the automatic
+/// bounded default) if it does not exist yet. The first successful call wins.
+fn ensure_lance_runtime_with(configured: u32) -> Result<&'static Runtime, FfiError> {
     if let Some(runtime) = LANCE_RUNTIME.get() {
         return Ok(runtime);
     }
 
-    let configured = LANCE_RUNTIME_WORKER_THREADS.load(Ordering::Acquire);
-    let worker_threads = resolve_worker_threads(configured);
-    match build_lance_runtime(worker_threads) {
-        Ok(runtime) => match LANCE_RUNTIME.set(runtime) {
-            Ok(()) => {
-                LANCE_RUNTIME_INITIALIZED.fetch_add(1, Ordering::Relaxed);
-                Ok(LANCE_RUNTIME
-                    .get()
-                    .expect("Lance runtime must be initialized after successful set"))
-            }
-            Err(_) => Ok(LANCE_RUNTIME
-                .get()
-                .expect("Lance runtime must be initialized after concurrent set")),
-        },
-        Err(message) => {
-            // Another thread may have succeeded while we failed to build.
-            if let Some(runtime) = LANCE_RUNTIME.get() {
-                Ok(runtime)
-            } else {
-                Err(FfiError::internal(ChLanceErrorOrigin::Unknown, message))
-            }
-        }
+    let _guard = LANCE_RUNTIME_INIT_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(runtime) = LANCE_RUNTIME.get() {
+        return Ok(runtime);
     }
+
+    let runtime = build_lance_runtime(resolve_worker_threads(configured))
+        .map_err(|message| FfiError::internal(ChLanceErrorOrigin::Unknown, message))?;
+    if LANCE_RUNTIME.set(runtime).is_err() {
+        unreachable!("Lance runtime is only initialized under LANCE_RUNTIME_INIT_LOCK");
+    }
+    LANCE_RUNTIME_INITIALIZED.fetch_add(1, Ordering::Relaxed);
+    Ok(LANCE_RUNTIME
+        .get()
+        .expect("Lance runtime must be initialized after successful set"))
 }
 
 fn block_on_lance<F>(future: F) -> Result<F::Output, FfiError>
@@ -1681,11 +1681,12 @@ unsafe fn ch_lance_runtime_ensure_impl(
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
-    if !config.is_null() && LANCE_RUNTIME.get().is_none() {
-        let worker_threads = (*config).worker_threads;
-        LANCE_RUNTIME_WORKER_THREADS.store(worker_threads, Ordering::Release);
-    }
-    match ensure_lance_runtime() {
+    let configured = if config.is_null() {
+        0
+    } else {
+        (*config).worker_threads
+    };
+    match ensure_lance_runtime_with(configured) {
         Ok(_) => true,
         Err(ffi_error) => {
             set_error(error, ffi_error);

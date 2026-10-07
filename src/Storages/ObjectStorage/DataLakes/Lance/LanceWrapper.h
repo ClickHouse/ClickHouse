@@ -17,6 +17,7 @@
 namespace DB
 {
 struct FormatSettings;
+struct Settings;
 }
 
 namespace arrow
@@ -204,6 +205,12 @@ private:
 };
 
 void ensureRuntime(UInt32 worker_threads = 0);
+
+/// Validated value of the `lance_runtime_threads` setting.
+UInt32 runtimeThreadsFromSettings(const Settings & settings);
+
+/// Ensure the runtime exists, sized by `lance_runtime_threads` from the given query settings.
+void ensureRuntime(const Settings & settings);
 
 struct RuntimeStats
 {

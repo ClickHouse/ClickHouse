@@ -24,7 +24,6 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool lance_query_dataset_reuse;
-extern const SettingsUInt64 lance_runtime_threads;
 }
 }
 
@@ -83,8 +82,7 @@ std::shared_ptr<QuerySession> QuerySession::get(const ContextPtr & context)
     {
         auto session = std::make_shared<QuerySession>();
         /// Apply runtime setting on first session attach for this query.
-        const auto threads = static_cast<UInt32>(context->getSettingsRef()[Setting::lance_runtime_threads]);
-        ensureRuntime(threads);
+        ensureRuntime(context->getSettingsRef());
         session->setReuseEnabled(context->getSettingsRef()[Setting::lance_query_dataset_reuse]);
         session->bindToQueryCancellation(query_context);
         holder = session;
