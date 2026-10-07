@@ -216,7 +216,7 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
-    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
     extern const SettingsString logsql_table;
     extern const SettingsString logsql_time_column;
@@ -2472,7 +2472,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::logsql_message_column],
                 begin,
                 end,
-                settings[Setting::allow_experimental_logsql_dialect],
+                settings[Setting::enable_logsql_dialect],
                 settings[Setting::max_parser_depth],
                 max_query_size);
             out_ast = parseLogsQLQuery(parser, begin, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);

@@ -245,8 +245,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool replicated_can_become_leader;
     extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
     extern const MergeTreeSettingsFloat replicated_max_ratio_of_wrong_parts;
-    extern const MergeTreeSettingsBool use_minimalistic_checksums_in_zookeeper;
-    extern const MergeTreeSettingsBool use_minimalistic_part_header_in_zookeeper;
     extern const MergeTreeSettingsMilliseconds wait_for_unique_parts_send_before_shutdown_ms;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsNonZeroUInt64 clone_replica_zookeeper_create_get_part_batch_size;
@@ -1560,7 +1558,7 @@ void StorageReplicatedMergeTree::drop()
                 LOG_INFO(log, "Dropping table with non-zero lost_part_count equal to {}", lost_part_count);
         }
 
-        bool last_replica_dropped = dropReplica(zookeeper, zookeeper_info, log.load(), getSettings(), &has_metadata_in_zookeeper);
+        bool last_replica_dropped = dropReplica(zookeeper, zookeeper_info, log.load(), &has_metadata_in_zookeeper);
         if (last_replica_dropped)
         {
             dropZookeeperZeroCopyLockPaths(zookeeper, zero_copy_locks_paths, log.load());
@@ -1571,7 +1569,7 @@ void StorageReplicatedMergeTree::drop()
 
 bool StorageReplicatedMergeTree::dropReplica(
     zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, LoggerPtr logger,
-    MergeTreeSettingsPtr table_settings, std::optional<bool> * has_metadata_out)
+    std::optional<bool> * has_metadata_out)
 {
     if (zookeeper->expired())
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table was not dropped because ZooKeeper session has expired.");
@@ -1599,9 +1597,7 @@ bool StorageReplicatedMergeTree::dropReplica(
         chassert(code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE);
 
         /// Then try to remove paths that are known to be flat (all children are leafs)
-        Strings flat_nodes = {"flags", "queue"};
-        if (table_settings && (*table_settings)[MergeTreeSetting::use_minimalistic_part_header_in_zookeeper])
-            flat_nodes.emplace_back("parts");
+        Strings flat_nodes = {"flags", "queue", "parts"};
         for (const auto & node : flat_nodes)
         {
             bool removed_quickly = zookeeper->tryRemoveChildrenRecursive(fs::path(remote_replica_path) / node, /* probably flat */ true);
@@ -2344,23 +2340,8 @@ bool StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(
 
     if (!part_exists_on_our_replica)
     {
-        const auto storage_settings_ptr = getSettings();
         String part_path = fs::path(replica_path) / "parts" / part_name;
-
-        if ((*storage_settings_ptr)[MergeTreeSetting::use_minimalistic_part_header_in_zookeeper])
-        {
-            ops.emplace_back(zkutil::makeCreateRequest(
-                part_path, local_part_header.toString(), zkutil::CreateMode::Persistent));
-        }
-        else
-        {
-            ops.emplace_back(zkutil::makeCreateRequest(
-                part_path, "", zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(
-                fs::path(part_path) / "columns", part->getColumns().toString(), zkutil::CreateMode::Persistent));
-            ops.emplace_back(zkutil::makeCreateRequest(
-                fs::path(part_path) / "checksums", getChecksumsForZooKeeper(part->checksums), zkutil::CreateMode::Persistent));
-        }
+        ops.emplace_back(zkutil::makeCreateRequest(part_path, local_part_header.toString(), zkutil::CreateMode::Persistent));
     }
     else
     {
@@ -2463,12 +2444,6 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
 
         throw zkutil::KeeperMultiException(e, ops, responses);
     }
-}
-
-String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const
-{
-    return MinimalisticDataPartChecksums::getSerializedString(checksums,
-        (*getSettings())[MergeTreeSetting::use_minimalistic_checksums_in_zookeeper]);
 }
 
 MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry, PartsTemporaryRename & rename_parts) const
@@ -9454,7 +9429,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
         if (replace)
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Only support DROP/DETACH/ATTACH PARTITION ALL currently");
 
+        /// Patch parts cannot be copied to another table. Partitions with unapplied patches are rejected by `replacePartitionFromImpl`.
         partitions = src_data.getAllPartitionIds();
+        std::erase_if(partitions, isPatchPartitionId);
     }
     else
     {
@@ -10220,7 +10197,6 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     const std::vector<String> & block_id_paths) const
 {
     const String & part_name = part->name;
-    const auto storage_settings_ptr = getSettings();
     for (const String & block_id_path : block_id_paths)
     {
         /// Make final duplicate check and commit block_id
@@ -10232,28 +10208,10 @@ void StorageReplicatedMergeTree::getCommitPartOps(
     }
 
     /// Information about the part, in the replica
-    if ((*storage_settings_ptr)[MergeTreeSetting::use_minimalistic_part_header_in_zookeeper])
-    {
-        ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "parts" / part->name,
-            ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums).toString(),
-            zkutil::CreateMode::Persistent));
-    }
-    else
-    {
-        ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "parts" / part->name,
-            "",
-            zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "parts" / part->name / "columns",
-            part->getColumns().toString(),
-            zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(
-            fs::path(replica_path) / "parts" / part->name / "checksums",
-            getChecksumsForZooKeeper(part->checksums),
-            zkutil::CreateMode::Persistent));
-    }
+    ops.emplace_back(zkutil::makeCreateRequest(
+        fs::path(replica_path) / "parts" / part->name,
+        ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(part->getColumns(), part->checksums).toString(),
+        zkutil::CreateMode::Persistent));
 }
 
 ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAddress() const

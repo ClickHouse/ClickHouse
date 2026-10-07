@@ -417,6 +417,26 @@ void UnityV2Catalog::createTable(
     }
 }
 
+std::optional<std::string> UnityV2Catalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    checkNamespaceExists(namespace_name);
+
+    auto json = getJSONRequest(std::filesystem::path{SCHEMAS_ENDPOINT} / fmt::format("{}.{}", warehouse, namespace_name)).first;
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    /// Only Unity on Databricks reports a location for a schema; the open-source server does not,
+    /// and then the table engine arguments have to name the location explicitly.
+    if (!hasValueAndItsNotNone("storage_location", object))
+    {
+        LOG_DEBUG(log, "Schema {}.{} has no storage location", warehouse, namespace_name);
+        return std::nullopt;
+    }
+
+    return std::string(std::filesystem::path(object->get("storage_location").extract<String>()) / table_name);
+}
+
 void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     checkNamespaceExists(namespace_name);
@@ -445,6 +465,20 @@ bool UnityV2Catalog::updateSchema(
     return requestWithRetry([&](bool force_refresh)
     {
         return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+    });
+}
+
+Poco::JSON::Object::Ptr UnityV2Catalog::removeSnapshots(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const std::vector<Int64> & snapshot_ids,
+    const std::vector<String> & ref_names) const
+{
+    /// `nullptr` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
+    return requestWithRetry([&](bool force_refresh)
+    {
+        return getIcebergRestCatalog(force_refresh)->removeSnapshots(namespace_name, table_name, base_metadata, snapshot_ids, ref_names);
     });
 }
 
