@@ -144,6 +144,10 @@ public:
     bool isReadOnly() const override { return true; }
     void shutdown() override {}
 
+    /// The tables belong to the source databases, so there is nothing to detach here. Opting out also
+    /// keeps the randomized `DETACH`/`ATTACH` hook from probing the source databases (possibly remote).
+    bool supportsDetachingTables() const override { return false; }
+
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
 protected:
