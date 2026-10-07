@@ -1430,6 +1430,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
+    /// Table aliases are single-part names, so a compound table identifier can only be `database.table`.
+    if (identifier_lookup.isTableExpressionLookup() && identifier_lookup.identifier.isCompound())
+        return {};
+
     auto * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
     if (it == nullptr)
         return {};
@@ -1557,13 +1561,12 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
             }
             return {};
         }
-        if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
+        if (identifier_lookup.isFunctionLookup())
         {
             throw Exception(
                 ErrorCodes::UNKNOWN_IDENTIFIER,
-                "Compound identifier '{}' cannot be resolved as {}. In scope {}",
+                "Compound identifier '{}' cannot be resolved as function. In scope {}",
                 identifier_lookup.identifier.getFullName(),
-                identifier_lookup.isFunctionLookup() ? "function" : "table expression",
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
