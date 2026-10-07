@@ -327,8 +327,7 @@ void WindowTransform::computeReadyRows()
         // which is precisely the definition of the known end of the partition.
         while (current.location < partition_end)
         {
-            // We now know that the current row is valid, so its indexes and its peer group start can be settled.
-            current.row_index_in_partition = partition.rowIndex(blocks, current.location);
+            // We now know that the current row is valid, so its peer group can be settled.
             current.peer_group_index_in_partition = partition.peerGroupIndex(blocks, current.location);
             if (current.peer_group_index_in_partition != peer_group_start.peer_group_index_in_partition)
                 peer_group_start = current;
@@ -380,6 +379,7 @@ void WindowTransform::computeReadyRows()
             // The peer group start is updated at the beginning of the loop,
             // because the current row might now be past-the-end.
             current.location = blocks.next(current.location);
+            ++current.row_index_in_partition;
         }
 
         if (input_is_finished)
