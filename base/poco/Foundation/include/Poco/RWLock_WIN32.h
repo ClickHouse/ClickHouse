@@ -40,7 +40,6 @@ protected:
 private:
 	void addWriter();
 	void removeWriter();
-	DWORD tryReadLockOnce();
 
 	HANDLE   _mutex;
 	HANDLE   _readEvent;
