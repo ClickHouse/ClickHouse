@@ -7,8 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
-#include <Common/UniversalHash128.h>
-#include <Common/thread_local_rng.h>
+#include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -261,7 +260,6 @@ public:
         : partition_bits(partition_bits_)
         , num_partitions(1ULL << partition_bits_)
         , streams(num_streams_)
-        , string_hash(randomKey())
         , stats_collecting_params(stats_collecting_params_)
         , hint(hint_)
     {
@@ -777,25 +775,9 @@ private:
         chain.num_distinct = chain.size;
     }
 
-    /// The key of the hash of strings is random, so that the strings cannot be chosen to collide. The keys never
-    /// leave the query, so they may differ between the queries. Any fixed key has colliding strings, and every key
-    /// is as likely as any other, but with the key 1 the hash is just the XOR of the blocks, so 0 and 1 are skipped.
-    static UInt128 randomKey()
-    {
-        UInt128 key = 0;
-        while (key == 0 || key == 1)
-            key = (UInt128(thread_local_rng()) << 64) | thread_local_rng();
-        return key;
-    }
-
-    /// The hash of the strings, mixed so that the bits of both halves are uniformly distributed, because the partition
-    /// and the slot are selected by them.
-    ALWAYS_INLINE UInt128 stringKey(const char * data, size_t size) const { return mixKey(string_hash.hash(data, size)); }
-
     const size_t partition_bits;
     const size_t num_partitions;
     std::vector<Stream> streams;
-    const UniversalHash128 string_hash;
 
     const StatsCollectingParams stats_collecting_params;
     const std::optional<RadixUniqExactEntry> hint;
@@ -831,8 +813,8 @@ void RadixUniqExactState<UInt64>::route(size_t stream, const IColumn & column, c
     routeFixed<UInt64, UInt64>(*this, stream, column, null_map);
 }
 
-/// Strings and `IPv6` are represented by their 128-bit `UniversalHash128` with a random key, and other 16-byte values by
-/// a bijection of themselves. Consecutive duplicates are compared by their bytes before they are hashed.
+/// Strings and `IPv6` are represented by their 128-bit `SipHash`, the same key as in `uniqExact`, and other 16-byte
+/// values by a bijection of themselves. Consecutive duplicates are compared by their bytes before they are hashed.
 template <>
 void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, const UInt8 * null_map)
 {
@@ -851,7 +833,7 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
             {
                 const size_t size = size_of(row);
                 routed_empty_string |= size == 0;
-                return stringKey(chars + start_of(row), size);
+                return sipHash128Padded(chars + start_of(row), size);
             },
             [&](size_t lhs, size_t rhs)
             {
@@ -867,7 +849,7 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         const size_t n = column_fixed_string->getN();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return stringKey(chars + row * n, n); },
+            [&](size_t row) { return sipHash128Padded(chars + row * n, n); },
             [&](size_t lhs, size_t rhs) { return memcmp(chars + lhs * n, chars + rhs * n, n) == 0; });
     }
     else if (const auto * column_ipv6 = typeid_cast<const ColumnIPv6 *>(&column))
@@ -875,7 +857,7 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
         const auto & data = column_ipv6->getData();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return stringKey(reinterpret_cast<const char *>(&data[row]), sizeof(IPv6)); },
+            [&](size_t row) { return sipHash128Padded(reinterpret_cast<const char *>(&data[row]), sizeof(IPv6)); },
             [&](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; });
     }
     else if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() == sizeof(UInt128))
