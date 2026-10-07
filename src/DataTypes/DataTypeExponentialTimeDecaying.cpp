@@ -1350,6 +1350,9 @@ ordered `UInt64` key. Curves mapping to the same key compare equal and have the 
 authoritative key plus `(value, timestamp)` as non-identity display metadata. Key-only operations
 such as `GROUP BY` or `DISTINCT` may choose any metadata representative for equal keys.
 Compact values print as `(-1/0/+1, unit_timestamp, decay_length)`.
+If the derived unit timestamp exceeds the finite `Float64` range, it is clamped to the
+nearest finite boundary before encoding. The key discards one sortable timestamp bit,
+so the decoded positive boundary is the `Float64` immediately below the largest finite value.
 )",
         .syntax = "ExponentialTimeDecaying64(decay_length[, mode])",
         .examples = {},

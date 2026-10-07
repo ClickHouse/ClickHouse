@@ -66,14 +66,31 @@ SELECT
         = exponentialTimeDecayingValueAt(current_value, toFloat64(0)),
     round(exponentialTimeDecayingValueAt(combined, toFloat64(1)), 6);
 
--- Finite inputs must not manufacture a non-finite ExponentialTimeDecaying64 curve.
--- This covers a derived unit timestamp overflow, arithmetic overflow, and
--- aggregate finalization overflow.
-SELECT exponentialTimeDecaying(1e308)(1e308, toFloat64(0)); -- { serverError BAD_ARGUMENTS }
+-- Clamp a derived unit timestamp outside the finite `Float64` range.
+-- The 64-bit key discards the low sortable timestamp bit, so the positive
+-- boundary decodes to the `Float64` immediately below the largest finite value.
+WITH
+    exponentialTimeDecaying(1e308)(1e308, toFloat64(0)) AS upper_curve,
+    exponentialTimeDecaying(1e308)(1e-308, toFloat64(0)) AS lower_curve
+SELECT
+    exponentialTimeDecayingUnitTime(upper_curve) = toFloat64('1.7976931348623155e308'),
+    exponentialTimeDecayingUnitTime(lower_curve) = -toFloat64('1.7976931348623157e308'),
+    exponentialTimeDecayingValueAtUnitTime(upper_curve) = 1,
+    exponentialTimeDecayingValueAtUnitTime(lower_curve) = 1;
 
-WITH exponentialTimeDecaying(1)(1e308, toFloat64(0)) AS value
-SELECT value + value; -- { serverError BAD_ARGUMENTS }
+-- Addition remains valid when the resulting curve has a finite key, even if
+-- evaluating it at the original input timestamp overflows `Float64`.
+WITH
+    exponentialTimeDecaying(1)(1e308, toFloat64(0)) AS value,
+    value + value AS combined
+SELECT
+    combined > value,
+    isFinite(exponentialTimeDecayingUnitTime(combined)),
+    round(exponentialTimeDecayingValueAtUnitTime(combined), 10) = 1,
+    round(exponentialTimeDecayingValueAt(combined, exponentialTimeDecayingUnitTime(value)), 10) = 2,
+    isInfinite(exponentialTimeDecayingValueAt(combined, toFloat64(0)));
 
+-- Raw numeric aggregate finalization still rejects `Float64` overflow.
 SELECT exponentialTimeDecayedSum(1)(value, time)
 FROM VALUES('value Float64, time Float64', (1e308, 0), (1e308, 0)); -- { serverError BAD_ARGUMENTS }
 
