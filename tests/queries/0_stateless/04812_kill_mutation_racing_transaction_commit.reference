@@ -15,3 +15,9 @@ kill_status	cant_cancel
 mutation_entry_kept_after_stale_read	1
 data_after_commit_arm3	1	101
 server_alive_after_arm3	1
+--- arm 4: commit finalized later by the updating thread, kill must refuse
+kill_status	cant_cancel
+mutation_entry_kept_during_deferred_finalization	1
+commit_finalization_deferred	1
+data_after_commit_arm4	1	101
+server_alive_after_arm4	1

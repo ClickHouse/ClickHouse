@@ -17,6 +17,8 @@
 # Arm 3 interleaves the two: the killer is parked after resolving the transaction and before its
 # claim, and the commit passes its commit point while the killer waits. Only claiming through the
 # CAS refuses here; reading the CSN and then erasing is a TOCTOU that aborts the server.
+# Arm 4 loses the Keeper response of the commit, so `runUpdatingThread` finalizes it later; the
+# kill lands while that finalization is parked before the mutation-CSN loop and must also refuse.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,6 +32,7 @@ trap '
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_commit_pause_before_mutation_csn" 2>/dev/null || true
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_commit_pause_before_csn_cas" 2>/dev/null || true
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT kill_mutation_pause_after_transaction_resolve" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_force_unknown_state_after_commit" 2>/dev/null || true
 ' EXIT
 
 echo '--- arm 1: commit past its commit point, kill must refuse'
@@ -186,4 +189,54 @@ tx_wait 3
 $CLICKHOUSE_CLIENT -q "SELECT 'data_after_commit_arm3', n, v FROM t_kill_race_3 ORDER BY n"
 $CLICKHOUSE_CLIENT -q "SELECT 'server_alive_after_arm3', 1"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_kill_race; DROP TABLE t_kill_race_2; DROP TABLE t_kill_race_3"
+echo '--- arm 4: commit finalized later by the updating thread, kill must refuse'
+
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_kill_race_4;
+    CREATE TABLE t_kill_race_4 (n Int64, v Int64) ENGINE = MergeTree ORDER BY n;
+    INSERT INTO t_kill_race_4 VALUES (1, 1);
+"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT transaction_force_unknown_state_after_commit"
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT transaction_commit_pause_before_mutation_csn"
+
+tx_async 4 "BEGIN TRANSACTION"
+tx_async 4 "ALTER TABLE t_kill_race_4 UPDATE v = v + 100 WHERE 1"
+tx_async 4 "COMMIT"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT transaction_commit_pause_before_mutation_csn PAUSE"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_force_unknown_state_after_commit"
+
+MUTATION_ID_4=$($CLICKHOUSE_CLIENT -q "
+    SELECT mutation_id FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_kill_race_4'
+    ORDER BY mutation_id LIMIT 1
+")
+
+$CLICKHOUSE_CLIENT -q "
+    KILL MUTATION WHERE database = currentDatabase() AND table = 't_kill_race_4'
+        AND mutation_id = '$MUTATION_ID_4'
+" | awk '{print "kill_status\t" $1}'
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'mutation_entry_kept_during_deferred_finalization', count()
+    FROM system.mutations
+    WHERE database = currentDatabase() AND table = 't_kill_race_4' AND mutation_id = '$MUTATION_ID_4'
+"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT transaction_commit_pause_before_mutation_csn"
+tx_wait 4
+
+# Pins the route: the commit's own query logged that its finalization was deferred.
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS text_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'commit_finalization_deferred', count() > 0
+    FROM system.text_log
+    WHERE event_date >= yesterday()
+        AND startsWith(query_id, '${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx4_')
+        AND message LIKE 'Connection lost on attempt to commit transaction%will finalize it later%'
+"
+
+$CLICKHOUSE_CLIENT -q "SELECT 'data_after_commit_arm4', n, v FROM t_kill_race_4 ORDER BY n"
+$CLICKHOUSE_CLIENT -q "SELECT 'server_alive_after_arm4', 1"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_kill_race; DROP TABLE t_kill_race_2; DROP TABLE t_kill_race_3; DROP TABLE t_kill_race_4"
