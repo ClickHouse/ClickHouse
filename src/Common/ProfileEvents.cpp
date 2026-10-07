@@ -171,10 +171,11 @@
     M(TextIndexLazySegmentsBuilt, "Number of segments actually read and decoded (cache misses) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.", ValueType::Number) \
+    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.", ValueType::Number) \
     M(TextIndexLazySegmentsSkippedDense, "Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedDense, "Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
     M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
@@ -183,9 +184,13 @@
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(EncryptionHeaderCacheHits, "Number of times encryption header bytes were found in the encryption header cache, so the source read of the header was skipped.", ValueType::Number) \
     M(EncryptionHeaderCacheMisses, "Number of times encryption header bytes were not found in the encryption header cache, so they were read from the source.", ValueType::Number) \
-    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.", ValueType::Number) \
+    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Counts the query cache as a whole: a miss in memory followed by a hit in the query cache on disk is one hit. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Counts the query cache as a whole: a query is a miss only if it was found in neither the in-memory nor the on-disk backend. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskHits, "Number of times a query result has been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheHits. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskMisses, "Number of times a query result has not been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheMisses. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskReadBytes, "Number of serialized (compressed) bytes read from the query cache on disk.", ValueType::Bytes) \
+    M(QueryCacheOnDiskWrittenBytes, "Number of serialized (compressed) bytes written into the query cache on disk.", ValueType::Bytes) \
+    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. Only updated for hits, of both the in-memory and the on-disk backend of the query cache.", ValueType::Number) \
     M(QueryCacheReadRows, "The number of rows read from the query cache.", ValueType::Number) \
     M(QueryCacheReadBytes, "The number of (uncompressed) bytes read from the query cache.", ValueType::Bytes) \
     M(QueryCacheWrittenRows, "The number of rows saved into the query cache.", ValueType::Number) \
