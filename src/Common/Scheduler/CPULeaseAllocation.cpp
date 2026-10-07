@@ -150,12 +150,15 @@ bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost r
     head->is_master_slot = std::exchange(request_master_slot, false);
     head->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
 
-    if (auto * queue = head->is_master_slot ? master_link.queue : worker_link.queue)
+    // Master and worker are distinct resources, each with its own per-query scheduling state, so
+    // enqueue to the leaf this request actually targets. `ResourceLink::enqueue` stamps the scheduling
+    // pointers (cleared by `reset()` on renewal) and uses `enqueueRequest` — not the budget-aware
+    // variant, which would redistribute resource between requests from different queries; we budget
+    // per query independently for better fairness.
+    const ResourceLink & link = head->is_master_slot ? master_link : worker_link;
+    if (link.enqueue(&*head))
     {
         head->is_noncompeting = false;
-        // We do not use enqueueRequestUsingBudget() because it redistributes resource between requests in the queue (which might be from different queries).
-        // Instead we do budgeting for every query independently for better fairness
-        queue->enqueueRequest(&*head);
         enqueued = true;
         return true; // Request is enqueued to the scheduler queue, we will wait for it to be granted
     }
@@ -528,6 +531,13 @@ bool CPULeaseAllocation::renew(Lease & lease)
             // It is better to run less threads, but utilize CPU better to avoid frequent context switches. This is how down-scaling works.
             setPreempted(thread_num);
 
+            // No thread is running now, so nothing reports consumption until a grant resumes one.
+            // With no running thread, preemption implies `consumed_ns >= requested_ns`: every request
+            // in consumption is fully consumed, but `consume` finishes only one per report. The rest
+            // would hold their slots while we wait, and the grant we wait for may need one of them.
+            if (threads.running_count == 0)
+                finishConsumedRequests(lock);
+
             std::optional<OpenTelemetry::SpanHolder> preemption_span;
             if (settings.trace_cpu_scheduling)
             {
@@ -625,6 +635,30 @@ void CPULeaseAllocation::consume(std::unique_lock<std::mutex> & lock, ResourceCo
                 grantImpl(lock);
         }
         // NOTE: we do not finish more than one request per one report to avoid stalling the pipeline for reports larger than quantum
+    }
+}
+
+void CPULeaseAllocation::finishConsumedRequests(std::unique_lock<std::mutex> & lock)
+{
+    if (allocated == 0)
+        return;
+
+    while (allocated > 0)
+    {
+        chassert(consumed_ns >= requests.getMaxConsumed());
+        --allocated;
+        --granted;
+        requests.finish();
+        LOG_EVENT(C);
+    }
+    if (granted <= 0 && !exception)
+        acquirable.store(false, std::memory_order_relaxed);
+
+    // Ask for a slot to resume a preempted thread
+    if (!requests.hasEnqueued())
+    {
+        if (!schedule(lock))
+            grantImpl(lock);
     }
 }
 

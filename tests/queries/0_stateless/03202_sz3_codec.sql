@@ -493,22 +493,21 @@ ATTACH TABLE tab_legacy_mode;
 SELECT abs(a - 1.5) <= 0.1, abs(b - 2.5) <= 0.1 FROM tab_legacy_mode;
 DROP TABLE tab_legacy_mode;
 
-SELECT 'A compression block size that is not a multiple of the float width is rejected';
--- SZ3 compresses whole values. `CompressedWriteBuffer` chunks the column stream into compressed blocks by the
--- `max_compress_block_size` byte count, so a value is split across two blocks when that setting is not a
--- multiple of the value width. Such a block previously compressed only the whole-value prefix and silently
--- dropped the trailing bytes, while the block header still recorded the full uncompressed size; the part was
--- accepted on insert but could not be read back. It is now rejected at write time with a clear error.
+SELECT 'A compression block size that is not a multiple of the float width';
+-- SZ3 compresses whole values. The writer rounds `max_compress_block_size` down to a multiple of the value width,
+-- so a value is never split across two blocks.
 DROP TABLE IF EXISTS tab_block_size_f64;
 CREATE TABLE tab_block_size_f64 (x Float64 CODEC(SZ3)) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS max_compress_block_size = 10, min_bytes_for_wide_part = 0;
-INSERT INTO tab_block_size_f64 SELECT number FROM numbers(100) SETTINGS async_insert = 0; -- { serverError BAD_ARGUMENTS }
+INSERT INTO tab_block_size_f64 SELECT number FROM numbers(100) SETTINGS async_insert = 0;
+SELECT count() FROM tab_block_size_f64;
 DROP TABLE tab_block_size_f64;
 
 DROP TABLE IF EXISTS tab_block_size_f32;
 CREATE TABLE tab_block_size_f32 (x Float32 CODEC(SZ3)) ENGINE = MergeTree ORDER BY tuple()
     SETTINGS max_compress_block_size = 5, min_bytes_for_wide_part = 0;
-INSERT INTO tab_block_size_f32 SELECT number FROM numbers(100) SETTINGS async_insert = 0; -- { serverError BAD_ARGUMENTS }
+INSERT INTO tab_block_size_f32 SELECT number FROM numbers(100) SETTINGS async_insert = 0;
+SELECT count() FROM tab_block_size_f32;
 DROP TABLE tab_block_size_f32;
 
 SELECT 'The lossless (zstd) fallback round-trips';

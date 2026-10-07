@@ -41,7 +41,6 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
-extern const int NOT_IMPLEMENTED;
 }
 
 namespace DataLakeStorageSetting
@@ -671,10 +670,9 @@ ExpireSnapshotsResult expireSnapshots(
     if (!common_path.starts_with('/'))
         common_path = "/" + common_path;
 
-    if (catalog && catalog->isTransactional())
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "expire_snapshots is not supported for Iceberg tables backed by a transactional catalog");
+    /// A transactional catalog writes the metadata itself: the removal of the snapshots is committed as a set of
+    /// updates to it instead of a new metadata file.
+    const bool catalog_commits_metadata = catalog && catalog->isTransactional();
 
     int max_retries = MAX_TRANSACTION_RETRIES;
     while (--max_retries > 0)
@@ -748,15 +746,25 @@ ExpireSnapshotsResult expireSnapshots(
 
         Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
 
-        std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_paths;
-        std::set<Iceberg::IcebergPathFromMetadata> retained_data_file_paths;
-        std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_list_paths;
-        collectRetainedFiles(
-            partition.retained_snapshots, object_storage, persistent_table_components, context, log,
-            current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
-        auto expired_files = collectExpiredFiles(
-            partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
-            object_storage, persistent_table_components, context, log, current_schema_id);
+        /// The files of the expired snapshots that none of `retained_snapshots` references.
+        auto collect_expired_files = [&](const Poco::JSON::Array::Ptr & retained_snapshots)
+        {
+            std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_paths;
+            std::set<Iceberg::IcebergPathFromMetadata> retained_data_file_paths;
+            std::set<Iceberg::IcebergPathFromMetadata> retained_manifest_list_paths;
+            collectRetainedFiles(
+                retained_snapshots, object_storage, persistent_table_components, context, log,
+                current_schema_id, retained_manifest_paths, retained_data_file_paths, retained_manifest_list_paths);
+            return collectExpiredFiles(
+                partition.expired_manifest_list_paths, retained_manifest_list_paths, retained_manifest_paths, retained_data_file_paths,
+                object_storage, persistent_table_components, context, log, current_schema_id);
+        };
+
+        /// Collected before the commit, so that a failure to read the retained snapshots fails the whole request.
+        /// A transactional catalog returns the snapshots it retains only with the commit.
+        ExpiredFiles expired_files;
+        if (!catalog_commits_metadata || options.dry_run)
+            expired_files = collect_expired_files(partition.retained_snapshots);
 
         if (options.dry_run)
         {
@@ -771,36 +779,61 @@ ExpireSnapshotsResult expireSnapshots(
             };
         }
 
-        updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
-
-        std::string json_representation = stringifyJSON(metadata, 4);
-        auto metadata_info = filename_generator.generateMetadataPathWithInfo();
-        auto hint_path = filename_generator.generateVersionHint();
-        if (!writeMetadataFileAndVersionHint(
-                persistent_table_components.path_resolver,
-                metadata_info,
-                json_representation,
-                hint_path,
-                object_storage,
-                context,
-                data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+        if (catalog_commits_metadata)
         {
-            LOG_WARNING(log, "Metadata commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
-            continue;
-        }
-
-        if (catalog)
-        {
-            auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
             const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
-            if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
+            auto committed_metadata = catalog->removeSnapshots(
+                namespace_name,
+                parsed_table_name,
+                metadata,
+                std::vector<Int64>(partition.expired_snapshot_ids.begin(), partition.expired_snapshot_ids.end()),
+                expired_ref_names);
+            if (!committed_metadata)
             {
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Failed to update catalog metadata after writing new metadata file. "
-                    "The table metadata may be in an inconsistent state");
+                LOG_WARNING(log, "Catalog commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
+                continue;
+            }
+            /// The snapshots the committed metadata retains, not `partition.retained_snapshots`: the catalog may have
+            /// committed snapshots without a reference since `metadata` was read, e.g. staged ones, which can
+            /// reference the files of the expired snapshots.
+            expired_files = collect_expired_files(
+                committed_metadata->has(Iceberg::f_snapshots) ? committed_metadata->getArray(Iceberg::f_snapshots)
+                                                              : Poco::JSON::Array::Ptr(new Poco::JSON::Array));
+        }
+        else
+        {
+            updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
+
+            std::string json_representation = stringifyJSON(metadata, 4);
+            auto metadata_info = filename_generator.generateMetadataPathWithInfo();
+            auto hint_path = filename_generator.generateVersionHint();
+            if (!writeMetadataFileAndVersionHint(
+                    persistent_table_components.path_resolver,
+                    metadata_info,
+                    json_representation,
+                    hint_path,
+                    object_storage,
+                    context,
+                    data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint]))
+            {
+                LOG_WARNING(log, "Metadata commit conflict during expire_snapshots, retrying ({} retries left)", max_retries);
+                continue;
+            }
+
+            if (catalog)
+            {
+                auto catalog_filename = persistent_table_components.path_resolver.resolveForCatalog(metadata_info.path);
+                const auto & [namespace_name, parsed_table_name] = DataLake::parseTableName(table_name);
+                if (!catalog->updateMetadata(namespace_name, parsed_table_name, catalog_filename, nullptr))
+                {
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Failed to update catalog metadata after writing new metadata file. "
+                        "The table metadata may be in an inconsistent state");
+                }
             }
         }
+        persistent_table_components.invalidateMetadataCache();
 
         LOG_INFO(log, "Deleting {} expired files for {} expired snapshots", expired_files.all_paths.size(), partition.expired_snapshot_ids.size());
         deleteExpiredFiles(expired_files.all_paths, persistent_table_components.path_resolver, object_storage, log);

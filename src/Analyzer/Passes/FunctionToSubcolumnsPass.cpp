@@ -66,11 +66,29 @@ namespace Setting
 namespace
 {
 
+/// Wrapper storages answer both predicates by walking what they wrap, so they are memoized per visitor.
+struct SubcolumnSupportAnswers
+{
+    bool all_transformers;
+    std::optional<bool> tuple_element_only;
+};
+
+using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
+
+SubcolumnSupportAnswers & getSubcolumnSupportAnswers(const IStorage & storage, SubcolumnSupportCache & cache)
+{
+    auto it = cache.find(&storage);
+    if (it == cache.end())
+        it = cache.emplace(&storage, SubcolumnSupportAnswers{storage.supportsOptimizationToSubcolumns(), std::nullopt}).first;
+    return it->second;
+}
+
 struct ColumnContext
 {
     NameAndTypePair column;
     TableExpressionNodePtr column_source;
     ContextPtr context;
+    SubcolumnSupportCache & subcolumn_support_cache;
 };
 
 /// A column source is either a TableNode (`FROM t`) or a TableFunctionNode (`FROM file(...)`).
@@ -383,19 +401,23 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
 
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
     const auto & key_type = data_type_map.getKeyType();
-    auto tmp_key_column = key_type->createColumn();
-    /// Verify that the constant value is compatible with the map's key type.
-    if (!tmp_key_column->tryInsert(second_argument_constant_node->getValue()))
-    {
-        /// A map with Enum keys can also be indexed by the name of the enum value,
-        /// so convert the name to the numeric value of the enum.
-        if (!isEnum(key_type) || second_argument_constant_node->getValue().getType() != Field::Types::String)
-            return;
 
-        Field enum_value = tryConvertFieldToType(second_argument_constant_node->getValue(), *key_type);
-        if (enum_value.isNull() || !tmp_key_column->tryInsert(enum_value))
+    Field key_value = second_argument_constant_node->getValue();
+    if (isEnum(key_type))
+    {
+        /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
+        /// Convert both forms to the numeric value of the enum. This also rejects a value that is not in
+        /// the Enum at all, which has no name and hence no key subcolumn, while `arrayElement` returns
+        /// the default value for it.
+        key_value = tryConvertFieldToType(key_value, *key_type);
+        if (key_value.isNull())
             return;
     }
+
+    auto tmp_key_column = key_type->createColumn();
+    /// Verify that the constant value is compatible with the map's key type.
+    if (!tmp_key_column->tryInsert(key_value))
+        return;
 
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
@@ -518,7 +540,7 @@ bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const
 /// True when the element name is a bare ordinal that is not guaranteed to occur in the file schema:
 /// an unnamed tuple names its elements "1", "2", ... while a source reading them from a file matches
 /// the flattened `<column>.<element>` by string. A source serving subcolumns from its own metadata does have it.
-bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple)
+bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple, SubcolumnSupportCache & cache)
 {
     if (tuple.hasExplicitNames())
         return false;
@@ -527,7 +549,7 @@ bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const
     if (!storage)
         return false;
 
-    return !storage->supportsOptimizationToSubcolumns();
+    return !getSubcolumnSupportAnswers(*storage, cache).all_transformers;
 }
 
 template <typename DataType>
@@ -560,7 +582,7 @@ void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
         if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, *subcolumn_name)
             || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
-            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
+            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete, ctx.subcolumn_support_cache))
             return;
 
     /// ``Tuple(`t.a` UInt64, t Tuple(a UInt64))`` resolves `c.t.a` to the sibling, not to `t`.`a`.
@@ -1198,15 +1220,20 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// A storage may permit only tuple element rewrites while still refusing every other transformer
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
-bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, const String & function_name)
+bool storageAllowsTransformer(
+    const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
-    if (storage.supportsOptimizationToSubcolumns())
+    auto & answers = getSubcolumnSupportAnswers(storage, cache);
+    if (answers.all_transformers)
         return true;
+    if (!answers.tuple_element_only)
+        answers.tuple_element_only = storage.supportsOptimizationToTupleElementSubcolumns();
     /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
-    return storage.supportsOptimizationToTupleElementSubcolumns() && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
+    return *answers.tuple_element_only && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
 }
 
-std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr>
+getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -1243,7 +1270,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1259,7 +1286,8 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
 /// Returns the outermost function, the underlying column, the table,
 /// and the chain of intermediate function nodes.
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr, std::vector<FunctionNode *>>
-getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+getTypedNodesForChainedOptimization(
+    const QueryTreeNodePtr & node, const ContextPtr & context, SubcolumnSupportCache & subcolumn_support_cache)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -1305,7 +1333,7 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName(), subcolumn_support_cache)
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1352,7 +1380,8 @@ public:
         if (chained_pattern_inner_nodes.contains(node.get()))
             return;
 
-        auto [function_node, first_argument_node, column_source] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_node, column_source]
+            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
         if (function_node && first_argument_node && column_source)
         {
             enterImpl(*function_node, *first_argument_node, column_source);
@@ -1360,7 +1389,8 @@ public:
         }
 
         /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
-        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        auto [chain_func, chain_col, chain_source, intermediates]
+            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
         if (chain_func && chain_col && chain_source)
         {
             enterImpl(*chain_func, *chain_col, chain_source, intermediates);
@@ -1507,6 +1537,7 @@ private:
     CorrelatedColumnsStack correlated_columns;
 
     std::unordered_set<const IQueryTreeNode *> processed_sources;
+    SubcolumnSupportCache subcolumn_support_cache;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
 
@@ -1632,6 +1663,7 @@ private:
     std::vector<bool> in_where_prewhere_stack;
 
     CorrelatedColumnsStack correlated_columns;
+    SubcolumnSupportCache subcolumn_support_cache;
 
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FunctionToSubcolumnsVisitorSecondPass>;
@@ -1681,7 +1713,8 @@ public:
         /// Direct match: first argument is a ColumnNode.
         /// Restructured from "if (!match) return" to "if (match) { ... } return"
         /// so that failed direct matches fall through to the chained match below.
-        auto [function_node, first_argument_column_node, column_source] = getTypedNodesForOptimization(node, getContext());
+        auto [function_node, first_argument_column_node, column_source]
+            = getTypedNodesForOptimization(node, getContext(), subcolumn_support_cache);
         if (function_node && first_argument_column_node && column_source)
         {
             auto column = first_argument_column_node->getColumn();
@@ -1711,7 +1744,7 @@ public:
             if (transformer_it != node_transformers.end()
                 && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
-                ColumnContext ctx{std::move(column), column_source, getContext()};
+                ColumnContext ctx{std::move(column), column_source, getContext(), subcolumn_support_cache};
                 transformer_it->second(node, *function_node, ctx);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1721,7 +1754,8 @@ public:
         }
 
         /// Chained match: first argument is a chain of functions with a ColumnNode at the bottom.
-        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        auto [chain_func, chain_col, chain_source, intermediates]
+            = getTypedNodesForChainedOptimization(node, getContext(), subcolumn_support_cache);
         if (chain_func && chain_col && chain_source)
         {
             auto column = chain_col->getColumn();
@@ -1735,7 +1769,7 @@ public:
                 && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_source.get())))
             {
                 auto result_type = chain_func->getResultType();
-                ColumnContext ctx{std::move(column), chain_source, getContext()};
+                ColumnContext ctx{std::move(column), chain_source, getContext(), subcolumn_support_cache};
                 it->second(node, *chain_func, ctx, intermediates);
 
                 if (!result_type->equals(*node->getResultType()))
