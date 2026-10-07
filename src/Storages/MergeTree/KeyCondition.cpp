@@ -44,6 +44,8 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
@@ -1874,61 +1876,68 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     return {field.columns, field.row_idx, result_idx};
 }
 
-/// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
-/// array or a set usually occupies only some of them. Judging such a constant by its declared alternatives
-/// would decline exact pruning because of branches that carry no value at all, so narrow the type
-/// down to the alternatives that are actually occupied. `ignored_discriminator` skips the shared
-/// variant of a `Dynamic` column, which is handled by the caller.
-static DataTypePtr narrowVariantToOccupiedAlternatives(
-    const ColumnVariant & variant_column, const DataTypes & alternatives, std::optional<size_t> ignored_discriminator = {})
-{
-    DataTypes occupied_types;
-    for (size_t i = 0; i < alternatives.size(); ++i)
-    {
-        if (ignored_discriminator && i == *ignored_discriminator)
-            continue;
-        if (!variant_column.getVariantByGlobalDiscriminator(i).empty())
-            occupied_types.push_back(alternatives[i]);
-    }
-
-    /// A column with no occupied alternative holds nothing but NULLs, which never poison the set:
-    /// they are either dropped by the accurate-or-null conversion or match the NULL of a `Nullable`
-    /// key.
-    if (occupied_types.empty())
-        return std::make_shared<DataTypeNothing>();
-
-    if (occupied_types.size() == 1)
-        return occupied_types.front();
-
-    return std::make_shared<DataTypeVariant>(occupied_types);
-}
-
 /// A cast of a `FixedString` to `String` drops its trailing zero bytes, which changes how it compares. This also
 /// holds for a `FixedString` nested in an `Array`, a `Map`, a `Tuple` or a `Variant`, or held by a `Dynamic` value.
 /// The types are matched the way `CAST` converts them, so a `FixedString` that stays a `FixedString` does not count.
 /// Where the mapping is unknown, any `FixedString` or `Dynamic` in `from` and any `String` in `to` count.
-static bool castTypeMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type)
+/// `from_column`, if given, holds the values to cast, and a `Variant` or `Dynamic` at any depth then only counts the
+/// members it actually holds. A constant column must be built with `createConstantColumn` for that.
+static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr)
 {
     const auto from = removeLowCardinalityAndNullable(from_type);
     const auto to = removeLowCardinalityAndNullable(to_type);
     if (from->equals(*to) || !anyInTypeTree(*to, [](const IDataType & type) { return isString(type); }))
         return false;
 
-    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from.get()))
-        return std::ranges::any_of(
-            from_variant->getVariants(),
-            [&](const DataTypePtr & alternative) { return castTypeMayDropFixedStringPadding(alternative, to); });
+    /// `LowCardinality` holds no `Variant` or `Dynamic`, so its column is not needed.
+    if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(from_column))
+        from_column = &nullable_column->getNestedColumn();
+
+    const auto * from_variant = typeid_cast<const DataTypeVariant *>(from.get());
+    const auto * variant_column = typeid_cast<const ColumnVariant *>(from_column);
+    std::optional<size_t> shared_variant_discriminator;
+    if (const auto * dynamic_column = typeid_cast<const ColumnDynamic *>(from_column))
+    {
+        /// The shared variant holds values of any type in serialized form.
+        if (!dynamic_column->getSharedVariant().empty())
+            return true;
+        from_variant = assert_cast<const DataTypeVariant *>(dynamic_column->getVariantInfo().variant_type.get());
+        variant_column = &dynamic_column->getVariantColumn();
+        shared_variant_discriminator = dynamic_column->getSharedVariantDiscriminator();
+    }
+
+    if (from_variant)
+    {
+        const auto & alternatives = from_variant->getVariants();
+        for (size_t i = 0; i < alternatives.size(); ++i)
+        {
+            const IColumn * alternative_column = variant_column ? &variant_column->getVariantByGlobalDiscriminator(i) : nullptr;
+            if (shared_variant_discriminator == i || (alternative_column && alternative_column->empty()))
+                continue;
+            if (castMayDropFixedStringPadding(alternatives[i], to, alternative_column))
+                return true;
+        }
+        return false;
+    }
 
     const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
     const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
     if (from_array && to_array)
-        return castTypeMayDropFixedStringPadding(from_array->getNestedType(), to_array->getNestedType());
+    {
+        const auto * array_column = typeid_cast<const ColumnArray *>(from_column);
+        return castMayDropFixedStringPadding(
+            from_array->getNestedType(), to_array->getNestedType(), array_column ? &array_column->getData() : nullptr);
+    }
 
     const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
     const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
     if (from_map && to_map)
-        return castTypeMayDropFixedStringPadding(from_map->getKeyType(), to_map->getKeyType())
-            || castTypeMayDropFixedStringPadding(from_map->getValueType(), to_map->getValueType());
+    {
+        const auto * map_column = typeid_cast<const ColumnMap *>(from_column);
+        const ColumnTuple * entries = map_column ? &map_column->getNestedData() : nullptr;
+        return castMayDropFixedStringPadding(from_map->getKeyType(), to_map->getKeyType(), entries ? &entries->getColumn(0) : nullptr)
+            || castMayDropFixedStringPadding(from_map->getValueType(), to_map->getValueType(), entries ? &entries->getColumn(1) : nullptr);
+    }
 
     /// `CAST` matches the elements of two named tuples by name, otherwise by position.
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
@@ -1937,38 +1946,15 @@ static bool castTypeMayDropFixedStringPadding(const DataTypePtr & from_type, con
         && (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames()
             || from_tuple->getElementNames() == to_tuple->getElementNames()))
     {
+        const auto * tuple_column = typeid_cast<const ColumnTuple *>(from_column);
         for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
-            if (castTypeMayDropFixedStringPadding(from_tuple->getElements()[i], to_tuple->getElements()[i]))
+            if (castMayDropFixedStringPadding(
+                    from_tuple->getElements()[i], to_tuple->getElements()[i], tuple_column ? &tuple_column->getColumn(i) : nullptr))
                 return true;
         return false;
     }
 
     return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
-}
-
-/// Same as `castTypeMayDropFixedStringPadding`, but `from_column`, if given, narrows a top-level `Variant` or `Dynamic`
-/// to the types it actually stores. A constant column must be built with `createConstantColumn` for that.
-static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const DataTypePtr & to_type, const IColumn * from_column = nullptr)
-{
-    /// `Variant` and `Dynamic` cannot be inside `Nullable` or `LowCardinality`, so `from_column` is their own column.
-    auto from = from_type;
-    if (from_column && isDynamic(from))
-    {
-        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*from_column);
-        /// The shared variant holds values of any type in serialized form.
-        if (!dynamic_column.getSharedVariant().empty())
-            return castTypeMayDropFixedStringPadding(from, to_type);
-        from = narrowVariantToOccupiedAlternatives(
-            dynamic_column.getVariantColumn(),
-            assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants(),
-            dynamic_column.getSharedVariantDiscriminator());
-    }
-    else if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from.get()); from_column && variant_type)
-    {
-        from = narrowVariantToOccupiedAlternatives(assert_cast<const ColumnVariant &>(*from_column), variant_type->getVariants());
-    }
-
-    return castTypeMayDropFixedStringPadding(from, to_type);
 }
 
 /// Builds the one-row column of a constant. `tryGetConstant` hands out only the nested value of a `Variant`/`Dynamic`
@@ -3747,6 +3733,35 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         out.relaxed = true;
 
     return true;
+}
+
+/// A `Variant` column describes at the type level every alternative it *may* hold, but a constant
+/// array usually occupies only some of them. Judging such a constant by its declared alternatives
+/// would decline exact pruning because of branches that carry no value at all, so narrow the type
+/// down to the alternatives that are actually occupied. `ignored_discriminator` skips the shared
+/// variant of a `Dynamic` column, which is handled by the caller.
+static DataTypePtr narrowVariantToOccupiedAlternatives(
+    const ColumnVariant & variant_column, const DataTypes & alternatives, std::optional<size_t> ignored_discriminator = {})
+{
+    DataTypes occupied_types;
+    for (size_t i = 0; i < alternatives.size(); ++i)
+    {
+        if (ignored_discriminator && i == *ignored_discriminator)
+            continue;
+        if (!variant_column.getVariantByGlobalDiscriminator(i).empty())
+            occupied_types.push_back(alternatives[i]);
+    }
+
+    /// A column with no occupied alternative holds nothing but NULLs, which never poison the set:
+    /// they are either dropped by the accurate-or-null conversion or match the NULL of a `Nullable`
+    /// key.
+    if (occupied_types.empty())
+        return std::make_shared<DataTypeNothing>();
+
+    if (occupied_types.size() == 1)
+        return occupied_types.front();
+
+    return std::make_shared<DataTypeVariant>(occupied_types);
 }
 
 bool KeyCondition::tryPrepareSetIndexForHas(

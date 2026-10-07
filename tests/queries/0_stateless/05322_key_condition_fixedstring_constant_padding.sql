@@ -53,6 +53,7 @@ SELECT count() FROM t_bare WHERE s IN (SELECT toNullable(toFixedString('abc', 4)
 SELECT count() FROM t_bare WHERE s IN (SELECT CAST(toFixedString('abc', 4) AS Dynamic));
 SELECT count() FROM t_array WHERE s IN (SELECT [toFixedString('abc', 4)]);
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), toFixedString('abc', 4), toUInt8(1)));
+SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST(toFixedString('abc', 4) AS Variant(String, FixedString(4))), toUInt8(1)));
 
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
@@ -61,6 +62,8 @@ SELECT count() FROM t_monotonic WHERE s <= CAST('abc' AS Variant(String, FixedSt
 SELECT count() FROM t_bare WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Variant(String, FixedString(2)))) SETTINGS force_primary_key = 1;
 SELECT count() FROM t_deterministic WHERE s IN (SELECT CAST('abc' AS Dynamic)) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Variant(String, FixedString(2))), toUInt8(1))) SETTINGS force_primary_key = 1;
+SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), CAST('abc' AS Dynamic), toUInt8(1))) SETTINGS force_primary_key = 1;
 
 -- A `FixedString` that stays a `FixedString` keeps index analysis.
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), 'abc', toUInt8(1))) SETTINGS force_primary_key = 1;
