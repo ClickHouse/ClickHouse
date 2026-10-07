@@ -1,17 +1,9 @@
 #include <Processors/Transforms/Window/Partition.h>
 
+#include <algorithm>
+
 namespace DB
 {
-
-namespace
-{
-
-bool isPartitionStart(const SlidingBlocks & blocks, RowNumber row)
-{
-    return blocks.blockAt(row.block).index.partition_starts[row.row];
-}
-
-}
 
 Partition::Partition()
     : partition_bounds{.start = RowNumber{0, 0}, .end = RowNumber{0, 0}, .fully_visible = true}
@@ -30,10 +22,10 @@ void Partition::advance(const SlidingBlocks & blocks)
 {
     while (!partition_bounds.fully_visible && partition_bounds.end < blocks.end())
     {
-        if (isPartitionStart(blocks, partition_bounds.end))
-            partition_bounds.fully_visible = true;
-        else
-            partition_bounds.end = blocks.next(partition_bounds.end);
+        const std::vector<bool> & starts = blocks.blockAt(partition_bounds.end.block).index.partition_starts;
+        const auto next_start = std::find(starts.begin() + partition_bounds.end.row, starts.end(), true);
+        partition_bounds.fully_visible = next_start != starts.end();
+        partition_bounds.end = *blocks.move(partition_bounds.end, next_start - starts.begin() - partition_bounds.end.row);
     }
     rows_count = rowIndex(blocks, partition_bounds.end);
 }
