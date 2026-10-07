@@ -1033,6 +1033,9 @@ private:
 
     /// If it's true then data related to this part is cleared from mark and index caches.
     mutable std::atomic_bool cleared_data_in_caches = false;
+
+    /// If it's true then the statistics of this part may have been put into the statistics cache.
+    mutable std::atomic_bool may_store_data_in_statistics_cache = false;
 };
 
 using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;

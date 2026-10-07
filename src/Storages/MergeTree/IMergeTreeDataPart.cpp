@@ -1136,6 +1136,10 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
     if (caches.hasAny())
         return true;
 
+    /// The statistics cache is filled by queries even if it is not prewarmed.
+    if (may_store_data_in_statistics_cache)
+        return true;
+
     /// The columns cache holds deserialized columns of this part, and the prewarmable caches above
     /// know nothing about it: a part whose only footprint is there has to be cleared as well, or its
     /// entries stay resident until a much later filesystem cleanup and evict entries of live parts
@@ -1491,6 +1495,12 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
         cache = nullptr;
 
     const String part_path = cache ? getPathForCacheKey() : "";
+
+    /// The statistics cache is filled on demand by queries, not only by the prewarm, so remember that
+    /// this part may own entries there: `mayStoreDataInCaches` reports it then, and the entries of an
+    /// outdated part are evicted as soon as the part is no longer used, not when it is finally removed.
+    if (cache && !files_to_load.empty())
+        may_store_data_in_statistics_cache = true;
 
     ColumnsStatistics result;
     for (const auto & [filename, column_desc] : files_to_load)
