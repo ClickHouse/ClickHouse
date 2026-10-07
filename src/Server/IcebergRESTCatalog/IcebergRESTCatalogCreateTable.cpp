@@ -1,4 +1,4 @@
-#include <Server/IcebergRESTCatalog/IcebergRESTCatalogTableMetadata.h>
+#include <Server/IcebergRESTCatalog/IcebergRESTCatalogCreateTable.h>
 
 #include "config.h"
 
@@ -10,7 +10,6 @@
 
 #include <Poco/JSON/Array.h>
 
-#include <chrono>
 #include <set>
 #include <vector>
 
@@ -235,7 +234,7 @@ Poco::JSON::Object::Ptr buildInitialTableMetadata(
     Poco::JSON::Object::Ptr properties_json = new Poco::JSON::Object;
     for (const auto & [key, value] : properties)
         properties_json->set(key, value);
-    const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    const auto now_ms = nowMs();
 
     /// Key order follows the Iceberg spec listing.
     Poco::JSON::Object::Ptr metadata = new Poco::JSON::Object(Poco::JSON_PRESERVE_KEY_ORDER);
@@ -243,7 +242,7 @@ Poco::JSON::Object::Ptr buildInitialTableMetadata(
     metadata->set(f_table_uuid, uuid);
     metadata->set(f_location, location);
     metadata->set(f_last_sequence_number, 0);
-    metadata->set(f_last_updated_ms, static_cast<Int64>(now_ms));
+    metadata->set(f_last_updated_ms, now_ms);
     metadata->set(f_last_column_id, last_column_id);
     metadata->set(f_current_schema_id, 0);
     metadata->set(f_schemas, makeArray(schema));

@@ -218,8 +218,10 @@ std::optional<IcebergTablePointer> KeeperIcebergRESTCatalogStore::getTable(const
     if (!zookeeper->tryGet(tablePath(ns, table), pointer.uuid))
         return std::nullopt;
     /// Missing here means the table was dropped between the two reads.
-    if (!zookeeper->tryGet(tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location))
+    Coordination::Stat stat;
+    if (!zookeeper->tryGet(tableUuidPath(ns, table, pointer.uuid), pointer.metadata_location, &stat))
         return std::nullopt;
+    pointer.version = stat.version;
     return pointer;
 }
 
@@ -268,6 +270,23 @@ bool KeeperIcebergRESTCatalogStore::dropTable(const IcebergNamespaceName & ns, c
         return false;
     zkutil::KeeperMultiException::check(code, ops, responses);
     return true;
+}
+
+KeeperIcebergRESTCatalogStore::UpdateTableResult KeeperIcebergRESTCatalogStore::updateTable(
+    const IcebergNamespaceName & ns, const String & table, const IcebergTablePointer & expected, const IcebergTablePointer & new_pointer)
+{
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::updateTable");
+    /// The uuid node pins the table identity. A table re-created under the same name has another uuid, so the set misses it.
+    auto zookeeper = getZooKeeper();
+    const auto path = tableUuidPath(ns, table, expected.uuid);
+    const auto code = zookeeper->trySet(path, new_pointer.metadata_location, expected.version);
+    if (code == Coordination::Error::ZBADVERSION)
+        return UpdateTableResult::VersionMismatch;
+    if (code == Coordination::Error::ZNONODE)
+        return zookeeper->exists(tablePath(ns, table)) ? UpdateTableResult::UuidMismatch : UpdateTableResult::TableMissing;
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, path);
+    return UpdateTableResult::Updated;
 }
 
 }

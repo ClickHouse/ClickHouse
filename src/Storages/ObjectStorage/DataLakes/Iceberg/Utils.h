@@ -98,6 +98,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     ContextPtr context,
     UInt64 format_version = 2);
 
+/// Parses the version out of a metadata file name: `v<N>.metadata.json`, `v<N>-<uuid>.metadata.json` or `<N>-<uuid>.metadata.json`.
+MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path);
+
 /// `ignore_metadata_pointer_overrides` distrusts the version a configured pointer names
 /// (`iceberg_metadata_file_path`, `version-hint.text`) and resolves by listing; the scheme that name
 /// is spelled in still counts, and a listing these callers cannot order unambiguously is refused.
