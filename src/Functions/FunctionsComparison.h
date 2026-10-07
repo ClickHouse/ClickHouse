@@ -888,10 +888,17 @@ struct ComparisonParams
     bool validate_enum_literals_in_operators = false;
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
+    /// The hash of the session settings `format_settings` was derived from (see `getFormatSettingsHash`).
+    UInt64 format_settings_hash = 0;
 
     explicit ComparisonParams(const ContextPtr & context);
 
     ComparisonParams() = default;
+
+    /// Everything here decides what a comparison produces for the same arguments (how a string literal
+    /// is read as a `DateTime`, whether an enum literal or a decimal overflow throws), so a hash that
+    /// keys an expression has to see it all. See `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const;
 };
 
 template <template <typename, typename> class Op, typename Name, bool is_null_safe_cmp_mode = false>
@@ -1251,25 +1258,6 @@ private:
         if (result_type->onlyNull())
             return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        /// When any tuple element has Nothing or Nullable(Nothing) type, element-wise
-        /// comparisons would produce ColumnNothing which doesn't match the declared
-        /// Nullable(UInt8) return type. Return all-NULL column of the correct type.
-        /// Skip this for null-safe comparison mode because NULL <=> NULL should return 1,
-        /// and the element-wise null-safe comparison handles Nothing types correctly.
-        if constexpr (!is_null_safe_cmp_mode)
-        {
-            const auto & left_elems = typeid_cast<const DataTypeTuple &>(*c0.type).getElements();
-            const auto & right_elems = typeid_cast<const DataTypeTuple &>(*c1.type).getElements();
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                if (left_elems[i]->onlyNull() || isNothing(left_elems[i])
-                    || right_elems[i]->onlyNull() || isNothing(right_elems[i]))
-                {
-                    return result_type->createColumnConstWithDefaultValue(input_rows_count);
-                }
-            }
-        }
-
         ColumnsWithTypeAndName x(tuple_size);
         ColumnsWithTypeAndName y(tuple_size);
 
@@ -1296,6 +1284,18 @@ private:
 
             x[i].column = x_columns[i];
             y[i].column = y_columns[i];
+
+            /// An element of type `Nothing` or `Nullable(Nothing)` is an untyped NULL. A non-null-safe comparison with NULL
+            /// is NULL whatever the other value, so compare a typed NULL pair and let the other elements decide the result.
+            if constexpr (!is_null_safe_cmp_mode)
+            {
+                if (x[i].type->onlyNull() || isNothing(x[i].type) || y[i].type->onlyNull() || isNothing(y[i].type))
+                {
+                    auto null_type = makeNullable(std::make_shared<DataTypeUInt8>());
+                    x[i] = {null_type->createColumnConstWithDefaultValue(input_rows_count), null_type, ""};
+                    y[i] = x[i];
+                }
+            }
         }
 
         return executeTupleImpl(x, y, tuple_size, input_rows_count);
@@ -1745,6 +1745,8 @@ public:
     {
         return name;
     }
+
+    void updateHash(SipHash & hash) const override { params.updateHash(hash); }
 
     size_t getNumberOfArguments() const override { return 2; }
 

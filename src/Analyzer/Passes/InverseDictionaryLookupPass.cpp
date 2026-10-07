@@ -27,6 +27,7 @@
 #include <Access/Common/AccessType.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/typeid_cast.h>
 
 
@@ -165,11 +166,7 @@ bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
     if (key_type.hasDynamicStructure())
         return true;
 
-    bool result = false;
-    auto check = [&](const IDataType & nested) { result |= isVariant(nested); };
-    check(key_type);
-    key_type.forEachChild(check);
-    return result;
+    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested); });
 }
 
 bool isRewriteSemanticallySafe(

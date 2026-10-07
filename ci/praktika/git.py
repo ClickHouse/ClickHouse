@@ -44,6 +44,16 @@ class Git:
         )
 
     @staticmethod
+    def is_ancestor(commit: str, ref: str) -> bool:
+        # Exit 1 is a "no", not a failure, so it must not be logged as an error.
+        rc, _, err = Shell.get_res_stdout_stderr(
+            f"git merge-base --is-ancestor {shlex.quote(commit)} {shlex.quote(ref)}"
+        )
+        if err:
+            print(err)
+        return rc == 0
+
+    @staticmethod
     def push(
         repo: str,
         refspec: str,
