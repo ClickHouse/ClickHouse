@@ -230,6 +230,20 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             ostr << " PATH " << quoteString(queue_path);
             break;
         }
+        case Type::RESET_FILELOG:
+        {
+            ostr << ' ';
+            print_database_table();
+            if (filelog_file)
+            {
+                ostr << " FILE " << quoteString(*filelog_file);
+                if (filelog_offset)
+                    ostr << " OFFSET " << *filelog_offset;
+                else if (filelog_to_end)
+                    ostr << " TO END";
+            }
+            break;
+        }
         case Type::RESTART_REPLICA:
         case Type::RESTORE_REPLICA:
         case Type::SYNC_REPLICA:
@@ -238,6 +252,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::FLUSH_DISTRIBUTED:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_TIME_SERIES_CACHES:
         {
             if (table)
             {
@@ -278,7 +293,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::RELOAD_DICTIONARY:
         case Type::UNLOAD_DICTIONARY:
-        case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
         case Type::WAIT_BLOBS_CLEANUP:
@@ -288,11 +302,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 ostr << ' ';
                 print_database_table();
-            }
-            else if (!target_model.empty())
-            {
-                ostr << ' ';
-                print_identifier(target_model);
             }
             else if (!target_function.empty())
             {
@@ -621,6 +630,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_COLUMNS_CACHE:
         case Type::CLEAR_UNCOMPRESSED_CACHE:
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
@@ -648,7 +658,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_DICTIONARIES:
         case Type::UNLOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
-        case Type::RELOAD_MODELS:
         case Type::RELOAD_FUNCTIONS:
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
@@ -669,6 +678,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RECONNECT_ZOOKEEPER:
         case Type::FREE_MEMORY:
         case Type::RESET_DDL_WORKER:
+        case Type::DISABLE_ALL_FAILPOINTS:
             break;
         case Type::SYNC_FILESYSTEM_CACHE:
         {
@@ -692,14 +702,12 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JSON serialization is not supported for SYSTEM INSTRUMENT queries");
 #endif
     JSONObjectWriter w(out, "SystemQuery");
-    w.writeString("query_type", std::string(magic_enum::enum_name(type)));
+    w.writeString("query_type", magic_enum::enum_name(type));
     w.writeChild("database", database);
     w.writeChild("table", table);
     if (if_exists)
         w.writeBool("if_exists", true);
     w.writeChild("query_settings", query_settings);
-    if (!target_model.empty())
-        w.writeString("target_model", target_model);
     if (!target_function.empty())
         w.writeString("target_function", target_function);
     if (!replica.empty())
@@ -748,16 +756,22 @@ void ASTSystemQuery::writeJSON(WriteBuffer & out) const
         w.writeString("schema_cache_format", schema_cache_format);
     if (!queue_path.empty())
         w.writeString("queue_path", queue_path);
+    if (filelog_file)
+        w.writeString("filelog_file", *filelog_file);
+    if (filelog_offset)
+        w.writeUInt("filelog_offset", *filelog_offset);
+    if (filelog_to_end)
+        w.writeBool("filelog_to_end", true);
     if (!fail_point_name.empty())
         w.writeString("fail_point_name", fail_point_name);
     if (fail_point_action != FailPointAction::UNSPECIFIED)
-        w.writeString("fail_point_action", std::string(magic_enum::enum_name(fail_point_action)));
+        w.writeString("fail_point_action", magic_enum::enum_name(fail_point_action));
     if (!delta_kernel_tracing_level.empty())
         w.writeString("delta_kernel_tracing_level", delta_kernel_tracing_level);
     if (!coverage_test_name.empty())
         w.writeString("coverage_test_name", coverage_test_name);
     if (sync_replica_mode != SyncReplicaMode::DEFAULT)
-        w.writeString("sync_replica_mode", std::string(magic_enum::enum_name(sync_replica_mode)));
+        w.writeString("sync_replica_mode", magic_enum::enum_name(sync_replica_mode));
     if (!src_replicas.empty())
     {
         w.writeKey("src_replicas");
@@ -837,7 +851,8 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'query_type' field in `SystemQuery` during AST JSON deserialization");
     String query_type_str = r.getString("query_type");
     auto query_type_opt = magic_enum::enum_cast<Type>(query_type_str);
-    if (!query_type_opt)
+    /// `UNKNOWN` and `END` bound the enumeration instead of naming a SYSTEM command; no parse produces them.
+    if (!query_type_opt || *query_type_opt == Type::UNKNOWN || *query_type_opt == Type::END)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM query_type: '{}'", query_type_str);
     type = *query_type_opt;
 #if USE_XRAY
@@ -858,7 +873,6 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     query_settings = r.readChildOfType<ASTSetQuery>("query_settings");
     if (query_settings)
         children.push_back(query_settings);
-    target_model = r.getString("target_model");
     target_function = r.getString("target_function");
     replica = r.getString("replica");
     shard = r.getString("shard");
@@ -935,6 +949,11 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
     schema_cache_storage = r.getString("schema_cache_storage");
     schema_cache_format = r.getString("schema_cache_format");
     queue_path = r.getString("queue_path");
+    if (r.has("filelog_file"))
+        filelog_file = r.getString("filelog_file");
+    if (r.has("filelog_offset"))
+        filelog_offset = r.getUInt("filelog_offset");
+    filelog_to_end = r.getBool("filelog_to_end");
     fail_point_name = r.getString("fail_point_name");
     if (r.has("fail_point_action"))
     {
@@ -987,6 +1006,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'scheduled_merge_parts' during AST JSON deserialization");
             break;
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
+        case Type::RESET_FILELOG:
         case Type::REFRESH_VIEW:
         case Type::START_VIEW:
         case Type::START_REPLICATED_VIEW:
@@ -996,6 +1016,12 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
         case Type::CANCEL_VIEW:
         case Type::WAIT_VIEW:
         case Type::TEST_VIEW:
+        case Type::STOP:
+        case Type::START:
+        case Type::PAUSE:
+        case Type::CANCEL:
+        case Type::REFRESH:
+        case Type::CLEAR_TIME_SERIES_CACHES:
             if (!table)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM {}` requires 'table' during AST JSON deserialization", typeToString(type));
             break;
@@ -1027,7 +1053,8 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'server_type' is missing 'type' during AST JSON deserialization");
         String srv_type_str = srv_reader.getString("type");
         auto srv_type_opt = magic_enum::enum_cast<ServerType::Type>(srv_type_str);
-        if (!srv_type_opt)
+        /// `ServerType::Type::END` bounds the enumeration instead of naming a port; no parse produces it.
+        if (!srv_type_opt || *srv_type_opt == ServerType::Type::END)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.type: '{}'", srv_type_str);
         server_type.type = *srv_type_opt;
         server_type.custom_name = srv_reader.getString("custom_name");
@@ -1048,7 +1075,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
                         "'server_type.exclude_types[{}]' must be a string during AST JSON deserialization", i);
                 String v = arr->getElement<std::string>(i);
                 auto opt = magic_enum::enum_cast<ServerType::Type>(v);
-                if (!opt)
+                if (!opt || *opt == ServerType::Type::END)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown SYSTEM server_type.exclude_types[{}]: '{}'", i, v);
                 server_type.exclude_types.insert(*opt);
             }

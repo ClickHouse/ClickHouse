@@ -208,11 +208,41 @@ clickhouse-client --query "CREATE TABLE test.visits (CounterID UInt32,  StartDat
     ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
     SAMPLE BY intHash32(UserID) SETTINGS index_granularity = 8192, storage_policy='$TEMP_POLICY'"
 
+# `--max_execution_time` is enforced cooperatively: the deadline is raised out of band and ends the
+# query only where its threads observe it, so it does not bound a statement parked in blocking I/O.
+# Bound each INSERT in wall-clock time instead.
+PREP_MAX_EXECUTION_TIME=600
+PREP_STATEMENT_TIMEOUT=$((PREP_MAX_EXECUTION_TIME + 300))
+PREP_STDERR=/tmp/prep_statement.err
+
+function run_prep_statement()
+{
+    local rc=0
+    LC_ALL=C timeout --verbose --signal=TERM --kill-after=60 "$PREP_STATEMENT_TIMEOUT" "$@" \
+        2> "$PREP_STDERR" || rc=$?
+    cat "$PREP_STDERR" >&2
+
+    # An expiry is 124 with the TERM diagnostic, or 137 with the KILL one. Neither half identifies it
+    # alone: `clickhouse-client` exits with the server's error code, and a signal the wrapper merely
+    # forwarded exits 143 after printing the same TERM line.
+    case "$rc" in
+        124) grep -qF "sending signal TERM to command" "$PREP_STDERR" || return $rc ;;
+        137) grep -qF "sending signal KILL to command" "$PREP_STDERR" || return $rc ;;
+        *) return $rc ;;
+    esac
+
+    echo -e "Stateful data preparation statement exceeded ${PREP_STATEMENT_TIMEOUT}s (see gdb.log)$FAIL" >> /test_output/test_results.tsv
+    echo "thread apply all backtrace (on stateful prep bound)" >> /test_output/gdb.log
+    timeout --verbose --signal=TERM --kill-after=60 30m gdb -batch -ex 'thread apply all backtrace' -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
+    clickhouse stop --force
+    exit 1
+}
+
 # Might fail in sanitizer runs, not very important
 set +e
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
-clickhouse-client --max_execution_time 600 --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits_s3 SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.hits SELECT * FROM datasets.hits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+run_prep_statement clickhouse-client --max_execution_time "$PREP_MAX_EXECUTION_TIME" --max_memory_usage 30G --max_memory_usage_for_user 30G --query "INSERT INTO test.visits SELECT * FROM datasets.visits_v1 SETTINGS enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
 
 clickhouse-client --query "DROP TABLE datasets.visits_v1 SYNC"
 clickhouse-client --query "DROP TABLE datasets.hits_v1 SYNC"
@@ -323,7 +353,7 @@ rm -f /etc/clickhouse-server/config.d/fail_points_active.xml
 
 # Use a larger timeout for the post-stress restart: under sanitizers with
 # async_load_databases=false the server may need minutes to load all tables.
-start_server 10 || { echo "Failed to start server"; exit 1; }
+start_server 10 600 || { echo "Failed to start server"; exit 1; }
 
 check_server_start
 

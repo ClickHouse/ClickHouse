@@ -117,7 +117,7 @@ PreprocessedPolygonsCache<PolygonImpl, MultiPolygonImpl> & preprocessedPolygonsC
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 /// Feed a string into an in-progress XXH3 state, length-prefixed so concatenations are unambiguous.
-void updateHashWithString(XXH3_state_t & state, std::string_view s)
+void updateHashWithString(XXH_INLINE_XXH3_state_t & state, std::string_view s)
 {
     UInt64 size = s.size();
     XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
@@ -128,7 +128,7 @@ void updateHashWithString(XXH3_state_t & state, std::string_view s)
 /// feeding contiguous leaf buffers in bulk (the same structural walk as updateHashFast, but XXH3).
 /// The structure is mixed in (array offsets, tuple arity) so distinct shapes that share leaf bytes
 /// cannot collide.
-void updateHashWithColumn(XXH3_state_t & state, const IColumn & column)
+void updateHashWithColumn(XXH_INLINE_XXH3_state_t & state, const IColumn & column)
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
     {
@@ -184,7 +184,7 @@ void updateHashWithColumn(XXH3_state_t & state, const IColumn & column)
 ///    lookup and skip the validation that would otherwise raise an exception.
 UInt128 hashConstPolygonArguments(const ColumnsWithTypeAndName & arguments, bool validate, UInt8 discriminator)
 {
-    XXH3_state_t state;
+    XXH_INLINE_XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
 
     XXH_INLINE_XXH3_128bits_update(&state, &discriminator, sizeof(discriminator));
@@ -932,11 +932,11 @@ REGISTER_FUNCTION(PointInPolygon)
     FunctionDocumentation::Description description = R"(
 Checks whether the point belongs to the polygon on the plane.
 
-:::note
+<Note>
 - You can set `validate_polygons = 0` to bypass geometry validation.
 - `pointInPolygon` assumes every polygon is well-formed. If the input is self-intersecting, has mis-ordered rings, or overlapping edges, results become unreliable—especially for points that sit exactly on an edge, a vertex, or inside a self-intersection where the notion of "inside" vs. "outside" is undefined.
 - The polygon-shaped types (`Ring`, `Polygon`, `MultiPolygon`, and `Geometry`) may be passed either as constants or as regular (non-constant) table columns. When the polygon is provided across several separate arguments (an outer ring followed by holes, or several polygons of a multipolygon), all of those arguments must be constant.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "pointInPolygon((x, y), [(a, b), (c, d) ...], ...)";
     FunctionDocumentation::Arguments arguments = {

@@ -27,8 +27,8 @@ your_profile_name:
       # Optional
       schema: [default] # ClickHouse database for dbt models
       driver: [http] # http or native.  If not set this will be autodetermined based on port setting
-      host: [localhost] 
-      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings 
+      host: [localhost]
+      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings
       user: [default] # User for all database operations
       password: [<empty string>] # Password for the user
       cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. Distributed materializations require this setting to work. See the following ClickHouse Cluster section for more details.
@@ -52,7 +52,7 @@ your_profile_name:
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
       database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
-      
+
       # Native (clickhouse-driver) connection settings
       sync_request_timeout: [5] # Timeout for server ping
       compress_block_size: [1048576] # Compression block size if compression is enabled
@@ -163,11 +163,27 @@ keys used to populate the parameters of the S3 table function:
 | aws_access_key_id     | The S3 access key id.                                                                                                                                                                        |
 | aws_secret_access_key | The S3 secret key.                                                                                                                                                                           |
 | role_arn              | The ARN of the IAM role created for secure S3 access. See this [documentation](/products/cloud/guides/data-sources/accessing-s3-data-securely) for more information.     |
+| external_id           | The external ID to pass along with `role_arn` when assuming the IAM role. Requires `role_arn` to be set. Available since dbt-clickhouse 1.10.2.                                              |
 | compression           | The compression method used with the S3 objects.  If not provided ClickHouse will attempt to determine compression based on the file name.                                                   |
 
-See
-the [S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)
-for examples of how to use this macro.
+#### Example {#s3source-example}
+
+Define the shared configuration in `dbt_project.yml` (the dictionary name must end in `s3`):
+
+```yaml
+vars:
+  taxi_s3:
+    bucket: 'datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi'
+    fmt: 'TabSeparatedWithNames'
+```
+
+Then call the macro in a model. Any of the arguments above can also be passed directly in the call, taking precedence over the dictionary values:
+
+```sql
+select * from {{ clickhouse_s3source('taxi_s3', path='/trips_4.gz') }}
+```
+
+See the [S3 test file](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py) for more examples.
 
 ### Cross database macro support {#cross-database-macro-support}
 
@@ -205,9 +221,9 @@ SET allow_experimental_database_iceberg = 1;
 
 CREATE DATABASE iceberg_catalog
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
-SETTINGS 
-    catalog_type = 'rest', 
-    storage_endpoint = 'http://minio:9000/lakehouse', 
+SETTINGS
+    catalog_type = 'rest',
+    storage_endpoint = 'http://minio:9000/lakehouse',
     warehouse = 'demo'
 ```
 
@@ -227,7 +243,7 @@ sources:
 3. **Use the catalog tables in your dbt models:**
 
 ```sql
-SELECT 
+SELECT
     o.order_id,
     c.customer_name,
     o.order_date

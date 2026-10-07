@@ -1,5 +1,5 @@
 {
-  "group": "استخدم سحابتك الخاصة",
+  "group": "Bring Your Own Cloud",
   "pages": [
     {
       "group": "نظرة عامة",
@@ -17,7 +17,7 @@
       ]
     },
     {
-      "group": "الإعداد",
+      "group": "الإعداد الأولي",
       "pages": [
         "ar/products/bring-your-own-cloud/onboarding/standard",
         {
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "group": "Network",
+          "group": "الشبكة",
           "pages": [
             "ar/products/bring-your-own-cloud/onboarding/network",
             "ar/products/bring-your-own-cloud/onboarding/network-aws",
@@ -50,7 +50,26 @@
         "ar/products/bring-your-own-cloud/reference/cost-model-aws",
         "ar/products/bring-your-own-cloud/reference/aws-service-limits",
         "ar/products/bring-your-own-cloud/reference/security-shared-responsibility",
-        "ar/products/bring-your-own-cloud/reference/faq"
+        "ar/products/bring-your-own-cloud/reference/faq",
+        {
+          "group": "وضع الموصل",
+          "hidden": true,
+          "pages": [
+            "ar/products/bring-your-own-cloud/connector/overview",
+            "ar/products/bring-your-own-cloud/connector/onboarding",
+            "ar/products/bring-your-own-cloud/connector/architecture",
+            "ar/products/bring-your-own-cloud/connector/managed-services",
+            "ar/products/bring-your-own-cloud/connector/platform-updates",
+            "ar/products/bring-your-own-cloud/connector/support-sessions",
+            "ar/products/bring-your-own-cloud/connector/configuration",
+            "ar/products/bring-your-own-cloud/connector/operations",
+            "ar/products/bring-your-own-cloud/connector/reference/cli",
+            "ar/products/bring-your-own-cloud/connector/reference/configuration",
+            "ar/products/bring-your-own-cloud/connector/reference/faq",
+            "ar/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ],
+          "tag": "Preview"
+        }
       ]
     }
   ]

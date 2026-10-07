@@ -109,7 +109,7 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
             /// The values of the column selected by `format_json_object_each_row_column_for_object_name`
             /// become the outer object keys, and they are written verbatim: `writeRowStartDelimiter`
             /// passes them to `JSONUtils::writeCompactObjectStart`, which emits the title with
-            /// `writeCString` - no escaping and no UTF-8 validation. So an arbitrary `String` value
+            /// no escaping and no UTF-8 validation. So an arbitrary `String` value
             /// (a quote, a newline, or non-UTF-8 bytes) makes the whole output non-textual, and that
             /// is data-dependent, not knowable from the header. Fail close: whenever such a column is
             /// selected, the carrier counts as possibly producing raw bytes, so the text framings

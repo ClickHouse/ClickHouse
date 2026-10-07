@@ -154,7 +154,7 @@ REGISTER_FUNCTION(DateTimeToSnowflakeID)
             {"epoch", "Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657.", {"UInt*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Input value converted to", {"UInt64"}};
-        FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shanghai'))", "6832626394434895872"}};
+        FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shanghai'))", "6832626392367104000"}};
         FunctionDocumentation::IntroducedIn introduced_in = {24, 6};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
 

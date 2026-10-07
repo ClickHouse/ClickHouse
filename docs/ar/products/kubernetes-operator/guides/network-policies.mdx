@@ -2,18 +2,19 @@
 position: 7
 slug: /clickhouse-operator/guides/network-policies
 title: سياسات الشبكة
-keywords: ['kubernetes', 'سياسة الشبكة', 'الأمن', 'المقاييس', 'webhook']
-description: 'كيف يقيّد المشغّل حركة المرور الواردة إلى بود مدير وحدة التحكم باستخدام Kubernetes NetworkPolicies لنقطتَي نهاية المقاييس وwebhook، وكيفية تفعيلها، ومساحات أسماء العملاء التي يجب وضع تسميات عليها.'
+keywords: ['kubernetes', 'سياسة الشبكة', 'الأمن', 'المقاييس', 'webhook', 'حركة المرور الواردة']
+description: 'كيف يدير المشغّل Kubernetes NetworkPolicies لتجمّعات ClickHouse وKeeper، وكيفية السماح بحركة مرور العملاء والمراقبة، وكيفية تقييد حركة المرور الواردة إلى بود مدير وحدة التحكم.'
 doc_type: 'guide'
 ---
 
-يوفّر المشغّل موارد Kubernetes `NetworkPolicy` اختيارية
-تقيّد أنواع حركة المرور المسموح لها بالوصول إلى **بود مدير وحدة التحكم** — أي
-عملية المشغّل نفسها، وليس بودات ClickHouse server أو Keeper. وهي معطّلة
-افتراضيًا، لذا لن تفعّلها إلا عندما تريد عزل حركة المرور الواردة إلى المشغّل.
+يدير المشغّل موارد Kubernetes `NetworkPolicy` على مستويين، وكلاهما
+معطّل افتراضيًا:
 
-تغطي السياسات المنفذين اللذين يعرّضهما المشغّل للعملاء الآخرين: نقطة نهاية المقاييس
-وadmission webhook.
+* **سياسات التجمّع** — سياسات لكل تجمّع تغطي حركة المرور الداخلية لموارد
+  `ClickHouseCluster` و`KeeperCluster`، وتُفعَّل من خلال
+  `spec.networkPolicy` في كل مورد مخصص.
+* **سياسات بود المشغّل** — سياسات مضمّنة في chart تقيّد حركة المرور الواردة إلى
+  بود مدير وحدة التحكم نفسه لنقطتَي نهاية المقاييس وwebhook.
 
 <Note>
   لا يتم تطبيق `NetworkPolicy` إلا إذا كانت إضافة CNI في التجمّع تدعمها
@@ -21,6 +22,116 @@ doc_type: 'guide'
   إنشاء الموارد لكنها لن يكون لها أي تأثير بصمت — ولن يعيد Kubernetes أي
   error. تأكّد من أن إضافة CNI لديك تطبّق السياسات قبل الاعتماد عليها.
 </Note>
+
+<div id="cluster-network-policies">
+  ## سياسات الشبكة للمجموعة
+</div>
+
+فعّل السياسة المُدارة لكل مجموعة:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+spec:
+  networkPolicy:
+    policy: Enabled
+```
+
+تغطي السياسات المُدارة **حركة المرور داخل العنقود فقط**. يؤدي اختيار البودات إلى
+تطبيق سياسة الرفض الافتراضي على حركة المرور الواردة إليها، بينما يسمح المشغّل فقط بما
+تحتاجه العناقيد للعمل:
+
+| العنقود    | المصدر المسموح به                                                       | المنافذ المسموح بها                         |
+| ---------- | ----------------------------------------------------------------------- | ------------------------------------------- |
+| ClickHouse | بودات العنقود نفسه                                                       | `9009` (بين الخوادم)، `9001` (الإدارة)      |
+| ClickHouse | بودات المشغّل (التسمية `clickhouse.com/role: operator`، في أي مساحة اسم) | `9001`، `9002` (الإدارة)                    |
+| Keeper     | بودات العنقود نفسه                                                       | `9234` (Raft)                               |
+| Keeper     | بودات المشغّل وكل `ClickHouseCluster` يشير إلى هذا الـKeeper             | `2181`، `2281` (العميل)، `9123` (تحكم HTTP) |
+
+يقبل Keeper عناقيد ClickHouse استنادًا إلى `keeperClusterRef` الخاص بها — وتؤدي إضافة
+مرجع أو إزالته إلى تحديث سياسة Keeper تلقائيًا، بما في ذلك
+المراجع من مساحات الأسماء الأخرى.
+
+<div id="allowing-clients">
+  ### السماح بوصول العملاء والمراقبة
+</div>
+
+لا تشمل السياسة اتصالات العملاء وجمع المقاييس: فعند تفعيل السياسة المُدارة،
+لن يتمكن أي شيء من الوصول إلى منافذ العملاء (`9000`/`8123` أو متغيرات TLS
+الخاصة بها) أو منفذ المقاييس إلى أن تسمح بذلك. سياسات الشبكة (NetworkPolicy) تراكمية،
+لذا امنح الوصول باستخدام سياستك الخاصة إلى جانب السياسة المُدارة:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients
+  namespace: <cluster-namespace>
+spec:
+  podSelector:
+    matchLabels:
+      app: <name>-clickhouse
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          role: my-app
+    ports:
+    - protocol: TCP
+      port: 9000
+```
+
+ينطبق النمط نفسه على عمليات scrape في Prometheus (المنفذ `9363` على ClickHouse،
+و`9090` على Keeper) — اسمح صراحةً بمساحة الأسماء المخصصة للمراقبة.
+
+يؤدي ضبط `networkPolicy.policy: Disabled` (الإعداد الافتراضي) إلى إزالة
+السياسة المُدارة؛ ولا يلمس المشغّل السياسات التي يعرّفها المستخدم ما لم
+تحمل تسمية `app` الخاصة بالـ cluster.
+
+<div id="np-cluster-wide-disable">
+  ### إلغاء التفعيل على مستوى الـ cluster بالكامل
+</div>
+
+يمكن أيضًا تعطيل إدارة NetworkPolicy على مستوى الـ cluster بالكامل عبر متغير البيئة
+`ENABLE_NETWORK_POLICY` الخاص بـ المشغّل. عند ضبط `ENABLE_NETWORK_POLICY=false`،
+يتجاوز المشغّل خطوة reconcile الخاصة بـ NetworkPolicy لجميع
+ClickHouseCluster وKeeperCluster، بغض النظر عن قيمة `spec.networkPolicy.policy`،
+و**لا يراقب** موارد `NetworkPolicy` إطلاقًا. لذلك، لا يحتاج
+ServiceAccount الخاص بـ المشغّل إلى أذونات RBAC على
+`networkpolicies.networking.k8s.io`، مما يفيد عند تشغيل المشغّل
+باستخدام ServiceAccount مقيّد لا يتضمن تلك الأذونات عمدًا.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: ENABLE_NETWORK_POLICY
+  value: "false"
+```
+
+باستخدام Helm، يتوفر المفتاح نفسه كقيمة للمخطط:
+
+```yaml
+# values.yaml
+controller:
+  networkPolicyManagement:
+    enabled: false
+```
+
+<div id="operator-pod-policies">
+  ## سياسات بود المشغّل
+</div>
+
+يوفّر المخطط أيضًا سياسات اختيارية تقيّد أنواع حركة المرور المسموح لها بالوصول إلى
+**بود مدير وحدة التحكم** — أي عملية المشغّل نفسها. تغطي هذه السياسات المنفذين
+اللذين يعرّضهما المشغّل للعملاء الآخرين: نقطة نهاية المقاييس و
+admission webhook.
 
 <div id="what-the-helm-chart-creates">
   ## ما الذي ينشئه مخطط Helm

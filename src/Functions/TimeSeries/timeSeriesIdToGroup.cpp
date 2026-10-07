@@ -39,6 +39,12 @@ public:
     /// Disable constant folding: the per-query tags collector is not populated at analysis time.
     bool isSuitableForConstantFolding() const override { return false; }
 
+    /// The collector handles dictionary-encoded identifiers itself, resolving only the dictionary
+    /// keys referenced by some row. The default implementation would run the function over the
+    /// whole dictionary, and a shared dictionary can contain identifiers whose rows were all
+    /// filtered out and which are therefore unknown to the collector.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -95,9 +101,9 @@ SELECT 8374283493092 AS id,
        timeSeriesGroupToTags(group)
         )",
         R"(
-┌────────────id─┬───────same_id─┬─throwIf(notE⋯me_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
-│ 8374283493092 │ 8374283493092 │                        0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
-└───────────────┴───────────────┴──────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
+┌────────────id─┬───────same_id─┬─throwIf(notEquals(same_id, id))─┬─group─┬─timeSeriesGroupToTags(group)───────────────────────────────────────┐
+│ 8374283493092 │ 8374283493092 │                               0 │     1 │ [('__name__','http_requests_count'),('env','dev'),('region','eu')] │
+└───────────────┴───────────────┴─────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

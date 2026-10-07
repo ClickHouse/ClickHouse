@@ -1,0 +1,53 @@
+-- Case 1: the reproducer from the issue; the nullability mismatch must not force a CROSS JOIN
+plan: cross_joins=0 substituted=1
+1	10	100	100	10
+-- Case 2: EXISTS, outer Int64 vs inner Nullable(Int64); inner NULL must not match, in particular not outer 0
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+1
+3
+-- Case 3: NOT EXISTS complement of case 2
+0
+2
+-- Case 4: EXISTS, outer Nullable(Int64) vs inner Int64; outer NULL rows must not match
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+1
+-- Case 5: scalar subquery with count(); outer 0 must count only genuine 0 rows, not inner NULLs
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+0	1
+1	2
+2	\N
+-- Case 6: guarded, the correlated column is also used in a second expression inside the subquery; after substitution that expression would be evaluated on the inner values, so the identifier is not substituted
+plan: substituted=0
+1
+3
+-- Case 7: widening, outer Int64 vs inner Int32 (lossless cast, no pre-filter); 2147483648 is out of the inner range
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+-5
+7
+-- Case 8: outer Int64 vs inner Nullable(Int32) (nullability and width differ)
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+3
+-- Case 9: narrowing, outer Int32 vs inner Int64; 5000000000 must not match 705032704 (= 5000000000 mod 2^32)
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+1
+-- Case 10: sideways, outer Int32 vs inner UInt32 (supertype Int64); 3000000000 must not match -1294967296 (its Int32 wrap)
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+5
+-- Case 11: outer Int32 vs inner Float64; 1.5 must not match 1 or 2 (no truncation), 3.0 must match 3, and inner -0.0 canonicalizes to 0 through accurateCastOrNull and must match outer 0
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+0
+3
+-- Case 12: guarded, outer Float64 vs inner Int32; a float correlated value cannot be reconstructed from an equivalent member (-0.0 = 0 is true but hash joins compare floats bitwise), so with the equality kept as a filter (see issue #116358) the fallback matches -0.0 to inner 0 (the -0 row appears) while 1.5 and 100.25 must not match
+plan: substituted=0
+-0
+3
+-- Case 13: guarded, outer Float64 vs inner Int64; the comparison is exact, 9007199254740992.0 must not match 9007199254740993
+plan: substituted=0
+123
+-- Case 14: guarded, outer Int64 vs inner UInt64; -1 must not match 18446744073709551615
+plan: substituted=0
+42
+-- Case 15: guarded, String vs FixedString(2); the comparison ignores padding, so \'a\' must match toFixedString(\'a\', 2)
+plan: substituted=0
+a
+bb

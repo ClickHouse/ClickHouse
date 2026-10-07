@@ -1,9 +1,27 @@
 Without SELECT on the loop table
 ACCESS_DENIED
 With SELECT on the loop table
+ACCESS_DENIED
+Describing the dangling alias directly
+ACCESS_DENIED
+With SELECT on the dropped target name
 UNSUPPORTED_METHOD
 With SELECT on a live alias but not on its target
+ACCESS_DENIED
+Reading no rows through loop without a grant on the target
+ACCESS_DENIED
+Describing a row-less loop subquery without a grant on the target
+ACCESS_DENIED
+Reading no rows from the live alias directly
+ACCESS_DENIED
+With only a column grant on the target, through loop
+ACCESS_DENIED
+With only a column grant on the target, reading the alias directly
+c0
+With only SHOW COLUMNS on the target, through loop
 ACCESS_DENIED
 With SELECT on a live alias and on its target
 1
 1
+Reading no rows through loop with SELECT on the target
+c0

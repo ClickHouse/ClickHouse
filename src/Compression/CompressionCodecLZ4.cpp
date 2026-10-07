@@ -8,11 +8,7 @@
 #include <Compression/LZ4_decompress_faster.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <Common/Exception.h>
 
 #pragma clang diagnostic ignored "-Wold-style-cast"
 
@@ -23,9 +19,10 @@ namespace DB
 class CompressionCodecLZ4 : public ICompressionCodec
 {
 public:
-    explicit CompressionCodecLZ4();
+    CompressionCodecLZ4() = default;
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER; }
 
@@ -51,6 +48,7 @@ class CompressionCodecLZ4HC : public CompressionCodecLZ4
 {
 public:
     explicit CompressionCodecLZ4HC(int level_);
+    ASTPtr getCodecDescription() const override;
 
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
@@ -73,9 +71,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
-CompressionCodecLZ4::CompressionCodecLZ4()
+ASTPtr CompressionCodecLZ4::getCodecDescription() const
 {
-    setCodecDescription("LZ4");
+    return makeCodecDescription("LZ4");
 }
 
 uint8_t CompressionCodecLZ4::getMethodByte() const
@@ -85,7 +83,7 @@ uint8_t CompressionCodecLZ4::getMethodByte() const
 
 void CompressionCodecLZ4::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecLZ4::getMaxCompressedDataSize(UInt32 uncompressed_size) const
@@ -153,9 +151,11 @@ void registerCodecLZ4HC(CompressionCodecFactory & factory)
 CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     : level(level_)
 {
-    ASTs arguments;
-    arguments.push_back(make_intrusive<ASTLiteral>(static_cast<UInt64>(level)));
-    setCodecDescription("LZ4HC", arguments);
+}
+
+ASTPtr CompressionCodecLZ4HC::getCodecDescription() const
+{
+    return makeCodecDescription("LZ4HC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
 

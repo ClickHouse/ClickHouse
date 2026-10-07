@@ -1,0 +1,9 @@
+-- a non-SELECT invalidate query of a local source is rejected, so it does not run as internal
+1
+-- reloaded after the invalidate query was evaluated
+1
+1
+-- nothing was created
+0
+-- a SELECT invalidate query keeps working
+2

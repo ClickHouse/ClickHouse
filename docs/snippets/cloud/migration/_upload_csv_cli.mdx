@@ -1,0 +1,148 @@
+This page covers uploading a local file (for example, a CSV) into a table on a ClickHouse Cloud service from the command line with the [ClickHouse CLI](/products/cloud/features/cli) (`clickhousectl`). The flow mirrors the console's file-upload wizard: inspect the file's schema, create the destination table, and insert the file over HTTP with the Query API — no `clickhouse` binary or service password required.
+
+## Prerequisites {#cli-prerequisites}
+
+Install the ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+You also need `jq`.
+
+Write operations require [API key authentication](/products/cloud/features/admin-features/api/openapi); OAuth login is read-only:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Verify with `clickhousectl cloud auth status`; expect an entry with scope `read/write`.
+
+## Pick a service {#pick-a-service}
+
+This guide assumes you already have a running service. If you don't, see the [Cloud quick start](/get-started/setup/cloud) for creating one from the CLI. Look up the ID of your service by name:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="my-service") | .id')
+```
+
+## Prepare the file {#prepare-the-file}
+
+Suppose the following text is in a CSV file named `data.csv`. The first line is a header row, so the matching input format is `CSVWithNames`:
+
+```text title="data.csv"
+user_id,url,visited_at,duration_ms
+101,https://clickhouse.com/docs,2026-08-14 09:15:32,4210
+102,https://clickhouse.com/pricing,2026-08-14 09:16:01,1830
+101,https://clickhouse.com/cloud,2026-08-14 09:17:45,2650
+103,https://clickhouse.com/blog,2026-08-15 11:02:10,980
+102,https://clickhouse.com/docs/cloud,2026-08-15 11:05:44,3120
+```
+
+## Inspect the schema {#inspect-the-schema}
+
+Where the console wizard shows you the inferred type of each source field, the CLI equivalent is `DESCRIBE` on the [`format`](/reference/functions/table-functions/format) table function with a sample of the file inlined:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
+```
+
+The first `query` call provisions a Query API endpoint and a service-scoped API key for the service automatically:
+
+```text
+Provisioning Query API endpoint + key for service 'my-service'...
+   ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
+2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
+3. │ visited_at  │ Nullable(DateTime) │              │                    │         │                  │                │
+4. │ duration_ms │ Nullable(Int64)    │              │                    │         │                  │                │
+   └─────────────┴────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+The sample is spliced into a SQL string literal, so it must not contain single quotes or backslashes; for files where it does, escape them or just write the `CREATE TABLE` by hand.
+
+## Create the table {#create-the-table}
+
+Everything the wizard's "Configure table" step offers — adjusting the inferred types, nullability, defaults, excluded fields, the table engine, and the sorting, partitioning, and primary key expressions — is a plain [`CREATE TABLE`](/reference/statements/create/table) here. For example, tightening the inferred types and picking a sorting key:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE default.website_visits (
+    user_id UInt32,
+    url String,
+    visited_at DateTime,
+    duration_ms UInt32
+  ) ENGINE = MergeTree
+  ORDER BY (user_id, visited_at)"
+```
+
+The command prints `OK`. To load into an existing table instead, skip this step.
+
+## Upload the file {#upload-the-file}
+
+`INSERT ... FORMAT` reads the data from stdin, so pipe the query and the file together:
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+The command prints `OK`.
+
+<Warning>
+**Pipe the query and the data together**
+
+Passing the `INSERT` via `--query` and redirecting or piping the file into stdin (`--query "INSERT ..." < data.csv`) does not work: `--query` never reads stdin, so the data would go nowhere. The CLI refuses the combination outright rather than inserting nothing silently — it exits `1`, inserts no rows, and prints:
+
+```text
+Error: --query cannot be combined with SQL or data on stdin. The Query API sends one request body, so redirected data is never read. Pipe the statement and its data together on stdin instead: printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <id>. Or read a whole statement from stdin with --queries-file -.
+```
+
+Always send the query and the data through stdin as one stream, as shown above. Only stdin that actually carries data conflicts with `--query`, so `--query` on its own still works in scripts and pipelines where stdin is not a terminal.
+</Warning>
+
+Verify the rows landed:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --json \
+  --query "SELECT count() FROM default.website_visits"
+```
+
+```text
+{"count()":5}
+```
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "SELECT * FROM default.website_visits ORDER BY visited_at"
+```
+
+```text
+   ┌─user_id─┬─url───────────────────────────────┬──────────visited_at─┬─duration_ms─┐
+1. │     101 │ https://clickhouse.com/docs       │ 2026-08-14 09:15:32 │        4210 │
+2. │     102 │ https://clickhouse.com/pricing    │ 2026-08-14 09:16:01 │        1830 │
+3. │     101 │ https://clickhouse.com/cloud      │ 2026-08-14 09:17:45 │        2650 │
+4. │     103 │ https://clickhouse.com/blog       │ 2026-08-15 11:02:10 │         980 │
+5. │     102 │ https://clickhouse.com/docs/cloud │ 2026-08-15 11:05:44 │        3120 │
+   └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
+```
+
+## Other file formats {#other-file-formats}
+
+The same pattern works for any [input format](/reference/formats/index) ClickHouse supports — including all the formats the console's upload wizard accepts, such as `CSV`, `JSONEachRow`, and `TabSeparatedWithNames`. For another format, change the format name consistently in both the `DESCRIBE format(...)` schema-inference step and the `INSERT ... FORMAT` statement, and use a sample file that matches that format (a TSV sample for `TabSeparatedWithNames`, a JSON-lines sample for `JSONEachRow`, and so on). For example, the upload step for a TSV file becomes:
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+## Cleanup {#cleanup}
+
+If this was a trial run, drop the table to remove the imported data:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "DROP TABLE default.website_visits"
+```

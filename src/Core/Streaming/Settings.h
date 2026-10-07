@@ -9,9 +9,10 @@
 namespace DB
 {
 
+///////////////////////////////////////////////////////////////////////////////////
 struct WatermarkSettings
 {
-    String column;
+    String time_attribute_column;
     ASTPtr expression;
     std::chrono::milliseconds idle_timeout{0};
 
@@ -21,6 +22,7 @@ public:
 };
 using WatermarkSettingsPtr = std::shared_ptr<WatermarkSettings>;
 
+///////////////////////////////////////////////////////////////////////////////////
 struct StreamSettings
 {
     /// If true, read only the first snapshot and then finish (do not subscribe for updates).

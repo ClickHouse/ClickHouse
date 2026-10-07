@@ -101,6 +101,7 @@
     "ru/reference/settings/server-settings/settings/query",
     "ru/reference/settings/server-settings/settings/query-cache-max",
     "ru/reference/settings/server-settings/settings/query-condition",
+    "ru/reference/settings/server-settings/settings/reader-executor",
     "ru/reference/settings/server-settings/settings/remote",
     "ru/reference/settings/server-settings/settings/replicated-fetches",
     "ru/reference/settings/server-settings/settings/s3",

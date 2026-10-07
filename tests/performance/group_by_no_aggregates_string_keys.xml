@@ -1,0 +1,15 @@
+<test>
+    <!--
+        `GROUP BY` without aggregate functions over a short, low-cardinality string key. Single string
+        keys have no set counterpart, so they run on the map methods `key_packed_string` (default) and
+        `key_string` (`enable_packed_string_keys_in_aggregation = 0`), and all the per-row work is the
+        emplace of `executeImplBatchNoAggregates`.
+        The queries are the ones from https://github.com/ClickHouse/ClickHouse/issues/115804.
+    -->
+
+    <query>SELECT length(URL) > 1000 ? 'LONG' : 'SHORT' as x FROM hits_100m_single GROUP BY x FORMAT Null</query>
+    <query>SELECT transform(number, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other') as x FROM numbers(100000000) GROUP BY x FORMAT Null</query>
+
+    <query>SELECT length(URL) > 1000 ? 'LONG' : 'SHORT' as x FROM hits_100m_single GROUP BY x SETTINGS enable_packed_string_keys_in_aggregation = 0 FORMAT Null</query>
+    <query>SELECT transform(number, [2, 4, 6], ['google', 'yandex', 'yahoo'], 'other') as x FROM numbers(100000000) GROUP BY x SETTINGS enable_packed_string_keys_in_aggregation = 0 FORMAT Null</query>
+</test>

@@ -158,7 +158,12 @@ public:
     /** Get hash code, identifying this element and its subtree.
      *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
-      */
+     *
+     *  The default implementation only hashes `getID` and `children`. When adding a member that is
+     *  not a child and is part of the element's meaning, hash it here as well, otherwise two
+     *  elements that differ only in that member get the same hash, and the callers that use the
+     *  hash as an identity of the expression treat them as the same expression.
+     */
     IASTHash getTreeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;

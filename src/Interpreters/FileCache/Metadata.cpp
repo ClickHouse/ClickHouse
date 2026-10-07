@@ -260,7 +260,12 @@ String CacheMetadata::getKeyPath(const Key & key, const OriginInfo & origin) con
     const auto key_str = key.toString();
     const auto key_type_prefix = getKeyTypePrefix(origin.segment_type);
     if (write_cache_per_user_directory)
+    {
+        /// The id is a single path component: every carrier of a non-internal id rejects a NUL and
+        /// a '/' up front via `DistributedCache::getClientIDRejectionReason`.
+        chassert(!origin.user_id.contains('\0') && !origin.user_id.contains('/'));
         return fs::path(path) / key_type_prefix / fmt::format("{}.{}", origin.user_id, origin.weight.value()) / key_str.substr(0, 3) / key_str;
+    }
 
     return fs::path(path) / key_type_prefix / key_str.substr(0, 3) / key_str;
 }
@@ -351,8 +356,9 @@ KeyMetadataPtr CacheMetadata::getKeyMetadata(
 
     /// Refresh idle-client TTL after releasing the bucket lock: prevents
     /// lock-order inversion with the eviction task. Skip internal/common ids
-    /// and probe-only lookups (result == nullptr).
-    if (result && on_client_access)
+    /// and probe-only lookups (result == nullptr). The startup load is not a client
+    /// access, so it must not pass for one (the TTL counts from the load regardless).
+    if (result && on_client_access && !is_initial_load)
     {
         const auto & user_id = origin.user_id;
         if (!user_id.empty()
@@ -995,6 +1001,7 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
     if (offset != static_cast<size_t>(buf->getPosition()))
         buf->seek(offset, SEEK_SET);
 
+    FileCacheReserveAhead reserve_ahead;
     while (size_to_download && !buf->eof())
     {
         const auto available = buf->available();
@@ -1004,7 +1011,11 @@ void CacheMetadata::downloadImpl(FileSegment & file_segment, std::optional<Memor
         size_to_download -= size;
 
         std::string failure_reason;
-        if (!file_segment.reserve(size, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
+        /// Don't reserve ahead past this background pass.
+        const size_t reserve_hint = size + size_to_download;
+        if (!file_segment.reserve(
+                size, reserve_space_lock_wait_timeout_milliseconds, failure_reason,
+                /* reserve_stat */nullptr, reserve_hint, &reserve_ahead))
         {
             LOG_TEST(
                 log, "Failed to reserve space during background download "

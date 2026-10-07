@@ -1,0 +1,22 @@
+-- { echoOn }
+
+SELECT * FROM file(currentDatabase() || '_05023_struct.arrow', 'Arrow', 's Tuple(b Int32, a IPv6)');
+(7,'2001:db8::1')
+SELECT * FROM file(currentDatabase() || '_05023_struct.arrow', 'Arrow', 's Tuple(a IPv6)');
+('2001:db8::1')
+SELECT * FROM file(currentDatabase() || '_05023_struct.arrow', 'Arrow', 's Tuple(a IPv6, b Int32)');
+('2001:db8::1',7)
+SELECT * FROM file(currentDatabase() || '_05023_flat.arrow', 'Arrow', 'v LowCardinality(IPv6)');
+2001:db8::2
+SELECT * FROM file(currentDatabase() || '_05023_array.arrow', 'Arrow', 'a Array(LowCardinality(IPv6))');
+['2001:db8::3']
+SELECT * FROM file(currentDatabase() || '_05023_binary.arrow', 'Arrow', 'v LowCardinality(IPv6)');
+2001:db8::4
+SELECT * FROM file(currentDatabase() || '_05023_nested_int128.arrow', 'Arrow', 'n Nested(v Int128)');
+[1234567890123456789]
+SELECT * FROM file(currentDatabase() || '_05023_nested_date32.arrow', 'Arrow', 'n Nested(d Int32)');
+[2932996]
+SELECT * FROM file(currentDatabase() || '_05023_date32.arrow', 'Arrow', 'd Decimal(10, 0)');
+2932996
+SELECT * FROM file(currentDatabase() || '_05023_date32_inrange.arrow', 'Arrow', 'd Decimal(10, 0)');
+18262

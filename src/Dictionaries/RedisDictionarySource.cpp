@@ -7,7 +7,6 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -94,7 +93,7 @@ Setting fields:
 |---------|-------------|
 | `host` | The Redis host. |
 | `port` | The port on the Redis server. |
-| `storage_type` | The structure of the internal Redis storage used to work with keys. `simple` uses a flat key-value map and supports simple-key layouts as well as single-column complex-key layouts (such as `complex_key_cache` and `complex_key_direct`). `hash_map` uses a Redis hash and is required for composite complex keys; it expects exactly two key columns. Key columns must be of integer or string type. Ranged layouts are unsupported. Default value is `simple`. Optional. |
+| `storage_type` | The structure of the internal Redis storage used to work with keys. `simple` uses a flat key-value map and supports simple-key layouts as well as single-column complex-key layouts (such as `complex_key_cache` and `complex_key_direct`). `hash_map` uses a Redis hash and is required for composite complex keys; it expects exactly two key columns. Key columns must be of native integer (`Int8` to `Int64`, `UInt8` to `UInt64`) or `String` type; wide integers such as `Int256` are not supported. Ranged layouts are unsupported. Default value is `simple`. Optional. |
 | `db_index` | The specific numeric index of Redis logical database. Default value is `0`. Optional. |
 )DOCS_MD",
             .syntax = "SOURCE(REDIS(host 'host' port 6379 storage_type 'simple' db_index 0))",
@@ -127,9 +126,9 @@ Setting fields:
             // suppose key[0] is primary key, key[1] is secondary key
 
             for (const auto & key : *dict_struct.key)
-                if (!isInteger(key.type) && !isString(key.type))
+                if (!isNativeInteger(key.type) && !isString(key.type))
                     throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                        "Redis source supports only integer or string key, but key '{}' of type {} given",
+                        "Redis source supports only native integer or string key, but key '{}' of type {} given",
                         key.name,
                         key.type->getName());
         }
@@ -145,9 +144,9 @@ Setting fields:
                     dict_struct.key->size());
 
             const auto & key = dict_struct.key->front();
-            if (!isInteger(key.type) && !isString(key.type))
+            if (!isNativeInteger(key.type) && !isString(key.type))
                 throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                    "Redis source supports only integer or string key, but key '{}' of type {} given",
+                    "Redis source supports only native integer or string key, but key '{}' of type {} given",
                     key.name,
                     key.type->getName());
         }
@@ -231,8 +230,6 @@ Setting fields:
                 out << DB::toString(key_columns[column]->getInt(row));
             else if (isNativeUInt(type))
                 out << DB::toString(key_columns[column]->getUInt(row));
-            else if (isInteger(type))
-                out << applyVisitor(FieldVisitorToString(), (*key_columns[column])[row]);
             else if (isString(type))
                 out << (*key_columns[column])[row].safeGet<String>();
             else

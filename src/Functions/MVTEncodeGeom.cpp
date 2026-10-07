@@ -687,7 +687,11 @@ Supported input geometry types are `Point`, `MultiPoint`, `LineString`, `MultiLi
         {
             "Project a point into a tile",
             "SELECT MVTEncodeGeom((13.37, 52.52)::Point, 10, 550, 335)",
-            "",
+            R"(
+┌─MVTEncodeGeom(CAST('(13.37, 52.52)', 'Point'), 10, 550, 335)─┐
+│ (124,3384)                                                   │
+└──────────────────────────────────────────────────────────────┘
+)",
         },
     };
     FunctionDocumentation::IntroducedIn introduced_in = {26, 7};

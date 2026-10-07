@@ -27,11 +27,13 @@ namespace DB
 /// threshold in rows while staying below it in keys gives up on freezing, per thread: the
 /// stream has few groups (typically with fat states, which want the conversion and its
 /// bucket-parallel merge). And when the staged stream as a whole proves to repeat the same keys
-/// over and over, every thread thaws its table: those repeats are neither frequent enough for
-/// the local tables nor rare keys to store once, and staging them re-processes the bulk of the
-/// stream that ordinary insertion would absorb as cheap in-place updates. The thaw verdict is
-/// remembered in the hash-table statistics, so later runs of the query skip the engagement
-/// altogether instead of re-measuring the stream.
+/// over and over, every thread thaws its table. A key's first staged record is the price of
+/// storing it once; every repeat is bytes the baseline would have absorbed as a cheap
+/// in-place update. The thaw therefore fires once the wasted staged bytes per distinct key
+/// exceed a bound, which stands repetitive streams down early in proportion to how heavy
+/// their keys and arguments are. The thaw verdict is remembered in the hash-table
+/// statistics, so later runs of the query skip the engagement altogether instead of
+/// re-measuring the stream.
 ///
 /// Merge phase: at the end of input every local table converts to two-level and the standard
 /// bucket-parallel merge runs, except that the merge task owning bucket b first drains backlog b

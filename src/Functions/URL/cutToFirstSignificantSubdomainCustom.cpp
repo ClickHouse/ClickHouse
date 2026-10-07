@@ -160,9 +160,9 @@ Similar to [cutToFirstSignificantSubdomainCustom](#cutToFirstSignificantSubdomai
 SELECT cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list');
         )",
         R"(
-┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─────┐
-│ www.foo                                                                      │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─cutToFirstSignificantSubdomainCustomRFC('www.foo', 'public_suffix_list')─┐
+│ foo                                                                      │
+└──────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -204,7 +204,7 @@ Similar to [cutToFirstSignificantSubdomainCustomWithWWW](#cutToFirstSignificantS
     {
         "RFC 3986 parsing preserving www with custom TLD list",
         "SELECT cutToFirstSignificantSubdomainCustomWithWWWRFC('https://www.subdomain.example.custom', 'public_suffix_list')",
-        "www.example.custom"
+        "example.custom"
     }
     };
     FunctionDocumentation::IntroducedIn cutToFirstSignificantSubdomainCustomWithWWWRFC_introduced_in = {22, 10};

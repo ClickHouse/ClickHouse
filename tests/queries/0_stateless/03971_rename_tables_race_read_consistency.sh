@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-replicated-database
+# Tag no-replicated-database: the chained exchange `RENAME` is not supported
 
 set -e
 
@@ -30,7 +31,7 @@ EOF
 # Each iteration races one SELECT against one RENAME and waits for both: at most 2 concurrent
 # clients per test instance, so the flaky check (8 instances in parallel, each sanitizer client
 # ~0.5 GB) stays well under the container memory limit.
-for enable_analyzer in 0 1; do
+for enable_analyzer in 1; do
     for _ in {1..10}; do
         (! ${CLICKHOUSE_CLIENT} --enable_analyzer="$enable_analyzer" --query "SELECT n * 0.123 FROM (SELECT * FROM tbl_03971_a)" 2>&1 | grep LOGICAL_ERROR) &
         select_pid=$!

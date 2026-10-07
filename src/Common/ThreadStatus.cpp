@@ -135,7 +135,17 @@ static thread_local bool has_alt_stack = false;
 
 
 ThreadStatus::ThreadStatus()
-    : thread_id(getThreadId())
+    : ThreadStatus(getThreadId())
+{
+}
+
+ThreadStatus::ThreadStatus(NoOSThreadTag)
+    : ThreadStatus(NO_OS_THREAD)
+{
+}
+
+ThreadStatus::ThreadStatus(UInt64 thread_id_)
+    : thread_id(thread_id_)
 {
     chassert(!current_thread);
 
@@ -264,9 +274,30 @@ void ThreadStatus::flushUntrackedMemory()
     memory_tracker.adjustWithUntrackedMemory(current_untracked_memory);
 }
 
+void ThreadStatus::publishUntrackedMemory()
+{
+    if (!per_cpu_memory.publish(untracked_memory.load(), per_cpu_untracked_memory))
+        flushUntrackedMemory();
+}
+
+namespace
+{
+thread_local bool query_cancellation_blocked = false;
+}
+
+ThreadStatus::QueryCancellationBlocker::QueryCancellationBlocker()
+    : previous(std::exchange(query_cancellation_blocked, true))
+{
+}
+
+ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
+{
+    query_cancellation_blocked = previous;
+}
+
 bool ThreadStatus::isQueryCanceled() const
 {
-    if (!thread_group)
+    if (!thread_group || query_cancellation_blocked)
         return false;
 
     if (local_data.query_is_canceled_predicate)
@@ -276,7 +307,7 @@ bool ThreadStatus::isQueryCanceled() const
 
 void ThreadStatus::throwIfQueryCanceled() const
 {
-    if (!thread_group)
+    if (!thread_group || query_cancellation_blocked)
         return;
 
     if (local_data.throw_if_query_canceled_predicate)

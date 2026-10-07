@@ -19,40 +19,36 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 لحصر الوصول إلى خدمات ClickHouse Cloud الخاصة بك عبر عناوين AWS PrivateLink فقط، اتبع الإرشادات التي يوفرها ClickHouse Cloud بشأن [قوائم الوصول حسب عنوان IP](/ar/products/cloud/guides/security/connectivity/setting-ip-filters).
 
-<Note>
-  يدعم ClickHouse Cloud [PrivateLink عبر المناطق](https://aws.amazon.com/about-aws/whats-new/2024/11/aws-privatelink-across-region-connectivity/) من المناطق التالية:
+يدعم ClickHouse Cloud [PrivateLink عبر المناطق](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region) للخدمات المستضافة في مناطق AWS التالية:
 
-  * sa-east-1
-  * il-central-1
-  * me-south-1
-  * mx-central-1
-  * eu-central-2
-  * eu-north-1
-  * eu-south-2
-  * eu-west-3
-  * eu-south-1
-  * eu-west-2
-  * eu-west-1
-  * eu-central-1
-  * ca-west-1
-  * ca-central-1
-  * ap-northeast-1
-  * ap-southeast-2
-  * ap-southeast-1
-  * ap-northeast-2
-  * ap-northeast-3
-  * ap-south-1
-  * ap-southeast-5
-  * ap-southeast-4
-  * ap-southeast-3
-  * ap-south-2
-  * ap-east-1
-  * af-south-1
-  * us-west-2
-  * us-west-1
-  * us-east-2
-  * us-east-1
-</Note>
+يغطي الجدول مناطق استضافة الخدمات فقط. وتستخدم مناطق نقاط نهاية VPC للواجهة الخاصة بالمستهلك قائمة سماح منفصلة؛ فعلى سبيل المثال، تُعد `mx-central-1` منطقة مستهلك مسموحًا بها، رغم أن الخدمات المستضافة فيها لا يمكنها تفعيل الوصول عبر المناطق.
+
+| رمز المنطقة      | اسم المنطقة                             |
+| ---------------- | --------------------------------------- |
+| `af-south-1`     | أفريقيا (كيب تاون)                      |
+| `ap-east-1`      | آسيا والمحيط الهادئ (هونغ كونغ)         |
+| `ap-northeast-1` | آسيا والمحيط الهادئ (طوكيو)             |
+| `ap-northeast-2` | آسيا والمحيط الهادئ (سيول)              |
+| `ap-south-1`     | آسيا والمحيط الهادئ (مومباي)            |
+| `ap-southeast-1` | آسيا والمحيط الهادئ (سنغافورة)          |
+| `ap-southeast-2` | آسيا والمحيط الهادئ (سيدني)             |
+| `ap-southeast-3` | آسيا والمحيط الهادئ (جاكرتا)            |
+| `ap-southeast-5` | آسيا والمحيط الهادئ (ماليزيا)           |
+| `ca-central-1`   | كندا (الوسطى)                           |
+| `eu-central-1`   | أوروبا (فرانكفورت)                      |
+| `eu-north-1`     | أوروبا (ستوكهولم)                       |
+| `eu-west-1`      | أوروبا (أيرلندا)                        |
+| `eu-west-2`      | أوروبا (لندن)                           |
+| `il-central-1`   | إسرائيل (تل أبيب)                       |
+| `me-central-1`   | الشرق الأوسط (الإمارات العربية المتحدة) |
+| `sa-east-1`      | أمريكا الجنوبية (ساو باولو)             |
+| `us-east-1`      | شرق الولايات المتحدة (N. Virginia)      |
+| `us-east-2`      | شرق الولايات المتحدة (أوهايو)           |
+| `us-west-2`      | غرب الولايات المتحدة (أوريغون)          |
+
+<Warning>
+  لا يتوفر PrivateLink عبر المناطق لخدمات ClickHouse Cloud المستضافة في `ap-east-2` أو `mx-central-1`. للاتصال بخدمة في أيٍ من المنطقتين باستخدام PrivateLink، أنشئ نقطة نهاية VPC للواجهة في منطقة AWS نفسها التي توجد فيها الخدمة.
+</Warning>
 
 <Note>
   تفرض AWS رسومًا على نقل البيانات عبر المناطق. راجع [أسعار AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/) للاطلاع على التفاصيل.
@@ -376,61 +372,51 @@ jq .result
   ## استكشاف الأخطاء وإصلاحها
 </div>
 
-<div id="multiple-privatelinks-in-one-region">
-  ### عدة PrivateLinks في منطقة واحدة
-</div>
+<AccordionGroup>
+  <Accordion title="عدة اتصالات PrivateLink في منطقة واحدة" id="multiple-privatelinks-in-one-region">
+    في معظم الحالات، لا تحتاج إلا إلى إنشاء خدمة نقطة نهاية واحدة لكل VPC. ويمكن لنقطة النهاية هذه توجيه الطلبات من VPC إلى عدة خدمات ClickHouse Cloud.
+    يُرجى الرجوع [هنا](#considerations)
+  </Accordion>
 
-في معظم الحالات، لا تحتاج إلا إلى إنشاء خدمة endpoint واحدة لكل VPC. ويمكن لهذا endpoint توجيه الطلبات من الـ VPC إلى عدة خدمات ClickHouse Cloud.
-يُرجى الرجوع إلى [هذا القسم](#considerations)
+  <Accordion title="انتهت مهلة الاتصال بنقطة النهاية الخاصة" id="connection-to-private-endpoint-timed-out">
+    * يُرجى إرفاق مجموعة الأمان بنقطة نهاية VPC.
+    * يُرجى التحقق من قواعد `inbound` في مجموعة الأمان المرفقة بنقطة النهاية، والسماح بمنافذ ClickHouse.
+    * يُرجى التحقق من قواعد `outbound` في مجموعة الأمان المرفقة بالجهاز الظاهري المستخدم لاختبار الاتصال، والسماح بالاتصالات بمنافذ ClickHouse.
+  </Accordion>
 
-<div id="connection-to-private-endpoint-timed-out">
-  ### انتهت مهلة الاتصال بنقطة النهاية الخاصة
-</div>
+  <Accordion title="اسم المضيف الخاص: تعذر العثور على عنوان المضيف" id="private-hostname-not-found-address-of-host">
+    * يُرجى التحقق من تهيئة DNS لديك
+  </Accordion>
 
-* يُرجى إرفاق مجموعة أمان بـ VPC Endpoint.
-* يُرجى التحقق من قواعد `inbound` في مجموعة الأمان المرتبطة بـ Endpoint، والتأكد من السماح بمنافذ ClickHouse.
-* يُرجى التحقق من قواعد `outbound` في مجموعة الأمان المرتبطة بالآلة الافتراضية المستخدمة لاختبار الاتصال، والتأكد من السماح بالاتصالات إلى منافذ ClickHouse.
+  <Accordion title="أعاد النظير تعيين الاتصال" id="connection-reset-by-peer">
+    * على الأرجح لم تتم إضافة Endpoint ID إلى قائمة السماح الخاصة بالخدمة، يُرجى الانتقال إلى [الخطوة](#add-endpoint-id-to-services-allow-list)
+  </Accordion>
 
-<div id="private-hostname-not-found-address-of-host">
-  ### اسم المضيف الخاص: تعذّر العثور على عنوان المضيف
-</div>
+  <Accordion title="التحقق من عوامل تصفية نقطة النهاية" id="checking-endpoint-filters">
+    عيّن متغيرات البيئة التالية قبل تشغيل أي أوامر:
 
-* يُرجى التحقق من إعدادات DNS لديك
+    ```bash
+    KEY_ID=<Key ID>
+    KEY_SECRET=<Key secret>
+    ORG_ID=<please set ClickHouse organization ID>
+    INSTANCE_ID=<Instance ID>
+    ```
 
-<div id="connection-reset-by-peer">
-  ### تمت إعادة ضبط الاتصال بواسطة النظير
-</div>
+    يمكنك استرداد `INSTANCE_ID` من [الخطوة](#option-2-api).
 
-* على الأرجح، لم تتم إضافة Endpoint ID إلى قائمة السماح الخاصة بالخدمة. يُرجى الرجوع إلى [الخطوة](#add-endpoint-id-to-services-allow-list)
+    ```shell
+    curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
+    -X GET -H "Content-Type: application/json" \
+    "https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
+    jq .result.privateEndpointIds
+    ```
+  </Accordion>
 
-<div id="checking-endpoint-filters">
-  ### التحقق من مرشحات نقاط النهاية
-</div>
+  <Accordion title="الاتصال بقاعدة بيانات بعيدة" id="connecting-to-a-remote-database">
+    وفقًا لـ [وثائق AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
 
-اضبط متغيرات البيئة التالية قبل تشغيل أي أوامر:
+    > استخدم AWS PrivateLink عندما يكون لديك إعداد عميل/خادم وتريد منح VPC مستهلك واحد أو أكثر وصولًا أحادي الاتجاه إلى خدمة محددة أو إلى مجموعة من المثيلات داخل VPC الخاص بمزوّد الخدمة. ولا يمكن إلا للعملاء الموجودين في VPC المستهلك بدء اتصال بالخدمة الموجودة في VPC الخاص بمزوّد الخدمة.
 
-```bash
-KEY_ID=<Key ID>
-KEY_SECRET=<Key secret>
-ORG_ID=<please set ClickHouse organization ID>
-INSTANCE_ID=<Instance ID>
-```
-
-يمكنك الحصول على `INSTANCE_ID` من [الخطوة](#option-2-api).
-
-```shell
-curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
--X GET -H "Content-Type: application/json" \
-"https://api.clickhouse.cloud/v1/organizations/${ORG_ID:?}/services/${INSTANCE_ID:?}" | \
-jq .result.privateEndpointIds
-```
-
-<div id="connecting-to-a-remote-database">
-  ### الاتصال بقاعدة بيانات بعيدة
-</div>
-
-وفقًا لـ [وثائق AWS PrivateLink](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html):
-
-> استخدم AWS PrivateLink عندما يكون لديك إعداد عميل/خادم وتريد منح VPC مستهلك واحد أو أكثر وصولًا أحادي الاتجاه إلى خدمة محددة أو إلى مجموعة من المثيلات داخل VPC الخاص بمزوّد الخدمة. ولا يمكن إلا للعملاء الموجودين في VPC المستهلك بدء اتصال بالخدمة الموجودة في VPC الخاص بمزوّد الخدمة.
-
-لتوصيل دوال الجداول [MySQL](/ar/reference/functions/table-functions/mysql) أو [PostgreSQL](/ar/reference/functions/table-functions/postgresql) في ClickHouse Cloud بقاعدة بيانات مستضافة في AWS VPC لديك، اضبط مجموعات الأمان في AWS للسماح باتصالات من ClickHouse Cloud. راجع [عناوين IP الصادرة الافتراضية لمناطق ClickHouse Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api)، إلى جانب [عناوين IP الثابتة المتاحة](https://api.clickhouse.cloud/static-ips.json).
+    لتوصيل دوال الجداول [MySQL](/ar/reference/functions/table-functions/mysql) أو [PostgreSQL](/ar/reference/functions/table-functions/postgresql) في ClickHouse Cloud بقاعدة بيانات مستضافة في AWS VPC لديك، اضبط مجموعات الأمان في AWS للسماح باتصالات من ClickHouse Cloud. راجع [عناوين IP الصادرة الافتراضية لمناطق ClickHouse Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api)، إلى جانب [عناوين IP الثابتة المتاحة](https://api.clickhouse.cloud/static-ips.json).
+  </Accordion>
+</AccordionGroup>

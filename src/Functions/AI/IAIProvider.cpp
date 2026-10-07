@@ -62,7 +62,8 @@ AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPSt
 {
 }
 
-AIEmbeddingResponse IAIProvider::embed(const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/)
+void IAIProvider::embed(
+    const AIEmbeddingRequest & /*ai_embedding_request*/, const ConnectionTimeouts & /*timeouts*/, AIEmbeddingResponse & /*response*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This AI provider does not support embeddings");
 }

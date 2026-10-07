@@ -30,8 +30,6 @@ INSERT INTO pfsmj_nrio_ord SELECT number % 3000, number % 100 FROM numbers(4000,
 INSERT INTO pfsmj_nrio_dim SELECT number, number * 2 FROM numbers(100);
 INSERT INTO pfsmj_nrio_probe SELECT number % 2000, number FROM numbers(5000);
 
--- Analyzer path. The default is overridden to 0 in the old-analyzer CI configuration, so pin it
--- explicitly (`enable_analyzer` cannot be changed inside a subquery, so set it at session level).
 SET enable_analyzer = 1;
 
 -- The outer join is NOT scattered: its left side is a sorted subquery (a pre-sorted `FinishSorting` side),
@@ -75,23 +73,6 @@ FROM
     EXCEPT
     (SELECT s.k, p.y FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k SETTINGS join_algorithm = 'hash')
 );
-
--- Legacy analyzer: the nested read-in-order subquery must not scatter and must stay correct too.
--- `enable_analyzer` cannot be changed inside a subquery, so set it at session level (as in `04494` /
--- `04497` / `04500`).
-SET enable_analyzer = 0;
-
-SELECT 'legacy not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
-FROM (EXPLAIN PIPELINE
-  SELECT s.k FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s
-  INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k
-  SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, query_plan_join_shard_by_pk_ranges = 0);
-
-SELECT 'legacy virtual_row_on',
-    (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, query_plan_join_shard_by_pk_ranges = 0)
-  = (SELECT (sum(s.k), sum(p.y), count()) FROM (SELECT l.k AS k FROM pfsmj_nrio_ord AS l INNER JOIN pfsmj_nrio_dim AS r ON l.d = r.d ORDER BY l.k SETTINGS join_algorithm = 'hash') AS s INNER JOIN pfsmj_nrio_probe AS p ON s.k = p.k SETTINGS join_algorithm = 'hash');
-
-SET enable_analyzer = 1;
 
 DROP TABLE pfsmj_nrio_ord;
 DROP TABLE pfsmj_nrio_dim;

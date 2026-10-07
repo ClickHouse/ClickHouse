@@ -67,14 +67,12 @@
 -- a MATERIALIZED twin is physical in the destination and stays supported --
 5
 5
-5
 -- a target ALIAS twin behind a view is rejected for PREWHERE too --
 -- a column missing from one child is rejected for PREWHERE --
 -- a column every child declares still supports PREWHERE, and WHERE sees the defaults --
 5
 5
 -- a policy on the missing column filters above the read instead of failing inside it --
-5
 5
 -- a policy on the shared column still pushes --
 5

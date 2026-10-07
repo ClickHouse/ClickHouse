@@ -29,17 +29,17 @@ CH="${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --enable
 TAGS="parquet avro depth3 multi array map unnamed"
 
 # Drop the objects before removing their directories (a surviving table is re-attached
-# with its data gone), pinning `ignore_drop_queries_probability` as `roundtrip` does.
+# with its data gone).
 cleanup() {
     local query="" tag
     for tag in ${TAGS}; do
-        query="${query} DROP TABLE IF EXISTS mv_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;"
+        query="${query} DROP TABLE IF EXISTS mv_${PFX}_${tag};"
     done
     for tag in ${TAGS}; do
-        query="${query} DROP TABLE IF EXISTS src_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;"
-        query="${query} DROP TABLE IF EXISTS dst_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;"
+        query="${query} DROP TABLE IF EXISTS src_${PFX}_${tag};"
+        query="${query} DROP TABLE IF EXISTS dst_${PFX}_${tag};"
     done
-    query="${query} DROP TABLE IF EXISTS added_${PFX} SETTINGS ignore_drop_queries_probability = 0;"
+    query="${query} DROP TABLE IF EXISTS added_${PFX};"
     ${CH} -q "${query}" > /dev/null 2>&1 || true
     rm -rf "${BASE_DIR}"
 }
@@ -68,16 +68,14 @@ print(deepest(json.load(open(sys.argv[1]))['schemas'][-1]['fields'])[1])
 
 # Write each shape through a materialized view (the write path that publishes the
 # Iceberg schema) and read the value back, so the round trip is asserted end to end.
-# The DROPs pin ignore_drop_queries_probability: the stress job injects 0.2 for it,
-# and an ignored DROP would leave the table behind and fail the next CREATE.
 roundtrip() {
     local tag="$1" type="$2" insert="$3" format="$4"
     local engine="IcebergLocal('${BASE_DIR}/${tag}/'"
     [ -n "${format}" ] && engine="${engine}, '${format}'"
     ${CH} -q "
-DROP TABLE IF EXISTS mv_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS src_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS dst_${PFX}_${tag} SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS mv_${PFX}_${tag};
+DROP TABLE IF EXISTS src_${PFX}_${tag};
+DROP TABLE IF EXISTS dst_${PFX}_${tag};
 CREATE TABLE src_${PFX}_${tag} (c0 ${type}) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE dst_${PFX}_${tag} (c0 ${type}) ENGINE = ${engine});
 CREATE MATERIALIZED VIEW mv_${PFX}_${tag} TO dst_${PFX}_${tag} AS SELECT c0 FROM src_${PFX}_${tag};
@@ -111,7 +109,7 @@ echo "unnamed innermost name: $(innermost_name unnamed)"
 # second call site that a CREATE-only test would miss. Iceberg refuses adding a
 # non-nullable column, hence Nullable.
 ${CH} -q "
-DROP TABLE IF EXISTS added_${PFX} SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS added_${PFX};
 CREATE TABLE added_${PFX} (id Int64) ENGINE = IcebergLocal('${BASE_DIR}/added/', 'Avro');
 INSERT INTO added_${PFX} VALUES (1);
 ALTER TABLE added_${PFX} ADD COLUMN c1 Nullable(Tuple(o Tuple(i UInt32)));

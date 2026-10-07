@@ -27,7 +27,7 @@ struct L1Norm
     template <typename ResultType>
     static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
-        return result + fabs(value);
+        return result + std::fabs(value);
     }
 
     template <typename ResultType>
@@ -64,7 +64,7 @@ struct L2Norm
     template <typename ResultType>
     static ResultType finalize(ResultType result, const ConstParams &)
     {
-        return sqrt(result);
+        return std::sqrt(result);
     }
 };
 
@@ -93,7 +93,7 @@ struct LpNorm
     template <typename ResultType>
     static ResultType accumulate(ResultType result, ResultType value, const ConstParams & params)
     {
-        return result + static_cast<ResultType>(std::pow(fabs(value), params.power));
+        return result + static_cast<ResultType>(std::pow(std::fabs(value), params.power));
     }
 
     template <typename ResultType>
@@ -118,13 +118,13 @@ struct LinfNorm
     template <typename ResultType>
     static ResultType accumulate(ResultType result, ResultType value, const ConstParams &)
     {
-        return fmax(result, fabs(value));
+        return std::fmax(result, std::fabs(value));
     }
 
     template <typename ResultType>
     static ResultType combine(ResultType result, ResultType other_result, const ConstParams &)
     {
-        return fmax(result, other_result);
+        return std::fmax(result, other_result);
     }
 
     template <typename ResultType>

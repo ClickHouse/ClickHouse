@@ -55,6 +55,14 @@ struct Dictionary
     /// decoded `col`), excluding `data` which only points into one of those or into prefetcher memory.
     size_t allocatedBytes() const;
     void index(const ColumnUInt32 & indexes_col, IColumn & out);
+    /// Append the values at the given dictionary indexes to `out`. Same as `index`, from a plain
+    /// array; `index` delegates here. The indexes must be within bounds.
+    void appendIndexes(const UInt32 * indexes, size_t n, IColumn & out);
+    /// Append the value at dictionary index `idx` to `out`, `n` times. Used by the fused
+    /// decode-and-index path (`PageDecoder::decodeAndIndex`) to turn an RLE run of a repeated
+    /// index into a bulk fill, instead of expanding the run into explicit indexes and gathering
+    /// them one by one.
+    void appendRepeated(size_t idx, size_t n, IColumn & out);
     void decode(parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values, std::span<const char> data_, const IDataType & raw_decoded_type);
 
     /// Upper bound on `allocatedBytes()` after `decode()` with the given arguments, computed from the
@@ -77,6 +85,15 @@ struct PageDecoder
 {
     virtual void skip(size_t num_values) = 0;
     virtual void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) = 0;
+
+    /// Fused decode-and-gather for dictionary-encoded data pages: append the *dictionary values*
+    /// at the decoded indexes directly to `out`, without materializing the indexes as a column.
+    /// An RLE run of a repeated index becomes a single dictionary lookup and a bulk fill, and
+    /// bit-packed indexes are gathered from a small stack buffer, saving a full write + read pass
+    /// over an indexes column (most values in typical files sit in RLE runs). Returns false if
+    /// this decoder (or this dictionary mode) does not support the fusion; the caller then falls
+    /// back to `decode` into an indexes column + `Dictionary::index`.
+    virtual bool decodeAndIndex(size_t /*num_values*/, Dictionary & /*dictionary*/, IColumn & /*out*/) { return false; }
 
     explicit PageDecoder(std::span<const char> data_) : data(data_.data()), end(data_.data() + data_.size()) {}
     virtual ~PageDecoder() = default;
@@ -111,7 +128,8 @@ struct FixedSizeConverter
     /// Decodes min/max value from parquet Statistics or ColumnIndex.
     /// Called separately for min (with is_max=false) and max (is_max=true).
     /// Returns std::nullopt if the value can't be decoded; the caller then keeps the corresponding
-    /// range bound at +-infinity.
+    /// range bound at +-infinity. Returns a Null Field if reading a chunk that holds the value throws;
+    /// then none of the chunk's statistics may be used.
     /// Called only if PageDecoderInfo::allow_stats is true, which SchemaConverter sets only after
     /// carefully checking that min/max stats are usable in this situation (either no type
     /// conversion is needed, or the Field is converted afterwards -
@@ -120,6 +138,9 @@ struct FixedSizeConverter
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FixedSizeConverter subclass doesn't support decoding Field");
     }
+
+    /// True if convertField can return a Null Field, so a chunk is bounded only if both its min and max are known.
+    virtual bool statsNeedBothBounds() const { return false; }
 
     virtual ~FixedSizeConverter() = default;
 };
@@ -189,7 +210,8 @@ struct PageDecoderInfo
     /// Decode a min/max value from Statistics.
     /// If not supported, allow_stats is false, or the value doesn't survive the conversion to
     /// `final_output_type` (see cast_stats_to_output_type), leaves `out` unchanged.
-    void decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const;
+    /// Returns false if none of the chunk's statistics may be used (see FixedSizeConverter::convertField).
+    bool decodeField(std::span<const char> data, bool is_max, const IDataType & decoded_type, const IDataType & final_output_type, Field & out) const;
 };
 
 
@@ -210,7 +232,9 @@ struct IntConverter : public FixedSizeConverter
     std::optional<UInt32> field_decimal_scale; // Decimal{32,64}(scale)
     bool field_ipv4 = false; // IPv4
     bool field_timestamp_from_millis = false; // convert DateTime64(3) to DateTime
+    bool field_datetime = false; // DateTime; the cast saturates values above UINT32_MAX
     bool field_signed = true; // Int64, otherwise UInt64
+    bool field_bool = false; // Bool; an endpoint above 1 bounds nothing, as a nonzero value may be read as 1
     /// If not Ignore, it's a date column and we should range-check it.
     FormatSettings::DateTimeOverflowBehavior date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Ignore;
     /// Only used when date_overflow_behavior is not Ignore: the requested output type is Date rather
@@ -238,6 +262,11 @@ struct IntConverter : public FixedSizeConverter
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
     std::optional<Field> convertField(std::span<const char> data, bool /*is_max*/) const override;
+
+    bool statsNeedBothBounds() const override
+    {
+        return date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+    }
 };
 
 /// Input physical type: FLOAT or DOUBLE.
@@ -277,7 +306,6 @@ struct UUIDConverter : public FixedSizeConverter
     UUIDConverter() { input_size = 16; }
 
     void convertColumn(std::span<const char> data, size_t num_values, IColumn & col) const override;
-    std::optional<Field> convertField(std::span<const char> data, bool is_max) const override;
 };
 
 struct TrivialStringConverter : public StringConverter
@@ -414,7 +442,9 @@ struct GeoConverter : public StringConverter
 };
 
 
-void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out);
+/// If out_num_zeros is not null, the number of zero levels is added to it, counted as part of the
+/// decoding.
+void decodeRepOrDefLevels(parq::Encoding::type encoding, UInt8 max, size_t num_values, std::span<const char> data, PaddedPODArray<UInt8> & out, size_t * out_num_zeros = nullptr);
 
 std::unique_ptr<PageDecoder> makeDictionaryIndicesDecoder(parq::Encoding::type encoding, size_t dictionary_size, std::span<const char> data);
 

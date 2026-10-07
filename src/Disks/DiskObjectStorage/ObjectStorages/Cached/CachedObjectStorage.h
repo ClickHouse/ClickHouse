@@ -61,7 +61,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,
@@ -127,7 +129,7 @@ public:
         return object_storage->getAzureBlobStorageAuthMethod();
     }
 
-    const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const override
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override
     {
         return object_storage->getAzureBlobStorageConnectionParams();
     }
@@ -153,18 +155,25 @@ public:
     }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override
+    void tagObjects( /// NOLINT
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override
     {
-        object_storage->tagObjects(objects, tag_key, tag_value);
+        object_storage->tagObjects(objects, tag_key, tag_value, successful_objects);
     }
 #endif
 
     ObjectStoragePtr getUnderlying() override { return object_storage; }
 
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     FileCacheKey getCacheKey(const std::string & path) const;
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
+    WriteSettings patchSettings(const WriteSettings & write_settings) const override;
 
     ObjectStoragePtr object_storage;
     FileCachePtr cache;

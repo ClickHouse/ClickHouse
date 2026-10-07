@@ -22,6 +22,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `receive_timeout` is propagated to the replica and is the timeout a parked one is stuck on. It is
 # lowered here only so that a regression fails in seconds instead of hanging for the default 300,
 # and it is kept well above the window this test polls for.
+#
+# A replica that has already been cancelled stays listed in `system.processes` until its exception's
+# text stack trace has been resolved - seconds on an instrumented build - so that is turned off here.
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_04604 SYNC;
@@ -40,6 +43,7 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" -q "
              parallel_replicas_local_plan = 1,
              automatic_parallel_replicas_mode = 0,
              async_query_sending_for_remote = 0,
+             calculate_text_stack_trace = 0,
              receive_timeout = 10
 "
 

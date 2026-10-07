@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <gtest/gtest.h>
@@ -23,6 +24,7 @@
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/WorkloadResourceManager.h>
 #include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Scheduler/Nodes/WorkloadNode.h>
 #include <base/getMemoryAmount.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/ProfileEvents.h>
@@ -89,6 +91,13 @@ public:
     void loadEntities(const Poco::Util::AbstractConfiguration & config) override
     {
         WorkloadEntityStorageBase::loadEntities(config);
+    }
+
+    // Drive the config/Keeper load path (setLocalEntities) directly from SQL text, the way
+    // WorkloadEntityConfigStorage / WorkloadEntityKeeperStorage do (parse -> setLocalEntities).
+    void loadFromString(const String & data)
+    {
+        setLocalEntities(parseEntitiesFromString(data, getLogger("WorkloadEntityTestStorage")));
     }
 
     void executeQuery(const String & query)
@@ -350,6 +359,104 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     }
 }
 
+// Multiple root workloads (workloads created without a parent): each becomes a child of the
+// resource's implicit anonymous root workload, so several SQL roots coexist and are scheduled
+// among each other.
+TEST(SchedulerWorkloadResourceManager, MultipleRoots)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD a_child IN root_a SETTINGS weight = 3");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD b_child IN root_b");
+
+    ClassifierPtr c_a = t.manager->acquire("a_child");
+    ClassifierPtr c_b = t.manager->acquire("b_child");
+
+    // Both independent trees consume the shared resource.
+    for (int i = 0; i < 10; i++)
+    {
+        ResourceGuard g_a(ResourceGuard::Metrics::getIOWrite(), c_a->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_a.lock();
+        g_a.consume(1);
+        g_a.unlock();
+
+        ResourceGuard g_b(ResourceGuard::Metrics::getIOWrite(), c_b->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_b.lock();
+        g_b.consume(1);
+        g_b.unlock();
+    }
+
+    // Dropping one whole tree leaves the other working.
+    t.query("DROP WORKLOAD a_child");
+    t.query("DROP WORKLOAD root_a");
+
+    ClassifierPtr c_b2 = t.manager->acquire("b_child");
+    ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), c_b2->get("res1"), 1, ResourceGuard::Lock::Defer);
+    g.lock();
+    g.consume(1);
+    g.unlock();
+}
+
+// Changing the priority of a parentless workload via CREATE OR REPLACE re-positions it among the
+// implicit root's children: two equal-priority parentless workloads share one fair branch, and
+// giving one a distinct priority introduces a "prio" policy node under the implicit root.
+TEST(SchedulerWorkloadResourceManager, UpdateParentlessWorkloadPriorityReattaches)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    auto has_priority_node = [&]
+    {
+        bool seen = false;
+        t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode *)
+        {
+            if (path.contains("/prio/"))
+                seen = true;
+        });
+        return seen;
+    };
+
+    // Equal priority: both parentless workloads sit under one fair branch, no priority node.
+    EXPECT_FALSE(has_priority_node());
+
+    // Distinct priority must re-position b under a newly created priority node.
+    t.query("CREATE OR REPLACE WORKLOAD b SETTINGS priority = 1");
+    EXPECT_TRUE(has_priority_node())
+        << "priority change on a parentless workload was not re-positioned under the implicit root";
+}
+
+// The implicit anonymous root workload is exposed by forEachNode so system.scheduler is complete:
+// it has an empty basename and renders at the root path "/".
+TEST(SchedulerWorkloadResourceManager, ImplicitRootExposedInIntrospection)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res (WRITE DISK d, READ DISK d)");
+    t.query("CREATE WORKLOAD a");
+    t.query("CREATE WORKLOAD b");
+
+    bool seen_root = false;
+    String root_type;
+    t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+    {
+        if (path == "/")
+        {
+            seen_root = true;
+            root_type = String(node->getTypeName());
+        }
+    });
+    EXPECT_TRUE(seen_root)
+        << "implicit root workload was not exposed in system.scheduler introspection";
+    EXPECT_EQ(root_type, "workload")
+        << "the node exposed at \"/\" should be the implicit root workload";
+}
+
 TEST(SchedulerWorkloadResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
@@ -464,7 +571,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
         g.waitFailed("is about to be destructed");
     });
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
 
@@ -510,7 +617,7 @@ TEST(SchedulerWorkloadResourceManager, ResourceGuardDefaultLockResetsOnFailure)
     });
 
     sync_before_drop.arrive_and_wait();
-    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's FifoQueue
+    t.query("CREATE WORKLOAD leaf IN intermediate"); // detaches and purges intermediate's RequestQueue
     sync_after_drop.arrive_and_wait();
     t.wait();
 }
@@ -547,7 +654,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
         });
     }
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD leaf IN intermediate");
     sync_after_drop.arrive_and_wait();
 
@@ -604,7 +711,7 @@ TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDeferRequestIsGran
         });
     });
 
-    sync_before_drop.arrive_and_wait(); // main thread triggers FifoQueue destruction by adding a unified child
+    sync_before_drop.arrive_and_wait(); // main thread triggers RequestQueue destruction by adding a unified child
     t.query("CREATE WORKLOAD child IN production");
     sync_after_drop.arrive_and_wait();
 
@@ -667,7 +774,7 @@ TEST(SchedulerWorkloadResourceManager, ReuseRequestAfterFailedDefaultRequestIsGr
 
     sync_leader_ready.arrive_and_wait(); // leader is holding the `production` slot
     sync_worker_ready.arrive_and_wait(); // worker is about to enqueue its (doomed) request
-    t.query("CREATE WORKLOAD child IN production"); // triggers FifoQueue destruction, failing the worker's request
+    t.query("CREATE WORKLOAD child IN production"); // triggers RequestQueue destruction, failing the worker's request
     sync_after_drop.arrive_and_wait(); // release the leader
 
     t.wait(); // Wait for threads to finish before destructing locals
@@ -2343,6 +2450,38 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
     }
 }
 
+// Multiple root workloads on a space-shared resource (MEMORY RESERVATION). Each parentless workload
+// becomes a child of the resource's implicit anonymous root workload (the scheduler's single child)
+// and enforces its own limit independently.
+TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_memory = 100");
+
+    ClassifierPtr c_a = t.manager->acquire("root_a");
+    ClassifierPtr c_b = t.manager->acquire("root_b");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link_a = c_a->get("memory");
+        ResourceLink link_b = c_b->get("memory");
+
+        // Both trees allocate and resize concurrently within their own per-root limits.
+        TestAllocation a(link_a, "A", 80);
+        TestAllocation b(link_b, "B", 80);
+        a.waitSync();
+        b.waitSync();
+
+        a.setSize(20);
+        b.setSize(60);
+        a.waitSync();
+        b.waitSync();
+    }
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationZeroSize)
 {
     ResourceTest t;
@@ -3552,6 +3691,168 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxMemoryRatio)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsPerResourceScheduler)
+{
+    // `scheduler` can be chosen per resource via the `FOR <resource>` clause (e.g. a different
+    // algorithm for CPU and IO). A resource-specific value wins for that resource; a resource with
+    // no specific value falls back to the workload-wide (regular) value, otherwise the `fifo`
+    // default. This resolution is what lets `WorkloadResourceManager` build each resource's leaf
+    // with its own algorithm.
+    ASTCreateWorkloadQuery::SettingsChanges changes;
+    changes.emplace_back("scheduler", Field(String("fair")), "cpu");
+    changes.emplace_back("scheduler", Field(String("las")), "io");
+    changes.emplace_back("scheduler", Field(String("priority")), ""); // workload-wide value
+
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "cpu");
+        EXPECT_EQ(ws.scheduler, "fair");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "io");
+        EXPECT_EQ(ws.scheduler, "las");
+    }
+    {
+        WorkloadSettings ws;
+        ws.initFromChanges(changes, "other"); // no FOR-specific value → workload-wide value
+        EXPECT_EQ(ws.scheduler, "priority");
+    }
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges none;
+        ws.initFromChanges(none);
+        EXPECT_EQ(ws.scheduler, "fifo"); // default when unset
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, CpuLeafUsesConfiguredSchedulerLikeIO)
+{
+    // The `scheduler` setting applies to a CPU leaf exactly as to an IO leaf: it is NOT gated on
+    // `cpu_slot_preemption`, which is a runtime-only server property affecting slot cost, no longer
+    // captured in the node. Other time-shared leaves (e.g. QuerySlot admission) always run fifo.
+    using Traits = WorkloadNodeTraits<ITimeSharedNode>;
+
+    WorkloadSettings ws;
+    ws.scheduler = "fair";
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::IOByte), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::QuerySlot), SchedulerAlgorithm::Fifo);
+}
+
+TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
+{
+    const Int64 cores = static_cast<Int64>(getNumberOfCPUCoresToUse());
+    ASSERT_GT(cores, 0) << "Test host must report a non-zero core count";
+
+    // In-range ratio — resolves to `ratio * cores`, unaffected by the clamp.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(2.5)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, static_cast<Int64>(2.5 * static_cast<Float64>(cores)));
+    }
+
+    // Ratios whose product with the core count exceeds `Int64` range must clamp to `unlimited`
+    // instead of narrowing a float outside the destination range, which is undefined behaviour and
+    // could yield a negative or garbage limit.
+    for (Float64 ratio : {9223372036854775807.0, 1e19, 1e100, std::numeric_limits<Float64>::max()})
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(ratio), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited) << "ratio = " << ratio;
+    }
+
+    // The reported input arrived as an integer literal, which takes the `UInt64` branch of
+    // `getFloat64` and so bypasses its finiteness check entirely.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(UInt64(9223372036854775807ULL)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+
+    // A smaller exact limit still wins over the saturated ratio limit.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads", Field(Int64(4)), "");
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(1e100)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, 4);
+    }
+
+    // Zero ratio does not constrain.
+    {
+        WorkloadSettings ws;
+        ASTCreateWorkloadQuery::SettingsChanges changes;
+        changes.emplace_back("max_concurrent_threads_ratio_to_cores", Field(Float64(0)), "");
+        ws.initFromChanges(changes);
+        EXPECT_EQ(ws.max_concurrent_threads, WorkloadSettings::unlimited);
+    }
+}
+
+// The config/Keeper load path (setLocalEntities) must enforce the same setting-value contract as the
+// SQL path (storeEntity). Regression: it previously ran only the `FOR <resource>` unit check, so an
+// invalid value loaded from config/Keeper was accepted and only surfaced later, when the scheduler
+// node was built.
+TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
+{
+    {
+        ResourceTest t;
+        // Bad value in a `... FOR <resource>` clause (the reported case).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'bogus' FOR cpu"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // Bad value in the base settings.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'nope'"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A valid config loads without error.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString(
+                "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+                "CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"));
+    }
+    {
+        ResourceTest t;
+        // Forward-compat: an unknown setting NAME loaded from config/Keeper/disk is tolerated (the
+        // load path passes throw_on_unknown_setting=false, matching the runtime NodeInfo parser), so
+        // a newer node's entity does not make an older node reject the whole workload.
+        EXPECT_NO_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS some_future_setting = 5"));
+    }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause must target an existing RESOURCE, not a workload (parity with
+        // storeEntity's forEachReference check).
+        EXPECT_THROW(
+            t.storage.loadFromString(
+                "CREATE WORKLOAD all;\n"
+                "CREATE WORKLOAD bad IN all SETTINGS scheduler = 'fair' FOR all"),
+            DB::Exception);
+    }
+    {
+        ResourceTest t;
+        // A `FOR <resource>` clause targeting a missing entity is rejected.
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR missing_resource"),
+            DB::Exception);
+    }
+}
+
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
 // (current_max_slots gated schedule + setMax growth). Higher-level fairness /
 // preemption behaviour is exercised by the PreemptiveCPUScheduling* tests above;
@@ -3790,4 +4091,157 @@ TEST(SchedulerWorkloadResourceManager, PreemptiveCPUSchedulingEagerDefaultIsUnch
     });
 
     t.wait();
+}
+
+// Shared with in-flight handlers, so it must outlive every subscriber that owns a subscription.
+struct UnsubscribeProbe
+{
+    std::mutex mutex;
+    std::condition_variable blocker_entered_cv;
+    bool blocker_entered = false;
+    std::condition_variable release_cv;
+    bool release_blocker = false;
+    std::chrono::seconds blocker_hold{2};
+    std::atomic<bool> armed{false};
+    std::atomic<int> blocker_in_flight{0};
+    std::atomic<int> unsubscribed_handler_calls{0};
+    std::atomic<int> live_handler_calls{0};
+};
+
+// Captures `this` in its handler, like every real subscriber of getAllEntitiesAndSubscribe.
+// `subscription` is declared last, so it is destroyed before any state the handler reads.
+struct UnsubscribeTestSubscriber
+{
+    enum class Role
+    {
+        Blocker, // holds the notification inside the handler for a while
+        CountUnsubscribed, // increments unsubscribed_handler_calls
+        CountLive, // increments live_handler_calls
+    };
+
+    UnsubscribeTestSubscriber(WorkloadEntityTestStorage & storage, std::shared_ptr<UnsubscribeProbe> probe_, Role role_)
+        : probe(std::move(probe_)), role(role_)
+    {
+        subscription = storage.getAllEntitiesAndSubscribe(
+            [this, shared_probe = probe] (const std::vector<IWorkloadEntityStorage::Event> &)
+            {
+                // Reading a member is what makes the `this` capture load-bearing.
+                if (state.empty())
+                    return;
+
+                if (!shared_probe->armed.load())
+                    return;
+
+                switch (role)
+                {
+                    case Role::Blocker:
+                    {
+                        shared_probe->blocker_in_flight.fetch_add(1);
+                        {
+                            std::lock_guard lock{shared_probe->mutex};
+                            shared_probe->blocker_entered = true;
+                        }
+                        shared_probe->blocker_entered_cv.notify_all();
+                        // Held until the test releases it, or for blocker_hold if the test has nothing to signal.
+                        {
+                            std::unique_lock lock{shared_probe->mutex};
+                            shared_probe->release_cv.wait_for(
+                                lock, shared_probe->blocker_hold, [&] { return shared_probe->release_blocker; });
+                        }
+                        shared_probe->blocker_in_flight.fetch_sub(1);
+                        break;
+                    }
+                    case Role::CountUnsubscribed:
+                        shared_probe->unsubscribed_handler_calls.fetch_add(1);
+                        break;
+                    case Role::CountLive:
+                        shared_probe->live_handler_calls.fetch_add(1);
+                        break;
+                }
+            });
+    }
+
+    std::shared_ptr<UnsubscribeProbe> probe;
+    Role role;
+    String state = "subscribed";
+    scope_guard subscription;
+};
+
+// Blocks until the blocker handler is provably inside its window.
+static bool waitForBlocker(UnsubscribeProbe & probe)
+{
+    std::unique_lock lock{probe.mutex};
+    return probe.blocker_entered_cv.wait_for(lock, std::chrono::seconds(60), [&] { return probe.blocker_entered; });
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeWaitsForInFlightNotification)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+
+    // The initial handler(current_state) call already happened above, with `armed == false`.
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Handler never started, so the barrier was never exercised";
+    EXPECT_EQ(probe->blocker_in_flight.load(), 1) << "Handler is not in flight, so the barrier was never exercised";
+
+    // Destroys the scope_guard returned by getAllEntitiesAndSubscribe.
+    // The handler must still be running when unsubscribe is entered, so only the blocked thread could signal a release.
+    blocker.reset();
+
+    EXPECT_EQ(probe->blocker_in_flight.load(), 0) << "Unsubscribe returned while the handler was still running";
+
+    notifier.join();
+}
+
+TEST(SchedulerWorkloadResourceManager, UnsubscribeSkipsHandlerNotYetReached)
+{
+    WorkloadEntityTestStorage storage;
+    auto probe = std::make_shared<UnsubscribeProbe>();
+
+    // Subscription order is notification order, so the blocker holds the notification before it
+    // reaches the two handlers below.
+    auto blocker = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::Blocker);
+    auto unsubscribed = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountUnsubscribed);
+    auto live = std::make_unique<UnsubscribeTestSubscriber>(
+        storage, probe, UnsubscribeTestSubscriber::Role::CountLive);
+
+    // A deadlock escape that must never fire; the release after the unsubscribe below ends the hold.
+    probe->blocker_hold = std::chrono::seconds(60);
+    probe->armed.store(true);
+
+    ThreadFromGlobalPool notifier([&storage]
+    {
+        storage.executeQuery("CREATE RESOURCE res1 (WRITE DISK disk1, READ DISK disk1)");
+    });
+
+    EXPECT_TRUE(waitForBlocker(*probe)) << "Blocker handler never started, so nothing was exercised";
+
+    // The notifier already copied all three handlers out of the list and is parked in the first
+    // one, so this unsubscribe cannot wait for anything and must return immediately.
+    // Only the guard is dropped: the subscriber stays alive so that a handler invoked in breach of
+    // the contract reads live state and fails the assertion below instead of reading freed memory.
+    unsubscribed->subscription.reset();
+
+    {
+        std::lock_guard lock{probe->mutex};
+        probe->release_blocker = true;
+    }
+    probe->release_cv.notify_all();
+
+    notifier.join();
+
+    EXPECT_EQ(probe->live_handler_calls.load(), 1)
+        << "The notification never reached the handlers after the blocker, so the assertion below is vacuous";
+    EXPECT_EQ(probe->unsubscribed_handler_calls.load(), 0)
+        << "A handler was called after its subscription guard had already been destroyed";
 }

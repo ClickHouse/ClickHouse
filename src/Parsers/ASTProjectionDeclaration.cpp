@@ -1,5 +1,6 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 
+#include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -31,6 +32,16 @@ ASTPtr ASTProjectionDeclaration::clone() const
     return res;
 }
 
+void ASTProjectionDeclaration::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    /// `name` is not a child, so the default implementation does not see it.
+    /// The expected size is for 64-bit targets; the layout differs on 32-bit ones (the wasm parser build).
+    static_assert(sizeof(void *) != 8 || sizeof(*this) == 88, "If members were added to ASTProjectionDeclaration, hash them here unless they are purely cosmetic.");
+    hash_state.update(name.size());
+    hash_state.update(name);
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+}
+
 
 void ASTProjectionDeclaration::writeJSON(WriteBuffer & out) const
 {
@@ -48,9 +59,11 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
 
     name = r.getString("name");
 
-    /// `query` is the parser-owned `ASTProjectionSelectQuery`; `ProjectionDescription::getProjectionFromAST`
-    /// does `query->as<ASTProjectionSelectQuery &>()`, so reject any other node type here.
-    auto query_child = r.readChildOfType<ASTProjectionSelectQuery>("query");
+    /// `query` must be the parser-owned `ASTProjectionSelectQuery`.
+    auto query_child = r.readExpressionChild("query");
+    if (query_child && !query_child->as<ASTProjectionSelectQuery>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unexpected node type for key 'query' during AST JSON deserialization");
     if (query_child)
         set(query, query_child);
 
@@ -59,9 +72,12 @@ void ASTProjectionDeclaration::readJSON(const Poco::JSON::Object & json)
     /// `ProjectionIndexCommitOrder::fillProjectionDescription` clones `index` straight into the
     /// projection SELECT slot, and `ASTProjectionSelectQuery::cloneToASTSelect` throws a logical
     /// error unless that slot is an `ASTExpressionList` — so reject any other shape at the boundary.
-    auto index_child = r.readChildOfType<ASTExpressionList>("index");
+    auto index_child = r.readExpressionChild("index");
     if (index_child)
     {
+        if (!index_child->as<ASTExpressionList>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected node type for key 'index' during AST JSON deserialization");
         if (index_child->children.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "`ProjectionDeclaration` INDEX must be a non-empty expression list during AST JSON deserialization");
@@ -98,6 +114,12 @@ void ASTProjectionDeclaration::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    formatBody(ostr, settings, state, frame);
+}
+
+void ASTProjectionDeclaration::formatBody(
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
     if (query)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');

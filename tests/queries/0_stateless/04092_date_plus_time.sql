@@ -306,11 +306,12 @@ SELECT DISTINCT toTypeName(dt) FROM
 
 SELECT toDate('2024-01-15') - toTime('01:02:03'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTime('01:02:03') - toDate('2024-01-15'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime('2024-01-15 00:00:00') + toTime('01:02:03'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- DateTime[64] +- Time[64] is supported: Time is applied as an offset in seconds
+SELECT toDateTime('2024-01-15 00:00:00') + toTime('01:02:03');
 SELECT toDate('2024-01-15') - toTime64('01:02:03.456', 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime('2024-01-15 00:00:00') + toTime64('01:02:03.456', 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime('01:02:03'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime64('01:02:03.456', 3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toDateTime('2024-01-15 00:00:00') + toTime64('01:02:03.456', 3);
+SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime('01:02:03');
+SELECT toDateTime64('2024-01-15 00:00:00.000', 3) + toTime64('01:02:03.456', 3);
 
 -- Overflow with throw (already the default from top of file)
 

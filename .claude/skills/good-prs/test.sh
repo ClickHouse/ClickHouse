@@ -3,7 +3,8 @@
 # Focused tests for report.sh. No network access: `gh` is replaced by a stub on
 # PATH that serves canned fixtures, so the tests exercise report.sh's own logic
 # (bucket -> label classification, the "only CH Inc sync is non-green" criterion,
-# empty-input handling, --repo pinning, and fail-loud-on-real-error behaviour).
+# the public-repo conflict marker, empty-input handling, --repo pinning, and
+# fail-loud-on-real-error behaviour).
 #
 # Usage: bash test.sh
 #
@@ -14,6 +15,8 @@ REPORT="$HERE/report.sh"
 
 # Keep the retry wrapper's timing out of the tests: same code path, no sleeping.
 export GH_RETRIES=3 GH_RETRY_DELAY=0
+# Same for the UNKNOWN-mergeability re-query: keep the attempts, drop the wait.
+export GH_MERGEABLE_TRIES=3 GH_MERGEABLE_DELAY=0
 
 RC=0
 ok()  { printf '  ok   - %s\n' "$*"; }
@@ -63,6 +66,16 @@ case "$sub" in
   "pr view")
     n="$3"
     if [ -f "$GH_STUB_DIR/view/$n.err" ]; then cat "$GH_STUB_DIR/view/$n.err" >&2; exit 1; fi
+    # <n>.lazy holds a count of leading calls that answer with <n>.tsv.first,
+    # mimicking GitHub's lazily computed mergeability (UNKNOWN until the test
+    # merge it schedules has run).
+    if [ -f "$GH_STUB_DIR/view/$n.lazy" ]; then
+      cnt=$(cat "$GH_STUB_DIR/view/$n.vcount" 2>/dev/null || echo 0)
+      cnt=$(( cnt + 1 )); printf '%s\n' "$cnt" > "$GH_STUB_DIR/view/$n.vcount"
+      if [ "$cnt" -le "$(cat "$GH_STUB_DIR/view/$n.lazy")" ]; then
+        cat "$GH_STUB_DIR/view/$n.tsv.first"; exit 0
+      fi
+    fi
     cat "$GH_STUB_DIR/view/$n.tsv"
     ;;
   *)
@@ -113,6 +126,9 @@ printf 'testuser\n' > "$A/fix/me"
   printf '107\ttestuser\tSync QUEUED\n'
   printf '108\ttestuser\tSync CANCELLED\n'
   printf '109\ttestuser\tSync SKIPPED\n'
+  printf '110\ttestuser\tGreen but conflicting\n'
+  printf '111\ttestuser\tConflict known only on the second ask\n'
+  printf '112\ttestuser\tMergeability never computed\n'
 } > "$A/fix/list/author_testuser.tsv"
 printf '201\tgroeneai\tGroeneai green PR\n' > "$A/fix/list/author_groeneai.tsv"
 
@@ -126,17 +142,26 @@ c 106 '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"},{"name":"Build"
 c 107 '[{"name":"CH Inc sync","state":"QUEUED","bucket":"pending"},{"name":"Build","state":"SUCCESS","bucket":"pass"}]'
 c 108 '[{"name":"CH Inc sync","state":"CANCELLED","bucket":"cancel"},{"name":"Build","state":"SUCCESS","bucket":"pass"}]'
 c 109 '[{"name":"CH Inc sync","state":"SKIPPED","bucket":"skipping"},{"name":"Build","state":"SUCCESS","bucket":"pass"}]'
+c 110 '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"},{"name":"Build","state":"SUCCESS","bucket":"pass"}]'
+c 111 '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"},{"name":"Build","state":"SUCCESS","bucket":"pass"}]'
+c 112 '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"},{"name":"Build","state":"SUCCESS","bucket":"pass"}]'
 c 201 '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"},{"name":"Build","state":"SUCCESS","bucket":"pass"}]'
 
-v() { printf '%s\t%s\n' "$2" "$3" > "$A/fix/view/$1.tsv"; }
+# v <pr> <state> <ever-approved> [mergeable, default MERGEABLE]
+v() { printf '%s\t%s\t%s\n' "$2" "$3" "${4:-MERGEABLE}" > "$A/fix/view/$1.tsv"; }
 v 101 OPEN true
 v 102 OPEN false
 v 103 OPEN false
 v 104 OPEN false
-v 106 MERGED false
+v 106 MERGED false UNKNOWN
 v 107 OPEN false
 v 108 OPEN false
 v 109 OPEN false
+v 110 OPEN false CONFLICTING
+v 111 OPEN false CONFLICTING
+printf 'OPEN\tfalse\tUNKNOWN\n' > "$A/fix/view/111.tsv.first"
+printf '1\n' > "$A/fix/view/111.lazy"     # UNKNOWN once, then the real verdict
+v 112 OPEN false UNKNOWN
 v 201 OPEN true
 
 run_report "$A"
@@ -151,7 +176,32 @@ row_has "$OUT" 107 INPROG "#107 sync QUEUED (bucket pending) -> INPROG"
 row_has "$OUT" 108 FAILED "#108 sync CANCELLED (bucket cancel) -> FAILED"
 row_has "$OUT" 109 NOSYNC "#109 sync SKIPPED (bucket skipping) -> NOSYNC"
 row_has "$OUT" 201 GREEN  "#201 groeneai section rendered"
-assert_repo_pinned "$A/calls.log" "every PR-scoped gh call pins --repo ClickHouse/ClickHouse"
+row_has "$OUT" 110 'GREEN+CONFLICT' "#110 conflicting in the public repo -> GREEN+CONFLICT"
+row_has "$OUT" 111 'GREEN+CONFLICT' "#111 conflict found on the re-query -> GREEN+CONFLICT"
+row_has "$OUT" 112 'GREEN+UNKNOWN'  "#112 mergeability never computed -> GREEN+UNKNOWN"
+if [ "$(grep -c '^pr view 111 ' "$A/calls.log")" = 2 ]; then
+  ok "UNKNOWN mergeability re-queried until GitHub computed it"
+else
+  bad "UNKNOWN mergeability re-queried until GitHub computed it (got $(grep -c '^pr view 111 ' "$A/calls.log") calls)"
+fi
+if [ "$(grep -c '^pr view 106 ' "$A/calls.log")" = 1 ]; then
+  ok "a non-OPEN PR's UNKNOWN mergeability is not re-queried"
+else
+  bad "a non-OPEN PR's UNKNOWN mergeability is not re-queried (got $(grep -c '^pr view 106 ' "$A/calls.log") calls)"
+fi
+if [ "$(grep -c '^pr view 112 ' "$A/calls.log")" = "$GH_MERGEABLE_TRIES" ]; then
+  ok "a permanently UNKNOWN mergeability stops after GH_MERGEABLE_TRIES"
+else
+  bad "a permanently UNKNOWN mergeability stops after GH_MERGEABLE_TRIES (got $(grep -c '^pr view 112 ' "$A/calls.log") calls)"
+fi
+# Within one sync bucket: clean rows first, then unknown, then conflicting.
+order=$(grep -oE '#(101|110|111|112)' "$OUT" | tr -d '#' | tr '\n' ' ')
+if [ "$order" = "101 112 110 111 " ]; then
+  ok "conflicting rows sorted after the clean ones in the same bucket"
+else
+  bad "conflicting rows sorted after the clean ones in the same bucket (got: $order)"
+fi
+if grep -q '| sync / merge |' "$OUT"; then ok "first column header names the merge state"; else bad "first column header names the merge state"; fi
 rm -rf "$A"
 
 ############################ Test B: empty input ###############################
@@ -195,7 +245,7 @@ printf 'testuser\n' > "$E/fix/me"
 { printf '501\ttestuser\tNo checks reported\n'; printf '502\ttestuser\tGreen PR\n'; } > "$E/fix/list/author_testuser.tsv"
 : > "$E/fix/checks/501.nochecks"
 printf '%s\n' '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"}]' > "$E/fix/checks/502.json"
-v502() { printf 'OPEN\ttrue\n' > "$E/fix/view/502.tsv"; }; v502
+v502() { printf 'OPEN\ttrue\tMERGEABLE\n' > "$E/fix/view/502.tsv"; }; v502
 run_report "$E"
 [ "$EXIT" = 0 ] && ok "exit code 0 (no-checks is legitimate)" || { bad "exit code 0 (got $EXIT)"; cat "$ERRF"; }
 not_present 501 "$OUT" "#501 with no checks -> excluded"
@@ -209,7 +259,7 @@ printf 'testuser\n' > "$F/fix/me"
 printf '601\ttestuser\tFlaky then green\n' > "$F/fix/list/author_testuser.tsv"
 printf '2\n' > "$F/fix/checks/601.flaky"   # fail twice, succeed on the third call
 printf '%s\n' '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"}]' > "$F/fix/checks/601.json"
-printf 'OPEN\ttrue\n' > "$F/fix/view/601.tsv"
+printf 'OPEN\ttrue\tMERGEABLE\n' > "$F/fix/view/601.tsv"
 run_report "$F"
 [ "$EXIT" = 0 ] && ok "exit code 0 after retried 503s" || { bad "exit code 0 after retried 503s (got $EXIT)"; cat "$ERRF"; }
 row_has "$OUT" 601 GREEN "#601 rendered after the transient failures"

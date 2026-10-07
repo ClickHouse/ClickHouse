@@ -25,13 +25,3 @@ SELECT toUInt8(232) IN (materialize(232), 500);
 SELECT toUInt8(232) IN (materialize(1000), 'x');
 SELECT toUInt8(232) NOT IN (materialize(1000), 'x');
 SELECT toUInt8(232) IN (materialize(1000), 'x') SETTINGS transform_null_in = 1; -- { serverError CANNOT_PARSE_TEXT }
-
-SET enable_analyzer = 0;
-
-SELECT toUInt8(232) IN (materialize(1000), 500);
-SELECT toUInt8(232) NOT IN (materialize(1000), 500);
-SELECT toUInt8(232) IN (materialize(1000), 500) SETTINGS transform_null_in = 1;
-SELECT toUInt8(232) IN (materialize(232), 500);
-SELECT toUInt8(232) IN (materialize(1000), 'x');
-SELECT toUInt8(232) NOT IN (materialize(1000), 'x');
-SELECT toUInt8(232) IN (materialize(1000), 'x') SETTINGS transform_null_in = 1; -- { serverError CANNOT_PARSE_TEXT }

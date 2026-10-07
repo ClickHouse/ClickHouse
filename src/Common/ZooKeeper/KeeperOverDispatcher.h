@@ -39,6 +39,11 @@ public:
 
     using ResponseCallback = std::function<void(const ZooKeeperResponsePtr &)>;
 
+    /// Build the callback multi() installs: it promotes a failed multi's aggregate error
+    /// (the in-process path would otherwise leave it ZOK) before forwarding to the user
+    /// callback.
+    static ResponseCallback promotingMultiCallback(MultiCallback callback);
+
     void create(
         const String & path,
         const String & data,
@@ -71,6 +76,12 @@ public:
         const String & path,
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
+
+    void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
 
     void set(
         const String & path,
@@ -112,7 +123,7 @@ public:
 
     void finalize(const String & reason) override;
 
-    bool isFeatureEnabled(DB::KeeperFeatureFlag) const override { return false; }
+    bool isFeatureEnabled(DB::KeeperFeatureFlag feature_flag) const override;
 
     void getACL(const String & path, GetACLCallback  callback) override;
 

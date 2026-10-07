@@ -6,6 +6,25 @@
 namespace DB
 {
 
+namespace
+{
+
+void markRangesInfoDroppedRows(Chunk & chunk)
+{
+    auto mark_ranges_info = chunk.getChunkInfos().extract<MarkRangesInfo>();
+    if (!mark_ranges_info)
+        return;
+
+    /// `ChunkInfo` objects are held by `shared_ptr` and may be aliased: `get` returns the pointer
+    /// itself and a collection copy shares it. Follow the copy-on-write convention instead of
+    /// mutating in place.
+    auto updated_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    updated_info->has_dropped_rows = true;
+    chunk.getChunkInfos().add(std::move(updated_info));
+}
+
+}
+
 FilterSortedStreamByRange::FilterSortedStreamByRange(
     SharedHeader header_, ExpressionActionsPtr expression_, String filter_column_name_, bool remove_filter_column_, bool on_totals_)
     : ISimpleTransform(
@@ -25,6 +44,8 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
     if (rows_before_filtration < 2)
     {
         filter_transform.transform(chunk);
+        if (chunk.getNumRows() != rows_before_filtration)
+            markRangesInfoDroppedRows(chunk);
         return;
     }
 
@@ -45,7 +66,11 @@ void FilterSortedStreamByRange::transform(Chunk & chunk)
 
     // Not all rows satisfy conditions.
     if (!all_rows_will_pass_filter)
+    {
         filter_transform.transform(chunk);
+        if (chunk.getNumRows() != rows_before_filtration)
+            markRangesInfoDroppedRows(chunk);
+    }
 }
 
 }

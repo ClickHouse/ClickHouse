@@ -381,14 +381,14 @@ SELECT distinctJSONPaths(json) FROM test_json;
         R"(
 DROP TABLE IF EXISTS test_json;
 CREATE TABLE test_json(json JSON) ENGINE = Memory;
-INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}')
+INSERT INTO test_json VALUES ('{"a" : 42, "b" : "Hello"}'), ('{"b" : [1, 2, 3], "c" : {"d" : {"e" : "2020-01-01"}}}'), ('{"a" : 43, "c" : {"d" : {"f" : [{"g" : 42}]}}}');
 
 SELECT distinctJSONPaths(json) FROM test_json;
         )",
         R"(
-┌─distinctJSONPaths(json)─┐
-│ ['a','b','c']           │
-└─────────────────────────┘
+┌─distinctJSONPaths(json)───┐
+│ ['a','b','c.d.e','c.d.f'] │
+└───────────────────────────┘
         )"
     }
     };
@@ -400,9 +400,9 @@ SELECT distinctJSONPaths(json) FROM test_json;
     FunctionDocumentation::Description description_distinctJSONPathsAndTypes = R"(
 Calculates the list of distinct paths and their types stored in [JSON](/reference/data-types/newjson) column.
 
-:::note
+<Note>
 If JSON declaration contains paths with specified types, these paths will be always included in the result of `distinctJSONPaths/distinctJSONPathsAndTypes` functions even if input data didn't have values for these paths.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_distinctJSONPathsAndTypes = R"(
 distinctJSONPathsAndTypes(json)

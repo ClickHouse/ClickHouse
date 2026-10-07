@@ -19,6 +19,7 @@ SETTINGS index_granularity = 256;
 system stop merges t_lazy_final;
 
 -- Insert data in multiple parts.
+-- Equal (day, id, version) keys within each insert retain the last input row.
 INSERT INTO t_lazy_final SELECT
     toDateTime('2024-01-01 00:00:00') + number * 60,
     number % 1000,
