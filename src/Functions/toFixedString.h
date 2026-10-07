@@ -1,10 +1,13 @@
 #pragma once
 #include <Functions/IFunction.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -26,7 +29,7 @@ enum class ConvertToFixedStringExceptionMode : uint8_t
 
 /** Conversion to fixed string is implemented only for strings.
   */
-class FunctionToFixedString final : public IFunction
+class FunctionToFixedString : public IFunction
 {
 public:
     static constexpr auto name = "toFixedString";

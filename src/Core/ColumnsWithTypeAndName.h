@@ -7,6 +7,6 @@
 namespace DB
 {
 
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 }

@@ -96,7 +96,7 @@ public:
         }
         else
         {
-            chassert(name == "not");
+            assert(name == "not");
         }
 
         auto & arguments = function_node->getArguments().getNodes();
@@ -135,13 +135,10 @@ public:
         {
             if (add_negation)
             {
-                /// Negate a new node: the formula can reference this one from several places.
-                const auto & resolver = function_name == "and" ? or_function_resolver : and_function_resolver;
-                auto negated_node = std::make_shared<FunctionNode>(resolver->getName());
-                negated_node->getArguments().getNodes() = function_node->getArguments().getNodes();
-                negated_node->resolveAsFunction(resolver);
-                node = std::move(negated_node);
-                function_node = node->as<FunctionNode>();
+                if (function_name == "and")
+                    function_node->resolveAsFunction(or_function_resolver);
+                else
+                    function_node->resolveAsFunction(and_function_resolver);
             }
 
             auto & arguments = function_node->getArguments().getNodes();
@@ -150,9 +147,9 @@ public:
             return;
         }
 
-        chassert(function_name == "not");
+        assert(function_name == "not");
         auto & arguments = function_node->getArguments().getNodes();
-        chassert(arguments.size() == 1);
+        assert(arguments.size() == 1);
         node = arguments[0];
         visit(node, !add_negation);
     }
@@ -199,7 +196,7 @@ public:
         if (name == "or")
         {
             auto & arguments = function_node->getArguments().getNodes();
-            chassert(arguments.size() == 2);
+            assert(arguments.size() == 2);
 
             size_t and_node_id = arguments.size();
 
@@ -215,12 +212,12 @@ public:
                 return true;
 
             auto & other_node = arguments[1 - and_node_id];
-            const auto & and_function_arguments = arguments[and_node_id]->as<FunctionNode &>().getArguments().getNodes();
+            auto & and_function_arguments = arguments[and_node_id]->as<FunctionNode &>().getArguments().getNodes();
 
-            auto lhs = createFunctionNode(or_resolver, other_node->clone(), and_function_arguments[0]);
+            auto lhs = createFunctionNode(or_resolver, other_node->clone(), std::move(and_function_arguments[0]));
             num_atoms += countAtoms(other_node);
 
-            auto rhs = createFunctionNode(or_resolver, other_node, and_function_arguments[1]);
+            auto rhs = createFunctionNode(or_resolver, std::move(other_node), std::move(and_function_arguments[1]));
             node = createFunctionNode(and_resolver, std::move(lhs), std::move(rhs));
 
             return visit(node, num_atoms);
@@ -239,7 +236,7 @@ private:
 class CollectGroupsVisitor
 {
 public:
-    void visit(const QueryTreeNodePtr & node)
+    void visit(QueryTreeNodePtr & node)
     {
         CNF::OrGroup or_group;
         visitImpl(node, or_group);
@@ -250,14 +247,14 @@ public:
     CNF::AndGroup and_group;
 
 private:
-    void visitImpl(const QueryTreeNodePtr & node, CNF::OrGroup & or_group)
+    void visitImpl(QueryTreeNodePtr & node, CNF::OrGroup & or_group)
     {
         checkStackSize();
 
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || !isLogicalFunction(*function_node))
         {
-            or_group.insert(CNFAtomicFormula{false, node});
+            or_group.insert(CNFAtomicFormula{false, std::move(node)});
             return;
         }
 
@@ -265,8 +262,8 @@ private:
 
         if (name == "and")
         {
-            const auto & arguments = function_node->getArguments().getNodes();
-            for (const auto & argument : arguments)
+            auto & arguments = function_node->getArguments().getNodes();
+            for (auto & argument : arguments)
             {
                 CNF::OrGroup argument_or_group;
                 visitImpl(argument, argument_or_group);
@@ -276,15 +273,15 @@ private:
         }
         else if (name == "or")
         {
-            const auto & arguments = function_node->getArguments().getNodes();
-            for (const auto & argument : arguments)
+            auto & arguments = function_node->getArguments().getNodes();
+            for (auto & argument : arguments)
                 visitImpl(argument, or_group);
         }
         else
         {
-            chassert(name == "not");
-            const auto & arguments = function_node->getArguments().getNodes();
-            or_group.insert(CNFAtomicFormula{true, arguments[0]});
+            assert(name == "not");
+            auto & arguments = function_node->getArguments().getNodes();
+            or_group.insert(CNFAtomicFormula{true, std::move(arguments[0])});
         }
     }
 };
@@ -298,9 +295,9 @@ std::optional<CNFAtomicFormula> tryInvertFunction(
 
     if (auto it = inverse_relations.find(function_node->getFunctionName()); it != inverse_relations.end())
     {
-        auto inverted_node = atom.node_with_hash.node->clone();
-        inverted_node->as<FunctionNode &>().resolveAsFunction(FunctionFactory::instance().get(it->second, context));
-        return CNFAtomicFormula{!atom.negative, std::move(inverted_node)};
+        auto inverse_function_resolver = FunctionFactory::instance().get(it->second, context);
+        function_node->resolveAsFunction(inverse_function_resolver);
+        return CNFAtomicFormula{!atom.negative, atom.node_with_hash.node};
     }
 
     return std::nullopt;
@@ -525,7 +522,7 @@ CNF CNF::toCNF(const QueryTreeNodePtr & node, ContextPtr context, size_t max_gro
     auto cnf = tryBuildCNF(node, context, max_growth_multiplier);
     if (!cnf)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
-            "Cannot convert expression '{}' to CNF, because it produces to many clauses. "
+            "Cannot convert expression '{}' to CNF, because it produces to many clauses."
             "Size of boolean formula in CNF can be exponential of size of source formula.",
             node->formatConvertedASTForErrorMessage());
 

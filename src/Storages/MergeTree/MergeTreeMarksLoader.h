@@ -48,8 +48,7 @@ public:
         bool save_marks_in_cache_,
         const ReadSettings & read_settings_,
         ThreadPool * load_marks_threadpool_,
-        size_t num_columns_in_mark_,
-        bool use_streaming_compression_);
+        size_t num_columns_in_mark_);
 
     ~MergeTreeMarksLoader();
 
@@ -66,7 +65,6 @@ private:
     const bool save_marks_in_cache;
     const ReadSettings read_settings;
     const size_t num_columns_in_mark;
-    const bool use_streaming_compression;
 
     std::mutex load_mutex;
     MarkCache::MappedPtr marks;

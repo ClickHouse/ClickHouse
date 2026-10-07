@@ -1,5 +1,4 @@
 #include <Client/ProgressTable.h>
-#include <base/sort.h>
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
 
@@ -237,7 +236,7 @@ void ProgressTable::writeTable(
         sorted_metrics.emplace_back(&elem);
     }
 
-    ::stableSort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
+    std::stable_sort(sorted_metrics.begin(), sorted_metrics.end(), [](Metrics::const_pointer a, Metrics::const_pointer b)
     {
         return std::tuple(a->second.getDisplayPriority(), std::floor(std::log10(1 + a->second.getSummaryValue())))
             > std::tuple(b->second.getDisplayPriority(), std::floor(std::log10(1 + b->second.getSummaryValue())));

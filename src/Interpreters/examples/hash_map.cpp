@@ -8,7 +8,6 @@
 #include <sparsehash/sparse_hash_map>
 
 #include <Common/Stopwatch.h>
-#include <Examples/clickhouse_examples.h>
 /*
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 */
@@ -35,9 +34,6 @@
   * States of aggregate functions were separated from the interface to manipulate them, and put in the pool.
   * But in this test, there was something similar to the old scenario of using hash tables in the aggregation.
   */
-
-namespace
-{
 
 struct AlternativeHash
 {
@@ -66,9 +62,8 @@ struct CRC32HashTest
 
 #endif
 
-}
 
-int mainEntryExampleHashMap(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     using namespace DB;
 
@@ -134,8 +129,8 @@ int mainEntryExampleHashMap(int argc, char ** argv)
         Stopwatch watch;
 
         HashMap<Key, Value> map;
-        HashMap<Key, Value>::LookupResult it = {};
-        bool inserted = {};
+        HashMap<Key, Value>::LookupResult it;
+        bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {
@@ -165,8 +160,8 @@ int mainEntryExampleHashMap(int argc, char ** argv)
 
         using Map = HashMap<Key, Value, AlternativeHash>;
         Map map;
-        Map::LookupResult it = {};
-        bool inserted = {};
+        Map::LookupResult it;
+        bool inserted;
 
         for (size_t i = 0; i < n; ++i)
         {

@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 
 #include <mutex>
+#include <base/sleep.h>
 #include <base/types.h>
 #include <atomic>
 
@@ -69,9 +70,6 @@ public:
     UInt64 getMaxBurst() const override;
 
     void setMaxSpeed(size_t max_speed_);
-
-protected:
-    void sleep(UInt64 nanoseconds);
 
 private:
     void throttleImpl(size_t amount, size_t & count_value, double & tokens_value);

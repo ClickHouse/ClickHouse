@@ -2,40 +2,10 @@
 
 #include <Common/TargetSpecific.h>
 
-namespace
-{
-/// Below this size the head scan costs more than the cache line splits it avoids.
-constexpr size_t ALIGN_THRESHOLD = 64 * 1024;
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
-/// Deliberately plain: at x86-64-v3/v4 the compiler vectorizes this reduction,
-/// while the same implementation also produces a good loop on other platforms.
-MULTITARGET_FUNCTION_X86_V4(
-    MULTITARGET_FUNCTION_HEADER(static bool NO_INLINE),
-    isAllASCIIImpl,
-    MULTITARGET_FUNCTION_BODY((const UInt8 * data, size_t size) /// NOLINT
-    {
-        UInt8 mask = 0;
-
-        if (size < ALIGN_THRESHOLD)
-        {
-            for (size_t i = 0; i < size; ++i)
-                mask |= data[i];
-            return !(mask & 0x80);
-        }
-
-        /// One overlapping scan of the first 64 bytes, so that the bulk loop starts on a 64-byte
-        /// boundary and no wide load splits a cache line. Misaligned 512-bit loads run at half rate.
-        for (size_t i = 0; i < 64; ++i)
-            mask |= data[i];
-
-        const size_t start = 64 - (reinterpret_cast<uintptr_t>(data) & 63);
-        const UInt8 * aligned = static_cast<const UInt8 *>(__builtin_assume_aligned(data + start, 64));
-        for (size_t i = 0, rest = size - start; i < rest; ++i)
-            mask |= aligned[i];
-
-        return !(mask & 0x80);
-    }))
-}
 
 namespace impl
 {
@@ -52,17 +22,77 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 }
 
+DECLARE_DEFAULT_CODE(
+static bool isAllASCII(const UInt8 * data, size_t size)
+{
+    UInt8 mask = 0;
+    for (size_t i = 0; i < size; ++i)
+        mask |= data[i];
+
+    return !(mask & 0x80);
+})
+
+DECLARE_X86_64_V2_SPECIFIC_CODE(
+/// Copy from https://github.com/lemire/fastvalidate-utf-8/blob/master/include/simdasciicheck.h
+/// See also https://lemire.me/blog/2025/12/20/performance-trick-optimistic-vs-pessimistic-checks/
+static bool isAllASCII(const UInt8 * data, size_t size)
+{
+    __m128i masks = _mm_setzero_si128();
+
+    size_t i = 0;
+    for (; i + 16 <= size; i += 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + i));
+        masks = _mm_or_si128(masks, bytes);
+    }
+    int mask = _mm_movemask_epi8(masks);
+
+    UInt8 tail_mask = 0;
+    for (; i < size; i++)
+        tail_mask |= data[i];
+
+    mask |= (tail_mask & 0x80);
+    return !mask;
+})
+
+DECLARE_X86_64_V3_SPECIFIC_CODE(
+static bool isAllASCII(const UInt8 * data, size_t size)
+{
+    __m256i masks = _mm256_setzero_si256();
+
+    size_t i = 0;
+    for (; i + 32 <= size; i += 32)
+    {
+        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
+        masks = _mm256_or_si256(masks, bytes);
+    }
+    int mask = _mm256_movemask_epi8(masks);
+
+    UInt8 tail_mask = 0;
+    for (; i < size; i++)
+        tail_mask |= data[i];
+
+    mask |= (tail_mask & 0x80);
+    return !mask;
+})
+
 bool isAllASCII(const UInt8 * data, size_t size)
 {
 #if USE_MULTITARGET_CODE
-    if (DB::isArchSupported(DB::TargetArch::x86_64_v4))
-        return isAllASCIIImpl_x86_64_v4(data, size);
+    if (isArchSupported(DB::TargetArch::x86_64_v3))
+        return TargetSpecific::x86_64_v3::isAllASCII(data, size);
+    if (isArchSupported(DB::TargetArch::x86_64_v2))
+        return TargetSpecific::x86_64_v2::isAllASCII(data, size);
 #endif
-
-    return isAllASCIIImpl(data, size);
+    return TargetSpecific::Default::isAllASCII(data, size);
 }
 
-LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
+/// Returns the prefix of like_pattern before the first wildcard, e.g. 'Hello\_World% ...' --> 'Hello\_World'
+/// We call a pattern "perfect prefix" if:
+/// - (1) the pattern has a wildcard
+/// - (2) the first wildcard is '%' and is only followed by nothing or other '%'
+/// e.g. 'test%' or 'test%% has perfect prefix 'test', 'test%x', 'test%_' or 'test_' has no perfect prefix.
+std::tuple<String, bool> extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)
 {
     String fixed_prefix;
     fixed_prefix.reserve(like_pattern.size());
@@ -77,26 +107,24 @@ LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_p
             case '_':
             {
                 bool is_perfect_prefix = std::all_of(pos, end, [](auto c) { return c == '%'; });
-                if (requires_perfect_prefix && !is_perfect_prefix)
-                    return {};
-                return {.prefix = fixed_prefix, .is_perfect = is_perfect_prefix};
+                if (requires_perfect_prefix)
+                {
+                    if (is_perfect_prefix)
+                        return {fixed_prefix, true};
+                    else
+                        return {"", false};
+                }
+                else
+                {
+                    return {fixed_prefix, is_perfect_prefix};
+                }
             }
             case '\\':
             {
                 ++pos;
-                /// A trailing escape is an invalid pattern the matcher rejects; never report it as exact,
-                /// or a point range would prune the granule and skip that exception.
                 if (pos == end)
-                {
-                    if (requires_perfect_prefix)
-                        return {};
-                    return {.prefix = fixed_prefix};
-                }
-                /// Only '\%', '\_' and '\\' drop the backslash, an unknown escape keeps it.
-                if (*pos != '%' && *pos != '_' && *pos != '\\')
-                    fixed_prefix += '\\';
-                fixed_prefix += *pos;
-                break;
+                    break;
+                [[fallthrough]];
             }
             default:
             {
@@ -106,8 +134,10 @@ LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_p
 
         ++pos;
     }
-    /// No wildcard was found, so the pattern is an exact match of `fixed_prefix`.
-    return {.prefix = fixed_prefix, .is_exact = true};
+    /// If we can reach this code, it means there was no wildcard found in the pattern, so it is not a perfect prefix
+    if (requires_perfect_prefix)
+        return {"", false};
+    return {fixed_prefix, false};
 }
 
 /** For a given string, get a minimum string that is strictly greater than all strings with this prefix,

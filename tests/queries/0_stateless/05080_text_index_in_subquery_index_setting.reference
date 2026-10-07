@@ -1,7 +1,0 @@
--- use_index_for_in_with_subqueries = 1: the index is used
-yes
--- use_index_for_in_with_subqueries = 0: the index is left alone
-no
--- and the answer is the same either way
-3
-3

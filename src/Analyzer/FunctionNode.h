@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/IFunction.h>
 #include <Parsers/NullsAction.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -190,7 +191,7 @@ public:
                 function_name);
         auto type = function->getResultType();
         if (wrap_with_nullable)
-          return makeNullableOrLowCardinalityNullableSafe(type);
+          return makeNullableSafe(type);
         return type;
     }
 
