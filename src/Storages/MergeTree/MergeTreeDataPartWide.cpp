@@ -610,17 +610,26 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 
             /// Dynamic streams (`JSON`, `Dynamic`) cannot be enumerated without the deserialization state,
             /// but regenerated checksums list every file of the part, so check the marks of every stream
-            /// that has a data file. Marks of skip indices have no `.bin` peer and are left out.
+            /// that has a data file. Start from the data files: a marks file that is gone entirely is absent
+            /// from the regenerated checksums, but its `.bin` peer is still listed. Only column streams have
+            /// `.bin` files, so marks of skip indices are left out.
             if (checksums_were_regenerated)
             {
                 for (const auto & [file_name, _] : checksums.files)
                 {
-                    if (!file_name.ends_with(marks_file_extension))
+                    if (!file_name.ends_with(DATA_FILE_EXTENSION))
                         continue;
 
-                    String stream_name = file_name.substr(0, file_name.size() - marks_file_extension.size());
-                    if (checksums.files.contains(stream_name + DATA_FILE_EXTENSION))
-                        check_marks_file(file_name);
+                    String marks_file_name = file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION)) + marks_file_extension;
+                    if (!checksums.files.contains(marks_file_name))
+                        throw Exception(
+                            ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "Part {} is broken: no marks file {} for data file {}",
+                            getDataPartStorage().getFullPath(),
+                            marks_file_name,
+                            file_name);
+
+                    check_marks_file(marks_file_name);
                 }
             }
         }

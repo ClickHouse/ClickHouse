@@ -35,6 +35,7 @@ TABLES="
     compact_several_blocks_no_checksums
     wide_dynamic_no_substreams_no_checksums
     wide_torn_dynamic_no_substreams_no_checksums
+    wide_missing_dynamic_no_substreams_no_checksums
 "
 
 table_settings()
@@ -146,6 +147,9 @@ rm "$(part_path wide_missing_second_column_no_checksums)/$(column_file wide_miss
 # Without `columns_substreams.txt` the dynamic streams are not enumerated, but the marks of every stream
 # with a data file are checked when the checksums are regenerated.
 truncate_to_first_block "$(part_path wide_torn_dynamic_no_substreams_no_checksums)/$(column_file wide_torn_dynamic_no_substreams_no_checksums d.UInt64).cmrk2"
+# A marks file of a dynamic stream that is gone altogether is not listed by the regenerated checksums,
+# but its data file is.
+rm "$(part_path wide_missing_dynamic_no_substreams_no_checksums)/$(column_file wide_missing_dynamic_no_substreams_no_checksums d.UInt64).cmrk2"
 for table in ${TABLES}
 do
     if [[ ${table} == *_no_substreams_* ]]
