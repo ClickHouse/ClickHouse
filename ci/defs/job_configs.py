@@ -1646,7 +1646,8 @@ class JobConfigs:
                 "./tests/config/users.d/ci_logs_sender.yaml",
             ],
         ),
-        timeout=2 * 3600,
+        # TEMPORARY: 4h instead of 2h while the whole suite runs in this PR, revert before merge
+        timeout=4 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
         *[
