@@ -848,10 +848,18 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 
 
 /// Every node of a distributed write runs the whole INSERT over its own slice of the read, so the writes
-/// add up to a single logical INSERT only where each node's write becomes visible on all of them. Two
-/// target shapes break that even where the engine itself replicates.
+/// add up to a single logical INSERT only where each node's write becomes visible on all of them.
 static bool targetAbsorbsDistributedWrite(const StoragePtr & table)
 {
+    /// A data lake answers `supportsReplication()` with `isDataLakeConfiguration()`, which says nothing about
+    /// concurrent writers: the Iceberg sink retries a conflicting commit, the Delta one does not, and a local
+    /// Iceberg table keeps its files on each node's own disk.
+    const auto object_storage = castStorage<StorageObjectStorage>(table, DeferredTable::Load);
+    const bool shared_lake_retries_conflicting_commits = object_storage && object_storage->isIcebergStorage()
+        && object_storage->getObjectStorage()->isRemote();
+    if (!(table->isMergeTree() || shared_lake_retries_conflicting_commits) || !table->supportsReplication())
+        return false;
+
     /// `Alias` answers the engine predicates from the table it points at, and an insert into it also pushes
     /// the views attached to the alias itself, which the walk below skips at that hop.
     if (dynamic_cast<const StorageAlias *>(table.get()))
@@ -882,9 +890,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     context->setSetting("parallel_replicas_plan_based", false);
 
     if (!context->canUseParallelReplicasOnInitiator())
-        return {};
-
-    if (!table->isMergeTree() || !table->supportsReplication())
         return {};
 
     if (!targetAbsorbsDistributedWrite(table))
@@ -1263,14 +1268,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         return {};
 
     StoragePtr dst_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(query.table_id, local_context));
-    /// A data lake answers `supportsReplication()` with `isDataLakeConfiguration()`, which says nothing about
-    /// concurrent writers. The Iceberg sink re-reads the metadata and retries a conflicting commit; the Delta
-    /// one does not, so its per-node commits race for a single log version.
-    const auto object_storage = castStorage<StorageObjectStorage>(dst_storage, DeferredTable::Load);
-    const bool lake_retries_conflicting_commits = object_storage && object_storage->isIcebergStorage();
-    if (!(dst_storage->isMergeTree() || lake_retries_conflicting_commits) || !dst_storage->supportsReplication())
-        return {};
-
     if (!targetAbsorbsDistributedWrite(dst_storage))
         return {};
 

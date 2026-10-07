@@ -82,10 +82,48 @@ WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = '${LOG_CO
     AND event_date >= yesterday() AND event_time >= now() - 600;
 
 DROP TABLE pr_dl;
-DROP TABLE pr_src;
 "
 
 rm -rf "$TABLE_PATH"
+
+
+# The other side of the boundary: an Iceberg table on remote storage keeps one INSERT per replica,
+# because its sink re-reads the metadata and retries a conflicting commit. The retried conflict is
+# logged as an error, hence `send_logs_level`.
+ICEBERG_LOG_COMMENT="iceberg-fanout-${CLICKHOUSE_DATABASE}"
+
+$CLICKHOUSE_CLIENT --query "
+SET allow_experimental_insert_into_iceberg = 1;
+DROP TABLE IF EXISTS pr_ice;
+CREATE TABLE pr_ice (id Int64, s String)
+    ENGINE = IcebergS3(s3_conn, filename = '${CLICKHOUSE_TEST_UNIQUE_NAME}_iceberg');
+"
+
+$CLICKHOUSE_CLIENT --query "
+SET allow_experimental_insert_into_iceberg = 1;
+SET enable_parallel_replicas = 1, max_parallel_replicas = 3,
+    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
+    parallel_replicas_for_non_replicated_merge_tree = 1,
+    parallel_distributed_insert_select = 2,
+    automatic_parallel_replicas_mode = 0,
+    send_logs_level = 'fatal',
+    log_comment = '${ICEBERG_LOG_COMMENT}';
+INSERT INTO pr_ice SELECT id, s FROM pr_src;
+"
+
+$CLICKHOUSE_CLIENT --query "
+SET allow_experimental_insert_into_iceberg = 1;
+SELECT 'iceberg: rows', count(), sum(id) FROM pr_ice;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT 'iceberg: distributed write', count() > 1 FROM system.query_log
+WHERE type = 'QueryStart' AND query_kind = 'Insert' AND log_comment = '${ICEBERG_LOG_COMMENT}'
+    AND (current_database = currentDatabase() OR has(databases, currentDatabase()))
+    AND event_date >= yesterday() AND event_time >= now() - 600;
+
+DROP TABLE pr_ice;
+DROP TABLE pr_src;
+"
 
 
 CLUSTER_TABLE_PATH="${CLICKHOUSE_USER_FILES_UNIQUE}_pr_cluster_source"

@@ -8,9 +8,9 @@
 # them: each node also pushes its slice through the target's dependent materialized views, so a view
 # target that does not replicate keeps a different subset of the rows on each node, and an `Alias`
 # reports the engine of the table it points at while owning views of its own that the check on the
-# forwarded-to table does not see. Both shapes fall back to the initiator. The first case below is the
-# control that the rig forwards the INSERT at all, and the last one is the control for the opposite
-# direction: an Iceberg target keeps it.
+# forwarded-to table does not see. Both shapes fall back to the initiator, and so does a local Iceberg
+# table, whose files each node keeps on its own disk. The first case below is the control that the rig
+# forwards the INSERT at all.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -97,9 +97,10 @@ forwarded 'alias without any view: distributed write' al_bare
 distributed_read 'alias without any view: distributed read' al_bare
 ${CLICKHOUSE_CLIENT} -q "SELECT 'alias without any view: rows', count() FROM dst_bare"
 
-forwarded 'iceberg: distributed write' dst_iceberg
+forwarded 'local iceberg: distributed write' dst_iceberg
+distributed_read 'local iceberg: distributed read' dst_iceberg
 ${CLICKHOUSE_CLIENT} -q "SET allow_experimental_insert_into_iceberg = 1;
-    SELECT 'iceberg: rows', count() FROM dst_iceberg"
+    SELECT 'local iceberg: rows', count() FROM dst_iceberg"
 
 ${CLICKHOUSE_CLIENT} -q "
 SET allow_experimental_insert_into_iceberg = 1;
