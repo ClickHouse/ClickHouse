@@ -58,6 +58,7 @@ public:
 
     const MessageData & currentMessage() { return current; }
     const String & getChannelID() const { return channel_id; }
+    UInt16 getPrefetchCount() const { return prefetch_count; }
 
     /// Return read buffer containing next available message
     /// or nullptr if there are no messages to process.
@@ -115,6 +116,9 @@ private:
     const std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;
+    /// basic.qos per queue subscription. It bounds `received`, which must never block the event loop thread:
+    /// the streaming thread waits for that loop to stop, see https://github.com/ClickHouse/ClickHouse/issues/54775.
+    const UInt16 prefetch_count;
 
     LoggerPtr log;
     std::atomic<bool> stopped;
