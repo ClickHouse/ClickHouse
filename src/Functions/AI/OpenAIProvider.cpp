@@ -1,10 +1,6 @@
 #include <Functions/AI/OpenAIProvider.h>
-#include <IO/HTTPCommon.h>
 #include <Common/Exception.h>
 
-#include <Poco/Net/HTTPRequest.h>
-#include <Poco/Net/HTTPResponse.h>
-#include <Poco/URI.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
@@ -59,36 +55,7 @@ void OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts
     root->stringify(body_stream);
     String body = std::move(body_stream).str();
 
-    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts, ProxyConfiguration{});
-
-    Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-    http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
-    chassert(!ai_request.function_name.empty());
-    http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
-    http_request.setContentLength(body.size());
-
-    auto & out_stream = session->sendRequest(http_request);
-    out_stream << body;
-
-    Poco::Net::HTTPResponse http_response;
-    auto & in_stream = session->receiveResponse(http_response);
-
-    String response_body;
-    {
-        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        ss << in_stream.rdbuf();
-        response_body = std::move(ss).str();
-    }
-
-    auto status = http_response.getStatus();
-    if (status != Poco::Net::HTTPResponse::HTTP_OK)
-    {
-        throw AIProviderHTTPException(
-            status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
-    }
+    String response_body = postJSONToAIProvider(uri, api_key, ai_request.function_name, body, timeouts);
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
@@ -171,36 +138,7 @@ void OpenAIProvider::embed(
     root->stringify(body_stream);
     String body = std::move(body_stream).str();
 
-    auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, uri, timeouts, ProxyConfiguration{});
-
-    Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
-    http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
-    chassert(!ai_embedding_request.function_name.empty());
-    http_request.set("X-ClickHouse-AI-Function", ai_embedding_request.function_name);
-    http_request.setContentLength(body.size());
-
-    auto & out_stream = session->sendRequest(http_request);
-    out_stream << body;
-
-    Poco::Net::HTTPResponse http_response;
-    auto & in_stream = session->receiveResponse(http_response);
-
-    String response_body;
-    {
-        std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        ss << in_stream.rdbuf();
-        response_body = std::move(ss).str();
-    }
-
-    auto status = http_response.getStatus();
-    if (status != Poco::Net::HTTPResponse::HTTP_OK)
-    {
-        throw AIProviderHTTPException(
-            status,
-            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
-    }
+    String response_body = postJSONToAIProvider(uri, api_key, ai_embedding_request.function_name, body, timeouts);
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);

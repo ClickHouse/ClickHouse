@@ -277,6 +277,19 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"api_key = 'test-key'"
         )
 
+        for name, path in [
+            ("ai_typesafe", "systemone"),
+            ("ai_typesafe_malformed", "systemone_malformed"),
+            ("ai_typesafe_error", "systemone_error"),
+        ]:
+            instance.query(
+                f"CREATE NAMED COLLECTION {name} AS "
+                f"provider = 'typesafe', "
+                f"endpoint = 'http://localhost:{MOCK_PORT}/v1/{path}', "
+                f"model = 'jev-test', "
+                f"api_key = 'test-key'"
+            )
+
         instance.query("CREATE TABLE test_input (x String) ENGINE = Memory")
         instance.query(
             "CREATE TABLE test_input_nullable (x Nullable(String)) ENGINE = Memory"
@@ -755,6 +768,94 @@ def test_classify_null_input(started_cluster):
     assert len(lines) == 2
     assert "\\N" in lines
     assert "a" in lines
+
+
+# ---------------------------------------------------------------------------
+# aiClassify over the TypeSafe decision provider
+# ---------------------------------------------------------------------------
+
+_TYPESAFE_ROWS = "values('x String', 'my laptop has a bug', 'a question about pricing')"
+
+
+def test_classify_typesafe_array(started_cluster):
+    qid = unique_query_id("classify_typesafe")
+    result = instance.query(
+        "SELECT aiClassify(x, ['question', 'bug'], map('credentials', 'ai_typesafe')) "
+        f"FROM {_TYPESAFE_ROWS}",
+        query_id=qid,
+    )
+    assert result.strip().split("\n") == ["bug", "question"]
+
+    request = last_request()
+    assert request["path"] == "/v1/systemone"
+    assert request["headers"]["authorization"] == "Bearer test-key"
+    assert request["headers"]["x-clickhouse-ai-function"] == "aiClassify"
+    body = json.loads(request["body"])
+    assert body["model"] == "jev-test"
+    assert body["state"] == "a question about pricing"
+    question = body["questions"]["category"]
+    assert question["type"] == "choice"
+    assert question["criteria"] == {"question": "question", "bug": "bug"}
+
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 2
+    assert int(events["input_tokens"]) == 60
+    assert int(events["output_tokens"]) == 8
+    assert int(events["rows_processed"]) == 2
+
+
+def test_classify_typesafe_map_and_confidence(started_cluster):
+    result = instance.query(
+        "SELECT aiClassify(x, map('question', 'A usage question', 'bug', 'A software defect'), "
+        "map('credentials', 'ai_typesafe', 'return_confidence', '1')) "
+        f"FROM {_TYPESAFE_ROWS}",
+    )
+    assert result.strip().split("\n") == ["('bug',0.9)", "('question',0.9)"]
+
+    criteria = json.loads(last_request()["body"])["questions"]["category"]["criteria"]
+    assert criteria == {"question": "A usage question", "bug": "A software defect"}
+
+
+def test_classify_confidence_requires_typesafe(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiClassify('text', ['a', 'b'], "
+        "map('credentials', 'ai_mock', 'return_confidence', '1'))",
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "typesafe" in error
+
+
+def test_generate_typesafe_rejected(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiGenerate('hello', map('credentials', 'ai_typesafe'))",
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "supports only `aiClassify`" in error
+
+
+def test_classify_typesafe_malformed(started_cluster):
+    error = instance.query_and_get_error(
+        "SELECT aiClassify('text', ['a', 'b'], map('credentials', 'ai_typesafe_malformed'))",
+    )
+    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
+
+
+def test_classify_typesafe_error_retried(started_cluster):
+    qid = unique_query_id("classify_typesafe_error")
+    result = instance.query(
+        "SELECT aiClassify('text', ['a', 'b'], "
+        "map('credentials', 'ai_typesafe_error', 'return_confidence', '1'))",
+        query_id=qid,
+        settings={
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 2,
+            "ai_function_retry_initial_delay_ms": 1,
+        },
+    )
+    assert result.strip() == "('',0)"
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 3
+    assert int(events["rows_skipped"]) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,11 @@
+-- Return types
+aiClassify(x, map(\'a\', \'A\', \'b\', \'B\'), map(\'credentials\', \'ai_05292_typesafe\'))	String					
+aiClassify(n, map(\'a\', \'A\', \'b\', \'B\'), map(\'credentials\', \'ai_05292_typesafe\'))	Nullable(String)					
+aiClassify(x, [\'a\', \'b\'], map(\'credentials\', \'ai_05292_typesafe\', \'return_confidence\', \'1\'))	Tuple(\n    label String,\n    confidence Float64)					
+aiClassify(n, map(\'a\', \'A\'), map(\'credentials\', \'ai_05292_typesafe\', \'return_confidence\', \'1\'))	Tuple(\n    label Nullable(String),\n    confidence Nullable(Float64))					
+aiClassify(x, [\'a\', \'b\'], map(\'credentials\', \'ai_05292_typesafe\', \'return_confidence\', \'0\'))	String					
+-- Map categories without a parameter map
+aiClassify(x, map(\'a\', \'A\', \'b\', \'B\'))	String					
+-- Categories validation
+-- typesafe provider
+-- return_confidence requires typesafe

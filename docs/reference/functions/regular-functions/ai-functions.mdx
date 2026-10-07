@@ -54,7 +54,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
+| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`, `'typesafe'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
 | `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text functions; the embedding functions (`aiEmbed`, `aiSimilarity`) require `model` as a positional argument and error if `model` is specified in the named collection. |
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
@@ -144,6 +144,7 @@ Note that in either case the provider receives the input data in cleartext after
 |----------|-----------------|----------------|-------|
 | OpenAI | `'openai'` | Yes | Default provider. |
 | Anthropic | `'anthropic'` | Yes | Uses `/v1/messages` endpoint. |
+| TypeSafe | `'typesafe'` | `aiClassify` only | Uses `/v1/systemone` endpoint. `temperature` and `max_tokens` are not used. Supports `return_confidence`. |
 
 ## Observability {#observability}
 

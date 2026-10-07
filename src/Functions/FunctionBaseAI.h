@@ -119,11 +119,13 @@ public:
     ///    access-check the named collection and validate `provider`/`endpoint`;
     ///  - resolve every other spec entry: map override -> (if `inherit_from_collection`) named
     ///    collection field -> `default_value` -> throw when required and absent.
+    /// The parameter map is the last argument when it is a `Map(String, String)` at index `first_params_arg_index` or later.
     static AIParams resolveAIParams(
         const ContextPtr & context,
         const ColumnsWithTypeAndName & arguments,
         const AIParamSpecs & spec,
-        const String & default_credentials);
+        const String & default_credentials,
+        size_t first_params_arg_index = 0);
 
     /// Parameters common to every AI function. Function-specific params are appended by `functionParams`.
     static AIParamSpecs commonParams();
@@ -178,6 +180,9 @@ protected:
     /// of `commonParams`. Each entry carries its own default (or is required). Default: none.
     virtual AIParamSpecs functionParams() const { return {}; }
 
+    /// Lowest index of the trailing parameter map. Needed when a mandatory argument can also be a `Map(String, String)`.
+    virtual size_t firstParamsArgumentIndex() const { return 0; }
+
     /// Performs additional validation of the input arguments.
     virtual void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const {}
 
@@ -198,9 +203,43 @@ protected:
     /// (e.g. `aiFilter` → `UInt8`). The result column itself is created from `result_type`.
     virtual void insertProcessedResult(IColumn & column, const String & processed) const;
 
+    /// Validates the arguments against the provider of the named collection `provider_name`.
+    virtual void checkProvider(const IAIProvider & /*provider*/, const String & /*provider_name*/, const ColumnsWithTypeAndName & /*arguments*/) const {}
+
+    /// Whether this function can run on a decision provider (see `IAIProvider::supportsDecisions`).
+    virtual bool supportsDecisions() const { return false; }
+
+    /// The question asked about each row on a decision provider. Called once per block.
+    virtual AIDecisionQuestion buildDecisionQuestion(const ColumnsWithTypeAndName & /*arguments*/) const;
+
+    /// Insert the answer to the question of `buildDecisionQuestion` into the result column.
+    /// Also called with a default `AIDecisionAnswer` for a row that failed or was skipped.
+    virtual void insertDecisionResult(IColumn & /*column*/, const AIDecisionAnswer & /*answer*/) const;
+
 private:
     /// Full parameter spec for this function: `commonParams` followed by `functionParams`.
     AIParamSpecs allParams() const;
+
+    /// Token counts of one request attempt, filled by the provider before the response is validated.
+    struct AITokenUsage
+    {
+        UInt64 input_tokens = 0;
+        UInt64 output_tokens = 0;
+    };
+
+    /// Callbacks of `executeRows`. `request` performs one attempt for a row and throws on failure. On success,
+    /// `insert_result` inserts the result of the last attempt. `insert_failed` inserts the value of a failed or skipped row.
+    struct AIRowCallbacks
+    {
+        std::function<void(size_t row, const ConnectionTimeouts & timeouts, AITokenUsage & usage)> request;
+        std::function<void(IColumn & column)> insert_result;
+        std::function<void(IColumn & column)> insert_failed;
+    };
+
+    /// Sends one request per non-null row of the first argument, with quota checks, retries, backoff,
+    /// `ai_function_throw_on_error`, token accounting and ProfileEvents.
+    ColumnPtr executeRows(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const AIRowCallbacks & callbacks) const;
 };
 
 }

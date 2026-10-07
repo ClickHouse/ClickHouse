@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/URI.h>
 #include <memory>
 #include <string_view>
 
@@ -129,6 +131,64 @@ struct AIEmbeddingResponse
     UInt64 input_tokens = 0;
 };
 
+/// Type of a question asked to a decision model.
+enum class AIDecisionQuestionType : UInt8
+{
+    Choice, /// Pick exactly one label from `criteria`.
+};
+
+/// One question about the state of an `AIDecisionRequest`.
+struct AIDecisionQuestion
+{
+    /// Key of the answer in `AIDecisionResponse::answers`.
+    String key;
+    AIDecisionQuestionType type = AIDecisionQuestionType::Choice;
+    String instructions;
+    /// Candidate labels with their descriptions, in the order given by the user.
+    VectorWithMemoryTracking<std::pair<String, String>> criteria;
+};
+
+/** Parameters for a single request to a decision model (e.g. TypeSafe Jev).
+  *
+  * Each row processed by a decision-capable AI function produces one AIDecisionRequest.
+  * A decision model returns typed answers with probabilities instead of generated text.
+  */
+struct AIDecisionRequest
+{
+    String model;
+
+    /// The per-row input text.
+    String state;
+
+    VectorWithMemoryTracking<AIDecisionQuestion> questions;
+
+    /// SQL name of the AI function that produced this request (e.g. "aiClassify"), sent as the `X-ClickHouse-AI-Function` header.
+    String function_name;
+};
+
+/// Answer to one `AIDecisionQuestion` of type `Choice`.
+struct AIDecisionAnswer
+{
+    /// One of the labels of the question's `criteria`.
+    String choice;
+
+    /// Confidence of `choice`, in [0, 1].
+    Float64 confidence = 0;
+
+    /// Probability of each label.
+    MapWithMemoryTracking<String, Float64> probabilities;
+};
+
+/// Response from a single decision request. Returned by IAIProvider::decide.
+struct AIDecisionResponse
+{
+    /// Answers keyed by `AIDecisionQuestion::key`. Holds an answer for every question of the request.
+    MapWithMemoryTracking<String, AIDecisionAnswer> answers;
+
+    UInt64 input_tokens = 0;
+    UInt64 output_tokens = 0;
+};
+
 /** Abstract interface for AI provider HTTP clients.
   *
   * Each provider (OpenAI, Anthropic, etc.) implements this interface to handle
@@ -151,11 +211,23 @@ public:
     /// `response`, filling `input_tokens` before the payload is validated: so a failed request can still update token counts
     virtual void embed(
         const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response);
+
+    /// Whether this provider is a decision model. Such a provider has no chat endpoint and serves only `decide`.
+    virtual bool supportsDecisions() const { return false; }
+
+    /// Send a decision request. Only valid when `supportsDecisions()` is true. Replaces the contents of `response`,
+    /// filling the token counts before the payload is validated: so a failed request can still update token counts.
+    virtual void decide(const AIDecisionRequest & ai_decision_request, const ConnectionTimeouts & timeouts, AIDecisionResponse & response);
 };
 
 using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
+
+/// POST a JSON `body` to `uri` with Bearer auth (omitted when `api_key` is empty) and the `X-ClickHouse-AI-Function`
+/// header. Returns the response body. Throws `AIProviderHTTPException` on a non-200 status.
+String postJSONToAIProvider(
+    const Poco::URI & uri, const String & api_key, const String & function_name, const String & body, const ConnectionTimeouts & timeouts);
 
 /// Build an error message from a provider's non-200 HTTP response, for use in an exception that is logged.
 String formatProviderError(int status_code, const String & response_body);

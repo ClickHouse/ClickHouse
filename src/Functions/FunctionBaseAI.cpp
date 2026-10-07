@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int AI_PROVIDER_RESPONSE_TRUNCATED;
     extern const int AI_PROVIDER_RESPONSE_INCOMPLETE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -203,12 +204,13 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     const ContextPtr & context,
     const ColumnsWithTypeAndName & arguments,
     const AIParamSpecs & spec,
-    const String & default_credentials)
+    const String & default_credentials,
+    size_t first_params_arg_index)
 {
     /// The parameter map, when present, is the last argument (validated as a const Map(String, String)
     /// by getReturnTypeImpl). Read it into a plain string->string map.
     std::map<String, String, std::less<>> map_values; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    if (!arguments.empty() && isStringToStringMap(*arguments.back().type))
+    if (arguments.size() > first_params_arg_index && isStringToStringMap(*arguments.back().type))
     {
         const auto * map_const = typeid_cast<const ColumnConst *>(arguments.back().column.get());
         if (!map_const)
@@ -462,10 +464,21 @@ void FunctionBaseAI::embedTexts(
     }
 }
 
+AIDecisionQuestion FunctionBaseAI::buildDecisionQuestion(const ColumnsWithTypeAndName & /*arguments*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support decision providers", getName());
+}
+
+void FunctionBaseAI::insertDecisionResult(IColumn & /*column*/, const AIDecisionAnswer & /*answer*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support decision providers", getName());
+}
+
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     const auto & settings = getContext()->getSettingsRef();
-    auto params = resolveAIParams(getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials]);
+    auto params = resolveAIParams(
+        getContext(), arguments, allParams(), settings[Setting::ai_function_text_default_credentials], firstParamsArgumentIndex());
 
     String model = params.getString("model");
     UInt64 max_tokens = params.getUInt("max_tokens");
@@ -474,12 +487,117 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Row-independent validation must run before the zero-row fast path so malformed constant
     /// arguments fail consistently regardless of source size.
     checkSanityBeforeExecuteImpl(arguments, result_type, input_rows_count);
+    auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
+    checkProvider(*provider, params.collection.provider, arguments);
+
+    if (provider->supportsDecisions())
+    {
+        if (!supportsDecisions())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "AI provider '{}' of named collection '{}' supports only `aiClassify`, not `{}`",
+                params.collection.provider, params.collection.collection_name, getName());
+
+        /// `temperature` and `max_tokens` have no equivalent in a decision request.
+        AIDecisionQuestion question = buildDecisionQuestion(arguments);
+
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        AIDecisionAnswer answer;
+        return executeRows(arguments, result_type, input_rows_count, {
+            .request = [&](size_t row, const ConnectionTimeouts & timeouts, AITokenUsage & usage)
+            {
+                AIDecisionRequest ai_request;
+                ai_request.model = model;
+                ai_request.state = sanitizeForModel(buildUserMessage(arguments, row));
+                ai_request.questions.push_back(question);
+                ai_request.function_name = getName();
+
+                AIDecisionResponse ai_response;
+                SCOPE_EXIT({
+                    usage.input_tokens = ai_response.input_tokens;
+                    usage.output_tokens = ai_response.output_tokens;
+                });
+                provider->decide(ai_request, timeouts, ai_response);
+                answer = std::move(ai_response.answers.at(question.key));
+            },
+            .insert_result = [&](IColumn & column) { insertDecisionResult(column, answer); },
+            .insert_failed = [&](IColumn & column) { insertDecisionResult(column, AIDecisionAnswer{}); },
+        });
+    }
+
     String system_prompt = sanitizeForModel(buildSystemPrompt(arguments, params));
     auto response_format = buildResponseFormat(arguments);
-    auto provider = createAIProvider(params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
 
     if (input_rows_count == 0)
         return result_type->createColumn();
+
+    String result;
+    return executeRows(arguments, result_type, input_rows_count, {
+        .request = [&](size_t row, const ConnectionTimeouts & timeouts, AITokenUsage & usage)
+        {
+            AIRequest ai_request;
+            ai_request.system_prompt = system_prompt;
+            ai_request.user_message = sanitizeForModel(buildUserMessage(arguments, row));
+            ai_request.response_format = response_format;
+            ai_request.model = model;
+            ai_request.temperature = temperature;
+            ai_request.max_tokens = max_tokens;
+            ai_request.function_name = getName();
+
+            AIResponse ai_response;
+            SCOPE_EXIT({
+                usage.input_tokens = ai_response.input_tokens;
+                usage.output_tokens = ai_response.output_tokens;
+            });
+            provider->call(ai_request, timeouts, ai_response);
+
+            /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
+            /// interpolating it into an exception message that reaches the logs and `system.query_log`.
+            const String safe_finish_reason = sanitizeForLog(ai_response.raw_finish_reason);
+
+            /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
+            switch (ai_response.finish_reason)
+            {
+                case FinishReason::Complete:
+                case FinishReason::Unknown: /// Don't throw on Unknown, could be new valid reason in new API version
+                    break;
+                case FinishReason::Truncated:
+                    /// Differentiate between model hitting our output cap and exhausting its context window
+                    throw Exception(
+                        ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
+                        "AI provider returned a truncated response (finish_reason='{}'): {}",
+                        safe_finish_reason,
+                        ai_response.raw_finish_reason == "model_context_window_exceeded"
+                            ? "the model ran out of context window before completing its answer. "
+                              "Reduce the input or use a model with a larger context window."
+                            : "the model hit the output token limit before completing its answer. "
+                              "Increase max_tokens or reduce the input.");
+                case FinishReason::ContentFilter:
+                    throw Exception(
+                        ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                        "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
+                        "is incomplete.",
+                        safe_finish_reason);
+                case FinishReason::RequiresAction:
+                    throw Exception(
+                        ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
+                        "AI provider stopped expecting further caller action (finish_reason='{}') instead of "
+                        "returning a completed answer.",
+                        safe_finish_reason);
+            }
+
+            result = postProcessResponse(ai_response.result);
+        },
+        .insert_result = [&](IColumn & column) { insertProcessedResult(column, result); },
+        .insert_failed = [](IColumn & column) { column.insertDefault(); },
+    });
+}
+
+ColumnPtr FunctionBaseAI::executeRows(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const AIRowCallbacks & callbacks) const
+{
+    const auto & settings = getContext()->getSettingsRef();
 
     /// A Nullable prompt can arrive as `ColumnNullable` or as `ColumnConst(ColumnNullable)` (e.g. `NULL::Nullable(String)`).
     /// `convertToFullColumnIfConst` unwraps the latter into the former, so a single null-map path handles both.
@@ -532,13 +650,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         if (quota_tracker->checkQuotas())
         {
-            result_col->insertDefault();
+            callbacks.insert_failed(*result_col);
             ++rows_skipped;
             continue;
         }
 
-        String user_message = sanitizeForModel(buildUserMessage(arguments, i));
-        String result;
         bool success = false;
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
@@ -550,61 +666,15 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
             try
             {
-                AIRequest ai_request;
-                ai_request.system_prompt = system_prompt;
-                ai_request.user_message = user_message;
-                ai_request.response_format = response_format;
-                ai_request.model = model;
-                ai_request.temperature = temperature;
-                ai_request.max_tokens = max_tokens;
-                ai_request.function_name = getName();
-
                 ++total_api_calls;
 
-                AIResponse ai_response;
+                AITokenUsage usage;
                 SCOPE_EXIT({
-                    quota_tracker->recordTokens(ai_response.input_tokens, ai_response.output_tokens);
-                    total_input_tokens += ai_response.input_tokens;
-                    total_output_tokens += ai_response.output_tokens;
+                    quota_tracker->recordTokens(usage.input_tokens, usage.output_tokens);
+                    total_input_tokens += usage.input_tokens;
+                    total_output_tokens += usage.output_tokens;
                 });
-                provider->call(ai_request, timeouts, ai_response);
-
-                /// `raw_finish_reason` is provider-controlled text; sanitize control characters before
-                /// interpolating it into an exception message that reaches the logs and `system.query_log`.
-                const String safe_finish_reason = sanitizeForLog(ai_response.raw_finish_reason);
-
-                /// Reject incomplete responses, throw plain DB::Exception so it is classified as non-retriable
-                switch (ai_response.finish_reason)
-                {
-                    case FinishReason::Complete:
-                    case FinishReason::Unknown: /// Don't throw on Unknown, could be new valid reason in new API version
-                        break;
-                    case FinishReason::Truncated:
-                        /// Differentiate between model hitting our output cap and exhausting its context window
-                        throw Exception(
-                            ErrorCodes::AI_PROVIDER_RESPONSE_TRUNCATED,
-                            "AI provider returned a truncated response (finish_reason='{}'): {}",
-                            safe_finish_reason,
-                            ai_response.raw_finish_reason == "model_context_window_exceeded"
-                                ? "the model ran out of context window before completing its answer. "
-                                  "Reduce the input or use a model with a larger context window."
-                                : "the model hit the output token limit before completing its answer. "
-                                  "Increase max_tokens or reduce the input.");
-                    case FinishReason::ContentFilter:
-                        throw Exception(
-                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
-                            "AI provider withheld or filtered the response (finish_reason='{}'): the returned answer "
-                            "is incomplete.",
-                            safe_finish_reason);
-                    case FinishReason::RequiresAction:
-                        throw Exception(
-                            ErrorCodes::AI_PROVIDER_RESPONSE_INCOMPLETE,
-                            "AI provider stopped expecting further caller action (finish_reason='{}') instead of "
-                            "returning a completed answer.",
-                            safe_finish_reason);
-                }
-
-                result = postProcessResponse(ai_response.result);
+                callbacks.request(i, timeouts, usage);
                 success = true;
                 break;
             }
@@ -625,12 +695,12 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         if (success)
         {
-            insertProcessedResult(*result_col, result);
+            callbacks.insert_result(*result_col);
             ++rows_processed;
         }
         else
         {
-            result_col->insertDefault();
+            callbacks.insert_failed(*result_col);
             ++rows_skipped;
         }
     }

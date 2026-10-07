@@ -58,6 +58,11 @@ Endpoints:
   POST /v1/bad_request               — always returns HTTP 400, a deterministic client error that
       the url table function never retries, used to assert AI functions do not retry it either.
   POST /v1/embeddings_error          — always returns HTTP 500 (used for embedding errors)
+  POST /v1/systemone                 — TypeSafe System One decision endpoint. Answers each `choice`
+      question with the first `criteria` label found in `state`, or the first label. Confidence 0.9.
+      Fixed tokens: 30 input, 4 output.
+  POST /v1/systemone_malformed       — like `/v1/systemone`, but the choice is not one of the labels.
+  POST /v1/systemone_error           — always returns HTTP 500.
 """
 
 import http.server
@@ -229,6 +234,31 @@ def make_embeddings_response(body, *, duplicate_index=False, drop_last=False):
             "prompt_tokens": sum(len(t) for t in inputs),
             "total_tokens": sum(len(t) for t in inputs),
         },
+    }
+
+
+def make_decision_response(body, choice=None):
+    """TypeSafe System One response. Each `choice` question is answered with the first label of
+    `criteria` that occurs in `state` (case-insensitive), or the first label otherwise."""
+    data = json.loads(body)
+    state = data.get("state", "").lower()
+    answers = {}
+    for key, question in data.get("questions", {}).items():
+        labels = list(question.get("criteria", {}).keys())
+        picked = choice
+        if picked is None:
+            picked = next((l for l in labels if l.lower() in state), labels[0])
+        rest = 0.1 / max(len(labels) - 1, 1)
+        answers[key] = {
+            "type": "choice",
+            "choice": picked,
+            "confidence": 0.9,
+            "probabilities": {l: 0.9 if l == picked else rest for l in labels},
+        }
+    return {
+        "model": "jev-test",
+        "answers": answers,
+        "usage": {"input_tokens": 30, "output_tokens": 4},
     }
 
 
@@ -452,6 +482,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         if parsed.path == "/v1/embeddings_error":
             self._send_json(500, make_error_response("embedding failure"))
+            return
+
+        if parsed.path == "/v1/systemone":
+            self._send_json(200, make_decision_response(body))
+            return
+
+        if parsed.path == "/v1/systemone_malformed":
+            self._send_json(200, make_decision_response(body, choice="not_a_label"))
+            return
+
+        if parsed.path == "/v1/systemone_error":
+            self._send_json(500, make_error_response("decision failure"))
             return
 
         self.send_response(404)
