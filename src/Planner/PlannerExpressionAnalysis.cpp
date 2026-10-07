@@ -444,19 +444,13 @@ ActionsAndProjectInputsFlagPtr analyzeAliasColumnsAfterAggregation(
 {
     CollectAliasColumnsAfterAggregationVisitor collector(*planner_context, input_columns, correlated_columns_set);
 
-    for (const auto & node : {
-             query_node.getHaving(),
-             query_node.getQualify(),
-             query_node.getOrderByNode(),
-             query_node.getInterpolate(),
-             query_node.getLimitByNode(),
-             query_node.getLimitAfter(),
-             query_node.getLimitUntil(),
-             query_node.getProjectionNode()})
-    {
+    QueryTreeNodes nodes_after_aggregation{query_node.getHaving(), query_node.getQualify(), query_node.getOrderByNode(),
+        query_node.getInterpolate(), query_node.getLimitByNode(), query_node.getLimitAfter(), query_node.getLimitUntil(),
+        query_node.getProjectionNode()};
+
+    for (const auto & node : nodes_after_aggregation)
         if (node)
             collector.visit(node);
-    }
 
     const auto & alias_columns = collector.getAliasColumns();
     if (alias_columns.empty())
