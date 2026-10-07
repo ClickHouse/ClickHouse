@@ -31,6 +31,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/Stopwatch.h>
@@ -43,6 +44,7 @@
 #include <Interpreters/TransactionLog.h>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -432,6 +434,15 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
+/// Background work that deferring would cancel, or nothing to load, so these are never deferred.
+static bool isEagerEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> eager_engines
+        = {"Distributed", "Buffer", "MaterializedPostgreSQL", "Merge", "Memory"};
+
+    return eager_engines.contains(engine_name);
+}
+
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -439,6 +450,9 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, LoadingStric
 
     if (query.is_ordinary_view || query.is_materialized_view || query.is_dictionary
         || query.isParameterizedView() || query.is_window_view)
+        return false;
+
+    if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
@@ -523,7 +537,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip);
     if (!rmt)
         return;
 
