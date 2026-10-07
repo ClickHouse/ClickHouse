@@ -256,40 +256,16 @@ public:
             stream.local_set.reset(INITIAL_LOCAL_SET_CAPACITY);
     }
 
-    /// Calls `insert` for every key (after skipping NULLs and consecutive duplicates) of the column.
-    /// `extract` maps the row number to the key, `same` compares two rows.
+    /// Inserts the keys of the rows (after skipping NULLs and consecutive duplicates) of the column. `extract` maps
+    /// the row number to the key, `same` compares two rows. The rows are compared before the keys are computed,
+    /// because computing a key (hashing a string) is more expensive.
     template <typename Extract, typename Same>
     ALWAYS_INLINE void routeRows(size_t stream_index, size_t num_rows, const UInt8 * null_map, Extract && extract, Same && same)
     {
         auto & stream = streams[stream_index];
+        std::array<Key, KEYS_BATCH_SIZE> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
         size_t last_row = 0;
         bool has_last_row = false;
-
-        for (size_t row = 0; row < num_rows; ++row)
-        {
-            if (null_map && null_map[row])
-                continue;
-
-            if (has_last_row && same(last_row, row))
-                continue;
-            last_row = row;
-            has_last_row = true;
-
-            insert(stream, extract(row));
-        }
-
-        rows.fetch_add(num_rows, std::memory_order_relaxed);
-    }
-
-    /// The same as `routeRows` for the values that are the keys themselves (zero-extended). Consecutive duplicates
-    /// and NULLs are dropped without branches into a buffer, which is then inserted.
-    template <typename T>
-    void routeValues(size_t stream_index, const T * data, size_t num_rows, const UInt8 * null_map)
-    {
-        auto & stream = streams[stream_index];
-        std::array<Key, 256> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
-        T last_value{};
-        bool has_last_value = false;
 
         for (size_t begin = 0; begin < num_rows; begin += keys.size())
         {
@@ -297,25 +273,77 @@ public:
             size_t num_keys = 0;
             for (size_t row = begin; row < end; ++row)
             {
-                const T value = data[row];
-                const bool is_null = null_map && null_map[row];
-                keys[num_keys] = static_cast<Key>(value);
-                num_keys += !is_null && !(has_last_value && value == last_value);
-                last_value = is_null ? last_value : value;
-                has_last_value |= !is_null;
+                if (null_map && null_map[row])
+                    continue;
+
+                if (has_last_row && same(last_row, row))
+                    continue;
+                last_row = row;
+                has_last_row = true;
+
+                keys[num_keys++] = extract(row);
             }
 
-            auto & set = stream.local_set;
-            if (stream.mode != Mode::Radix && (set.numCellsInUse() + num_keys) * 2 <= set.capacity())
+            insertBatch(stream, keys.data(), num_keys);
+        }
+
+        rows.fetch_add(num_rows, std::memory_order_relaxed);
+    }
+
+    /// The same as `routeRows` for the values that are the keys themselves (zero-extended). NULLs and consecutive
+    /// duplicates are dropped without branches into a buffer, which is then inserted. As in the ordinary `uniqExact`,
+    /// the consecutive duplicates are looked for only while they are frequent.
+    template <typename T>
+    void routeValues(size_t stream_index, const T * data, size_t num_rows, const UInt8 * null_map)
+    {
+        auto & stream = streams[stream_index];
+        std::array<Key, KEYS_BATCH_SIZE> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
+        T last_value{};
+        bool has_last_value = false;
+        bool skip_duplicates = true;
+        size_t num_seen = 0;
+        size_t num_skipped = 0;
+
+        for (size_t begin = 0; begin < num_rows; begin += keys.size())
+        {
+            const size_t end = std::min(begin + keys.size(), num_rows);
+            size_t num_keys = 0;
+            if (null_map)
             {
-                set.insertMany(keys.data(), num_keys);
+                for (size_t row = begin; row < end; ++row)
+                {
+                    const T value = data[row];
+                    const bool is_null = null_map[row];
+                    keys[num_keys] = static_cast<Key>(value);
+                    num_keys += !is_null && !(skip_duplicates && has_last_value && value == last_value);
+                    last_value = is_null ? last_value : value;
+                    has_last_value |= !is_null;
+                }
+            }
+            else if (skip_duplicates)
+            {
+                /// The rows of a column are contiguous, so a row is compared with the previous one in memory, and
+                /// the only dependency between the iterations is the number of keys.
+                for (size_t row = begin; row < end; ++row)
+                {
+                    keys[num_keys] = static_cast<Key>(data[row]);
+                    num_keys += row == 0 || data[row] != data[row - 1];
+                }
             }
             else
             {
-                /// The set may need to grow, or the keys are routed.
-                for (size_t i = 0; i < num_keys; ++i)
-                    insert(stream, keys[i]);
+                for (size_t row = begin; row < end; ++row)
+                    keys[num_keys++] = static_cast<Key>(data[row]);
             }
+
+            if (skip_duplicates)
+            {
+                num_seen += end - begin;
+                num_skipped += end - begin - num_keys;
+                skip_duplicates = num_skipped * 4 > num_seen;
+            }
+
+            insertBatch(stream, keys.data(), num_keys);
         }
 
         rows.fetch_add(num_rows, std::memory_order_relaxed);
@@ -364,6 +392,9 @@ public:
 
 private:
     static constexpr size_t INITIAL_LOCAL_SET_CAPACITY = 256;
+
+    /// The keys of a column are computed into a buffer of this size, which is then inserted.
+    static constexpr size_t KEYS_BATCH_SIZE = 256;
 
     enum class Mode : uint8_t
     {
@@ -437,6 +468,45 @@ private:
         push(stream, stream.chains[partitionHash(key) >> (64 - partition_bits)], key);
         if (++stream.num_buffered > stream.compaction_budget) [[unlikely]]
             compactStream(stream);
+    }
+
+    /// Inserts the keys into the local set or routes them, as `insert` does for each of them. The checks of `insert`
+    /// are done once for as many keys as possible.
+    ALWAYS_INLINE void insertBatch(Stream & stream, const Key * keys, size_t num_keys)
+    {
+        size_t i = 0;
+        while (i < num_keys)
+        {
+            if (stream.mode == Mode::Radix)
+            {
+                /// The keys within the budget are pushed without checking it, the next one starts a deduplication.
+                const size_t num_pushed = std::min(stream.compaction_budget - stream.num_buffered, num_keys - i);
+                pushMany(stream, keys + i, num_pushed);
+                i += num_pushed;
+            }
+            else
+            {
+                auto & set = stream.local_set;
+                if ((set.numCellsInUse() + num_keys - i) * 2 <= set.capacity())
+                {
+                    set.insertMany(keys + i, num_keys - i);
+                    return;
+                }
+            }
+
+            /// The set may need to grow, the stream may switch to another mode, or the keys may be deduplicated.
+            if (i < num_keys)
+                insert(stream, keys[i++]);
+        }
+    }
+
+    void pushMany(Stream & stream, const Key * keys, size_t num_keys)
+    {
+        Chain * chains = stream.chains.data();
+        const size_t shift = 64 - partition_bits;
+        for (size_t i = 0; i < num_keys; ++i)
+            push(stream, chains[partitionHash(keys[i]) >> shift], keys[i]);
+        stream.num_buffered += num_keys;
     }
 
     static void growLocalSet(FlatSet<Key> & set)
@@ -633,14 +703,17 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
 
     if (const auto * column_string = typeid_cast<const ColumnString *>(&column))
     {
+        const char * chars = reinterpret_cast<const char *>(column_string->getChars().data());
+        const auto * offsets = column_string->getOffsets().data();
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row)
+            [&](size_t row) { return sip_hash(chars + offsets[row - 1], offsets[row] - offsets[row - 1]); },
+            [&](size_t lhs, size_t rhs)
             {
-                const auto value = column_string->getDataAt(row);
-                return sip_hash(value.data(), value.size());
-            },
-            [&](size_t lhs, size_t rhs) { return column_string->getDataAt(lhs) == column_string->getDataAt(rhs); });
+                const size_t size = offsets[lhs] - offsets[lhs - 1];
+                return size == offsets[rhs] - offsets[rhs - 1]
+                    && (size == 0 || memcmp(chars + offsets[lhs - 1], chars + offsets[rhs - 1], size) == 0);
+            });
     }
     else if (const auto * column_fixed_string = typeid_cast<const ColumnFixedString *>(&column))
     {
