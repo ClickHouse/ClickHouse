@@ -244,9 +244,18 @@ void MergeTreeReaderWide::prefetchForColumns(
     }
 }
 
+/// Rows are about to be appended to the result column at `pos`. A column shared with the columns
+/// cache is not modified: the rows go to a copy of it.
+static IColumn::MutablePtr & takeColumnForAppending(MutableColumns & res_columns, Columns & shared_columns, size_t pos)
+{
+    if (shared_columns[pos])
+        res_columns[pos] = IColumn::mutate(std::move(shared_columns[pos]));
+    return res_columns[pos];
+}
+
 size_t MergeTreeReaderWide::readRows(
     size_t from_mark, size_t current_range_last_mark, bool continue_reading, size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    MutableColumns & res_columns, Columns & shared_columns)
 {
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
@@ -259,6 +268,8 @@ size_t MergeTreeReaderWide::readRows(
     {
         size_t num_columns = res_columns.size();
         checkNumberOfColumns(num_columns);
+        if (shared_columns.size() != num_columns)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected {} shared columns, got {}", num_columns, shared_columns.size());
 
         if (num_columns == 0)
             return max_rows_to_read;
@@ -266,7 +277,7 @@ size_t MergeTreeReaderWide::readRows(
         if (!columns_cache_reads_possible && !columns_cache_writes_possible)
         {
             /// Read from disk: every column that is in the part, continuing or seeking as asked.
-            read_rows = readSegmentFromDisk(from_mark, max_rows_to_read, res_columns,
+            read_rows = readSegmentFromDisk(from_mark, max_rows_to_read, res_columns, shared_columns,
                 [&](size_t) -> std::optional<bool> { return continue_reading; });
         }
         else
@@ -284,7 +295,7 @@ size_t MergeTreeReaderWide::readRows(
             if (!continue_reading)
                 startColumnsCacheRange(from_mark, current_range_last_mark ? current_range_last_mark : last_mark_to_read, num_columns);
 
-            read_rows = readRowsWithColumnsCache(max_rows_to_read, res_columns);
+            read_rows = readRowsWithColumnsCache(max_rows_to_read, res_columns, shared_columns);
         }
 
         /// NOTE: positions for all streams must be kept in sync.
@@ -316,6 +327,7 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
     size_t from_mark,
     size_t max_rows_to_read,
     MutableColumns & res_columns,
+    Columns & shared_columns,
     const ColumnReadSelector & selector,
     std::vector<size_t> * sizes_before_reading)
 {
@@ -354,7 +366,7 @@ size_t MergeTreeReaderWide::readSegmentFromDisk(
 
         /// The column may already be present (we append the values to the end) or empty; either way it is
         /// uniquely owned here, so we read into it directly without cloning.
-        auto & column = res_columns[pos];
+        auto & column = takeColumnForAppending(res_columns, shared_columns, pos);
         if (!column)
             column = column_to_read.type->createColumn(*serializations[pos]);
 
@@ -544,7 +556,7 @@ bool MergeTreeReaderWide::isGranuleColumnCached(size_t pos, size_t mark) const
     return entry && entry->coversMarks(mark, mark + 1);
 }
 
-size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns)
+size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns)
 {
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
     const size_t num_columns = res_columns.size();
@@ -650,7 +662,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
                 size_t j = i;
                 while (j < run_end && stripes.stripeOf(segments[j].mark) == stripe)
                     rows += segments[j++].rows;
-                serveRowsFromColumnsCache(segments[i].mark, row_begin, rows, res_columns);
+                serveRowsFromColumnsCache(segments[i].mark, row_begin, rows, res_columns, shared_columns);
                 i = j;
             }
         }
@@ -659,7 +671,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
         if (disk_columns || has_columns_read_only_from_part)
         {
             const bool continue_reading_from_part_only = partial_columns_started;
-            const size_t rows_from_disk = readSegmentFromDisk(segments[run_begin].mark, run_rows, res_columns,
+            const size_t rows_from_disk = readSegmentFromDisk(segments[run_begin].mark, run_rows, res_columns, shared_columns,
                 [&](size_t pos) -> std::optional<bool>
                 {
                     if (isColumnAbsentFromPart(pos))
@@ -747,7 +759,7 @@ size_t MergeTreeReaderWide::readRowsWithColumnsCache(size_t max_rows_to_read, Mu
     return read_rows;
 }
 
-void MergeTreeReaderWide::serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns)
+void MergeTreeReaderWide::serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns)
 {
     const size_t num_columns = res_columns.size();
     for (size_t pos = 0; pos < num_columns; ++pos)
@@ -776,22 +788,27 @@ void MergeTreeReaderWide::serveRowsFromColumnsCache(size_t first_mark, size_t ro
                 entry->row_begin, entry->row_begin + cached_column.size(), row_begin, row_begin + rows);
         const size_t offset = row_begin - entry->row_begin;
 
-        auto & column = res_columns[pos];
-        if (!column)
+        if (!res_columns[pos] && !shared_columns[pos])
         {
-            /// The first rows of the result column are a copy of the cached rows, so that the
-            /// column keeps the structure the part gives it and a freshly created column would
-            /// not have: the dynamic paths of a `JSON` column and the variants of a `Dynamic`
-            /// column come from the prefix of the part, the value of a column stored as a single
-            /// value per part is in the data, and a part with sparse serialization produces a
-            /// `ColumnSparse`. Downstream behavior depends on all of these: some aggregate
-            /// functions (for example `groupConcat`) have a sparse fast path that processes
-            /// non-defaults first and all defaults at the end, while the full path preserves the
-            /// natural row order. `cut` creates a fresh copy, so mutating it cannot touch the
-            /// column stored in the cache.
-            column = IColumn::mutate(cached_column.cut(offset, rows));
+            /// The first rows of the result column are the cached rows, so that the column keeps
+            /// the structure the part gives it and a freshly created column would not have: the
+            /// dynamic paths of a `JSON` column and the variants of a `Dynamic` column come from
+            /// the prefix of the part, the value of a column stored as a single value per part is
+            /// in the data, and a part with sparse serialization produces a `ColumnSparse`.
+            /// Downstream behavior depends on all of these: some aggregate functions (for example
+            /// `groupConcat`) have a sparse fast path that processes non-defaults first and all
+            /// defaults at the end, while the full path preserves the natural row order.
+            ///
+            /// Rows that are the whole entry are the cached column itself, shared with the cache;
+            /// other rows are a copy, which the read may go on to modify.
+            if (offset == 0 && rows == cached_column.size())
+                shared_columns[pos] = entry->column;
+            else
+                res_columns[pos] = IColumn::mutate(cached_column.cut(offset, rows));
             continue;
         }
+
+        auto & column = takeColumnForAppending(res_columns, shared_columns, pos);
 
         /// The result column already has its structure, from the granules before this one - read
         /// from the part or served from the cache, both of the same part. If the entry was written

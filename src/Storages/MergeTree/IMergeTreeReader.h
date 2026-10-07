@@ -41,9 +41,12 @@ public:
     /// (<= the last mark of the current read task; equal to it when the task is one
     /// contiguous range). It bounds caching of deserialized columns, which must not
     /// span the gaps between ranges of a multi-range task. 0 means unknown.
+    /// `res_columns` are the columns the reader fills. `shared_columns`, of the same size, are the
+    /// columns it shares with the columns cache instead, which must not be modified: for every
+    /// position at most one of the two is set.
     virtual size_t readRows(size_t from_mark, size_t current_range_last_mark,
                             bool continue_reading, size_t max_rows_to_read,
-                            MutableColumns & res_columns) = 0;
+                            MutableColumns & res_columns, Columns & shared_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 

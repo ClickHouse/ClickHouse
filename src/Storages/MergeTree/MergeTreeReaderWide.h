@@ -42,7 +42,7 @@ public:
         size_t current_range_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        MutableColumns & res_columns) override;
+        MutableColumns & res_columns, Columns & shared_columns) override;
 
     bool canReadIncompleteGranules() const override { return true; }
 
@@ -155,11 +155,13 @@ private:
 
     /// Read up to `max_rows_to_read` rows of the selected columns from the part, appending them to
     /// `res_columns`, and return how many rows were read (zero if no selected column is in the part).
+    /// A column in `shared_columns` is moved to `res_columns` as a copy first.
     /// `sizes_before_reading`, if given, receives the number of rows every column held before.
     size_t readSegmentFromDisk(
         size_t from_mark,
         size_t max_rows_to_read,
         MutableColumns & res_columns,
+        Columns & shared_columns,
         const ColumnReadSelector & selector,
         std::vector<size_t> * sizes_before_reading = nullptr);
 
@@ -310,11 +312,13 @@ private:
     bool canServeFirstRangeFromCache();
 
     /// Read up to `max_rows_to_read` rows granule by granule, from the cache or from the part.
-    size_t readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns);
+    size_t readRowsWithColumnsCache(size_t max_rows_to_read, MutableColumns & res_columns, Columns & shared_columns);
 
     /// Append the `rows` rows starting at row `row_begin` of the part - which lie in the stripe of
-    /// granule `first_mark` - to the regular result columns whose entry covers them.
-    void serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns);
+    /// granule `first_mark` - to the regular result columns whose entry covers them. Rows that are
+    /// a whole entry of an empty result column are not copied: the entry's column goes to
+    /// `shared_columns`.
+    void serveRowsFromColumnsCache(size_t first_mark, size_t row_begin, size_t rows, MutableColumns & res_columns, Columns & shared_columns);
 
     /// Whether a deferred write may begin or go on: the query-wide budgets may have run out.
     bool canWriteToColumnsCache() const;
