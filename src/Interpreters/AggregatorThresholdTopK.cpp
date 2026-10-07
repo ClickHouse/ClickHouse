@@ -186,8 +186,11 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                 return std::nullopt;
         }
 
-        /// An earlier bucket exhausted the walk budget: this value distribution does not converge.
-        if (threshold_top_k_verdict && threshold_top_k_verdict->load(std::memory_order_relaxed) == 0)
+        /// Earlier buckets exhausted the walk budget: this value distribution does not converge.
+        /// One bucket is not enough evidence - a single bucket can be an outlier (e.g. its tail
+        /// ties keep the threshold open while the other buckets converge) - so the verdict needs
+        /// two of them. A wasted walk costs one bucket's heap setup, out of the many buckets.
+        if (threshold_top_k_verdict && threshold_top_k_verdict->load(std::memory_order_relaxed) >= 2)
             return std::nullopt;
 
         const IAggregateFunction * order_by_function = aggregate_functions[order_by_index];
@@ -519,9 +522,9 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
         /// tied tail values of a stray second table, which keeps the threshold open (the
         /// extremum bounds stop within about k * m pops). Once half
         /// of the cells are popped with the threshold still open, this bucket finishes with a
-        /// plain linear sweep - same processing, no heap traffic - and the verdict tells the
-        /// remaining buckets (which see the same hash-partitioned distribution) to take the
-        /// ordinary merge from the start.
+        /// plain linear sweep - same processing, no heap traffic - and counts towards the verdict
+        /// that tells the remaining buckets (which see the same hash-partitioned distribution) to
+        /// take the ordinary merge from the start.
         const size_t pop_budget = total_cells / 2;
         bool budget_exhausted = false;
 
@@ -594,7 +597,7 @@ std::optional<Aggregator::AggregatedChunk> Aggregator::mergeAndConvertOneBucketT
                 if (popped_cells > pop_budget)
                 {
                     if (threshold_top_k_verdict)
-                        threshold_top_k_verdict->store(0, std::memory_order_relaxed);
+                        threshold_top_k_verdict->fetch_add(1, std::memory_order_relaxed);
                     budget_exhausted = true;
                     break;
                 }

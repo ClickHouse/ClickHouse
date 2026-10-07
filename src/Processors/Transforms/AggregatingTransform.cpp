@@ -220,10 +220,10 @@ public:
         std::atomic<size_t> single_level_merged_rows = 0;
 
         /// The convergence verdict of the top-K threshold merge, shared across the buckets: the
-        /// buckets partition the groups by hash, so their value distributions are alike, and the
-        /// first bucket's precheck decides for all of them (see `Aggregator::Params::threshold_top_k`).
-        /// -1 - undecided, 0 - take the ordinary merge, 1 - the threshold merge converges.
-        std::atomic<int> threshold_top_k_verdict{-1};
+        /// number of buckets whose walk exhausted its budget. The buckets partition the groups by
+        /// hash, so their value distributions are alike, and once two buckets failed to converge,
+        /// the remaining ones take the ordinary merge (see `Aggregator::Params::threshold_top_k`).
+        std::atomic<int> threshold_top_k_verdict{0};
 
         /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
         /// checked against this running total, taken from the bucket tables rather than from
