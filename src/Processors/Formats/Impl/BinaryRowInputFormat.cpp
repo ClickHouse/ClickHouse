@@ -1007,14 +1007,14 @@ c0 6c be 0d 8d 01 00 00   # Int64: timestamps
 The JSON type encodes data in two distinct categories:
 
 1. **Typed Paths** - Paths declared with explicit types in the schema (e.g., `JSON(user_id UInt32, name String)`)
-2. **Dynamic Paths/Overflow paths when dynamic path limit is exceeded** - Runtime-discovered paths stored as `Dynamic` type. The value encoding is preceded by the type definition.
+2. **Dynamic Paths/Overflow paths when dynamic path limit is exceeded** - Runtime-discovered paths stored as `Dynamic` type. The value encoding is preceded by the type definition. With `DEFAULT PATH TYPE T` the value is a length-prefixed blob (`VarUInt` length followed by the binary encoding of `T`) without the type definition.
 
 The wire format and rules are different for these two categories.
 
 | Path Category | Included in Serialization | Value Encoding | Variant/Nullable allowed |
 | --- | --- | --- | --- |
 | **Typed paths** | Always (even if NULL) | Type-specific binary format | Yes |
-| **Dynamic paths** | Only if non-null | Dynamic | No |
+| **Dynamic paths** | Only if non-null | Dynamic, or bare `T` blob for `DEFAULT PATH TYPE T` | No |
 
 Paths are serialized in three groups, written sequentially: typed paths, dynamic paths, then shared data (overflow) paths. Typed and dynamic paths are written in an implementation-defined order (determined by internal hash-map iteration), while shared data paths are written in alphabetical order. Readers should not rely on any specific path ordering. The deserializer dispatches each path by name, not by position.
 
@@ -1151,6 +1151,30 @@ Binary encoding (hex with annotations):
 ```
 
 Note: Nested objects are flattened into dot-separated paths (e.g., `user.name` instead of a nested structure).
+
+**5. Dynamic paths with DEFAULT PATH TYPE:**
+
+Schema: `JSON(DEFAULT PATH TYPE String)`
+
+Row: `{"user_id": 42, "name": "Alice"}`
+
+Binary encoding (hex with annotations):
+
+```text
+02                              # VarUInt: 2 paths total
+
+# Dynamic path "name" (no type definition; value is a bare String in a length-prefixed blob)
+04 6E 61 6D 65                  # String: "name" (length 4 + bytes)
+06                              # VarUInt blob length: 6
+05 41 6C 69 63 65               #   bare String value: "Alice" (length 5 + bytes)
+
+# Dynamic path "user_id" (coerced to String "42")
+07 75 73 65 72 5F 69 64         # String: "user_id" (length 7 + bytes)
+03                              # VarUInt blob length: 3
+02 34 32                        #   bare String value: "42" (length 2 + bytes)
+```
+
+Note: `T` is known from the column type, not from the row payload. The same encoding is used for dynamic and shared data (overflow) paths.
 
 **Alternative: JSON as String Mode**
 

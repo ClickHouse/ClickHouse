@@ -28,8 +28,9 @@ SerializationJSON<Parser>::SerializationJSON(
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
     const SerializationPtr & dynamic_serialization_,
+    const DataTypePtr & default_path_type_,
     std::unique_ptr<JSONExtractTreeNode<Parser>> json_extract_tree_)
-    : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_)
+    : SerializationObject(typed_paths_types_, typed_paths_serializations_, paths_to_skip_, path_regexps_to_skip_, dynamic_type_, dynamic_serialization_, default_path_type_)
     , json_extract_tree(std::move(json_extract_tree_))
 {
 }
@@ -245,6 +246,15 @@ void SerializationJSON<Parser>::serializeTextImpl(const IColumn & column, size_t
                 typed_paths_serializations.at(String(path_info.path))->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
             else
                 typed_paths_serializations.at(String(path_info.path))->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
+        }
+        else if (default_path_type)
+        {
+            /// With `DEFAULT PATH TYPE T` the iterator returns values of non-typed paths as `T`.
+            const auto & serialization = default_path_type->getDefaultSerialization();
+            if (pretty)
+                serialization->serializeTextJSONPretty(*path_info.column, path_info.row, ostr, settings, indent + current_prefix.size() + 1);
+            else
+                serialization->serializeTextJSON(*path_info.column, path_info.row, ostr, settings);
         }
         else
         {

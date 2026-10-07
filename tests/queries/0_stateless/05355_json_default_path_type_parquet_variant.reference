@@ -1,0 +1,7 @@
+Int64	1	2	1097	1	UInt8	500	Int64	1099	Int64
+String	1	2	1097	1	UInt8	500	String	1099	String
+LowCardinality(String)	1	2	1097	1	UInt8	500	LowCardinality(String)	1099	LowCardinality(String)
+CANNOT_PARSE_TEXT
+1	{"a":1,"b":{"d":{"e":1}}}	['a','b.d.e']	[]
+1	{"a":1,"b":{"d":{"e":1}}}	[]	['a','b.d.e']
+1	{"a":1,"b":{"d":{"e":1}}}	['a','b.d.e']	[]
