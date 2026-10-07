@@ -12333,13 +12333,13 @@ void MergeTreeData::Transaction::renameParts()
     precommitted_parts_need_rename.clear();
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(std::function<void()> cancel_check)
 {
     auto lock = data.lockParts();
-    return commit(lock);
+    return commit(lock, cancel_check);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock)
+MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock & acquired_parts_lock, std::function<void()> cancel_check)
 {
     DataPartsVector total_covered_parts;
 
@@ -12349,6 +12349,14 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Parts had not been renamed");
 
         auto settings = data.getSettings();
+
+        /// Abort the commit if the caller's cancellation check fires, before any precommitted part
+        /// is added to the active set. Runs under `acquired_parts_lock` and outside `NOEXCEPT_SCOPE`,
+        /// so it may throw (e.g. `ABORTED` for a killed mutation); unwinding rolls the transaction
+        /// back. This closes the race where a cancellation that lands after a caller-side check but
+        /// before the PreActive -> Active handoff would otherwise still publish the part.
+        if (cancel_check)
+            cancel_check();
 
         for (const auto & part : precommitted_parts)
             if (part->getDataPartStorage().hasActiveTransaction())

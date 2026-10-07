@@ -28,6 +28,7 @@ ColumnsDescription StorageSystemFailPoints::getColumnsDescription()
          "'pauseable_once' blocks execution once, "
          "'pauseable' blocks execution every time until resumed."},
         {"enabled", std::make_shared<DataTypeUInt8>(), "Whether the failpoint is currently enabled (1) or disabled (0)."},
+        {"paused", std::make_shared<DataTypeUInt8>(), "Whether at least one thread is currently paused at this failpoint (1) or not (0)."},
     };
 }
 
@@ -35,15 +36,16 @@ void StorageSystemFailPoints::fillData(
     MutableColumns & res_columns, ContextPtr /* context */, const ActionsDAG::Node * /* predicate */, std::vector<UInt8> /* columns_mask */) const
 {
     /// Get all available failpoints from the FailPointInjection registry.
-    /// getFailPoints() returns a vector of {name, type, enabled} tuples
+    /// getFailPoints() returns a vector of {name, type, enabled, paused} tuples
     /// covering all four categories: once, regular, pauseable_once, pauseable.
     const auto & fail_points = FailPointInjection::getFailPoints();
 
-    for (const auto & [name, type, enabled] : fail_points)
+    for (const auto & [name, type, enabled, paused] : fail_points)
     {
         res_columns[0]->insert(name);
         res_columns[1]->insert(static_cast<Int8>(type)); /// 0=once, 1=regular, 2=pauseable_once, 3=pauseable
         res_columns[2]->insert(static_cast<UInt8>(enabled ? 1 : 0));
+        res_columns[3]->insert(static_cast<UInt8>(paused ? 1 : 0));
     }
 }
 

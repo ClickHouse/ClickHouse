@@ -643,7 +643,11 @@ private:
                                              Coordination::Requests & ops, size_t & num_check_ops);
 
     /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
-    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false);
+    /// If `cancel_check` is set, it is forwarded into `Transaction::commit`, where it is invoked under the
+    /// parts lock immediately before the PreActive -> Active handoff. Callers that must not publish a part
+    /// (e.g. mutations that may be killed) pass it so the commit itself aborts rather than only checking
+    /// on the caller side before the ZooKeeper `multi`.
+    DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files = {}, bool replace_zero_copy_lock=false, std::function<void()> cancel_check = {});
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
 

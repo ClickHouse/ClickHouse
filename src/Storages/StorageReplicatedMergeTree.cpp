@@ -1,6 +1,7 @@
 #include <Core/Defines.h>
 
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <ranges>
 #include <chrono>
@@ -2392,7 +2393,8 @@ bool StorageReplicatedMergeTree::getOpsToCheckPartChecksumsAndCommit(const ZooKe
 
 
 MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAndCommit(Transaction & transaction,
-    const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock)
+    const MutableDataPartPtr & part, std::optional<HardlinkedFiles> hardlinked_files, bool replace_zero_copy_lock,
+    std::function<void()> cancel_check)
 {
     auto zookeeper = std::make_shared<ZooKeeperWithFaultInjection>(getZooKeeper());
 
@@ -2430,7 +2432,10 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
         if (e == Coordination::Error::ZOK)
         {
             LOG_DEBUG(log, "Part {} committed to zookeeper", part->name);
-            return transaction.commit();
+            /// Forward a caller-provided cancellation check (e.g. `KILL MUTATION`) into the local
+            /// `Transaction::commit`, so it is re-evaluated under the parts lock immediately before
+            /// the PreActive -> Active handoff, rather than only at the caller-side check above.
+            return transaction.commit(cancel_check);
         }
 
         if (e == Coordination::Error::ZNODEEXISTS)

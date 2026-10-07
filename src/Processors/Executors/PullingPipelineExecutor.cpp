@@ -46,7 +46,7 @@ const SharedHeader & PullingPipelineExecutor::getSharedHeader() const
     return pulling_format->getPort(IOutputFormat::PortKind::Main).getSharedHeader();
 }
 
-bool PullingPipelineExecutor::pull(Chunk & chunk)
+void PullingPipelineExecutor::ensureExecutor()
 {
     if (!executor)
     {
@@ -54,6 +54,11 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
         executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         executor->setStepProfiler(pipeline.getStepProfiler());
     }
+}
+
+bool PullingPipelineExecutor::pull(Chunk & chunk)
+{
+    ensureExecutor();
 
     /// Throws when the time limit is exceeded with `timeout_overflow_mode = 'throw'`. With 'break' the partial result
     /// is returned as a success: the execution is cancelled with `CancelledByTimeout`, and `executeUntil` below

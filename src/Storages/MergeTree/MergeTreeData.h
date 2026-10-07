@@ -378,8 +378,15 @@ public:
     public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
-        DataPartsVector commit();
-        DataPartsVector commit(DataPartsLock & lock);
+        /// `cancel_check`, if set, is invoked inside `commit` under the parts lock, immediately
+        /// before the precommitted parts are added to the active set. It lets a caller (e.g. a
+        /// mutation that can be killed) abort the commit from within the publication path, closing
+        /// the race where a cancellation that lands after a caller-side check but before the
+        /// PreActive -> Active handoff would otherwise still publish the part. The check runs
+        /// outside `NOEXCEPT_SCOPE`, so it may throw (e.g. `Exception(ABORTED, ...)`); unwinding
+        /// out of `commit` rolls the transaction back.
+        DataPartsVector commit(std::function<void()> cancel_check = {});
+        DataPartsVector commit(DataPartsLock & lock, std::function<void()> cancel_check = {});
 
         /// Rename should be done explicitly, before calling commit(), to
         /// guarantee that no lock held during rename (since rename is IO

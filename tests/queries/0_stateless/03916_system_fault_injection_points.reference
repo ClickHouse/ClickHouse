@@ -2,6 +2,7 @@
 name	String
 type	Enum8(\'once\' = 0, \'regular\' = 1, \'pauseable_once\' = 2, \'pauseable\' = 3)
 enabled	UInt8
+paused	UInt8
 0
 once	1
 regular	1

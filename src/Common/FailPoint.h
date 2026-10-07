@@ -2,7 +2,9 @@
 
 #include <Core/Types.h>
 
+#include <chrono>
 #include <mutex>
+#include <optional>
 
 #include "config.h"
 
@@ -83,6 +85,10 @@ public:
 
         /// Whether the failpoint is currently active (i.e., present in fail_point_wait_channels).
         bool enabled;
+
+        /// Whether at least one thread is currently paused at this failpoint (pause_epoch > resume_epoch).
+        /// Only meaningful for pauseable failpoints; false for non-pauseable ones or when no channel exists.
+        bool paused;
     };
 
     /** Block the calling thread at a pauseable failpoint until notifyFailPoint()
@@ -167,7 +173,14 @@ public:
       * - Can be called after target thread has already paused
       * - Thread-safe: multiple test threads can wait simultaneously
       */
-    static void waitForPause(const String & fail_point_name);
+    /// `timeout_ms`, when set, bounds the wait so a caller cannot hang forever if the target never
+    /// reaches the failpoint (e.g. the operation errored out earlier). When unset, waits indefinitely
+    /// as before.
+    /// Returns `true` only if a thread actually reached and paused at the failpoint; `false` if the
+    /// wait timed out, the failpoint was never paused, or the failpoint was disabled in the meantime
+    /// (the wait wakes on a disable so it cannot hang, but a disable is not reported as a real pause).
+    /// This lets a caller distinguish a genuine pause from a timeout or a premature disable.
+    static bool waitForPause(const String & fail_point_name, std::optional<UInt64> timeout_ms = {});
 
     /** Wait for the failpoint to be notified and threads to resume.
       *

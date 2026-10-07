@@ -2,6 +2,8 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/FailPoint.h>
+#include <Common/Stopwatch.h>
 #include <Processors/Sources/BlocksListSource.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -9,8 +11,19 @@
 #include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypesNumber.h>
 
+#include <atomic>
+#include <chrono>
+#include <thread>
+
 
 using namespace DB;
+
+
+namespace DB::FailPoints
+{
+extern const char check_sorted_transform_pause[];
+extern const char check_sorted_transform_after_loop_pause[];
+}
 
 
 static SortDescription getSortDescription(const std::vector<std::string> & column_names)
@@ -232,4 +245,105 @@ TEST(CheckSortedTransform, CheckEqualBlock)
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
     EXPECT_NO_THROW(executor.pull(chunk));
+}
+
+namespace
+{
+
+/// State shared between the test body and the pull thread. Owned by a `shared_ptr` and captured by
+/// value, so the (detached-on-timeout) thread never touches stack memory that `checkCancellation`
+/// may have destroyed by the time it returns.
+struct CancellationTestState
+{
+    std::atomic<bool> pull_finished{false};
+    std::atomic<bool> pull_result{true};
+    std::shared_ptr<QueryPipeline> pipeline;
+    std::shared_ptr<PullingPipelineExecutor> executor;
+};
+
+/// Check that a `CheckSortedTransform` paused at a failpoint is interrupted promptly when the
+/// pipeline is cancelled: the in-flight `pull` must finish without producing the chunk.
+void checkCancellation(const char * fail_point_name)
+{
+    std::vector<std::string> key_columns{"K1", "K2", "K3"};
+    auto sort_description = getSortDescription(key_columns);
+    BlocksList blocks;
+    blocks.push_back(getSortedBlockWithSize(key_columns, 10000, 1, 0));
+
+    auto state = std::make_shared<CancellationTestState>();
+    Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
+    pipe.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<CheckSortedTransform>(header, sort_description);
+    });
+    state->pipeline = std::make_shared<QueryPipeline>(std::move(pipe));
+    state->executor = std::make_shared<PullingPipelineExecutor>(*state->pipeline);
+
+    FailPointInjection::enableFailPoint(fail_point_name);
+
+    /// The thread keeps `state` (and thus `pipeline`/`executor`) alive via the shared pointer, so on
+    /// timeout it can be detached instead of joined without accessing freed stack memory.
+    std::thread pull_thread([state]
+    {
+        Chunk chunk;
+        try
+        {
+            state->pull_result = state->executor->pull(chunk);
+        }
+        catch (...)
+        {
+            /// Any exception during pull is treated as a failed pull; the test only asserts on
+            /// prompt termination after cancellation, not on the chunk content. Ok.
+            state->pull_result = false;
+        }
+        state->pull_finished = true;
+    });
+
+    /// Bound the wait so a pull that errors out before reaching the failpoint cannot wedge the job.
+    /// `waitForPause` returns whether a thread actually paused at the failpoint, so a timeout is
+    /// distinguishable from a real pause and the cancellation path is only asserted on when it was
+    /// actually exercised.
+    bool paused = FailPointInjection::waitForPause(fail_point_name, UInt64{5000});
+    if (!paused)
+    {
+        /// The failpoint was never reached (e.g. the pull errored out first), so the cancellation
+        /// path below was not exercised. Clean up first - disable the failpoint and stop the thread -
+        /// and only then fail, so the thread is never destroyed while still joinable and the failpoint
+        /// is not left armed for the next test.
+        FailPointInjection::disableFailPoint(fail_point_name);
+        if (state->pull_finished)
+            pull_thread.join();
+        else
+            pull_thread.detach();
+        ADD_FAILURE() << "Failpoint " << fail_point_name
+                      << " was not reached within 5000 ms; the cancellation path was not exercised";
+        return;
+    }
+
+    state->executor->cancel();
+    FailPointInjection::disableFailPoint(fail_point_name);
+
+    Stopwatch timer;
+    while (!state->pull_finished && timer.elapsedSeconds() < 10)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    if (state->pull_finished)
+        pull_thread.join();
+    else
+        pull_thread.detach();
+
+    ASSERT_TRUE(state->pull_finished) << "Pull did not finish promptly after cancellation";
+    EXPECT_FALSE(state->pull_result);
+}
+
+}
+
+TEST(CheckSortedTransform, CheckCancellationBeforeLoop)
+{
+    checkCancellation(FailPoints::check_sorted_transform_pause);
+}
+
+TEST(CheckSortedTransform, CheckCancellationAfterLoop)
+{
+    checkCancellation(FailPoints::check_sorted_transform_after_loop_pause);
 }
