@@ -710,23 +710,42 @@ bool cachedStatisticsDeclineParallelReplicas(
     if (!boundary)
         return false;
 
-    /// The same fail-close checks the full path applies, for the same reasons: a boundary that is the read
-    /// itself has no output bytes to price, and without an index analysis there is nothing to compare the
-    /// recorded row count against.
-    LazilyReadFromMergeTree * lazy_reading_step = nullptr;
-    const auto * source_reading_step = findReadingStep(const_cast<QueryPlan::Node &>(*boundary), &lazy_reading_step);
-    if (!source_reading_step || boundary->step.get() == source_reading_step)
+    /// A boundary that is the read itself has no output bytes to price, exactly as in the full path. That
+    /// is a question about the boundary, not about which read the replicas would coordinate, so it needs no
+    /// read identification - only the replicas plan can answer that, and the point here is not to build one.
+    if (typeid_cast<const ReadFromMergeTree *>(boundary->step.get()))
         return false;
 
-    const auto analysis = source_reading_step->getAnalyzedResult();
-    if (!analysis || analysis->readFromProjection())
-        return false;
-    const auto rows_to_read = analysis->selected_rows;
-    if (!rows_to_read)
-        return false;
-
-    /// Drifted data must be measured again, so it belongs to the collection path.
-    if (std::max<size_t>(stats->total_rows_to_read, rows_to_read) > std::min<size_t>(stats->total_rows_to_read, rows_to_read) * 2)
+    /// Drift is not checked here, and the projection check is not either. Both exist to keep the
+    /// *adoption* honest - stale measurements or a projection-backed read would price the parallel-replicas
+    /// plan wrongly - and this path only ever declines, which is correct whatever the measurements say. The
+    /// full path still applies both before it adopts anything.
+    ///
+    /// What does have to be caught is a table that has grown since it was measured, because growth is the
+    /// direction that turns a decline into a win, and a decline taken here records nothing, so nothing would
+    /// ever notice. The reads below the boundary bound the coordinated read from above - whichever one it is,
+    /// it reads no more rows than the largest of them - so a bound is enough to send a grown table back to
+    /// the full path, which identifies the real read and recollects. Shrinkage needs no guard: a read smaller
+    /// than it was measured only makes the single node look better still.
+    size_t largest_read_rows = 0;
+    std::vector<const QueryPlan::Node *> to_visit{boundary};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+        {
+            /// Only an analysis already done is consulted: forcing one here would spend on the queries this
+            /// path exists to make cheap.
+            const auto analysis = read->getAnalyzedResult();
+            if (!analysis)
+                return false;
+            largest_read_rows = std::max<size_t>(largest_read_rows, analysis->selected_rows);
+        }
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+    if (!largest_read_rows || largest_read_rows > stats->total_rows_to_read * 2)
         return false;
 
     const auto estimate = estimateReplicasCost(*stats, boundary->step.get(), optimization_settings);
