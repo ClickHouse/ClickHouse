@@ -4,6 +4,7 @@
 #include <typeinfo>
 #include <unordered_map>
 
+#include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>
@@ -231,7 +232,15 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         }
     }
 
-    getTreeHashWorkCounter() += visited_nodes;
+    size_t & hashed_nodes = getTreeHashWorkCounter();
+    const size_t hashed_nodes_before = hashed_nodes;
+    hashed_nodes += visited_nodes;
+
+    /// Analysis passes hash trees in per-key loops, so a long analysis observes query cancellation here.
+    static constexpr size_t cancellation_check_period_log2 = 16;
+    if ((hashed_nodes_before >> cancellation_check_period_log2) != (hashed_nodes >> cancellation_check_period_log2))
+        CurrentThread::checkIfNotCancelled();
+
     return getSipHash128AsPair(hash_state);
 }
 
