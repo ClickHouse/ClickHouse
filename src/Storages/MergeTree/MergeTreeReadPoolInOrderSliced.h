@@ -92,9 +92,9 @@ public:
     struct Cut
     {
         MergeTreeSliceTag slice;
-        size_t marks;
+        size_t marks = 0;
         /// The mark the rows of the slice start at in reading order.
-        size_t boundary_mark;
+        size_t boundary_mark = 0;
     };
 
     struct Scheduled
@@ -142,7 +142,7 @@ private:
     struct QueuedLane
     {
         Block key;
-        size_t lane;
+        size_t lane = 0;
     };
 
     struct QueuedLaneLess

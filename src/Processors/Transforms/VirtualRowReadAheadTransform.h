@@ -12,24 +12,18 @@ namespace DB
 
 /// N-in / N-out processor between the in-order `MergeTree` streams (or their preliminary
 /// merges) and the final `MergingSortedTransform` of a read-in-order query. Lane i connects
-/// input i to output i. It takes over two things the merge used to get from elsewhere:
+/// input i to output i. It owns the buffering and the read-ahead of the lanes, so the merge
+/// consumes them strictly on demand; the merge's own input read-ahead is off (`disableInputReadAhead`).
 ///
-/// - the buffering of `BufferChunksTransform` and the one chunk the merge used to request
-///   ahead into its input port: a lane keeps the next chunk ready and reads ahead up to the
-///   caps, and after delivering a virtual row it waits until the merge asks for the lane again,
-///   so a source parked behind its announcement is not read;
-/// - the read-ahead window the merge itself used to run: lanes that start with a virtual row
-///   are deferred, and up to `read_ahead_window` of them, nearest to the merge in key order,
-///   are woken to read their next chunk (plus the buffering, if enabled), so their reads
-///   overlap with the merge instead of running one at a time. A woken lane keeps its window
-///   slot until the merge takes its data or asks for it and finds it exhausted. With a `LIMIT`
-///   the window opens only after the merge has moved past a lane, since until then the front
-///   lane alone may answer the query.
+/// Buffering: a lane keeps its next chunk ready, plus up to `max_rows_to_buffer` / `max_bytes_to_buffer`
+/// more. After it delivers a virtual row it reads nothing until the merge asks for it again.
 ///
-/// The window is refilled only when the merge asks for a lane, never on a source event: the
-/// step in which the merge picks its next lane must not queue behind the sources it wakes.
-/// The merge's own read-ahead is disabled for this (see `disableInputReadAhead`), so each of
-/// its requests is a decision it took after consuming what it had.
+/// Read-ahead: a lane whose first chunk is a virtual row is deferred and ranked by that key. Each time
+/// the merge asks for a lane, the first `read_ahead_window` deferred lanes in key order are woken to
+/// read their next chunk; a woken lane holds its slot until it delivers data or the merge finds it
+/// exhausted. With a `LIMIT` the window opens only after the merge has moved past a lane: until then
+/// the front lane alone may answer the query. The window is refilled on the merge's requests only,
+/// never on a source event, so the merge never waits for the sources it wakes.
 class VirtualRowReadAheadTransform final : public IProcessor
 {
 public:

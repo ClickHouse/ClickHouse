@@ -12,28 +12,29 @@ namespace DB
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/// The processor between the sources of MergeTreeReadPoolInOrderSliced and the merge that reads in order.
-/// Input i is source i; output l is lane l, one part, whose chunks come out in mark order as if one
-/// source read that part alone (in reverse order, from the last mark down).
+/// The processor between the sources of MergeTreeReadPoolInOrderSliced and the merge that reads in
+/// order. Input i is source i; output l is lane l, one part, whose chunks come out in mark order as
+/// if one source read that part alone (in reverse order, from the last mark down).
 ///
-/// The router owns the rows and the demand; the pool owns marks, keys and readers.
+/// The router owns the chunks and the demand; the pool owns marks, keys and readers.
 ///
-/// Rows. Every chunk a source emits carries its slice (MergeTreeSliceInfo) and is buffered in that slice.
-/// A lane's chunks leave through its first unconsumed slice only, so the lane is in mark order whichever
-/// sources read it. A slice is complete when its source reports it ended, in the marker it emits after
-/// asking for the next slice: the last chunk may still be in the port at that moment. When a lane can
-/// take a chunk and none is ready, a virtual row announces the key its next rows start at, from the
-/// index, so the merge moves on to other lanes up to that key.
+/// Chunks. A chunk carries its slice (MergeTreeSliceInfo) and is buffered in it. A lane's chunks
+/// leave through its first unconsumed slice only, so the lane is in mark order whichever sources
+/// read it. A slice is complete when its source reports it ended, in the marker it emits after
+/// asking for the next slice. When a lane can take a chunk and none is ready, a virtual row
+/// announces the key its next rows start at, so the merge moves on to other lanes up to that key.
 ///
-/// Demand. The pool is told what to cut (MergeTreeReadPoolInOrderSliced::Demand): the lanes the merge
-/// waits for with nothing in flight, and a read-ahead allowance in marks. The allowance is the budget
-/// minus the marks in flight, where budget = min(sources x slice, 4 x consumed + 16 x empty): consumed
-/// are the marks of slices the merge took in full and then asked past, empty the marks of slices that
-/// came back without rows. It is zero in a round where no lane asked anew or waits, so a LIMIT met by
-/// the last chunk triggers no reads.
+/// Demand. Every round the pool is told what to cut (MergeTreeReadPoolInOrderSliced::Demand):
+/// - the lanes the merge waits for with nothing in flight: one slice each, always;
+/// - a read-ahead allowance in marks: budget minus marks in flight, where
+///   budget = min(sources x full slice, 4 x consumed + 16 x empty),
+///   consumed = marks of slices the merge took in full and then asked past,
+///   empty = marks of slices that came back without rows.
+/// The allowance is zero in a round where no lane asked anew or waits, so a LIMIT met by the last
+/// chunk triggers no reads.
 ///
-/// Sources. An input is set needed when the pool names its source to wake for a slice in the FIFO, and
-/// set not needed again when the source reports idle while the FIFO is empty.
+/// Sources. An input is set needed when the pool names its source to wake for a slice in the FIFO,
+/// and set not needed again when the source reports idle while the FIFO is empty.
 class MergeTreeInOrderSliceRouter final : public IProcessor
 {
 public:

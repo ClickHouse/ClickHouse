@@ -78,8 +78,6 @@ private:
     template <typename TSortingQueue>
     Status mergeBatchImpl(TSortingQueue & queue);
 
-    bool hasFilter() const { return filter_column_position != -1; }
-
     /// Where the rows to keep come from: the filter column of the header, or the chunk's
     /// `RowFilterInfo`. Resolved once per chunk, so the per-row path is one indexed read.
     const IColumnFilter * resolveRowFilterMask(const Chunk & chunk) const;
