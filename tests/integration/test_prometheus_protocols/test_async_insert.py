@@ -46,6 +46,40 @@ def get_async_insert_query_count():
     )
 
 
+def get_profile_event(event):
+    return int(
+        node.query(
+            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
+        )
+    )
+
+
+def test_async_insert_metric_families_deduplication_cache():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+
+    metadata = [("cached_metric", "GAUGE", "Test metric", "seconds")]
+    protobuf = convert_metrics_metadata_to_protobuf(metadata)
+    hits_before = get_profile_event(
+        "TimeSeriesMetricFamiliesDeduplicationCacheHits"
+    )
+
+    # Every remote write is acknowledged after its data is flushed,
+    # so the second one finds the metric family in the deduplication cache.
+    for _ in range(2):
+        send_protobuf_to_remote_write(
+            node.ip_address, 9093, "/write?async_insert=1", protobuf
+        )
+
+    assert (
+        node.query("SELECT count() FROM timeSeriesMetricFamilies(prometheus)")
+        == "1\n"
+    )
+    assert (
+        get_profile_event("TimeSeriesMetricFamiliesDeduplicationCacheHits")
+        == hits_before + 1
+    )
+
+
 def test_async_insert_acknowledged_after_flush():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 

@@ -44,7 +44,10 @@ A cluster with `replicas: 3` and `shards: 2` will create 6 ClickHouse pods total
 
 ### Keeper integration {#keeper-integration}
 
-Every ClickHouse cluster must reference a KeeperCluster for coordination:
+Every ClickHouse cluster needs a Keeper ensemble for coordination. Set exactly one of
+`keeperClusterRef` or `externalKeeper`; a cluster that sets both or neither is rejected.
+
+Point `keeperClusterRef` at a KeeperCluster this operator manages:
 
 ```yaml
 spec:
@@ -54,6 +57,63 @@ spec:
 ```
 
 When `keeperClusterRef.namespace` is set, the operator must watch both namespaces. If `WATCH_NAMESPACE` is configured, include the ClickHouse and Keeper namespaces in that list.
+
+### Externally managed Keeper {#external-keeper}
+
+Use `externalKeeper` to run ClickHouse against a Keeper ensemble the operator does not manage —
+one owned by another operator, running in a different Kubernetes cluster, on virtual machines or
+bare metal, or shared between several systems:
+
+```yaml
+spec:
+  externalKeeper:
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9181
+      - host: keeper-2.example.internal
+        port: 9181
+      - host: keeper-3.example.internal
+        port: 9181
+```
+
+`port` defaults to `9181`. `host` is a DNS name or an IP address; enclose IPv6 addresses in square
+brackets. Set `tls: Enabled` to connect over TLS, and give `port` the value the ensemble listens on
+for secure connections:
+
+```yaml
+spec:
+  externalKeeper:
+    tls: Enabled
+    nodes:
+      - host: keeper-1.example.internal
+        port: 9281
+```
+
+ClickHouse verifies the Keeper certificates against the system trust store, plus any `caBundle`
+you configure. See [ClickHouse-Keeper communication over TLS](#clickhouse-keeper-communication-over-tls).
+
+When several ClickHouse clusters share one ensemble, give each its own root znode through
+`settings.extraConfig`, so their replication metadata, SQL-defined users and named collections
+don't collide. Create the znode before ClickHouse starts, and don't change it afterwards:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      zookeeper:
+        root: /clickhouse/production
+```
+
+Don't put `zookeeper.root` in `settings.extraReloadableConfig`: a reload would switch the root of a
+running cluster and leave its replicated tables read-only. If the root znode has ACLs, they must let
+the cluster's `keeper-identity` create child znodes.
+
+The operator does not change these servers, and it does not wait for them before it reconciles ClickHouse.
+Keeping the ensemble available is up to the user.
+
+Authentication works the same way as for an operator-managed Keeper: the operator reads the
+`keeper-identity` key from the cluster Secret and passes it to ClickHouse. See
+[External Secret](#external-secret) for the Secret layout.
 
 ## KeeperCluster configuration {#keepercluster-configuration}
 
@@ -69,6 +129,31 @@ spec:
       requests:
         storage: 5Gi
 ```
+
+### Leadership handover on termination {#keeper-leadership-handover}
+
+The Keeper container has a default `preStop` hook that asks the replica to hand off Raft
+leadership before it stops, and waits for the handover to complete before letting the
+container terminate. This runs on every graceful stop of the container, not just
+operator-initiated rollouts: a descheduler eviction, a node drain, or an autoscaler
+action all trigger the same hook, since it is a kubelet-level `preStop` handler rather
+than reconcile-loop logic.
+
+Without this, restarting the current leader leaves the ensemble without a leader until a
+new election completes, which can take several seconds under load and shows up to
+ClickHouse as Keeper connection loss and elevated query latency. The hook asks the
+replica to yield leadership (Keeper's `ydld` four-letter-word command, sent over the
+`http_control` port) and then polls the replica's status until it is no longer the
+leader, rather than firing the request and immediately letting the container stop — a
+fire-and-forget request can still lose the race with `SIGTERM` under write load, so
+waiting is what keeps the leaderless window bounded.
+
+The hook needs no configuration and degrades gracefully: on Keeper versions older than
+26.3, which don't yet serve the leadership commands used here, the request is a no-op and
+the container stops as it would without the hook. It runs a shell script, so it requires
+`bash` in the image; if you run a distroless or scratch Keeper image, override or remove
+it via `containerTemplate.lifecycle` — see
+[API Reference](/products/kubernetes-operator/reference/api-reference#containertemplatespec).
 
 ## Storage configuration {#storage-configuration}
 
@@ -352,7 +437,8 @@ This format is compatible with cert-manager generated certificates.
 
 ### ClickHouse-Keeper communication over TLS {#clickhouse-keeper-communication-over-tls}
 
-If KeeperCluster has TLS enabled, ClickHouseCluster would use secure connection to Keeper nodes automatically.
+If the KeeperCluster referenced by `keeperClusterRef` has TLS enabled, ClickHouseCluster would use secure connection to Keeper nodes automatically.
+With `externalKeeper`, set `tls: Enabled` instead, and set each node's `port` to the ensemble's secure client port (for example `9281`).
 
 ClickHouseCluster verifies Keeper node certificates against the system trust store, plus any `caBundle` you configure.
 
@@ -833,7 +919,7 @@ Before a replica is removed on scale-down, the operator first unloads client tra
 
 ### Server logging {#server-logging}
 
-Configure the ClickHouse server log through `spec.settings.logger`. Every field is optional with a safe default, so a cluster you never touch already logs at `trace` to both the container console and a rotated file on disk.
+Configure the ClickHouse server log through `spec.settings.logger`. Every field is optional with a safe default, so a cluster you never touch already logs at `information` to both the container console and a rotated file on disk.
 
 ```yaml
 spec:
@@ -841,35 +927,71 @@ spec:
     logger:
       logToFile: true   # Default: true. Set false to log only to the console
       jsonLogs: false   # Default: false. Set true for structured JSON log lines
-      level: trace      # Default: trace
-      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
-      count: 50         # Default: 50. Number of rotated files to keep
+      level: information # Default: information
+      size: 100M        # Default: 100M. Rotate a log file once it reaches this size
+      count: 10         # Default: 10. Number of rotated files to keep
 ```
 
 | Field       | Default | Description                                                                                                       |
 |-------------|---------|-------------------------------------------------------------------------------------------------------------------|
 | `logToFile` | `true`  | When `false`, the operator drops the file targets and the server logs only to the container console.              |
 | `jsonLogs`  | `false` | When `true`, the operator adds `formatting.type: json` so each line is a JSON object.                             |
-| `level`     | `trace` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
-| `size`      | `1000M` | Maximum size of a single log file before rotation.                                                                |
-| `count`     | `50`    | Number of rotated log files the server retains.                                                                   |
+| `level`     | `information` | Log verbosity. One of `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
+| `size`      | `100M`  | Maximum size of a single log file before rotation.                                                                |
+| `count`     | `10`    | Number of rotated log files the server retains.                                                                   |
 
 The operator always keeps console logging on so that `kubectl logs` works, and layers file logging on top when `logToFile` is `true`. A cluster with the defaults renders this `logger` block:
 
 ```yaml
 logger:
   console: true
-  level: trace
+  level: information
   log: /var/log/clickhouse-server/clickhouse-server.log
   errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
-  size: 1000M
-  count: 50
+  size: 100M
+  count: 10
 ```
 
-The same `spec.settings.logger` block applies to a `KeeperCluster`; the operator writes its files under `/var/log/clickhouse-keeper/` instead.
+The same `spec.settings.logger` block applies to a `KeeperCluster`; the operator writes its files under `/var/log/clickhouse-keeper/` instead, and sets the Raft logger (`raft_logs_level`) to the same `level`.
 
 <Note>
 Console logging stays on regardless of `logToFile`, so `kubectl logs` keeps working even when you disable file logging. Set `jsonLogs: true` when you ship logs to a structured log store that parses JSON.
+</Note>
+
+### System log tables {#system-log-tables}
+
+The operator enables the `query_log`, `part_log`, `text_log`, `metric_log` and `asynchronous_metric_log` system tables. Because they live on the same volume as your data, `spec.settings.systemLogsTTLDays` bounds them with a table TTL. The defaulting webhook sets it to `30` when you create a cluster without the field. Set `0` to disable the TTL explicitly.
+
+```yaml
+spec:
+  settings:
+    systemLogsTTLDays: 14
+```
+
+<Note>
+The default applies only to new clusters. A cluster created before `systemLogsTTLDays` existed keeps unbounded system log tables until you set the field yourself.
+</Note>
+
+The TTL takes effect on the next server restart. Override it per table, tune any other system log setting, or disable a table entirely with the `@remove` attribute — all through `extraConfig`:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      text_log:
+        ttl: event_date + INTERVAL 90 DAY DELETE
+      metric_log:
+        collect_interval_milliseconds: 60000
+      part_log:
+        "@remove": "1"
+```
+
+<Note>
+A disabled table is not dropped: the existing data stays on disk until you drop the table yourself.
+</Note>
+
+<Note>
+ClickHouse recreates a system table whose TTL changed and keeps the old data in a renamed table such as `system.text_log_0`. Drop those tables once you no longer need the history.
 </Note>
 
 ## Custom configuration {#custom-configuration}
@@ -890,6 +1012,26 @@ spec:
 #### Useful links:
 * [YAML configuration examples](/concepts/features/configuration/server-config/configuration-files#example-1)
 * [All server settings](/reference/settings/server-settings/settings)
+
+### Reloadable extra configuration {#reloadable-extra-configuration}
+
+Any change to `extraConfig` restarts the ClickHouse pods, because the operator cannot know which settings apply at runtime. For settings ClickHouse reloads on the fly — `named_collections` is the common case — use `extraReloadableConfig` instead. The operator applies its changes through a configuration reload, without restarting pods:
+
+```yaml
+spec:
+  settings:
+    extraReloadableConfig:
+      named_collections:
+        customers:
+          url: "http://my-service.my-ns.svc:5400/Customers"
+          format: "JSONEachRow"
+```
+
+Keep each top-level section in exactly one of `extraConfig` and `extraReloadableConfig`; the operator warns when both set the same section.
+
+<Note>
+By using `extraReloadableConfig` you assert its settings are reload-safe. A restart-only setting placed here takes effect only at the next restart, without any error.
+</Note>
 
 ### Embedded extra users configuration {#embedded-extra-users-configuration}
 
@@ -1005,4 +1147,16 @@ The interval is controlled by the operator's `RESYNC_PERIOD` environment variabl
 env:
 - name: RESYNC_PERIOD
   value: "1m"
+```
+
+The operator reconciles clusters concurrently; the number of parallel reconciles per controller is set by `MAX_CONCURRENT_RECONCILES` (default `4`).
+
+## Pausing reconciliation {#pausing-reconciliation}
+
+Set the `clickhouse.com/pause-reconciliation: "true"` annotation on a `ClickHouseCluster` or `KeeperCluster` to stop the operator from reconciling it. The operator reports `ReconcileSucceeded=False` with reason `ReconciliationPaused` on the paused resource and otherwise leaves it untouched — useful for manual intervention when the operator would fight your changes. While paused, the operator reports all state conditions (including `Ready` and `Healthy`) as `Unknown` with reason `ReconciliationPaused` — it does not observe the cluster. Remove the annotation to resume; the pending spec changes are applied on the next reconciliation.
+
+```bash
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation=true
+# ... manual surgery ...
+kubectl annotate clickhousecluster my-cluster clickhouse.com/pause-reconciliation-
 ```

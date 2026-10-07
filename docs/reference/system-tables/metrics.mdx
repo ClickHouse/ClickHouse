@@ -310,6 +310,18 @@ Number of existing cache file segments
 
 Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.
 
+### ColumnsCacheBytes {#columnscachebytes}
+
+Total size of columns cache in bytes. The columns cache stores deserialized columns from MergeTree tables to avoid repeated decompression and deserialization.
+
+### ColumnsCacheEntries {#columnscacheentries}
+
+Total number of entries in the columns cache.
+
+### ColumnsCacheSizeLimit {#columnscachesizelimit}
+
+The size limit of the columns cache in bytes currently in effect. It is lowered below the configured `columns_cache_size` while the rest of the server is short of memory, and raised back towards it once that usage subsides, see `columns_cache_free_memory_ratio`.
+
 ### ColumnsDescriptionsCacheSize {#columnsdescriptionscachesize}
 
 Size of ColumnsDescriptions cache (per-table cache)
@@ -1160,11 +1172,11 @@ Total number of outstanding increase request bytes for memory reservations
 
 ### MemoryTracking {#memorytracking}
 
-Total amount of memory (bytes) allocated by the server.
+Total amount of memory (bytes) tracked by the server. By default the background memory worker corrects this value on every tick from an external measurement of the memory the process really uses (see the `memory_worker_correct_memory_tracker` server setting), so it follows the measured usage rather than a plain count of allocations. See `MemoryTrackingUncorrected` for the value with no corrections applied.
 
 ### MemoryTrackingUncorrected {#memorytrackinguncorrected}
 
-Total amount of memory (bytes) allocated by the server not corrected by RSS.
+The value the global memory tracker would have had with no corrections from a measurement applied: a plain counter to which allocations are added and from which deallocations are subtracted. It is a snapshot taken by the background memory worker on every tick (see `memory_worker_period_ms`), so it lags the counter by at most one tick, and it stays `0` when the worker is not running. The difference between the two is the current gap between the plain counter and the measured usage: besides the accounting drift, it includes the memory that the process uses but that never went through the counter, such as the pages retained by the allocator.
 
 ### Merge {#merge}
 
@@ -1393,6 +1405,18 @@ Number of files open for reading
 ### OpenFileForWrite {#openfileforwrite}
 
 Number of files open for writing
+
+### OptimizeFinalThreads {#optimizefinalthreads}
+
+Number of threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.
+
+### OptimizeFinalThreadsActive {#optimizefinalthreadsactive}
+
+Number of active threads in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.
+
+### OptimizeFinalThreadsScheduled {#optimizefinalthreadsscheduled}
+
+Number of queued or active jobs in the threadpool that assigns merges of all partitions for OPTIMIZE FINAL.
 
 ### OutdatedPartsLoadingThreads {#outdatedpartsloadingthreads}
 
@@ -2161,6 +2185,22 @@ Number of queued or active jobs in the thread pool for remote_filesystem_read_me
 ### ThreadsInOvercommitTracker {#threadsinovercommittracker}
 
 Number of waiting threads inside of OvercommitTracker
+
+### TimeSeriesMetricFamiliesDeduplicationCacheBytes {#timeseriesmetricfamiliesdeduplicationcachebytes}
+
+Approximate size in bytes of the deduplication caches of the metric families tables of TimeSeries tables
+
+### TimeSeriesMetricFamiliesDeduplicationCacheEntries {#timeseriesmetricfamiliesdeduplicationcacheentries}
+
+Number of entries in the deduplication caches of the metric families tables of TimeSeries tables
+
+### TimeSeriesTagsDeduplicationCacheBytes {#timeseriestagsdeduplicationcachebytes}
+
+Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables
+
+### TimeSeriesTagsDeduplicationCacheEntries {#timeseriestagsdeduplicationcacheentries}
+
+Number of entries in the deduplication caches of the tags tables of TimeSeries tables
 
 ### TotalTemporaryFiles {#totaltemporaryfiles}
 

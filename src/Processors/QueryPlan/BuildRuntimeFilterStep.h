@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-
-#include <optional>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 
 namespace DB
 {
@@ -18,16 +17,9 @@ public:
         const DataTypePtr & filter_column_type_,
         String filter_name_,
         String filter_key_,
-        UInt64 exact_values_limit_,
-        UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_,
+        RuntimeFilterBuildOptions build_options_,
         Float64 pass_ratio_threshold_for_disabling,
-        UInt64 blocks_to_skip_before_reenabling,
-        Float64 max_ratio_of_set_bits_in_bloom_filter,
-        bool allow_to_use_not_exact_filter_,
-        bool track_key_range_,
-        std::optional<UInt64> distinct_keys_hint_ = std::nullopt,
-        bool distinct_keys_hint_matches_filter_key_ = false);
+        UInt64 blocks_to_skip_before_reenabling);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -62,21 +54,9 @@ private:
     /// serialized) so it never enters a plan-step hash. Empty for a deserialized step (then inert).
     String filter_key;
 
-    UInt64 exact_values_limit;
-    UInt64 bloom_filter_bytes;
-    UInt64 bloom_filter_hash_functions;
+    RuntimeFilterBuildOptions build_options;
     Float64 pass_ratio_threshold_for_disabling;
     UInt64 blocks_to_skip_before_reenabling;
-    Float64 max_ratio_of_set_bits_in_bloom_filter;
-
-    bool allow_to_use_not_exact_filter;
-    /// Record the key values/range for left-side index analysis; off avoids an extra build-side scan.
-    bool track_key_range;
-
-    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
-    std::optional<UInt64> distinct_keys_hint;
-    /// Whether the filter key is the whole join key, so that the hint counts this filter's distinct keys.
-    bool distinct_keys_hint_matches_filter_key;
 };
 
 }

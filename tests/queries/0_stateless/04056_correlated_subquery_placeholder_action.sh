@@ -20,7 +20,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "
     SET enable_analyzer = 1;
-    SET allow_experimental_correlated_subqueries = 1;
+    SET allow_correlated_subqueries = 1;
 
     DROP TABLE IF EXISTS t1;
     DROP TABLE IF EXISTS t2;
@@ -41,7 +41,7 @@ $CLICKHOUSE_CLIENT -q "
 # unexpected exception) must fail the test.
 OUTPUT=$($CLICKHOUSE_CLIENT -q "
     SET enable_analyzer = 1;
-    SET allow_experimental_correlated_subqueries = 1;
+    SET allow_correlated_subqueries = 1;
     SELECT a, (SELECT x FROM t2 WHERE t2.y = t1.a * 100 ORDER BY x) as s FROM t1 ORDER BY a;
 " 2>&1)
 RC=$?
@@ -68,7 +68,7 @@ fi
 # Any other outcome must fail the test.
 OUTPUT=$($CLICKHOUSE_CLIENT -q "
     SET enable_analyzer = 1;
-    SET allow_experimental_correlated_subqueries = 1;
+    SET allow_correlated_subqueries = 1;
     SELECT a FROM t1 WHERE a IN (SELECT x FROM t2 WHERE t2.y = t1.b);
 " 2>&1)
 RC=$?
