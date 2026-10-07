@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnSet.h>
 #include <Columns/IColumn.h>
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -110,6 +111,23 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
                 return true;
         }
     }
+    return false;
+}
+
+bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
+{
+    /// `sleep` and `sleepEachRow` are the functions with observable side effects. A lambda hides the
+    /// functions of its body, so it counts as sensitive.
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.result_type && WhichDataType(node.result_type).isFunction())
+            return true;
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
+            && (!node.function_base->isDeterministicInScopeOfQuery() || node.function_base->isStateful()
+                || node.function_base->getName() == "sleep" || node.function_base->getName() == "sleepEachRow"))
+            return true;
+    }
+
     return false;
 }
 

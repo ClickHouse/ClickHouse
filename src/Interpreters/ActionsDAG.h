@@ -507,6 +507,7 @@ public:
       * to left and right streams.
       * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
+      * @param filter_is_always_false - no row passes the filter, and a side whose emptiness empties the join output receives it.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -517,7 +518,8 @@ public:
         const Block & right_stream_header,
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
+        bool filter_is_always_false);
 
     /** Build filter dag from multiple filter dags.
       *
