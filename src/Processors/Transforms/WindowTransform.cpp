@@ -140,15 +140,16 @@ void WindowTransform::checkInvariants() const
     chassert(peer_group_start.peer_group_index_in_partition == current.peer_group_index_in_partition);
     chassert(current.peer_group_index_in_partition <= current.row_index_in_partition);
 
-    chassert(partition.bounds().start <= prev_frame.start.location);
-    chassert(prev_frame.start.location <= prev_frame.end.location);
-    chassert(prev_frame.end.location <= partition_end);
+    const int64_t rows_count = partition.size();
+    chassert(0 <= prev_frame.start.row_index_in_partition);
+    chassert(prev_frame.start.row_index_in_partition <= prev_frame.end.row_index_in_partition);
+    chassert(prev_frame.end.row_index_in_partition <= rows_count);
     if (frame.bounds().fully_visible)
     {
-        chassert(prev_frame.start.location <= frame.bounds().start.location);
-        chassert(frame.bounds().start.location <= frame.bounds().end.location);
-        chassert(prev_frame.end.location <= frame.bounds().end.location);
-        chassert(frame.bounds().end.location <= partition_end);
+        chassert(prev_frame.start.row_index_in_partition <= frame.bounds().start.row_index_in_partition);
+        chassert(frame.bounds().start.row_index_in_partition <= frame.bounds().end.row_index_in_partition);
+        chassert(prev_frame.end.row_index_in_partition <= frame.bounds().end.row_index_in_partition);
+        chassert(frame.bounds().end.row_index_in_partition <= rows_count);
     }
 
     chassert(blocks.begin().block <= std::min(prev_frame.start.location.block, current.location.block));
@@ -167,7 +168,7 @@ void WindowTransform::updateAggregationState()
     bool reset_aggregation = false;
     RowNumber rows_to_add_start;
     RowNumber rows_to_add_end;
-    if (current_frame.start.location == prev_frame.start.location)
+    if (current_frame.start.row_index_in_partition == prev_frame.start.row_index_in_partition)
     {
         // The frame start didn't change, add the tail rows.
         reset_aggregation = false;
@@ -251,7 +252,7 @@ void WindowTransform::writeOutCurrentRow()
     // Whether this row's frame equals the previous row's. The first row of the partition has no
     // previous row in this partition (and thus no previous frame) to compare against.
     const FrameBounds & current_frame = frame.bounds();
-    const bool frame_unchanged = current.row_index_in_partition > 0 && current_frame.start.location == prev_frame.start.location && current_frame.end.location == prev_frame.end.location;
+    const bool frame_unchanged = current.row_index_in_partition > 0 && current_frame.start.row_index_in_partition == prev_frame.start.row_index_in_partition && current_frame.end.row_index_in_partition == prev_frame.end.row_index_in_partition;
 
     const auto & block = blocks.blockAt(current.location.block);
     for (size_t wi = 0; wi < workspaces.size(); ++wi)
@@ -326,16 +327,14 @@ void WindowTransform::computeReadyRows()
         // which is precisely the definition of the known end of the partition.
         while (current.location < partition_end)
         {
+            // We now know that the current row is valid, so its indexes and its peer group start can be settled.
+            current.row_index_in_partition = partition.rowIndex(blocks, current.location);
+            current.peer_group_index_in_partition = partition.peerGroupIndex(blocks, current.location);
+            if (current.peer_group_index_in_partition != peer_group_start.peer_group_index_in_partition)
+                peer_group_start = current;
             checkInvariants();
 
-            // We now know that the current row is valid, so we can update the peer group start.
-            if (peer_group_start.location != current.location && blocks.blockAt(current.location.block).index.peer_group_starts[current.location.row])
-            {
-                ++current.peer_group_index_in_partition;
-                peer_group_start = current;
-            }
-
-            frame.advance(blocks, current, partition.bounds());
+            frame.advance(blocks, current, partition);
             if (!frame.bounds().fully_visible)
             {
                 // Wait for more input data to find the frame.
@@ -381,7 +380,6 @@ void WindowTransform::computeReadyRows()
             // The peer group start is updated at the beginning of the loop,
             // because the current row might now be past-the-end.
             current.location = blocks.next(current.location);
-            ++current.row_index_in_partition;
         }
 
         if (input_is_finished)
@@ -414,9 +412,9 @@ void WindowTransform::startNextPartition()
     // We have to reset the frame and other pointers when the new partition
     // starts.
     chassert(current.location == partition_start);
-    current = RowPoint{.location = partition_start};
+    current = partition.pointAt(blocks, partition_start);
     peer_group_start = current;
-    frame.enterPartition(blocks, current, partition.bounds());
+    frame.enterPartition(blocks, current, partition);
     prev_frame = FrameBounds{.start = current, .end = current, .fully_visible = true};
 
     // Reinitialize the aggregate function states because the new partition
@@ -558,7 +556,7 @@ void WindowTransform::work()
     }
     else
     {
-        partition.finish(blocks.end());
+        partition.finish(blocks, blocks.end());
     }
 
     computeReadyRows();
