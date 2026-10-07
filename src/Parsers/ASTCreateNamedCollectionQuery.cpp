@@ -23,6 +23,7 @@ void ASTCreateNamedCollectionQuery::updateTreeHashImpl(SipHash & hash_state, boo
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(collection_name);
+    hash_state.update(or_replace);
     hash_state.update(if_not_exists);
     hash_state.update(cluster);
 
