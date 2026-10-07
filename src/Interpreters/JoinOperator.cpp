@@ -48,6 +48,8 @@ namespace Setting
 
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
+    extern const SettingsNonZeroUInt64 partitioned_hash_join_max_fanout_per_pass;
+    extern const SettingsBool partitioned_hash_join_cap_partitions_by_l1_descriptors;
 
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
 
@@ -103,6 +105,8 @@ namespace QueryPlanSerializationSetting
 
     extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 grace_hash_join_max_buckets;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 partitioned_hash_join_max_fanout_per_pass;
+    extern const QueryPlanSerializationSettingsBool partitioned_hash_join_cap_partitions_by_l1_descriptors;
 
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_external_join;
     extern const QueryPlanSerializationSettingsDouble max_bytes_ratio_before_external_join;
@@ -173,6 +177,9 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     grace_hash_join_initial_buckets = query_settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = query_settings[Setting::grace_hash_join_max_buckets];
 
+    partitioned_hash_join_max_fanout_per_pass = query_settings[Setting::partitioned_hash_join_max_fanout_per_pass];
+    partitioned_hash_join_cap_partitions_by_l1_descriptors = query_settings[Setting::partitioned_hash_join_cap_partitions_by_l1_descriptors];
+
     max_bytes_before_external_join = query_settings[Setting::max_bytes_before_external_join];
     max_bytes_ratio_before_external_join = query_settings[Setting::max_bytes_ratio_before_external_join];
 
@@ -224,6 +231,9 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 
     grace_hash_join_initial_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets];
+
+    partitioned_hash_join_max_fanout_per_pass = settings[QueryPlanSerializationSetting::partitioned_hash_join_max_fanout_per_pass];
+    partitioned_hash_join_cap_partitions_by_l1_descriptors = settings[QueryPlanSerializationSetting::partitioned_hash_join_cap_partitions_by_l1_descriptors];
 
     max_bytes_before_external_join = settings[QueryPlanSerializationSetting::max_bytes_before_external_join];
     max_bytes_ratio_before_external_join = settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join];
@@ -461,6 +471,9 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
 
     settings[QueryPlanSerializationSetting::grace_hash_join_initial_buckets] = grace_hash_join_initial_buckets;
     settings[QueryPlanSerializationSetting::grace_hash_join_max_buckets] = grace_hash_join_max_buckets;
+
+    settings[QueryPlanSerializationSetting::partitioned_hash_join_max_fanout_per_pass] = partitioned_hash_join_max_fanout_per_pass;
+    settings[QueryPlanSerializationSetting::partitioned_hash_join_cap_partitions_by_l1_descriptors] = partitioned_hash_join_cap_partitions_by_l1_descriptors;
 
     settings[QueryPlanSerializationSetting::max_bytes_before_external_join] = max_bytes_before_external_join;
     settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_join] = max_bytes_ratio_before_external_join;

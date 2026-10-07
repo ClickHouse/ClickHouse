@@ -299,6 +299,40 @@ TEST(HashJoinTable, RoutesMatchTablePlacement)
     }
 }
 
+TEST(HashJoinTable, RoutesMatchWithoutSketch)
+{
+    const std::array<UInt8, 6> skip{0, 1, 0, 0, 1, 0};
+    const auto check = [&](HashJoin::Type type, const IColumn & key, size_t key_size, bool fixed)
+    {
+        const ColumnRawPtrs key_columns{&key};
+        const Sizes key_sizes{key_size};
+        PaddedPODArray<UInt16> with_sketch(key.size());
+        PaddedPODArray<UInt16> without_sketch(key.size());
+        DenseHyperLogLog sketch;
+        computeJoinRoutesForFill(type, key_columns, key_sizes, key.size(), skip.data(), with_sketch.data(), sketch);
+        computeJoinRoutesForFill(type, key_columns, key_sizes, key.size(), skip.data(), without_sketch.data());
+        EXPECT_TRUE(std::equal(with_sketch.begin(), with_sketch.end(), without_sketch.begin()));
+        EXPECT_NEAR(sketch.estimate(), 4.0, 0.1);
+        if (fixed)
+            EXPECT_TRUE(std::ranges::all_of(without_sketch, [](UInt16 route) { return route == 0; }));
+    };
+
+    auto strings = ColumnString::create();
+    for (const auto & value : {"alpha", "skip-one", "beta", "gamma", "skip-two", "delta"})
+        strings->insertData(value, strlen(value));
+    check(HashJoin::Type::key_string, *strings, /*key_size=*/0, /*fixed=*/false);
+
+    auto key8 = ColumnUInt8::create();
+    auto key16 = ColumnUInt16::create();
+    for (UInt16 key = 1; key <= skip.size(); ++key)
+    {
+        key8->insertValue(static_cast<UInt8>(key));
+        key16->insertValue(key);
+    }
+    check(HashJoin::Type::key8, *key8, sizeof(UInt8), /*fixed=*/true);
+    check(HashJoin::Type::key16, *key16, sizeof(UInt16), /*fixed=*/true);
+}
+
 /// Every row completes exactly once, whether the run has no rows, stays in the drain (fewer rows than
 /// slots), or fills the ring and refills it.
 TEST(AmacRing, EveryRowCompletesOnce)

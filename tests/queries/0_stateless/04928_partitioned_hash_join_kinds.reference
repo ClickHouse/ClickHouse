@@ -1,0 +1,46 @@
+right all uint64	300000	1	1
+right all uint64 sample
+2000000000	1000000000
+2000000002	1000000001
+2000000004	1000000002
+2000000000	1000000000
+2000000002	1000000001
+2000000004	1000000002
+2000000000	1000000000
+2000000002	1000000001
+2000000004	1000000002
+right all string join_use_nulls	300000	1	1
+right all nullable keys	300000	1	1
+full all uint64	500000	1	1
+full all string join_use_nulls	500000	1	1
+right all duplicate-heavy build (1000 keys, may be one partition)	8010000	1	1
+any left (key-determined checksum)	400000	1	1
+any inner dup-heavy (key-determined checksum)	1000	1	1
+any right	300000	1	1
+any left take_last_row (key-determined checksum)	400000	1	1
+legacy rightany (any_join_distinct_right_table_keys)	400000	1	1
+semi left	200000	1	1
+semi right	200000	1	1
+anti left	200000	1	1
+anti right	100000	1	1
+right using	300000	1	1
+empty build side right	0	1
+empty probe side full	300000	1
+partition plans
+04928 anti left	1	1
+04928 anti right	1	1
+04928 any left	1	1
+04928 any right	1	1
+04928 empty probe full	1	1
+04928 full all string join_use_nulls	1	1
+04928 full all uint64	1	1
+04928 legacy rightany	1	1
+04928 right all nullable	1	1
+04928 right all string join_use_nulls	1	1
+04928 right all uint64	1	1
+04928 right using	1	1
+04928 semi left	1	1
+04928 semi right	1	1
+04928 dup any inner	1	1
+04928 dup any left last row	1	1
+04928 dup right all	1	1

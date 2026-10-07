@@ -1,0 +1,12 @@
+inner all, saturated key	400000	1
+right all, saturated key	400000	1
+right any, saturated key	400000	1
+inner any, saturated key	54000	1
+inner all, duplicates across 777-row blocks	400000	1
+full all, duplicates across 777-row blocks, max_threads 1	416000	1
+left all, max_threads 16	416000	1
+inner all, zipf	300000	1
+right all, zipf	300000	1
+inner all, zipf build probed by a zipf sample	1761104	1
+saturated build: every row inserted, duplicate storage used	1	1
+zipf build: every row inserted, duplicate storage used	1	1

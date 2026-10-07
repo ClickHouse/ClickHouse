@@ -470,6 +470,21 @@
     M(HashJoinProbeMicroseconds, "Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.", ValueType::Microseconds) \
     M(HashJoinProbeLookupMicroseconds, "HashJoin probe-side sub-phase: hash-map lookup and per-row match emission (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.", ValueType::Microseconds) \
     M(HashJoinProbeGatherMicroseconds, "HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.", ValueType::Microseconds) \
+    M(HashJoinPartitionedBuildMicroseconds, "Time spent building the right side of a `partitioned_hash` join. This includes adding right-side blocks, waiting for all build threads, and inserting into the hash table. The value is summed over all build threads.", ValueType::Microseconds) \
+    M(HashJoinPartitionedBuildFillMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent hashing the keys of right-side blocks and storing the blocks as they arrive.", ValueType::Microseconds) \
+    M(HashJoinPartitionedBuildHistogramMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent counting the rows of each partition and computing where each partition starts.", ValueType::Microseconds) \
+    M(HashJoinPartitionedBuildScatterMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent moving the right-side keys and row references into their partitions, over all passes.", ValueType::Microseconds) \
+    M(HashJoinPartitionedBuildInsertMicroseconds, "Part of `HashJoinPartitionedBuildMicroseconds`: time spent inserting the partitioned rows into the hash table. This includes the later serial insert of rows that did not fit their partition's range.", ValueType::Microseconds) \
+    M(HashJoinPartitionedProbeMicroseconds, "Time spent joining left-side blocks in a `partitioned_hash` join. Summed over all probe threads.", ValueType::Microseconds) \
+    M(HashJoinPartitionedProbeLookupMicroseconds, "Part of `HashJoinPartitionedProbeMicroseconds`: time spent hashing the left-side keys, looking them up in the hash table, and recording the matches. Producing the joined columns is counted in `HashJoinProbeGatherMicroseconds`. The hash joins share that gather event.", ValueType::Microseconds) \
+    M(HashJoinPartitions, "Number of partitions a `partitioned_hash` join split its hash table into. Added once per join. 1 means the table was built as one partition.", ValueType::Number) \
+    M(HashJoinInsertedRows, "Number of right-side rows inserted into the hash tables of `partitioned_hash` joins.", ValueType::Number) \
+    M(HashJoinTableBytes, "Bytes allocated for the hash table of a `partitioned_hash` join. The table is sized once, from an estimate of the number of distinct keys.", ValueType::Bytes) \
+    M(HashJoinPartitionOverflowRows, "Number of right-side rows of a `partitioned_hash` join that did not fit in their partition's range of the hash table. One thread inserts those rows later.", ValueType::Number) \
+    M(HashJoinDuplicateRunBytes, "Bytes a `partitioned_hash` join allocated to store the row references of keys that occur more than once.", ValueType::Bytes) \
+    M(HashJoinTeardownMicroseconds, "Time spent freeing the hash table, the build buffers and the stored right-side blocks of a `partitioned_hash` join.", ValueType::Microseconds) \
+    M(HashJoinTableResizes, "Number of times the hash table of a `partitioned_hash` join grew after inserting started.", ValueType::Number) \
+    M(HashJoinRowStoreBlocks, "Number of right-side blocks a `partitioned_hash` join stored in row-major form (`RowDataStore`). The `hash` join stores the same way when the row store is enabled.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \

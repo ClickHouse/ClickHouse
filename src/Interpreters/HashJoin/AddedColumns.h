@@ -53,10 +53,13 @@ struct JoinOnKeyColumns
     /// 1 = skip), prepared once per call: without an ON-section condition the null map is
     /// returned directly, no copy (nullptr when the keys are not nullable either = no row
     /// is skipped); with one, `buffer` is filled with the merged null-and-mask bytes.
-    /// Only the positions the caller will probe are written (continuation chunks visit a
-    /// subset of the source block); the rest of `buffer` stays uninitialized and must not
-    /// be read.
+    /// Only the positions the caller will probe are written (continuation chunks and
+    /// index selectors visit a subset of the source block); the rest of `buffer` stays
+    /// uninitialized and must not be read.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
+    /// `PartitionedHashJoin::joinRightColumns` calls this overload when its selector holds
+    /// row indexes rather than one continuous range.
+    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };
 
 struct LazyOutput
@@ -288,7 +291,10 @@ public:
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
     /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
-    IColumn::Offsets matched_rows;
+    /// The per-row `push_back` reloads `c_end` and `c_end_of_storage` right after the previous row stored `c_end`. If the pair
+    /// crosses a cache line, store-to-load forwarding fails. On the stack that depended on the callers' frames, and it made a
+    /// 1-thread join 35% slower.
+    alignas(64) IColumn::Offsets matched_rows;
 
     /// for lazy
     // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
