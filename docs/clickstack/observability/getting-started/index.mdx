@@ -10,7 +10,7 @@ keywords: ['ClickHouse Observability', 'getting started', 'fully managed']
 import { Image } from "/snippets/components/Image.jsx";
 
 <Warning>
-This guide is a draft for fully managed ClickHouse Observability. Service creation, telemetry configuration, and the end-to-end ingestion workflow still need verification. Review notes below identify the remaining gaps.
+The service-creation steps are still being verified. The telemetry examples linked below use an existing fully managed ClickHouse Observability service.
 </Warning>
 
 Get started with ClickHouse Observability, send a test event, and confirm that the event is available in the observability UI.
@@ -19,7 +19,7 @@ The service provides a managed telemetry endpoint. Send data from your applicati
 
 ## Before you begin {#before-you-begin}
 
-After you create a ClickHouse Observability service, you automatically land on the **Getting Started** page. Choose one of the three paths below to send telemetry.
+You need an existing fully managed ClickHouse Observability service and access to its telemetry endpoint and API key. Open the service’s **Getting Started** page and choose one of the three paths below to send telemetry.
 
 <Note>
 **Review: service creation.** Add the verified steps for creating a fully managed Observability service.
@@ -42,6 +42,8 @@ Use this path if your application, agent, or collector already produces OpenTele
 3. Configure your sender to export telemetry to the managed endpoint using the provided authentication details.
 4. Generate normal activity in your application, then confirm that the resulting data appears in [Search](/clickstack/observability/features/search).
 
+You can also find these connection details under **Team Settings → Managed Telemetry**.
+
 <Tip>
 For an optional quick check, select **send a test log** on the getting started page. The button immediately sends a test log from the UI; it does not verify your application's or collector's configuration.
 </Tip>
@@ -58,9 +60,7 @@ Use this path if you have application code and want your coding assistant to hel
 3. Set `CLICKSTACK_OTLP_ENDPOINT` and `CLICKSTACK_API_KEY` using the values provided in the dialog. Store them in a `.env` file excluded from version control or in your secrets store.
 4. Review and apply the suggested instrumentation, then run your application and generate an event.
 
-<Note>
-**Review: AI instrumentation.** Verify the generated prompt with a sample application and confirm that its telemetry arrives in Search.
-</Note>
+For a complete example with application code and an instrumentation prompt, follow the [HackerNews Analyzer demo](/clickstack/observability/example-datasets/instrument-application). It walks through sending application logs, traces, metrics, and browser session replay to your managed service.
 
 </Tab>
 <Tab title="Follow setup guides">
@@ -73,9 +73,7 @@ Use this path if you want instructions for a specific application or infrastruct
 2. Choose the guide for your language, framework, or infrastructure.
 3. Follow its instrumentation and configuration steps, then generate telemetry from that source.
 
-<Note>
-**Review: setup guides.** Verify this path against the fully managed SDK and integration guides once their endpoint and authentication instructions have been updated.
-</Note>
+For managed configuration examples, start with [Kubernetes monitoring](/clickstack/observability/example-datasets/kubernetes), [local logs and metrics](/clickstack/observability/example-datasets/local-data), or the [HackerNews Analyzer application](/clickstack/observability/example-datasets/instrument-application). If you want to try ingestion without instrumenting an application, use [otelgen](/clickstack/observability/example-datasets/otelgen) or [telemetrygen](/clickstack/observability/example-datasets/telemetrygen).
 
 </Tab>
 </Tabs>
@@ -90,8 +88,45 @@ For logs, select the **Logs** source and a time range that includes when you sen
 
 ## Next steps {#next-steps}
 
-Once your data is available, use [Search](/clickstack/observability/features/search) to explore events and [Dashboards](/clickstack/observability/features/dashboards/overview) to visualize them.
+### Send application and infrastructure data {#send-application-and-infrastructure-data}
 
-<Warning>
-**Review: next steps.** Once the remaining fully managed guides have been written or updated, revisit this section and add the applicable equivalents of the next-step links in the Self Configured and OSS getting started guides.
-</Warning>
+Choose a guide for the data that you want to send to ClickHouse Observability:
+
+<CardGroup cols={2}>
+  <Card title="Instrument an application" icon="code" href="/clickstack/observability/example-datasets/instrument-application">
+    Instrument the HackerNews Analyzer app and explore logs, traces, metrics, and session replay.
+  </Card>
+  <Card title="Monitor Kubernetes" icon="cubes" href="/clickstack/observability/example-datasets/kubernetes">
+    Collect cluster logs and metrics and explore the Kubernetes dashboard.
+  </Card>
+</CardGroup>
+
+### Explore sample data {#explore-sample-data}
+
+Use a sample dataset to explore ClickHouse Observability with richer telemetry:
+
+<CardGroup cols={2}>
+  <Card title="Sample logs, traces, and metrics" href="/clickstack/observability/example-datasets/sample-data">
+    <img src="/images/clickstack/getting-started/observability-sample-data-payment-errors-chart.png" alt="" />
+    Load data from the public demo and diagnose an issue.
+  </Card>
+  <Card title="Local logs and metrics" href="/clickstack/observability/example-datasets/local-data">
+    <img src="/images/clickstack/observability-local-memory-percentage.png" alt="" />
+    Collect local files and system metrics on macOS or Linux.
+  </Card>
+</CardGroup>
+
+### Generate synthetic data {#generate-synthetic-data}
+
+Use a generator to test ingestion without an existing application or dataset:
+
+<CardGroup cols={2}>
+  <Card title="Generate data with otelgen" icon="terminal" href="/clickstack/observability/example-datasets/otelgen">
+    Send synthetic OTLP logs, traces, and metrics to your managed telemetry endpoint.
+  </Card>
+  <Card title="Generate data with telemetrygen" icon="terminal" href="/clickstack/observability/example-datasets/telemetrygen">
+    Generate configurable OpenTelemetry signals to test your managed service.
+  </Card>
+</CardGroup>
+
+See [all sample data and demos](/clickstack/observability/example-datasets).
