@@ -204,6 +204,8 @@ public:
 
     Info getInfo() const;
     String getCoordinationPath() const { return coordination.path; }
+    /// Whether refreshes are coordinated between replicas (set at construction).
+    bool isCoordinated() const { return coordination.coordinated; }
 
     bool canCreateOrDropOtherTables() const;
 

@@ -1154,6 +1154,13 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
     if (!getStorageID().hasUUID())
         return {};
 
+    /// A coordinated refreshable view with a replacing (non-`APPEND`) refresh is read through
+    /// `RefreshTask::getAndLockTargetTable`, which can wait for the latest exchanged target table and run
+    /// `SYSTEM SYNC REPLICA` on it before reading. Hashing `getTargetTableId` directly could sample the
+    /// stale pre-sync target after another replica finished a refresh, so fail closed.
+    if (!fixed_uuid && refresher.ptr && refresher.ptr->isCoordinated())
+        return {};
+
     try
     {
         /// `readImpl` reads the target table under `getSQLSecurityOverriddenContext`, so sample it under the
