@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -29,6 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <cmath>
 
 
 namespace DB
@@ -232,9 +234,11 @@ struct MapIndexInfo
 };
 
 /// Try to resolve a Map column against the bloom filter index header by the map column name
-/// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
-/// is present in the index.
-std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
+/// and the key as a Field. `map_key_type` is the key type of the map column, when it is known
+/// independently of the index header. Returns std::nullopt if neither `mapKeys(<col>)` nor
+/// `mapValues(<col>)` is present in the index, or if the key is not representable in the key type.
+std::optional<MapIndexInfo> tryResolveMapIndexInfo(
+    const String & map_column_name, const Field & key_field, const DataTypePtr & map_key_type, const Block & header)
 {
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     auto map_values_index_column_name = fmt::format("mapValues({})", map_column_name);
@@ -247,6 +251,32 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 
     MapIndexInfo info;
     info.key_field = key_field;
+
+    /// The key is hashed as a value of the key type of the map, while the constant in the query can have
+    /// a different type: e.g. a map with `Enum` keys is indexed by the name of the enum value, which is a
+    /// `String`. Convert the key to the key type; if it is not representable in that type, decline the
+    /// whole predicate: the key cannot be present in the map, but the index cannot be used to prove it
+    /// either, because `arrayElement` returns the default value for a missing key, and for an `Enum` key
+    /// it throws `UNKNOWN_ELEMENT_OF_ENUM` instead. Probing the `mapValues` index alone would be unsound
+    /// as well: it could prune the granules before `arrayElement` runs and silently replace that
+    /// exception by an empty result. This is why the check is not done only when `mapKeys` is indexed.
+    DataTypePtr key_type = map_key_type;
+    if (keys_position)
+    {
+        const auto & index_type = header.getByPosition(*keys_position).type;
+        key_type = assert_cast<const DataTypeArray &>(*index_type).getNestedType();
+    }
+
+    if (key_type)
+    {
+        Field converted_key_field = tryConvertFieldToType(key_field, *key_type, nullptr, {}, /* strict */ true);
+
+        if (converted_key_field.isNull())
+            return std::nullopt;
+
+        info.key_field = converted_key_field;
+    }
+
     if (keys_position)
     {
         info.has_keys_index = true;
@@ -257,6 +287,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
         info.has_values_index = true;
         info.values_index_position = *values_position;
     }
+
     return info;
 }
 
@@ -274,7 +305,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
 
     auto map_keys_index_column_name = fmt::format("mapKeys({})", map_column_name);
     if (!header.has(map_keys_index_column_name))
-        return tryResolveMapIndexInfo(map_column_name, {}, header);
+        return tryResolveMapIndexInfo(map_column_name, {}, nullptr, header);
 
     /// Deserialize the key from its text representation using the key type from the index header.
     size_t keys_position = header.getPositionByName(map_keys_index_column_name);
@@ -289,7 +320,7 @@ std::optional<MapIndexInfo> tryParseMapSubcolumn(
     Field key_field;
     key_column->get(0, key_field);
 
-    return tryResolveMapIndexInfo(map_column_name, key_field, header);
+    return tryResolveMapIndexInfo(map_column_name, key_field, key_type, header);
 }
 
 /// Try to resolve a `MapIndexInfo` from a key node that is either an `arrayElement(map, key)`
@@ -310,7 +341,14 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
             if (!second_argument.tryGetConstant(constant_value, constant_type))
                 return std::nullopt;
 
-            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header);
+            /// The key type of the map is needed even when only `mapValues` is indexed, to tell a key that
+            /// cannot be represented in it, see `tryResolveMapIndexInfo`.
+            DataTypePtr map_key_type;
+            if (const auto * dag_node = first_argument.getDAGNode())
+                if (const auto * map_type = typeid_cast<const DataTypeMap *>(removeNullable(dag_node->result_type).get()))
+                    map_key_type = map_type->getKeyType();
+
+            return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, map_key_type, header);
         }
     }
 
@@ -587,6 +625,58 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
+/// `-0.0 = 0.0`, but the index holds the hash of each value's bits, and the bits of the two zeros differ.
+static bool isFloatZero(const DataTypePtr & type, const Field & field)
+{
+    return isFloat(removeLowCardinalityAndNullable(type)) && field.getType() == Field::Types::Float64 && field.safeGet<Float64>() == 0;
+}
+
+static Field otherFloatZero(const Field & zero)
+{
+    return std::signbit(zero.safeGet<Float64>()) ? Field(0.0) : Field(-0.0);
+}
+
+/// The hash of `field`, and for a float zero also the hash of the other zero. A predicate with several
+/// hashes matches a granule that may hold any of them, except for `FUNCTION_HAS_ALL`.
+static ColumnPtr hashWithFieldAndOtherZero(const DataTypePtr & type, const Field & field)
+{
+    ColumnPtr hash = BloomFilterHash::hashWithField(type.get(), field);
+    if (!isFloatZero(type, field))
+        return hash;
+
+    auto hashes = ColumnUInt64::create();
+    hashes->insertValue(hash->getUInt(0));
+    hashes->insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(field))->getUInt(0));
+    return hashes;
+}
+
+/// The hashes of the values in `column`, and for each float zero also the hash of the other zero.
+/// Sets `has_float_zero` if there is one, which `FUNCTION_HAS_ALL` cannot express.
+static ColumnPtr hashWithColumnAndOtherZeros(const DataTypePtr & type, const ColumnPtr & column, bool & has_float_zero)
+{
+    has_float_zero = false;
+    ColumnPtr hashes = BloomFilterHash::hashWithColumn(type, column, 0, column->size());
+    if (!isFloat(removeLowCardinalityAndNullable(type)))
+        return hashes;
+
+    MutableColumnPtr result;
+    for (size_t i = 0; i < column->size(); ++i)
+    {
+        Field value = (*column)[i];
+        if (!isFloatZero(type, value))
+            continue;
+
+        if (!result)
+            result = IColumn::mutate(hashes->convertToFullColumnIfConst());
+        has_float_zero = true;
+        assert_cast<ColumnUInt64 &>(*result).insertValue(BloomFilterHash::hashWithField(type.get(), otherFloatZero(value))->getUInt(0));
+    }
+
+    if (result)
+        return result;
+    return hashes;
+}
+
 /// True when converting the constant to the element type yields the exact bytes the index holds, so
 /// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
 static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
@@ -737,7 +827,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), map_info->key_field)));
+            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, map_info->key_field)));
         }
         else if (map_info->has_values_index)
         {
@@ -852,9 +942,31 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
 /// the constant's raw padded bytes (arrayIndex.h `executeString`), so the padded form is the value
 /// to hash. The test must read the type before `getPrimitiveType` strips `LowCardinality`, whose
 /// elements do coerce.
+/// Over `Enum` values a `String` or `FixedString` constant is compared by the name of the enum value,
+/// after the cast of both arguments to their common type `String`, which strips the padding of a
+/// `FixedString` (arrayIndex.h `executeGeneric`, hasAllAny.h). Do the same, and return the value of the
+/// enum to hash. A name that is not in the `Enum` does not throw there, it does not match, so return a
+/// null `Field` for it: the caller declines the index instead of throwing `UNKNOWN_ELEMENT_OF_ENUM`
+/// while it is prepared. Returns `std::nullopt` when the constant is not a name of an enum value.
+static std::optional<Field> tryConvertEnumNameConstant(const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & enum_type)
+{
+    if (!isEnum(enum_type) || value_field.getType() != Field::Types::String || !value_type
+        || !isStringOrFixedString(removeLowCardinalityAndNullable(value_type)))
+        return std::nullopt;
+
+    String name = value_field.safeGet<String>();
+    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
+        name.resize(name.find_last_not_of('\0') + 1);
+
+    return tryConvertFieldToType(Field(std::move(name)), *enum_type, nullptr, {}, /* strict */ true);
+}
+
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
+    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, actual_type))
+        return std::move(*enum_value);
+
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
         return convertFieldToType(value_field, *actual_type, value_type.get());
 
@@ -886,21 +998,33 @@ static ColumnPtr createColumnFromConstantArray(
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast.
-        /// An over-wide value therefore cannot match a narrower `FixedString` scalar, but
-        /// `ColumnFixedString::insert` would throw while preparing the index. Decline the
-        /// index and let the function evaluate normally instead.
-        if (!coerce && fixed_string_type && f.getType() == Field::Types::String
-            && f.safeGet<String>().size() > fixed_string_type->getN())
+        /// `hasAny`/`hasAll` compare a `String` or `FixedString` constant with `Enum` elements by the name
+        /// of the enum value, see `tryConvertEnumNameConstant`.
+        std::optional<Field> enum_value;
+        if (coerce_like_search_function)
+            enum_value = tryConvertEnumNameConstant(f, element_type, actual_type);
+
+        Field converted;
+        if (enum_value)
+            converted = std::move(*enum_value);
+        else if (coerce)
+            converted = coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true);
+        else
+            converted = convertFieldToType(f, *actual_type, element_type.get());
+        if (converted.isNull())
+            return nullptr;
+
+        /// `has(<constant array>, <indexed scalar>)` compares the `Field`s without a cast, and an
+        /// `Enum` element is converted to its name, which can be wider than the indexed
+        /// `FixedString(N)` - the name is not truncated to it. Such a value cannot match a narrower
+        /// `FixedString` scalar, but `ColumnFixedString::insert` would throw `TOO_LARGE_STRING_SIZE`
+        /// while preparing the index. Decline the index and let the function evaluate normally
+        /// instead. The `coerce` branch rejects an over-wide value on its own.
+        if (fixed_string_type && converted.getType() == Field::Types::String
+            && converted.safeGet<String>().size() > fixed_string_type->getN())
         {
             return nullptr;
         }
-
-        Field converted = coerce
-            ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
-            : convertFieldToType(f, *actual_type, element_type.get());
-        if (converted.isNull())
-            return nullptr;
 
         mutable_column->insert(converted);
     }
@@ -1056,7 +1180,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     if (converted_field.isNull())
                         return false;
 
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
                 }
             }
             else if (function_name == "has")
@@ -1070,7 +1194,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
 
                 out.function = RPNElement::FUNCTION_HAS_ANY;
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
+                bool has_float_zero = false;
+                out.predicate.emplace_back(std::make_pair(position, hashWithColumnAndOtherZeros(actual_type, column, has_float_zero)));
             }
         }
         else if (function_name == "hasAny" || function_name == "hasAll")
@@ -1084,10 +1209,17 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (!column)
                 return false;
 
+            bool has_float_zero = false;
+            ColumnPtr hashes = hashWithColumnAndOtherZeros(actual_type, column, has_float_zero);
+
+            /// `hasAll` needs one of the two zeros in the granule, while `FUNCTION_HAS_ALL` needs every hash.
+            if (function_name == "hasAll" && has_float_zero)
+                return false;
+
             out.function = function_name == "hasAny" ?
                 RPNElement::FUNCTION_HAS_ANY :
                 RPNElement::FUNCTION_HAS_ALL;
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
+            out.predicate.emplace_back(std::make_pair(position, std::move(hashes)));
         }
         else
         {
@@ -1129,7 +1261,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (converted_field.isNull())
                 return false;
 
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
         }
 
         return true;
@@ -1202,7 +1334,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (converted_field.isNull())
             return false;
 
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+        out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, converted_field)));
         return true;
     }
 
@@ -1246,6 +1378,27 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (value_field == value_type->getDefault())
                 return false;
 
+            /// Over `Enum` map values the constant can be the name of the enum value, a `String`, which has
+            /// to be converted to the value of the enum before it is hashed and compared with the default.
+            /// The default value of an `Enum` is not the default value of the type of the constant. For a
+            /// missing key `arrayElement` returns the zero of the underlying integer, which is not necessarily
+            /// the default value of the `Enum` (its first value), so decline the index for both.
+            Field map_value_field = value_field;
+            if (const auto * dag_node = key_node.getDAGNode())
+            {
+                const DataTypePtr map_value_type = removeLowCardinalityAndNullable(dag_node->result_type);
+                if (isEnum(map_value_type))
+                {
+                    if (auto enum_value = tryConvertEnumNameConstant(value_field, value_type, map_value_type))
+                        map_value_field = std::move(*enum_value);
+                    else
+                        map_value_field = tryConvertFieldToType(value_field, *map_value_type, value_type.get(), {}, /* strict */ true);
+
+                    if (map_value_field.isNull() || map_value_field == Field(Int64(0)) || map_value_field == map_value_type->getDefault())
+                        return false;
+                }
+            }
+
             size_t position = 0;
             Field const_value;
 
@@ -1257,7 +1410,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             else if (map_info->has_values_index)
             {
                 position = map_info->values_index_position;
-                const_value = value_field;
+                const_value = map_value_field;
             }
             else
             {
@@ -1268,7 +1421,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), const_value)));
+            out.predicate.emplace_back(std::make_pair(position, hashWithFieldAndOtherZero(actual_type, const_value)));
 
             return true;
         }

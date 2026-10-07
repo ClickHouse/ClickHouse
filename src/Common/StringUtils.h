@@ -407,6 +407,9 @@ inline void trim(std::string & str, char c = ' ')
 /// If all characters in the string are ASCII, return true
 bool isAllASCII(const UInt8 * data, size_t size);
 
+/// Position of the first byte >= 0x80, or `size` if there is none.
+size_t findFirstNonASCII(const UInt8 * data, size_t size);
+
 constexpr bool containsGlobs(const std::string & str)
 {
     return str.find_first_of("*?{") != std::string::npos;

@@ -5048,7 +5048,7 @@ static const std::unordered_set<String> lambda_accepting_funcs = []
 
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
-        {"ilike", "like", "match", "notILike", "notLike"},
+        {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"},
         /// Set membership operators (renames an existing node, so only the infix-safe spellings)
         std::unordered_set<String>(in_infix_variants.begin(), in_infix_variants.end()),
         /// Their IgnoreSet variants; only the lambda injection below reaches these, never the rename

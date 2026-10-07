@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
@@ -108,16 +109,7 @@ NameSet getTableColumns(const StorageSnapshotPtr & storage_snapshot, const Names
 
 bool typeContainsFloat(const DataTypePtr & type)
 {
-    if (isFloat(removeLowCardinalityAndNullable(type)))
-        return true;
-
-    bool has_float = false;
-    type->forEachChild([&](const IDataType & child)
-    {
-        if (!has_float && WhichDataType(child).isFloat())
-            has_float = true;
-    });
-    return has_float;
+    return anyInTypeTree(*type, [](const IDataType & node) { return isFloat(node); });
 }
 
 /// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
@@ -339,6 +331,27 @@ static bool isConditionGood(const RPNBuilderTreeNode & condition, const NameSet 
     return false;
 }
 
+/// A join runtime filter, alone or in the `OR isNull(key)` that an ANTI join adds.
+static bool isJoinRuntimeFilter(const RPNBuilderTreeNode & node)
+{
+    auto function_node = node.toFunctionNodeOrNull();
+    if (!function_node)
+        return false;
+
+    const auto function_name = function_node->getFunctionName();
+    if (function_name == "__applyFilter")
+        return true;
+
+    if (function_name == "or")
+    {
+        for (size_t i = 0; i < function_node->getArgumentsSize(); ++i)
+            if (isJoinRuntimeFilter(function_node->getArgumentAt(i)))
+                return true;
+    }
+
+    return false;
+}
+
 static void collectConjuncts(const RPNBuilderTreeNode & node, std::vector<RPNBuilderTreeNode> & conjuncts)
 {
     auto fn = node.toFunctionNodeOrNull();
@@ -487,6 +500,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             NameSet group_columns;
             bool group_may_use_primary_index = true;
             bool group_good = false;
+            bool group_is_runtime_filter = true;
 
             for (size_t idx : group.indices)
             {
@@ -495,6 +509,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
                 group_may_use_primary_index = group_may_use_primary_index && infos[idx].may_use_primary_index;
                 if (!where_optimizer_context.use_statistics && !where_optimizer_context.move_primary_key_columns_to_end_of_prewhere)
                     group_good = group_good || isConditionGood(infos[idx].node, table_columns);
+                group_is_runtime_filter = group_is_runtime_filter && isJoinRuntimeFilter(infos[idx].node);
             }
 
             Condition cond(std::move(group_nodes));
@@ -502,6 +517,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             cond.columns_size = getColumnsSize(group_columns);
             cond.viable = true;
             cond.good = group_good;
+            cond.is_runtime_filter = group_is_runtime_filter;
 
             if (where_optimizer_context.use_statistics)
             {
@@ -561,6 +577,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
             cond.table_columns = columns;
             cond.columns_size = getColumnsSize(columns);
             cond.bytes_per_rejected_row = static_cast<double>(cond.columns_size);
+            cond.is_runtime_filter = isJoinRuntimeFilter(conjunct);
             cond.viable =
                 !has_invalid_column
                 && !columns.empty()
