@@ -24,6 +24,8 @@ LowCardinality column, UTF-8 tail	1	1
 sparse_grams column, UTF-8 tail	1	1
 String column IN, UTF-8 tail	1	1
 FixedString column IN, UTF-8 tail	1	1
+FixedString column IN prunes exactly	1
+String column IN declines	1
 text ngrams, UTF-8 tail	1	1
 text sparseGrams, UTF-8 tail	1	1
 text splitByNonAlpha, UTF-8 tail	1	1
@@ -32,6 +34,7 @@ text ngrams prunes	1
 text sparseGrams prunes	1
 text splitByNonAlpha keeps pruning	1
 text ngrams declines	1
+text ngrams IN declines	1
 IPv6 equals	1	1
 IPv6 equals text	1	1
 LowCardinality(FixedString) wide const	1	1

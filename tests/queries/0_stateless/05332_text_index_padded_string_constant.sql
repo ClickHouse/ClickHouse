@@ -95,6 +95,8 @@ SELECT 'LowCardinality column, UTF-8 tail', (SELECT count() FROM w_log WHERE s =
 SELECT 'sparse_grams column, UTF-8 tail', (SELECT count() FROM w_log WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)), (SELECT count() FROM w_sparse WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8));
 SELECT 'String column IN, UTF-8 tail', (SELECT count() FROM w_log WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))), (SELECT count() FROM w_str WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8)));
 SELECT 'FixedString column IN, UTF-8 tail', (SELECT count() FROM u_log WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))), (SELECT count() FROM u_idx WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8)));
+SELECT 'FixedString column IN prunes exactly', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM u_idx WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))) WHERE explain ILIKE '%Granules: 1/64%';
+SELECT 'String column IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM w_str WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))) WHERE explain ILIKE '%idx_s%';
 
 -- The `text` index has the same trimming step behind its own guard, and the same incomplete sequence reaches it.
 DROP TABLE IF EXISTS t_ngrams;
@@ -116,6 +118,7 @@ SELECT 'text ngrams prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FR
 SELECT 'text sparseGrams prunes', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sparse WHERE s = toFixedString('FILLER13', 12)) WHERE explain ILIKE '%Granules: 1/64%';
 SELECT 'text splitByNonAlpha keeps pruning', count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_token WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)) WHERE explain ILIKE '%Granules: 1/64%';
 SELECT 'text ngrams declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrams WHERE s = toFixedString(concat('VALUE', unhex('C2')), 8)) WHERE explain ILIKE '%idx_s%';
+SELECT 'text ngrams IN declines', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrams WHERE s IN (SELECT toFixedString(concat('VALUE', unhex('C2')), 8))) WHERE explain ILIKE '%idx_s%';
 
 -- `IPv6` is stored and tokenized as 16 raw bytes, so a trailing zero group is padding that has to be probed. The
 -- fillers carry no long zero run, so they share the trimmed probe's leading grams but not its zero-run grams.
