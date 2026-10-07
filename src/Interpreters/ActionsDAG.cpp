@@ -34,6 +34,7 @@
 #include <stack>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
@@ -284,7 +285,7 @@ UInt64 ActionsDAG::Node::getHash() const
     return hash_state.get64();
 }
 
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
+void ActionsDAG::Node::updateHash(SipHash & hash_state, bool with_variable_size_constant_values) const
 {
     hash_state.update(type);
 
@@ -295,7 +296,13 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         hash_state.update(result_type->getName());
 
     if (function_base)
+    {
         hash_state.update(function_base->getName());
+        /// The name says nothing about the settings a function captured when it was built (a
+        /// conversion captures how it parses), and two expressions that differ only in those are not
+        /// the same expression.
+        function_base->updateHash(hash_state);
+    }
 
     if (function)
         hash_state.update(function->getName());
@@ -318,12 +325,12 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         /// hashed above. Skipping only its value keeps the single-replica and parallel-replicas plan
         /// builds matching without dropping any other constant's value (it still serializes normally
         /// for distributed propagation).
-        if (!is_runtime_filter_id)
+        if (!is_runtime_filter_id && (with_variable_size_constant_values || column->valuesHaveFixedSize()))
             column->updateHashWithValue(0, hash_state);
     }
 
     for (const auto & child : children)
-        child->updateHash(hash_state);
+        child->updateHash(hash_state, with_variable_size_constant_values);
 }
 
 UInt64 ActionsDAG::getHash() const
@@ -333,7 +340,7 @@ UInt64 ActionsDAG::getHash() const
     return hash.get64();
 }
 
-void ActionsDAG::updateHash(SipHash & hash_state) const
+void ActionsDAG::updateHash(SipHash & hash_state, bool with_variable_size_constant_values) const
 {
     struct Frame
     {
@@ -350,7 +357,7 @@ void ActionsDAG::updateHash(SipHash & hash_state) const
         auto & frame = stack.top();
         if (frame.next_child == frame.node->children.size())
         {
-            frame.node->updateHash(hash_state);
+            frame.node->updateHash(hash_state, with_variable_size_constant_values);
             stack.pop();
         }
         else
@@ -1050,6 +1057,141 @@ bool hasDummyInside(const ColumnConstPtr & col)
     return col && col->getDataColumn().isDummy();
 }
 
+struct FoldResult
+{
+    ColumnConstPtr column;
+    bool deterministic;
+    /// A descendant `materialize` was stripped while producing this const. It must not be
+    /// passed to an argument that the function requires to remain a `ColumnConst` at runtime.
+    bool through_materialize;
+    /// The fold result must render as `[HIDDEN]` when any folded constant is a masked secret,
+    /// so the flag survives into the rebuilt COLUMN node (see `formatConstant`)
+    bool masked_secret;
+};
+
+/// The DAG is deduplicated before folding (`tryMergeExpressions` calls `deduplicateSubtrees`), so a
+/// node can be shared by many parents. Without memoization the walk would cost one visit per
+/// incoming edge, which is exponential for a chain such as `x1 = and(x0, x0)`, `x2 = and(x1, x1)`, ...
+using FoldCache = std::unordered_map<const ActionsDAG::Node *, std::optional<FoldResult>>;
+
+/// These operators depend only on their argument values, rather than whether an argument is a
+/// `ColumnConst` or a full column. Keep this list deliberately narrow: the generic constant-folding
+/// contract does not cover functions that impose their own const-only requirement in `executeImpl`.
+const std::unordered_set<std::string> & foldablePredicateFunctions()
+{
+    static const std::unordered_set<std::string> functions{
+        "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals", "and", "or", "not",
+        /// `xor` never short-circuits and reads its arguments by value only, the same shape as `not`
+        "xor",
+        /// `isNull` / `isNotNull` only look at the null map of their argument, so a `ColumnConst`
+        /// and the materialized column it wraps give the same answer
+        "isNull", "isNotNull"};
+    return functions;
+}
+
+/// Fold a predicate: const COLUMN leaves, walk past alias/materialize, evaluate functions
+/// over the folded constant arguments for the value-only predicate operators above.
+///
+/// This is ordinary constant folding, just performed after stripping `materialize`, so the same
+/// contract applies: the function must be deterministic and `isSuitableForConstantFolding`.
+/// If the evaluation throws, the predicate is left unfolded and runtime keeps its exact behavior,
+/// including `short_circuit_function_evaluation` semantics for `and` / `or` arguments.
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node, FoldCache & cache);
+
+std::optional<FoldResult> tryFoldPredicateImpl(const ActionsDAG::Node * node, FoldCache & cache)
+{
+    bool through_materialize = false;
+    while (node)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        {
+            node = node->children.front();
+            continue;
+        }
+        if (node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base
+            && node->function_base->getName() == "materialize"
+            && node->children.size() == 1)
+        {
+            node = node->children.front();
+            through_materialize = true;
+            continue;
+        }
+        break;
+    }
+    if (!node)
+        return std::nullopt;
+
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column && !hasDummyInside(node->column))
+        return FoldResult{node->column, node->is_deterministic_constant, through_materialize, node->is_masked_secret};
+
+    if (node->type != ActionsDAG::ActionType::FUNCTION
+        || !node->function_base
+        || !node->function
+        || !node->function_base->isDeterministic()
+        || !node->function_base->isSuitableForConstantFolding()
+        || !foldablePredicateFunctions().contains(node->function_base->getName()))
+        return std::nullopt;
+
+    try
+    {
+        ColumnsWithTypeAndName args;
+        args.reserve(node->children.size());
+        bool all_det = true;
+        bool any_through_materialize = through_materialize;
+        bool any_masked = false;
+        const auto constant_arguments = node->function->getArgumentsThatAreAlwaysConstant();
+        for (size_t i = 0; i != node->children.size(); ++i)
+        {
+            const auto * child = node->children[i];
+            auto folded = tryFoldPredicate(child, cache);
+            if (!folded)
+                return std::nullopt;
+            if (folded->through_materialize && std::ranges::find(constant_arguments, i) != constant_arguments.end())
+                return std::nullopt;
+            all_det = all_det && folded->deterministic;
+            any_through_materialize = any_through_materialize || folded->through_materialize;
+            any_masked = any_masked || folded->masked_secret;
+
+            ColumnConstPtr col = folded->column;
+            /// DAG consts are size 0, resize to 1 for `execute` (matches `getFunctionArguments`)
+            if (col->empty())
+                col = ColumnConst::create(col->getDataColumnPtr(), 1);
+            args.push_back({col, child->result_type, child->result_name});
+        }
+
+        ColumnPtr result = node->function->execute(args, node->result_type, 1, true);
+        const auto * column_const = result ? typeid_cast<const ColumnConst *>(result.get()) : nullptr;
+        if (!column_const)
+            return std::nullopt;
+
+        /// keep the DAG convention of size-0 consts
+        ColumnConstPtr canonical;
+        if (column_const->empty())
+            canonical = column_const->getPtr();
+        else
+            canonical = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+        return FoldResult{std::move(canonical), all_det, any_through_materialize, any_masked};
+    }
+    catch (...)
+    {
+        /// Swallowing the exception is Ok: the predicate is left unfolded, and evaluating it
+        /// at runtime reproduces the exception (or not, under short-circuit evaluation)
+        /// exactly as the query dictates
+        return std::nullopt;
+    }
+}
+
+std::optional<FoldResult> tryFoldPredicate(const ActionsDAG::Node * node, FoldCache & cache)
+{
+    if (auto it = cache.find(node); it != cache.end())
+        return it->second;
+
+    auto result = tryFoldPredicateImpl(node, cache);
+    cache.emplace(node, result);
+    return result;
+}
+
 /// same scalar can show up as different ColumnConst objects after merge
 bool constColumnsEqual(const ColumnConstPtr & a, const ColumnConstPtr & b)
 {
@@ -1144,6 +1286,7 @@ struct ConstantKeyHash
         SipHash h;
         k.sample->result_type->updateHash(h);
         k.sample->column->updateHashWithValue(0, h);
+        h.update(k.sample->is_masked_secret);
         return h.get64();
     }
 };
@@ -1152,7 +1295,10 @@ struct ConstantKeyEqual
 {
     bool operator()(const ConstantKey & a, const ConstantKey & b) const
     {
-        return a.sample->result_type->equals(*b.sample->result_type)
+        /// a masked secret must not be collapsed onto an equal plain constant: the class
+        /// representative would render the value instead of `[HIDDEN]` in plan dumps
+        return a.sample->is_masked_secret == b.sample->is_masked_secret
+            && a.sample->result_type->equals(*b.sample->result_type)
             && constColumnsEqual(a.sample->column, b.sample->column);
     }
 };
@@ -1263,6 +1409,41 @@ EquivalenceClasses buildStructuralEquivalenceClasses(const ActionsDAG & dag)
     return ec;
 }
 
+}
+
+void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filter_column_name)
+{
+    if (filter_column_name.empty())
+        return;
+    const Node * filter_node = tryFindInOutputs(filter_column_name);
+    if (!filter_node)
+        return;
+
+    /// A prior optimizer pass may already have folded this filter. Replacing an
+    /// existing const output with another const output makes the pass report a
+    /// change on every iteration, exhausting the query-plan optimization limit.
+    if (filter_node->type == ActionType::COLUMN && filter_node->column && isColumnConst(*filter_node->column))
+        return;
+
+    FoldCache fold_cache;
+    auto folded = tryFoldPredicate(filter_node, fold_cache);
+    if (!folded || !folded->column)
+        return;
+
+    /// add a fresh const COLUMN and re-route the filter output, leave the original predicate
+    /// subtree intact so other parents that may share parts of it are unaffected -
+    /// `removeUnusedActions` prunes the now-orphan subtree later
+    const Node & new_const = addColumn(
+        std::move(folded->column), filter_node->result_type,
+        std::string(filter_column_name), folded->deterministic, folded->masked_secret);
+    for (auto & out : outputs)
+    {
+        if (out == filter_node)
+        {
+            out = &new_const;
+            break;
+        }
+    }
 }
 
 void ActionsDAG::deduplicateSubtrees()
@@ -2252,6 +2433,16 @@ static bool isNonDeterministicOrStateful(const ActionsDAG::Node & node)
         node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery() && !function.isStateful(); });
 }
 
+/// A higher-order call runs its lambda body, so it counts as non-deterministic when the body is. The lambda itself does not move alone.
+static bool isNonDeterministicOrStatefulCall(const ActionsDAG::Node & node)
+{
+    auto is_lambda = [](const ActionsDAG::Node & n) { return WhichDataType(n.result_type).isFunction(); };
+    if (is_lambda(node))
+        return false;
+    return isNonDeterministicOrStateful(node)
+        || std::ranges::any_of(node.children, [&](const ActionsDAG::Node * child) { return is_lambda(*child) && isNonDeterministicOrStateful(*child); });
+}
+
 bool ActionsDAG::hasStatefulFunctions() const
 {
     for (const auto & node : nodes)
@@ -3041,7 +3232,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
     return {std::move(first_actions), std::move(second_actions), std::move(split_nodes_mapping)};
 }
 
-std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoin() const
+std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoin(bool nondeterministic_before_expansion) const
 {
     const Node * array_join = nullptr;
     for (const auto & node : nodes)
@@ -3054,7 +3245,26 @@ std::optional<ActionsDAG::SplitArrayJoinResult> ActionsDAG::extractFirstArrayJoi
         return {};
 
     /// ARRAY_JOIN and its argument go to `before`, the rest to `after`; the crossing columns get unique names.
-    auto split_res = split({array_join}, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);
+    std::unordered_set<const Node *> split_nodes{array_join};
+    if (nondeterministic_before_expansion)
+    {
+        /// Anything under a later array join stays in `after`, or the joins would swap order.
+        std::unordered_set<const Node *> depends_on_join;
+        for (const auto & node : nodes)
+            if (node.type == ActionType::ARRAY_JOIN)
+                depends_on_join.insert(&node);
+        for (bool changed = true; changed;)
+        {
+            changed = false;
+            for (const auto & node : nodes)
+                if (!depends_on_join.contains(&node) && std::ranges::any_of(node.children, [&](const Node * child) { return depends_on_join.contains(child); }))
+                    changed = depends_on_join.insert(&node).second || changed;
+        }
+        for (const auto & node : nodes)
+            if (!depends_on_join.contains(&node) && isNonDeterministicOrStatefulCall(node))
+                split_nodes.insert(&node);
+    }
+    auto split_res = split(split_nodes, /*create_split_nodes_mapping=*/true, /*avoid_duplicate_inputs=*/true);
     ActionsDAG before = std::move(split_res.first);
     ActionsDAG after = std::move(split_res.second);
     const Node * aj_before = split_res.split_nodes_mapping.at(array_join);
@@ -3661,7 +3871,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const Names & equivalent_columns_to_push_down,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
-    const NameSet & cross_type_equivalent_columns)
+    const NameSet & cross_type_equivalent_columns,
+    bool filter_is_always_false)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3810,14 +4021,19 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const bool left_stream_push_down_enabled = !left_stream_allowed_nodes.empty();
     const bool right_stream_push_down_enabled = !right_stream_allowed_nodes.empty();
 
-    if (!left_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
-    if (!right_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
-    /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
-    /// EITHER side is disabled.
-    if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
-        keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
+    /// If no row passes the filter, the join output is already empty once a side that may be filtered
+    /// receives it, so a disabled side can receive the no-input conjuncts too and is not read in vain.
+    if (!filter_is_always_false)
+    {
+        if (!left_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
+        if (!right_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
+        /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
+        /// EITHER side is disabled.
+        if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
+            keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
+    }
 
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);
@@ -4768,14 +4984,14 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
 
         writeIntBinary(column_flags, out);
 
-        /// When computing a cache key (`registry.for_cache_key`), skip the VALUE of the runtime-filter
-        /// id carrier only: it is a volatile per-plan-build rendezvous key, not a stable key component,
-        /// while its `result_name`/`column_flags` (already written) carry the stable structural id.
-        /// Every other constant's value — including a folded `now()`/`randConstant` — must stay in the
-        /// key, otherwise semantically different queries would share statistics. This output is
-        /// hash-only and never deserialized, so omitting the carrier value is safe; the transmission
-        /// path (`for_cache_key == false`) always writes it.
-        if (has_column && !(registry.for_cache_key && node.is_runtime_filter_id))
+        /// A cache key (`registry.for_cache_key`) leaves out a constant's value when it has no fixed
+        /// size, with the same contract as `updateHash` with `with_variable_size_constant_values = false`:
+        /// such a value can be arbitrarily large (a folded scalar subquery), and hashing it on every
+        /// execution costs more than the rest of planning. It also leaves out the value of the
+        /// runtime-filter id carrier, a volatile per-plan-build rendezvous key whose `result_name` is its
+        /// stable identity. This output is hash-only and never deserialized; the transmission path
+        /// (`for_cache_key == false`) always writes the value.
+        if (has_column && !(registry.for_cache_key && (node.is_runtime_filter_id || !node.column->valuesHaveFixedSize())))
             serializeConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
@@ -4793,6 +5009,15 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         else if (node.type == ActionType::FUNCTION)
         {
             writeStringBinary(node.function_base->getName(), out);
+            /// A cache key has to tell apart two functions of one name that captured different settings
+            /// (see `Node::updateHash`), so it also carries the hash of what the function captured. The
+            /// transmission path leaves it out: the receiver rebuilds the function from its own settings.
+            if (registry.for_cache_key)
+            {
+                SipHash function_state;
+                node.function_base->updateHash(function_state);
+                writeBinaryLittleEndian(function_state.get128(), out);
+            }
             if (function_capture)
             {
                 serializeCapture(function_capture->getCapture(), out);

@@ -5,6 +5,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <IO/WriteHelpers.h>
 #include <base/AlignedUnion.h>
 
 namespace DB
@@ -91,9 +92,20 @@ struct SingleValueDataFixed
     /// This is necessary for AggregateFunctionIf, merging states, JIT (where simple add is used), etc
     bool has_value = false;
 
+    static constexpr size_t serialized_size_bound = sizeof(bool) + sizeof(T);
+
     bool has() const { return has_value; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const;
-    void write(WriteBuffer & buf, const ISerialization &) const;
+
+    /// `out` is either a WriteBuffer or a raw `char *` cursor; both are advanced past the state.
+    template <typename Out>
+    void write(Out & out, const ISerialization &) const
+    {
+        writeBinary(has(), out);
+        if (has())
+            writeBinaryLittleEndian(value, out);
+    }
+
     void read(ReadBuffer & buf, const ISerialization &, const DataTypePtr &, Arena *);
     bool isEqualTo(const IColumn & column, size_t index) const;
     bool isEqualTo(const Self & to) const;
@@ -463,4 +475,18 @@ static_assert(alignof(SingleValueDataBaseMemoryBlock) == 8);
 void generateSingleValueFromType(const DataTypePtr & type, SingleValueDataBaseMemoryBlock & data);
 
 bool singleValueTypeAllocatesMemoryInArena(TypeIndex idx);
+
+/// Bridges the single-value Data classes to IAggregateFunction's bulk serialization hooks: only the
+/// fixed-width ones declare a bound, the string and generic ones keep the per-state path.
+template <typename Data>
+concept HasSerializedSizeBound = requires { Data::serialized_size_bound; };
+
+template <typename Data>
+constexpr std::optional<size_t> singleValueSerializedSizeBound()
+{
+    if constexpr (HasSerializedSizeBound<Data>)
+        return Data::serialized_size_bound;
+    else
+        return std::nullopt;
+}
 }

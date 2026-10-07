@@ -150,6 +150,9 @@ public:
             return "uniqCombined";
     }
 
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -339,6 +342,9 @@ public:
         else
             return "uniqCombined";
     }
+
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
 
     bool allocatesMemoryInArena() const override { return false; }
 

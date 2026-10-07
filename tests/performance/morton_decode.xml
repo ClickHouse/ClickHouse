@@ -1,0 +1,22 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>nd</name>
+            <values>
+                <value>2</value>
+                <value>3</value>
+                <value>4</value>
+                <value>5</value>
+                <value>6</value>
+                <value>7</value>
+                <value>8</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT mortonDecode({nd}, number) FROM numbers(50000000) FORMAT Null</query>
+</test>

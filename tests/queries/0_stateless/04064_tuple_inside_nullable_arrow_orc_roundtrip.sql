@@ -3,7 +3,7 @@
 
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET engine_file_truncate_on_insert = 1;
 
 -- Nullable struct with non-nullable elements

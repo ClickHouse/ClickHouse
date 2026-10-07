@@ -70,11 +70,25 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
+}
+
+namespace
+{
+
+/// Whether listing the path failed because the reader refuses the path itself - a malformed or an
+/// unbounded glob, or a glob whose regexp RE2 cannot compile - rather than because of the endpoint.
+/// Such a path fails the same way whenever the table is read.
+bool isPathRefusedByReader(int code)
+{
+    return code == ErrorCodes::BAD_ARGUMENTS || code == ErrorCodes::CANNOT_COMPILE_REGEXP;
+}
+
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -110,9 +124,25 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// creating a file iterator just to get a sample path string.
     if (containsOnlyEnumGlobs(path.path))
     {
-        auto expanded = expandSelectionGlob(path.path);
-        if (!expanded.empty())
-            return expanded.front() + archive_suffix;
+        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
+        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
+        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
+        /// and, for a table definition, persist it - from a path that the reader always refuses to
+        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
+        /// never built, so taking each group's first alternative is enough.
+        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
+        {
+            auto expanded = expandSelectionGlob(path.path);
+            if (!expanded.empty())
+                return expanded.front() + archive_suffix;
+        }
+        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
+        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
+        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
+        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
+        /// the sample path is never one the reader would not read.
+        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
+            return *first + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);
@@ -280,6 +310,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
         catch (...)
         {
+            /// A path the reader refuses - a malformed or an unbounded glob, or one whose regexp
+            /// cannot be compiled - fails the same way whenever the table is read, so it is reported
+            /// here as well instead of being downgraded to a listing failure that only leaves the
+            /// hive columns unresolved.
+            if (isPathRefusedByReader(getCurrentExceptionCode()))
+                throw;
+
             LOG_WARNING(
                 log,
                 "Failed to list object storage, cannot use hive partitioning. "
@@ -288,7 +325,7 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+    auto [hive_partition_columns, file_columns] = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
         columns,
         configuration,
         sample_path,
@@ -303,6 +340,9 @@ StorageObjectStorage::StorageObjectStorage(
             "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
             sample_path);
     }
+
+    hive_partitioning_columns.set(std::make_unique<const HivePartitioningColumns>(
+        HivePartitioningColumns{std::move(hive_partition_columns), std::move(file_columns)}));
 
     bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
@@ -437,7 +477,8 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(
+        /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
@@ -460,10 +501,9 @@ bool StorageObjectStorage::supportsDelete() const
 
 bool StorageObjectStorage::supportsParallelInsert() const
 {
-    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
-    /// INSERT pipeline. Only the root insert table is pre-initialised by
-    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
-    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
+    /// Defense in depth. `InsertDependenciesBuilder` refreshes every dependency before calling this method,
+    /// so a data lake table reached through a materialized view is normally initialized already. Keep the
+    /// lazy initialization to protect any other caller that reaches this method without the metadata hook.
     if (configuration->isDataLakeConfiguration())
         configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
     return configuration->supportsParallelInsert();
@@ -505,9 +545,12 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (!hive_partitioning_sample_path_deferred)
         return;
 
-    std::lock_guard lock(hive_partitioning_resolution_mutex);
-    if (hive_partitioning_sample_path_resolved)
-        return;
+    /// Not held while listing: a waiter could not be cancelled.
+    {
+        std::lock_guard lock(hive_partitioning_resolution_mutex);
+        if (hive_partitioning_sample_path_resolved)
+            return;
+    }
 
     /// Listing the storage happens on behalf of the triggering query, so it must use its context.
     /// Rebuilding the client with any other one would ignore that session's credential restriction.
@@ -531,6 +574,11 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
             throw;
 
+        /// A path the reader refuses is not an endpoint failure: reading the table fails the same
+        /// way, so the refusal is reported here rather than retried by every next query.
+        if (isPathRefusedByReader(getCurrentExceptionCode()))
+            throw;
+
         /// An endpoint failure degrades only the triggering query and is retried by the next one.
         LOG_WARNING(
             log,
@@ -551,6 +599,10 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         return;
     }
 
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+    if (hive_partitioning_sample_path_resolved)
+        return;
+
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
 
@@ -570,8 +622,8 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
             sample_path);
     }
 
-    hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
-    file_columns = std::move(new_file_columns);
+    hive_partitioning_columns.set(std::make_unique<const HivePartitioningColumns>(
+        HivePartitioningColumns{std::move(new_hive_partition_columns), std::move(new_file_columns)}));
 
     new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, inference_context));
     setInMemoryMetadata(new_metadata);
@@ -772,6 +824,7 @@ void StorageObjectStorage::read(
         }
     }
 #endif
+    const auto hive_columns = hive_partitioning_columns.get();
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
@@ -779,17 +832,17 @@ void StorageObjectStorage::read(
         supportsSubsetOfColumns(local_context),
         supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ hive_columns->file_columns, hive_columns->hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
     const bool need_only_count = (query_info.optimize_trivial_count
                                   || (read_from_format_info.requested_columns.empty()
-                                      && !read_from_format_info.prewhere_info
-                                      && !read_from_format_info.row_level_filter))
+                                      && !read_from_format_info.prewhere_info))
         && settings[Setting::optimize_count_from_files]
+        && !query_info.row_level_filter
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto modified_format_settings{format_settings};
@@ -900,7 +953,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
 void StorageObjectStorage::truncate(
@@ -1166,6 +1219,12 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
+Pipe StorageObjectStorage::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
+{
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+}
+
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
@@ -1190,6 +1249,15 @@ void StorageObjectStorage::shutdown(bool)
 bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
     return configuration->scheduleDataProcessingJob(assignee, *this);
+}
+
+void StorageObjectStorage::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr context) const
+{
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
 }
 
 }

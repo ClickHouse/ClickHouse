@@ -1354,8 +1354,6 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
     oracle_context->setSetting("ast_fuzzer_oracle", Field(false));
     oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
-    /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
-    oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
     /// A seed query's `SET aggregate_functions_null_for_empty = 1` would leak
     /// into oracle sub-queries and break NoREC: `count()` over zero input rows
     /// becomes NULL while `countIf` still aggregates every row and returns 0.
@@ -2002,8 +2000,6 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         {{"optimize_move_to_prewhere", Field(false)}},
         {{"query_plan_remove_redundant_sorting", Field(false)}},
         {{"optimize_rewrite_sum_if_to_count_if", Field(false)}},
-        /// `enable_optimize_predicate_expression` is unconditionally `false` in
-        /// `makeOracleContext`, so toggling it here would be a no-op.
         {{"optimize_if_chain_to_multiif", Field(false)}},
         {{"optimize_if_transform_strings_to_enum", Field(false)}},
         {{"optimize_functions_to_subcolumns", Field(false)}},

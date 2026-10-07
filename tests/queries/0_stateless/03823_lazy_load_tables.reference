@@ -10,5 +10,6 @@ al	Alias	1
 mv	MaterializedView	1
 src	MergeTree	0
 dict
+t3_renamed
 t3_renamed	MergeTree
 value	String

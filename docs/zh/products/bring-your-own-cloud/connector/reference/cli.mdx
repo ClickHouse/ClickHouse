@@ -1,99 +1,99 @@
 ---
 title: '命令行客户端参考'
 sidebarTitle: '命令行客户端'
-description: 'clicklink clctl 命令参考：init、preflight、支持会话、网关 信任、审计和访问配置'
+description: 'clicklink clctl 命令参考：init、preflight、支持会话、gateway trust、审计、访问凭据预配、托管服务和平台审批'
 keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', 'CLI']
 doc_type: 'reference'
 ---
 
-连接器 以名为 `clicklink` 的单个二进制文件形式提供；可通过 `clicklink clctl` 运行相关命令。本页介绍安装和日常运维中使用的命令。对任意命令运行 `--help`，即可查看完整帮助文本。`troubleshoot` 和 `preflight` 子树中的 flags 还可通过 `CLCTL_*` 环境变量 (名称见各 flag 的帮助输出) 或 `~/.clicklink/clctl.yaml` 提供。
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="init">
-  ## clicklink clctl init
-</div>
+<PrivatePreviewBadge />
 
-通过注册令牌、已保存的注册包或带外签名证书初始化连接器。一次调用即可暂存配置、配置 ClickHouse 访问权限、获取 mTLS 客户端证书、部署 (Helm 图表或 systemd 单元) 并验证运行状况。重复运行是安全的：配置和集群 UUID 会被保留，凭据会以原子方式覆盖；除非传入 `--force`，否则会复用现有客户端密钥。有关完整流程，请参阅[入门配置](/zh/products/bring-your-own-cloud/connector/onboarding)。
+连接器 以名为 `clicklink` 的单个二进制文件形式提供；可通过 `clicklink clctl` 运行相关命令。本页介绍安装和日常运维中使用的命令。对任意命令运行 `--help`，即可查看完整帮助文本。
 
-<div id="init-entry-points">
-  ### 入口点
-</div>
+`troubleshoot`、`scraper`、`preflight`、`executor`、`instances create` 和 `platform` 子树中的 标志，以及全局 `--endpoint` 和 `--cluster`，还可通过 `CLCTL_*` 环境变量 (名称见各 标志 的帮助输出) 或 `~/.clicklink/clctl.yaml` 提供。全局 `-v` 会记录命令发出的 admin API 请求；`-vv` 还会记录请求 bodies。
 
-三个入口点中必须且只能使用一个，彼此互斥。
+`instances` 和 `commands` 命令以及 `executor teardown` 会读取 executor 的本地 API。有两个全局 标志 用于指定该 API：`--endpoint <url>` (默认 `http://127.0.0.1:9999`，环境变量 `CLCTL_ENDPOINT`) 和 `--cluster <name>` (环境变量 `CLCTL_CLUSTER`)，后者用于在命令需要时指定受管 cluster 的名称。在 Kubernetes 上，请先对 executor Deployment 开启 `kubectl port-forward`；参见 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services#status)。
 
-| 标志                     | 说明                                                                                                                                                                                                        |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--enroll <url>`       | 标准流程。接受组织连接器端点 (`https://<subdomain>.<connector domain>`) ，兑换一次性注册令牌 (在终端中会提示输入且不回显；否则从 stdin 的第一行读取) ，将生成的包写入 `handoff.yaml` (权限模式为 0600) ，然后以 `--handoff handoff.yaml` 继续执行。令牌绝不会出现在命令行、磁盘或日志中。 |
-| `--handoff <path>`     | 使用已保存的注册包进行引导。`handoff.yaml` 存在后，重新运行和恢复时都会使用此选项。                                                                                                                                                         |
-| `--signed-cert <path>` | 隔离网络流程的第 2 阶段：安装通过带外方式签名的客户端证书，并完成分阶段安装。还可使用 `--chain <path>` 同时替换 CA 证书链。                                                                                                                                |
+## clicklink clctl init {#init}
 
-<div id="init-common-flags">
-  ### 通用标志
-</div>
+通过注册令牌、已保存的注册包或带外签名证书初始化连接器。一次调用即可暂存配置、配置 ClickHouse 访问权限、获取 mTLS 客户端证书、部署 (Helm 图表或 systemd 单元) 并验证运行状况。使用 `--managed` 时，它还会为检测到的 EKS 集群启用 executor，并授予该 executor 的集群级访问权限。重复运行是安全的：`init` 会保留配置和集群 UUID，以原子方式覆盖凭据；除非传入 `--force`，否则会复用现有客户端密钥。有关完整流程，请参阅[入门配置](/zh/products/bring-your-own-cloud/connector/onboarding)；有关 executor 的作用，请参阅[托管服务](/zh/products/bring-your-own-cloud/connector/managed-services)。
 
-| 标志                          | 说明                                                                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `--target <shape>`          | 部署形态：`systemd` (默认；引导当前所在的 VM) 或 `helm` (在具有 kubeconfig 的工作站上暂存 `clicklink-connector` chart) 。                                 |
-| `--instance <spec>`         | 以逗号分隔的 `key=value` 对指定 ClickHouse 实例 (`name`、`host`、`port`、`secure`、`database`、`namespace`、`cluster`) ；可重复指定。跳过交互式实例提示。        |
-| `--operators <emails>`      | 允许发起支持会话的 operator 电子邮件地址，以逗号分隔；启用会话网关并跳过提示。                                                                            |
-| `--no-gateway`              | 禁用会话网关 (不使用 OIDC 管理的会话) ；跳过提示。在 VM 上，主机上的 root 用户仍可通过本地会话文件管理会话。                                                         |
-| `--force`                   | 覆盖现有 config 或 overlay，并重新生成客户端密钥；同时确认替换尚未过期的自动签名证书。即使使用 `--force`，cluster UUID 也会保留。                           |
-| `--skip-provision`          | 仅暂存：跳过按角色进行的 ClickHouse 访问预配 (在 systemd target 上还会跳过单元启用和验证) 。请另行运行 `clicklink clctl {scraper,troubleshoot} access provision`。 |
-| `--ch-user-suffix <suffix>` | 为已预配的 ClickHouse 用户名添加可选后缀 (`pcm_scraper` 变为 `pcm_scraper_<suffix>`) ，使第二个连接器部署可与第一个共享同一实例，且不会发生用户冲突。                  |
-| `--ch-admin-password-stdin` | 当 SQL 预配需要 ClickHouse 管理员密码时，从 stdin 读取；在 terminal 中运行时则会提示输入。                                                              |
+### 入口点 {#init-entry-points}
 
-<div id="init-signing-flags">
-  ### 签名选项 (仅限阶段 1)
-</div>
+必须且只能使用一个入口点。
+
+| 标志                     | 说明                                                                                                                                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--enroll <url>`       | 标准流程。接受连接器端点 (`https://<subdomain>.<connector-domain>`) 并兑换一次性注册标记，在终端中会提示输入且不回显，否则从 stdin 的第一行读取。将生成的包写入 `handoff.yaml` (权限模式为 0600) ，然后以 `--handoff handoff.yaml` 继续执行。标记绝不会出现在命令行、磁盘或日志中。 |
+| `--handoff <path>`     | 使用已保存的注册包进行引导。`handoff.yaml` 存在后，重新运行和恢复时都会使用此选项。                                                                                                                                            |
+| `--signed-cert <path>` | 隔离网络流程的第 2 阶段：安装通过带外方式签名的客户端证书，并完成分阶段安装。还可使用 `--chain <path>` 同时替换 CA 证书链。                                                                                                                   |
+
+### 通用参数 {#init-common-flags}
+
+| 标志                          | 描述                                                                                                                                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--target <shape>`          | 部署形态：`systemd` (默认；对当前所在的 VM 执行引导) 或 `helm` (在配有 kubeconfig 的工作站上暂存 `clicklink-connector` chart) 。                                                                                             |
+| `--instance <spec>`         | 自行运行的 ClickHouse 实例，以逗号分隔的 `key=value` 对指定 (`name`、`host`、`port`、`secure`、`database`、`namespace`、`cluster`) ；可重复指定。指定后将跳过交互式实例提示。在 Kubernetes 上的托管模式下不允许使用：此类实例需由另一个以 `--no-managed` 安装的部署来观测。 |
+| `--env <label>`             | 环境标签，会以 `scraper.labels.env` 的形式注入到每条发出的指标中 (默认为 `production`) 。暂存环境安装时请传入 `staging`。                                                                                                          |
+| `--operators <emails>`      | 以逗号分隔的操作员邮箱列表，允许这些邮箱开启支持会话；启用会话网关并跳过相应提示。                                                                                                                                                      |
+| `--no-gateway`              | 禁用会话网关 (不使用 OIDC 托管的会话) ；跳过相应提示。在 VM 上，主机的 root 用户仍可通过本地会话文件管理会话。                                                                                                                              |
+| `--managed`                 | 启用托管模式：运行 executor，由 ClickHouse Cloud 管理该 cluster 中 ClickHouse 服务的生命周期；跳过相应提示。需要 Amazon EKS cluster。                                                                                           |
+| `--no-managed`              | 不启用托管模式 (即不运行 executor) ；跳过相应提示。                                                                                                                                                               |
+| `--force`                   | 覆盖已有的 config 或 overlay 并重新生成客户端密钥；同时表示确认替换尚未过期的自动签发证书。即使使用 `--force`，cluster UUID 仍会保留。                                                                                                        |
+| `--skip-provision`          | 仅暂存：跳过按角色进行的 ClickHouse 访问预配 (在 systemd 目标上还会跳过启用单元和验证步骤) 。请另行运行 `clicklink clctl {scraper,troubleshoot} access provision`。`--target helm` 仍会应用 executor 的授权；VM 上则同样跳过。                        |
+| `--ch-user-suffix <suffix>` | 为预配的 ClickHouse 用户名添加可选后缀 (`pcm_scraper` 变为 `pcm_scraper_<suffix>`) ，使第二个连接器部署可以共享同一实例，而不会与第一个部署的用户发生冲突。                                                                                       |
+| `--ch-admin-password-stdin` | 当 SQL 预配需要密码时，从 stdin 读取 ClickHouse 管理员密码；若在终端中运行，则改为交互提示输入。                                                                                                                                   |
+
+### 签名选项 (仅限阶段 1) {#init-signing-flags}
 
 | 标志                      | 描述                                                           |
 | ----------------------- | ------------------------------------------------------------ |
 | `--no-auto-sign`        | 仅限阶段 1：跳过通过注册端点自动签署 CSR，适用于隔离网络或带外签名流程。                      |
 | `--sign-endpoint <url>` | 覆盖注册签名端点 (默认值：通过在支持包端点中插入 `enroll` DNS 标签生成) 。必须为 HTTPS URL。 |
 
-<div id="init-kubernetes-flags">
-  ### 仅适用于 Kubernetes 的标志
-</div>
+### 仅适用于 Kubernetes 的标志 {#init-kubernetes-flags}
 
 仅可与 `--target helm` 一同使用。
 
-| 标志                          | 说明                                                                                                         |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `--target-namespace <ns>`   | chart 要安装到的命名空间，Secret 也会创建在此处 (默认值为 `clicklink`；会在终端中提示输入) 。                                              |
-| `--instance-namespace <ns>` | 目标 ClickHouse 实例所在的命名空间；用于初始化原生 Service 检测和实例相关提示。                                                         |
-| `--storage-class <name>`    | troubleshooter 状态卷使用的存储类 (默认值：集群的默认 StorageClass；如果集群未设置默认 StorageClass，则会提示输入或要求提供) 。                     |
-| `--values <path>`           | 暂存的配置值覆盖文件路径 (默认值为 `clicklink-values.yaml`) 。                                                              |
-| `--chart <ref>`             | 要部署的 chart：在 `--chart-repo` 中解析的名称，或用于镜像安装的直接 `oci://`、URL 或本地引用 (默认值为 `clicklink-connector`) 。            |
-| `--chart-repo <url>`        | 用于解析 chart 名称的 Helm 仓库 (默认值为 `https://releases.clicklink.clickhouse.com/charts`) ；直接指定 `--chart` 引用时将忽略此项。 |
-| `--chart-version <ver>`     | 要部署的 chart 版本 (默认值：此二进制文件的发行版版本) 。                                                                         |
-| `--ch-pod <ref>`            | 用于 pod 内预配步骤的 ClickHouse pod (容器组) ，可指定名称或 `k=v` 标签选择器 (默认值：为每个实例的 Service 提供支持的一个运行中 pod) 。               |
-| `--api-private-ca`          | API 端点提供由注册包 CA 签发的证书：暂存 `api.tls.caFile`，使其指向已挂载的 CA 证书链，而非系统根证书。                                           |
+| 标志                          | 说明                                                                                                                                                 |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--target-namespace <ns>`   | chart 要安装到的命名空间，Secret 也会创建在此处 (默认值为 `clicklink`；会在终端中提示输入) 。                                                                                      |
+| `--instance-namespace <ns>` | 目标 ClickHouse 实例所在的命名空间；用于初始化原生 Service 检测和实例相关提示。与 `--managed` 同时使用时会被拒绝：托管安装不会注册任何已有实例。                                                          |
+| `--storage-class <name>`    | troubleshooter 与 executor 状态卷使用的存储类 (默认值：集群的默认存储类；如果集群未设置默认存储类，则会提示输入或要求提供) 。                                                  |
+| `--values <path>`           | 暂存的配置值覆盖文件路径 (默认值为 `clicklink-values.yaml`) 。                                                                                                      |
+| `--chart <ref>`             | 要部署的 chart：在 `--chart-repo` 中解析的名称，或用于镜像安装的直接 `oci://`、URL 或本地引用 (默认值为 `clicklink-connector`) 。                                                    |
+| `--chart-repo <url>`        | 用于解析 chart 名称的 Helm 仓库 (默认值为 `https://releases.clicklink.clickhouse.com/charts`) ；直接指定 `--chart` 引用时将忽略此项。                                         |
+| `--chart-version <ver>`     | 要部署的 chart 版本 (默认值：此二进制文件的发行版版本) 。                                                                                                                 |
+| `--ch-pod <ref>`            | 用于 pod 内预配步骤的 ClickHouse pod (容器组) ，可指定名称或 `k=v` 标签选择器 (默认值：为每个实例的 Service 提供支持的一个运行中 pod) 。                                                       |
+| `--api-private-ca`          | 你的连接器端点提供由注册包 CA 签发的证书：暂存 `api.tls.caFile`，使其指向已挂载的 CA 证书链，该证书链会被追加到系统根证书中。                                                                        |
+| `--egress-cidrs <cidrs>`    | 以逗号分隔的连接器端点 CIDR，供 chart 的默认拒绝 NetworkPolicy 使用：暂存为启用状态，并将这些 CIDR 设为 `networkPolicy.allowEgressCIDRs` (在托管模式下会在终端中提示输入) 。若未提供，则该策略会以禁用状态暂存，供你稍后启用。 |
 
-<div id="init-vm-flags">
-  ### 仅适用于 VM 的标志
-</div>
+### 仅适用于 VM 的标志 {#init-vm-flags}
 
 仅可与 `--target systemd` 配合使用。
 
-| 标志                   | 描述                                                                                  |
-| -------------------- | ----------------------------------------------------------------------------------- |
-| `--server <url>`     | 访问包所指向的 Kubernetes API server URL (默认使用此主机的 kubeconfig；否则会提示输入) 。                   |
-| `--ca-data <base64>` | 用于 `--server` 的 Base64 `certificate-authority-data` (默认使用此主机的 kubeconfig；否则会提示输入) 。 |
+| 标志                      | 描述                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `--server <url>`        | 访问包所指向的 Kubernetes API server URL (默认使用此主机的 kubeconfig；否则会提示输入) 。                   |
+| `--ca-data <base64>`    | 用于 `--server` 的 Base64 `certificate-authority-data` (默认使用此主机的 kubeconfig；否则会提示输入) 。 |
+| `--cluster-name <name>` | managed 模式所驱动的 EKS cluster 名称 (默认使用此主机 kubeconfig 中唯一的 EKS cluster；在终端中会提示输入) 。     |
+| `--no-instance`         | 以空的 instance registry 启动，并跳过 instance 相关提示。                                         |
 
-<div id="init-flag-conflicts">
-  ### 标志冲突
-</div>
+### 标志冲突 {#init-flag-conflicts}
 
 * `--handoff`、`--enroll` 和 `--signed-cert` 互斥；必须且只能指定其中一个。
-* 仅 Kubernetes 适用的标志仅在指定 `--target helm` 时可用；使用 `--target helm` 时，不接受 `--server` 和 `--ca-data` (Helm 流程会读取工作站的 kubeconfig) 。
-* `--no-auto-sign` 与 `--sign-endpoint` 互斥，且二者 (以及 `--api-private-ca`) 均不能与 `--signed-cert` 一起使用。
+* 仅 Kubernetes 适用的标志仅在指定 `--target helm` 时可用；使用 `--target helm` 时，不接受 `--server`、`--ca-data`、`--cluster-name` 和 `--no-instance` (Helm 流程会读取工作站的 kubeconfig 并检测集群内的实例) 。
+* `--no-instance` 与 `--instance` 互斥。
+* `--managed` 与 `--no-managed` 互斥，且 `--cluster-name` 不能与 `--no-managed` 一起使用。在 `--target helm` 下，`--instance` 和 `--instance-namespace` 不能与 `--managed` 一起使用。
+* `--no-auto-sign` 与 `--sign-endpoint` 互斥，且二者 (以及 `--api-private-ca`、`--managed`、`--no-managed` 和 `--cluster-name`) 均不能与 `--signed-cert` 一起使用。
 * `--operators` 与 `--no-gateway` 互斥。
 * 使用 `--skip-provision` 时，不接受 `--ch-pod`、`--ch-user-suffix`、`--server`、`--ca-data` 和 `--ch-admin-password-stdin` (不会执行任何预配) 。
 
-<div id="preflight">
-  ## clicklink clctl preflight
-</div>
+## clicklink clctl preflight {#preflight}
 
-运行按类别分组的连接器检查套件：配置、文件、网络、ClickHouse、systemd、访问、磁盘和脱敏。每项检查会报告通过、警告、失败或跳过。退出代码为 0 表示所有检查均已通过 (警告不造成阻塞) ；退出代码为 2 表示一项或多项检查失败。
+运行按类别分组的连接器检查套件：配置、文件、网络、ClickHouse、systemd、访问、磁盘和脱敏。每项检查会报告通过、警告、失败或跳过。退出代码为 0 表示所有检查均已通过 (警告不造成阻塞) ；退出代码为 2 表示至少有一项失败。
 
 该命令默认在本地运行。使用 `--k8s-namespace` 时，它会通过 `kubectl exec` 在连接器 pod (容器组) 中运行连接器自身的二进制文件，并在本地生成报告 (在 pod 中始终跳过 systemd 检查) 。使用[远程通道标志](#channel-flags)时，则会在远程 VM 上运行已安装的二进制文件。
 
@@ -110,35 +110,29 @@ doc_type: 'reference'
 
 `--k8s-*` 标志与远程通道标志互斥；请选择其中一个目标。
 
-<div id="troubleshoot-session">
-  ## clicklink clctl troubleshoot session
-</div>
+## clicklink clctl troubleshoot session {#troubleshoot-session}
 
-用于启用、禁用和检查支持会话：故障排除程序在此限定时间窗口内接受命令。当没有活动会话时，即使其 WebSocket 已连接，守护进程也会拒绝所有命令。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
+用于启用、禁用和检查支持会话：故障排除程序在此限定时间窗口内接受命令。若没有活动会话，即使其 WebSocket 已连接，守护进程也会拒绝所有命令。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 
 这些命令可在以下两种模式之一运行：
 
 * **本地文件** (默认) ：在运行故障排除程序的主机上读取和写入会话状态文件 (默认为 `/var/lib/clicklink/session.json`) 。
 * **Gateway**：使用 `--gateway-url` 时，会从您的工作站获取 OIDC ID 令牌，并改为调用故障排除程序的会话网关。
 
-<div id="session-shared-flags">
-  ### 共享选项
-</div>
+### 共享选项 {#session-shared-flags}
 
 | 标志                         | 说明                                                                                       |
 | -------------------------- | ---------------------------------------------------------------------------------------- |
 | `--session-file <path>`    | 会话状态文件的路径 (默认为 `/var/lib/clicklink/session.json`) 。                                      |
-| `--config <path>`          | 连接器配置文件；会从其 `troubleshooter` 部分获取会话文件路径。                                          |
+| `--config <path>`          | 连接器配置文件；会从其 `troubleshooter` 部分获取会话文件路径。                                                 |
 | `--gateway-url <url>`      | 会话网关的基础 URL。设置后，命令会获取 OIDC Bearer 令牌并调用网关，而不访问本地状态文件。与 `--session-file` 和 `--config` 互斥。 |
 | `--gateway-audience <aud>` | OIDC 令牌绑定的 audience 声明 (默认为 `clicklink-clctl`，与网关自身的默认值一致) 。仅当重新配置了网关 audience 时才设置此项。   |
 | `--gateway-issuer <url>`   | 网关用于验证的 OIDC 签发方。留空时使用 Google 流程；与 `--oidc-client-id` 一同设置，可针对非 Google 身份提供商运行设备代码流程。    |
 | `--oidc-client-id <id>`    | 用于设备代码流程的公网 OIDC 客户端 ID，已在 `--gateway-issuer` 注册并启用设备授权。                                 |
 | `--token-file <path>`      | 包含预先生成的 OIDC ID 令牌的文件；该令牌将作为 Bearer 令牌使用，并绕过其他令牌提供商。                                     |
-| `--gateway-ca <path>`      | 用于验证网关证书的 CA bundle (自带证书) 。未设置时，使用通过 `gateway trust` 固定的证书；未固定证书的自签名网关会拒绝连接。            |
+| `--gateway-ca <path>`      | 用于验证网关证书的 CA bundle (自带证书) 。未设置时，命令会使用通过 `gateway trust` 固定的证书；未固定证书的自签名网关会拒绝连接。         |
 
-<div id="session-enable">
-  ### 启用 session
-</div>
+### 启用 session {#session-enable}
 
 | 标志                 | 描述                                                                             |
 | ------------------ | ------------------------------------------------------------------------------ |
@@ -148,15 +142,11 @@ doc_type: 'reference'
 
 如果已有处于活动状态的 session，启用操作将失败；请先将其禁用，或等待其过期。
 
-<div id="session-disable">
-  ### 禁用 session
-</div>
+### 禁用 session {#session-disable}
 
 立即停用 session。未激活 session 时，此操作为空操作。
 
-<div id="session-status">
-  ### 会话状态
-</div>
+### 会话状态 {#session-status}
 
 显示会话是否处于活动状态、由谁启用及其到期时间。`--output` (`-o`) 可选择 `table` (默认) 或 `json`。
 
@@ -170,18 +160,16 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-<div id="gateway-trust">
-  ## clicklink clctl troubleshoot gateway trust
-</div>
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
 
-在 VM 上，session 网关使用自签名 TLS 证书。此命令会将证书的 SHA-256 指纹记录到 `~/.clicklink/clctl.yaml`，以便 `session` 命令验证该证书；若固定的指纹不再匹配，验证将失败并拒绝连接。可通过以下两种带外方式之一建立信任：
+在 VM 上，会话网关使用自签名 TLS 证书。此命令会将证书的 SHA-256 指纹记录到 `~/.clicklink/clctl.yaml`，以便 `session` 命令验证该证书；若固定的指纹不再匹配，验证将失败并拒绝连接。可通过以下两种带外方式之一建立信任：
 
-* 使用[远程通道标志](#channel-flags)时，会通过已完成身份验证的通道直接从 VM 读取并固定证书。
-* 不使用通道时，传入 `--gateway-fingerprint`，其值为连接器生成证书时记录的 SHA-256 指纹；仅当获取的证书与其匹配时才会固定。省略该标志会打印出当前提供的指纹，但不会固定任何内容。
+* 使用[远程通道标志](#channel-flags)时，该命令会通过已完成身份验证的通道从 VM 读取证书并将其固定。
+* 不使用通道时，传入 `--gateway-fingerprint`，其值为连接器生成证书时记录的 SHA-256 指纹；仅当获取的证书与其匹配时，该命令才会固定该证书。省略该标志会打印出当前提供的指纹，但不会固定任何内容。
 
-| 标志                               | 描述                                                                            |
-| -------------------------------- | ----------------------------------------------------------------------------- |
-| `--gateway-url <url>`            | 要信任的网关基础 URL (必填) ，例如 `https://<vm-host>:8443`。                        |
+| 标志                               | 描述                                                                     |
+| -------------------------------- | ---------------------------------------------------------------------- |
+| `--gateway-url <url>`            | 要信任的网关基础 URL (必填) ，例如 `https://<vm-host>:8443`。必须为 `https://`。         |
 | `--gateway-fingerprint <sha256>` | 连接器日志中记录的预期 SHA-256 指纹，固定前会进行验证。忽略冒号和字母大小写。                            |
 | `--remote-cert-file <path>`      | VM 上网关证书的路径，通过通道读取 (默认为 `/var/lib/clicklink/gateway/tls/server.crt`) 。 |
 
@@ -193,11 +181,9 @@ clicklink clctl troubleshoot gateway trust \
 
 在 Kubernetes 中，不使用固定方式：应通过具有 CA 签发证书的入口公开网关，或使用端口转发。
 
-<div id="audit-tail">
-  ## clicklink clctl troubleshoot audit tail
-</div>
+## clicklink clctl troubleshoot audit tail {#audit-tail}
 
-打印故障排除程序审计日志中的最后几条记录：采用以换行分隔的 JSON 格式，守护进程接受或阻止的每条命令各对应一条记录。该命令以只读方式打开日志，绝不会对其进行修改。
+打印故障排除程序审计日志中的最后几条记录：采用以换行分隔的 JSON 格式，守护进程接受或阻止的每条命令各对应一条记录。它以只读方式打开日志。
 
 | 标志                  | 说明                                                            |
 | ------------------- | ------------------------------------------------------------- |
@@ -211,9 +197,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-<div id="access-provision">
-  ## 访问凭据预配
-</div>
+## 访问凭据预配 {#access-provision}
 
 `clicklink clctl scraper access provision` 和 `clicklink clctl troubleshoot access provision` 会创建组件每个实例的访问包；使用 `--force` 时会轮换该访问包。访问包包括只读 ClickHouse 用户及其授权，以及组件所使用的 Kubernetes ServiceAccount、RBAC 和令牌。`init` 会在安装期间内联执行此操作；独立命令则用于重新执行和轮换。
 
@@ -225,16 +209,17 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
 | `--config <path>`                                                    | 用于读取实例信息的连接器配置文件。                                                                                                       |
 | `--target <shape>`                                                   | `systemd` (默认：通过远程通道将访问包发送到 VM，或使用 `--provider local` 在本地生成) 或 `helm` (将访问包作为 Kubernetes Secret 推送到 chart) 。            |
 | `--target-namespace <ns>`                                            | 存放访问包 Secret 的命名空间 (使用 `--target helm` 时必填) 。                                                                           |
-| `--instance-namespace <ns>`                                          |  (`--target helm`) 目标 ClickHouse 实例所在的命名空间。                                                                             |
+| `--instance-namespace <ns>`                                          | 目标 ClickHouse 实例所在的命名空间；指定后，命令无需为 `--instance` 提供 registry 条目。                                                          |
 | `--force`                                                            | 覆盖现有访问包：用于重新执行和轮换凭据。                                                                                                    |
 | `--secret-name <name>`                                               | 覆盖访问包 Secret 的名称 (默认值为 `clicklink-connector-<component>-access-<instance>`) 。                                           |
-| `--output-dir <path>`                                                |  (`--target helm` 或 `--provider local`) 访问包的输出根目录。                                                                      |
+| `--output-dir <path>`                                                | (`--target helm` 或 `--provider local`) 访问包的输出根目录 (默认值：`helm` 为工作目录下的 `./<component>/`，`local` 为组件的访问目录) 。               |
+| `--audit-log <path>`                                                 | 预配审计日志，NDJSON 格式，以追加方式写入 (默认值为访问包输出目录旁的 `clctl-audit.log`；设为 `none` 可禁用) 。                                              |
 | `--ch-admin-user <name>`                                             | 用于应用授权的 ClickHouse 管理员用户 (默认值为 `default`) 。                                                                             |
 | `--ch-admin-password-stdin`                                          | 从 stdin 读取 ClickHouse 管理员密码。                                                                                            |
 | `--ch-user-suffix <suffix>`                                          | 为预配的 ClickHouse 用户名指定可选后缀。                                                                                              |
 | `--ch-user-via <mode>`                                               | ClickHouse 用户的预配方式：`sql` (默认；以 `--ch-admin-user` 身份应用生成的授权) 或 `cr` (将用户写入实例的自定义资源，适用于由 operator 管理且没有可执行 SQL 的管理员的实例) 。 |
-| `--apply-ch-grants`                                                  |  (`--target helm`) 通过 `kubectl exec` 在 pod (容器组) 中应用生成的授权，而非留待你自行应用。                                                    |
-| `--ch-pod <ref>`, `--ch-pod-namespace <ns>`, `--ch-container <name>` |  (`--target helm` 搭配 `--apply-ch-grants` 或 `--ch-user-via cr`) 选择要 exec 进入的 ClickHouse pod (容器组) 和容器。                   |
+| `--apply-ch-grants`                                                  | (`--target helm`) 通过 `kubectl exec` 在 pod (容器组) 中应用生成的授权，而非留待你自行应用。                                                     |
+| `--ch-pod <ref>`, `--ch-pod-namespace <ns>`, `--ch-container <name>` | (`--target helm` 搭配 `--apply-ch-grants` 或 `--ch-user-via cr`) 选择要 exec 进入的 ClickHouse pod (容器组) 和容器。                    |
 | `--token-duration <dur>`                                             | ServiceAccount 令牌有效期 (默认 `2160h`，即 90 天；EKS 将令牌有效期限制为 24 小时) 。                                                          |
 | `--skip-restart`                                                     | 预配后跳过重启组件。                                                                                                              |
 | `--dry-run`                                                          | 打印计划后退出；不会向 Kubernetes、远程系统或 ClickHouse 写入任何内容。                                                                         |
@@ -250,15 +235,183 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-<div id="channel-flags">
-  ## 远程通道标志
-</div>
+## clicklink clctl executor access {#executor-access}
 
-`preflight`、`gateway trust` 和 `access provision` 接受一组通用标志，用于指定连接到 VM 目标的方式：
+`init --managed` 会使用你的凭据为 executor 应用集群级 grant。若无法完成，`init` 会打印出需通过具备集群管理员权限的 kubeconfig 执行的命令：在 VM 上只需执行 `access apply` (bundle 已就绪) ，在 Kubernetes 上则先执行 `access grant`，再执行 `access apply`。参见 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)。
 
-| 标志                                                                                          | 描述                                                                                                            |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `--provider <name>`                                                                         | 执行通道：对于远程 VM，可使用 `ssh`、`aws` (SSM) 或 `gcp` (IAP)；在目标 VM 上运行时，使用 `local`。未显式设置时，将根据各提供商相关的标志推断；绝不会推断为 `local`。 |
-| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH 连接信息 (`--provider ssh`) ；用户、端口和密钥默认采用你的 SSH 配置。                                                           |
-| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | 用于 SSM 的 EC2 实例、区域和共享配置 profile (`--provider aws`) 。                                                          |
-| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | 用于 IAP 隧道的项目、可用区和实例 (`--provider gcp`) 。                                                                      |
+### executor access grant {#executor-access-grant}
+
+在 `<output-dir>/_cluster/` 下生成 executor 的集群级访问包：包含一个 ServiceAccount、一个集群角色和 ClusterRoleBinding，以及一个 ValidatingAdmissionPolicy，用于将该 ServiceAccount 限制在 executor 命名空间前缀下的各命名空间内。应用前请先检查生成的 RBAC 内容。
+
+| 参数                                    | 说明                                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------------------------- |
+| `--cluster`                           | 生成集群级访问包 (此场景下必填；若不指定，命令将为 `--instance` 生成单个服务的访问包) 。                                  |
+| `--config <path>`                     | 连接器配置文件 (环境变量 `CLCTL_EXECUTOR_CONFIG`) 。                                               |
+| `--sa-namespace <ns>`                 | executor ServiceAccount 所在的主命名空间 (默认 `clicklink-system`；Kubernetes 安装方式下即为连接器所在命名空间) 。 |
+| `--context <name>`                    | 受管集群的 kubeconfig context，用法同 `prepare`。                                                |
+| `--server <url>`、`--ca-data <base64>` | 写入 kubeconfig 的 Kubernetes API server URL 和 CA (默认取自当前 kube context) 。                 |
+| `--output-dir <path>`                 | 输出根目录 (默认 `/etc/clicklink/access/executor`；环境变量 `CLCTL_EXECUTOR_OUTPUT_DIR`) 。         |
+| `--force`                             | 覆盖已有的访问包。                                                                              |
+| `--dry-run`                           | 仅打印执行计划，不写入文件。                                                                         |
+
+### executor access apply {#executor-access-apply}
+
+应用已渲染的集群级 `grant` 支持包：ServiceAccount 所属的命名空间、ServiceAccount、集群角色与 ClusterRoleBinding，以及 admission 策略，随后签发 ServiceAccount 标记并写入该包。此命令不会注册任何 service。
+
+| Flag                     | Description                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `--cluster`              | 从 `<output-dir>/_cluster/` 应用集群级包 (此用法下必填) 。                                   |
+| `--config <path>`        | 连接器配置文件 (环境变量 `CLCTL_EXECUTOR_CONFIG`) 。                                       |
+| `--context <name>`       | 受管 cluster 的 kubeconfig context，与 `prepare` 相同。                                |
+| `--output-dir <path>`    | 输出根目录 (默认 `/etc/clicklink/access/executor`；环境变量 `CLCTL_EXECUTOR_OUTPUT_DIR`) 。 |
+| `--token-duration <dur>` | ServiceAccount 标记的有效期 (默认 `2160h`，即 90 天) 。                                    |
+| `--dry-run`              | 仅打印将要应用的内容，不实际执行。                                                              |
+
+```bash
+clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>
+clicklink clctl executor access apply --cluster --output-dir <dir>
+```
+
+## clicklink clctl executor prepare {#executor-prepare}
+
+在一次幂等运行中完成 managed service 创建所需的、位于你这一侧的全部准备工作，并在遇到第一个失败时停止。它会选取或校验 service 名称，并创建数据桶和备份桶以及 IAM role (或校验你自带的 role) 。在 VM 上，它还会为该 service 命名空间渲染并应用 executor 的访问包；在 Kubernetes 上则会跳过访问包，因为 executor 以其 pod ServiceAccount 身份运行。随后它会生成 `default` USER 的密码 (仅显示一次) ，并写出供 [`instances create`](#instances-create) 使用的创建请求体。参见 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services#create-a-service)。
+
+在 VM 上，它运行于 connector 主机。对于 Kubernetes 安装，它运行在一台具备 AWS 凭证以及指向该受管集群的 kube context 的 workstation 上。该 workstation 还需要一份 connector 配置的副本 (`--config`) 、一个指向 executor 本地 API 的端口转发，以及一个可写的 `--output-dir`。
+
+| 标志                                              | 描述                                                                                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `--config <path>`                               | 连接器配置文件 (必填；环境变量 `CLCTL_EXECUTOR_CONFIG`) 。访问包依据该文件渲染，且 kube context 必须与其中的 `executor.cluster` 一致。                     |
+| `--instance <name>`                             | Service 名称 (环境变量 `CLCTL_EXECUTOR_INSTANCE`) 。默认：自动生成的名称，记录于 `<output-dir>/_prepare/<eks-cluster-name>.name`，并在下次运行时沿用。 |
+| `--new-name`                                    | 忽略上一次运行记录的名称，重新选取一个新名称。                                                                                                |
+| `--context <name>`                              | 受管集群的 kubeconfig context：可以是名称，也可以是模式 (只匹配到一个则直接采用，多个则提示选择) ；环境变量 `CLCTL_CONTEXT`。默认：唯一的那个 context，否则弹出选择器。            |
+| `--server <url>`、`--ca-data <base64>`           | 写入 executor kubeconfig 的 Kubernetes API server URL 和 CA (默认取自 kube context) 。                                          |
+| `--data-bucket <name>`、`--backup-bucket <name>` | 要校验或创建的桶 (默认为 `<cluster>-clickhouse-data-<rand>` 和 `<cluster>-clickhouse-backup-<rand>`) 。                             |
+| `--role-name <name>`                            | IAM role 名称 (默认 `CH-S3-<instance>-<region>-00-Role`) 。                                                                 |
+| `--role-arn <arn>`                              | 自带 IAM role：校验其信任关系和 S3 授权，且绝不创建或修改 IAM。                                                                               |
+| `--restore-from <name>`                         | 作为本 service 恢复来源的 service；IAM role 同时获得对其备份桶的读取权限。                                                                     |
+| `--region <region>`                             | AWS 区域 (默认：kube context 所指向的 cluster 所在区域) 。                                                                           |
+| `--token-duration <dur>`                        | ServiceAccount 标记的有效期 (默认 `2160h`，即 90 天) 。                                                                            |
+| `--force`                                       | 重新生成完整的访问包，而不是复用已有的。                                                                                                   |
+| `--output-dir <path>`                           | 输出根目录 (默认 `/etc/clicklink/access/executor`；环境变量 `CLCTL_EXECUTOR_OUTPUT_DIR`) 。                                         |
+| `--output <fmt>`                                | `text` (默认) 或 `json`。两者均不包含密码。                                                                                         |
+| `--dry-run`                                     | 以 dry-run 模式执行每个步骤；不创建也不写入任何内容。                                                                                        |
+
+## clicklink clctl executor teardown {#executor-teardown}
+
+针对 ClickHouse Cloud 中已删除的 service,移除 `prepare` 为其创建的资源,包括:IAM role、已记录的名称,以及 executor 中该 service 的记录;在 VM 上,还包括该 service 的集群角色和 ClusterRoleBinding、本地访问包和 registry entry。执行时 executor 必须处于运行状态,且 service 状态为 `terminated` (或 `stale`) ;若 service 命名空间中仍存在 ClickHouse cluster,则该命令会拒绝执行。除非显式要求删除,否则 `prepare` 创建的桶及其中的数据和备份会被保留,保留下来的桶会被重新打上 `clicklink:retained-from=<name>` 标签。该命令会先读取全部信息,然后才开始删除。参见[删除 service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。
+
+| Flag                                            | Description                                                                                                     |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `--instance <name>`                             | Service 名称 (环境变量 `CLCTL_EXECUTOR_INSTANCE`) 。                                                                   |
+| `--config <path>`                               | 连接器配置文件 (环境变量 `CLCTL_EXECUTOR_CONFIG`) ;省略时从连接器主机的 `/etc/clicklink/config.yaml` 读取。用于提供 `delete_instance_data`。 |
+| `--context <name>`                              | 受管集群的 kubeconfig context,与 `prepare` 中相同。                                                                       |
+| `--delete-data`                                 | 即使 `delete_instance_data` 已关闭,也删除该 service 的数据。需配合 `--yes` 使用。                                                  |
+| `--delete-backups`                              | 删除 backup 桶及其中的备份 (默认保留) 。需配合 `--yes` 使用。                                                                       |
+| `--yes`                                         | 用于确认 `--delete-data` 和 `--delete-backups`;不加该 flag 时,命令会在记录步骤后停止,并列出本应清空的桶。                                     |
+| `--data-bucket <name>`、`--backup-bucket <name>` | 覆盖 executor 记录中的桶 (默认:绑定到该 service 的 role 或为其打了标签的桶) 。                                                          |
+| `--role-name <name>`                            | IAM role 名称 (默认 `CH-S3-<instance>-<region>-00-Role`) 。                                                          |
+| `--region <region>`                             | AWS 区域 (默认:cluster 所在区域) 。                                                                                      |
+| `--namespace-prefix <prefix>`                   | Service 命名空间前缀 (默认 `ns-`) ;必须与已加载的 config 一致。                                                                   |
+| `--output-dir <path>`                           | 输出根目录 (默认 `/etc/clicklink/access/executor`) 。                                                                   |
+| `--output <fmt>`                                | `text` (默认) 或 `json`。                                                                                           |
+| `--dry-run`                                     | 仅打印将被移除的内容并退出,不删除任何内容。                                                                                          |
+
+## clicklink clctl instances {#instances}
+
+### instances create {#instances-create}
+
+通过你的连接器端点、使用连接器自身的凭证，向 ClickHouse Cloud 提交一次已准备好的创建请求。创建功能按环境启用；参见 [创建服务](/zh/products/bring-your-own-cloud/connector/managed-services#create-a-service)。命令会打印 ClickHouse Cloud 分配的可读名称、状态，以及一条使用你的 Service 名称的 `watch:` 提示。创建请求正文来自 `prepare` 写入的文件，或由 `--deployed-name`、`--data-bucket`、`--backup-bucket` 和 `--irsa-role-arn` 这四个标志共同提供。使用相同输入重试将返回首次创建的结果。
+
+| 标志                                                                                               | 描述                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--from-prepare <path>`                                                                          | 由 `executor prepare` 写入的创建请求正文 (`<output-dir>/_prepare/<instance>.create.json`) ，其中包含 `default` 用户密码的哈希。与 `--deployed-name` 和 `--default-user-password-file` 互斥。 |
+| `--deployed-name <name>`、`--data-bucket <name>`、`--backup-bucket <name>`、`--irsa-role-arn <arn>` | 以标志形式提供的已准备输入；必须一并提供。                                                                                                                                            |
+| `--default-user-password-file <path>`                                                            | 保存 `default` 用户密码的文件 (取第一行) ，用于标志方式。若未提供，命令会生成一个密码并仅显示一次；之后重试必须通过该文件传入该密码，否则服务仍保留首次的密码，而显示的却是一个新密码。                                                              |
+| `--config <path>`                                                                                | 连接器配置文件 (环境变量 `CLCTL_EXECUTOR_CONFIG`；文件存在时默认为 `/etc/clicklink/config.yaml`) 。用于提供端点、其凭证以及环境 identity。                                                           |
+| `--connector-namespace <ns>`                                                                     | 仅适用于 Kubernetes，且当该主机上没有连接器配置或凭证文件时：提供这些内容的 ConfigMap 与 Secret 所在的连接器命名空间 (默认 `clicklink`) 。每次集群读取都会有提示输出。                                                       |
+| `--connector-configmap <name>`                                                                   | 该命名空间中保存 executor `config.yaml` 的 ConfigMap (默认 `clicklink-connector-executor`) 。                                                                                |
+| `--hmac-secret-name <name>`、`--mtls-secret-name <name>`                                          | 当相应文件不存在时，保存 API 凭证和客户端证书的 Secret (默认为 `clicklink-hmac` 和 `clicklink-mtls`) 。证书对保存在内存中。                                                                          |
+| `--context <name>`                                                                               | 用于这些读取操作的 Kube context (环境变量 `CLCTL_CONTEXT`) ；可以是一个 pattern，也可以使用交互式 picker，与 `executor` 命令一致。                                                                  |
+| `--idempotency-key <key>`                                                                        | 重试时复用以取回首次创建结果的 key (默认：由环境和服务名称推导得出) 。                                                                                                                          |
+| `--wait`                                                                                         | 轮询 executor 的本地 API，直到服务处于 `running` 状态。若该名称对应的创建失败，或服务转为 `terminating`、`terminated` 或 `stale`，则立即失败退出。                                                          |
+| `--wait-timeout <dur>`                                                                           | `--wait` 在失败前轮询的时长 (默认 `30m`) 。                                                                                                                                  |
+
+### instances list {#instances-list}
+
+以 JSON 格式输出 executor 已知的所有 service。`--cluster <name>` 可按受管集群进行过滤。
+
+### instances get {#instances-get}
+
+以 JSON 形式打印单个 service，并包含其创建时所用的 storage。必须提供 `--name <name>`，同时也必须指定 cluster：传入 `--cluster`、设置 `CLCTL_CLUSTER`，或将其写入 `~/.clicklink/clctl.yaml`。
+
+以下三个子命令会将命令直接提交到 executor 的本地 API，绕过 ClickHouse Cloud。请仅在客户团队要求时运行。每个子命令都需要 `--name <name>` 以及 cluster (`--cluster`、`CLCTL_CLUSTER` 或 `~/.clicklink/clctl.yaml`) ，并会以 JSON 形式打印该命令。将其 `id` 传给 [`commands get`](#commands-get) 即可跟踪其状态；命令失败时，其 `result` 中会包含对应的 error。
+
+### instances scale {#instances-scale}
+
+通过 `ScalingOverride` 设置单个 service 的服务器副本数。必须指定 `--server-replicas <n>`，且取值需大于零。executor 在应用该 override 时会将命令状态报告为 running，待副本就绪后报告为 completed。
+
+### instances patch {#instances-patch}
+
+原地修改单个 service。`--create-nlb` 是唯一可用的 patch；若未指定它,该命令将以 `nothing to patch` 拒绝执行。它会以 Kubernetes `Service` 的形式预配一个内部 NLB,仅支持 AWS,使 cluster 外部的抓取器能够访问这些服务器。executor 会在下一次同步时从 load balancer 回填抓取器的 host。
+
+### instances delete {#instances-delete}
+
+从 cluster 中移除一个 service。该命令会停止 service，并等待 operator 完成有序 shutdown，然后卸载 workload、删除 `ns-<name>` 命名空间以及抓取器的制品，等待该命名空间完全消失，并将该 service 标记为 `terminated`。该 service 的桶和 IAM role 会保留，需通过 [`executor teardown`](#executor-teardown) 使用你的 credentials 删除。对已完成的删除再次 retry 为空操作。常规做法是在 ClickHouse Cloud 中删除该 service，参见 [delete a service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。
+
+## clicklink clctl 命令 {#commands}
+
+### commands list {#commands-list}
+
+以 JSON 格式打印 executor 记录的命令，最新的排在最前面。失败命令的 `result` 中包含对应的 error；等待你批准的平台同步会在该字段中给出确切的 `platform approve` 命令。
+
+| Flag                | Description                                     |
+| ------------------- | ----------------------------------------------- |
+| `--status <status>` | 过滤器：`pending`、`running`、`completed` 或 `failed`。 |
+| `--action <action>` | 按操作过滤，例如 `create_instance` 或 `sync_platform`。   |
+| `--cluster <name>`  | 按受管集群过滤。                                 |
+
+### commands get {#commands-get}
+
+`clicklink clctl commands get <id>` 打印单条命令及其 stage 和结果。
+
+## clicklink clctl platform approve {#platform-approve}
+
+使用你自己的集群凭证授权一次平台变更。该命令会读取 executor 暂存的 bundle、计算其哈希，并以与 executor 完全相同的方式渲染其中的每个 chart。它使用你选择的 kube context 应用权限部分，在需要时创建 executor 的 `pcm-platform` 身份，并为其签发 token。该命令不会向你的连接器端点发起任何请求。权限部分包括 Namespaces、CustomResourceDefinitions、ServiceAccounts、集群角色及其 bindings、Roles 及其 bindings、webhook 与 admission 配置、PriorityClasses 以及存储类。随后 executor 仅应用 workload 部分，且仅在该 token 有效期内执行。参见[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)。
+
+若需直接访问 ClickHouse 的 registry，请在连接器 EC2 VM 上执行审批：命令行客户端会使用其实例配置文件担任只读拉取角色，与你的 kubeconfig 凭证无关。其他 ECR chart registry 则使用环境中的 AWS 凭证。参见 [registry 凭证](/zh/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)。
+
+| 标志                        | 描述                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `--config <path>`         | 连接器配置文件 (环境变量 `CLCTL_EXECUTOR_CONFIG`) 。提供命名空间前缀；在工作站上，则为连接器配置的一份副本。                                                         |
+| `--context <name>`        | 受管集群的 kubeconfig context，需具备 cluster-admin 权限；可为名称或匹配模式 (环境变量 `CLCTL_CONTEXT`) 。默认值：唯一的 context，否则弹出选择器。                     |
+| `--ttl <dur>`             | 平台 token 的有效期 (默认 `2h`) 。executor 不会为其续期。                                                                                    |
+| `--output-dir <path>`     | 访问根目录：从中读取暂存的 bundle，并将 token 写入其下的 `_platform` (默认 `/etc/clicklink/access/executor`；环境变量 `CLCTL_EXECUTOR_OUTPUT_DIR`) 。     |
+| `--secret-namespace <ns>` | Kubernetes 安装方式：从 executor 的本地 API 读取暂存的 bundle，并将 token bundle 以 Secret 形式交付到该命名空间 (即连接器命名空间) ，而非 `<output-dir>/_platform`。 |
+| `--secret-name <name>`    | 用于 `--secret-namespace` 的 Secret 名称 (默认 `clicklink-platform-bundle`) ；必须与 chart 的 `executor.platformBundleSecret` 保持一致。      |
+| `--endpoint <url>`        | Kubernetes 安装方式：executor 的本地 API，通过 `kubectl port-forward` 访问 (默认 `http://127.0.0.1:9999`；环境变量 `CLCTL_ENDPOINT`) 。           |
+| `--bundle <path>`         | 覆盖项：通过带外方式交付的已渲染平台清单，读取它以替代暂存的 bundle。通常无需指定。                                                                                |
+| `--dry-run`               | 仅渲染并列出权限部分，不实际应用，也不签发 token。                                                                                                 |
+
+## clicklink clctl platform reset {#platform-reset}
+
+适用于没有 service 的测试 cluster：按依赖关系的逆序卸载平台 release，并移除 executor 的平台标记支持包，从而可以再次执行首次安装流程。在做出任何更改之前，它会先列出该连接器所拥有的命名空间中的 ClickHouse cluster，只要存在任何 cluster 就会拒绝执行。CustomResourceDefinition、RBAC 和存储类会予以保留。在下一次平台同步之前，请重新运行 `platform approve`。
+
+| Flag                                             | Description                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `--bundle <path>`                                | 已渲染平台清单的路径 (必填，在空 cluster 检查之后读取) 。                                            |
+| `--config <path>`                                | 连接器配置文件 (环境变量 `CLCTL_EXECUTOR_CONFIG`) 。                                       |
+| `--context <name>`                               | 受管集群的 kubeconfig context，需具备 cluster-admin 权限。                          |
+| `--output-dir <path>`                            | 要移除其 `_platform` 支持包的访问根目录 (默认 `/etc/clicklink/access/executor`) 。             |
+| `--secret-namespace <ns>`、`--secret-name <name>` | Kubernetes 安装方式：改为移除连接器命名空间中的平台支持包 Secret (默认名称 `clicklink-platform-bundle`) 。 |
+| `--dry-run`                                      | 检查是否存在 service 并打印重置 plan，但不会更改 cluster。                                       |
+
+## 远程通道标志 {#channel-flags}
+
+`preflight`、`gateway trust` 和 `access provision` 共用一组标志，用于指定连接到 VM 目标的方式：
+
+| 标志                                                                                          | 描述                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>`                                                                         | 执行通道：对于远程 VM，可使用 `ssh`、`aws` (SSM) 或 `gcp` (IAP)；在目标 VM 上运行时，使用 `local`。未设置时，将根据各提供商相关的标志推断；均未设置时默认为 `aws`。`local` 绝不会被推断出来，因此在 VM 上运行时务必传入 `--provider local`。 |
+| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH 连接信息 (`--provider ssh`) ；用户、端口和密钥默认采用你的 SSH 配置。                                                                                                             |
+| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | 用于 SSM 的 EC2 实例、区域 (默认 `us-east-1`) 和共享配置 profile (`--provider aws`) 。                                                                                          |
+| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | 用于 IAP 隧道的项目、可用区和实例 (`--provider gcp`) 。                                                                                                                        |
