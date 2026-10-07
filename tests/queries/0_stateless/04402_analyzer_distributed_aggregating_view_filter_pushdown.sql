@@ -110,13 +110,13 @@ FROM (
 -- Conjuncts whose result may differ between servers stay in HAVING, because HAVING is executed on the initiator:
 -- functions like `shardNum`, and subqueries reading a table or a table function.
 SELECT '--- HAVING with shardNum';
-SELECT date, count() FROM t_dist_04402 GROUP BY date HAVING date >= toDate('2024-01-01') + 5 * shardNum() ORDER BY date;
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date >= toDate('2024-01-01') + 5 * shardNum() ORDER BY date;
 SELECT
     countIf(explain ILIKE '%Condition:%date in%') > 0 AS shard_prunes,
     countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
 FROM (
     EXPLAIN indexes = 1, distributed = 1
-    SELECT date, count() FROM t_dist_04402 GROUP BY date HAVING date >= toDate('2024-01-01') + 5 * shardNum()
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date >= toDate('2024-01-01') + 5 * shardNum()
 );
 SELECT '--- HAVING with subquery reading a table';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date IN (SELECT date FROM t_dates_04402);
