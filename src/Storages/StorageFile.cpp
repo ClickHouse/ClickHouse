@@ -2456,7 +2456,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
     for (const auto & path : paths_snapshot)
     {
         struct stat file_stat{};
-        if (0 != stat(path.c_str(), &file_stat))
+        if (0 != platformStat(path, file_stat))
             throw ErrnoException(ErrorCodes::CANNOT_STAT, "Cannot stat file {}", path);
 
         if (!S_ISREG(file_stat.st_mode))
