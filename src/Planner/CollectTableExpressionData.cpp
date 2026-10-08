@@ -304,6 +304,12 @@ public:
             return;
 
         auto column_source = column_node->getColumnSourceOrNull();
+
+        /// Lambda bodies are visited too, so that a column captured by a lambda (e.g. a correlated column of
+        /// the outer query) is checked like any other column; the lambda's own arguments are not table columns.
+        if (column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA_ARGS)
+            return;
+
         if (!column_source)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid column {} in PREWHERE. In query {}",
@@ -362,8 +368,7 @@ public:
     {
         auto child_node_type = child_node->getNodeType();
         return child_node_type != QueryTreeNodeType::QUERY &&
-               child_node_type != QueryTreeNodeType::UNION &&
-               child_node_type != QueryTreeNodeType::LAMBDA;
+               child_node_type != QueryTreeNodeType::UNION;
     }
 
 private:
