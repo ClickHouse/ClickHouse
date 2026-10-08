@@ -895,17 +895,19 @@ void RemoteQueryExecutor::throwIfColumnLessResultFromOldServer() const
 {
     /// The result of the remote query has no columns, so its rows can travel only as the row count of
     /// a column-less block. An older server drops such blocks instead, and the rows of its part of the
-    /// result would be lost silently. Every replica the query was sent to answers at least with the end
-    /// of the stream, so checking at each `Data` and `EndOfStream` packet refuses such a query before
-    /// any of its result is used. Only a header that is known to describe the result can tell that.
+    /// result would be lost silently. Every replica that contributes to the result answers at least with
+    /// the end of the stream, so checking the sender of each `Data` and `EndOfStream` packet refuses such
+    /// a query. Only the sender matters: with hedged requests, a losing replica is cancelled and sends
+    /// nothing more, so an old one must not fail the query that a newer replica answers. Only a header
+    /// that is known to describe the result can tell that the result has no columns.
     if (header_describes_result && header->columns() == 0
-        && connections->getMinQueriedServerRevision() < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
+        && connections->getServerRevisionOfLastPacket() < DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "The result of the query sent to {} has no columns, and its rows cannot be received from a server "
             "that speaks protocol revision {}: that requires revision {}. Upgrade the remote server",
             connections->dumpAddresses(),
-            connections->getMinQueriedServerRevision(),
+            connections->getServerRevisionOfLastPacket(),
             DBMS_MIN_REVISION_WITH_COLUMN_LESS_BLOCK_ROW_COUNT);
 }
 

@@ -98,7 +98,7 @@ public:
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
 
-    UInt64 getMinQueriedServerRevision() const override { return min_queried_server_revision; }
+    UInt64 getServerRevisionOfLastPacket() const override { return server_revision_of_last_packet; }
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) override
     {
@@ -226,7 +226,7 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
-    UInt64 min_queried_server_revision = std::numeric_limits<UInt64>::max();
+    UInt64 server_revision_of_last_packet = std::numeric_limits<UInt64>::max();
 
     ReplicaInfo replica_info;
 

@@ -44,7 +44,7 @@ public:
 
     bool supportsQueryPlanSerializationVersion(UInt64 version) const override;
 
-    UInt64 getMinQueriedServerRevision() const override { return min_queried_server_revision; }
+    UInt64 getServerRevisionOfLastPacket() const override { return server_revision_of_last_packet; }
 
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response) override;
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
@@ -85,6 +85,8 @@ private:
     {
         Connection * connection = nullptr;
         ConnectionPool::Entry pool_entry;
+        /// The protocol revision of the replica, known once the query is sent to it.
+        UInt64 server_revision = 0;
     };
 
     /// Get a replica where you can read the data.
@@ -109,7 +111,7 @@ private:
 
     bool sent_query = false;
     bool cancelled = false;
-    UInt64 min_queried_server_revision = std::numeric_limits<UInt64>::max();
+    UInt64 server_revision_of_last_packet = std::numeric_limits<UInt64>::max();
 
     /// std::nullopt if parallel reading from replicas is not used
     std::optional<ReplicaInfo> replica_info;

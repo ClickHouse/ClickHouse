@@ -256,8 +256,6 @@ void HedgedConnections::sendQuery(
             "enable_packed_string_keys_in_aggregation",
             static_cast<bool>(modified_settings[Setting::enable_packed_string_keys_in_aggregation]));
 
-        min_queried_server_revision = std::min<UInt64>(min_queried_server_revision, replica.connection->getServerRevision(timeouts));
-
         replica.connection->sendQuery(
             timeouts, query, /* query_parameters */ {}, query_id, stage, &modified_settings, &client_info, with_pending_data, external_roles, {});
 
@@ -522,6 +520,8 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
 {
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     Packet packet = std::move(last_received_packet);
+    /// Take the revision before `finishProcessReplica` below releases the connection.
+    server_revision_of_last_packet = replica.connection->getServerRevision(hedged_connections_factory.getConnectionTimeouts());
     switch (packet.type)
     {
         case Protocol::Server::Data:
