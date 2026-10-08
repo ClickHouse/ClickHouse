@@ -119,10 +119,14 @@ protected:
         {
             const auto & meta = all_entries[current_index];
 
-            /// Look up database and table names from UUID
+            /// Look up database and table names from UUID. The entries of `Parquet` files have the
+            /// nil UUID: they belong to no table.
             String database_name;
             String table_name;
-            auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(meta.table_uuid);
+            DatabaseAndTable database_and_table;
+            if (meta.table_uuid != UUIDHelpers::Nil)
+                database_and_table = DatabaseCatalog::instance().tryGetByUUID(meta.table_uuid);
+            const auto & [database, table] = database_and_table;
             if (database && table)
             {
                 database_name = database->getDatabaseName();
