@@ -182,6 +182,22 @@ SELECT '--- no GROUP BY, constant HAVING';
 SELECT sum(x) FROM t_dist_04402 HAVING 0;
 SELECT sum(x) FROM t_dist_04402 HAVING 1;
 
+-- `group_by_use_nulls` makes the keys `Nullable` only with `ROLLUP`, `CUBE` and `GROUPING SETS`, which are not rewritten.
+-- With a plain `GROUP BY` the keys keep their type, so a type-sensitive grouping-key conjunct can still move to the shard `WHERE`.
+SELECT '--- group_by_use_nulls = 1';
+SELECT date, toTypeName(date), sum(x) FROM t_dist_04402 GROUP BY date HAVING date = '2024-01-05' AND toTypeName(date) = 'Date'
+    SETTINGS group_by_use_nulls = 1;
+SELECT count() FROM (SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING toTypeName(date) = 'Nullable(Date)')
+    SETTINGS group_by_use_nulls = 1;
+SELECT
+    countIf(explain ILIKE '%Condition: (date in%') > 0 AS shard_prunes,
+    countIf(explain ILIKE '%Condition: true%') > 0 AS shard_reads_all_partitions
+FROM (
+    EXPLAIN indexes = 1, distributed = 1
+    SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date = '2024-01-05'
+)
+SETTINGS group_by_use_nulls = 1;
+
 DROP VIEW v_hav_04402;
 DROP VIEW v_agg_04402;
 DROP TABLE t_dist_04402;

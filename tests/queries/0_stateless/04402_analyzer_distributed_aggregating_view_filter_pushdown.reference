@@ -62,3 +62,7 @@
 1	0
 --- no GROUP BY, constant HAVING
 599990
+--- group_by_use_nulls = 1
+2024-01-05	Date	60002
+0
+1	0
