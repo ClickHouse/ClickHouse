@@ -2767,6 +2767,10 @@ void IMergeTreeDataPart::assertColumnsReadableAtCurrentMetadataVersion(
 
         if (command.type == MutationCommand::DROP_COLUMN)
         {
+            /// `CLEAR COLUMN` keeps the column in the table and is applied to the part on read like any
+            /// other pending mutation, so it says nothing about a stale drop and add of the same name.
+            if (command.clear)
+                continue;
             columns_dropped_after_part.insert(command.column_name);
             continue;
         }

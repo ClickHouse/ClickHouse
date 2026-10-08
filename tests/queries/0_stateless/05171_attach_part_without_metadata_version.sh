@@ -78,6 +78,13 @@ ALTER TABLE readded DETACH PARTITION tuple();
 ALTER TABLE readded DROP COLUMN value;
 ALTER TABLE readded ADD COLUMN value UInt32 DEFAULT 7;
 
+-- A column cleared meanwhile: CLEAR COLUMN keeps the column in the table, so it is not a drop followed
+-- by an add of the same name and the part still attaches.
+CREATE TABLE cleared (id UInt64, a UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO cleared SELECT number, number FROM numbers(1000);
+ALTER TABLE cleared DETACH PARTITION tuple();
+ALTER TABLE cleared CLEAR COLUMN a IN PARTITION tuple();
+
 -- A part with a persistent virtual column (_row_exists, written by a lightweight delete) and a column
 -- added meanwhile: the virtual column is not among the table's columns, but it is not a sign of a rename.
 CREATE TABLE with_virtual (id UInt64, a UInt32) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
@@ -125,6 +132,9 @@ SELECT 'dropped and added columns attach', count(), sum(a), sum(b) FROM dropped_
 
 ALTER TABLE retyped ATTACH PARTITION tuple();
 SELECT 'retyped column attaches', count(), sum(toUInt64(value)), toTypeName(any(value)) FROM retyped;
+
+ALTER TABLE cleared ATTACH PARTITION tuple();
+SELECT 'cleared column attaches', count(), sum(a) FROM cleared;
 
 ALTER TABLE with_virtual ATTACH PARTITION tuple();
 SELECT 'persistent virtual column attaches', count(), sum(a), sum(b) FROM with_virtual;
