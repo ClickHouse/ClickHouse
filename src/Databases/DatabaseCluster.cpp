@@ -194,7 +194,9 @@ void registerDatabaseCluster(DatabaseFactory & factory)
         /// Server startup and other internal metadata replay attach a database from metadata that was
         /// already validated when it was created, and such a database must not prevent the server from
         /// starting; every user query, including an explicit `ATTACH DATABASE`, is validated in full.
-        const bool is_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run
+        /// user statements as internal ones.
+        const bool is_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
 
         if (!engine->arguments || engine->arguments->children.size() != 2)
             throw Exception(
