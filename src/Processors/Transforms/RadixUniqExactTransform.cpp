@@ -6,6 +6,9 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Arena.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerSwitcher.h>
+#include <Common/logger_useful.h>
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
@@ -937,6 +940,18 @@ RadixUniqExactStatePtr createState(size_t num_streams, const StatsCollectingPara
         /// The numbers of a stream are not comparable with a different number of streams.
         if (hint && hint->num_streams != num_streams)
             hint.reset();
+
+        /// As the ordinary aggregation, do not preallocate the sets above `max_size_to_preallocate`.
+        if (hint && hint->num_distinct > stats_collecting_params.max_size_to_preallocate)
+        {
+            LOG_TRACE(
+                getLogger("HashTablesStatistics"),
+                "No space were preallocated in hash tables because 'max_size_to_preallocate' has too small value: {}, should be at "
+                "least {}",
+                stats_collecting_params.max_size_to_preallocate,
+                hint->num_distinct);
+            hint.reset();
+        }
     }
 
     return std::make_shared<RadixUniqExactState<Key>>(
@@ -966,6 +981,20 @@ RadixUniqExactStatePtr createRadixUniqExactState(
         return createState<UInt128>(num_streams, stats_collecting_params);
 
     return nullptr;
+}
+
+
+bool IRadixUniqExactState::useOwnTracker() const
+{
+    return memory_tracker && CurrentThread::getMemoryTracker()
+        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
+}
+
+std::optional<UInt64> IRadixUniqExactState::getPeakMemoryUsage() const
+{
+    if (!memory_tracker)
+        return std::nullopt;
+    return std::max<Int64>(memory_tracker->getPeak(), 0);
 }
 
 
@@ -1010,10 +1039,19 @@ IProcessor::Status RadixUniqExactRouteTransform::prepare()
     return Status::Ready;
 }
 
+/// Accounts the allocations of the state to its tracker (see `IRadixUniqExactState::getMemoryTracker`). Only the calls
+/// into the state are wrapped: the input chunk was allocated under the tracker of the query, so freeing it here would
+/// be charged to the state.
+#define RADIX_UNIQ_EXACT_TRACK_MEMORY(state_) \
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher; \
+    if ((state_)->useOwnTracker()) \
+        memory_tracker_switcher.emplace((state_)->getMemoryTracker())
+
 void RadixUniqExactRouteTransform::work()
 {
     if (!has_chunk)
     {
+        RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
         state->finishStream(stream);
         stream_finished = true;
         return;
@@ -1027,10 +1065,13 @@ void RadixUniqExactRouteTransform::work()
         column = column_sparse->getNumberOfDefaultRows() ? values : values->cut(1, values->size() - 1);
     }
     column = column->convertToFullIfWrapped();
-    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
-        state->route(stream, column_nullable->getNestedColumn(), column_nullable->getNullMapData().data());
-    else
-        state->route(stream, *column, nullptr);
+    {
+        RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+            state->route(stream, column_nullable->getNestedColumn(), column_nullable->getNullMapData().data());
+        else
+            state->route(stream, *column, nullptr);
+    }
 
     current_chunk.clear();
     has_chunk = false;
@@ -1126,12 +1167,15 @@ void RadixUniqExactBuildTransform::work()
     built = true;
 
     UInt64 count = 0;
-    for (size_t bucket = state->claimBucket(); bucket < state->numBuckets(); bucket = state->claimBucket())
     {
-        /// A partial count must not reach the result.
-        if (isCancelled())
-            return;
-        count += state->buildBucket(bucket);
+        RADIX_UNIQ_EXACT_TRACK_MEMORY(state);
+        for (size_t bucket = state->claimBucket(); bucket < state->numBuckets(); bucket = state->claimBucket())
+        {
+            /// A partial count must not reach the result.
+            if (isCancelled())
+                return;
+            count += state->buildBucket(bucket);
+        }
     }
 
     auto column = ColumnUInt64::create();

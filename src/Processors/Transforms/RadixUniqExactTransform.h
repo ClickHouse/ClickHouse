@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/IProcessor.h>
@@ -99,11 +101,18 @@ public:
     /// Buckets are claimed by the build transforms one at a time.
     size_t claimBucket() { return next_bucket.fetch_add(1, std::memory_order_relaxed); }
 
+    /// The memory of the buffers and sets across all threads is accounted to a tracker of the state, as `Aggregator`
+    /// does, so that `EXPLAIN ANALYZE` reports it. The transforms switch to it while they work (see `useOwnTracker`).
+    MemoryTracker * getMemoryTracker() const { return memory_tracker.get(); }
+    bool useOwnTracker() const;
+    std::optional<UInt64> getPeakMemoryUsage() const;
+
 protected:
     std::atomic<size_t> rows{0};
 
 private:
     std::atomic<size_t> next_bucket{0};
+    std::unique_ptr<MemoryTracker> memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery();
 };
 
 using RadixUniqExactStatePtr = std::shared_ptr<IRadixUniqExactState>;
@@ -122,6 +131,8 @@ public:
     String getName() const override { return "RadixUniqExactRouteTransform"; }
     Status prepare() override;
     void work() override;
+
+    const IRadixUniqExactState & getState() const { return *state; }
 
 private:
     RadixUniqExactStatePtr state;

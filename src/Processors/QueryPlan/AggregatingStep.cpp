@@ -255,6 +255,17 @@ static StepAnalysisReport aggregationAnalysisReport(StepProcessors step_processo
     bool tracked = false;
     for (const auto * processor : step_processors)
     {
+        /// The radix partitioned `uniqExact` has one state for all its transforms.
+        if (const auto * route_transform = typeid_cast<const RadixUniqExactRouteTransform *>(processor))
+        {
+            if (auto peak = route_transform->getState().getPeakMemoryUsage())
+            {
+                peak_memory += *peak;
+                tracked = true;
+            }
+            break;
+        }
+
         const auto * aggregating_transform = typeid_cast<const AggregatingTransform *>(processor);
         if (!aggregating_transform)
             continue;
