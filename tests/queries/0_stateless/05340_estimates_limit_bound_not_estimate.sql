@@ -2,6 +2,9 @@
 -- stays without one under a limit, in the join order optimizer and in the Cascades optimizer, and
 -- `WITH TIES` can keep every row equal to the last one, so it bounds nothing.
 SET enable_analyzer = 1;
+-- The columns a step does not need are dropped below it, which narrows the rows the costs count;
+-- the runner randomizes the removal.
+SET query_plan_remove_unused_columns = 1;
 -- The plan lines below show the filter moved to PREWHERE; the runner randomizes the move.
 SET optimize_move_to_prewhere = 1;
 SET enable_parallel_replicas = 0;

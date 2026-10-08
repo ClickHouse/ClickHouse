@@ -65,7 +65,7 @@ JOIN (SELECT k FROM (SELECT k, count() AS c FROM t_cb_scan GROUP BY k) WHERE toS
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_max_bytes_to_broadcast = 2000, query_plan_filter_push_down = 0;
 
 SELECT '-- results do not depend on the shape';
-SELECT count(), any(name) FROM t_cb_fact AS f JOIN t_cb_dim AS d ON f.k = d.k
+SELECT count(), min(name) FROM t_cb_fact AS f JOIN t_cb_dim AS d ON f.k = d.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1;
 SELECT count() FROM t_cb_fact AS f JOIN t_cb_unk AS u ON f.k = u.k WHERE u.v < 5
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1, distributed_plan_max_bytes_to_broadcast = 500;
