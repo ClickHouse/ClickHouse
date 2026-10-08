@@ -14,6 +14,7 @@
 #if USE_AZURE_BLOB_STORAGE
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+#include <Disks/IO/WriteBufferFromAzureDataLakeStorage.h>
 #endif
 
 #include <Disks/DiskObjectStorage/ObjectStorages/Web/WebObjectStorage.h>
@@ -207,9 +208,15 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
         };
 
-        /// Set only for a disk created by a query (`disk(...)`): its endpoint is checked like a URL in a query.
+        /// Set only for a disk created by a query (`disk(...)`): its endpoints are checked like URLs in a query.
         if (run_local_paths_check)
-            context->getRemoteHostFilter().checkURL(Poco::URI(params.getConnectionURL()));
+        {
+            const auto & remote_host_filter = context->getRemoteHostFilter();
+            remote_host_filter.checkURL(Poco::URI(params.getConnectionURL()));
+            /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
+            if (isAdlsGen2Endpoint(params.endpoint))
+                remote_host_filter.checkURL(Poco::URI(getAdlsGen2Url(params.endpoint, params.auth_method)));
+        }
 
         return std::make_shared<AzureObjectStorage>(
             name,
