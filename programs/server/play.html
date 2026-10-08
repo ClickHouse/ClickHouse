@@ -9030,7 +9030,11 @@ function docsURL() {
             return; /// Unparsable configured URL: leave the navigation to the anchor.
         }
         if (!isTrustedHostOrigin(origin)) return;
+        /// The relay keeps the routing query of this page (`?cluster=a`): it is part of the endpoint
+        /// identity, and the relay receives this page's credentials, so it must be served by the same
+        /// routed backend rather than by the proxy's default one.
         const relay_url = new URL(window.location.pathname, window.location.href);
+        relay_url.search = routingParameters();
         relay_url.searchParams.set('docs_relay', docs_icon.href);
         const win = window.open(relay_url.href, '_blank');
         if (!win) return;

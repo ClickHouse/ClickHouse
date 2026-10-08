@@ -117,7 +117,10 @@ relay_trust_guard=$(echo "$content" | grep -qF "if (!isTrustedHostOrigin(origin)
 relay_ordering_guard=$(echo "$content" | grep -qF "if (!credentials || !docs_frame_ready) return;" \
     && echo "$content" | grep -qF "docs_frame_ready = true;" \
     && echo yes || echo no)
-echo "play docs_relay=${relay} direct_docs_opener=${direct_docs_opener} relay_trust_guard=${relay_trust_guard} relay_ordering_guard=${relay_ordering_guard}"
+# The relay receives the credentials of this page, so it must stay on the same routed endpoint:
+# its URL keeps the routing query (`?cluster=a`) of the page.
+relay_route=$(echo "$content" | grep -qF "relay_url.search = routingParameters();" && echo preserved || echo dropped)
+echo "play docs_relay=${relay} direct_docs_opener=${direct_docs_opener} relay_trust_guard=${relay_trust_guard} relay_ordering_guard=${relay_ordering_guard} relay_route=${relay_route}"
 
 # The Web Terminal link, probe and iframe of `/play` address the configured server, and the path of
 # that address is part of the endpoint, exactly like the Documentation link: a server exposed as
