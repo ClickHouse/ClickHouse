@@ -20,6 +20,21 @@ namespace ErrorCodes
     extern const int UNKNOWN_FORMAT_VERSION;
 }
 
+namespace
+{
+
+/// The strings of the snapshot are paths, object keys and ETags, which are far shorter than this. The lengths are not
+/// trusted: the string grows as its bytes are actually read, so a corrupted length fails the parsing at the end of the
+/// file instead of allocating up to this much memory upfront.
+constexpr size_t MAX_SNAPSHOT_STRING_SIZE = 64 * 1024;
+
+void readSnapshotString(std::string & s, ReadBuffer & in)
+{
+    readStringBinaryGrowing(s, in, MAX_SNAPSHOT_STRING_SIZE);
+}
+
+}
+
 void writePlainRewritableSnapshot(const PlainRewritableRemoteLayout & layout, WriteBuffer & out)
 {
     writeVarUInt(SNAPSHOT_FORMAT_VERSION, out);
@@ -91,11 +106,11 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
     for (UInt64 i = 0; i < directories_count; ++i)
     {
         std::string path;
-        readStringBinary(path, compressed);
+        readSnapshotString(path, compressed);
 
         DirectoryRemoteInfo info;
-        readStringBinary(info.remote_path, compressed);
-        readStringBinary(info.etag, compressed);
+        readSnapshotString(info.remote_path, compressed);
+        readSnapshotString(info.etag, compressed);
         Int64 last_modified = 0;
         readIntBinary(last_modified, compressed);
         info.last_modified = static_cast<time_t>(last_modified);
@@ -110,14 +125,14 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
         for (UInt64 j = 0; j < files_count; ++j)
         {
             std::string name;
-            readStringBinary(name, compressed);
+            readSnapshotString(name, compressed);
 
             FileRemoteInfo file_info{};
             readVarUInt(file_info.bytes_size, compressed);
             Int64 file_last_modified = 0;
             readIntBinary(file_last_modified, compressed);
             file_info.last_modified = static_cast<time_t>(file_last_modified);
-            readStringBinary(file_info.blob_key, compressed);
+            readSnapshotString(file_info.blob_key, compressed);
 
             if (!info.files.emplace(std::move(name), file_info).second)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate file in the directory '{}' of the plain_rewritable snapshot file", path);
