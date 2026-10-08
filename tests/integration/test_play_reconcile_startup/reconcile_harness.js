@@ -394,18 +394,27 @@ function makeHistory(initialState, location) {
 
 /// ----- Context assembly -------------------------------------------------------------------
 
-function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm }) {
+/// The `localStorage` of a page that has already learned the implicit user of `origin` (the server
+/// authenticates a request without a `user` as `default`, see `rememberImplicitUser`), so a stored
+/// implicit connection stamped with that name is the live one (`sameConnectionUser`).
+function learnedImplicitDefault(origin) {
+    return { implicit_users: JSON.stringify({ [new URL(origin).origin + '/']: 'default' }) };
+}
+
+function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs, wasmInstantiateDelayMs, disableWasm, seedLocalStorage }) {
     const document = makeDocument();
     const location = makeLocation(href);
     const history = makeHistory(historyState, location);
     const { indexedDB, stores, stats } = makeIndexedDB(seedTabs, seedMeta, openDelayMs);
+    const localStorage = makeStorage();
+    for (const [k, v] of Object.entries(seedLocalStorage || {})) localStorage.setItem(k, v);
 
     const sandbox = {
         document,
         location,
         history,
         indexedDB,
-        localStorage: makeStorage(),
+        localStorage,
         sessionStorage: makeStorage(),
         navigator: {
             clipboard: { writeText: async () => {}, readText: async () => '' },
@@ -1099,10 +1108,11 @@ async function main() {
                 /// dropped by the connection-divergence check instead of by the policy under test.
                 { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
                   result: { ran: true, query: 'SELECT 8', params: {}, database: null,
-                            url: new URL(base).origin, user: '' },
+                            url: new URL(base).origin, user: '', implicitUser: 'default' },
                   lastSavedQuery: 'SELECT 8' },
             ],
             seedMeta: { key: 'state', activeTabId: 't7', tabOrder: ['t7', 't8'], tabSeq: 8, tabTitleSeq: 2 },
+            seedLocalStorage: learnedImplicitDefault(base),
         });
         /// Sanity: `Report` really is the clean, run-backed tab this contract is about — otherwise
         /// the assertion below would pass for the trivial reason that no tab could carry `run=1`.
@@ -1143,16 +1153,17 @@ async function main() {
                 /// dropped by the connection-divergence check instead of by the policy under test.
                 { id: 't8', title: 'Report', query: 'SELECT 8', params: {},
                   result: { ran: true, query: 'SELECT 8', params: {}, database: null,
-                            url: origin, user: '' },
+                            url: origin, user: '', implicitUser: 'default' },
                   lastSavedQuery: 'SELECT 8' },
             ],
             seedMeta: { key: 'state', activeTabId: 't8', tabOrder: ['t8'], tabSeq: 8, tabTitleSeq: 2 },
+            seedLocalStorage: learnedImplicitDefault(base),
         });
         const entryState = (extra) => Object.assign({
             tabId: 't8', tabName: 'Report', query: 'SELECT 8', params: {},
             result: { ran: true, query: 'SELECT 8', params: {}, database: null,
-                      url: origin, user: '' },
-            connectionServer: origin, connectionUser: '',
+                      url: origin, user: '', implicitUser: 'default' },
+            connectionServer: origin, connectionUser: '', connectionImplicitUser: 'default',
         }, extra);
         /// Back to a MODERN entry carrying the policy: the tab adopts it. This is the "promote"
         /// direction, asserted so the clearing below cannot pass by never adopting a policy at all.
@@ -1208,7 +1219,8 @@ async function main() {
         vm.runInContext(
             "(() => { const t = getActiveTab();" +
             " saveHistory({ query: t.query, params: {}, database: selected_database," +
-            " url: url_elem.value, user: user_elem.value, ok: true, data: null, fullEditor: true }, undefined, t); })()",
+            " url: url_elem.value, user: user_elem.value, implicitUser: implicitUserStamp(url_elem.value, user_elem.value)," +
+            " ok: true, data: null, fullEditor: true }, undefined, t); })()",
             r.sandbox);
         await sleep(50);
         check('run-marker-kept-for-own-run', 'a genuine run under a `run=1` load keeps `run=1` on its own URL',
