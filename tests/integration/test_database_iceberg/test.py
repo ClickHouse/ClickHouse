@@ -3639,15 +3639,14 @@ def test_namespace_postgresql_wire(started_cluster):
 
 
 def _run_namespace_session_with_reconnect(node, database, query, out_file):
-    """Run one clickhouse-client session bound to a namespace scope. It prints
-    `connected` at once and sends `query` only after the server has gone down and
-    come back, so the scope must survive the reconnect handshake. The client runs
-    through a link named without "clickhouse", otherwise the restart's pkill
+    """Run one clickhouse-client session bound to a namespace scope. The client
+    connects at startup, and `query` is sent only after the server has gone down
+    and come back, so the scope must survive the reconnect handshake. The client
+    runs through a link named without "clickhouse", otherwise the restart's pkill
     clickhouse kills it."""
     script = (
         "ln -sf $(command -v clickhouse) /tmp/chc; "
-        "( printf \"SELECT 'connected';\\n\"; "
-        "while /tmp/chc -q 'SELECT 1' >/dev/null 2>&1; do sleep 0.5; done; "
+        "( while /tmp/chc -q 'SELECT 1' >/dev/null 2>&1; do sleep 0.5; done; "
         "while ! /tmp/chc -q 'SELECT 1' >/dev/null 2>&1; do sleep 0.5; done; "
         f"printf '{query};\\n' ) | "
         "/tmp/chc --allow_experimental_table_namespaces=1 "
@@ -3658,8 +3657,9 @@ def _run_namespace_session_with_reconnect(node, database, query, out_file):
 
 def test_namespace_scope_survives_reconnect(started_cluster):
     """
-    After a mid-session reconnect, an unqualified name still resolves in the
-    selected (flat or nested) namespace.
+    A client connects at startup with the logical database `db.namespace`, loses
+    the connection on a server restart and reconnects at query time. The counts
+    of the unqualified `t` prove the reconnect handshake carried the scope.
     """
     node = started_cluster.instances["node1"]
 
@@ -3680,33 +3680,47 @@ def test_namespace_scope_survives_reconnect(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    def wait_lines(path, count, timeout=60):
-        deadline = time.time() + timeout
-        content = ""
-        while time.time() < deadline:
-            content = node.exec_in_container(["bash", "-c", f"cat {path} 2>/dev/null; true"])
-            if len(content.splitlines()) >= count:
-                return content
+    def tcp_connections():
+        return int(node.query("SELECT value FROM system.metrics WHERE metric = 'TCPConnection'"))
+
+    def read_file(path):
+        return node.exec_in_container(["bash", "-c", f"cat {path} 2>/dev/null; true"])
+
+    try:
+        baseline = tcp_connections()
+        _run_namespace_session_with_reconnect(
+            node, f"{CATALOG_NAME}.{ns}", "SELECT count() FROM t", flat_out
+        )
+        _run_namespace_session_with_reconnect(
+            node, f"{CATALOG_NAME}.{nested}", "SELECT count() FROM t", nested_out
+        )
+
+        deadline = time.time() + 60
+        current = tcp_connections()
+        while current < baseline + 2 and time.time() < deadline:
             time.sleep(0.5)
-        raise AssertionError(f"{path} has fewer than {count} lines after {timeout} s: {content!r}")
+            current = tcp_connections()
+        assert current >= baseline + 2, (
+            f"sessions did not connect: TCPConnection {current}, baseline {baseline}"
+        )
 
-    _run_namespace_session_with_reconnect(
-        node, f"{CATALOG_NAME}.{ns}", "SELECT count() FROM t", flat_out
-    )
-    _run_namespace_session_with_reconnect(
-        node, f"{CATALOG_NAME}.{nested}", "SELECT count() FROM t", nested_out
-    )
-    wait_lines(flat_out, 1)
-    wait_lines(nested_out, 1)
+        node.restart_clickhouse()
 
-    node.restart_clickhouse()
-
-    flat = wait_lines(flat_out, 2)
-    nested_result = wait_lines(nested_out, 2)
-    assert flat == "connected\n1\n", f"scope was not restored after reconnect: {flat!r}"
-    assert nested_result == "connected\n2\n", (
-        f"nested scope was not restored after reconnect: {nested_result!r}"
-    )
+        deadline = time.time() + 60
+        flat = read_file(flat_out)
+        nested_result = read_file(nested_out)
+        while not (flat and nested_result) and time.time() < deadline:
+            time.sleep(0.5)
+            flat = read_file(flat_out)
+            nested_result = read_file(nested_out)
+        assert flat == "1\n", f"scope was not restored after reconnect: {flat!r}"
+        assert nested_result == "2\n", (
+            f"nested scope was not restored after reconnect: {nested_result!r}"
+        )
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"pkill -f '[/]tmp/chc' || true; rm -f {flat_out} {nested_out}"]
+        )
 
 
 def test_alter_database_settings_not_supported(started_cluster):
