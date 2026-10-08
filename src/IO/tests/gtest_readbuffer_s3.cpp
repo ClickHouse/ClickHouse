@@ -514,6 +514,23 @@ TEST_F(ReadBufferFromS3Test, ResponseStreamServesIstreamReaders)
         ASSERT_EQ(consumed, data);
         ASSERT_EQ(stream.get(), std::char_traits<char>::eof());
     }
+
+    {
+        /// The SDK positions the output side of a stream it only reads from. That has to fail the
+        /// way `std::streambuf` says - by returning -1 and setting `failbit` - and not throw, and
+        /// it must not move the input side.
+        DB::StdStreamFromReadBuffer stream(std::make_unique<ChunkedResponseBody>(data, 7), data.size());
+        ASSERT_EQ(stream.get(), 'a');
+
+        ASSERT_EQ(stream.rdbuf()->pubseekpos(0, std::ios_base::out), std::streampos(std::streamoff(-1)));
+        ASSERT_EQ(stream.rdbuf()->pubseekoff(0, std::ios_base::end, std::ios_base::out), std::streampos(std::streamoff(-1)));
+
+        ASSERT_NO_THROW(stream.seekp(0));
+        ASSERT_TRUE(stream.fail());
+        stream.clear();
+
+        ASSERT_EQ(stream.get(), 'b');
+    }
 }
 
 TEST_F(ReadBufferFromS3Test, GatherFillsWholeBufferAfterShortRead)
