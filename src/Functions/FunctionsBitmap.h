@@ -1141,32 +1141,39 @@ public:
                             bitmap_type0->getArgumentsDataTypes()[0]->getName(),
                             bitmap_type1->getArgumentsDataTypes()[0]->getName());
 
+        /// The arguments may carry different state versions. Newer versions only add information
+        /// (version 1 serializes `init`, which is derived on reading version 0), so promote the
+        /// result to the newer version: it does not depend on the order of the arguments and
+        /// does not re-serialize a newer state in a lossy older format.
+        if (bitmap_type1->getVersion() > bitmap_type0->getVersion())
+            return arguments[1];
         return arguments[0];
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
         const DataTypeAggregateFunction * aggr_type = typeid_cast<const DataTypeAggregateFunction *>(from_type);
+        const size_t version = assert_cast<const DataTypeAggregateFunction &>(*result_type).getVersion();
         WhichDataType which(aggr_type->getArgumentsDataTypes()[0]);
         if (which.isUInt8())
-            return executeBitmapData<UInt8>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<UInt8>(arguments, input_rows_count, version);
         if (which.isUInt16())
-            return executeBitmapData<UInt16>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<UInt16>(arguments, input_rows_count, version);
         if (which.isUInt32())
-            return executeBitmapData<UInt32>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<UInt32>(arguments, input_rows_count, version);
         if (which.isUInt64())
-            return executeBitmapData<UInt64>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<UInt64>(arguments, input_rows_count, version);
         if (which.isInt8())
-            return executeBitmapData<Int8>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<Int8>(arguments, input_rows_count, version);
         if (which.isInt16())
-            return executeBitmapData<Int16>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<Int16>(arguments, input_rows_count, version);
         if (which.isInt32())
-            return executeBitmapData<Int32>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<Int32>(arguments, input_rows_count, version);
         if (which.isInt64())
-            return executeBitmapData<Int64>(arguments, input_rows_count, aggr_type->getVersion());
+            return executeBitmapData<Int64>(arguments, input_rows_count, version);
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unexpected type {} of argument of function {}", from_type->getName(), getName());
     }
