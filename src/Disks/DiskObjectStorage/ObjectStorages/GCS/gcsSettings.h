@@ -108,7 +108,8 @@ struct GCSObjectStorageSettings
     /// switching `use_native_gcs` on. 0 means "no bound of this kind".
     UInt64 http_keep_alive_timeout = DEFAULT_GCS_KEEP_ALIVE_TIMEOUT;
     UInt64 http_keep_alive_max_requests = DEFAULT_GCS_KEEP_ALIVE_MAX_REQUESTS;
-    /// Upper bound on the retries of one request, from the `retry_attempts` key of a disk section.
+    /// Upper bound on the retries of one request, from the `retry_attempts` key of a disk section, or, on
+    /// the SQL path, from an explicitly set `retry_attempts` / `s3_retry_attempts` request setting.
     /// 0 means "do not retry".
     UInt64 retry_attempts = DEFAULT_GCS_RETRY_ATTEMPTS;
     /// Request-rate limits: requests per second and burst of the GET requests, and of the PUT / POST /

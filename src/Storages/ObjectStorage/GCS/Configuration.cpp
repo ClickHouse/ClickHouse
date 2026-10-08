@@ -11,6 +11,8 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Common/Exception.h>
 
+#include <Poco/URI.h>
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -46,6 +48,7 @@ namespace S3AuthSetting
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsString storage_class_name;
+    extern const S3RequestSettingsUInt64 retry_attempts;
 }
 
 void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -72,7 +75,13 @@ void StorageGCSConfiguration::fromDisk(const String & disk_name, ASTs & args, Co
     const String key = String(fs::path(disk_settings->key_prefix) / fs::path(parsing_result.path_suffix));
     const String endpoint
         = disk_settings->endpoint_override.empty() ? String("https://storage.googleapis.com") : disk_settings->endpoint_override;
-    url = S3::URI(fmt::format("{}/{}/{}", endpoint, disk_settings->bucket, key));
+    /// The URI only carries the endpoint and the bucket here. A GCS object name may contain characters
+    /// that are URL syntax (`#`, `?`), so the key is percent-encoded for parsing and then restored
+    /// verbatim: reading `url.key` back from the parsed URI would address a different object.
+    String encoded_key;
+    Poco::URI::encode(key, "?#", encoded_key);
+    url = S3::URI(fmt::format("{}/{}/{}", endpoint, disk_settings->bucket, encoded_key));
+    url.key = key;
 
     /// The native backend takes nothing from here, but the S3 code path this configuration inherits
     /// dereferences `s3_settings` unconditionally.
@@ -276,6 +285,14 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
         gcs_settings.max_put_rps = put_throttler->getMaxSpeed();
         gcs_settings.max_put_burst = put_throttler->getMaxBurst();
     }
+
+    /// The retry budget (`retry_attempts` of an endpoint section or a named collection, `s3_retry_attempts`
+    /// of the query) bounds the native client's retry loop as well. Only an explicitly set value is taken:
+    /// the default of the S3 request settings is tuned for the AWS SDK's own backoff and would let the
+    /// native client retry for far longer than its own default allows.
+    const auto & retry_attempts = s3_settings->request_settings[S3RequestSetting::retry_attempts];
+    if (retry_attempts.changed)
+        gcs_settings.retry_attempts = retry_attempts.value;
 
     validateGCSRefreshTokenTriple(gcs_settings);
     checkGCSCredentialsAllowedInUserQuery(gcs_settings, context);
