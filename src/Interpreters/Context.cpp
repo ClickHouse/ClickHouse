@@ -6647,7 +6647,9 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
     const ZooKeeperWaitLimit limit(*this);
-    while (true)
+    /// Only an attempt found on the first pass started before this call. Its failure can predate a recovered
+    /// connection, so it is not final: the caller then makes or joins one more attempt.
+    for (bool first_pass = true;; first_pass = false)
     {
         std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
         bool is_connector = false;
@@ -6682,7 +6684,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         {
             limit.wait(attempt->getFuture(), "ZooKeeper connection attempt");
             /// A published client is read under the mutex again: a config reload may have replaced it already.
-            attempt->rethrowIfFailed();
+            if (!first_pass)
+                attempt->rethrowIfFailed();
             continue;
         }
 
@@ -6977,7 +6980,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
     const ZooKeeperWaitLimit limit(*this);
     const auto config_name = "auxiliary_zookeepers." + name;
-    while (true)
+    /// As in getZooKeeper, the failure of an attempt found on the first pass is not final.
+    for (bool first_pass = true;; first_pass = false)
     {
         std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
         bool is_connector = false;
@@ -7027,7 +7031,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
         if (!is_connector)
         {
             limit.wait(attempt->getFuture(), "auxiliary ZooKeeper connection attempt");
-            attempt->rethrowIfFailed();
+            if (!first_pass)
+                attempt->rethrowIfFailed();
             continue;
         }
 

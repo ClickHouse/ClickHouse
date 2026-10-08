@@ -115,7 +115,8 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
                 error = run(base_query, f"timed_out_{suffix}", {**no_limit, "max_execution_time": 1})
                 assert error and "TIMEOUT_EXCEEDED" in error and "connection attempt" not in error, error
 
-                # Queries with no limit wait for the attempt and get its error.
+                # Queries with no limit wait for the attempt. It started before them, so they make one more attempt
+                # together and get its error.
                 waiters = [executor.submit(run, base_query, f"waiter_{i}_{suffix}", no_limit) for i in range(3)]
                 for i in range(3):
                     wait_for_query(f"waiter_{i}_{suffix}")
@@ -124,8 +125,8 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
                 for f in [connector, create, *waiters]:
                     error = f.result(timeout=120)
                     assert error and "All connection tries failed while connecting to ZooKeeper" in error, error
-                # The connector's attempt was the only one: every waiter got its error.
-                assert session_expirations() - expirations == 1
+                # The connector's attempt and the one the waiters shared.
+                assert session_expirations() - expirations == 2
         finally:
             node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
