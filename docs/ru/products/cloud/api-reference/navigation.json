@@ -24,6 +24,12 @@
         ]
       },
       {
+        "group": "Notifications",
+        "pages": [
+          "products/cloud/api-reference/notifications/notification-types-get-list"
+        ]
+      },
+      {
         "group": "Оплата",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
