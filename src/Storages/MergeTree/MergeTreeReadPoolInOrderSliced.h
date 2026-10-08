@@ -117,7 +117,8 @@ public:
     std::optional<size_t> nextUnreadMark(size_t lane) const;
     /// Primary key values at the mark of the lane, one row; empty if the index has no value there.
     Block keyAtMark(size_t lane, size_t mark) const;
-    /// Keys that are not known (empty blocks) go last.
+    /// Keys that are not known (empty blocks) go last: the queue is the read-ahead order, and the pool does not
+    /// speculate on a lane it cannot place. The merge's demand for such a lane is served regardless.
     static int compareKeys(const Block & lhs, const Block & rhs, bool reverse = false);
 
     /// The lane is not going to be read anymore: its unread marks, queued slices and parked readers go away.

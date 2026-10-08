@@ -4879,7 +4879,7 @@ Read `MergeTree` tables in the order of the primary key with a shared pool of re
 Parts are cut into slices which are handed out to the threads as the merge demands data, so a single part can be read by several threads when a filter discards most of its rows, while parts whose data is not needed yet are not touched.
 At every slice the primary key the part's next rows start at is announced to the merge, so the merge steps past a part whose rows are filtered out as soon as that key is past the rows it needs, without reading the part to its end.
 Requires `read_in_order_use_virtual_row`. Applies to local reading only, and not when the streams are merged in two levels (see `read_in_order_two_level_merge_threshold`). When the pool is used, `read_in_order_use_buffering` is not applied, because the pool buffers rows per part itself.
-)", 0, \
+)", EXPERIMENTAL, \
         {"26.10", false, false, "New setting: read `MergeTree` tables in the order of the primary key with a shared pool of threads that read slices of parts on demand, instead of one thread per part."}) \
     DECLARE(UInt64, read_in_order_virtual_row_block_interval, 8, R"(
 With `read_in_order_use_virtual_row_per_block`, the number of blocks a part reads before it reports its position to the merge again.
