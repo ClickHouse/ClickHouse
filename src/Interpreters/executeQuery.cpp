@@ -1394,9 +1394,9 @@ struct CollectTablesData
     std::vector<QualifiedTableName> dictionaries;
 
     /// Set when the query names an object through a function argument whose value cannot be determined
-    /// from the AST (e.g. `joinGet(concat('j', 'oin'), ...)` or a first argument bound to an alias). Neither
-    /// the access nor the existence of such an object can be preflighted, so the hook is skipped for the
-    /// whole query.
+    /// from the AST (e.g. `joinGet(concat('j', 'oin'), ...)` or a first argument bound to an alias), or reads
+    /// a table function in `FROM`/`JOIN`. Neither the access nor the existence of such an object can be
+    /// preflighted, so the hook is skipped for the whole query.
     bool has_unverifiable_reference = false;
 
     void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
@@ -2852,7 +2852,21 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// references, which defeats the CTE-name check: a CTE shadows only unqualified table references.
         for (const auto * table_expression : getTableExpressions(*select))
         {
-            if (!table_expression || !table_expression->database_and_table_name)
+            if (!table_expression)
+                continue;
+
+            /// A table function checks its access only when the analyzer executes it, after this hook: the
+            /// source grant, `TABLE ENGINE`, `CREATE TEMPORARY TABLE`, and its own checks over the objects it
+            /// names (e.g. `dictGet` and `SELECT` on the dictionary that `dictionary('d')` reads, checked in
+            /// `StorageDictionary::read`). None of these can be preflighted from the AST in general, so a
+            /// table function in `FROM`/`JOIN` disables the hook for the whole query.
+            if (table_expression->table_function)
+            {
+                data.has_unverifiable_reference = true;
+                continue;
+            }
+
+            if (!table_expression->database_and_table_name)
                 continue;
             if (const auto * id = table_expression->database_and_table_name->as<ASTTableIdentifier>())
                 data.addTableIfNotEmpty(id->getDatabaseName(), id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);

@@ -62,6 +62,13 @@ check_access_rejected "SELECT count() FROM t_reattach_fn_src WHERE dictGet(d_rea
 check_access_rejected "SELECT count() FROM t_reattach_fn_src WHERE dictGet('d_reattach_fn', 'v', a) = 1"
 check_access_rejected "SELECT count() FROM t_reattach_fn_src WHERE dictHas('${CLICKHOUSE_DATABASE}.d_reattach_fn', a)"
 
+# A table function checks its access only when it is executed, so a query reading one in `FROM`/`JOIN`
+# cannot be preflighted and must be skipped, both when it is rejected and when it succeeds.
+echo "table function"
+check_access_rejected "SELECT count() FROM t_reattach_fn_src AS s JOIN dictionary('${CLICKHOUSE_DATABASE}.d_reattach_fn') AS d ON s.a = d.a"
+check_if_not_detached "SELECT count() FROM t_reattach_fn_src AS s JOIN dictionary('${CLICKHOUSE_DATABASE}.d_reattach_fn') AS d ON s.a = d.a" t_reattach_fn_src
+check_if_not_detached "SELECT count() FROM t_reattach_fn_src, numbers(1) AS n" t_reattach_fn_src
+
 # With the access in place, the `Join` table `joinGet` reads is reattached like any other table it reads.
 echo "join table reattached"
 check_if_detached "SELECT joinGet('t_reattach_fn_join', 'v', toUInt64(1))" t_reattach_fn_join
