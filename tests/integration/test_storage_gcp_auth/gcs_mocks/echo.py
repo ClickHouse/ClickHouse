@@ -1,14 +1,7 @@
-"""Stand-in for the GCS XML (S3-interoperability) endpoint.
+"""GCS XML endpoint accepting a fixed token, or rotating tokens from `metadata.py`.
 
 Usage: echo.py <port> [expected_token]
-
-With `expected_token`, only that bearer token is accepted -- so a read that skipped an expected token exchange
-fails instead of quietly succeeding.
-
-Without it, the mock expects the rotating `my-secret-token-<n>` that `metadata.py` hands out for its rotating
-service account, and counts requests, so a test can assert that the token was refreshed.
-
-  GET /reset  -- zero the counter
+GET /reset resets the rotating token counter.
 """
 
 import http.server
@@ -16,7 +9,6 @@ import sys
 
 EXPECTED_PATH = "/test/test.txt"
 
-# None means the rotating mode, which is keyed on the request counter below.
 STATIC_TOKEN = sys.argv[2] if len(sys.argv) > 2 else None
 
 counter = 0

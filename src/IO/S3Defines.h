@@ -19,9 +19,6 @@ inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_MAX_REQUESTS = 100;
 
 inline static constexpr uint64_t DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS = 3600;
 
-/// Every GCP service account impersonation setting, in the named-collection spelling. They form one block:
-/// `impersonate_service_account` names the identity, the rest qualify it or say where the exchange is made, so
-/// code that moves them between settings objects moves all five or none.
 inline static constexpr std::array<std::string_view, 5> GCP_IMPERSONATION_SETTING_NAMES = {
     "impersonate_service_account",
     "impersonation_delegates",

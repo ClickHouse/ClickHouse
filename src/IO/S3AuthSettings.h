@@ -78,18 +78,11 @@ struct S3AuthSettings
     /// user-chosen endpoint.
     void clearServerManagedGcpOAuth();
 
-    /// Clear the GCP service account impersonation settings (`impersonate_service_account`,
-    /// `impersonation_delegates`, `impersonation_scopes`, `impersonation_lifetime_seconds`,
-    /// `iam_credentials_endpoint`). This is the GCP counterpart of `clearRoleArn`: restricted paths drop an
-    /// impersonation target inherited from the server `<s3>` config, so the target is never impersonated with
-    /// the server's identity as the source; the caller decides when a query-supplied target may be kept.
+    /// Drop server-configured impersonation before applying query credentials.
     void clearGcpImpersonation();
 
-    /// Take the whole GCP service account impersonation block from `other`, changed and unchanged fields alike.
-    /// The five settings are only meaningful together -- the qualifiers describe the target they were configured
-    /// alongside -- so a consumer that must not end up with a target from one source and its qualifiers from
-    /// another takes them all from one place, which `updateIfChanged` cannot do (it skips unchanged fields, so a
-    /// deliberately empty qualifier does not displace a configured one).
+    /// Copy the target and all qualifiers, including unchanged or empty values that
+    /// `updateIfChanged` would skip. Qualifiers must stay with their target.
     void copyGcpImpersonationFrom(const S3AuthSettings & other);
 
     HTTPHeaderEntries headers;

@@ -245,11 +245,8 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc)
             client_configuration.http_client.clear();
 
-        /// The impersonation target goes with the source identity: `getCredentialsProvider` rejects a target
-        /// without `gcp_oauth`, which would fail the load instead of downgrading it. Keyed on the absence of a
-        /// `gcp_oauth` source rather than on the branch above, because a restricted storage path may have
-        /// dropped the source already and left the query-supplied target in place -- that combination reaches
-        /// here with `http_client` empty and would otherwise still throw.
+        /// The source may already have been stripped by a restricted storage path. Clear its target
+        /// too, so anonymous loading does not fail the impersonation/source compatibility check.
         if (!boost::iequals(client_configuration.http_client, "gcp_oauth"))
         {
             client_configuration.impersonate_service_account.clear();

@@ -1,9 +1,7 @@
 <clickhouse>
     <profiles>
         <default>
-            <!-- The restriction is left in place for the default profile, which is also what a table load at
-                 server startup runs under. A `CREATE` that needs the server's GCP identity has to opt in per
-                 query, so the stored definition can then be re-parsed under the restriction on restart. -->
+            <!-- Startup loads use this restricted profile; tests opt in per query during `CREATE`. -->
             <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
         </default>
     </profiles>

@@ -2,9 +2,7 @@
     <profiles>
         <default>
             <enable_s3_requests_logging>1</enable_s3_requests_logging>
-            <!-- These named collections authenticate via the GCP metadata service, which is server-managed and
-                 blocked for user queries by default. Allow it here; `test_impersonation_is_server_managed`
-                 uses a separate user with the restriction left in place. -->
+            <!-- Allow the metadata identity; `restricted_user` tests the default restriction. -->
             <s3_allow_server_credentials_in_user_queries>1</s3_allow_server_credentials_in_user_queries>
         </default>
         <restricted>

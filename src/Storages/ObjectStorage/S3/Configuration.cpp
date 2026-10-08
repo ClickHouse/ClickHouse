@@ -96,16 +96,6 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-/// Every GCP impersonation setting, in the named-collection spelling.
-static constexpr auto & gcp_impersonation_keys = S3::GCP_IMPERSONATION_SETTING_NAMES;
-
-/// The one entry of `gcp_impersonation_keys` that decides neither *which* identity the impersonated token acts
-/// as nor *which host* the source identity's own token is sent to: it only bounds the lifetime of a token the
-/// server keeps to itself, with the target, the delegation chain, the scopes and the endpoint all still the
-/// operator's, so overriding it escalates nothing. Spelled as the exception rather than as a second list of
-/// everything else, so a setting added to `gcp_impersonation_keys` is guarded by default.
-static constexpr std::string_view gcp_impersonation_non_identity_key = "impersonation_lifetime_seconds";
-
 void checkQueryOverriddenGcpImpersonation(
     const NamedCollection & collection,
     const ContextPtr & context,
@@ -119,22 +109,17 @@ void checkQueryOverriddenGcpImpersonation(
         && collection.isQueryOverridden("google_adc_refresh_token"))
         return;
 
-    for (const auto & key : gcp_impersonation_keys)
+    for (const auto & key : S3::GCP_IMPERSONATION_SETTING_NAMES)
     {
-        if (key == gcp_impersonation_non_identity_key)
+        /// Lifetime changes select neither an identity nor an endpoint. Guard new settings by default.
+        if (key == "impersonation_lifetime_seconds")
             continue;
 
         if (!collection.isQueryOverridden(String(key)))
             continue;
 
-        /// A table created while the restriction was relaxed stores its overrides in its definition, and
-        /// `markQueryOverridden` fires again when that definition is re-parsed at startup. Throwing there would
-        /// abort the attach and drop the table out of `system.tables`, so defer to
-        /// `s3_load_table_anonymously_if_credentials_restricted` exactly as every other restricted-load path
-        /// does (`getDiskConfigurationFromAST`, `getCredentialsProvider`, `DatabaseDataLake`): when it is
-        /// enabled, drop the whole GCP OAuth block -- no source identity remains, so nothing is impersonated and
-        /// the table is merely inaccessible until its credentials are permitted again -- and when the operator
-        /// disabled it, fail the load instead of silently downgrading.
+        /// Stored query overrides are re-parsed on startup. Honor the anonymous-load setting
+        /// so restricted credentials do not prevent the table from attaching.
         if (is_loading_from_existing_metadata
             && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
         {
@@ -201,11 +186,11 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "google_adc_client_id", /// For GCP (explicit Application Default Credentials triple)
     "google_adc_client_secret", /// For GCP
     "google_adc_refresh_token", /// For GCP
-    "impersonate_service_account", /// For GCP (service account impersonation), also for extra_credentials
-    "impersonation_delegates", /// For GCP, also for extra_credentials
-    "impersonation_scopes", /// For GCP, also for extra_credentials
-    "impersonation_lifetime_seconds", /// For GCP
-    "iam_credentials_endpoint", /// For GCP
+    "impersonate_service_account",
+    "impersonation_delegates",
+    "impersonation_scopes",
+    "impersonation_lifetime_seconds",
+    "iam_credentials_endpoint",
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -494,7 +479,6 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
         else if (arg_name == "external_id")
             auth_settings_[S3AuthSetting::external_id] = arg_value.safeGet<String>();
-        /// GCP service account impersonation, the counterpart of `role_arn` above.
         else if (arg_name == "impersonate_service_account")
             auth_settings_[S3AuthSetting::impersonate_service_account] = arg_value.safeGet<String>();
         else if (arg_name == "impersonation_delegates")
@@ -589,12 +573,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     if (key_value_args.contains("structure"))
         with_structure = false;
 
-    /// A key-value argument this form does not know is dropped without a word, and none of the GCP impersonation
-    /// settings is read from here (the target and its qualifiers arrive in `extra_credentials`, the two
-    /// operator-only ones not at all). Refuse them explicitly: a silently ignored `impersonate_service_account`
-    /// would run the read with the source identity's own full-scope token while reporting success -- the same
-    /// hazard that is refused in `extra_credentials` and on a named collection.
-    for (const auto & key : gcp_impersonation_keys)
+    /// Unknown arguments are otherwise ignored, which would silently use the source identity.
+    for (const auto & key : S3::GCP_IMPERSONATION_SETTING_NAMES)
         if (key_value_args.contains(String(key)))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -858,9 +838,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     /// Same for the GCP impersonation target, whose source identity would likewise be the server's.
     const bool restrict_server_credentials = context->shouldRestrictUserQueryS3Credentials();
 
-    /// Read before the clear below wipes it: a target the global `<s3>` supplied is gone by the time the
-    /// qualifier check runs, and it is the only place that can tell "the restriction took the target away"
-    /// from "there never was one" for a global target.
+    /// Remember whether the restriction removed a configured target for the error below.
     const bool config_supplied_impersonation_target
         = !String(s3_settings->auth_settings[S3AuthSetting::impersonate_service_account]).empty();
 
@@ -870,16 +848,10 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings.clearGcpImpersonation();
     }
 
-    /// Parse `extra_credentials` into a scratch settings object rather than straight into `auth_settings`: it
-    /// shares every one of these field names with the `<s3>` config, which is already loaded there, so reading
-    /// them back out of `auth_settings` cannot tell a query-supplied value from a server-configured one. Both
-    /// the restore after the per-endpoint merge below and the impersonation qualifier check need exactly that
-    /// distinction -- without it a global `<s3>` value masquerades as one the query named.
+    /// Keep query credentials separate so configured values cannot be mistaken for query overrides.
     S3::S3AuthSettings query_auth_settings;
     S3StorageParsedArguments::collectCredentials(extra_credentials, query_auth_settings, context);
 
-    /// The query-supplied role_arn/STS and GCP impersonation fields, so the per-endpoint `<s3>` merge below
-    /// cannot replace them. Empty means the query did not name one.
     const String user_role_arn = query_auth_settings[S3AuthSetting::role_arn];
     const String user_role_session_name = query_auth_settings[S3AuthSetting::role_session_name];
     const String user_external_id = query_auth_settings[S3AuthSetting::external_id];
@@ -887,8 +859,6 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     const String user_impersonation_delegates = query_auth_settings[S3AuthSetting::impersonation_delegates];
     const String user_impersonation_scopes = query_auth_settings[S3AuthSetting::impersonation_scopes];
 
-    /// Apply them on top of the config, which is what `collectCredentials` did when it wrote here directly:
-    /// `updateIfChanged` copies exactly the fields the query set.
     s3_settings->auth_settings.updateIfChanged(query_auth_settings);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
@@ -897,8 +867,6 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
-    /// Whether the restriction is what removed the impersonation target the config had supplied, so the qualifier
-    /// check below can name the restriction instead of blaming the query for a target it never had to supply.
     bool restriction_dropped_config_target = false;
 
     if (restrict_server_credentials)
@@ -907,8 +875,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
         s3_settings->auth_settings[S3AuthSetting::external_id] = user_external_id;
 
-        /// Either half is a config target the query did not supply: the global one, already cleared above, or
-        /// the per-endpoint one, still in place until `clearServerManagedGcpOAuth` below takes it.
+        /// Check both the global target cleared above and the per-endpoint target.
         restriction_dropped_config_target = user_impersonate_service_account.empty()
             && (config_supplied_impersonation_target
                 || !String(s3_settings->auth_settings[S3AuthSetting::impersonate_service_account]).empty());
@@ -924,23 +891,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings.clearServerManagedRequestAuth();
     }
 
-    /// `extra_credentials` *can* supply an impersonation target, so a query-supplied one wins over both the
-    /// per-endpoint `<s3>` merge above and (when restricted) the `clearServerManagedGcpOAuth` that dropped it
-    /// along with the rest of the GCP block. Without this the operator's target would silently replace the one
-    /// the query named, running the request as an identity the user did not ask for. These values come from
-    /// `extra_credentials` alone, so a query that names no target leaves the endpoint-configured one in force
-    /// rather than having it overwritten by the global `<s3>` value.
-    ///
-    /// Under the restriction the restored target has no source identity to impersonate from (this form cannot
-    /// supply the ADC triple, and the server's `gcp_oauth` was just dropped), so it is rejected by
-    /// `getCredentialsProvider` with an explicit error instead of being silently ignored.
-    ///
-    /// The qualifiers travel with the target they qualify. A query that names its own target therefore takes
-    /// its `impersonation_delegates` and `impersonation_scopes` from the query as well, empty ones included:
-    /// restoring the target alone would leave it paired with the delegation chain and the scopes the operator
-    /// provisioned for the *endpoint's* target, so the account the query named would be reached through a
-    /// chain, and granted a scope set, meant for a different account entirely. A query that names no target
-    /// qualifies the configured one instead, which is what the check below spells out.
+    /// A query target takes its own delegates and scopes, including empty values.
+    /// Otherwise it could inherit privileges configured for a different target.
+    /// Without a query target, query qualifiers apply to the configured target.
     if (!user_impersonate_service_account.empty())
     {
         s3_settings->auth_settings[S3AuthSetting::impersonate_service_account] = user_impersonate_service_account;
@@ -955,16 +908,11 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
             s3_settings->auth_settings[S3AuthSetting::impersonation_scopes] = user_impersonation_scopes;
     }
 
-    /// `impersonation_delegates` and `impersonation_scopes` only ever qualify a target. Supplied in
-    /// `extra_credentials` with no target in force, every consumer downstream drops them silently -- the read
-    /// would then run with the source identity's full-scope token while the query says otherwise -- so refuse
-    /// the query instead. A target inherited from the config counts, hence the check on the resolved value.
+    /// Reject query qualifiers without a target instead of silently using the source token.
     if (String(s3_settings->auth_settings[S3AuthSetting::impersonate_service_account]).empty()
         && (!user_impersonation_delegates.empty() || !user_impersonation_scopes.empty()))
     {
-        /// The query did name a target to qualify -- the endpoint's -- and the restriction is what took it away,
-        /// so report that and not a missing argument: naming the target in `extra_credentials` instead would only
-        /// trade this error for the one about a target with no source identity to impersonate from.
+        /// Report the restriction if it removed the configured target.
         if (restriction_dropped_config_target)
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,

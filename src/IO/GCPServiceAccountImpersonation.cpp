@@ -36,9 +36,7 @@ Strings parseGCPCommaSeparatedList(const std::string & value)
 namespace
 {
 
-/// A service account is identified by an email (`name@project.iam.gserviceaccount.com`) or a numeric unique
-/// id. Because the identifier goes into the request path, validate it against that alphabet rather than
-/// escaping it: an identifier carrying `/`, `?` or `%` could otherwise redirect the request to another method.
+/// Restrict identifiers embedded in the request path to prevent changing the API method.
 void validateServiceAccountIdentifier(const std::string & service_account, std::string_view what)
 {
     if (service_account.empty())
@@ -58,9 +56,7 @@ void validateServiceAccountIdentifier(const std::string & service_account, std::
 
 static constexpr std::string_view resource_prefix = "projects/-/serviceAccounts/";
 
-/// GCP spells a service account either as a bare email/unique id or as the `projects/-/serviceAccounts/<id>`
-/// resource name, and its own `generateAccessToken` documentation uses the latter. Accept both wherever a
-/// service account is configured, and reduce to the bare identifier the request path needs.
+/// Accept both bare identifiers and `projects/-/serviceAccounts/<id>` resource names.
 std::string toBareServiceAccountIdentifier(const std::string & service_account, std::string_view what)
 {
     std::string_view identifier = service_account;
@@ -104,10 +100,7 @@ std::string buildRequestBody(const GCPImpersonationParams & params)
     return oss.str();
 }
 
-/// `Poco::URI::getPath` is decoded, so this rejects a percent-encoded `%2E%2E` as well as a literal `..`.
-/// Such a segment survives the percent-encoding of the request target below -- `.` is unreserved, so
-/// `Poco::URI::encode` passes it through -- and a proxy or the peer that normalizes the path would then route
-/// the request, which carries the source identity's access token, to a path the operator never configured.
+/// `Poco::URI::getPath` decodes escapes. Reject traversal before a proxy can normalize it.
 void validateEndpointPath(const std::string & path)
 {
     Poco::StringTokenizer segments(path, "/");
@@ -118,12 +111,8 @@ void validateEndpointPath(const std::string & path)
                 "The path of `iam_credentials_endpoint` must not contain a `..` segment");
 }
 
-/// RFC 3986 allows in a query only unreserved characters, sub-delims, `:`, `@`, `/`, `?` and percent-encoded
-/// octets. `Poco::URI` copies the query out of the endpoint verbatim -- `parseQuery` neither validates nor
-/// encodes it -- and it is appended to the request target as it stands, because it is already encoded and
-/// encoding it again would turn a legitimate `%2F` into `%252F`. A CR or LF there splits the request line of
-/// a request that carries the source identity's access token, letting the endpoint inject headers or a whole
-/// second request onto that connection, so reject what is not a valid query instead of encoding it.
+/// `Poco::URI` neither validates nor encodes the raw query. Validate RFC 3986 characters
+/// without re-encoding, which would double-escape parameters. This also rejects request-line injection.
 void validateEndpointQuery(const std::string & query)
 {
     static constexpr std::string_view allowed_punctuation = "-._~!$&'()*+,;=:@/?";
@@ -140,8 +129,7 @@ void validateEndpointQuery(const std::string & query)
             continue;
         }
 
-        /// The offending byte is named rather than echoed: it is control characters that matter here, and
-        /// quoting them in the message would only carry the injection from the wire into the server log.
+        /// Do not echo control characters into the server log.
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The query of `iam_credentials_endpoint` contains the byte 0x{:02X} at position {}, which is not "
@@ -151,11 +139,8 @@ void validateEndpointQuery(const std::string & query)
     }
 }
 
-/// The endpoint has to be an absolute URL: `Poco::URI` parses a bare `host` as a relative path, which would
-/// leave the session with an empty host.
 Poco::URI parseEndpoint(const std::string & endpoint)
 {
-    /// The IAM Service Account Credentials API, which mints short-lived credentials.
     static constexpr auto DEFAULT_IAM_CREDENTIALS_ENDPOINT = "https://iamcredentials.googleapis.com";
 
     Poco::URI url;
@@ -165,8 +150,6 @@ Poco::URI parseEndpoint(const std::string & endpoint)
     }
     catch (const Poco::Exception & e)
     {
-        /// `Poco::URI` throws on input it cannot parse at all (an unterminated IPv6 literal, say). Report that
-        /// as the same `BAD_ARGUMENTS` naming the setting, rather than letting a bare Poco exception escape.
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "`iam_credentials_endpoint` is not a valid URL: '{}' ({})",
@@ -181,23 +164,17 @@ Poco::URI parseEndpoint(const std::string & endpoint)
             DEFAULT_IAM_CREDENTIALS_ENDPOINT,
             endpoint);
 
-    /// Whatever the endpoint carries beyond scheme and host ends up in the request line of the token exchange,
-    /// so it is validated here rather than where the request target is assembled: this runs from
-    /// `validateGCPImpersonationParams` too, which rejects a bad endpoint when the client is built instead of
-    /// on the first read that needs a token.
     validateEndpointPath(url.getPath());
     validateEndpointQuery(url.getRawQuery());
 
     return url;
 }
 
-/// Seconds left until `expire_time`, which the API returns as an RFC 3339 timestamp.
 Int64 secondsUntil(const std::string & expire_time)
 {
     int tz_diff = 0;
     Poco::DateTime expires_at;
-    /// The format-guessing overload, because RFC 3339 allows fractional seconds (which GCP does emit) and the
-    /// fixed `ISO8601_FORMAT` cannot consume them.
+    /// The format-guessing overload accepts RFC 3339 fractional seconds; `ISO8601_FORMAT` does not.
     if (!Poco::DateTimeParser::tryParse(expire_time, expires_at, tz_diff))
         throw Exception(
             ErrorCodes::AUTHENTICATION_FAILED,
@@ -220,11 +197,7 @@ void validateGCPImpersonationParams(const GCPImpersonationParams & params)
         toServiceAccountResourceName(delegate);
     parseEndpoint(params.endpoint);
 
-    /// Bound the lifetime here rather than only rejecting `<= 0`: the value is user-settable, and it is
-    /// multiplied when the client computes its refresh margin, which overflows for very large values.
-    /// `MAX_GCP_IMPERSONATION_LIFETIME_SECONDS` is Google's own ceiling with
-    /// `constraints/iam.allowServiceAccountCredentialLifetimeExtension` granted; anything above it would be
-    /// refused by the API anyway.
+    /// Google's 12-hour ceiling also bounds the arithmetic used to compute the refresh margin.
     if (params.lifetime_seconds <= 0 || params.lifetime_seconds > MAX_GCP_IMPERSONATION_LIFETIME_SECONDS)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
@@ -249,18 +222,10 @@ GCPOAuthToken fetchImpersonatedGCPAccessToken(
 
     auto url = parseEndpoint(params.endpoint);
 
-    /// The endpoint is configurable, and this request carries the source identity's access token, so it is
-    /// subject to the operator's egress allow-list just like the S3 URL itself.
     remote_host_filter.checkURL(url);
 
-    /// `Poco::URI::getPath` returns the *decoded* path, so it cannot be concatenated into the request target
-    /// directly: a percent-encoded space, `?`, or CRLF in `iam_credentials_endpoint` would be written to the
-    /// wire literally, splitting the request line and letting a chosen endpoint inject headers onto a
-    /// connection that carries the source identity's access token. Encode the assembled path exactly once
-    /// instead -- what `getPathAndQuery` does to the decoded path it holds. Note that it cannot be routed
-    /// through `Poco::URI::setPath`, which *decodes* what it is given: that would strip a layer of encoding
-    /// rather than add one, turning a `%252E%252E` in the endpoint into a real `..` and a `%252F` into a real
-    /// path separator, both of which reach the wire as-is.
+    /// `getPath` is decoded: encode the assembled path exactly once to prevent request-line injection.
+    /// Do not use `Poco::URI::setPath`, which would decode it again and turn `%252F` into a separator.
     auto base_path = url.getPath();
     while (base_path.ends_with('/'))
         base_path.pop_back();
@@ -272,8 +237,7 @@ GCPOAuthToken fetchImpersonatedGCPAccessToken(
         fmt::format("{}/v1/projects/-/serviceAccounts/{}:generateAccessToken", base_path, target_service_account),
         reserved_path,
         request_target);
-    /// The raw query, because it is already percent-encoded; `parseEndpoint` has checked that it holds nothing
-    /// that cannot appear in a request line.
+    /// `parseEndpoint` validated this already-encoded query.
     if (!url.getRawQuery().empty())
         request_target += fmt::format("?{}", url.getRawQuery());
 
@@ -305,11 +269,7 @@ GCPOAuthToken fetchImpersonatedGCPAccessToken(
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        /// The API states the cause in the response body; `getReason` is only the HTTP reason phrase. The missing
-        /// role is one cause among many (a rejected lifetime, a wrong endpoint, exhausted quota), so name it only
-        /// for the status it explains. 403 and 401 are different failures and must not share a hint: the API
-        /// answers 403 when the role binding on the *target* is missing, and 401 when the *source* token it was
-        /// called with was itself rejected, which no IAM change on the target can fix.
+        /// A 403 concerns the target role binding; a 401 concerns the source credentials.
         std::string_view hint;
         if (response.getStatus() == Poco::Net::HTTPResponse::HTTP_FORBIDDEN)
             hint = ". The source identity needs the `roles/iam.serviceAccountTokenCreator` role on the target "
@@ -358,11 +318,8 @@ GCPOAuthToken fetchImpersonatedGCPAccessToken(
     GCPOAuthToken result;
     result.access_token = std::move(access_token);
 
-    /// `expireTime` is authoritative, the requested lifetime is not: the API may grant less. A non-positive
-    /// value means the token is already expired by this host's clock -- either it is ahead of Google's, or a
-    /// very short lifetime rounded down to zero. Keeping the requested lifetime there would sign every request
-    /// for the next ~0.9 x lifetime with a token the API considers dead, so expire it at once instead and let
-    /// the next request mint a new one.
+    /// Honor the returned expiry even if the API grants less than the requested lifetime.
+    /// Do not substitute the requested lifetime when the returned expiry is already in the past.
     const auto reported = secondsUntil(expire_time);
     if (reported <= 0)
     {

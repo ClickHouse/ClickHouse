@@ -1417,11 +1417,8 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         else if (!configuration.impersonate_service_account.empty() && !credentials_configuration.no_sign_request
                  && !has_explicit_credentials)
         {
-            /// A restricted path strips the server's `gcp_oauth` but keeps a query-supplied impersonation
-            /// target, so the target can arrive here with no source identity left to impersonate from. Report
-            /// the restriction that took the source away: the generic mismatch below would instead point at
-            /// `http_client = gcp_oauth`, which the syntax that can supply a target -- `extra_credentials` --
-            /// cannot set at all.
+            /// The restriction removed the source identity. Report that rather than suggesting
+            /// `http_client = gcp_oauth`, which `extra_credentials` cannot supply.
             if (credentials_configuration.anonymous_fallback_for_server_credentials)
                 force_anonymous_fallback = true;
             else
@@ -1471,9 +1468,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
             credentials_configuration.use_environment_credentials = false;
     }
 
-    /// After the restriction, which reports the more specific cause when it is what removed the `gcp_oauth`
-    /// source; what is left here is a plain misconfiguration. Skipped once the target has been downgraded to
-    /// an anonymous client, which impersonates nothing.
+    /// Check after credential restrictions so they can report the more specific error.
     if (!force_anonymous_fallback && !configuration.impersonate_service_account.empty()
         && !boost::iequals(configuration.http_client, "gcp_oauth"))
         throw DB::Exception(

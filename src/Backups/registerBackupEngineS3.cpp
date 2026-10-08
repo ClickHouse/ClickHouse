@@ -139,10 +139,8 @@ namespace
         return location;
     }
 
-    /// `extra_credentials` is shared with the `s3` table function, which accepts the GCP impersonation
-    /// counterparts of `role_arn` there. A backup destination has no channel to carry them to its client, so
-    /// reject them rather than parse and drop them. Checked both where the destination identity is computed, so
-    /// an `ON CLUSTER` backup fails before any coordination, and in `creator_fn`, which is reached without it.
+    /// Backups cannot pass these fields to their client. Check both entry points so
+    /// `ON CLUSTER` fails before coordination, and direct client creation also rejects them.
     void rejectGcpImpersonationInExtraCredentials(const S3::S3AuthSettings & auth_settings)
     {
         if (!String(auth_settings[S3AuthSetting::impersonate_service_account]).empty()
@@ -158,10 +156,7 @@ namespace
     {
         if (location.collection)
         {
-            /// The same reason `extra_credentials` is checked here and not only in `creator_fn`: an impersonation
-            /// override on a collection must fail an `ON CLUSTER` backup before any coordination starts. The
-            /// collection's own fields are not needed -- with `is_loading_from_existing_metadata` false the check
-            /// only throws or returns -- so a scratch settings object stands in for the one `creator_fn` fills.
+            /// Validate before `ON CLUSTER` coordination. Outside metadata loading, this check does not modify credentials.
             S3::S3AuthSettings auth_settings_unused;
             checkQueryOverriddenGcpImpersonation(
                 *location.collection, context, auth_settings_unused, /*is_loading_from_existing_metadata=*/false);

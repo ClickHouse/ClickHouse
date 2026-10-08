@@ -51,10 +51,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    /// Must be set before `initialize`, which is what inspects the credentials: a table whose stored definition
-    /// overrides server-managed credentials has to be downgraded to an inaccessible-but-attached table rather
-    /// than throwing, exactly as in `createStorageObjectStorage`. `StorageObjectStorageQueue` assigns this again
-    /// from the same `mode` further down, once the object it belongs to exists.
+    /// Set before credential validation so restricted tables can attach anonymously on startup.
     configuration->is_loading_from_existing_metadata = isLoadingFromExistingMetadata(args.mode);
 
     /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the

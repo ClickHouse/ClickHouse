@@ -1,20 +1,8 @@
-"""Stand-in for the GCP metadata service, which hands out an access token for the instance's service account.
+"""Metadata service with rotating and static token identities.
 
 Usage: metadata.py <port> <token_path> <rotating_service_account> <static_service_account> <static_token>
-
-ClickHouse builds the metadata URL as `http://<metadata_service>/<token_path>/<service_account>/token` with no
-port, so every test that mocks this service has to share port 80 of the one container. The two behaviours tests
-need are therefore keyed on the service account instead of on separate ports:
-
-  <rotating_service_account>  -- a fresh `my-secret-token-<n>` with `expires_in: 0`, so every request forces a
-                                 refresh. `echo.py` in its rotating mode expects exactly this sequence.
-  <static_service_account>    -- `<static_token>` with a one-hour expiry: a stable source identity, for tests
-                                 that assert on what is done with the token rather than on its refresh.
-
-Any other service account is a 404, which stands in for an instance that has no such account.
-
-  GET /counter  -- number of rotating tokens issued
-  GET /reset    -- zero the counter
+ClickHouse uses port 80, so the two behaviors are selected by service account.
+GET /counter and /reset expose the rotating token counter.
 """
 
 import http.server

@@ -734,9 +734,7 @@ void S3ObjectStorage::applyNewSettings(
     settings_from_config->loadFromConfigForObjectStorage(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    /// One snapshot for the copy below, the impersonation restore and the comparison further down: another
-    /// thread may swap `s3_settings` meanwhile, and reading a different version in each of them would mix
-    /// settings from two generations.
+    /// Use one snapshot so concurrent updates cannot mix settings generations.
     auto current_settings = s3_settings.get();
     auto modified_settings = std::make_unique<S3Settings>(*current_settings);
 
@@ -770,16 +768,8 @@ void S3ObjectStorage::applyNewSettings(
         apply_endpoint_settings();
     }
 
-    /// The GCP impersonation block is already resolved: `fromAST` and `fromNamedCollection` merge the `<s3>`
-    /// config and the endpoint block themselves, then decide which target and which qualifiers survive -- only
-    /// they can tell a query-supplied value from a configured one. Re-merging here would undo that decision,
-    /// because `updateIfChanged` restores a configured qualifier over the deliberately empty one a query-supplied
-    /// target carries: the account the query named would then be reached through the delegation chain, and
-    /// granted the scope set, that the operator provisioned for a different account entirely. Take the whole
-    /// block back from the settings the parse produced.
-    ///
-    /// A disk is exempt: its arguments cannot supply these settings, so nothing here was reconciled against a
-    /// query, and its own config section is the more specific one that should keep winning.
+    /// Preserve the target and qualifiers resolved during parsing. Re-merging config could restore
+    /// privileges deliberately cleared for a query-supplied target. Disks use their own config instead.
     if (!for_disk_s3)
         modified_settings->auth_settings.copyGcpImpersonationFrom(current_settings->auth_settings);
 

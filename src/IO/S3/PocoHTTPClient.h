@@ -272,19 +272,15 @@ private:
     const String google_adc_client_secret;
     const String google_adc_refresh_token;
 
-    /// When set, the source token obtained above is exchanged for a token that acts as this service account.
     const GCPImpersonationParams impersonation;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
-    /// The token of the source identity, kept only when impersonating: it is minted independently of the
-    /// impersonated token it is exchanged for, and usually outlives it by far.
     mutable std::optional<BearerToken> source_bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
     BearerToken requestSourceBearerToken() const;
-    BearerToken requestBearerTokenFromMetadataService() const;
     BearerToken requestBearerTokenFromADC() const;
 };
 
