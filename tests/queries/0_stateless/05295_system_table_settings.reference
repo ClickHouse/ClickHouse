@@ -10,6 +10,12 @@ max_rows_to_keep	100
 dist_alias	1	1
 dist_stated	1	1
 1
+-- a setting a table takes from elsewhere, such as a format setting, is shown only where the definition states it
+set_plain	disk	default	0
+set_plain	persistent	1	0
+set_stated	disk	default	0
+set_stated	format_csv_delimiter	;	1
+set_stated	persistent	1	0
 -- a view has no engine settings
 0
 -- access: the SELECT grant, then SHOW TABLES per table

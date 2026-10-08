@@ -1255,9 +1255,10 @@ A value that a named collection supplies is shown as in [`system.named_collectio
 `min`, `max`, `disallowed_values` and `readonly` come from the [constraints](/concepts/features/configuration/settings/constraints-on-settings) of the current user, as in `system.engine_settings`. They do not say whether the engine allows changing the setting with `ALTER`.
 
 Not shown:
-- Tables of engines that `system.engine_settings` does not list, such as `Join` and the `Log` family, and tables without an engine definition of their own: views, dictionaries and tables created from a table function.
+- Tables of engines without a settings class of their own, such as `File`, `URL`, `Join` and the `Log` family, and tables without an engine definition of their own: views, dictionaries and tables created from a table function.
 - Tables in data lake catalogs. Tables in `MySQL` and `PostgreSQL` databases are left out when [`show_remote_databases_in_system_tables`](/reference/settings/session-settings/show#show_remote_databases_in_system_tables) is off, as in `system.tables`.
-- Values that are not in the table's definition: values `S3Queue` and `AzureQueue` keep in Keeper (see [`system.s3_queue_settings`](/reference/system-tables/s3_queue_settings)), and credentials that `NATS` and `RabbitMQ` take from the server configuration. Macros are shown as written.
+- Settings a table takes from elsewhere unless its definition states them, which [`system.engine_settings`](/reference/system-tables/engine_settings) does not list either: the format settings, the connection pool settings of `PostgreSQL`, `mysql_datatypes_support_level` of `MySQL`, and the credentials `NATS` and `RabbitMQ` take from the server configuration. A table that states one shows it.
+- Values that are not in the table's definition: values `S3Queue` and `AzureQueue` keep in Keeper (see [`system.s3_queue_settings`](/reference/system-tables/s3_queue_settings)). Macros are shown as written.
 
 .examples
 The settings a `MergeTree` table changed through its definition and `ALTER`:

@@ -44,6 +44,12 @@ ORDER BY table;
 SELECT value = (SELECT value FROM system.engine_settings WHERE engine_name = 'Distributed' AND name = 'background_insert_sleep_time_ms')
 FROM system.table_settings WHERE database = currentDatabase() AND table = 'dist_stated' AND name = 'background_insert_sleep_time_ms';
 
+SELECT '-- a setting a table takes from elsewhere, such as a format setting, is shown only where the definition states it';
+CREATE TABLE set_plain (a Int) ENGINE = Set;
+CREATE TABLE set_stated (a Int) ENGINE = Set SETTINGS format_csv_delimiter = ';';
+SELECT table, name, value, changed FROM system.table_settings
+WHERE database = currentDatabase() AND table LIKE 'set\\_%' ORDER BY table, name;
+
 SELECT '-- a view has no engine settings';
 CREATE VIEW v AS SELECT 1;
 SELECT count() FROM system.table_settings WHERE database = currentDatabase() AND table = 'v';

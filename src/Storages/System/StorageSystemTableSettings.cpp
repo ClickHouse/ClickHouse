@@ -302,6 +302,13 @@ void StorageSystemTableSettings::fillData(
         for (size_t j = 0; j < settings.size(); ++j)
         {
             const auto & setting = settings[j];
+
+            /// A setting the table takes from elsewhere unless its definition states it has a value only if stated. The
+            /// engines with such settings start from compiled defaults, so `changed` means the definition, or its named
+            /// collection, states it.
+            if (!setting.changed && StorageFactory::isInheritedSetting(engine->second.features, setting.name))
+                continue;
+
             Array disallowed_values;
             for (const auto & value : setting.disallowed_values)
                 disallowed_values.emplace_back(value);
