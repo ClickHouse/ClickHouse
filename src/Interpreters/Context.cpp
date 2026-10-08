@@ -764,7 +764,7 @@ struct ContextSharedPart : boost::noncopyable
     /// the `<compression>` configuration names a gated codec, because such a selector is only valid
     /// for the policy it was validated against; see `Context::chooseCompressionCodec`.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
-    /// Bumped every time the configuration is replaced, so a policy read outside the lock can be
+    /// Bumped every time the configuration or the users configuration is replaced, so a policy read outside the lock can be
     /// detected as stale and re-read instead of being baked into a freshly built selector.
     mutable UInt64 compression_codec_selector_generation TSA_GUARDED_BY(mutex) = 0;
     /// Storage disk chooser for MergeTree engines
@@ -2270,6 +2270,9 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     std::lock_guard lock(shared->mutex);
     shared->users_config = config;
     shared->access_control->setUsersConfig(*shared->users_config);
+    /// The users config carries the default profile, whose codec gates `chooseCompressionCodec` reads
+    /// outside the lock; make a read that raced with this reload detectable as stale.
+    ++shared->compression_codec_selector_generation;
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -7892,7 +7895,8 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     /// The policy is read *without* holding `shared->mutex`: reading it goes through `AccessControl`,
     /// which takes that same non-recursive mutex (and may do IO), so reading it under the lock
     /// deadlocks the very first `MergeTree` part write of the process. The generation counter detects
-    /// a configuration reload racing with that read, in which case the policy is re-read, so the
+    /// a configuration or users configuration reload (`SYSTEM RELOAD USERS`) racing with that read,
+    /// in which case the policy is re-read, so the
     /// selector is never built from a policy older than the configuration it is built for.
     ///
     /// Without a `<compression>` section there is no codec to gate, so the policy is not read at all.
