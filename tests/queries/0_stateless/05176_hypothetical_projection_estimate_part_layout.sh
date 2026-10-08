@@ -169,6 +169,24 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'real marks:', marks FROM (EXPLAIN ESTIMATE SELECT a, v FROM t_real_m WHERE b < 30 SETTINGS ${PIN}, force_optimize_projection = 1);
 " | grep -E '^\s+(marks|rows|verdict):|^real marks:' | awk '{$1=$1; print}'
 
+# a byte-driven granularity is sized from the rows the projection keeps, not from the deleted ones read
+echo "--- a mostly deleted part with a byte-driven granularity ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;
+    CREATE TABLE t_est_g (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 0,
+                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, lightweight_mutation_projection_mode = 'rebuild';
+    CREATE TABLE t_real_g AS t_est_g;
+    ALTER TABLE t_real_g ADD PROJECTION p_g (SELECT a, b, v ORDER BY b);
+    INSERT INTO t_est_g SELECT number, number % 100, number FROM numbers(10000);
+    INSERT INTO t_real_g SELECT number, number % 100, number FROM numbers(10000);
+    DELETE FROM t_est_g WHERE a % 10 != 0 SETTINGS lightweight_deletes_sync = 2;
+    DELETE FROM t_real_g WHERE a % 10 != 0 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_g ON t_est_g (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, v FROM t_est_g WHERE b < 30 SETTINGS ${PIN};
+    SELECT 'real marks:', marks FROM (EXPLAIN ESTIMATE SELECT a, v FROM t_real_g WHERE b < 30 SETTINGS ${PIN}, force_optimize_projection = 1);
+" | grep -E '^\s+(marks|rows|verdict):|^real marks:' | awk '{$1=$1; print}'
+
 # a projection that stores less per row gets bigger granules, so a full scan of it beats the base read
 
 # even when the predicate cannot prune its key and there is no ORDER BY to help

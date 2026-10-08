@@ -86,6 +86,13 @@ marks: 13
 rows: 1300
 verdict: chosen
 real marks: 13
+--- a mostly deleted part with a byte-driven granularity ---
+marks: 239
+rows: 10000
+marks: 7
+rows: 301
+verdict: chosen
+real marks: 7
 --- a full projection scan that is cheaper than the base read ---
 hypothetical:
 marks: 162

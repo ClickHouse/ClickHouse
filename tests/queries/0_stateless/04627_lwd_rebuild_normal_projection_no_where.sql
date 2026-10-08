@@ -30,12 +30,13 @@ WHERE database = currentDatabase() AND table = 't_lwd_norm_proj_compact' AND nam
 -- A read forced through the projection must not return deleted rows, and must match the same
 -- read without the projection.
 SELECT 'compact deleted leaked via projection', countIf(id % 11 = 0)
-FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20
-      SETTINGS optimize_use_projections = 1, force_optimize_projection = 1);
+FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
 
-SELECT 'compact projection == no-projection',
-    (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1))
-  = (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 0));
+SELECT 'compact projection read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
+SELECT 'compact base read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 0;
 
 -- A second lightweight DELETE: the rebuild must keep the rows removed by the first one, which
 -- `_row_exists` now carries too.
@@ -46,12 +47,13 @@ SELECT 'compact second delete projection rows', sum(rows) FROM system.projection
 WHERE database = currentDatabase() AND table = 't_lwd_norm_proj_compact' AND name = 'p' AND active;
 
 SELECT 'compact second delete deleted leaked via projection', countIf(id % 11 = 0 OR id % 13 = 0)
-FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20
-      SETTINGS optimize_use_projections = 1, force_optimize_projection = 1);
+FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
 
-SELECT 'compact second delete projection == no-projection',
-    (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1))
-  = (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 0));
+SELECT 'compact second delete projection read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
+SELECT 'compact second delete base read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_compact WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_lwd_norm_proj_compact;
 
@@ -75,12 +77,13 @@ SELECT 'wide projection rows', sum(rows) FROM system.projection_parts
 WHERE database = currentDatabase() AND table = 't_lwd_norm_proj_wide' AND name = 'p' AND active;
 
 SELECT 'wide deleted leaked via projection', countIf(id % 11 = 0)
-FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20
-      SETTINGS optimize_use_projections = 1, force_optimize_projection = 1);
+FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
 
-SELECT 'wide projection == no-projection',
-    (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1))
-  = (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 0));
+SELECT 'wide projection read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
+SELECT 'wide base read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 0;
 
 -- apply_deleted_mask = 0 reads the deleted rows, which the rebuilt projection does not store, so the
 -- projection is not used.
@@ -99,12 +102,13 @@ SELECT 'wide second delete projection rows', sum(rows) FROM system.projection_pa
 WHERE database = currentDatabase() AND table = 't_lwd_norm_proj_wide' AND name = 'p' AND active;
 
 SELECT 'wide second delete deleted leaked via projection', countIf(id % 11 = 0 OR id % 13 = 0)
-FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20
-      SETTINGS optimize_use_projections = 1, force_optimize_projection = 1);
+FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
 
-SELECT 'wide second delete projection == no-projection',
-    (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 1, force_optimize_projection = 1))
-  = (SELECT groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20 SETTINGS optimize_use_projections = 0));
+SELECT 'wide second delete projection read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 1, optimize_read_in_order = 1, force_optimize_projection = 1;
+SELECT 'wide second delete base read', groupArray(id) FROM (SELECT id FROM t_lwd_norm_proj_wide WHERE g BETWEEN 2 AND 5 ORDER BY g, id LIMIT 20)
+SETTINGS optimize_use_projections = 0;
 
 DROP TABLE t_lwd_norm_proj_wide;
 
