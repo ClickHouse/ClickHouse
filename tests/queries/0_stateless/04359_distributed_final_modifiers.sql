@@ -11,12 +11,12 @@ INSERT INTO t_mod SELECT number, number, 1 FROM numbers(80000);
 INSERT INTO t_mod SELECT number, number + 5, 2 FROM numbers(80000);
 
 SELECT 'WHERE local', count(), sum(v) FROM t_mod FINAL WHERE k % 3 = 0 SETTINGS make_distributed_plan = 0;
-SELECT 'WHERE distributed', count(), sum(v) FROM t_mod FINAL WHERE k % 3 = 0 SETTINGS make_distributed_plan = 1;
+SELECT 'WHERE distributed', count(), sum(v) FROM t_mod FINAL WHERE k % 3 = 0 SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'WHERE read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_mod FINAL WHERE k % 3 = 0 SETTINGS make_distributed_plan = 1);
 
 SELECT 'PREWHERE local', count(), sum(v) FROM t_mod FINAL PREWHERE k % 3 = 0 SETTINGS make_distributed_plan = 0;
-SELECT 'PREWHERE distributed', count(), sum(v) FROM t_mod FINAL PREWHERE k % 3 = 0 SETTINGS make_distributed_plan = 1;
+SELECT 'PREWHERE distributed', count(), sum(v) FROM t_mod FINAL PREWHERE k % 3 = 0 SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'PREWHERE read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_mod FINAL PREWHERE k % 3 = 0 SETTINGS make_distributed_plan = 1);
 
@@ -32,7 +32,7 @@ SET apply_mutations_on_fly = 1, lightweight_deletes_sync = 0;
 DELETE FROM t_del WHERE k % 5 = 0;
 
 SELECT 'delete local', count(), sum(v) FROM t_del FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'delete distributed', count(), sum(v) FROM t_del FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'delete distributed', count(), sum(v) FROM t_del FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'delete read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_del FINAL SETTINGS make_distributed_plan = 1);
 

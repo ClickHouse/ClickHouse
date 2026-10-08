@@ -1,6 +1,7 @@
 import argparse
 import csv
 import json
+import math
 import os
 import re
 import shutil
@@ -13,6 +14,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+from shlex import quote
 from threading import Thread
 
 import yaml
@@ -25,6 +27,7 @@ from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -69,6 +72,7 @@ FROM query_metrics_v2
 WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
+    AND workflow_name = 'MasterCI'
 -- The display name is part of the key: compare.sh joins this file on all three.
 GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
@@ -172,7 +176,7 @@ DASHBOARD_INPUT_TABLES = (RAW_QUERY_METRICS_TABLE, HISTORICAL_DATA_TABLE, TEST_T
 # this shard's rows, counted from the start of the uploads.
 DASHBOARD_INGEST_TIMEOUT_SEC = 600
 DASHBOARD_POLL_INTERVAL_SEC = 15
-# Pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
+# Longest pause between the attempts of an upload in `DASHBOARD_INPUT_TABLES` that CIDB failed.
 CIDB_UPLOAD_RETRY_INTERVAL_SEC = 60
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
@@ -1063,10 +1067,14 @@ def insert_into_cidb(cidb, info, table, query, data, deadline):
             return f"rejected: {error}"
         if table not in DASHBOARD_INPUT_TABLES:
             return error
-        if deadline - time.monotonic() <= CIDB_UPLOAD_RETRY_INTERVAL_SEC:
+        pause = min(
+            CIDB_UPLOAD_RETRY_INTERVAL_SEC,
+            deadline - time.monotonic() - Settings.CI_DB_INSERT_TIMEOUT_SEC,
+        )
+        if pause <= 0:
             break
-        print(f"WARNING: insert into [{table}] failed, retrying in {CIDB_UPLOAD_RETRY_INTERVAL_SEC}s")
-        time.sleep(CIDB_UPLOAD_RETRY_INTERVAL_SEC)
+        print(f"WARNING: insert into [{table}] failed, retrying in {pause:.0f}s")
+        time.sleep(pause)
     if error is None:
         return f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent"
     return f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
@@ -1331,6 +1339,8 @@ class CHServer:
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
+        else:
+            Path(f"{results_path}/{test_name}-err.log").unlink(missing_ok=True)
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
@@ -1663,6 +1673,7 @@ def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
                 "diff_percent": row.get("diffPercent"),
                 "tier": confidence.get("tier") or "unknown",
                 "reason": confidence.get("reason") or "",
+                "confirmation_threshold": confidence.get("confirmationThreshold"),
                 "link": dashboard_query_link(
                     run_id, row.get("test"), row.get("queryIndex")
                 ),
@@ -1719,16 +1730,151 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     return [row for row in rows if row["tier"] in DASHBOARD_BLOCKING_TIERS]
 
 
+def confirm_dashboard_regressions(regressions, pr_number, workdir):
+    """Rerun dashboard blockers once on fresh servers; missing evidence stays blocking.
+
+    Reuse the shard confirmation measurements/randomization test, but carry the
+    dashboard's practical threshold instead of the shard's 15%/per-test floor.
+    Original samples and the dashboard classification are left intact.
+    """
+    rows = [dict(row, confirmation_passed=False) for row in regressions]
+    if not rows:
+        return rows
+    if len(rows) > 100:
+        for row in rows:
+            row["confirmation"] = "Not rerun: exceeds the 100-query confirmation limit"
+        return rows
+
+    selected = {}
+    for row in rows:
+        threshold = row.get("confirmation_threshold")
+        if (
+            not isinstance(threshold, (int, float))
+            or isinstance(threshold, bool)
+            or not math.isfinite(threshold)
+            or threshold <= 0
+        ):
+            row["confirmation"] = (
+                "Not rerun: dashboard confirmationThreshold unavailable"
+            )
+            continue
+        test, index = row["test"], row["query_index"]
+        diff = row["diff_percent"]
+        if (
+            not isinstance(test, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", test)
+            or type(index) is not int
+            or index < 0
+            or not isinstance(diff, (int, float))
+            or not math.isfinite(diff)
+            or diff <= 0
+            or (test, index) in selected
+        ):
+            raise PerfDashboardError("Invalid dashboard confirmation query")
+        row["confirmation"] = (
+            "Confirmation unavailable: missing or failed rerun; remains blocking"
+        )
+        selected[test, index] = row
+    if not selected:
+        return rows
+
+    workdir = Path(workdir).resolve()
+    output_dir = workdir / "analyze-dashboard-confirm"
+    # Remove stale results before starting: an interrupted/resumed job must not
+    # accept the previous attempt's successful measurements.
+    if output_dir.exists():
+        shutil.rmtree(output_dir)
+    query_file = workdir / "dashboard-confirm-queries.tsv"
+    with query_file.open("w", encoding="utf-8") as out:
+        for (test, index), row in selected.items():
+            out.write(
+                f"{test}\t{index}\t{row['diff_percent']}\t0\t{row['confirmation_threshold']}\n"
+            )
+
+    script = Path(__file__).resolve().parent / "scripts/perf/compare.sh"
+    env = dict(
+        os.environ,
+        stage="confirm_dashboard",
+        PR_TO_TEST=str(pr_number),
+        CHPC_CONFIRM_QUERIES=str(query_file),
+    )
+    exit_code = Shell.run(
+        quote(str(script)),
+        cwd=str(workdir),
+        env=env,
+        log_file=str(workdir / "dashboard-confirm.log"),
+        timeout=1500,
+    )
+    if exit_code:
+        for row in selected.values():
+            row["confirmation"] = (
+                f"Confirmation failed (exit {exit_code}); remains blocking"
+            )
+        return rows
+
+    stats_file = output_dir / "query-metric-stats.tsv"
+    if not stats_file.exists():
+        return rows
+    stats = {}
+    invalid = set()
+    with stats_file.open(encoding="utf-8") as source:
+        for fields in csv.reader(source, delimiter="\t"):
+            # Malformed/unattributable output cannot clear any failures.
+            if len(fields) != 6:
+                raise PerfDashboardError("Malformed dashboard confirmation statistics")
+            try:
+                key = (fields[4], int(fields[5]))
+                arrays = [json.loads(value) for value in fields[:4]]
+                if any(
+                    not isinstance(value, list) or len(value) != 1 for value in arrays
+                ):
+                    raise ValueError("Expected one client_time metric")
+                values = [value[0] for value in arrays]
+                if any(
+                    type(value) not in (int, float) or not math.isfinite(value)
+                    for value in values
+                ):
+                    raise ValueError("Non-finite confirmation statistics")
+                left, right, diff, noise = values
+                if left <= 0 or right <= 0 or diff <= -1 or noise < 0:
+                    raise ValueError("Invalid confirmation statistics")
+            except (ValueError, TypeError) as e:
+                raise PerfDashboardError(
+                    f"Invalid dashboard confirmation statistics: {e}"
+                ) from e
+            if key in stats:
+                invalid.add(key)
+            stats[key] = (diff, noise)
+    for key, row in selected.items():
+        if key not in stats or key in invalid:
+            continue
+        diff, noise = stats[key]
+        reproduced = diff > row["confirmation_threshold"] and diff >= noise
+        row["confirmation_passed"] = not reproduced
+        verdict = "Reproduced" if reproduced else "Did not reproduce; non-blocking"
+        row["confirmation"] = (
+            f"{verdict} after server restart: {diff * 100:+.1f}%, "
+            f"dashboard threshold {row['confirmation_threshold'] * 100:.1f}%, "
+            f"rerun statistical threshold {noise * 100:.1f}%"
+        )
+    return rows
+
+
 def build_dashboard_results_children(regressions):
-    """One failed row per confirmed regression, linking the dashboard's query page."""
+    """Keep every dashboard blocker visible, including those cleared by a rerun."""
     children = []
     for row in regressions:
         sub = Result(
             name=f"{row['test']} #{row['query_index']}",
-            status=Result.Status.FAIL,
+            status=(
+                Result.Status.OK
+                if row.get("confirmation_passed")
+                else Result.Status.FAIL
+            ),
             info=(
                 f"{DASHBOARD_GATE_METRIC} {row['old']} -> {row['new']} "
                 f"({row['diff_percent'] * 100:+.1f}%), {row['tier']}: {row['reason']}"
+                + (f". {row['confirmation']}" if row.get("confirmation") else "")
             ),
         )
         sub.set_label(
@@ -2184,6 +2330,40 @@ def main():
 
     test_keyword = args.test
 
+    # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
+    test_files = test_discovery.list_test_files("./tests/performance/")
+    # TODO: in PRs filter test files against changed files list if only tests has been changed
+    # changed_files = info.get_custom_data("changed_files")
+    if test_keyword:
+        test_files = [file for file in test_files if test_keyword in file]
+    else:
+        test_files = test_files[batch_num::total_batches]
+    print(f"Job Batch: [{batch_num}/{total_batches}]")
+    print(f"Test Files ({len(test_files)}): [{test_files}]")
+    assert test_files
+
+    # Test metadata keeps S3 off for old release_base vintages and shards without S3 tests.
+    needs_s3 = any(
+        test_discovery.test_requires_s3(f"./tests/performance/{file}")
+        for file in test_files
+    )
+    needs_s3_read_dataset = any(
+        test_discovery.test_requires_read_dataset(f"./tests/performance/{file}")
+        for file in test_files
+    )
+
+    def prepare_s3():
+        # Configure and stage re-entry must produce the same S3 fixture.
+        if not s3_service.ensure(f"{perf_wd}/s3_server.log"):
+            return False
+        if needs_s3_read_dataset and not s3_service.seed_read_dataset(
+            f"{db_path}/user_files/{s3_service.READ_DATASET_DIRECTORY}"
+        ):
+            return False
+        if not s3_service.write_side_override(perf_left_config, "left"):
+            return False
+        return s3_service.write_side_override(perf_right_config, "right")
+
     ch_path = args.ch_path
     assert (
         Path(ch_path + "/clickhouse").is_file()
@@ -2432,7 +2612,28 @@ def main():
         # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
         commands += iceberg_database_ddl_commands(perf_left)
         commands += iceberg_database_ddl_commands(perf_right)
+        if needs_s3_read_dataset:
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_left)
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_right)
+
+        if needs_s3:
+            commands.append(prepare_s3)
+        else:
+            print(
+                "No selected test uses the job-local S3 endpoint - skip its provisioning"
+            )
         results.append(Result.from_commands_run(name="Configure", command=commands))
+        res = results[-1].is_ok()
+
+    if res and needs_s3 and JobStages.CONFIGURE not in stages and any(
+        stage in stages for stage in (JobStages.RESTART, JobStages.TEST, JobStages.REPORT)
+    ):
+        results.append(
+            Result.from_commands_run(
+                name="Restore S3 endpoint",
+                command=[prepare_s3],
+            )
+        )
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -2505,18 +2706,14 @@ def main():
 
     if res and JobStages.TEST in stages:
         print("Tests")
-        test_files = [
-            file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
-        ]
-        # TODO: in PRs filter test files against changed files list if only tests has been changed
-        # changed_files = info.get_custom_data("changed_files")
-        if test_keyword:
-            test_files = [file for file in test_files if test_keyword in file]
-        else:
-            test_files = test_files[batch_num::total_batches]
-        print(f"Job Batch: [{batch_num}/{total_batches}]")
-        print(f"Test Files ({len(test_files)}): [{test_files}]")
-        assert test_files
+        # test_files was selected at the start of the job, where the S3 provisioning decision needs it.
+
+        # A local rerun reuses perf_wd for downloaded datasets. The report scans
+        # all *-raw.tsv and *-err.log files, including tests not selected this
+        # time, so keep only results produced by this invocation.
+        for pattern in ("*-raw.tsv", "*-err.log", "wall-clock-times.tsv"):
+            for old_result in Path(perf_wd).glob(pattern):
+                old_result.unlink()
 
         def cleanup_user_files():
             # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
@@ -2596,8 +2793,12 @@ def main():
         # `CHPC_CHECK_START_TIMESTAMP` is initialized once at the start of the
         # job - do not reset it here, the export stage has already used it.
 
+        # Local runs use PR_NUMBER=-1 as a sentinel. compare.sh formats the
+        # generated ci-checks.tsv using UInt32, so use the master sentinel (0)
+        # for this local-only report instead of passing a negative PR number.
+        report_pr_number = 0 if info.is_local_run else info.pr_number
         commands = [
-            f"PR_TO_TEST={info.pr_number} "
+            f"PR_TO_TEST={report_pr_number} "
             f"SHA_TO_TEST={info.sha} "
             "stage=get_profiles "
             f"{script_path}",
@@ -2849,18 +3050,23 @@ def main():
                         upload_deadline,
                         missing_dashboard_inputs,
                     )
+                    dashboard_regressions = confirm_dashboard_regressions(
+                        dashboard_regressions, info.pr_number, perf_wd
+                    )
                 except PerfDashboardError as e:
                     print(f"ERROR: {e}")
                     status = Result.Status.FAIL
-                    message += (
-                        f"; performance dashboard verdict unavailable: {e}"
-                    )
+                    message += f"; performance dashboard verdict unavailable: {e}"
                 else:
-                    if dashboard_regressions:
+                    blocking_count = sum(
+                        not row["confirmation_passed"] for row in dashboard_regressions
+                    )
+                    if blocking_count:
                         status = Result.Status.FAIL
+                    if dashboard_regressions:
                         message += (
-                            f"; {len(dashboard_regressions)} confirmed regression(s) "
-                            "on the performance dashboard"
+                            f"; {blocking_count}/{len(dashboard_regressions)} dashboard "
+                            "regression(s) remain blocking after confirmation"
                         )
             # TODO: Remove until here
         except Exception:
@@ -2906,6 +3112,10 @@ def main():
                 results=check_sub_results,
             )
         )
+
+    # Only after Report: its confirm_changes step reruns flagged queries, which may read the object store.
+    if needs_s3:
+        s3_service.stop()
 
     files_to_attach = []
     if res:

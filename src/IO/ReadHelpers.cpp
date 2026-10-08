@@ -795,8 +795,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
-
-        if constexpr (support_crlf)
+        else if constexpr (support_crlf)
         {
             if (*buf.position() == '\r')
             {

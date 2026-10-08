@@ -65,6 +65,13 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
     /// function subtree (its name and resolved arguments), otherwise e.g. numbers(1) and
     /// numbers(1e6) would share a stats entry.
+    ///
+    /// Unlike the actions DAGs below, the arguments are hashed with their values whatever their size:
+    /// they are the identity of what is read (a path, a URL, a format, a structure), so leaving out a
+    /// string would merge reads of different files. Their size is that of the query text the server
+    /// already parsed, since a folded expression argument such as `numbers(length(...))` is stored as
+    /// its result. The exception is a scalar subquery passed directly as an argument, whose whole
+    /// result is hashed here.
     if (const auto & table_expression = read.getQueryInfo().table_expression)
     {
         if (table_expression->as<TableFunctionNode>())
@@ -101,9 +108,10 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
     /// policies that pass very different numbers of rows to the boundary would otherwise share an
     /// entry.
     if (const auto & row_level_filter = read.getRowLevelFilter())
-        row_level_filter->actions.updateHash(hash);
+        row_level_filter->actions.updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
     if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.updateHash(hash, /*build_independent=*/true);
+        dag->prewhere_actions.updateHash(
+            hash, /*build_independent=*/true, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
     return hash.get64();
 }
 
@@ -203,8 +211,10 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     }
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
-    /// hashed as it is produced rather than accumulated. A step can carry a whole constant-folded
-    /// literal here, which `serializeConstant` writes out in full.
+    /// hashed as it is produced rather than accumulated. With `for_cache_key` the actions DAGs are
+    /// written without their variable-size constant values, which can be arbitrarily large (a folded
+    /// scalar subquery); see `ActionsDAG::updateHash` for what that lets collide. The DAGs of a read
+    /// step and of a join are hashed with `updateHash` under the same contract.
     SipHash hash;
     SipHashingWriteBuffer wbuf(hash);
     SerializedSetsRegistry registry;
@@ -347,13 +357,13 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
             /// other one's sample and picking the wrong build table. Making this build-independent for
             /// Auto-PR needs the two consumers separated first.
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash);
+                lhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash);
+                rhs.getNode()->updateHash(hash, /*build_independent=*/false, /*input_header=*/nullptr, /*with_variable_size_constant_values=*/false);
         }
     }
 
@@ -363,8 +373,9 @@ UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, 
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is
 /// itself approximate. Capturing every input that can affect the collected input/output bytes is a
 /// best-effort goal, not a guarantee: a few result-affecting inputs are deliberately not mixed in
-/// (e.g. the column-blind read hash on the input side, or the join output column names - see the
-/// `JoinStep` case below for why hashing them would be strictly worse). A resulting key
+/// (e.g. the column-blind read hash on the input side, the join output column names - see the
+/// `JoinStep` case below for why hashing them would be strictly worse - or the values of
+/// variable-size constants, see `ActionsDAG::updateHash`). A resulting key
 /// collision can only make Auto-PR reuse a slightly-off estimate and so enable/disable parallel
 /// replicas sub-optimally - it never changes query results. We trade that small estimation
 /// imprecision for a simpler, cheaper key.
@@ -533,7 +544,8 @@ void calculateHashTableCacheKeys(
                 Block joined_header = *node.children.at(0)->step->getOutputHeader();
                 for (const auto & column : *node.children.at(1)->step->getOutputHeader())
                     joined_header.insert(column);
-                mixed->getActionsDAG().updateHash(frame.hash, /*build_independent=*/true, &joined_header);
+                mixed->getActionsDAG().updateHash(
+                    frame.hash, /*build_independent=*/true, &joined_header, /*with_variable_size_constant_values=*/false);
             }
             /// Mix in the join's output column TYPES. The join produces its `required_output` columns
             /// directly, so two joins over the same inputs/keys that project a different number/types of

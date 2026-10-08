@@ -93,7 +93,7 @@
 	url = https://github.com/ClickHouse/icu
 [submodule "contrib/flatbuffers"]
 	path = contrib/flatbuffers
-	url = https://github.com/ClickHouse/flatbuffers
+	url = https://github.com/google/flatbuffers
 [submodule "contrib/replxx"]
 	path = contrib/replxx
 	url = https://github.com/ClickHouse/replxx
@@ -359,7 +359,7 @@
 	url = https://github.com/ClickHouse/ai-sdk-cpp
 [submodule "contrib/nlohmann-json"]
 	path = contrib/nlohmann-json
-	url = https://github.com/nlohmann/json.git
+	url = https://github.com/ClickHouse/json
 [submodule "contrib/crc32c"]
 	path = contrib/crc32c
 	url = https://github.com/ClickHouse/crc32c
