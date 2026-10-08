@@ -42,5 +42,5 @@ SYSTEM RESET FILELOG db.t FILE \'x.log\' TO END
 6
 -- lazily loaded table
 7
-TableProxy
+FileLog	0
 7

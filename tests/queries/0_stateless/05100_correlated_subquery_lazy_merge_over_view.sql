@@ -34,8 +34,8 @@ USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- `Merge` holds no data of its own, so `lazy_load_tables` attaches it eagerly, and only the `MergeTree`
 -- source stays unloaded at the time of the queries below. The `system.tables` filter is spelled with
--- `currentDatabase()` because the style check only recognizes that form; reading the engine name does not load a lazy table.
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND (name LIKE 'm05100%' OR name = 't05100_local') ORDER BY name;
+-- `currentDatabase()` because the style check only recognizes that form; reading `is_loaded` does not load a lazy table.
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND (name LIKE 'm05100%' OR name = 't05100_local') ORDER BY name;
 
 SELECT 'through a Merge over the view';
 SELECT o.v FROM m05100_over_view AS o WHERE EXISTS (SELECT 1 FROM m05100_over_view AS i WHERE i.n = o.n); -- { serverError NOT_IMPLEMENTED }

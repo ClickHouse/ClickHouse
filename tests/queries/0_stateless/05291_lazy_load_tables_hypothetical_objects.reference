@@ -1,5 +1,5 @@
 a drop leaves the table unloaded
-TableProxy
+0
 index on an unloaded table
 projection on a loaded table
 EXPLAIN WHATIF on an unloaded empty table

@@ -48,15 +48,15 @@ ${CLICKHOUSE_CLIENT} -nq "
 "
 
 # The inserts materialize the proxies, so re-attach to get them back. Assert the fixture is really
-# a proxy before probing: if it reads `MergeTree` the arms would pass without exercising the fix.
-# Query `engine` only: `parts` and `data_paths` materialize the proxy.
+# a proxy before probing: if it is loaded the arms would pass without exercising the fix.
+# Query `engine` and `is_loaded` only: `parts` and `data_paths` materialize the proxy.
 # `log` is asserted here for the same reason, and the assertion is load-bearing rather than
 # decorative: an eagerly loaded Log is blocked too, so without it arm E keeps passing while no longer
 # covering a proxy at all. If lazy loading ever stops admitting non-MergeTree engines this line is
 # meant to fail, because that retires arm E rather than weakening it.
 ${CLICKHOUSE_CLIENT} -q "DETACH DATABASE \`${LAZY}\` SYNC"
 ${CLICKHOUSE_CLIENT} -q "ATTACH DATABASE \`${LAZY}\`"
-${CLICKHOUSE_CLIENT} -q "SELECT name, engine FROM system.tables WHERE database = '${LAZY}' ORDER BY name"
+${CLICKHOUSE_CLIENT} -q "SELECT name, engine, is_loaded FROM system.tables WHERE database = '${LAZY}' ORDER BY name"
 
 # `arm <label> <table>`: prints `<label> blocked=<0|1> rows_after=<n>`.
 arm() {

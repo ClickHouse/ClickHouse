@@ -1123,7 +1123,8 @@ def check_catch_all(files) -> str:
 
 
 # Storage classes whose tables can be deferred behind `StorageTableProxy`, which means a pointer
-# taken from `DatabaseCatalog` may be the proxy rather than the engine.
+# taken from `DatabaseCatalog` may be the proxy rather than the engine. Keep in sync with the
+# engines registered with `supports_deferred_load`.
 DEFERRABLE_STORAGE_CLASSES = (
     "MergeTreeData",
     "StorageMergeTree",
@@ -1239,6 +1240,94 @@ def check_storage_casts(files) -> str:
                 "DatabaseCatalog, say why in a `/// NOLINT(storage-cast)` comment."
             )
     return "\n".join(violations)
+
+
+def check_deferrable_engines_are_audited(files) -> str:
+    """An engine that sets `supports_deferred_load = true` must have the class it creates in
+    `DEFERRABLE_STORAGE_CLASSES`, otherwise the casts to that class are never checked."""
+    violations = []
+    for path in files:
+        if not path.endswith(".cpp"):
+            continue
+        try:
+            text = _without_comments(pathlib.Path(path).read_text(errors="replace"))
+        except OSError:
+            continue
+        if "supports_deferred_load = true" not in text:
+            continue
+        # The storage a registration returns is the one the catalog hands out, unlike the sinks,
+        # sources and configurations created along the way.
+        registrations = text[text.find("registerStorage"):]
+        created = set(re.findall(r"return\s+std::make_shared<\s*(Storage\w+)\s*>", registrations))
+        for cls in sorted(created - set(DEFERRABLE_STORAGE_CLASSES)):
+            violations.append(
+                f"{path}: `{cls}` is created by an engine that opts into deferred loading, but it is not in "
+                f"DEFERRABLE_STORAGE_CLASSES in ci/jobs/check_style.py, so casts to it are not checked. Add it "
+                f"there, then run the storage_casts and storage_proxy_forwards checks."
+            )
+    return "\n".join(violations)
+
+
+def check_storage_proxy_forwards(files) -> str:
+    """`StorageProxy` must forward every virtual that a deferrable engine overrides.
+
+    A virtual that the proxy does not forward answers for the proxy rather than for the table it
+    wraps. That only matters where the engine overrides it, since otherwise both fall back to the
+    same `IStorage` default. The exemptions are explicit so that overriding a new virtual in the
+    MergeTree family forces a decision about the proxy.
+    """
+    proxy_path = "src/Storages/StorageProxy.h"
+    if not pathlib.Path(proxy_path).exists():
+        return ""
+
+    # Not forwarded on purpose, with the reason.
+    exempt = {
+        # The proxy answers from the CREATE query while the table is not loaded.
+        "getName",
+        # Loading is the proxy's own job, or the call is about the proxy itself.
+        "getNested", "tryGetNested", "isNestedInUse", "startup", "shutdown",
+        "flushAndPrepareForShutdown", "drop", "read", "write", "renameInMemory",
+        "getInMemoryMetadataPtr", "getStorageSnapshot", "getStorageSnapshotWithoutData",
+        "getStoragePolicy", "storesDataOnDisk", "isView",
+        # Answering must not turn an observer's listing into a load, so these report "unknown".
+        "getColumnSizes", "getSecondaryIndexSizes", "totalRows", "totalBytes",
+        "totalRowsByPartitionPredicate", "totalBytesUncompressed", "lifetimeRows", "lifetimeBytes",
+        # A config reload sweeps every table, and an unloaded one picks up new disks when it loads.
+        "initializeDiskOnConfigChange",
+        # Nothing is locked in a table that was never started.
+        "onActionLockRemove",
+        # Declared on the nested DataValidationTasksBase, not on IStorage itself.
+        "size",
+        # Called on the storage the factory just built, never on one from the catalog.
+        "addInferredEngineArgsToCreateQuery",
+        # A storage calls this on itself while reading, so it is already the nested one.
+        "parallelizeOutputAfterReading",
+    }
+
+    # The header of every deferrable engine, found by its declaration, so a class added to the cast
+    # check above joins this sweep as well.
+    declaration = re.compile(r"^\s*class\s+(" + "|".join(DEFERRABLE_STORAGE_CLASSES) + r")\b[^;]*$", re.M)
+    overrides = re.compile(r"\b(\w+)\s*\([^;{]*\)[^;{]*\boverride\b")
+    overridden_by_engine = set()
+    for path in pathlib.Path("src").rglob("*.h"):
+        text = _without_comments(path.read_text(errors="replace"))
+        if declaration.search(text):
+            overridden_by_engine |= set(overrides.findall(text))
+
+    istorage = _without_comments(pathlib.Path("src/Storages/IStorage.h").read_text(errors="replace"))
+    istorage_virtuals = set(re.findall(r"\bvirtual\b[^;{]*?\b(\w+)\s*\(", istorage))
+
+    forwarded = set(overrides.findall(_without_comments(pathlib.Path(proxy_path).read_text(errors="replace"))))
+
+    missing = sorted((overridden_by_engine & istorage_virtuals) - forwarded - exempt)
+    if not missing:
+        return ""
+    return (
+        f"{proxy_path}: a deferrable engine overrides these, but StorageProxy does not forward them, "
+        f"so a table in a database with `lazy_load_tables` answers them from the proxy instead of "
+        f"from itself: {', '.join(missing)}. Forward each one to getNested(), or add it to `exempt` "
+        "above with a comment saying why the proxy's own answer is the right one."
+    )
 
 
 def check_file_names(files):
@@ -1648,6 +1737,24 @@ if __name__ == "__main__":
             run_check_concurrent(
                 check_name=testname,
                 check_function=check_storage_casts,
+                files=cpp_files,
+            )
+        )
+    testname = "storage_proxy_forwards"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_storage_proxy_forwards,
+                files=cpp_files,
+            )
+        )
+    testname = "storage_deferrable_engines_audited"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_deferrable_engines_are_audited,
                 files=cpp_files,
             )
         )

@@ -1818,8 +1818,11 @@ void TCPHandler::processTablesStatusRequest()
             continue;
 
         TableStatus status;
-        /// The initiator asks about this table by name, so a lazily loaded replica is loaded to report its delay.
-        if (auto * replicated_table = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
+        /// Only a replicated table has a delay to report, and the proxy of a table that is not loaded
+        /// yet answers that from the engine name, so a probe materializes nothing else.
+        if (auto * replicated_table = table->supportsReplication()
+                ? castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get()
+                : nullptr)
         {
             status.is_replicated = true;
             status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());

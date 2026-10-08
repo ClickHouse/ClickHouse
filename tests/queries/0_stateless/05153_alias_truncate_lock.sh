@@ -81,11 +81,11 @@ $CLICKHOUSE_CLIENT -q "
 echo '-- fixture'
 $CLICKHOUSE_CLIENT -q "SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name"
 
-# `TableProxy` is what makes arms I/J/K lazy-target arms; a `MergeTree`/`Log` here instead would mean
+# `is_loaded = 0` is what makes arms I/J/K lazy-target arms; a `1` here instead would mean
 # the targets were already materialized and those arms would pass without exercising the lazy path.
-# Only `name` and `engine` are selected: `parts` and `data_paths` would materialize the stand-ins.
+# Only `name`, `engine` and `is_loaded` are selected: `parts` and `data_paths` would materialize the stand-ins.
 echo '-- fixture lazy targets'
-$CLICKHOUSE_CLIENT -q "SELECT name, engine FROM system.tables WHERE database = '${LAZY_DB}' ORDER BY name"
+$CLICKHOUSE_CLIENT -q "SELECT name, engine, is_loaded FROM system.tables WHERE database = '${LAZY_DB}' ORDER BY name"
 
 # arm <label> <reader table> <truncate target> <count table>
 arm() {

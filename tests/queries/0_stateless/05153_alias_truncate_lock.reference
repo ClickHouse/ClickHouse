@@ -18,9 +18,9 @@ mt_e	MergeTree
 mt_h	MergeTree
 rmt_b	ReplicatedMergeTree
 -- fixture lazy targets
-log_k	TableProxy
-mt_i	TableProxy
-rmt_j	TableProxy
+log_k	Log	0
+mt_i	MergeTree	0
+rmt_j	ReplicatedMergeTree	0
 -- arms
 A_alias_to_mergetree blocked=0 rows_after=0
 B_alias_to_replicated_mergetree blocked=0 rows_after=0
