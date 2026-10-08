@@ -386,7 +386,10 @@ def assert_ttl_cancellation_reaches_the_read(node, table, before):
         )
 
 
-def test_stop_ttl_merges_cancels_assigned_recompression_merge(cluster, broken_s3):
+# Cold, the merge stalls in `MergeTask::prepare`, loading statistics and marks. Warm, with neither
+# left to load, it stalls on the first data read, after `prepare` replaced the group's predicates.
+@pytest.mark.parametrize("warm", [False, True])
+def test_stop_ttl_merges_cancels_assigned_recompression_merge(cluster, broken_s3, warm):
     """`SYSTEM STOP TTL MERGES` must interrupt an assigned TTL merge stuck in an S3 read.
 
     Recompression specifically, because it is the only assigned TTL merge that the sibling
@@ -409,8 +412,12 @@ def test_stop_ttl_merges_cancels_assigned_recompression_merge(cluster, broken_s3
         node,
         table,
         ttl="d - INTERVAL 1 HOUR RECOMPRESS CODEC(ZSTD(3))",
-        extra_settings=", default_compression_codec = 'LZ4'",
+        extra_settings=", default_compression_codec = 'LZ4'"
+        + (", auto_statistics_types = ''" if warm else ""),
     )
+    if warm:
+        node.query(f"SELECT * FROM {table} FORMAT Null")
+        node.query("SYSTEM DROP UNCOMPRESSED CACHE")
 
     broken_s3.setup_at_object_get(count=1000000, action="slow_down")
 
