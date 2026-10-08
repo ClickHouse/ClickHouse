@@ -166,8 +166,20 @@ void ViewDefinitionsRenaming::checkDetachedTables() const
         {
             ASTPtr definition;
             if (dynamic_cast<const DatabaseOnDisk *>(database.get()))
-                definition = DatabaseOnDisk::parseQueryFromMetadata(
-                    getLogger("InterpreterRenameQuery"), context, database->getDisk(), it->metadataPath(), /*throw_on_error=*/ false);
+            {
+                auto disk = database->getDisk();
+                try
+                {
+                    definition = DatabaseOnDisk::parseQueryFromMetadata(
+                        getLogger("InterpreterRenameQuery"), context, disk, it->metadataPath(), /*throw_on_error=*/ false);
+                }
+                catch (const Exception &)
+                {
+                    /// A concurrent RENAME or DROP of the table removes its metadata file.
+                    if (disk->existsFile(it->metadataPath()))
+                        throw;
+                }
+            }
             else
                 definition = database->tryGetCreateTableQuery(it->table(), context);
             if (!definition)
