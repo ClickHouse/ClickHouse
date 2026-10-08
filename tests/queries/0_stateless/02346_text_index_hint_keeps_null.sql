@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, no-parallel-replicas
+-- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- Random settings limits: query_plan_direct_read_from_text_index=(1, None); query_plan_text_index_add_hint=(1, None)
 -- Direct read from a text index keeps NULL predicate values: a predicate over a JSON path that is absent in a row is NULL,
 -- so NOT of it and other NULL-sensitive expressions must give the same result as without the index.
