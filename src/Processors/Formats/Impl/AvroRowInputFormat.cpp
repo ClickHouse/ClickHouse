@@ -687,11 +687,11 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     /// alternatives in the order the writer emitted them, and an exact match over a `UUID2` one.
                     std::optional<ColumnVariant::Discriminator> exact_discriminator;
                     std::vector<ColumnVariant::Discriminator> compatible_discriminators;
-                    for (ColumnVariant::Discriminator d = 0; d < nested_types.size(); ++d)
+                    for (size_t d = 0; d < nested_types.size(); ++d)
                     {
                         if (variant->equals(*nested_types[d]))
                         {
-                            exact_discriminator = d;
+                            exact_discriminator = static_cast<ColumnVariant::Discriminator>(d);
                             continue;
                         }
                         auto replaced = replaceNestedTypesInPair(variant, nested_types[d], [](const DataTypePtr & left, const DataTypePtr & right) -> DataTypePtr
@@ -703,7 +703,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             return nullptr;
                         });
                         if (replaced && replaced->equals(*nested_types[d]))
-                            compatible_discriminators.push_back(d);
+                            compatible_discriminators.push_back(static_cast<ColumnVariant::Discriminator>(d));
                     }
 
                     std::optional<ColumnVariant::Discriminator> corresponding_discriminator;
