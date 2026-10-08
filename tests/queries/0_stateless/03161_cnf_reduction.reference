@@ -1,5 +1,5 @@
 -- Expected plan with analyzer:
-SELECT id\nFROM `03161_table`\nWHERE and(f, or(not(f), f))\nSETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, enable_analyzer = 1
+SELECT id\nFROM `03161_table`\nWHERE and(f, or(`not`(f), f))\nSETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, enable_analyzer = 1
 
 -- Expected result with analyzer:
 1
