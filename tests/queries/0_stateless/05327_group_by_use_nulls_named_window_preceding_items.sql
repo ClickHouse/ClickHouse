@@ -7,43 +7,43 @@
 SET enable_analyzer = 1;
 
 SELECT '-- OVER w';
-SELECT t.c, count() OVER w AS cnt, max(* REPLACE (intDiv(c, 2) AS c))
+SELECT t.c, count() OVER w AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
-ORDER BY t.c NULLS LAST, cnt
+ORDER BY t.c NULLS LAST, cnt, m
 SETTINGS group_by_use_nulls = 0;
-SELECT t.c, count() OVER w AS cnt, max(* REPLACE (intDiv(c, 2) AS c))
+SELECT t.c, count() OVER w AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
-ORDER BY t.c NULLS LAST, cnt
+ORDER BY t.c NULLS LAST, cnt, m
 SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- OVER (w ORDER BY ...)';
-SELECT t.c, count() OVER (w ORDER BY t.c ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c))
+SELECT t.c, count() OVER (w ORDER BY t.c ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
-ORDER BY t.c NULLS LAST, cnt
+ORDER BY t.c NULLS LAST, cnt, m
 SETTINGS group_by_use_nulls = 0;
-SELECT t.c, count() OVER (w ORDER BY t.c ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c))
+SELECT t.c, count() OVER (w ORDER BY t.c ROWS UNBOUNDED PRECEDING) AS cnt, max(* REPLACE (intDiv(c, 2) AS c)) AS m
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
-ORDER BY t.c NULLS LAST, cnt
+ORDER BY t.c NULLS LAST, cnt, m
 SETTINGS group_by_use_nulls = 1;
 
 SELECT '-- window functions before and after the matcher';
-SELECT t.c, count() OVER w AS before, max(* REPLACE (intDiv(c, 2) AS c)), count() OVER w AS after
+SELECT t.c, count() OVER w AS before, max(* REPLACE (intDiv(c, 2) AS c)) AS m, count() OVER w AS after
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
-ORDER BY t.c NULLS LAST, before, after
+ORDER BY t.c NULLS LAST, before, m, after
 SETTINGS group_by_use_nulls = 0;
-SELECT t.c, count() OVER w AS before, max(* REPLACE (intDiv(c, 2) AS c)), count() OVER w AS after
+SELECT t.c, count() OVER w AS before, max(* REPLACE (intDiv(c, 2) AS c)) AS m, count() OVER w AS after
 FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP
 WINDOW w AS (PARTITION BY c)
-ORDER BY t.c NULLS LAST, before, after
+ORDER BY t.c NULLS LAST, before, m, after
 SETTINGS group_by_use_nulls = 1;
