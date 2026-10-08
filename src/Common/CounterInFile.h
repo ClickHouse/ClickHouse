@@ -15,6 +15,7 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <base/defines.h>
+#include <base/pathToString.h>
 #include <base/types.h>
 
 
@@ -59,14 +60,14 @@ public:
 
         Int64 res = -1;
 
-        bool file_doesnt_exists = !fs::exists(path);
+        bool file_doesnt_exists = !fs::exists(pathFromString(path));
         if (file_doesnt_exists && !create_if_need)
         {
             throw Poco::Exception("File " + path + " does not exist. "
             "You must create it manually with appropriate value or 0 for first start.");
         }
 
-        int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
+        int fd = DB::platformOpenFile(path, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)
             DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
 
@@ -140,9 +141,9 @@ public:
     // Not thread-safe and not synchronized between processes.
     void fixIfBroken(UInt64 value)
     {
-        bool file_exists = fs::exists(path);
+        bool file_exists = fs::exists(pathFromString(path));
 
-        int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
+        int fd = DB::platformOpenFile(path, O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)
             DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_OPEN_FILE, path, "Cannot open file {}", path);
 
