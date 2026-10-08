@@ -889,6 +889,12 @@ The index arguments are:
 The index is declared on `(vec, cid)`, where `cid` is the cluster id column of type `UInt32`. It must be a column of the primary key.
 The parameters of `hierarchicalKMeans` are `(k, branching, max_iter, sample_cap, seed, cosine_distance)`; use `cosine_distance = 1` together with `cosineDistance`.
 
+The clustering function returns either the `k` centroids as `Array(Array(Float32))`, or a tree of centroids as `Array(Tuple(vec Array(Float32), level UInt8, cid UInt32, parent UInt32[, radius Float32]))`.
+In a tree, level 0 holds the `k` leaves, which are the clusters of the table, and every centroid below the top level has its `parent` at the next level.
+Cluster ids are non-zero, and `parent` is 0 at the top level.
+`hierarchicalKMeans` returns the first form.
+If the result does not satisfy these rules, training fails and no centroids are stored.
+
 #### Training {#ivf-training}
 
 Training starts in the background when the table is created.

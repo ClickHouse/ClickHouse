@@ -37,13 +37,13 @@ function insert_and_check()
 
 echo "EXCHANGE TABLES: each table keeps its own centroids"
 $CLICKHOUSE_CLIENT -q "EXCHANGE TABLES t8 AND t16"
-insert_and_check t8 ">= 8"
-insert_and_check t16 "< 8"
+insert_and_check t8 "> 8"
+insert_and_check t16 "<= 8"
 
 echo "RENAME TABLE"
 $CLICKHOUSE_CLIENT -q "RENAME TABLE t8 TO t_renamed"
 $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_renamed"
-insert_and_check t_renamed ">= 8"
+insert_and_check t_renamed "> 8"
 $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT id FROM t_renamed ORDER BY L2Distance(vec, [1., 2., 3., 4.]) LIMIT 5 SETTINGS ivf_nprobe = 2" | grep -o "cid in [0-9]*-element set"
 
 echo "Moving to another database is rejected"

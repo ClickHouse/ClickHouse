@@ -21,7 +21,8 @@ struct IvfIndexArguments
     UInt64 dimensions = 0;
     String samples_table;
     /// Aggregate function which trains the centroids from the samples, and its parameters. By contract, the first parameter
-    /// is the number of clusters k, and the function returns the k centroids as Array(Array(Float32)).
+    /// is the number of clusters k, and the function returns either the k centroids as Array(Array(Float32)) or a tree of
+    /// centroids as Array(Tuple(vec Array(Float32), level UInt8, cid UInt32, parent UInt32[, radius Float32])) with k leaves.
     String clustering_function;
     Array clustering_parameters;
     /// Option to enable advanced vector math

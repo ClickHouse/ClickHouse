@@ -20,7 +20,7 @@ ENGINE = MergeTree ORDER BY (cid, id);
 for _ in {1..600}; do
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE event_date >= yesterday() AND type = 'ExceptionWhileProcessing'
-        AND has(databases, currentDatabase()) AND exception LIKE '%The clustering function must return 4 centroids with 2 dimensions%'") -gt 0 ]] && break
+        AND has(databases, currentDatabase()) AND exception LIKE '%The clustering function must return centroids with 2 dimensions%'") -gt 0 ]] && break
     sleep 0.2
 done
 echo "training failed"

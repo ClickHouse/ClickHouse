@@ -17,6 +17,7 @@
 #include <Core/Settings.h>
 #include <Core/QualifiedTableName.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -398,6 +399,85 @@ void vectorSimilarityIvfIndexValidator(const IndexDescription & index, bool /*at
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second column of IVF vector similarity index (cluster id) must be of type UInt32, got {}", index.data_types[1]->getName());
 }
 
+namespace
+{
+
+/// Contract of clustering functions: the result is either the leaf centroids, Array(Array(Float32)), or the tree of centroids,
+/// Array(Tuple(vec Array(Float32), level UInt8, cid UInt32, parent UInt32[, radius Float32])) with named elements in any order.
+struct IvfClusteringResult
+{
+    bool is_tree = false;
+    bool has_radius = false;
+};
+
+IvfClusteringResult checkClusteringResultType(const DataTypePtr & type, const String & clustering_function, const String & index_name)
+{
+    const auto float32 = std::make_shared<DataTypeFloat32>();
+    const auto vector = std::make_shared<DataTypeArray>(float32);
+    auto throw_unexpected = [&]
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Clustering function {} of IVF vector similarity index {} must return Array(Array(Float32)) or "
+            "Array(Tuple(vec Array(Float32), level UInt8, cid UInt32, parent UInt32[, radius Float32])), but returns {}",
+            clustering_function, backQuoteIfNeed(index_name), type->getName());
+    };
+
+    const auto * array = typeid_cast<const DataTypeArray *>(type.get());
+    if (!array)
+        throw_unexpected();
+    if (array->getNestedType()->equals(*vector))
+        return {};
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(array->getNestedType().get());
+    if (!tuple || !tuple->hasExplicitNames())
+        throw_unexpected();
+
+    const std::map<String, DataTypePtr> expected_elements = {
+        {"vec", vector}, {"level", std::make_shared<DataTypeUInt8>()}, {"cid", std::make_shared<DataTypeUInt32>()},
+        {"parent", std::make_shared<DataTypeUInt32>()}, {"radius", float32}};
+    IvfClusteringResult result{.is_tree = true};
+    std::set<String> seen;
+    for (size_t i = 0; i < tuple->getElements().size(); ++i)
+    {
+        const String & name = tuple->getElementNames()[i];
+        const auto expected = expected_elements.find(name);
+        if (expected == expected_elements.end() || !expected->second->equals(*tuple->getElements()[i]) || !seen.insert(name).second)
+            throw_unexpected();
+    }
+    if (seen.size() < 4 || (seen.size() == 4 && seen.contains("radius")))
+        throw_unexpected();
+    result.has_radius = seen.contains("radius");
+    return result;
+}
+
+/// Instantiates the clustering function of an index on the vector column of its samples table. This runs the function's own
+/// validation of its parameters and of the argument type, so the index does not need to know the specifics of each algorithm.
+std::pair<StoragePtr, AggregateFunctionPtr> getClusteringFunction(
+    const IndexDescription & index, const IvfIndexArguments & arguments, const QualifiedTableName & samples_table, ContextPtr context)
+{
+    auto samples_storage = DatabaseCatalog::instance().tryGetTable(StorageID(samples_table.database, samples_table.table), context);
+    if (!samples_storage)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Samples table {} of IVF vector similarity index {} does not exist",
+            samples_table.getFullName(), backQuoteIfNeed(index.name));
+
+    /// The samples table must have a vector column with the same name as the indexed vector column.
+    const String & vector_column = index.column_names[0];
+    const auto samples_metadata = samples_storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+    const auto samples_vector = samples_metadata->getColumns().tryGetPhysical(vector_column);
+    if (!samples_vector)
+        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+            "Samples table {} of IVF vector similarity index {} has no column {}",
+            samples_table.getFullName(), backQuoteIfNeed(index.name), backQuoteIfNeed(vector_column));
+
+    AggregateFunctionProperties properties;
+    auto aggregate_function = AggregateFunctionFactory::instance().get(
+        arguments.clustering_function, NullsAction::EMPTY, {samples_vector->type}, arguments.clustering_parameters, properties);
+    return {samples_storage, aggregate_function};
+}
+
+}
+
 void checkVectorSimilarityIvfIndexForTable(
     const IndexDescription & index,
     const KeyDescription & primary_key,
@@ -418,35 +498,8 @@ void checkVectorSimilarityIvfIndexForTable(
         const IvfIndexArguments arguments = parseVectorSimilarityIvfIndexArguments(index.arguments);
         const auto samples_table = resolveSamplesTable(arguments, current_database);
 
-        auto samples_storage = DatabaseCatalog::instance().tryGetTable(StorageID(samples_table.database, samples_table.table), context);
-        if (!samples_storage)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                "Samples table {} of IVF vector similarity index {} does not exist",
-                samples_table.getFullName(), backQuoteIfNeed(index.name));
-
-        /// The samples table must have a vector column with the same name as the indexed vector column.
-        const String & vector_column = index.column_names[0];
-        const auto samples_metadata = samples_storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
-        const auto samples_vector = samples_metadata->getColumns().tryGetPhysical(vector_column);
-        if (!samples_vector)
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                "Samples table {} of IVF vector similarity index {} has no column {}",
-                samples_table.getFullName(), backQuoteIfNeed(index.name), backQuoteIfNeed(vector_column));
-
-        /// Instantiate the clustering function on the samples vector column. This runs the function's own validation of
-        /// its parameters and of the argument type, so the index does not need to know the specifics of each algorithm.
-        const String & clustering_function = arguments.clustering_function;
-        AggregateFunctionProperties properties;
-        auto aggregate_function = AggregateFunctionFactory::instance().get(
-            clustering_function, NullsAction::EMPTY, {samples_vector->type}, arguments.clustering_parameters, properties);
-
-        /// Contract of clustering functions: the result is the list of centroids.
-        const auto expected_result_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>()));
-        if (!aggregate_function->getResultType()->equals(*expected_result_type))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Clustering function {} of IVF vector similarity index {} must return {}, but returns {}",
-                clustering_function, backQuoteIfNeed(index.name), expected_result_type->getName(),
-                aggregate_function->getResultType()->getName());
+        const auto [samples_storage, aggregate_function] = getClusteringFunction(index, arguments, samples_table, context);
+        checkClusteringResultType(aggregate_function->getResultType(), arguments.clustering_function, index.name);
 
         /// Training k centroids needs at least k samples.
         const UInt64 k = arguments.clustering_parameters[0].safeGet<UInt64>();
@@ -679,23 +732,45 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
         for (const auto & parameter : arguments.clustering_parameters)
             clustering_parameters.push_back(applyVisitor(FieldVisitorToString(), parameter));
 
-        /// Single level for now: leaf centroids get level 0, cid = position, no parent, no radius, generation 0 of size k. For cosine distance they
-        /// are normalized, because rows are assigned by L2 distance, which agrees with cosine distance only for unit vectors.
-        const String centroid = arguments.distance_function == "cosineDistance" ? "L2Normalize(centroid)" : "centroid";
-        /// The result of the clustering function is checked as a whole before it is written: k centroids of the declared
-        /// dimensions. Otherwise nothing is written, so the table keeps reading all rows instead of using wrong centroids.
+        const auto [samples_storage, aggregate_function] = getClusteringFunction(index, arguments, samples_table, context);
+        const auto result_form = checkClusteringResultType(aggregate_function->getResultType(), arguments.clustering_function, index.name);
+
+        /// Both forms of the result become (vec, level, cid, parent, radius) tuples; plain centroids are leaves numbered from 1.
+        String nodes;
+        if (result_form.is_tree)
+            nodes = fmt::format(
+                "arrayMap(c -> (tupleElement(c, 'vec'), tupleElement(c, 'level'), tupleElement(c, 'cid'), tupleElement(c, 'parent'), {}), result)",
+                result_form.has_radius ? "tupleElement(c, 'radius')" : "toFloat32(0)");
+        else
+            nodes = "arrayMap((c, i) -> (c, toUInt8(0), toUInt32(i), toUInt32(0), toFloat32(0)), result, arrayEnumerate(result))";
+
+        /// For cosine distance the centroids are normalized, because rows are assigned by L2 distance, which agrees with cosine
+        /// distance only for unit vectors.
+        const String centroid = arguments.distance_function == "cosineDistance" ? "L2Normalize(node.1)" : "node.1";
+
+        /// The result is checked as a whole before anything is written, so the table keeps reading all rows instead of using
+        /// wrong centroids: k leaves (level 0), the declared dimensions, unique non-zero ids per level, and every centroid below
+        /// the top level has its parent one level up (0 = no parent). All rows are generation 0.
         const UInt64 num_clusters = arguments.clustering_parameters[0].safeGet<UInt64>();
         const String insert_query = fmt::format(
-            "INSERT INTO {} (level, cid, parent, vec, active, radius, generation, generation_size) "
-            "SELECT 0, toUInt32(position - 1), 0, {}, true, 0, 0, {} "
-            "FROM (SELECT {}({})({}) AS centroids FROM {} "
-            "HAVING throwIf(length(centroids) != {} OR NOT arrayAll(c -> length(c) = {}, centroids), "
-            "'The clustering function must return {} centroids with {} dimensions') = 0) "
-            "ARRAY JOIN centroids AS centroid, arrayEnumerate(centroids) AS position",
-            centroids_table_id.getFullTableName(), centroid, num_clusters,
+            "INSERT INTO {0} (level, cid, parent, vec, active, radius, generation, generation_size) "
+            "SELECT node.2, node.3, node.4, {1}, true, node.5, 0, length(nodes) "
+            "FROM (SELECT {2} AS nodes, arrayMap(n -> (toUInt16(n.2), n.3), nodes) AS keys, arrayMax(n -> n.2, nodes) AS top "
+            "FROM (SELECT {3}({4})({5}) AS result FROM {6}) "
+            "WHERE throwIf(NOT arrayAll(n -> length(n.1) = {7}, nodes), "
+            "'The clustering function must return centroids with {7} dimensions') "
+            "+ throwIf(countEqual(arrayMap(n -> n.2, nodes), 0) != {8}, "
+            "'The clustering function must return {8} centroids at level 0') "
+            "+ throwIf(NOT arrayAll(n -> n.3 != 0 AND n.2 < 255, nodes) OR length(arrayDistinct(keys)) != length(nodes), "
+            "'The clustering function must return unique non-zero centroid ids per level and levels below 255') "
+            "+ throwIf(NOT arrayAll(n -> n.2 < top OR n.4 = 0, nodes) "
+            "OR length(arrayDistinct(arrayConcat(keys, arrayMap(n -> (toUInt16(n.2 + 1), n.4), arrayFilter(n -> n.2 < top, nodes))))) != length(arrayDistinct(keys)), "
+            "'The clustering function must return a parent one level up for each centroid below the top level, and parent 0 at the top level') = 0) "
+            "ARRAY JOIN nodes AS node",
+            centroids_table_id.getFullTableName(), centroid, nodes,
             backQuoteIfNeed(arguments.clustering_function), fmt::join(clustering_parameters, ", "),
-            backQuoteIfNeed(index.column_names[0]), StorageID(samples_table.database, samples_table.table).getFullTableName(),
-            num_clusters, arguments.dimensions, num_clusters, arguments.dimensions);
+            backQuoteIfNeed(index.column_names[0]), samples_storage->getStorageID().getFullTableName(),
+            arguments.dimensions, num_clusters);
         const String reload_query = fmt::format("SYSTEM RELOAD DICTIONARY {}", centroids_dictionary_id.getFullTableName());
 
         /// The training runs after CREATE returns and outlives the session, so it gets a context of its own, with the user,
