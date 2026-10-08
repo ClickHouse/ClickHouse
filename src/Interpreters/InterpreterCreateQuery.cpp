@@ -912,13 +912,15 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
-/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so without the grant the name is reported as unknown.
-void throwIfEngineIsUnknownAndNotGranted(const String & engine_name, bool is_database_engine, const ContextPtr & context)
+/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so it is reported as unknown if that is the first missing grant.
+void throwIfEngineIsUnknownAndNotGranted(
+    const String & engine_name, bool is_database_engine, const AccessRightsElements & required_before, const ContextPtr & context)
 {
     if (is_database_engine ? DatabaseFactory::instance().getDatabaseEngines().contains(engine_name)
                            : StorageFactory::instance().getAllStorages().contains(engine_name))
         return;
-    if (context->getAccess()->isGranted(AccessType::TABLE_ENGINE, engine_name))
+    const auto access = context->getAccess();
+    if (access->isGranted(AccessType::TABLE_ENGINE, engine_name) || !access->isGranted(required_before))
         return;
     if (is_database_engine)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}{}",
@@ -951,7 +953,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
     {
-        throwIfEngineIsUnknownAndNotGranted(create.storage->engine->name, /*is_database_engine=*/ false, getContext());
+        throwIfEngineIsUnknownAndNotGranted(
+            create.storage->engine->name, /*is_database_engine=*/ false, /*required_before=*/ {}, getContext());
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
 
@@ -3900,7 +3903,15 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
 
     if (create.storage && create.storage->engine)
     {
-        throwIfEngineIsUnknownAndNotGranted(create.storage->engine->name, /*is_database_engine=*/ !create.table, getContext());
+        auto required_before = required_access;
+        /// `CREATE DATABASE` and legacy-format `CREATE TABLE` `ON CLUSTER` check `CLUSTER` before these.
+        if (!create.cluster.empty()
+            && (!create.table
+                || getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value
+                    < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION))
+            required_before.emplace_back(AccessType::CLUSTER);
+        throwIfEngineIsUnknownAndNotGranted(
+            create.storage->engine->name, /*is_database_engine=*/ !create.table, required_before, getContext());
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
     }
 
