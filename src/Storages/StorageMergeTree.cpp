@@ -1768,6 +1768,9 @@ Strings StorageMergeTree::getMutationsWithLegacyPartitionScope() const
             result.push_back(entry.file_name);
     }
 
+    /// A removed entry still pins its file until the file is actually deleted.
+    result.insert(result.end(), legacy_mutation_files_pending_removal.begin(), legacy_mutation_files_pending_removal.end());
+
     return result;
 }
 
@@ -1884,6 +1887,9 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
+
+            if (to_kill->needs_file_upgrade)
+                legacy_mutation_files_pending_removal.insert(to_kill->file_name);
         }
     }
 
@@ -1909,7 +1915,7 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     else
         for (const auto & partition_id : to_kill->partition_ids)
             getContext()->getMergeList().cancelPartMutations(getStorageID(), partition_id, to_kill->block_number);
-    to_kill->removeFile();
+    removeMutationFile(*to_kill);
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {
         std::lock_guard lock(mutation_wait_mutex);
@@ -3217,6 +3223,9 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
 
+            if (it->second.needs_file_upgrade)
+                legacy_mutation_files_pending_removal.insert(it->second.file_name);
+
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
         }
@@ -3225,10 +3234,23 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     for (auto & mutation : mutations_to_delete)
     {
         LOG_TRACE(log, "Removing mutation: {}", mutation.file_name);
-        mutation.removeFile();
+        removeMutationFile(mutation);
     }
 
     return mutations_to_delete.size();
+}
+
+void StorageMergeTree::removeMutationFile(MergeTreeMutationEntry & entry)
+{
+    String file_name = entry.file_name;
+    entry.removeFile();
+
+    /// Only after a successful deletion: if it throws, the legacy file is still on disk.
+    if (entry.needs_file_upgrade)
+    {
+        std::lock_guard lock(currently_processing_in_background_mutex);
+        legacy_mutation_files_pending_removal.erase(file_name);
+    }
 }
 
 size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)

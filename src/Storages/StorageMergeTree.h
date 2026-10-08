@@ -166,6 +166,12 @@ private:
 
     std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
+    /// Files of legacy mutations (see `MergeTreeMutationEntry::needs_file_upgrade`) which were removed
+    /// from `current_mutations_by_version` but are not deleted from disk yet. A file stays here if its
+    /// deletion failed, because the next load of the table still reads it (see `getMutationsWithLegacyPartitionScope`).
+    /// Protected by `currently_processing_in_background_mutex`.
+    std::set<String> legacy_mutation_files_pending_removal;
+
     /// Unfinished mutations that are required for AlterConversions.
     MutationCounters mutation_counters;
 
@@ -327,6 +333,8 @@ private:
     size_t markFinishedMutations(UInt64 first_just_completed_version = std::numeric_limits<UInt64>::max());
 
     size_t clearOldMutations(bool truncate = false);
+    /// Delete the file of a mutation already removed from `current_mutations_by_version`.
+    void removeMutationFile(MergeTreeMutationEntry & entry);
 
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
