@@ -1,5 +1,6 @@
--- Tags: no-shared-catalog
+-- Tags: no-shared-catalog, no-shared-merge-tree
 -- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will continue to merge
+-- no-shared-merge-tree: checks the `IN PARTITION ID` pinning of the mutation entry persisted in ZooKeeper by `ReplicatedMergeTree`
 
 -- Regression test: the `ReplicatedMergeTree` counterpart of a pending `IN PARTITION` mutation
 -- surviving a safe partition key type change (e.g. `Enum8 -> Int8`). The replicated mutation
