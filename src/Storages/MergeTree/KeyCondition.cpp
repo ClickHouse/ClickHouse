@@ -5916,29 +5916,9 @@ KeyCondition::Description KeyCondition::getDescription() const
             });
     };
 
-    /// An atom group is described as the conjunction of its atoms: `atom0 atom1 AND atom2 AND ...` in RPN.
-    const RPNElement and_element(RPNElement::FUNCTION_AND);
-    std::vector<const RPNElement *> elements;
-    for (const auto & element : rpn)
-    {
-        if (element.function != RPNElement::FUNCTION_ATOM_GROUP)
-        {
-            elements.push_back(&element);
-            continue;
-        }
-
-        for (size_t i = 0; i < element.group_atoms.size(); ++i)
-        {
-            elements.push_back(&element.group_atoms[i]);
-            if (i)
-                elements.push_back(&and_element);
-        }
-    }
-
     std::vector<Frame> rpn_stack;
-    for (const auto * element_ptr : elements)
+    const auto apply_element = [&](const RPNElement & element)
     {
-        const auto & element = *element_ptr;
         switch (element.function)
         {
             case RPNElement::FUNCTION_UNKNOWN:
@@ -6017,9 +5997,51 @@ KeyCondition::Description KeyCondition::getDescription() const
                 break;
             }
             case RPNElement::FUNCTION_ATOM_GROUP:
-                /// Groups are expanded into their atoms above.
+                /// Groups are handled separately and contain only atoms and constants.
                 UNREACHABLE();
             /// No `default:` to make the compiler warn if not all enum values are handled.
+        }
+    };
+
+    for (const auto & element : rpn)
+    {
+        if (element.function != RPNElement::FUNCTION_ATOM_GROUP)
+        {
+            apply_element(element);
+            continue;
+        }
+
+        /// Each atom bounds the whole predicate leaf. Intersect both components, as in
+        /// `pushAtomGroupMask`, so negation uses the same group semantics as evaluation.
+        for (size_t i = 0; i < element.group_atoms.size(); ++i)
+        {
+            const auto & atom = element.group_atoms[i];
+            apply_element(atom);
+
+            /// An unavailable curve-argument check constrains neither component. A relaxed check
+            /// constrains only its positive form, before any complement or surrounding negation.
+            auto & atom_frame = rpn_stack.back();
+            if (atom.argument_num_of_space_filling_curve)
+            {
+                atom_frame.can_be_true = std::make_unique<Node>(Node{.type = Node::Type::True});
+                atom_frame.can_be_false = std::make_unique<Node>(Node{.type = Node::Type::True});
+            }
+            else if (atom.relaxed)
+            {
+                const bool is_complement = atom.function == RPNElement::FUNCTION_NOT_IN_RANGE
+                    || atom.function == RPNElement::FUNCTION_NOT_IN_SET;
+                auto & unconstrained = is_complement ? atom_frame.can_be_true : atom_frame.can_be_false;
+                unconstrained = std::make_unique<Node>(Node{.type = Node::Type::True});
+            }
+
+            if (i)
+            {
+                auto atom_mask = std::move(rpn_stack.back());
+                rpn_stack.pop_back();
+                auto & group = rpn_stack.back();
+                group.can_be_true = combine(std::move(atom_mask.can_be_true), std::move(group.can_be_true), Node::Type::And);
+                group.can_be_false = combine(std::move(atom_mask.can_be_false), std::move(group.can_be_false), Node::Type::And);
+            }
         }
     }
 

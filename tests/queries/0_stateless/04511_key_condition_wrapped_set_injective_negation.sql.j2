@@ -20,7 +20,7 @@ FORMAT TSVRaw;
 -- A transform that is not recognized as injective keeps the atom relaxed, and negation must not
 -- prune through it. A relaxed atom stays in its multi-atom group under `NOT`: the group can be false
 -- only where its exact atom can be, so negation still prunes through the exact atom. The negated
--- checks print the condition, which shows the atoms of each negated group.
+-- checks print the effective condition, showing the atoms that can constrain the negated group.
 
 -- `NOT has(const_array, key)` folds into the `notHas` complement leaf, where additional wrapped
 -- atoms must be exact. `IS NOT DISTINCT FROM` has no complement function, so its negation exercises
