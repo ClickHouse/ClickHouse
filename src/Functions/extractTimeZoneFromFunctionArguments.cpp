@@ -1,3 +1,5 @@
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -92,7 +94,15 @@ std::optional<DataTypePtr> getDateTimeTypeWithTimeZoneArgument(
     if (!adaptor || !dynamic_cast<const FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()))
         return std::nullopt;
 
-    auto time_zone = extractTimeZoneNameFromColumn(time_zone_argument.column.get(), time_zone_argument.name);
+    /// The default implementation for NULLs admits a NULL or `Nullable` time zone; the function runs with the nested value.
+    ColumnPtr time_zone_column = time_zone_argument.column->convertToFullColumnIfLowCardinality();
+    if (time_zone_column->onlyNull())
+        return std::nullopt;
+    if (const auto * const_column = typeid_cast<const ColumnConst *>(time_zone_column.get()))
+        if (const auto * nullable_column = typeid_cast<const ColumnNullable *>(&const_column->getDataColumn()))
+            time_zone_column = ColumnConst::create(nullable_column->getNestedColumnPtr(), const_column->size());
+
+    auto time_zone = extractTimeZoneNameFromColumn(time_zone_column.get(), time_zone_argument.name);
 
     const IDataType * type_ptr = &type;
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))

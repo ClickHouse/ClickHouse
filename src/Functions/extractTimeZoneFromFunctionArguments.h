@@ -33,7 +33,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(
 
 /// For a date or time function (`FunctionDateOrDateTimeBase`) whose second argument is the constant time zone `time_zone_argument`:
 /// the type of its first argument with that time zone, i.e. the zone it executes in, or `nullptr` if `type` is not a `DateTime` or
-/// `DateTime64`. `std::nullopt` if `function` is not such a function.
+/// `DateTime64`. `std::nullopt` if `function` is not such a function or the time zone is `NULL`.
 std::optional<DataTypePtr> getDateTimeTypeWithTimeZoneArgument(
     const IFunctionBase & function, const IDataType & type, const ColumnWithTypeAndName & time_zone_argument);
 

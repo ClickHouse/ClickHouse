@@ -41,6 +41,8 @@ SELECT groupArray(d) FROM (SELECT toRelativeDayNum(dt, 'America/New_York') AS d 
 SELECT count(), sum(c) FROM (SELECT toRelativeDayNum(dt, 'America/New_York') AS d, count() AS c FROM t_rel_day_utc GROUP BY d) SETTINGS optimize_aggregation_in_order = 1;
 SELECT groupArray(d) FROM (SELECT toRelativeDayNum(dt, 'America/New_York') AS d FROM (SELECT dt FROM t_rel_day_utc ORDER BY dt) ORDER BY d LIMIT 3)
     SETTINGS optimize_sorting_by_input_stream_properties = 1, optimize_read_in_order = 0, query_plan_remove_redundant_sorting = 0;
+SELECT groupArray(d) FROM (SELECT toRelativeDayNum(dt, toNullable('America/New_York')) AS d FROM t_rel_day_utc ORDER BY d LIMIT 3) SETTINGS optimize_read_in_order = 1;
+SELECT toRelativeDayNum(dt, NULL) AS d FROM t_rel_day_utc ORDER BY d LIMIT 1 SETTINGS optimize_read_in_order = 1;
 DROP TABLE t_rel_day_utc;
 DROP TABLE IF EXISTS t_rel_day_utc_key;
 CREATE TABLE t_rel_day_utc_key (dt DateTime('UTC')) ENGINE = MergeTree ORDER BY toRelativeDayNum(dt, 'America/New_York') SETTINGS index_granularity = 8;
