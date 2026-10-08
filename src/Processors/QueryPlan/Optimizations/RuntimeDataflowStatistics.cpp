@@ -5,6 +5,8 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/SortDescription.h>
+#include <base/unit.h>
+#include <Core/Defines.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
@@ -62,6 +64,10 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
+    /// The gathered samples are compressed once, now that nothing more will be added to them.
+    for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
+        compressSample(output_bytes_statistics[i]);
+
     RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
@@ -117,7 +123,8 @@ bool isSerializedAsSingleStreamOfColumnType(const ISerialization & serialization
 }
 
 /// Tries to estimate compressed size of a column by serializing a sample of it.
-static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const ColumnCodecs & codecs)
+static std::pair<size_t, size_t>
+estimateCompressedColumnSize(const ColumnWithTypeAndName & column, const ColumnCodecs & codecs, bool compress_all_rows = false)
 {
     auto [serialization, _, column_to_write] = NativeWriter::getSerializationAndColumn(DBMS_TCP_PROTOCOL_VERSION, column);
     /// What the sample buffer holds is only known here: the serialization is picked from the column at
@@ -131,8 +138,11 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     const auto & codec = sample_matches_type_specific_codec ? codecs.type_specific : codecs.generic;
     NullWriteBuffer null_buf;
     CompressedWriteBuffer compressed_buf(null_buf, codec);
-    // To avoid spending too much time on serialization, we limit the number of rows to serialize.
-    const auto limit = std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
+    // To avoid spending too much time on serialization, we limit the number of rows to serialize - unless
+    // the caller gathered the sample itself and wants all of it compressed as one window.
+    const auto limit = compress_all_rows
+        ? column_to_write->size()
+        : std::max<size_t>(std::min(8192ul, column_to_write->size()), column_to_write->size() / 10);
     NativeWriter::writeData(*serialization, column_to_write, compressed_buf, std::nullopt, 0, limit, DBMS_TCP_PROTOCOL_VERSION);
     compressed_buf.finalize();
     // Return pair of (sample size, compressed size), note that both sizes are based on limited number of rows.
@@ -167,13 +177,94 @@ static IColumn::Permutation keyOrderPermutation(
     return permutation;
 }
 
+/// How many rows to gather before the compression ratio is taken off them, and the memory that is
+/// allowed to cost. A codec measures a ratio only as good as the window it is given: on one and the same
+/// `String` key column `ZSTD(3)` reaches 1.46x over 2.8 KB and 3.30x over 553 KB. Compressing each output
+/// block on its own therefore measured whatever window the output happened to be split into - a
+/// single-stream aggregation emits a few large blocks, a multi-stream one many small blocks - and made the
+/// estimate of a `GROUP BY` on a `String` key differ 2.3x between one thread and two. The budget is a
+/// block's worth of rows, so the window matches what a replica compresses when it sends one.
+static constexpr size_t sample_rows_budget = DEFAULT_BLOCK_SIZE;
+static constexpr size_t sample_memory_budget = 4_MiB;
+
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
     if (!block_rows)
         return false;
-    const auto counter = statistics.counter.fetch_add(1, std::memory_order_relaxed);
-    return counter % 5 == 0 && counter < 25;
+    /// Every block until the sample is full, rather than one in five: a block reaching here can be a few
+    /// dozen rows - the bucket Top-K conversion hands over a bounded sample of each bucket - and skipping
+    /// four in five of those left the sample short of a block's worth however much output there was.
+    statistics.counter.fetch_add(1, std::memory_order_relaxed);
+    return !statistics.sample_full.load(std::memory_order_relaxed);
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::appendToSample(
+    Statistics & statistics, const ColumnsWithTypeAndName & cols, size_t num_rows)
+{
+    if (statistics.sample_columns.empty())
+    {
+        statistics.sample_types.reserve(cols.size());
+        statistics.sample_columns.reserve(cols.size());
+        for (const auto & col : cols)
+        {
+            statistics.sample_types.push_back(col.type);
+            statistics.sample_columns.push_back(col.type->createColumn());
+        }
+    }
+    else if (statistics.sample_columns.size() != cols.size())
+    {
+        /// The header changed under us, which the callers of one statistics type do not do. Keep what was
+        /// gathered rather than mixing two shapes into one sample.
+        statistics.sample_full.store(true, std::memory_order_relaxed);
+        return;
+    }
+
+    const size_t rows = std::min(num_rows, sample_rows_budget - statistics.sample_rows);
+    for (size_t i = 0; i < cols.size(); ++i)
+        statistics.sample_columns[i]->insertRangeFrom(*cols[i].column, 0, rows);
+    statistics.sample_rows += rows;
+
+    statistics.sample_memory = 0;
+    for (const auto & col : statistics.sample_columns)
+        statistics.sample_memory += col->byteSize();
+
+    if (statistics.sample_rows >= sample_rows_budget || statistics.sample_memory >= sample_memory_budget)
+        statistics.sample_full.store(true, std::memory_order_relaxed);
+}
+
+void RuntimeDataflowStatisticsCacheUpdater::compressSample(Statistics & statistics)
+{
+    Stopwatch watch;
+    ColumnsWithTypeAndName cols;
+    size_t sample_bytes = 0;
+    size_t compressed_bytes = 0;
+    {
+        std::lock_guard lock(statistics.mutex);
+        if (statistics.sample_columns.empty() || !statistics.sample_rows)
+            return;
+        cols.reserve(statistics.sample_columns.size());
+        for (size_t i = 0; i < statistics.sample_columns.size(); ++i)
+            cols.emplace_back(std::move(statistics.sample_columns[i]), statistics.sample_types[i], "");
+        statistics.sample_columns.clear();
+    }
+
+    /// Only output columns get here, and they model what a replica sends to the initiator rather than
+    /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
+    /// The transfer codec is `network_compression_method`, whose default the default codec matches.
+    /// It is generic, so it applies to any serialization layout.
+    const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
+    for (const auto & col : cols)
+    {
+        auto [sample, compressed] = estimateCompressedColumnSize(col, codecs, /*compress_all_rows=*/true);
+        sample_bytes += sample;
+        compressed_bytes += compressed;
+    }
+
+    std::lock_guard lock(statistics.mutex);
+    statistics.sample_bytes += sample_bytes;
+    statistics.compressed_bytes += compressed_bytes;
+    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
@@ -196,39 +287,21 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             block_bytes += col.column->byteSize();
     }
 
-    size_t sample_bytes = 0;
-    size_t compressed_bytes = 0;
-    if (shouldSampleBlock(statistics, num_rows))
+    ColumnsWithTypeAndName sorted;
+    const bool sampling = shouldSampleBlock(statistics, num_rows);
+    if (sampling && key_order)
     {
-        /// Only output columns get here, and they model what a replica sends to the initiator rather than
-        /// anything stored in a part, so there is no column `CODEC` to resolve as in `recordInputColumns`.
-        /// The transfer codec is `network_compression_method`, whose default the default codec matches.
-        /// It is generic, so it applies to any serialization layout.
-        const ColumnCodecs codecs{.generic = CompressionCodecFactory::instance().getDefaultCodec()};
-        /// Built only for a block that is actually sampled - one in five, and at most five per query.
-        ColumnsWithTypeAndName sorted;
-        if (key_order)
-        {
-            const auto permutation = key_order();
-            sorted = cols;
-            for (auto & col : sorted)
-                col.column = col.column->permute(permutation, 0);
-        }
-        for (const auto & col : (key_order ? sorted : cols))
-        {
-            auto [sample, compressed] = estimateCompressedColumnSize(col, codecs);
-            sample_bytes += sample;
-            compressed_bytes += compressed;
-        }
+        /// Built only for a block that is actually sampled - one in five, until the sample is full.
+        const auto permutation = key_order();
+        sorted = cols;
+        for (auto & col : sorted)
+            col.column = col.column->permute(permutation, 0);
     }
 
     std::lock_guard lock(statistics.mutex);
     statistics.bytes += block_bytes;
-    if (compressed_bytes)
-    {
-        statistics.sample_bytes += sample_bytes;
-        statistics.compressed_bytes += compressed_bytes;
-    }
+    if (sampling)
+        appendToSample(statistics, key_order ? sorted : cols, num_rows);
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 
