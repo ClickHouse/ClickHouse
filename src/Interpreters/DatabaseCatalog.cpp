@@ -737,7 +737,7 @@ void DatabaseCatalog::assertDatabaseAndNamespacesExist(const CurrentDatabaseInfo
 {
     assertDatabaseExists(String(database_info.getDatabasePart()));
     if (database_info.hasTablePrefix())
-        getDatabase(database_info.getDatabasePart())->validateTableNamespace(database_info.getTablePrefixPart(), getContext());
+        getDatabase(database_info.getDatabasePart())->validateTableNamespace(database_info.getTablePrefixPart());
 }
 
 bool DatabaseCatalog::hasDatalakeCatalogs() const

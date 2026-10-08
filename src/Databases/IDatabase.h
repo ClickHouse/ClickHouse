@@ -225,7 +225,7 @@ public:
 
     virtual TableNamespaceSupport getTableNamespaceSupport() const { return TableNamespaceSupport::None; }
 
-    virtual void validateTableNamespace(std::string_view namespace_parts, ContextPtr context) const;
+    virtual void validateTableNamespace(std::string_view namespace_parts) const;
 
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.

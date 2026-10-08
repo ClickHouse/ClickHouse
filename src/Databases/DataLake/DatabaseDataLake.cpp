@@ -1037,7 +1037,7 @@ bool DatabaseDataLake::empty() const
     return getCatalog()->empty();
 }
 
-void DatabaseDataLake::validateTableNamespace(std::string_view namespace_parts, ContextPtr /*context*/) const
+void DatabaseDataLake::validateTableNamespace(std::string_view namespace_parts) const
 {
     /// one targeted catalog call, also recognizes empty namespaces
     const String requested = String(namespace_parts);

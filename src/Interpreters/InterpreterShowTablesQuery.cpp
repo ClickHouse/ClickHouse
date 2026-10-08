@@ -202,7 +202,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// validate explicit FROM names like USE does
     if (!query.getFrom().empty() && !table_namespace.empty())
     {
-        DatabaseCatalog::instance().getDatabase(database)->validateTableNamespace(database_info.getTablePrefixPart(), getContext());
+        DatabaseCatalog::instance().getDatabase(database)->validateTableNamespace(database_info.getTablePrefixPart());
     }
 
     WriteBufferFromOwnString rewritten_query;

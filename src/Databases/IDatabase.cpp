@@ -279,19 +279,10 @@ DiskPtr IDatabase::getDisk() const
     return Context::getGlobalContextInstance()->getDatabaseDisk();
 }
 
-void IDatabase::validateTableNamespace(std::string_view namespace_parts, ContextPtr context) const
+void IDatabase::validateTableNamespace(std::string_view /*namespace_parts*/) const
 {
-    if (getTableNamespaceSupport() != TableNamespaceSupport::Lexical)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Database {} does not support table namespaces", backQuoteIfNeed(getDatabaseName()));
-
-    const String prefix = String(namespace_parts) + ".";
-    for (const auto & details : getLightweightTablesIterator(context, {}, /*skip_not_loaded*/ true))
-        if (details.name.starts_with(prefix))
-            return;
-
-    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Database {} has no tables under namespace {}",
-        backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(prefix.substr(0, prefix.size() - 1)));
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "Database {} does not support table namespaces", backQuoteIfNeed(getDatabaseName()));
 }
 
 }
