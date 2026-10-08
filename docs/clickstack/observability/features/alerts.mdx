@@ -19,7 +19,7 @@ Alerting works seamlessly across your observability data, helping you track syst
 
 The service supports two complementary ways to create alerts: **Search alerts** and **Dashboard chart alerts**. Once the alert is created, it is attached to either the search or the chart.
 
-### 1. Search alerts {#search-alerts}
+### Search alerts {#search-alerts}
 
 Search alerts allow you to trigger notifications based on the results of a saved search. They help you detect when specific events or patterns occur more (or less) frequently than expected.
 
@@ -34,28 +34,28 @@ For an alert to be created for a search, the search must be saved. You can eithe
 
 Start by entering a [search](/clickstack/observability/features/search) and clicking the `Alerts` button in the top-right corner of the `Search` page.
 
-<Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Alerts search view" size="lg"/>
+<Image img="/images/clickstack/observability-alerts-search.png" alt="Search view with the Alerts button highlighted" size="lg"/>
 </Step>
 <Step title="Create the alert" id="create-the-alert">
 
 From the alert creation panel, you can:
 
 - Assign a name to the saved search associated with the alert.
-- Set a threshold and specify how many times it must be reached within a given period. Thresholds can also be used as upper or lower bounds. The period here will also dictate how often the alert is triggered.
+- Choose a comparison operator, a matching-event count, and a time window. For example, trigger when at least 10 matching events appear within 5 minutes.
 - Specify a `grouped by` value. This allows the search to be subject to an aggregation, e.g., `ServiceName`, thus allowing multiple alerts to be triggered off the same search.
-- Choose a webhook destination for notifications. You can add a new webhook directly from this view. See [Adding a webhook](#add-webhook) for details.
+- Choose a notification destination, such as email or a webhook. You can add a new webhook directly from this view. See [Adding a webhook](#add-webhook) for details.
 
 Before saving, the interface visualizes the threshold condition so you can confirm it will behave as expected.
 
-<Image img="/images/use-cases/observability/search_alert.webp" alt="Search alerts" size="lg"/>
+<Image img="/images/clickstack/observability-search-alert.png" alt="Search alert configuration with a static threshold, ServiceName grouping, and webhook destination" size="lg"/>
 </Step>
 </Steps>
 
 Note that multiple alerts can be added to a search. If the above process is repeated, you will see the current alerts as tabs at the top of the edit alert dialog, with each alert assigned a number.
 
-<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="Multiple alerts" size="md"/>
+<Image img="/images/clickstack/observability-multiple-search-alerts.png" alt="New Alert tab beside an existing alert for a saved search" size="md"/>
 
-### 2. Dashboard chart alerts {#dashboard-alerts}
+### Dashboard chart alerts {#dashboard-alerts}
 
 Dashboard alerts extend alerting to charts.
 
@@ -74,21 +74,21 @@ Alerts can be created during the chart creation process, when adding a chart to 
 <Steps>
 <Step title="Open the chart edit dialog" id="open-chart-dialog">
 
-Open the chart's configuration menu and select the alert button. This will show the chart edit dialog.
+Click the **Add alert** bell icon in the chart toolbar to open the chart edit dialog.
 
-<Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Edit chart alert" size="lg"/>
+<Image img="/images/clickstack/observability-dashboard-add-alert.png" alt="Dashboard chart with the Add alert button highlighted" size="lg"/>
 </Step>
 <Step title="Add the alert" id="add-chart-alert">
 
-Select **Add Alert**.
+Select **Add alert**.
 
-<Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Add alert to chart" size="lg"/>
+<Image img="/images/clickstack/observability-chart-editor-add-alert.png" alt="Chart editor with the Add alert button highlighted" size="lg"/>
 </Step>
 <Step title="Define the alert conditions" id="define-alert-conditions">
 
 Define the condition (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), threshold, duration, and webhook. The duration here will also dictate how often the alert is triggered.
 
-<Image img="/images/use-cases/observability/create_chart_alert.webp" alt="Create alert for chart" size="lg"/>
+<Image img="/images/clickstack/observability-create-chart-alert.png" alt="Chart editor with the alert conditions panel open" size="lg"/>
 
 You can add a new webhook directly from this view. See [Adding a webhook](#add-webhook) for details.
 </Step>
@@ -100,13 +100,13 @@ During alert creation, you can either use an existing webhook or create one. Onc
 
 A webhook can be created for different service types, including Slack and PagerDuty, as well as generic targets.
 
-For example, consider the alert creation for a chart below. Before specifying the webhook, the user can select `Add New Webhook`.
+In the alert panel, select **Add New Incoming Webhook** to create a notification destination.
 
-<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="Add new webhook" size="lg"/>
+<Image img="/images/clickstack/observability-add-new-webhook.png" alt="Alert panel with Add New Incoming Webhook highlighted" size="lg"/>
 
 This opens the webhook creation dialog, where you can create a new webhook:
 
-<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="Webhook creation" size="md"/>
+<Image img="/images/clickstack/observability-add-webhook-dialog.png" alt="Add New Webhook dialog with service type, name, URL, and description fields" size="md"/>
 
 A webhook name is required, while descriptions are optional. Other settings that must be completed depend on the service type.
 
@@ -118,7 +118,8 @@ Alerts integrate out of the box with the following service types:
 
 - **Slack**: send notifications directly to a channel via either a webhook or API.
 - **PagerDuty**: route incidents for on-call teams via the PagerDuty API.
-- **Webhook**: connect alerts to any custom system or workflow via a generic webhook.
+- **incident.io**: send alerts to incident.io.
+- **Generic**: connect alerts to any custom system or workflow via a generic webhook.
 
 <Info>
 **ClickHouse Cloud only integrations**
@@ -148,13 +149,9 @@ Depending on the service type, you will need to provide different details. Speci
 
 ## Managing alerts {#managing-alerts}
 
-Alerts can be centrally managed through the alerts panel on the left-hand side of the interface.
+Select **Alerts** in the left sidebar to manage your alerts. You can search by name and filter by state, source, or type.
 
-<Image img="/images/use-cases/observability/manage_alerts.webp" alt="Manage alerts" size="lg"/>
-
-From this view, you can see all alerts that have been created and are currently running.
-
-<Image img="/images/use-cases/observability/alerts_view.webp" alt="Alerts view" size="lg"/>
+<Image img="/images/clickstack/observability-manage-alerts.png" alt="Alert management page with Alerts highlighted in the sidebar" size="lg"/>
 
 This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, the service queries your data to check whether the alert condition is met:
 
@@ -163,16 +160,15 @@ This view also displays the alert evaluation history. Alerts are evaluated on a 
 
 Each evaluation is independent - the alert checks the data for that time window and fires only if the condition is true at that moment.
 
-In the example above, the first alert has fired on every evaluation, indicating a persistent issue. The second alert shows a resolved issue - it fired twice initially (red bars), then on subsequent evaluations the threshold condition was no longer met (green bars).
+In the example above, **Alert 1** has an **OK** status, with green bars showing recent evaluations where the threshold condition was not met.
 
 Clicking an alert takes you to the chart or search the alert is attached to.
 
 ### Deleting an alert {#deleting-alerts}
 
-To remove an alert, open the edit dialog for the associated search or chart, then select **Remove Alert**.
-In the example below, the `Remove Alert` button will remove the alert from the chart.
+To remove a chart alert, open the chart editor and select **Edit alert**. Click the trash icon in the top-right corner of the alert panel.
 
-<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Remove chart alert" size="lg"/>
+<Image img="/images/clickstack/observability-remove-chart-alert.png" alt="Chart editor with Edit alert and the alert deletion button highlighted" size="lg"/>
 
 ## SQL-based chart alerts {#sql-based-alerts}
 
@@ -201,18 +197,18 @@ From a saved dashboard, either [create a new chart with the **SQL** chart mode](
 
 Choose **Line**, **Stacked Bar**, or **Number** as the display type.
 
-<Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Create SQL chart" size="lg"/>
+<Image img="/images/clickstack/observability-sql-chart-alert.png" alt="SQL chart editor with SQL and Add alert highlighted" size="lg"/>
 </Step>
 <Step title="Add the alert" id="add-sql-alert">
 
-Select **Add Alert** from the alert section of the chart editor. Configure:
+Select **Add alert** from the alert section of the chart editor. Configure:
 
 - **Threshold type**: `>=` (greater than or equal), `>` (greater than), `<=` (less than or equal), `<` (less than), `=` (equal), `!=` (not equal), `<= x >=` (between), or `> or <` (outside)
 - **Threshold value**: The numeric value to compare against
 - **Interval**: How often the alert is evaluated (1m, 5m, 15m, 30m, 1h, 6h, 12h, or 1d). This also defines the time window for each evaluation.
 - **Webhook**: The notification channel to use when the alert fires. See [Adding a webhook](#add-webhook).
 
-<Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="Edit chart alert" size="lg"/>
+<Image img="/images/clickstack/observability-raw-sql-alert.png" alt="SQL chart editor with alert threshold and notification settings open" size="lg"/>
 
 <Warning>
 **Alert Time Range**
@@ -254,7 +250,7 @@ Typically, alert queries are executed once per interval. However, if one or more
 
 #### Error rate per service (time-series) {#example-error-rate}
 
-Alert when any service has an error rate above 5%, with at least 10 requests in the alert period to avoid noisy alerts on low-traffic services.
+Alert when any service has an error rate of at least 5%, with more than 10 requests in the alert period to avoid noisy alerts on low-traffic services.
 
 ```sql
 WITH error_rates AS (
