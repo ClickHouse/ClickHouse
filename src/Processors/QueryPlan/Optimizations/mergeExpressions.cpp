@@ -175,8 +175,6 @@ size_t tryReplaceAlwaysTrueFilter(QueryPlan::Node * node, QueryPlan::Nodes &, co
     dag.removeUnusedActions(false, false);
     auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(dag));
     expression->setStepDescription(*filter);
-    if (filter->isInputRemovalPrevented())
-        expression->setPreventInputRemoval();
     node->step = std::move(expression);
     return 1;
 }
