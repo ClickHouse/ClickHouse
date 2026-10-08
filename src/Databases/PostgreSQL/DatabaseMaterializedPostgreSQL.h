@@ -36,7 +36,8 @@ public:
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info,
-        std::unique_ptr<MaterializedPostgreSQLSettings> settings_);
+        std::unique_ptr<MaterializedPostgreSQLSettings> settings_,
+        ASTPtr table_overrides_);
 
     String getEngineName() const override { return "MaterializedPostgreSQL"; }
 
@@ -54,6 +55,9 @@ public:
     /// has caught up with the initial snapshot.
     std::vector<LightWeightTableDetails>
     getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
+    /// Names for the "Maybe you meant ...?" hints. Hides the same tables as `getLightweightTablesIterator`.
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
     /// The iterator above exposes the nested ReplacingMergeTree tables; reading them requires the
     /// `StorageMaterializedPostgreSQL` wrapper. See `IDatabase::getTableForRead`.
@@ -167,6 +171,9 @@ private:
     String remote_database_name;
     postgres::ConnectionInfo connection_info;
     std::unique_ptr<MaterializedPostgreSQLSettings> settings;
+    /// The `TABLE OVERRIDE` list of the database definition (may be null). It shapes the DDL of the nested tables,
+    /// so in coordinated mode it is part of the naming fingerprint all replicas must agree on.
+    ASTPtr table_overrides;
 
     std::shared_ptr<PostgreSQLReplicationHandler> replication_handler;
 

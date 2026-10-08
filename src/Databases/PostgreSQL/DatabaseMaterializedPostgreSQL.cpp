@@ -91,12 +91,14 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
         const String & database_name_,
         const String & postgres_database_name,
         const postgres::ConnectionInfo & connection_info_,
-        std::unique_ptr<MaterializedPostgreSQLSettings> settings_)
+        std::unique_ptr<MaterializedPostgreSQLSettings> settings_,
+        ASTPtr table_overrides_)
     : DatabaseAtomic(database_name_, metadata_path_, uuid_, "DatabaseMaterializedPostgreSQL (" + database_name_ + ")", context_)
     , is_attach(is_attach_)
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
+    , table_overrides(std::move(table_overrides_))
     , startup_task(getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
 {
 }
@@ -132,7 +134,8 @@ std::shared_ptr<PostgreSQLReplicationHandler> DatabaseMaterializedPostgreSQL::ma
             getContext(),
             is_attach,
             *settings,
-            /* is_materialized_postgresql_database = */ true);
+            /* is_materialized_postgresql_database = */ true,
+            table_overrides.get());
 }
 
 
@@ -1400,6 +1403,18 @@ std::vector<LightWeightTableDetails> DatabaseMaterializedPostgreSQL::getLightwei
 }
 
 
+VectorWithMemoryTracking<String> DatabaseMaterializedPostgreSQL::getAllTableNames(ContextPtr local_context) const
+{
+    auto result = DatabaseAtomic::getAllTableNames(local_context);
+
+    /// Do not suggest a coordinated table that user-facing lookups do not expose yet, see `getLightweightTablesIterator`.
+    if (isCoordinated() && !local_context->isInternalQuery())
+        std::erase_if(result, [this](const String & name) { return !isCoordinatedTableAvailable(name); });
+
+    return result;
+}
+
+
 bool DatabaseMaterializedPostgreSQL::isCoordinatedTableAvailable(const String & table_name) const
 {
     std::lock_guard lock(tables_mutex);
@@ -1676,13 +1691,14 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             const bool allow_uuid_macro = args.context->isDDLOrOnClusterInternal() || args.create_query.has_uuid;
             validateMaterializedPostgreSQLCoordinationSettings(
                 *postgresql_replica_settings, args.context, args.database_name, args.uuid,
-                configuration.database, /* postgres_table */ "", allow_uuid_macro);
+                configuration.database, /* postgres_table */ "", args.create_query.table_overrides, allow_uuid_macro);
         }
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,
             args.database_name, configuration.database, connection_info,
-            std::move(postgresql_replica_settings));
+            std::move(postgresql_replica_settings),
+            args.create_query.table_overrides ? args.create_query.table_overrides->clone() : nullptr);
     };
     factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
         .supports_arguments = true,

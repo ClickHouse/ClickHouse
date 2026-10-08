@@ -160,6 +160,10 @@ public:
 
     StoragePtr tryGetNested() const;
 
+    /// Like `tryGetNested`, but returns nothing for a coordinated single-table engine whose local nested table has
+    /// not caught up with the initial snapshot yet.
+    StoragePtr tryGetAvailableNested() const;
+
     /// Throw `error_code` if this is a coordinated single-table engine whose local nested table has not caught
     /// up with the initial snapshot yet.
     void checkCoordinatedNestedAvailable(int error_code, const char * action) const;

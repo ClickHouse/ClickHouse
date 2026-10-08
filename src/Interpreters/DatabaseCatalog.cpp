@@ -1046,7 +1046,21 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr co
         if (iter != databases.end())
             db = iter->second;
     }
-    return db && db->isTableExist(table_id.table_name, context_);
+    if (!db || !db->isTableExist(table_id.table_name, context_))
+        return false;
+
+#if USE_LIBPQXX
+    /// `EXISTS TABLE` must agree with `SELECT` and `SHOW TABLES`: a coordinated table stays invisible until this
+    /// replica has caught up with its initial snapshot (see `DatabaseMaterializedPostgreSQL::tryGetTable`).
+    if (!context_->isInternalQuery() && db->getEngineName() == "MaterializedPostgreSQL")
+    {
+        const auto * mat_pg_database = assert_cast<const DatabaseMaterializedPostgreSQL *>(db.get());
+        if (mat_pg_database->isCoordinated() && !mat_pg_database->isCoordinatedTableAvailable(table_id.table_name))
+            return false;
+    }
+#endif
+
+    return true;
 }
 
 void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id, ContextPtr context_) const

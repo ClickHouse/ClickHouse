@@ -61,6 +61,8 @@ struct NestedTableEngineSpec
 /// `ON CLUSTER` (or `Replicated` database) DDL, or an explicit `UUID '...'` clause. When it is false,
 /// a coordinated keeper path that depends on `{uuid}` is rejected, because each replica would land on
 /// a disjoint Keeper subtree while still contending for the same PostgreSQL slot and publication.
+/// `table_overrides` is the `TABLE OVERRIDE` list of the database engine (null for the table engine): the
+/// overrides shape the DDL of the shared nested tables, so they are part of the same check.
 void validateMaterializedPostgreSQLCoordinationSettings(
     const MaterializedPostgreSQLSettings & settings,
     ContextPtr context,
@@ -68,6 +70,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     const UUID & clickhouse_uuid,
     const String & postgres_database,
     const String & postgres_table,
+    const IAST * table_overrides,
     bool allow_uuid_macro);
 
 class PostgreSQLReplicationHandler : WithContext
@@ -86,7 +89,8 @@ public:
             ContextPtr context_,
             bool is_attach_,
             const MaterializedPostgreSQLSettings & replication_settings,
-            bool is_materialized_postgresql_database_);
+            bool is_materialized_postgresql_database_,
+            const IAST * table_overrides);
 
     /// Quiesces the background tasks before any other member is destroyed. The task functions capture `this`
     /// and use members that are declared after the task holders (and are therefore destroyed before them), so

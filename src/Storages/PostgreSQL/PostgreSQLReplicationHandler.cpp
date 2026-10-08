@@ -448,8 +448,13 @@ namespace
     /// through different addresses. The upstream cluster itself is fenced separately by its
     /// `system_identifier` (see `ensureCoordinatedSourceClusterCompatible`), which needs a PostgreSQL
     /// connection and therefore cannot be part of this fingerprint, which is also checked at CREATE time.
+    ///
+    /// The `TABLE OVERRIDE` list of the database engine is included as well: every replica feeds it into the DDL
+    /// of the shared nested tables (`getCreateNestedTableQuery`), so replicas with different overrides would
+    /// otherwise pass these checks and only fail later, on a metadata mismatch of the replicated nested tables.
     String coordinatedNamingFingerprint(
-        const MaterializedPostgreSQLSettings & settings, const String & postgres_database, const String & postgres_table)
+        const MaterializedPostgreSQLSettings & settings, const String & postgres_database, const String & postgres_table,
+        const IAST * table_overrides)
     {
         const String schema = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema];
         const String schema_list = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list];
@@ -457,14 +462,15 @@ namespace
             = !schema_list.empty() || settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema];
         return fmt::format(
             "table_engine: {}\nschema: {}\nschema_list: {}\nschema_as_a_part_of_table_name: {}\nuse_extended_date_and_time_types: {}\n"
-            "postgres_database: {}\npostgres_table: {}\n",
+            "postgres_database: {}\npostgres_table: {}\ntable_overrides: {}\n",
             settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine].value,
             schema,
             schema_list,
             schema_as_a_part_of_table_name,
             settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_extended_date_and_time_types].value,
             postgres_database,
-            postgres_table);
+            postgres_table,
+            table_overrides ? table_overrides->formatWithSecretsOneLine() : "");
     }
 
     /// The identity stored in this replica's <keeper_path>/replicas/<name> registration node. The registration
@@ -527,6 +533,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     const UUID & clickhouse_uuid,
     const String & postgres_database,
     const String & postgres_table,
+    const IAST * table_overrides,
     bool allow_uuid_macro)
 {
     const String engine = settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
@@ -721,7 +728,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     /// without Keeper anyway, and joining an existing setup on an unverified guess must not happen.
     if (coordination_enabled)
     {
-        const String local_fingerprint = coordinatedNamingFingerprint(settings, postgres_database, postgres_table);
+        const String local_fingerprint = coordinatedNamingFingerprint(settings, postgres_database, postgres_table, table_overrides);
         String published_fingerprint;
         if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/naming", published_fingerprint)
             && published_fingerprint != local_fingerprint)
@@ -729,8 +736,9 @@ void validateMaterializedPostgreSQLCoordinationSettings(
                 "A coordinated MaterializedPostgreSQL setup already exists at Keeper path '{}', and its "
                 "naming-affecting settings or source identity differ from the ones of this CREATE query. All "
                 "replicas of one coordinated setup must agree on materialized_postgresql_table_engine, "
-                "materialized_postgresql_schema, materialized_postgresql_schema_list and "
-                "materialized_postgresql_tables_list_with_schema, and must replicate the same PostgreSQL "
+                "materialized_postgresql_schema, materialized_postgresql_schema_list, "
+                "materialized_postgresql_tables_list_with_schema and the TABLE OVERRIDE clauses, and must "
+                "replicate the same PostgreSQL "
                 "source (the same source database and, for the single-table engine, the same source table): "
                 "these determine how the ClickHouse names of the shared nested tables (and the names of the "
                 "shared replication slot and publication) are derived, so a disagreeing replica would share "
@@ -785,7 +793,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     ContextPtr context_,
     bool is_attach_,
     const MaterializedPostgreSQLSettings & replication_settings,
-    bool is_materialized_postgresql_database_)
+    bool is_materialized_postgresql_database_,
+    const IAST * table_overrides)
     : WithContext(context_->getGlobalContext())
     , log(getLogger("PostgreSQLReplicationHandler"))
     , is_attach(is_attach_)
@@ -868,7 +877,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
                       coordination_identity_error);
         }
 
-        coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings, postgres_database_, postgres_table_);
+        coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings, postgres_database_, postgres_table_, table_overrides);
         coordination_replica_owner = coordinationReplicaOwnerId(clickhouse_uuid_);
 
         LOG_INFO(log, "Replica coordination enabled: keeper path '{}', replica name '{}', nested table engine '{}'",
@@ -2621,8 +2630,9 @@ void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
             "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' was created with "
             "naming-affecting settings or a source identity that differ from this replica's. All replicas "
             "of one coordinated setup must agree on materialized_postgresql_table_engine, "
-            "materialized_postgresql_schema, materialized_postgresql_schema_list and "
-            "materialized_postgresql_tables_list_with_schema, and must replicate the same PostgreSQL source "
+            "materialized_postgresql_schema, materialized_postgresql_schema_list, "
+            "materialized_postgresql_tables_list_with_schema and the TABLE OVERRIDE clauses, and must "
+            "replicate the same PostgreSQL source "
             "(the same source database and, for the single-table engine, the same source table): these "
             "determine how the ClickHouse names of the shared nested tables (and the names of the shared "
             "replication slot and publication) are derived, so a disagreeing replica would share the "

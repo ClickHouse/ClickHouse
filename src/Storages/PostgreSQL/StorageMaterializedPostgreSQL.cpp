@@ -112,7 +112,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             getContext(),
             is_attach,
             *replication_settings,
-            /* is_materialized_postgresql_database */false);
+            /* is_materialized_postgresql_database */false,
+            /* table_overrides */ nullptr);
 
     is_standalone_coordinated = replication_handler->isCoordinated();
 
@@ -197,6 +198,17 @@ StoragePtr StorageMaterializedPostgreSQL::getNested() const
 StoragePtr StorageMaterializedPostgreSQL::tryGetNested() const
 {
     return DatabaseCatalog::instance().tryGetTable(getNestedStorageID(), nested_context);
+}
+
+
+StoragePtr StorageMaterializedPostgreSQL::tryGetAvailableNested() const
+{
+    /// Size and row-count estimates (`EXPLAIN`, `system.tables`, optimizer statistics) must not observe the partial
+    /// local copy of a coordinated replica that has not caught up yet (see `checkCoordinatedNestedAvailable`). They
+    /// are optional, so report them as unknown instead of throwing.
+    if (is_standalone_coordinated && !has_nested.load())
+        return nullptr;
+    return tryGetNested();
 }
 
 
@@ -536,6 +548,9 @@ void StorageMaterializedPostgreSQL::checkTableSizeBelowDropLimit(ContextPtr quer
 
 bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & column_names) const
 {
+    /// Called while planning, before `read`: fail with the same "not available yet" error instead of whatever the
+    /// lookup of the nested table would report.
+    checkCoordinatedNestedAvailable(ErrorCodes::NOT_INITIALIZED, "read");
     return needRewriteQueryWithFinalForStorage(column_names, getNested());
 }
 
@@ -587,7 +602,7 @@ bool StorageMaterializedPostgreSQL::supportsOptimizationToSubcolumns() const
 
 IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
 {
-    if (auto nested = tryGetNested())
+    if (auto nested = tryGetAvailableNested())
         return nested->getColumnSizes();
     return {};
 }
@@ -595,7 +610,7 @@ IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes() const
 
 IStorage::ColumnSizeByName StorageMaterializedPostgreSQL::getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const
 {
-    if (auto nested = tryGetNested())
+    if (auto nested = tryGetAvailableNested())
         return nested->getColumnSizes(columns, calculate_subcolumn_sizes);
     return {};
 }
@@ -605,7 +620,7 @@ std::optional<UInt64> StorageMaterializedPostgreSQL::totalRows(ContextPtr query_
 {
     /// An estimate: as for any `ReplacingMergeTree`, the deleted rows and the superseded versions of the
     /// updated rows are still counted until the parts are merged.
-    if (auto nested = tryGetNested())
+    if (auto nested = tryGetAvailableNested())
         return nested->totalRows(query_context);
     return {};
 }
@@ -613,7 +628,7 @@ std::optional<UInt64> StorageMaterializedPostgreSQL::totalRows(ContextPtr query_
 
 std::optional<UInt64> StorageMaterializedPostgreSQL::totalBytes(ContextPtr query_context) const
 {
-    if (auto nested = tryGetNested())
+    if (auto nested = tryGetAvailableNested())
         return nested->totalBytes(query_context);
     return {};
 }
@@ -1063,7 +1078,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
             const bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.has_uuid;
             validateMaterializedPostgreSQLCoordinationSettings(
                 *postgresql_replication_settings, args.getContext(), args.table_id.database_name, args.table_id.uuid,
-                configuration.database, configuration.table_or_query.getTableName(), allow_uuid_macro);
+                configuration.database, configuration.table_or_query.getTableName(), /* table_overrides */ nullptr,
+                allow_uuid_macro);
         }
 
         /// For the table engine the user declares the column types explicitly, so this setting cannot

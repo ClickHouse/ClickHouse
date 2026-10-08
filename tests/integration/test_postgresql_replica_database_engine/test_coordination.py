@@ -1763,6 +1763,19 @@ def test_join_with_different_naming_settings_is_rejected(started_cluster):
         assert "materialized_postgresql_tables_list_with_schema" in error
         assert "test_database" not in instance2.query("SHOW DATABASES").split()
 
+        # A `TABLE OVERRIDE` changes the DDL of the shared nested table, so a joining replica that adds
+        # one is rejected as well, even with otherwise identical settings.
+        error = instance2.query_and_get_error(
+            f"CREATE DATABASE test_database "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+            f"SETTINGS {', '.join(naming_settings)} "
+            f"TABLE OVERRIDE `naming_schema.naming_table` (PARTITION BY key)"
+        )
+        assert "naming-affecting settings" in error
+        assert "TABLE OVERRIDE" in error
+        assert "test_database" not in instance2.query("SHOW DATABASES").split()
+
         # With the identical naming settings the join converges on the same table names.
         pg_manager2.create_materialized_db(
             ip=cluster.postgres_ip,
