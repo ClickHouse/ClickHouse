@@ -1337,7 +1337,7 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
 
     /// The lazy branch re-reads the surviving rows by their physical row numbers, and the main
     /// read must be able to prune the deferred columns. Prove that for every file of the snapshot:
-    /// all data files are Parquet, none needs schema evolution, and there are no equality deletes.
+    /// all data files are Parquet or Vortex, none needs schema evolution, and there are no equality deletes.
     /// The manifest files are cached, and the read itself traverses them anyway.
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
@@ -1704,6 +1704,11 @@ ColumnMapperPtr IcebergMetadata::getColumnMapperForCurrentSchema(StorageMetadata
 {
     if (const auto format = Poco::toLower(write_format); format != "parquet" && format != "vortex")
         return nullptr;
+    return getCurrentSchemaColumnMapperForFilters(storage_metadata_snapshot, context);
+}
+
+ColumnMapperPtr IcebergMetadata::getCurrentSchemaColumnMapperForFilters(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
     auto iceberg_table_state = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
     // This is a temporary cludge for cluster functions because now the state on replicas is not synchronized with the primary state on the coordinator
     if (!iceberg_table_state)

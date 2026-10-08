@@ -1495,7 +1495,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
                     /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
                     /// pruning) back to a field_id.
-                    result->current_schema_column_mapper = format_filter_info->column_mapper;
+                    result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper
+                        ? format_filter_info->current_schema_column_mapper
+                        : format_filter_info->column_mapper;
                     if (top_k_filter_allowed)
                         result->top_k_filter = format_filter_info->top_k_filter;
                     return result;
@@ -1503,11 +1505,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
 
             if (!format_supports_prewhere)
-                return std::make_shared<FormatFilterInfo>(
+            {
+                auto result = std::make_shared<FormatFilterInfo>(
                     format_filter_info->filter_actions_dag,
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     nullptr, nullptr);
+                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
+                return result;
+            }
 
             if (filters_substituted || (format_filter_info->top_k_filter && !top_k_filter_allowed))
             {
@@ -1516,6 +1522,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     format_filter_info->context.lock(),
                     format_filter_info->column_mapper,
                     row_level_filter, prewhere_info);
+                result->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
                 if (top_k_filter_allowed)
                     result->top_k_filter = format_filter_info->top_k_filter;
                 return result;
@@ -1537,6 +1544,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info ? filter_info->column_mapper : nullptr,
                 filter_info ? filter_info->row_level_filter : nullptr,
                 filter_info ? filter_info->prewhere_info : nullptr);
+            if (filter_info)
+                filter_info_with_rows->current_schema_column_mapper = filter_info->current_schema_column_mapper;
             filter_info_with_rows->rows_to_read = object_info->rows_to_read;
             filter_info_with_rows->need_row_numbers = true;
             filter_info = filter_info_with_rows;

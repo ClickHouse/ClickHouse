@@ -119,9 +119,10 @@ struct FormatFilterInfo
 
     ColumnMapperPtr column_mapper;
 
-    /// Only set when `column_mapper` above was swapped for a per-file mapper (data lake schema
-    /// evolution, e.g. Iceberg): the CURRENT/query-side mapper, i.e. the one `column_mapper` held
-    /// before the swap. Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
+    /// The CURRENT/query-side mapper of a data lake (e.g. Iceberg). It matters when `column_mapper`
+    /// above was swapped for a per-file mapper (schema evolution), and it is set even when the
+    /// current-schema mapper is not given to the reader as `column_mapper` (a table whose write
+    /// format differs from the format of the file). Filters built from the query (like `filter_actions_dag`, or a `SpatialFilter`
     /// extracted from it) reference columns by their current/query-side name, not the name they had
     /// in the schema this particular file was written under, so resolving a filter's column name back
     /// to a `field_id` requires this mapper, not the per-file one.
