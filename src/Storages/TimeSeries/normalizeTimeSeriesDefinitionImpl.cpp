@@ -914,8 +914,7 @@ namespace
 
                 remove_settings({
                     {"index_granularity", settings[TimeSeriesSetting::recent_samples_index_granularity].value},
-                    {"ttl_only_drop_parts", static_cast<UInt64>(1)},
-                    {"apply_ttl_delete_on_insert", static_cast<UInt64>(1)}});
+                    {"ttl_only_drop_parts", static_cast<UInt64>(1)}});
                 break;
             }
 
@@ -1549,10 +1548,6 @@ namespace
                 /// The table is partitioned by time, so `ttl_only_drop_parts` lets the TTL drop whole expired parts instead of rewriting them.
                 if (!has_engine_setting("ttl_only_drop_parts"))
                     set_engine_setting("ttl_only_drop_parts", 1);
-
-                /// A sample older than the TTL has no reader, so it is dropped on insert instead of waiting for the TTL merge.
-                if (!has_engine_setting("apply_ttl_delete_on_insert"))
-                    set_engine_setting("apply_ttl_delete_on_insert", 1);
 
                 if (const auto & partition_by = settings[TimeSeriesSetting::recent_samples_partition_by].value)
                 {

@@ -2,8 +2,9 @@
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 -- Tag no-replicated-database: `DatabaseReplicated` does not drop `TimeSeries` inner tables synchronously; deferred DROPs are rejected.
 
--- The inner recent samples table of a `TimeSeries` table enables `apply_ttl_delete_on_insert`,
--- so a sample older than the TTL window is written to the samples table only.
+-- The inner recent samples table does not set `apply_ttl_delete_on_insert`.
+-- This test enables the setting on that table, so a sample older than the TTL window
+-- is written to the samples table only.
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
@@ -12,11 +13,14 @@ DROP TABLE IF EXISTS ts_expired;
 
 -- TTL 1 hour. The samples close to now() stay inside the TTL window for the whole test,
 -- so the background TTL cannot drop them and race the row and part counts.
-CREATE TABLE ts_expired ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 3600;
+-- The inner table name is `.inner_id.recentsamples.<table uuid>`.
+CREATE TABLE ts_expired UUID '00005327-0000-4000-8000-000000000001' ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 3600;
 
-SELECT '-- the inner recent samples table enables the setting';
+SELECT '-- the inner recent samples engine does not contain the setting';
 
-SELECT engine_full LIKE '%apply_ttl_delete_on_insert = 1%' FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.recentsamples.%';
+SELECT engine_full LIKE '%apply_ttl_delete_on_insert%' FROM system.tables WHERE database = currentDatabase() AND name = '.inner_id.recentsamples.00005327-0000-4000-8000-000000000001';
+
+ALTER TABLE `.inner_id.recentsamples.00005327-0000-4000-8000-000000000001` MODIFY SETTING apply_ttl_delete_on_insert = 1;
 
 SELECT '-- a sample older than the TTL window goes to the samples table only';
 

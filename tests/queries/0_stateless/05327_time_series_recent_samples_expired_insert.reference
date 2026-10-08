@@ -1,5 +1,5 @@
--- the inner recent samples table enables the setting
-1
+-- the inner recent samples engine does not contain the setting
+0
 -- a sample older than the TTL window goes to the samples table only
 2	1
 -- the recent samples table holds one part, not one per partition of the expired range

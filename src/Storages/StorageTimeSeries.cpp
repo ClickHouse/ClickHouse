@@ -1104,7 +1104,6 @@ Queries whose time range fits in the TTL window read from the recent samples tab
 because it's much smaller (this can be disabled with the query-level setting `time_series_prefer_recent_samples_table`).
 
 The TTL of the inner recent samples table is always derived from the [recent_samples_ttl_seconds](#settings) setting.
-The inner recent samples table also enables the MergeTree setting `apply_ttl_delete_on_insert`, so a sample which is already older than the TTL at insert time is written only to the samples table and does not create a part in the recent samples table. For a `TimeSeries` table created by an older version of ClickHouse, enable it with `ALTER TABLE <inner recent samples table> MODIFY SETTING apply_ttl_delete_on_insert = 1`.
 
 ### Tags table {#tags-table}
 
@@ -1180,7 +1179,7 @@ RECENT SAMPLES INNER COLUMNS
     `timestamp` DateTime64(3) CODEC(Delta, T64, ZSTD(3)),
     `value` Float64 CODEC(ALP, ZSTD(3))
 )
-RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1, apply_ttl_delete_on_insert = 1
+RECENT SAMPLES INNER ENGINE = MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
@@ -1234,7 +1233,7 @@ ENGINE = MergeTree
 PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))
 ORDER BY (id, timestamp)
 TTL toDateTime(timestamp) + toIntervalSecond(345600)
-SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1, apply_ttl_delete_on_insert = 1
+SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
 ```
 
 ```sql
@@ -1368,7 +1367,7 @@ with all the tags except the metric name.
 By default inner target tables use the following table engines:
 - the [samples](#samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree);
 - the [recent samples](#recent-samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) partitioned by 5-hour buckets (see the [recent_samples_partition_by](#settings) setting) with a `TTL` derived from
-the [recent_samples_ttl_seconds](#settings) setting, with `ttl_only_drop_parts` enabled, so expired parts are dropped as a whole, and with `apply_ttl_delete_on_insert` enabled, so samples older than the TTL are not written to this table at all;
+the [recent_samples_ttl_seconds](#settings) setting, with `ttl_only_drop_parts` enabled, so expired parts are dropped as a whole;
 - the [tags](#tags-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
 to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`. If these columns aren't stored
 (see the `store_min_time_and_max_time` setting), most duplicates don't even reach the table: the deduplication cache of the `TimeSeries` table
@@ -1476,7 +1475,7 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `tags_deduplication_cache_size_bytes` | UInt64 | 104857600 | Maximum size in bytes of the deduplication cache of the [tags](#tags-table) table. The cache remembers the time series written recently, so their tags aren't written again with every insert. When the cache is full, the entries used only once are evicted first, then the least recently used ones (SLRU). The cache is used only when `store_min_time_and_max_time` is disabled, because otherwise every insert changes `min_time` and `max_time`: the default value is ignored then, and an explicit non-zero value is rejected. Set to 0 to disable the cache, see also `tags_deduplication_cache_expiration_seconds` |
 | `tags_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [tags](#tags-table) table expires, counted from the moment the time series was written. So every time series is written again at least once per this period, which limits any difference between the cache and the table. The cache is local to the server and cleared by `TRUNCATE TABLE` executed on it or by `SYSTEM DROP TIME SERIES CACHES`. Used only when `store_min_time_and_max_time` is disabled, see `tags_deduplication_cache_size_bytes`. Set to 0 to disable the cache |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
-| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. The inner recent samples table also enables the MergeTree setting `apply_ttl_delete_on_insert`, so samples already older than the TTL are not written to it. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
+| `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
