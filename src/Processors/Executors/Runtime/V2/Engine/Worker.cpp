@@ -41,11 +41,8 @@ std::optional<Task> Worker::pickTask()
         if (auto task = tryPickTask())
             return task;
 
-        if (!pool.coordinator.wait(*this))
-            return std::nullopt;
-
-        if (const size_t fired = taskCount(); fired > 1)
-            wakeOrSpawn(fired - 1);
+        if (auto task = pool.coordinator.wait(*this))
+            return task;
     }
 }
 
@@ -54,19 +51,16 @@ std::optional<Task> Worker::tryPickTask()
     const size_t picks_streak = ++picks_count;
 
     if (picks_streak % max_sequential_full_rounds == 0)
-    {
-        if (poll(0) > 0)
-            if (auto task = takeFromLocal())
-                return task;
-
         if (auto task = takeFromGlobal())
             return task;
-    }
 
     if (auto task = takeFromLocal())
         return task;
 
     if (auto task = takeFromGlobal())
+        return task;
+
+    if (auto task = takeFromPoller())
         return task;
 
     return takeFromOthers();
@@ -80,6 +74,14 @@ std::optional<Task> Worker::takeFromLocal()
 std::optional<Task> Worker::takeFromGlobal()
 {
     return pool.global_tasks.tryPop();
+}
+
+std::optional<Task> Worker::takeFromPoller()
+{
+    if (pool.coordinator.isPolling())
+        return std::nullopt;
+
+    return poll(0);
 }
 
 std::optional<Task> Worker::takeFromOthers()
@@ -136,9 +138,6 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
     while (auto task = pickTask())
     {
-        if (pool.coordinator.needsPoller())
-            wakeOrSpawn(1);
-
         const size_t threads_needed = runTask(*task);
 
         if (threads_needed > 0)
@@ -173,16 +172,22 @@ std::optional<Task> Worker::steal()
     return stolen;
 }
 
-size_t Worker::poll(int timeout_ms)
+std::optional<Task> Worker::poll(int timeout_ms)
 {
     if (pool.poller.pending() == 0)
-        return 0;
+        return std::nullopt;
 
-    auto fired = pool.poller.poll(timeout_ms);
-    for (auto * state : fired | std::views::reverse)
-        pushToLocal(Task::create(*state, Task::Step::AsyncReady));
+    const auto fired = pool.poller.poll(timeout_ms);
+    if (fired.empty())
+        return std::nullopt;
 
-    return fired.size();
+    if (fired.size() > 1)
+    {
+        pool.global_tasks.pushMany(std::span(fired).subspan(1));
+        wakeOrSpawn(fired.size() - 1);
+    }
+
+    return fired.front();
 }
 
 size_t Worker::drain()
@@ -198,11 +203,6 @@ size_t Worker::drain()
         }
     }
     return moved;
-}
-
-size_t Worker::taskCount() const
-{
-    return local_tasks.size();
 }
 
 void Worker::park()

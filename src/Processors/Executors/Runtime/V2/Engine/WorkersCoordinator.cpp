@@ -16,17 +16,9 @@ WorkersCoordinator::WorkersCoordinator(WorkerPool & pool_, size_t max_workers)
     sleeping_workers.reserve(max_workers);
 }
 
-size_t WorkersCoordinator::runnableTasks() const
-{
-    size_t result = pool.global_tasks.size();
-    for (const auto & worker : pool.workers)
-        result += worker.taskCount();
-    return result;
-}
-
 bool WorkersCoordinator::allIdle() const
 {
-    return idle_count == registered_workers && polling_count == 0 && runnableTasks() == 0 && pool.poller.pending() == 0;
+    return idle_count == registered_workers && polling_count == 0 && pool.global_tasks.size() == 0 && pool.poller.pending() == 0;
 }
 
 Worker * WorkersCoordinator::takeAnySleepingWorker()
@@ -84,26 +76,26 @@ void WorkersCoordinator::leave(size_t worker_id)
         wakeOneLocked();
 }
 
-bool WorkersCoordinator::wait(Worker & worker)
+std::optional<Task> WorkersCoordinator::wait(Worker & worker)
 {
     std::unique_lock lock(mutex);
 
     if (is_stopped)
-        return false;
+        return std::nullopt;
 
     idle_count.fetch_add(1);
 
-    if (runnableTasks() > 0)
+    if (pool.global_tasks.size() > 0)
     {
         idle_count.fetch_sub(1);
-        return true;
+        return std::nullopt;
     }
 
     if (allIdle())
     {
         idle_count.fetch_sub(1);
         stopLocked();
-        return false;
+        return std::nullopt;
     }
 
     if (pool.poller.pending() > 0 && polling_count == 0)
@@ -111,17 +103,18 @@ bool WorkersCoordinator::wait(Worker & worker)
         idle_count.fetch_sub(1);
         polling_count.fetch_add(1);
         lock.unlock();
-        worker.poll(-1);
+        auto polled = worker.poll(-1);
         lock.lock();
         polling_count.fetch_sub(1);
-        return !is_stopped;
+        if (is_stopped)
+            return std::nullopt;
+        return polled;
     }
 
     sleeping_workers.push_back(&worker);
     lock.unlock();
     worker.park();
-
-    return !is_stopped;
+    return std::nullopt;
 }
 
 size_t WorkersCoordinator::wake(size_t to_wake)
@@ -148,9 +141,9 @@ size_t WorkersCoordinator::wake(size_t to_wake)
     return woken.size();
 }
 
-bool WorkersCoordinator::needsPoller() const
+bool WorkersCoordinator::isPolling() const
 {
-    return polling_count == 0 && idle_count > 0 && pool.poller.pending() > 0;
+    return polling_count > 0;
 }
 
 void WorkersCoordinator::stop()

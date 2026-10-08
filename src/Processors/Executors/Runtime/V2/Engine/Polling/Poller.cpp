@@ -96,12 +96,12 @@ void Poller::updateTimer()
     timer_signal.setRelative(std::max<int64_t>(1, us_until_deadline));
 }
 
-void Poller::collectExpired(std::vector<ProcessorState *> & fired)
+void Poller::collectExpired(std::vector<Task> & fired)
 {
     while (ProcessorState * expired = deadlines->popExpired())
     {
         unregister(expired);
-        fired.push_back(expired);
+        fired.push_back(Task::create(*expired, Task::Step::AsyncReady));
     }
 
     updateTimer();
@@ -134,14 +134,14 @@ void Poller::add(const PollRequest & request)
     }
 }
 
-std::vector<ProcessorState *> Poller::poll(int timeout_ms)
+std::vector<Task> Poller::poll(int timeout_ms)
 {
     if (polling.exchange(true))
         return {};
 
     SCOPE_EXIT(polling = false);
 
-    std::vector<ProcessorState *> fired;
+    std::vector<Task> fired;
 
     {
         std::lock_guard lock(mutex);
@@ -176,7 +176,7 @@ std::vector<ProcessorState *> Poller::poll(int timeout_ms)
 
         auto * state = static_cast<ProcessorState *>(ptr);
         unregister(state);
-        fired.push_back(state);
+        fired.push_back(Task::create(*state, Task::Step::AsyncReady));
     }
 
     if (timer_fired)

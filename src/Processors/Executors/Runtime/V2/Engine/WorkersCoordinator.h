@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -16,7 +18,6 @@ class WorkerPool;
 
 class WorkersCoordinator
 {
-    size_t runnableTasks() const;
     bool allIdle() const;
     Worker * takeAnySleepingWorker();
     void wakeOneLocked();
@@ -28,9 +29,9 @@ public:
     void enter(size_t worker_id);
     void leave(size_t worker_id);
 
-    bool wait(Worker & worker);
+    std::optional<Task> wait(Worker & worker);
     size_t wake(size_t to_wake);
-    bool needsPoller() const;
+    bool isPolling() const;
 
     void stop();
     bool stopped() const;

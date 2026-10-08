@@ -23,6 +23,7 @@ class Worker
     std::optional<Task> tryPickTask();
     std::optional<Task> takeFromLocal();
     std::optional<Task> takeFromGlobal();
+    std::optional<Task> takeFromPoller();
     std::optional<Task> takeFromOthers();
     void pushToLocal(const Task & task);
     void wakeOrSpawn(size_t threads_needed);
@@ -34,9 +35,8 @@ public:
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
 
     std::optional<Task> steal();
-    size_t poll(int timeout_ms);
+    std::optional<Task> poll(int timeout_ms);
     size_t drain();
-    size_t taskCount() const;
 
     void park();
     void wake();
@@ -47,7 +47,7 @@ private:
     TaskRunner runner;
 
     LocalTasks local_tasks;
-    std::array<Task, LocalTasks::capacity / 2> offload_buffer;
+    std::array<Task, LocalTasks::capacity / 2> offload_buffer{};
 
     size_t picks_count = 0;
 

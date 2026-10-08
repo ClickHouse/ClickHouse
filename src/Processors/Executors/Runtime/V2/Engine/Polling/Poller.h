@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/V2/Engine/Polling/PollRequest.h>
+#include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 
@@ -28,14 +29,14 @@ class Poller
 
     void unregister(ProcessorState * state);
     void updateTimer();
-    void collectExpired(std::vector<ProcessorState *> & fired);
+    void collectExpired(std::vector<Task> & fired);
 
 public:
     Poller();
     ~Poller();
 
     void add(const PollRequest & request);
-    std::vector<ProcessorState *> poll(int timeout_ms);
+    std::vector<Task> poll(int timeout_ms);
     size_t pending() const;
     void wakeup();
 
@@ -61,7 +62,7 @@ class Poller
 {
 public:
     void add(const PollRequest & request);
-    std::vector<ProcessorState *> poll(int) { return {}; }
+    std::vector<Task> poll(int) { return {}; }
     size_t pending() const { return 0; }
     void wakeup() {}
 };
