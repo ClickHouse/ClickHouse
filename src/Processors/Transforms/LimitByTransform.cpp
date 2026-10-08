@@ -155,7 +155,7 @@ void LimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, UInt64)
 }
 
 /// `isCancelled` is polled every this many rows of the row loops below.
-constexpr UInt64 cancellation_check_mask = 1023;
+constexpr UInt64 cancellation_check_batch_rows = 1024;
 
 template <typename Method>
 requires MapAggregationMethod<Method>
@@ -168,44 +168,49 @@ void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & g
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
 
-    for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
+    /// Checking for cancellation on every row costs an atomic load per row and, with clang-23, the registers
+    /// the row loop needs for its hash lookup; a batch of rows is processed in microseconds, so checking once
+    /// per batch loses nothing noticeable. The check sits in an outer loop rather than behind a mask test on
+    /// the row index: on AArch64 clang-23 keeps even that test and its branch in the row loop, which costs 20%.
+    for (UInt64 batch_start_row = 0; batch_start_row < row_count; batch_start_row += cancellation_check_batch_rows)
     {
-        /// Checking on every row costs an atomic load per row and, with clang-23, the registers the loop
-        /// needs for its hash lookup; a block of rows is processed in microseconds, so checking once per
-        /// block loses nothing noticeable.
-        if ((row_idx & cancellation_check_mask) == 0 && isCancelled())
+        if (isCancelled())
         {
             LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
             stopReading();
             return;
         }
 
-        if (row_idx == 5)
-            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
-
-        auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
-        size_t row_group_idx = 0;
-        if (key_emplace_result.isInserted()) /// New grouping key
+        const UInt64 batch_end_row = std::min(batch_start_row + cancellation_check_batch_rows, row_count);
+        for (UInt64 row_idx = batch_start_row; row_idx < batch_end_row; ++row_idx)
         {
-            /// Assign a stable index into `group_counts` to the grouping key we just inserted.
-            row_group_idx = group_counts.size();
-            group_counts.push_back(0);
-            key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
-        }
-        else /// Existing grouping key
-        {
-            row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
+            if (row_idx == 5)
+                FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
 
-            chassert(row_group_idx < group_counts.size());
-        }
+            auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
+            size_t row_group_idx = 0;
+            if (key_emplace_result.isInserted()) /// New grouping key
+            {
+                /// Assign a stable index into `group_counts` to the grouping key we just inserted.
+                row_group_idx = group_counts.size();
+                group_counts.push_back(0);
+                key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
+            }
+            else /// Existing grouping key
+            {
+                row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
 
-        if (row_idx == 0)
-            current_run_group_idx = row_group_idx;
-        else if (row_group_idx != current_run_group_idx) /// Local run ended
-        {
-            processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
-            current_run_group_idx = row_group_idx;
-            current_run_start_row = row_idx;
+                chassert(row_group_idx < group_counts.size());
+            }
+
+            if (row_idx == 0)
+                current_run_group_idx = row_group_idx;
+            else if (row_group_idx != current_run_group_idx) /// Local run ended
+            {
+                processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
+                current_run_group_idx = row_group_idx;
+                current_run_start_row = row_idx;
+            }
         }
     }
 
