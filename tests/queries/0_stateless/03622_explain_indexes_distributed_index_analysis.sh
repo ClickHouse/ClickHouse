@@ -15,13 +15,9 @@ CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 
 $CLICKHOUSE_CLIENT -nm -q "
   drop table if exists test_10m;
-  -- auto_statistics_types='': otherwise the auto column statistics (materialized on INSERT by default) add a statistics.packed file that inflates part sizes and perturbs the distributed index analysis counters.
-  create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0, auto_statistics_types='';
+  create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0;
   system stop merges test_10m;
-  -- 50 parts of 10000 rows: enough parts to spread the index analysis over all replicas of the cluster,
-  -- while keeping the number of part commits low enough to fit the flaky-check time limit under sanitizers
-  -- (with metadata in Keeper, every part commit is a round trip, and the insert dominates the test wall time).
-  insert into test_10m select number, number*100 from numbers(5e5) settings max_insert_threads=1, max_partitions_per_insert_block=100, max_block_size=10000, min_insert_block_size_rows=10000;
+  insert into test_10m select number, number*100 from numbers(1e6) settings max_partitions_per_insert_block=100, max_block_size=10000, min_insert_block_size_rows=10000;
   select count() from system.parts where database = currentDatabase() and table = 'test_10m';
 "
 

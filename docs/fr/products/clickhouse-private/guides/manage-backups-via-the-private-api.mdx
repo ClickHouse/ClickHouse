@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "Gérer les sauvegardes via la Private API"
+sidebarTitle: "Gérer les sauvegardes via l’API"
+description: "Créez, surveillez, planifiez et restaurez des sauvegardes ClickHouse à l’aide de la Private API."
+---
+
+Créez, surveillez, planifiez et restaurez des sauvegardes ClickHouse à l’aide de la Private API.
+
+Pour effectuer des sauvegardes manuellement sans passer par l’API, consultez [Sauvegarde et restauration](/fr/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* ClickHouse Private API installée et accessible (par exemple, via un transfert de port vers `http://localhost:8080/`)
+* Au moins un cluster ClickHouse déployé (ce guide utilise `default-xx-01`)
+
+<div id="create-a-full-backup">
+  ## Créer une sauvegarde complète
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+La réponse inclut un UUID qui identifie la sauvegarde.
+
+<div id="check-backup-status">
+  ## Vérifier l’état d’une sauvegarde
+</div>
+
+Interrogez une sauvegarde spécifique à l’aide de son UUID :
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+Une fois la sauvegarde terminée avec succès, le champ `status.state` renvoie `Ready`.
+
+<div id="list-all-backups">
+  ## Lister toutes les sauvegardes
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+Le point de terminaison prend en charge les paramètres de requête pour le filtrage et le tri. Par exemple, pour trouver la dernière sauvegarde réussie :
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## Créer des sauvegardes incrémentielles
+</div>
+
+Les sauvegardes incrémentielles ne sauvegardent que les données modifiées depuis une sauvegarde précédente, constituant une chaîne dont le point de départ est une sauvegarde complète.
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## Sauvegarder des tables ou des bases de données spécifiques
+</div>
+
+Déterminez ce qui sera sauvegardé à l’aide des champs `databases` et `tables`. Les noms de table doivent être entièrement qualifiés (c.-à-d. `db.table`).
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## Programmer des sauvegardes avec un CronJob
+</div>
+
+Utilisez un CronJob Kubernetes pour automatiser la création de sauvegardes :
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+Cette configuration programme une sauvegarde complète chaque jour à 2 h du matin. Elle suppose que la Private API est accessible via `http://clickhouse-private-api-airgap-management:8080`.
+
+<div id="restore-from-a-backup">
+  ## Restaurer depuis une sauvegarde
+</div>
+
+<div id="via-the-api">
+  ### Via l’API
+</div>
+
+L’API fournit un point de terminaison de restauration permettant de restaurer une sauvegarde sur une autre instance cible :
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+Par mesure de sécurité, l’API n’autorise pas la restauration sur la même instance. Il est recommandé de créer un nouveau cluster pour effectuer la restauration afin d’éviter de surcharger le cluster d’origine.
+
+<div id="manual-sql-alternative">
+  ### Alternative manuelle en SQL
+</div>
+
+Pour un contrôle plus précis, restaurez directement avec SQL. Par exemple, pour restaurer une seule base de données sous un nouveau nom :
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## Gérer le cycle de vie des sauvegardes
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### Politique de cycle de vie S3
+</div>
+
+Utilisez les politiques de cycle de vie S3 pour déplacer automatiquement les anciennes sauvegardes vers une autre classe de stockage et les supprimer à expiration :
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+Cet exemple déplace les sauvegardes vers Standard-IA après 7 jours, vers Glacier après 30 jours et les supprime après 90 jours.
+
+<div id="backup-chain-integrity-warning">
+  ### Avertissement sur l’intégrité de la chaîne de sauvegarde
+</div>
+
+Les politiques de cycle de vie S3 ne tiennent pas compte des chaînes de sauvegarde incrémentielle. Si une sauvegarde complète à la base d’une chaîne est supprimée alors que des sauvegardes incrémentielles s’y réfèrent encore, ces sauvegardes incrémentielles ne peuvent plus être restaurées.
+
+Assurez-vous que la durée de rétention de vos sauvegardes complètes dépasse l’intervalle entre deux sauvegardes complètes. Vérifiez régulièrement que vos sauvegardes peuvent être restaurées.

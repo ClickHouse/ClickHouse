@@ -2,6 +2,7 @@
 #include <Core/SchemaInferenceMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Parsers/IAST_fwd.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
@@ -19,7 +20,6 @@
 #include <memory>
 #include <mutex>
 
-#include <Common/MultiVersion.h>
 #include <Storages/IPartitionStrategy.h>
 namespace DB
 {
@@ -34,8 +34,6 @@ class SchemaCache;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 struct IPartitionStrategy;
-class CursorTreeNode;
-using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 /**
  * A general class containing implementation for external table engines
@@ -112,9 +110,6 @@ public:
     /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
     /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
     bool supportsOptimizationToSubcolumns() const override { return false; }
-    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
-    /// `t.x` on its own and prune on it.
-    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
@@ -139,8 +134,6 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
-
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 
@@ -173,11 +166,6 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
-    /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
-    /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
-    bool isTransactionalRefreshTarget();
-    CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);
-
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
@@ -200,17 +188,9 @@ public:
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
-
-    Pipe alterPartition(
-        const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, ContextPtr /* context */) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
-    void checkAlterPartitionIsPossible(
-        const PartitionCommands & commands,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Settings & settings,
-        ContextPtr context) const override;
 
     ObjectStoragePtr getObjectStorage() const
     {
@@ -268,13 +248,8 @@ protected:
     bool supports_tuple_elements = false;
     bool is_table_function = false;
 
-    struct HivePartitioningColumns
-    {
-        NamesAndTypesList hive_partition_columns_to_read_from_file_path;
-        NamesAndTypesList file_columns;
-    };
-    /// Replaced as a whole by a deferred resolution while other queries read it.
-    MultiVersion<HivePartitioningColumns> hive_partitioning_columns;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
+    NamesAndTypesList file_columns;
 
     /// Set only in the constructor when hive partitioning detection is deferred to the first use.
     bool hive_partitioning_sample_path_deferred = false;

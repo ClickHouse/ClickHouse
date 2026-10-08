@@ -3,7 +3,6 @@
 #include <map>
 
 #include <base/types.h>
-#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 
@@ -21,22 +20,9 @@ public:
     {
         std::map<String, ASTPtr> subqueries;
         std::map<String, ASTPtr> literals;
-        /// Expression aliases declared with `enable_scopes_for_with_statement` disabled. They reach every
-        /// nested select, including through one that does not resolve them itself, so they are kept apart
-        /// from the aliases visible in the current scope.
-        std::map<String, ASTPtr> exported_literals;
-        /// When set, each subquery's own settings are applied while descending, so that an inherited
-        /// element is not substituted into a subquery whose settings hide it.
-        ContextPtr context;
     };
 
-    static void visit(ASTPtr & ast) { visit(ast, Data{}); }
-    static void visit(ASTPtr & ast, ContextPtr context)
-    {
-        Data data;
-        data.context = std::move(context);
-        visit(ast, data);
-    }
+    static void visit(ASTPtr & ast) { visit(ast, {}); }
     static void visit(ASTSelectQuery & select) { visit(select, {}); }
     static void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
 

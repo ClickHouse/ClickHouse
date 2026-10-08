@@ -329,7 +329,7 @@ if err := rows.Err(); err != nil {
   ## 비동기 삽입
 </div>
 
-비동기 삽입은 `ExecContext` 메서드를 사용해 삽입을 실행하면 구현할 수 있습니다. 아래와 같이 비동기 모드가 활성화된 Context를 전달해야 합니다. 이렇게 하면 클라이언트가 서버의 삽입 완료까지 기다릴지, 아니면 데이터가 수신되는 즉시 응답할지를 사용자가 지정할 수 있습니다. 이는 사실상 [wait&#95;for&#95;async&#95;insert](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert) 매개변수를 제어합니다.
+비동기 삽입은 `ExecContext` 메서드를 사용해 삽입을 실행하면 구현할 수 있습니다. 아래와 같이 비동기 모드가 활성화된 Context를 전달해야 합니다. 이렇게 하면 클라이언트가 서버의 삽입 완료까지 기다릴지, 아니면 데이터가 수신되는 즉시 응답할지를 사용자가 지정할 수 있습니다. 이는 사실상 [wait&#95;for&#95;async&#95;insert](/ko/reference/settings/session-settings#wait_for_async_insert) 매개변수를 제어합니다.
 
 ```go
 const ddl = `

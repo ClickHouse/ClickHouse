@@ -50,7 +50,7 @@ lazy materialization을 자세히 알아보려면 [&quot;ClickHouse gets lazier 
 
 다음 예시 쿼리는 날짜, 제품, 평점, 검증 상태와 관계없이 도움이 되었다는 투표 수가 가장 많은 Amazon 리뷰를 찾고, 제목, 헤드라인, 전체 텍스트와 함께 상위 3개를 반환합니다.
 
-먼저 lazy materialization을 비활성화한 상태에서([`query_plan_optimize_lazy_materialization`](/ko/reference/settings/session-settings/query-plan#query_plan_optimize_lazy_materialization) 사용), 쿼리를 콜드 파일 시스템 캐시 상태로 실행합니다:
+먼저 lazy materialization을 비활성화한 상태에서([`query_plan_optimize_lazy_materialization`](/ko/reference/settings/session-settings#query_plan_optimize_lazy_materialization) 사용), 쿼리를 콜드 파일 시스템 캐시 상태로 실행합니다:
 
 ```sql title="Query"
 SELECT

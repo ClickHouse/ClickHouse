@@ -1,12 +1,16 @@
 ---
-description: '日志 表引擎家族文档'
-sidebarTitle: '概览'
+description: 'Log 引擎家族文档'
+sidebarTitle: 'Log 家族'
 slug: /engines/table-engines/log-family/
-title: '日志 表引擎家族'
+title: 'Log 引擎家族'
 doc_type: 'guide'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="log-table-engine-family">
+  # Log 表引擎家族
+</div>
 
 <CloudNotSupportedBadge />
 
@@ -14,10 +18,10 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 该家族包含以下引擎：
 
-| 日志 引擎                                                             |
+| Log 引擎                                                             |
 | ------------------------------------------------------------------ |
 | [StripeLog](/zh/reference/engines/table-engines/log-family/stripelog) |
-| [日志](/zh/reference/engines/table-engines/log-family/log)             |
+| [Log](/zh/reference/engines/table-engines/log-family/log)             |
 | [TinyLog](/zh/reference/engines/table-engines/log-family/tinylog)     |
 
 `Log` 家族表引擎可以将数据存储到 [HDFS](/zh/reference/engines/table-engines/integrations/hdfs) 或 [S3](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) 分布式文件系统中。
@@ -25,7 +29,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 <Warning>
   **此引擎并非用于日志数据。**
 
-  尽管名称如此，*日志 表引擎并不是用来存储日志数据的。它们只适用于需要快速写入的小数据量场景。
+  尽管名称如此，*Log 表引擎并不是用来存储日志数据的。它们只适用于需要快速写入的小数据量场景。
 </Warning>
 
 <div id="common-properties">
