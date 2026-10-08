@@ -100,7 +100,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
     if (args.size() == 1)
     {
         /// the regexp would match table names of the parent database, ignoring the namespace
-        if (context->getCurrentDatabase().hasTablePrefix())
+        if (context->getCurrentDatabase().hasSchema())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The one-argument form of the merge table function is not supported while a table "
                 "namespace is selected; pass the database explicitly");

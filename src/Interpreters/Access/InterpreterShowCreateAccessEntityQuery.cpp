@@ -296,7 +296,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     const auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
-    if (const auto database_info = getContext()->getCurrentDatabase(); database_info.hasTablePrefix())
+    if (const auto database_info = getContext()->getCurrentDatabase(); database_info.hasSchema())
     {
         const bool has_unqualified_target
             = (show_query.database_and_table_name && show_query.database_and_table_name->first.empty())
@@ -307,7 +307,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "An unqualified policy target is not supported while a table namespace is selected "
                 "(USE {}.{}); qualify the table with its database explicitly",
-                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()));
+                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getSchemaPart()));
     }
 
     show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase().getFullName());

@@ -680,7 +680,7 @@ StorageID DatabaseCatalog::foldNamespaceIntoTableName(
     StorageID storage_id, const CurrentDatabaseInfo & current_database_info, std::optional<Exception> * exception)
 {
     const auto & info = current_database_info;
-    if (storage_id.hasUUID() || !info.hasTablePrefix())
+    if (storage_id.hasUUID() || !info.hasSchema())
         return storage_id;
 
     if (storage_id.database_name != info.getFullName())
@@ -692,7 +692,7 @@ StorageID DatabaseCatalog::foldNamespaceIntoTableName(
         auto error = Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table name {} contains a dot and cannot be resolved inside namespace {}; "
             "select the database with USE {} and use a fully qualified name",
-            backQuoteIfNeed(storage_id.table_name), backQuoteIfNeed(info.getTablePrefixPart()),
+            backQuoteIfNeed(storage_id.table_name), backQuoteIfNeed(info.getSchemaPart()),
             backQuoteIfNeed(info.getDatabasePart()));
         if (!exception)
             throw std::move(error);
@@ -701,7 +701,7 @@ StorageID DatabaseCatalog::foldNamespaceIntoTableName(
     }
 
     storage_id.database_name = info.getDatabasePart();
-    storage_id.table_name = String(info.getTablePrefixPart()) + "." + storage_id.table_name;
+    storage_id.table_name = String(info.getSchemaPart()) + "." + storage_id.table_name;
     return storage_id;
 }
 
@@ -736,8 +736,8 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 void DatabaseCatalog::assertDatabaseAndNamespacesExist(const CurrentDatabaseInfo & database_info) const
 {
     assertDatabaseExists(String(database_info.getDatabasePart()));
-    if (database_info.hasTablePrefix())
-        getDatabase(database_info.getDatabasePart())->validateTableNamespace(database_info.getTablePrefixPart());
+    if (database_info.hasSchema())
+        getDatabase(database_info.getDatabasePart())->validateTableNamespace(database_info.getSchemaPart());
 }
 
 bool DatabaseCatalog::hasDatalakeCatalogs() const

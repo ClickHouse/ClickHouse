@@ -58,12 +58,12 @@ BlockIO InterpreterUseQuery::execute()
 
     CurrentDatabaseInfo current_database_info(logical_name);
 
-    if (current_database_info.hasTablePrefix() && !getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+    if (current_database_info.hasSchema() && !getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
     {
         throw Exception(
             ErrorCodes::UNKNOWN_DATABASE,
             "Table namespaces are not allowed, but {} specified. Enable 'allow_experimental_table_namespaces' setting to allow it.",
-            current_database_info.getTablePrefixPart());
+            current_database_info.getSchemaPart());
     }
 
     /// `setCurrentDatabase` also keeps the `database` setting in sync with the session's current

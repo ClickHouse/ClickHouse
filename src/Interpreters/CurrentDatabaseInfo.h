@@ -25,12 +25,13 @@ struct CurrentDatabaseInfo
     const String & getFullName() const { return value; }
     /// the physical database, `db`
     std::string_view getDatabasePart() const { return std::string_view(value).substr(0, separator_idx); }
-    /// the namespace path without the database, `ns` or `ns.sub`; empty when none
-    std::string_view getTablePrefixPart() const
+    /// the namespace or schema path without the database, `ns` or `ns.sub`; empty when none
+    std::string_view getSchemaPart() const
     {
-        return hasTablePrefix() ? std::string_view(value).substr(separator_idx + 1) : std::string_view{};
+        return hasSchema() ? std::string_view(value).substr(separator_idx + 1) : std::string_view{};
     }
-    bool hasTablePrefix() const { return separator_idx != String::npos; }
+
+    bool hasSchema() const { return separator_idx != String::npos; }
     bool empty() const { return value.empty(); }
 
     bool operator==(const CurrentDatabaseInfo &) const = default;

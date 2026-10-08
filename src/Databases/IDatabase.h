@@ -56,7 +56,6 @@ struct LightWeightTableDetails
 enum class TableNamespaceSupport
 {
     None,     /// flat table names only
-    Lexical,  /// namespace exists when some table name starts with it plus a dot
     Native,   /// the engine has real namespace metadata (data lake catalog)
 };
 

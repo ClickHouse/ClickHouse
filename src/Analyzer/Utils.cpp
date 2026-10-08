@@ -1373,7 +1373,7 @@ std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const 
     if (table_identifier.getPartsSize() == 1)
     {
         // Table namespaces are not supported for parameterized views.
-        if (current_database.hasTablePrefix())
+        if (current_database.hasSchema())
         {
             if (can_throw)
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table namespaces are not supported for parameterized views.");
