@@ -23,9 +23,10 @@ INSERT INTO t_many_streams_s3 SELECT number, number, number, number, number, num
 "
 
 # One thread with synchronous reads. Count the requests that are sent with the end of their range.
-$CLICKHOUSE_CLIENT --send_logs_level=test -q "
+logs=$($CLICKHOUSE_CLIENT --send_logs_level=test -q "
 SELECT * FROM t_many_streams_s3 FORMAT Null
 SETTINGS max_threads = 1, remote_filesystem_read_method = 'read', load_marks_asynchronously = 0, use_page_cache_for_disks_without_file_cache = 0, enable_parallel_replicas = 0
-" 2>&1 >/dev/null | grep -cE 'Read S3 object\..*, Range: [0-9]+-[0-9]+' | awk '{ print ($1 >= 20) }'
+" 2>&1 >/dev/null) || { echo "SELECT failed:"; grep -F 'Received exception' -A1 <<< "$logs"; }
+grep -cE 'Read S3 object\..*, Range: [0-9]+-[0-9]+' <<< "$logs" | awk '{ print ($1 >= 20) }'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_many_streams_s3"
