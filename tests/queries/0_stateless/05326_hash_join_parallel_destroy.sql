@@ -15,10 +15,11 @@ SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 SET min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 SET log_queries = 1, log_query_threads = 1, log_queries_min_query_duration_ms = 0;
 
--- 20000 blocks of one column.
-SELECT count(), uniqExact(r.s)
+-- 1000 blocks of four columns. The thread fuzzer of CI slows down every block, so wide blocks keep the build fast.
+SELECT count(), uniqExact(r.a, r.b, r.c, r.d)
 FROM numbers(10) AS l
-JOIN (SELECT number AS k, toString(number) AS s FROM numbers(200000)) AS r ON l.number = r.k
+JOIN (SELECT number AS k, toString(number) AS a, toString(number + 1) AS b, toString(number + 2) AS c, toString(number + 3) AS d
+    FROM numbers(10000)) AS r ON l.number = r.k
 SETTINGS log_comment = 'many_objects', max_block_size = 10;
 
 -- 120 blocks, each with one column of about 1 MB.
@@ -28,10 +29,11 @@ JOIN (SELECT number AS k, repeat('x', 1000) AS s FROM numbers(120000)) AS r ON l
 SETTINGS log_comment = 'few_objects', max_block_size = 1000;
 
 -- The build stops at the row limit and never reaches `onBuildPhaseFinish`, so the lists stay per worker.
-SELECT count(), uniqExact(r.s)
+SELECT count(), uniqExact(r.a, r.b, r.c, r.d)
 FROM numbers(10) AS l
-JOIN (SELECT number AS k, toString(number) AS s FROM numbers(200000)) AS r ON l.number = r.k
-SETTINGS log_comment = 'cancelled', max_block_size = 10, max_rows_in_join = 190000; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+JOIN (SELECT number AS k, toString(number) AS a, toString(number + 1) AS b, toString(number + 2) AS c, toString(number + 3) AS d
+    FROM numbers(10000)) AS r ON l.number = r.k
+SETTINGS log_comment = 'cancelled', max_block_size = 10, max_rows_in_join = 9500; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- The row count of the `Memory` table is below the threshold, so one worker builds its 1250 blocks of four columns.
 -- Debug and sanitizer builds walk all blocks of one worker after each insert, so few wide blocks keep the build fast.
