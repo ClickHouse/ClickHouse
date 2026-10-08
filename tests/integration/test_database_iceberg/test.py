@@ -9,7 +9,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import avro.schema as avro_schema
+import psycopg2
 import pyarrow as pa
+import pymysql.connections
 import pytest
 import requests
 import pytz
@@ -38,6 +40,10 @@ from helpers.test_tools import assert_eq_with_retry
 BASE_URL = "http://rest:8181/v1"
 
 CATALOG_NAME = "demo"
+
+# ports of programs/server/config.xml, the base config of integration instances
+MYSQL_PORT = 9004
+POSTGRESQL_PORT = 9005
 
 DEFAULT_SCHEMA = Schema(
     NestedField(
@@ -3458,6 +3464,249 @@ def test_namespace_current_database_full_name(started_cluster):
         assert result == "t", f"SHOW TABLES FROM a quoted dotted database: {result}"
     finally:
         node.query(f"DROP DATABASE IF EXISTS `{plain}`")
+
+
+def _com_field_list(client, table):
+    # COM_FIELD_LIST returns one ColumnDefinition41 packet per column, terminated by an EOF/OK
+    # packet. On access denial the server sends an ERR packet, which pymysql raises from read_packet().
+    # The payload is a NUL-terminated table name followed by an (empty) field wildcard.
+    client._execute_command(0x04, table + "\x00")
+    columns = []
+    packet = client._read_packet()
+    while not (packet.is_eof_packet() or packet.is_ok_packet()):
+        # ColumnDefinition41 layout: catalog, schema, table, org_table, name, org_name, ...
+        # The column name is the 5th length-encoded string.
+        for _ in range(4):
+            packet.read_length_coded_string()
+        columns.append(packet.read_length_coded_string().decode())
+        packet = client._read_packet()
+    return columns
+
+
+def test_namespace_user_default_database_profile(started_cluster):
+    """
+    A user whose `DEFAULT DATABASE` is a namespace and whose profile enables the
+    setting logs in straight into the scope.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_user_default_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    user = f"user_{test_ref}"
+    profile = f"profile_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    try:
+        node.query(
+            f"CREATE SETTINGS PROFILE {profile} SETTINGS allow_experimental_table_namespaces = 1"
+        )
+        node.query(
+            f"CREATE USER {user} IDENTIFIED WITH plaintext_password BY 'pass' "
+            f"DEFAULT DATABASE `{CATALOG_NAME}.{ns}` SETTINGS PROFILE {profile}"
+        )
+        node.query(f"GRANT SELECT, SHOW ON {CATALOG_NAME}.* TO {user}")
+
+        result = node.query("SELECT count() FROM t", user=user, password="pass").strip()
+        assert result == "3", f"unqualified SELECT in the user's default namespace: {result}"
+        result = node.query("SELECT currentDatabase()", user=user, password="pass").strip()
+        assert result == CATALOG_NAME, f"currentDatabase() in the user's default namespace: {result}"
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
+
+
+def test_namespace_connect_time_database(started_cluster):
+    """
+    The client handshake with `--database db.namespace` selects the scope and
+    validates the namespace through the catalog.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_connect_time_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    database = f"{CATALOG_NAME}.{ns}"
+    result = node.query("SELECT count() FROM t", database=database, settings=ns_settings).strip()
+    assert result == "3", f"unqualified SELECT in the connect-time namespace: {result}"
+    result = node.query("SELECT currentDatabase()", database=database, settings=ns_settings).strip()
+    assert result == CATALOG_NAME, f"currentDatabase() in the connect-time namespace: {result}"
+
+    err = node.query_and_get_error(
+        "SELECT 1",
+        database=f"{CATALOG_NAME}.no_such_namespace_{test_ref}",
+        settings=ns_settings,
+    )
+    assert "BAD_ARGUMENTS" in err, f"connect to a missing namespace: {err}"
+
+
+def test_namespace_mysql_init_db_and_field_list(started_cluster):
+    """
+    MySQL `COM_INIT_DB` selects a namespace and `COM_FIELD_LIST` accepts the
+    stored table name.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_mysql_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    user = f"mysql_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    create_table(catalog, ns, "t")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    client = None
+    try:
+        node.query(
+            f"CREATE USER {user} IDENTIFIED WITH no_password SETTINGS allow_experimental_table_namespaces = 1"
+        )
+        node.query(f"GRANT SELECT, SHOW ON {CATALOG_NAME}.* TO {user}")
+
+        client = pymysql.connections.Connection(
+            host=started_cluster.get_instance_ip("node1"),
+            user=user,
+            password="",
+            database=CATALOG_NAME,
+            port=MYSQL_PORT,
+        )
+        client.select_db(f"{CATALOG_NAME}.{ns}")
+        columns = sorted(_com_field_list(client, f"{ns}.t"))
+        assert columns == ["ask", "bid", "datetime", "details", "symbol"], (
+            f"COM_FIELD_LIST under the namespace: {columns}"
+        )
+    finally:
+        if client is not None:
+            client.close()
+        node.query(f"DROP USER IF EXISTS {user}")
+
+
+def test_namespace_postgresql_wire(started_cluster):
+    """
+    A PostgreSQL wire session of a user whose settings enable the setting can
+    query a three-part path.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_postgresql_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    user = f"pg_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    conn = None
+    try:
+        node.query(
+            f"CREATE USER {user} IDENTIFIED WITH no_password SETTINGS allow_experimental_table_namespaces = 1"
+        )
+        node.query(f"GRANT SELECT ON {CATALOG_NAME}.* TO {user}")
+
+        conn = psycopg2.connect(
+            host=node.ip_address,
+            port=POSTGRESQL_PORT,
+            user=user,
+            password="",
+            dbname=CATALOG_NAME,
+        )
+        cur = conn.cursor()
+        cur.execute(f"SELECT count() FROM {CATALOG_NAME}.{ns}.t")
+        result = cur.fetchone()[0]
+        assert result == 3, f"three-part path over the PostgreSQL wire: {result}"
+        cur.close()
+    finally:
+        if conn is not None:
+            conn.close()
+        node.query(f"DROP USER IF EXISTS {user}")
+
+
+def _run_namespace_session_with_reconnect(node, database, query, out_file):
+    """Run one clickhouse-client session bound to a namespace scope. It prints
+    `connected` at once and sends `query` only after the server has gone down and
+    come back, so the scope must survive the reconnect handshake. The client runs
+    through a link named without "clickhouse", otherwise the restart's pkill
+    clickhouse kills it."""
+    script = (
+        "ln -sf $(command -v clickhouse) /tmp/chc; "
+        "( printf \"SELECT 'connected';\\n\"; "
+        "while /tmp/chc -q 'SELECT 1' >/dev/null 2>&1; do sleep 0.5; done; "
+        "while ! /tmp/chc -q 'SELECT 1' >/dev/null 2>&1; do sleep 0.5; done; "
+        f"printf '{query};\\n' ) | "
+        "/tmp/chc --allow_experimental_table_namespaces=1 "
+        f"--database '{database}' > {out_file} 2>&1"
+    )
+    node.exec_in_container(["bash", "-c", script], detach=True)
+
+
+def test_namespace_scope_survives_reconnect(started_cluster):
+    """
+    After a mid-session reconnect, an unqualified name still resolves in the
+    selected (flat or nested) namespace.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_reconnect_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    nested = f"{ns}1.{ns}2"
+    flat_out = f"/tmp/{test_ref}_flat.out"
+    nested_out = f"/tmp/{test_ref}_nested.out"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record()]))
+    catalog.create_namespace(f"{ns}1")
+    catalog.create_namespace(nested)
+    table_nested = create_table(catalog, nested, "t")
+    table_nested.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    def wait_lines(path, count, timeout=60):
+        deadline = time.time() + timeout
+        content = ""
+        while time.time() < deadline:
+            content = node.exec_in_container(["bash", "-c", f"cat {path} 2>/dev/null; true"])
+            if len(content.splitlines()) >= count:
+                return content
+            time.sleep(0.5)
+        raise AssertionError(f"{path} has fewer than {count} lines after {timeout} s: {content!r}")
+
+    _run_namespace_session_with_reconnect(
+        node, f"{CATALOG_NAME}.{ns}", "SELECT count() FROM t", flat_out
+    )
+    _run_namespace_session_with_reconnect(
+        node, f"{CATALOG_NAME}.{nested}", "SELECT count() FROM t", nested_out
+    )
+    wait_lines(flat_out, 1)
+    wait_lines(nested_out, 1)
+
+    node.restart_clickhouse()
+
+    flat = wait_lines(flat_out, 2)
+    nested_result = wait_lines(nested_out, 2)
+    assert flat == "connected\n1\n", f"scope was not restored after reconnect: {flat!r}"
+    assert nested_result == "connected\n2\n", (
+        f"nested scope was not restored after reconnect: {nested_result!r}"
+    )
 
 
 def test_alter_database_settings_not_supported(started_cluster):
