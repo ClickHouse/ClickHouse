@@ -222,6 +222,12 @@ TEST(ParseRemoteDescription, WithFailoverReportsTheWholeCardinality)
 
     /// A single-stage description is still counted as before.
     EXPECT_THAT(message("{1..600},{1..600}", 1000), testing::HasSubstr("too many result addresses: 1200,"));
+
+    /// An empty part or an empty group generates nothing, both for the shards and for the replicas.
+    EXPECT_THAT(message("h{,}ost{1..5}", 3), testing::HasSubstr("too many result addresses: 5, while at most 3 are allowed"));
+    EXPECT_THAT(message("a{1..3},,b{1..3}", 5), testing::HasSubstr("too many result addresses: 6, while at most 5 are allowed"));
+    EXPECT_THAT(message("h{1..3}-{1||2|}", 5), testing::HasSubstr("too many result addresses: 6, while at most 5 are allowed"));
+    EXPECT_THAT(message("h{1..3}-{1|2}{|}", 5), testing::HasSubstr("too many result addresses: 6, while at most 5 are allowed"));
 }
 
 TEST(ParseRemoteDescription, Quirks)
@@ -403,4 +409,10 @@ TEST(RemoteDescriptionGenerator, TooManyAddressesMessage)
 
     /// A group of alternatives over the limit is expanded while parsing; the number is still the whole pattern.
     EXPECT_THAT(message("x{a,b,c,d}{1..3}", 2, std::nullopt), testing::HasSubstr("too many result addresses: 12, while at most 2 are allowed"));
+
+    /// An empty part or an empty group generates nothing, the same way as in the generator itself.
+    EXPECT_THAT(message("h{,}ost{1..11}", 10, std::nullopt), testing::HasSubstr("too many result addresses: 11, while at most 10 are allowed"));
+    EXPECT_THAT(message("{1..6},,{1..6},", 10, std::nullopt), testing::HasSubstr("too many result addresses: 12, while at most 10 are allowed"));
+    EXPECT_THAT(message("a{,{,}}{1..11}", 10, std::nullopt), testing::HasSubstr("too many result addresses: 11, while at most 10 are allowed"));
+    EXPECT_THAT(message("h{,}{1..11}-{1||2|}", 10, '|'), testing::HasSubstr("too many result addresses: 22, while at most 10 are allowed"));
 }

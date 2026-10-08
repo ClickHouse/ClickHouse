@@ -147,6 +147,10 @@ struct SaturatingCounter
 /// whose alternative contains a top-level `|`, e.g. `{a|b,c}{d|e}`: there the segments of the outer
 /// product are cut by the inner `|` and the result is an overestimate, never an underestimate, so
 /// the number is still consistent with the limit having been exceeded.
+///
+/// Like the parser, an empty part (as in `host1,,host2`) generates nothing rather than an empty
+/// address, and a group that generates nothing (as in `a{,}b`) is dropped from the product instead of
+/// making it empty. So a product or a replica segment is counted only if it has at least one factor.
 Cardinality countAddresses(
     const String & description, size_t l, size_t r, char separator, std::optional<char> replica_separator)
 {
@@ -163,14 +167,29 @@ Cardinality countAddresses(
     SaturatingCounter segment{1};
     /// The already finished replica segments of the current product.
     SaturatingCounter segments;
+    /// Whether the current product, as seen by the shard stage, has any factor.
+    bool product_has_factors = false;
+    /// Whether the current replica segment, as seen by the replica stage, has any factor.
+    bool segment_has_factors = false;
+
+    auto finish_segment = [&]
+    {
+        if (segment_has_factors)
+            segments.add(segment);
+        segment = SaturatingCounter{1};
+        segment_has_factors = false;
+    };
 
     auto finish_product = [&]
     {
-        segments.add(segment);
-        product.multiply(segments);
-        total.add(product);
+        finish_segment();
+        if (product_has_factors)
+        {
+            product.multiply(segments);
+            total.add(product);
+        }
         product = SaturatingCounter{1};
-        segment = SaturatingCounter{1};
+        product_has_factors = false;
         segments = SaturatingCounter{};
     };
 
@@ -213,13 +232,21 @@ Cardinality countAddresses(
                     || left > right)
                     return {CardinalityStatus::Malformed, 0};
                 product.multiply({right - left + 1});
+                product_has_factors = true;
+                segment_has_factors = true;
             }
             else if (have_splitter)
             {
                 const auto nested = countAddresses(description, i + 1, m, separator, replica_separator);
                 if (nested.status != CardinalityStatus::Known)
                     return nested;
-                product.multiply({nested.value});
+                /// A group that generates nothing is dropped, as in `a{,}b`.
+                if (nested.value != 0)
+                {
+                    product.multiply({nested.value});
+                    product_has_factors = true;
+                    segment_has_factors = true;
+                }
             }
             else if (have_replica_splitter)
             {
@@ -227,9 +254,19 @@ Cardinality countAddresses(
                 const auto nested = countAddresses(description, i + 1, m, *replica_separator, std::nullopt);
                 if (nested.status != CardinalityStatus::Known)
                     return nested;
-                segment.multiply({nested.value});
+                product_has_factors = true;
+                if (nested.value != 0)
+                {
+                    segment.multiply({nested.value});
+                    segment_has_factors = true;
+                }
             }
-            /// A brace group without a separator inside is copied verbatim: a single-element set.
+            else
+            {
+                /// A brace group without a separator inside is copied verbatim: a single-element set.
+                product_has_factors = true;
+                segment_has_factors = true;
+            }
 
             i = m;
         }
@@ -239,10 +276,16 @@ Cardinality countAddresses(
         }
         else if (replica_separator && description[i] == *replica_separator)
         {
-            segments.add(segment);
-            segment = SaturatingCounter{1};
+            /// A literal character for the shard stage, a separator for the replica stage.
+            product_has_factors = true;
+            finish_segment();
         }
-        /// Any other character is a single-element set and does not change the cardinality.
+        else
+        {
+            /// Any other character is a single-element set and does not change the cardinality.
+            product_has_factors = true;
+            segment_has_factors = true;
+        }
     }
 
     finish_product();
