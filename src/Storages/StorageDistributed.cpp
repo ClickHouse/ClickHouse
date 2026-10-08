@@ -1955,8 +1955,10 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 }
 
 /// Returns the path of a pending async INSERT block under `path`, or an empty string if there is
-/// none. The queue keeps one directory per replica with the blocks (`N.bin`) inside, next to the
-/// `tmp` and `broken` subdirectories, so any `.bin` file below a subdirectory is queued data.
+/// none. The queue keeps one directory per replica with the blocks (`N.bin`) directly inside, and
+/// only those are ever sent (see `DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk`).
+/// The `tmp` and `broken` subdirectories are not looked into: a file in `tmp` was never promoted
+/// to the queue, and a file in `broken` was already quarantined by it, so neither is pending.
 /// Everything here is best-effort: a path a version without the queue never wrote to is expected
 /// not to resolve to a directory at all.
 static std::string findPendingQueueBlock(const std::string & path)
@@ -1970,10 +1972,13 @@ static std::string findPendingQueueBlock(const std::string & path)
         if (!replica->is_directory(ec))
             continue;
 
-        for (fs::recursive_directory_iterator block(replica->path(), ec), blocks_end; !ec && block != blocks_end;
-             block.increment(ec))
+        std::error_code block_ec;
+        for (fs::directory_iterator block(replica->path(), block_ec), blocks_end; !block_ec && block != blocks_end;
+             block.increment(block_ec))
         {
-            if (block->is_regular_file(ec) && block->path().extension() == ".bin")
+            UInt64 block_number;
+            if (block->is_regular_file(block_ec) && block->path().extension() == ".bin"
+                && tryParse(block_number, block->path().stem().string()))
                 return block->path().string();
         }
     }

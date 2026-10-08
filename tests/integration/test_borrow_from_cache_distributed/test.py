@@ -268,8 +268,16 @@ def test_distributed_attach_with_legacy_queue_directory_is_rejected(started_clus
     )
 
     # With the queue drained by hand the same table attaches, so the guard is about pending data
-    # rather than about the directory existing.
-    node.exec_in_container(["bash", "-c", f"rm '{queue_path}/1.bin'"])
+    # rather than about the directory existing. Leftovers in `tmp` (never promoted to the queue) and
+    # in `broken` (already quarantined by it) are not pending, so they do not block the attach.
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"rm '{queue_path}/1.bin' && mkdir -p '{queue_path}/tmp' '{queue_path}/broken' "
+            f"&& echo -n block > '{queue_path}/tmp/2.bin' && echo -n block > '{queue_path}/broken/3.bin'",
+        ]
+    )
     node.query(
         """
         ATTACH TABLE ordinary_legacy_queue.dist_legacy_queue (key UInt64)
