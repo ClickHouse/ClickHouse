@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/PlainRewritableSnapshotFile.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/PathLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
@@ -19,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -33,6 +35,9 @@ namespace DB
   *   each containing a single file, `prefix.path`, with the content as the logical path of the corresponding directory.
   * - when a logical directory is renamed or moved, we don't touch its randomly assigned name,
   *   and simply rewrite the contents of `prefix.path`.
+  * - a removal is committed by moving the directory (or a backup copy of the file) under a logical name
+  *   starting with `__removed.`, and the objects are deleted afterwards; if the process dies in between,
+  *   such objects are deleted on the next initial load, see `PlainRewritableLayout::REMOVED_NAME_PREFIX`.
   *
   * Example. Let's suppose, the logical filesystem structure is:
   * /hello/world/test1.txt
@@ -110,11 +115,13 @@ class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataSt
     /// Reads the snapshot file if it exists.
     SnapshotFileContents tryReadSnapshotFile(const LoggerPtr & log) const;
 
-    /// Lists the object storage. If `base` is provided, directories whose `prefix.path` has the same ETag as in `base`
-    /// take the local path from it without reading `prefix.path`; their files are taken from `base` too if `reuse_files`,
-    /// otherwise listed. `differs_from_base` tells whether the result is different from `base`.
-    PlainRewritableRemoteLayout listRemoteLayout(
-        const PlainRewritableRemoteLayout * base, bool reuse_files, bool & differs_from_base, const LoggerPtr & log) const;
+    /// Lists the object storage and publishes the result in `fs`. If `base` is provided, directories whose `prefix.path`
+    /// has the same ETag as in `base` take the local path from it without reading `prefix.path`; their files are taken from
+    /// `base` too if `reuse_files`, otherwise listed. `differs_from_base` tells whether the result is different from `base`,
+    /// `is_empty` whether the disk has nothing but the empty root. The initial load of a writable disk also rolls back or
+    /// reclaims the unfinished operations (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`). Must be called under `load_mutex`.
+    void loadRemoteLayout(
+        const PlainRewritableRemoteLayout * base, bool reuse_files, bool is_initial_load, bool & differs_from_base, bool & is_empty, const LoggerPtr & log);
     PlainRewritableRemoteLayout getCurrentLayout() const;
     static PlainRewritableRemoteLayout getLayoutOf(const FsSnapshot & tree);
 
@@ -183,11 +190,16 @@ private:
     const bool hard_links_enabled;
     const PlainRewritableSnapshotSettings snapshot_settings;
 
-    std::mutex metadata_mutex;
+    /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
+    /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.
+    PathLocks path_locks;
     FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
+    /// The remote paths of the directories of the targets of the pending replacements seen by the last completed load.
+    /// Protected by `load_mutex`.
+    std::unordered_set<std::string> remote_directories_of_pending_replaces;
     AtomicStopwatch previous_refresh;
 
     /// Set after every change of the state, cleared when the snapshot write starts.
@@ -225,6 +237,13 @@ protected:
 
     void planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to);
     void markFallbackCopyMoved(const std::string & path_from, const std::string & path_to);
+
+    /// Normalized paths of the files and directories the operations modify; locked for the duration of the commit.
+    std::vector<std::string> affected_paths;
+
+    void addAffectedPath(const std::string & path);
+    /// The same for a file, and also for its directory if the operation may rewrite the `prefix.path` of the directory.
+    void addAffectedFilePath(const std::string & path);
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);
