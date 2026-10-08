@@ -89,8 +89,8 @@ void optimizeSharingSets(QueryPlan & plan, const ContextPtr & context, const Bui
     forEachSubquerySet(&plan, [&](FutureSetFromSubquery & set) { sets.emplace_back(set.getHash(), set.getSetAndKey()); return true; });
     plan.optimize(QueryPlanOptimizationSettings(context));
     for (const auto & [hash, set_and_key] : sets)
-        /// index analysis can use only a set with explicit elements
-        if (set_and_key && set_and_key->set && set_and_key->set->isCreated() && set_and_key->set->hasExplicitSetElements())
+        /// also a set without explicit elements: a new build hits the same limit and gives the same set
+        if (set_and_key && set_and_key->set && set_and_key->set->isCreated())
             built_sets->sets.emplace(hash, set_and_key);
 }
 

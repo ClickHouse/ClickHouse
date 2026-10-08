@@ -16,9 +16,14 @@ CREATE HYPOTHETICAL PROJECTION p_b ON t_facts (SELECT a, b, v ORDER BY b);
 SELECT count() FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_facts WHERE a < 2000 AND b IN (SELECT k FROM t_keys WHERE sleepEachRow(0.001) = 0))
 SETTINGS log_comment = '05338_in_subquery_runs_once' FORMAT Null;
 
+-- with use_index_for_in_with_subqueries_max_values the set has no explicit elements, and a new build gives the same set
+SELECT count() FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_facts WHERE a < 2000 AND b IN (SELECT k FROM t_keys WHERE sleepEachRow(0.001) = 0))
+SETTINGS use_index_for_in_with_subqueries_max_values = 10, log_comment = '05338_in_subquery_runs_once_max_values' FORMAT Null;
+
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['SleepFunctionMicroseconds'] FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '05338_in_subquery_runs_once' AND type = 'QueryFinish';
+SELECT log_comment, ProfileEvents['SleepFunctionMicroseconds'] FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment LIKE '05338_in_subquery_runs_once%' AND type = 'QueryFinish'
+ORDER BY log_comment;
 
 DROP TABLE t_keys;
 DROP TABLE t_facts;
