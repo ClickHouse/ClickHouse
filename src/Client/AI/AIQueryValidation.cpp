@@ -548,7 +548,9 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
     /// tables read the queue state stored in Keeper, `replicas` and `database_replicas` request
     /// the replication state there, and even the connection/watch views can establish the
     /// server's Keeper session lazily, and `clusters` reads the replica states of the
-    /// `Replicated` databases from Keeper. The Iceberg tables read the table metadata from the
+    /// `Replicated` databases from Keeper. The `keeper_*` tables expose the internals of the
+    /// Keeper embedded in the server: its data tree, Raft membership, snapshots and changelogs.
+    /// The Iceberg tables read the table metadata from the
     /// object storage, and `remote_data_paths` walks the metadata of the object storage disks.
     ///
     /// Then the tables that hold the texts of queries and of errors, or access metadata, rather
@@ -566,6 +568,10 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "zookeeper_connection",
         "zookeeper_info",
         "zookeeper_watches",
+        "keeper_storage",
+        "keeper_cluster",
+        "keeper_snapshots",
+        "keeper_changelogs",
         "distributed_ddl_queue",
         "s3_queue_metadata",
         "azure_queue_metadata",

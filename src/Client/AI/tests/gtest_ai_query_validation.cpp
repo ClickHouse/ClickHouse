@@ -200,6 +200,10 @@ TEST(AIQueryValidation, RejectsExternalServerOwnedTables)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_connection"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_info"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "zookeeper_watches"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "keeper_storage"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "keeper_cluster"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "keeper_snapshots"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "keeper_changelogs"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "distributed_ddl_queue"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "s3_queue_metadata"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "azure_queue_metadata"));
