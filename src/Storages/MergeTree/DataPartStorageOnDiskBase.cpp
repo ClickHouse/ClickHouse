@@ -132,7 +132,7 @@ std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(Logger
     chassert(!broken || detached);
     String res;
 
-    auto full_relative_path = fs::path(root_path);
+    auto full_relative_path = pathFromString(root_path);
     if (detached)
         full_relative_path /= MergeTreeData::DETACHED_DIR_NAME;
 
@@ -223,7 +223,7 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
     if (!existsFile("checksums.txt"))
         return false;
 
-    auto storage_from_detached = create(volume, pathToGenericString(fs::path(root_path) / MergeTreeData::DETACHED_DIR_NAME), detached_part_path, /*initialize=*/ true);
+    auto storage_from_detached = create(volume, pathToGenericString(pathFromString(root_path) / MergeTreeData::DETACHED_DIR_NAME), detached_part_path, /*initialize=*/ true);
     if (!storage_from_detached->existsFile("checksums.txt"))
         return false;
 
@@ -288,7 +288,7 @@ std::string DataPartStorageOnDiskBase::getFullRootPath() const
 
 Poco::Timestamp DataPartStorageOnDiskBase::getLastModified() const
 {
-    return volume->getDisk()->getLastModified(pathToGenericString(fs::path(root_path) / part_dir));
+    return volume->getDisk()->getLastModified(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir)));
 }
 
 static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & from)
@@ -308,7 +308,7 @@ static UInt64 calculateTotalSizeOnDiskImpl(const DiskPtr & disk, const String & 
 
 UInt64 DataPartStorageOnDiskBase::calculateTotalSizeOnDisk() const
 {
-    return calculateTotalSizeOnDiskImpl(volume->getDisk(), pathToGenericString(fs::path(root_path) / part_dir));
+    return calculateTotalSizeOnDiskImpl(volume->getDisk(), pathToGenericString(pathFromString(root_path) / pathFromString(part_dir)));
 }
 
 std::string DataPartStorageOnDiskBase::getDiskName() const
@@ -376,7 +376,7 @@ IDataPartStorage::ReplicatedFilesDescription
 DataPartStorageOnDiskBase::getReplicatedFilesDescription(const NameSet & file_names) const
 {
     ReplicatedFilesDescription description;
-    auto relative_path = fs::path(root_path) / part_dir;
+    auto relative_path = pathFromString(root_path) / pathFromString(part_dir);
     auto disk = volume->getDisk();
     auto read_settings = getReadSettings();
 
@@ -402,7 +402,7 @@ IDataPartStorage::ReplicatedFilesDescription
 DataPartStorageOnDiskBase::getReplicatedFilesDescriptionForRemoteDisk(const NameSet & file_names) const
 {
     ReplicatedFilesDescription description;
-    auto relative_path = fs::path(root_path) / part_dir;
+    auto relative_path = pathFromString(root_path) / pathFromString(part_dir);
 
     auto disk = volume->getDisk();
     if (!disk->supportZeroCopyReplication())
@@ -452,7 +452,7 @@ void DataPartStorageOnDiskBase::backup(
     bool is_projection_part,
     bool allow_backup_broken_projection) const
 {
-    fs::path part_path_on_disk = fs::path{root_path} / part_dir;
+    fs::path part_path_on_disk = pathFromString(root_path) / pathFromString(part_dir);
     const String part_path_in_backup = joinBackupPath(path_in_backup, part_dir);
 
     auto disk = volume->getDisk();
@@ -835,7 +835,7 @@ void DataPartStorageOnDiskBase::remove(
     /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
     /// when we try to remove two parts with the same name, but different relative paths,
     /// for example all_1_2_1 (in Deleting state) and tmp_merge_all_1_2_1 (in Temporary state).
-    fs::path from = fs::path(root_path) / part_dir;
+    fs::path from = pathFromString(root_path) / pathFromString(part_dir);
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
 
     /// Cut last "/" if it exists (it shouldn't). Otherwise fs::path behave differently.
@@ -1126,27 +1126,27 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
 {
-    return volume->getDisk()->getDirectorySyncGuard(pathToGenericString(fs::path(root_path) / part_dir));
+    return volume->getDisk()->getDirectorySyncGuard(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir)));
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskBase::writeTransactionFile(const String & txn_file_name, WriteMode mode) const
 {
-    return volume->getDisk()->writeFile(pathToGenericString(fs::path(root_path) / part_dir / txn_file_name), 256, mode);
+    return volume->getDisk()->writeFile(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(txn_file_name)), 256, mode);
 }
 
 void DataPartStorageOnDiskBase::removeRecursive()
 {
-    executeWriteOperation([&](auto & disk) { disk.removeRecursive(pathToGenericString(fs::path(root_path) / part_dir)); });
+    executeWriteOperation([&](auto & disk) { disk.removeRecursive(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir))); });
 }
 
 void DataPartStorageOnDiskBase::removeSharedRecursive(bool keep_in_remote_fs)
 {
-    executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(pathToGenericString(fs::path(root_path) / part_dir), keep_in_remote_fs, {}); });
+    executeWriteOperation([&](auto & disk) { disk.removeSharedRecursive(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir)), keep_in_remote_fs, {}); });
 }
 
 void DataPartStorageOnDiskBase::createDirectories()
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectories(pathToGenericString(fs::path(root_path) / part_dir)); });
+    executeWriteOperation([&](auto & disk) { disk.createDirectories(pathToGenericString(pathFromString(root_path) / pathFromString(part_dir))); });
 }
 
 bool DataPartStorageOnDiskBase::hasActiveTransaction() const
@@ -1196,7 +1196,7 @@ void DataPartStorageOnDiskBase::prepareRead(
         /// underlying disk and wraps the result with ReadBufferFromFileView at the right offset.
         /// The archive's current location is captured here, so the reader holds no path of its own.
         auto disk = volume->getDisk();
-        String archive_path = pathToGenericString(fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME));
+        String archive_path = pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(SKIP_INDICES_PACKED_FILENAME));
         ReadPipeline::BufferCreator creator =
             [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
             {
@@ -1216,7 +1216,7 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExi
     if (auto reader = getArchiveReaderForFile(name))
         return reader->readFile(
             volume->getDisk(),
-            pathToGenericString(fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME)),
+            pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(SKIP_INDICES_PACKED_FILENAME)),
             name, settings, read_hint);
     return readFileIfExistsImpl(name, settings, read_hint);
 }
@@ -1229,7 +1229,7 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
 
     auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
 
-    const String packed_path = pathToGenericString(fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME));
+    const String packed_path = pathToGenericString(pathFromString(root_path) / pathFromString(part_dir) / pathFromString(SKIP_INDICES_PACKED_FILENAME));
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
     {

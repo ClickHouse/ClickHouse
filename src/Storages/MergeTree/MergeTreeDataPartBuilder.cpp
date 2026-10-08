@@ -130,7 +130,7 @@ MutableDataPartStoragePtr MergeTreeDataPartBuilder::getPartStorageByType(
             return std::make_shared<DataPartStorageOnDiskPacked>(volume_, root_path_, part_dir_, read_settings, initialize);
         default:
             throw Exception(ErrorCodes::UNKNOWN_PART_TYPE,
-                "Unknown type of storage for part {}", fs::path(root_path_) / part_dir_);
+                "Unknown type of storage for part {}", pathFromString(root_path_) / pathFromString(part_dir_));
     }
 }
 
@@ -181,7 +181,7 @@ MergeTreeDataPartBuilder::getPartStorageAndMarkType(
     const ReadSettings & read_settings_)
 {
     auto disk = volume_->getDisk();
-    auto part_relative_path = fs::path(root_path_) / part_dir_;
+    auto part_relative_path = pathFromString(root_path_) / pathFromString(part_dir_);
 
     for (auto it = disk->iterateDirectory(pathToGenericString(part_relative_path)); it->isValid(); it->next())
     {
