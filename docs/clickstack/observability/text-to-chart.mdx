@@ -2,114 +2,47 @@
 slug: /clickstack/observability/text-to-chart
 title: 'Text-to-Chart'
 sidebarTitle: 'Text-to-Chart'
-description: 'Generate charts from natural language prompts in ClickStack using the AI-powered Text-to-Chart feature.'
+description: 'Generate charts from natural language prompts in ClickHouse Observability using the AI-powered Text-to-Chart feature.'
 doc_type: 'guide'
 keywords: ['clickstack', 'text-to-chart', 'AI', 'visualization', 'Chart Explorer', 'natural language', 'observability']
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Warning>
-This guide needs to be rewritten for fully managed ClickHouse Observability. The instructions below were carried over from the OSS guide and include self-hosted deployment steps and API-key configuration that have not been verified for this offering. Do not use those setup steps for this offering.
-</Warning>
+The Text-to-Chart feature in ClickHouse Observability allows you to create visualizations by describing what you want to see in plain text. Rather than manually selecting metrics, filters, and group-by fields, you can type a prompt such as "Error counts by service over the last 3 days" and the AI Assistant will generate the corresponding chart automatically.
 
-ClickStack's Text-to-Chart feature allows you to create visualizations by describing what you want to see in plain text. Rather than manually selecting metrics, filters, and group-by fields, you can type a prompt such as "error rates by service over the last 24 hours" and ClickStack will generate the corresponding chart automatically.
-
-This feature uses a large language model (LLM) to convert your text prompt into a query, then builds the visualization in the [Chart Explorer](/clickstack/features/dashboards/overview#navigate-chart-explorer). It works with any configured data source.
+This feature uses a large language model (LLM) to convert your text prompt into a query, then builds the visualization in the [Chart Explorer](/clickstack/observability/features/dashboards/overview#navigate-chart-explorer).
 
 ## Prerequisites {#prerequisites}
 
-Text-to-Chart requires an [Anthropic API key](https://console.anthropic.com/). Set the `ANTHROPIC_API_KEY` environment variable when starting ClickStack.
-
-For open source deployments, pass the key as an environment variable. The method varies by deployment type:
-
-<Tabs>
-<Tab title="Docker (All-in-One or Local Mode)">
-
-```bash
-docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
-```
-
-</Tab>
-<Tab title="Docker (HyperDX Only)">
-
-```bash
-docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
-```
-
-</Tab>
-<Tab title="Docker Compose">
-
-Add the variable to your `.env` file or set it directly in the `docker-compose.yaml`:
-
-```yaml
-services:
-  app:
-    environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-```
-
-</Tab>
-<Tab title="Helm">
-
-Pass the key using `--set`:
-
-```bash
-helm install my-hyperdx hyperdx/hdx-oss-v2 \
-  --set env[0].name=ANTHROPIC_API_KEY \
-  --set env[0].value=<YOUR_KEY>
-```
-
-</Tab>
-</Tabs>
+A team admin must enable Generative AI in **Team Settings** under **Configure Generative AI**. See [Enabling Generative AI](/clickstack/observability/notebooks#enabling-generative-ai) for instructions. AI models and providers are managed automatically by the platform.
 
 ## Using Text-to-Chart {#using-text-to-chart}
 
 <Steps>
 <Step title="Navigate to Chart Explorer" id="navigate-chart-explorer">
 
-Select **Chart Explorer** from the left menu in HyperDX.
+Select **Chart Explorer** from the left sidebar.
 </Step>
 <Step title="Select a data source" id="select-data-source">
 
-Choose the data source you want to visualize — for example, **Logs**, **Traces**, or **Metrics**.
+Expand **AI Assistant** at the top of Chart Explorer if it is collapsed. Choose the data source you want to visualize from the selector beside the prompt field — for example, **Logs** or **Traces**.
 
-<Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
+<Image img="/images/clickstack/observability-text-to-chart-explorer.png" alt="Chart Explorer with the AI Assistant expanded, Logs selected, and the Generate button" />
 </Step>
 <Step title="Enter a text prompt" id="enter-text-prompt">
 
-At the top of the Chart Explorer, locate the **AI Assistant** input. Type a natural language description of the chart you want to create. For example:
+In the **AI Assistant** prompt field, type a natural language description of the chart you want to create. For example:
 
-- `Show error rates by service over the last 24 hours`
+- `Error counts by service over the last 3 days`
 - `Latency breakdown by endpoint`
 - `Count of events over time grouped by severity`
 
-ClickStack converts the prompt into a query and renders the visualization automatically.
+Click **Generate** to create the chart from your prompt. Review the generated configuration in the builder below. You can adjust the chart type, filters, and grouping, then click **Run** to update the visualization.
 
-<Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Text to chart" />
+<Image img="/images/clickstack/observability-text-to-chart-result.png" alt="Generated error counts by service chart with the AI Assistant prompt highlighted" />
 </Step>
 </Steps>
-
-## Trying it with demo data {#demo-data}
-
-The quickest way to try Text-to-Chart is with the [Local Mode](/clickstack/deployment/local-mode-only) Docker image and the [remote demo dataset](/clickstack/example-datasets/remote-demo-data):
-
-```bash
-docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
-```
-
-Navigate to `localhost:8080`. To connect to demo data, go to **Team Settings** and create a new connection with the following details:
-
-- **Connection Name**: `Demo`
-- **Host**: `https://sql-clickhouse.clickhouse.com`
-- **Username**: `otel_demo`
-- **Password**: Leave empty
-
-<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="Create connection" />
-
-Then modify each of the sources — **Logs**, **Traces**, **Metrics**, and **Sessions** — to use the `otel_v2` database. For full details on configuring sources, see the [remote demo dataset guide](/clickstack/example-datasets/remote-demo-data).
-
-Once connected, open the **Chart Explorer** and try prompts against the available logs, traces, and metrics.
 
 ## Example prompts {#example-prompts}
 
@@ -122,17 +55,15 @@ The following prompts demonstrate common use cases when working with observabili
 | `P99 latency by service` | Traces | Identifies tail latency across services |
 | `Count of 5xx status codes over the last 6 hours` | Logs | Tracks server error trends |
 
-Prompts can reference any column or attribute available in your configured data sources. The more specific the prompt, the more accurate the generated chart.
+Prompts can reference any column or attribute available in your configured data sources. Include specific column names, filters, and time ranges to help the AI generate the chart you want.
 
 ## Limitations {#limitations}
 
-- Text-to-Chart currently supports Anthropic as the LLM provider. Support for additional providers, including OpenAI, is planned for future releases.
 - Only logs and traces are supported as data sources. Prometheus metrics are not yet supported.
 - Chart accuracy depends on the clarity of the prompt and the structure of the underlying data. If a generated chart does not match expectations, try rephrasing the prompt or specifying column names explicitly.
 
 ## Further reading {#further-reading}
 
 - [From text to charts: a faster way to visualize with ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — blog post introducing the feature
-- [Dashboards and visualizations](/clickstack/features/dashboards/overview) — manual chart creation using Chart Explorer
-- [Search](/clickstack/features/search) — full-text and property search syntax
-- [Configuration](/clickstack/managing/config) — all ClickStack environment variables
+- [Dashboards and visualizations](/clickstack/observability/features/dashboards/overview) — manual chart creation using Chart Explorer
+- [Search](/clickstack/observability/features/search) — full-text and property search syntax
