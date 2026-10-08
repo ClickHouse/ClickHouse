@@ -16,9 +16,7 @@ INSERT INTO t_wkc_columns_cache SELECT number, if(number % 3 = 0, map('a', numbe
 
 SET use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1;
 
-SYSTEM DROP COLUMNS CACHE;
-
--- The first read fills the cache, the second one is served from it.
+-- The table is new, so the first read fills the cache and the second one is served from it.
 SELECT sum(length(m)), sum(m['a']), sum(m['b']), sum(length(m.keys)), sum(arraySum(m.values)), sum(m.size0) FROM t_wkc_columns_cache;
 SELECT sum(length(m)), sum(m['a']), sum(m['b']), sum(length(m.keys)), sum(arraySum(m.values)), sum(m.size0) FROM t_wkc_columns_cache;
 SELECT m FROM t_wkc_columns_cache WHERE id IN (2999, 3000) ORDER BY id;
