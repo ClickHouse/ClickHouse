@@ -9,6 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <algorithm>
+#include <unordered_set>
 #include <vector>
 
 namespace DB
@@ -103,6 +104,10 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
     /// The counts are not trusted, so the containers are not reserved from them:
     /// a corrupted snapshot file must fail to parse rather than allocate a huge amount of memory.
 
+    /// Every directory has its own remote path. The loader matches the directories of the listing to the snapshot
+    /// by the remote path, so a duplicate would let it load a directory under the logical path of another one.
+    std::unordered_set<std::string> remote_paths;
+
     for (UInt64 i = 0; i < directories_count; ++i)
     {
         std::string path;
@@ -119,6 +124,9 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
         if (has_explicit_file_list > 1)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid flag of the directory '{}' in the plain_rewritable snapshot file", path);
         info.has_explicit_file_list = has_explicit_file_list;
+
+        if (!remote_paths.insert(info.remote_path).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate remote path of the directory '{}' in the plain_rewritable snapshot file", path);
 
         UInt64 files_count = 0;
         readVarUInt(files_count, compressed);
