@@ -2724,10 +2724,12 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
     factory.registerFunction<FunctionParseDateTime>(parseDateTime_documentation);
     factory.registerAlias("TO_UNIXTIME", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("DATE_PARSE", FunctionParseDateTime::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionParseDateTimeOrZero>(parseDateTimeOrZero_documentation);
     factory.registerFunction<FunctionParseDateTimeOrNull>(parseDateTimeOrNull_documentation);
     factory.registerAlias("str_to_date", FunctionParseDateTimeOrNull::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionParseDateTimeInJodaSyntax>(parseDateTimeInJodaSyntax_documentation);
+    factory.registerAlias("PARSE_DATETIME", FunctionParseDateTimeInJodaSyntax::name, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrZero>(parseDateTimeInJodaSyntaxOrZero_documentation);
     factory.registerFunction<FunctionParseDateTimeInJodaSyntaxOrNull>(parseDateTimeInJodaSyntaxOrNull_documentation);
 

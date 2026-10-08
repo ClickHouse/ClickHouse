@@ -3702,5 +3702,6 @@ The first argument may also be a [`Map`](/sql-reference/data-types/map): an abse
     FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
 
     factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>>(documentation_null);
+    factory.registerAlias("element_at", "arrayElementOrNull", FunctionFactory::Case::Insensitive);
 }
 }

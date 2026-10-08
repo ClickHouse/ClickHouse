@@ -35,5 +35,6 @@ To find one, test for it: `arrayFirstIndex(x -> isNaN(x), arr)` returns its posi
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionIndexOf>(documentation);
+    factory.registerAlias("array_position", "indexOf", FunctionFactory::Case::Insensitive);
 }
 }

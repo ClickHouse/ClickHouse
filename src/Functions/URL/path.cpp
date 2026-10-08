@@ -40,6 +40,7 @@ SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/u
     FunctionDocumentation documentation_path = {description_path, syntax_path, arguments_path, {}, returned_value_path, examples_path, introduced_in_path, category_path};
 
     factory.registerFunction<FunctionPath>(documentation_path);
+    factory.registerAlias("url_extract_path", "path", FunctionFactory::Case::Insensitive);
 }
 
 }
