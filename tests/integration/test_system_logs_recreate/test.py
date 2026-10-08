@@ -208,3 +208,62 @@ def test_drop_system_log():
         ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
     node.restart_clickhouse()
+
+
+def test_materialized_view_over_rotated_system_log():
+    # https://github.com/ClickHouse/ClickHouse/issues/124177
+    override = "/etc/clickhouse-server/config.d/zzz-override-query_log-ttl.xml"
+    rotated = "SELECT name FROM system.tables WHERE database = 'system' AND match(name, '^query_log_[0-9]+$') ORDER BY name"
+    try:
+        node.query("SYSTEM FLUSH LOGS")
+        rotated_before = node.query(rotated)
+        node.query(
+            "CREATE TABLE default.dst_124177 (log_comment String) ENGINE = MergeTree ORDER BY tuple()"
+        )
+        node.query(
+            "CREATE MATERIALIZED VIEW default.mv_124177 TO default.dst_124177 "
+            "AS SELECT log_comment FROM system.query_log WHERE type = 'QueryFinish'"
+        )
+        node.query("SELECT 1", settings={"log_comment": "before_rotation_124177"})
+        node.query("SYSTEM FLUSH LOGS")
+        assert (
+            node.query(
+                "SELECT count() FROM default.dst_124177 WHERE log_comment = 'before_rotation_124177'"
+            )
+            == "1\n"
+        )
+
+        # A TTL changes the definition of query_log, so the next start renames it to query_log_N.
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"echo '<clickhouse><query_log><ttl>event_date + INTERVAL 30 DAY DELETE</ttl></query_log></clickhouse>' > {override}",
+            ]
+        )
+        node.restart_clickhouse()
+        node.query("SELECT 1", settings={"log_comment": "after_rotation_124177"})
+        node.query("SYSTEM FLUSH LOGS")
+
+        assert node.query(rotated) != rotated_before
+        assert (
+            node.query(
+                "SELECT dependencies_table FROM system.tables WHERE database = 'system' AND name = 'query_log'"
+            )
+            == "['mv_124177']\n"
+        )
+        assert (
+            node.query(
+                "SELECT count() FROM default.dst_124177 WHERE log_comment = 'after_rotation_124177'"
+            )
+            == "1\n"
+        )
+    finally:
+        node.query("DROP TABLE IF EXISTS default.mv_124177 SYNC")
+        node.query("DROP TABLE IF EXISTS default.dst_124177 SYNC")
+        node.exec_in_container(["rm", "-f", override])
+        # Removing the TTL rotates query_log once more.
+        node.restart_clickhouse()
+        node.query("SYSTEM FLUSH LOGS")
+        for name in node.query(rotated).split():
+            node.query(f"DROP TABLE IF EXISTS system.{name} SYNC")
