@@ -264,7 +264,7 @@ inline const auto & getOptimizations()
         {tryPushBucketTopKIntoAggregation, "aggregationBucketTopK", &QueryPlanOptimizationSettings::aggregation_bucket_top_k},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
-        {tryReplaceAlwaysTrueFilter, "replaceAlwaysTrueFilter", &QueryPlanOptimizationSettings::optimize_plan},
+        {tryReplaceAlwaysTrueFilter, "replaceAlwaysTrueFilter", &QueryPlanOptimizationSettings::replace_always_true_filter},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryFuseFilterIntoArrayJoin, "fuseFilterIntoArrayJoin", &QueryPlanOptimizationSettings::fuse_filter_into_array_join},

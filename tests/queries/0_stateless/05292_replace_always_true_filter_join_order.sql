@@ -11,3 +11,7 @@ SET query_plan_optimize_join_order_limit = 10, enable_parallel_replicas = 0;
 SELECT countIf(explain LIKE '%⋈%⋈%')
 FROM (EXPLAIN SELECT count() FROM jt_a, jt_b, jt_c WHERE jt_a.k = jt_b.k AND jt_b.d = jt_c.d AND materialize('w') = 'w');
 SELECT count() FROM jt_a, jt_b, jt_c WHERE jt_a.k = jt_b.k AND jt_b.d = jt_c.d AND materialize('w') = 'w';
+
+SET query_plan_replace_always_true_filter = 0;
+SELECT countIf(explain LIKE '%⋈%⋈%')
+FROM (EXPLAIN SELECT count() FROM jt_a, jt_b, jt_c WHERE jt_a.k = jt_b.k AND jt_b.d = jt_c.d AND materialize('w') = 'w');
