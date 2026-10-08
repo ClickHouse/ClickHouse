@@ -439,7 +439,17 @@
         const user_from_url = current_url.searchParams.get('user');
         if (user_from_url) user = user_from_url;
         const password_from_url = current_url.searchParams.get('password');
-        if (password_from_url) password = password_from_url;
+        if (password_from_url) {
+            password = password_from_url;
+            /// Strip the password back out of the address bar so it is not left in a shareable URL, in browser
+            /// history or in the `Referer` of later requests (`file:` URLs disallow `history` edits).
+            if (location.protocol != 'file:') {
+                current_url.searchParams.delete('password');
+                window.history.replaceState(history.state, '',
+                    window.location.origin + window.location.pathname + '?'
+                    + current_url.searchParams.toString() + window.location.hash);
+            }
+        }
 
         document.getElementById('url').value = host;
         document.getElementById('user').value = user;
