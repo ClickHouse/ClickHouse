@@ -9,7 +9,24 @@
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+#if defined(WYRD_SIMULATION)
+
+LockFreeScope::LockFreeScope()
+{
+    enterLockFreeScope();
+}
+
+LockFreeScope::~LockFreeScope()
+{
+    leaveLockFreeScope();
+}
+
+void progress()
+{
+    progressHint();
+}
+
+#elif defined(WYRD_ADVERSARY)
 
 LockFreeScope::LockFreeScope()
 {

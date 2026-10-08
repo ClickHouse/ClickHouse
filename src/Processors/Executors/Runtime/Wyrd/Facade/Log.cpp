@@ -2,9 +2,11 @@
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#elif defined(WYRD_ADVERSARY)
+#    include <base/getThreadId.h>
+#    include <cstdio>
 #else
 #    include <base/getThreadId.h>
-
 #    include <cstdio>
 #endif
 
@@ -16,6 +18,13 @@ namespace DB::Runtime::Wyrd
 void logMessage(std::string message)
 {
     trace(std::move(message));
+}
+
+#elif defined(WYRD_ADVERSARY)
+
+void logMessage(std::string message)
+{
+    fmt::print(stderr, "Wyrd thread {}: {}\n", getThreadId(), message);
 }
 
 #else

@@ -9,7 +9,14 @@
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+#if defined(WYRD_SIMULATION)
+
+void preemptionPoint(std::source_location location)
+{
+    injectFault("preemptionPoint", location);
+}
+
+#elif defined(WYRD_ADVERSARY)
 
 void preemptionPoint(std::source_location location)
 {

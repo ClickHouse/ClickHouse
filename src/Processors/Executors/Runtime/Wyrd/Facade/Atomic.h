@@ -12,14 +12,12 @@
 #    include <fmt/format.h>
 #elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/InjectFault.h>
-#    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Syscall.h>
-#    include <fmt/format.h>
 #endif
 
 namespace DB::Runtime::Wyrd
 {
 
-#if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+#if defined(WYRD_SIMULATION)
 
 template <typename T>
 auto formatArgument(const T & value)
@@ -103,8 +101,6 @@ public:
         return result;
     }
 
-#if defined(WYRD_SIMULATION)
-
     void wait(T old, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::wait", location);
@@ -125,7 +121,86 @@ public:
         futexWake(this, std::numeric_limits<size_t>::max(), location);
     }
 
-#else
+    operator T() const /// NOLINT(google-explicit-constructor)
+    {
+        return load();
+    }
+
+    T operator=(T desired) /// NOLINT(misc-unconventional-assign-operator)
+    {
+        store(desired);
+        return desired;
+    }
+
+    std::atomic<T> & underlying()
+    {
+        return impl;
+    }
+
+private:
+    std::atomic<T> impl{};
+};
+
+#elif defined(WYRD_ADVERSARY)
+
+template <typename T>
+class Atomic
+{
+public:
+    Atomic() = default;
+
+    constexpr Atomic(T desired) /// NOLINT(google-explicit-constructor)
+        : impl(desired)
+    {
+    }
+
+    Atomic(const Atomic &) = delete;
+    Atomic & operator=(const Atomic &) = delete;
+
+    T load(std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current()) const
+    {
+        injectFault("atomic::load", location);
+        return impl.load(order);
+    }
+
+    void store(T desired, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
+    {
+        injectFault("atomic::store", location);
+        impl.store(desired, order);
+    }
+
+    T exchange(T desired, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
+    {
+        injectFault("atomic::exchange", location);
+        return impl.exchange(desired, order);
+    }
+
+    bool compare_exchange_weak(T & expected, T desired, std::memory_order success = std::memory_order::seq_cst, std::memory_order failure = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
+    {
+        injectFault("atomic::compare_exchange_weak", location);
+        bool result = !spuriousFailure(location) && impl.compare_exchange_weak(expected, desired, success, failure);
+        if (!result)
+            expected = impl.load(failure);
+        return result;
+    }
+
+    bool compare_exchange_strong(T & expected, T desired, std::memory_order success = std::memory_order::seq_cst, std::memory_order failure = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
+    {
+        injectFault("atomic::compare_exchange_strong", location);
+        return impl.compare_exchange_strong(expected, desired, success, failure);
+    }
+
+    T fetch_add(T delta, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
+    {
+        injectFault("atomic::fetch_add", location);
+        return impl.fetch_add(delta, order);
+    }
+
+    T fetch_sub(T delta, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current()) requires std::is_integral_v<T>
+    {
+        injectFault("atomic::fetch_sub", location);
+        return impl.fetch_sub(delta, order);
+    }
 
     void wait(T old, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
@@ -144,8 +219,6 @@ public:
         injectFault("atomic::notify_all", location);
         impl.notify_all();
     }
-
-#endif
 
     operator T() const /// NOLINT(google-explicit-constructor)
     {
