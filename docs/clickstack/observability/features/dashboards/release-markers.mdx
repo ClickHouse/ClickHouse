@@ -9,10 +9,6 @@ keywords: ['clickstack', 'dashboards', 'release markers', 'deployment tracking',
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Warning>
-This guide has been carried over from the existing documentation and still needs review for ClickHouse Observability. Source configuration, the Team Settings workflow, and sources API access need verification for this offering.
-</Warning>
-
 The first question about a latency or error spike is usually whether something shipped. Dashboard time charts can answer it in place: turn on release markers and each tile draws a dashed vertical line at the moment a version of a service first appeared in its telemetry.
 
 The versions come from the telemetry you already send, read through an expression on the tile's source. There's no CI integration to wire up and nothing to push at deploy time.
