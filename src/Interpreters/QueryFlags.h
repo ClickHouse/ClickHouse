@@ -19,6 +19,9 @@ struct QueryFlags
     /// Otherwise the copy runs with the full access of the DDL worker. The other replicas run only the entries that
     /// succeeded on the initiator. So the query is checked as it would be on a local database.
     bool run_as_submitting_user = false;
+    /// If true, the query is not accounted in the quota. Used by the internal `DETACH`/`ATTACH` pair of the
+    /// `reattach_tables_before_query_execution` testing hook, which must not consume the user's quota.
+    bool ignore_quota = false;
 };
 
 }

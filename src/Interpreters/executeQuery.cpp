@@ -3522,14 +3522,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         {
             {
                 auto internal_context = make_internal_context();
-                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true, .ignore_quota = true}).second;
                 executeTrivialBlockIO(detach, internal_context);
                 detached = true;
             }
 
             {
                 auto internal_context = make_internal_context();
-                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true, .ignore_quota = true}).second;
                 executeTrivialBlockIO(attach, internal_context);
             }
         }
@@ -3558,7 +3558,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 try
                 {
                     auto internal_context = make_internal_context();
-                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
+                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true, .ignore_quota = true}).second;
                     executeTrivialBlockIO(attach, internal_context);
                 }
                 catch (...)
@@ -5242,7 +5242,11 @@ static BlockIO executeQueryImpl(
             /// filtered out by the gate above and are not randomized either.
             const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(out_ast.get());
             bool is_on_cluster = query_on_cluster && !query_on_cluster->cluster.empty();
-            if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster)
+            /// A `SELECT` with `use_query_cache` may be answered from the query result cache below without
+            /// touching its tables at all, so reattaching them would be a side effect the query never implies.
+            bool may_use_query_result_cache = settings[Setting::use_query_cache]
+                && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
+            if (!internal && is_initial_query && !has_transaction && !is_explain && !is_on_cluster && !may_use_query_result_cache)
             {
                 bool need_reattach_tables = settings[Setting::reattach_tables_before_query_execution];
                 auto reattach_probability = std::clamp(
@@ -5556,7 +5560,7 @@ static BlockIO executeQueryImpl(
                 if (auto * interpreter_with_analyzer = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
                     interpreter_with_analyzer->getQueryPlan();
 
-                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked)
+                if (!(interpreter && interpreter->ignoreQuota()) && !quota_checked && !flags.ignore_quota)
                 {
                     quota = context->getQuota();
                     if (quota)

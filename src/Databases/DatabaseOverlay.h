@@ -144,6 +144,10 @@ public:
     bool isReadOnly() const override { return true; }
     void shutdown() override {}
 
+    /// The tables are `StorageAlias` objects resolved through the source databases on every access, so there is
+    /// nothing to reattach here, and resolving names for the hook would query the source databases.
+    bool supportsDetachingTables() const override { return false; }
+
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
 protected:
