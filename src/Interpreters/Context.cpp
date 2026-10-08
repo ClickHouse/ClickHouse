@@ -631,6 +631,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<ZooKeeperConnectionAttempt> zookeeper_connection_attempt; /// Protected by zookeeper_mutex.
     bool zookeeper_server_started = false;                  /// Set by setServerCompletelyStarted. Protected by zookeeper_mutex.
     bool zookeeper_shut_down = false;                       /// Set by shutdown: no new connection attempts. Protected by zookeeper_mutex.
+    /// Set by a config reload waiting for an attempt: the expired client is not reused. Protected by zookeeper_mutex.
+    bool zookeeper_outdated = false;
 
     ConfigurationPtr sensitive_data_masker_config;
 
@@ -640,6 +642,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::map<String, std::shared_ptr<ZooKeeperConnectionAttempt>> auxiliary_zookeeper_connection_attempts; /// Protected by auxiliary_zookeepers_mutex.
     bool auxiliary_zookeepers_server_started = false;       /// Set by setServerCompletelyStarted. Protected by auxiliary_zookeepers_mutex.
     bool auxiliary_zookeepers_shut_down = false;            /// Set by shutdown. Protected by auxiliary_zookeepers_mutex.
+    std::set<String> outdated_auxiliary_zookeepers;         /// As zookeeper_outdated. Protected by auxiliary_zookeepers_mutex.
 
     /// No lock required for interserver_io_host, interserver_io_port, interserver_scheme modified only during initialization
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
@@ -6665,9 +6668,8 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
             {
                 if (shared->zookeeper_shut_down)
                     throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "ZooKeeper client is shut down");
-                if (shared->zookeeper)
-                    expired_zookeeper = shared->zookeeper;
-                else
+                expired_zookeeper = shared->zookeeper;
+                if (!expired_zookeeper || shared->zookeeper_outdated)
                 {
                     const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
                     args.emplace(config, zkutil::getZooKeeperConfigName(config));
@@ -6701,10 +6703,11 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
                 {
                     CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
                     LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
-                    zookeeper = expired_zookeeper->startNewSession();
                 }
-                else
+                if (args)
                     zookeeper = zkutil::ZooKeeper::create(std::move(*args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+                else
+                    zookeeper = expired_zookeeper->startNewSession();
             }
             catch (const Coordination::Exception & e)
             {
@@ -6998,7 +7001,8 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
             else
             {
                 const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-                if (zookeeper == shared->auxiliary_zookeepers.end())
+                const bool outdated = shared->outdated_auxiliary_zookeepers.contains(name);
+                if (zookeeper == shared->auxiliary_zookeepers.end() || outdated)
                 {
                     if (name.contains(':') || name.contains('/'))
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
@@ -7016,7 +7020,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 
                 if (zookeeper != shared->auxiliary_zookeepers.end())
                     expired_zookeeper = zookeeper->second;
-                else
+                if (!expired_zookeeper || outdated)
                 {
                     args.emplace(config, config_name);
                     args->send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
@@ -7049,12 +7053,11 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
             FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_connection_attempt_pause);
             zkutil::ZooKeeperPtr zookeeper;
             if (expired_zookeeper)
-            {
                 CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-                zookeeper = expired_zookeeper->startNewSession();
-            }
-            else
+            if (args)
                 zookeeper = zkutil::ZooKeeper::create(std::move(*args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+            else
+                zookeeper = expired_zookeeper->startNewSession();
 
             {
                 std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
@@ -7154,6 +7157,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
             attempt = shared->zookeeper_connection_attempt;
             if (!attempt)
             {
+                shared->zookeeper_outdated = false;
                 reloadZooKeeperIfChangedImpl(
                     config,
                     ZooKeeperConnectionLog::default_zookeeper_name,
@@ -7167,6 +7171,8 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
                     getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
                 return;
             }
+            if (shared->zookeeper)
+                shared->zookeeper_outdated = shared->zookeeper->configChanged(*config, zkutil::getZooKeeperConfigName(*config));
         }
         /// Two sessions of one client must not connect at the same time: they would race on the session node.
         attempt->getFuture().wait();
@@ -7189,6 +7195,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 
             if (shared->auxiliary_zookeeper_connection_attempts.empty())
             {
+                shared->outdated_auxiliary_zookeepers.clear();
                 for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
                 {
                     const auto config_name = "auxiliary_zookeepers." + it->first;
@@ -7221,6 +7228,13 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
                 return;
             }
             attempt = shared->auxiliary_zookeeper_connection_attempts.begin()->second;
+            shared->outdated_auxiliary_zookeepers.clear();
+            for (const auto & [zk_name, zk] : shared->auxiliary_zookeepers)
+            {
+                const auto zk_config_name = "auxiliary_zookeepers." + zk_name;
+                if (!config->has(zk_config_name) || zk->configChanged(*config, zk_config_name))
+                    shared->outdated_auxiliary_zookeepers.insert(zk_name);
+            }
         }
         /// As in reloadZooKeeperIfChanged: no session is created while a connection attempt is in flight.
         attempt->getFuture().wait();
