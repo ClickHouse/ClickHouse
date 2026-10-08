@@ -42,6 +42,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsArrowFlightDescriptorType arrow_flight_request_descriptor_type;
+    extern const SettingsUInt64 arrow_flight_request_timeout_sec;
 }
 
 StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & args, ContextPtr context_, const StorageID * table_id)
@@ -157,8 +158,9 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     const String & dataset_name_,
     ContextPtr context_)
 {
-    auto client = connection_->getClient();
-    auto options = connection_->getOptions();
+    UInt64 timeout_sec = context_->getSettingsRef()[Setting::arrow_flight_request_timeout_sec];
+    auto client = connection_->getClient(timeout_sec);
+    auto options = connection_->getCallOptions(timeout_sec);
 
     arrow::flight::FlightDescriptor descriptor;
     if (context_->getSettingsRef()[Setting::arrow_flight_request_descriptor_type] == ArrowFlightDescriptorType::Command)
@@ -170,7 +172,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     {
         descriptor = arrow::flight::FlightDescriptor::Path({dataset_name_});
     }
-    auto status = client->GetSchema(*options, descriptor);
+    auto status = client->GetSchema(options, descriptor);
     if (!status.ok())
     {
         throw Exception(ErrorCodes::ARROWFLIGHT_FETCH_SCHEMA_ERROR, "Failed to get table schema: {}", status.status().ToString());
@@ -223,6 +225,7 @@ public:
         , connection(connection_)
         , dataset_name(dataset_name_)
         , context(context_)
+        , request_timeout_sec(context_ ? context_->getSettingsRef()[Setting::arrow_flight_request_timeout_sec] : 0)
     {
     }
 
@@ -230,8 +233,8 @@ public:
 
     void consume(Chunk & chunk) override
     {
-        auto client = connection->getClient();
-        auto options = connection->getOptions();
+        auto client = connection->getClient(request_timeout_sec);
+        auto options = connection->getCallOptions(request_timeout_sec);
 
         auto block = getHeader().cloneWithColumns(chunk.getColumns());
 
@@ -289,7 +292,7 @@ public:
 
             if (first_batch)
             {
-                auto write_result = client->DoPut(*options, descriptor, batch->schema());
+                auto write_result = client->DoPut(options, descriptor, batch->schema());
                 if (!write_result.ok())
                 {
                     throw Exception(ErrorCodes::ARROWFLIGHT_WRITE_ERROR, "DoPut failed: {}", write_result.status().ToString());
@@ -328,6 +331,7 @@ private:
     std::shared_ptr<ArrowFlightConnection> connection;
     String dataset_name;
     ContextPtr context;
+    UInt64 request_timeout_sec;
 };
 
 SinkToStoragePtr
@@ -407,6 +411,7 @@ Named collection parameters:
 ## Settings {#settings}
 
 - `arrow_flight_request_descriptor_type` — Controls how the dataset name is sent to the Flight server. Possible values: `path` (default, sends as a PATH descriptor) or `command` (sends as a CMD descriptor with `SELECT * FROM <dataset>`). Use `command` for Flight servers that expect SQL commands (e.g., Dremio).
+- `arrow_flight_request_timeout_sec` — Timeout in seconds for a single Arrow Flight request, default `300`. It bounds the whole request: for a `SELECT` that is the entire result stream, not just the wait for the first record batch. `0` means no timeout, in which case a Flight server that accepts a request and never answers blocks the query until the connection is closed.
 
 ## Usage Example {#usage-example}
 

@@ -37,6 +37,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <base/sleep.h>
+#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -519,6 +520,15 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
     return metadata_storage->getLastChanged(path);
 }
 
+bool DiskObjectStorage::isRemote() const
+{
+    for (const auto & location : cluster->getEnabledLocations())
+        if (object_storages->takePointingTo(location)->isRemote())
+            return true;
+
+    return metadata_storage->isRemote();
+}
+
 struct stat DiskObjectStorage::stat(const String & path) const
 {
     return metadata_storage->stat(path);
@@ -758,6 +768,13 @@ bool DiskObjectStorage::isWriteOnce() const
     return metadata_storage->isWriteOnce();
 }
 
+bool DiskObjectStorage::prefersRecursiveRemoval() const
+{
+    /// `plain_rewritable` copies the blob of every unlinked file so that the unlink can be undone, while its
+    /// recursive removal only rewrites the directory metadata and deletes all objects in bulk.
+    return metadata_storage->getType() == MetadataStorageType::PlainRewritable;
+}
+
 bool DiskObjectStorage::isSharedCompatible() const
 {
     switch (object_storages->takePointingTo(cluster->getLocalLocation())->getType())
@@ -784,7 +801,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
+    return metadata_storage->supportsHardLinks();
 }
 
 String DiskObjectStorage::getReadResourceNameNoLock() const
