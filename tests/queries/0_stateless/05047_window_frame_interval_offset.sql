@@ -108,6 +108,21 @@ SELECT sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL -1 DAY PRECEDING AND CU
 SELECT 'Rejected: non-constant offset';
 SELECT sum(val) OVER (ORDER BY val ROWS BETWEEN val PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError BAD_ARGUMENTS }
 
+-- Like a numeric offset, an interval offset that does not fit the type of the key is rejected rather than truncated.
+SELECT 'Rejected: interval offset out of the range of the key';
+SELECT sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 65536 DAY PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT sum(val) OVER (ORDER BY dt RANGE BETWEEN CURRENT ROW AND INTERVAL 9363 WEEK FOLLOWING) FROM test_window_interval_offset; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 49711 DAY PRECEDING AND CURRENT ROW) FROM test_window_interval_offset; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT sum(val) OVER (ORDER BY dt32 RANGE BETWEEN INTERVAL 306783379 WEEK PRECEDING AND CURRENT ROW)
+FROM (SELECT toDate32(dt) AS dt32, val FROM test_window_interval_offset); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+SELECT 'Largest interval offsets that fit the key';
+SELECT dt, val,
+    sum(val) OVER (ORDER BY dt RANGE BETWEEN INTERVAL 65535 DAY PRECEDING AND CURRENT ROW) AS date_days,
+    sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 49710 DAY PRECEDING AND CURRENT ROW) AS datetime_days
+FROM test_window_interval_offset
+ORDER BY dt;
+
 DROP TABLE test_window_interval_offset;
 
 -- On a DateTime key in a time zone with DST, `ts - INTERVAL 1 DAY` is not monotone in `ts` around the switch, and the

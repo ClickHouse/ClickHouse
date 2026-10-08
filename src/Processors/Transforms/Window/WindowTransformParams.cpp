@@ -343,7 +343,12 @@ RangeOffsets prepareRangeOffsets(const Block & header, const WindowFrame & frame
             bool is_calendar = false;
             offset = convertIntervalOffset(offset, *interval_kind, key_type, time_zone, is_calendar);
             if (!is_calendar)
+            {
+                /// The arithmetic comparator casts the offset to the value type of the key, so an offset that
+                /// does not fit is rejected, as a numeric offset is.
+                offset = convertFieldToTypeOrThrow(offset, *key.type, nullptr, {}, /*convert_inexact_floats=*/true);
                 return arithmetic_comparator;
+            }
 
             result.time_zone = &time_zone;
             return chooseRangeOffsetComparator(*key.column, /*is_calendar=*/true);

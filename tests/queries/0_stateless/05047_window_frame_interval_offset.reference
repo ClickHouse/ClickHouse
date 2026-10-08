@@ -150,6 +150,15 @@ Rejected: numeric key with interval
 Rejected: sub-day interval on Date key
 Rejected: negative interval
 Rejected: non-constant offset
+Rejected: interval offset out of the range of the key
+Largest interval offsets that fit the key
+2024-01-30	1	1	1
+2024-01-31	2	3	3
+2024-02-01	3	6	6
+2024-02-29	4	10	10
+2024-03-01	5	15	15
+2024-03-31	6	21	21
+2025-01-31	7	28	28
 DST: INTERVAL DAY and WEEK are rejected for a DateTime key in a time zone with DST
 DST: INTERVAL HOUR frames in the repeated hour
 2024-10-26 02:00:00	2024-10-26 00:00:00	1	1	1	3
