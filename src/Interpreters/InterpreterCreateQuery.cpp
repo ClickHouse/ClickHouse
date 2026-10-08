@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 
 #include <Core/Settings.h>
@@ -911,6 +912,22 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
+/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so a user without it is told the name is
+/// unknown, as a user holding the grant is told later by the factory.
+void throwIfEngineIsUnknownAndNotGranted(const String & engine_name, bool is_database_engine, const ContextPtr & context)
+{
+    if (is_database_engine ? DatabaseFactory::instance().getDatabaseEngines().contains(engine_name)
+                           : StorageFactory::instance().getAllStorages().contains(engine_name))
+        return;
+    if (context->getAccess()->isGranted(AccessType::TABLE_ENGINE, engine_name))
+        return;
+    if (is_database_engine)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine {}{}",
+                        engine_name, DatabaseFactory::instance().getHintsMessage(engine_name));
+    throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Unknown table engine {}{}",
+                    engine_name, StorageFactory::instance().getHintsMessage(engine_name));
+}
+
 }
 
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
@@ -934,7 +951,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
     /// We have to check access rights again (in case engine was changed).
     if (create.storage && create.storage->engine)
+    {
+        throwIfEngineIsUnknownAndNotGranted(create.storage->engine->name, /*is_database_engine=*/ false, getContext());
         getContext()->checkAccess(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
 
     /// If this is a TimeSeries table then we need to normalize list of columns (add missing columns and reorder), and also set inner table engines.
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
@@ -3880,7 +3900,10 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (create.storage && create.storage->engine)
+    {
+        throwIfEngineIsUnknownAndNotGranted(create.storage->engine->name, /*is_database_engine=*/ !create.table, getContext());
         required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    }
 
     /// `ATTACH TABLE ... FROM '<path>'` reads a directory in `user_files` as the table data and then moves it to the
     /// data path of the new table. Reading it needs `READ` on the FILE source like the `file` function does, and
