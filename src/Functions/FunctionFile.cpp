@@ -26,6 +26,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -189,6 +190,12 @@ public:
 
                 try
                 {
+                    /// The containment checks below see the whole string, while a local disk opens
+                    /// the path through libc, which stops at the first NUL. The path is not echoed:
+                    /// it would put the NUL byte into the logs.
+                    if (file_path_str.contains('\0'))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File path contains an embedded NUL byte");
+
                     DiskPtr found_disk;
                     String relative_path;
 

@@ -323,6 +323,39 @@ def test_s3_glob_pattern():
     assert result.strip() == "1\n2"
 
 
+def test_s3_path_virtual_column_round_trips():
+    """On an `s3_plain` disk the disk root is a relative object-key prefix. `_path` must expose
+    the disk-relative path, so that feeding it back into `file` addresses the same file instead
+    of `<disk_root>/<disk_path>/<relative>`."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_path_round_trip.csv', 'CSV', 'x UInt64') SELECT 42"
+    )
+    path = node_s3.query(
+        "SELECT _path FROM file('s3_path_round_trip.csv', 'CSV', 'x UInt64')"
+    ).strip()
+    assert path == "s3_path_round_trip.csv", path
+    assert (
+        node_s3.query(f"SELECT * FROM file('{path}', 'CSV', 'x UInt64')").strip() == "42"
+    )
+
+
+def test_local_embedded_nul_rejected():
+    """The containment checks see the whole path, while a local disk opens it through libc,
+    which stops at the first NUL. Both the `file` table function and the scalar `file` must
+    reject such a path instead of reading the file named by the prefix before the NUL."""
+    node_local.exec_in_container(
+        ["bash", "-c", "mkdir -p /test_user_files_disk1/nul_dir && echo 1 > /test_user_files_disk1/nul_dir/a.csv"]
+    )
+    err = node_local.query_and_get_error(
+        "SELECT * FROM file(concat('nul_dir/a.csv', char(0), '/junk'), 'CSV', 'x UInt64')"
+    )
+    assert "embedded NUL" in err, err
+    err = node_local.query_and_get_error(
+        "SELECT file(concat('nul_dir/a.csv', char(0), '/junk'))"
+    )
+    assert "embedded NUL" in err, err
+
+
 def test_local_time_virtual_column():
     """Test that _time virtual column returns a real timestamp for disk-backed files."""
     node_local.exec_in_container(

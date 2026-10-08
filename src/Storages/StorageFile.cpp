@@ -702,6 +702,23 @@ std::pair<DiskPtr, String> splitUserFilesAbsolutePath(const String & absolute_pa
     return {best_disk, best_relative};
 }
 
+/// Returns the value exposed as the `_path` virtual column for a path produced by
+/// `getPathsListOnDisk`. On a disk with a host-absolute root (plain local disks) the
+/// internal `<disk_path>/<relative>` form is a real filesystem path, and feeding it back
+/// into `file` strips the root again, so it is returned unchanged. On a disk whose root is
+/// a relative object-key prefix (e.g. `s3_plain`) user entrypoints treat that form as an
+/// ordinary relative path, so the disk-relative part is returned instead: it addresses the
+/// same file when passed back to `file`.
+static String getUserFilesVirtualPath(const String & path, const VolumePtr & volume)
+{
+    if (!volume)
+        return path;
+    auto [disk, relative] = splitUserFilesAbsolutePath(path, volume->getDisks());
+    if (!disk || fs::path(disk->getPath()).is_absolute())
+        return path;
+    return relative;
+}
+
 /// Returns true if the given absolute user-files path points to an existing file
 /// or directory on the volume.
 bool userFilesPathExists(const String & absolute_path, const Disks & disks)
@@ -926,6 +943,10 @@ Strings getPathsListOnDisk(
     const VolumePtr & volume,
     size_t & total_bytes_to_read)
 {
+    /// The containment checks below see the whole string, while a local disk opens the path
+    /// through libc, which stops at the first NUL.
+    throwIfPathContainsEmbeddedNul(path_with_globs);
+
     const Disks disks = volume->getDisks();
 
     /// A `{_partition_id}` wildcard denotes a partitioned write, not a glob to expand.
@@ -2907,7 +2928,7 @@ Chunk StorageFileSource::generate()
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk, requested_virtual_columns,
                 {
-                    .path = current_path,
+                    .path = getUserFilesVirtualPath(current_path, storage->user_files_volume),
                     .storage_id = storage->getStorageID(),
                     .size = current_file_size,
                     .filename = (filename_override.has_value() ? &filename_override.value() : nullptr),
