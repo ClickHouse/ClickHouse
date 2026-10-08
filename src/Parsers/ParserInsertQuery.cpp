@@ -259,9 +259,11 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    /// COMPRESSION needs a real data stream: bare FORMAT, input() with a trailing FORMAT, or FROM
-    /// INFILE. Reject it next to VALUES / a plain SELECT / input() without a trailing FORMAT.
-    bool has_data_stream = has_format_clause && (!select || selectReadsInlineDataViaInputFunction(select));
+    /// COMPRESSION needs a real data stream: a bare FORMAT, FROM INFILE, or input(). input() carries
+    /// a stream regardless of whether the format comes from a trailing FORMAT or `SETTINGS input_format`,
+    /// so do not require the FORMAT token there. Reject it next to VALUES or a plain SELECT.
+    bool has_data_stream = (select && selectReadsInlineDataViaInputFunction(select))
+        || (!select && has_format_clause);
     if (compression && !infile && !has_data_stream)
         throw Exception(ErrorCodes::SYNTAX_ERROR,
                         "COMPRESSION clause is only supported next to FORMAT (including via input()) "

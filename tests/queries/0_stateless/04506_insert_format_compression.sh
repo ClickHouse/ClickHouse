@@ -39,6 +39,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_ins
 ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_insert_format_compression SETTINGS max_threads = 1 COMPRESSION ''gzip'' FORMAT CSV')"
 ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_insert_format_compression SETTINGS max_threads = 1 COMPRESSION ''gzip'' SELECT * FROM input(''id UInt32, text String'') FORMAT CSV')"
 
+# Parser-only check: input() can take its format from SETTINGS input_format instead of a trailing FORMAT
+# token, so COMPRESSION next to such an insert has a real data stream and must be accepted, not rejected.
+${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_insert_format_compression COMPRESSION ''gzip'' SELECT * FROM input(''id UInt32, text String'') SETTINGS input_format = ''CSV''')"
+
 # Negative check: COMPRESSION written before SETTINGS (wrong order for this form -- SETTINGS must come
 # first here, unlike FROM INFILE below) is rejected with a clear error instead of a generic "extra
 # tokens" parse failure.
@@ -106,6 +110,19 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 rm -f "${CLICKHOUSE_TMP}"/04506_data6.csv "${CLICKHOUSE_TMP}"/04506_data6.csv.gz
+
+# Case-insensitivity: the compression method is matched case-insensitively, including 'auto'. An
+# uppercase COMPRESSION 'AUTO' must resolve to the stdin-detected method like lowercase 'auto', not
+# silently become a no-op (which would try to parse still-gzipped bytes as CSV and fail).
+printf '27,AA\n28,BB\n' > "${CLICKHOUSE_TMP}"/04506_data14.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data14.csv
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'AUTO' FORMAT CSV" < "${CLICKHOUSE_TMP}"/04506_data14.csv.gz
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+rm -f "${CLICKHOUSE_TMP}"/04506_data14.csv "${CLICKHOUSE_TMP}"/04506_data14.csv.gz
 
 # Documented fallback: COMPRESSION 'auto' has no filename to detect a method from when stdin is a
 # pipe with no backing file (as opposed to a redirected file descriptor, tested above), so it must
@@ -332,6 +349,4 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' VALUES (1, 'A')" 2>&1 | grep -c -o "COMPRESSION clause is only supported"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' SELECT 1, 'A'" 2>&1 | grep -c -o "COMPRESSION clause is only supported"
-# An input() SELECT with no trailing FORMAT has no data stream either -- COMPRESSION must still be rejected.
-${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression COMPRESSION 'gzip' SELECT * FROM input('id UInt32, text String')" 2>&1 | grep -c -o "COMPRESSION clause is only supported"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"

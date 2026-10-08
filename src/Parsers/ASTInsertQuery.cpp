@@ -16,6 +16,8 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <IO/CompressionMethod.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 
 namespace DB
 {
@@ -178,13 +180,16 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTLiteral>("compression");
     if (child)
     {
-        /// Mirrors ParserInsertQuery: 'compression' needs a data stream ('infile', bare 'format', or
-        /// an input() 'select' with 'format').
-        bool has_data_stream = infile || (!format.empty() && (!select || selectReadsInlineDataViaInputFunction(select)));
+        /// Mirrors ParserInsertQuery: 'compression' needs a data stream ('infile', a bare 'format', or
+        /// input()). input() carries a stream even when its format comes from 'settings' rather than a
+        /// 'format' field, so do not require 'format' there.
+        bool has_data_stream = infile
+            || (select && selectReadsInlineDataViaInputFunction(select))
+            || (!select && !format.empty());
         if (!has_data_stream)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'compression' is only valid together with 'infile', a bare 'format' (no 'select'), "
-                "or a 'select' that reads via input() and carries a 'format' during AST JSON deserialization");
+                "or a 'select' that reads via input() during AST JSON deserialization");
         if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' must be a string literal during AST JSON deserialization");
         compression = child;
@@ -368,6 +373,9 @@ CompressionMethod ASTInsertQuery::resolveCompressionMethod(CompressionMethod aut
 
     const auto & compression_method_node = compression->as<ASTLiteral &>();
     String compression_method_string = compression_method_node.value.safeGet<std::string>();
+    /// `chooseCompressionMethod` matches every hint case-insensitively; do the same for 'auto' so
+    /// `COMPRESSION 'AUTO'` uses `auto_fallback` instead of silently resolving to `None`.
+    boost::algorithm::to_lower(compression_method_string);
     if (compression_method_string == "auto")
         return auto_fallback;
     return chooseCompressionMethod("", compression_method_string);
