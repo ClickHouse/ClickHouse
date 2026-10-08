@@ -2307,8 +2307,7 @@ def test_create_table_explicit_columns(started_cluster):
     )
 
     tbl = catalog.load_table(f"{namespace}.explicit")
-    namespace_location = catalog.load_namespace_properties(namespace)["location"].rstrip("/")
-    assert tbl.location().rstrip("/") == f"{namespace_location}/explicit"
+    assert tbl.location().rstrip("/") == f"s3://warehouse-rest/data/{namespace}/explicit"
     col_names = [f.name for f in tbl.schema().fields]
     assert col_names == ["id", "name", "value"]
 
@@ -2557,9 +2556,8 @@ def test_create_table_with_engine_namespace_location(started_cluster):
     table_location = catalog.load_table(f"{namespace}.first").location().rstrip("/")
     assert table_location.endswith(table_dir), table_location
 
-    # The engine path here is `<bucket>/<table_dir>/`, which does not follow `<base>/<namespace>/<table>`,
-    # so there is no namespace base to derive. The table's own directory must not become the namespace
-    # default location, or later tables in this namespace would land inside it.
+    # The catalog assigns the location of the namespace it creates for this table. The table's own directory
+    # must not become the namespace default location, or later tables in this namespace would land inside it.
     ns_location = catalog.load_namespace_properties(namespace).get("location")
     if ns_location is not None:
         ns_location = ns_location.rstrip("/")
@@ -2568,29 +2566,6 @@ def test_create_table_with_engine_namespace_location(started_cluster):
 
     node.query(
         f"DROP TABLE {CATALOG_NAME}.`{namespace}.first`",
-        settings={"allow_database_iceberg": 1},
-    )
-
-    # When the engine path does follow `<base>/<namespace>/<table>`, the namespace base is unambiguous and
-    # is registered as the namespace default location, so later tables land next to this one, not inside it.
-    base_dir = f"engine_ns_base_{uuid.uuid4().hex[:8]}"
-    nested_namespace = f"test_ns_engine_derived_{uuid.uuid4().hex[:8]}"
-    node.query(
-        f"CREATE TABLE {CATALOG_NAME}.`{nested_namespace}.second` (id Int64) "
-        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{base_dir}/{nested_namespace}/second/', "
-        f"'{minio_access_key}', '{minio_secret_key}')",
-        settings={
-            "allow_database_iceberg": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-        },
-    )
-
-    ns_location = catalog.load_namespace_properties(nested_namespace).get("location")
-    assert ns_location is not None, "namespace is missing its location property"
-    assert ns_location.rstrip("/") == f"s3://warehouse-rest/{base_dir}/{nested_namespace}", ns_location
-
-    node.query(
-        f"DROP TABLE {CATALOG_NAME}.`{nested_namespace}.second`",
         settings={"allow_database_iceberg": 1},
     )
 

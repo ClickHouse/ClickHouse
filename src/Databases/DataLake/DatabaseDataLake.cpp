@@ -1379,6 +1379,18 @@ void DatabaseDataLake::validateCreateTableEngineArguments(const ASTFunction & en
             location_str, storage_endpoint);
 }
 
+/// The location the catalog assigns to a new table from the location of its namespace, if any. A catalog that
+/// assigns a location to a new namespace gets the namespace registered first, as `getEngineArgsForNewTable` does.
+static std::optional<String> getNamespaceTableLocation(const DataLake::ICatalog & catalog, const String & namespace_name, const String & table_name)
+{
+    auto location = catalog.getDefaultTableLocation(namespace_name, table_name);
+    if (location || !catalog.assignsLocationToNewNamespaces())
+        return location;
+
+    catalog.createNamespaceIfNotExists(namespace_name);
+    return catalog.getDefaultTableLocation(namespace_name, table_name);
+}
+
 void DatabaseDataLake::createTable(
     ContextPtr context_,
     const String & name,
@@ -1456,10 +1468,29 @@ void DatabaseDataLake::createTable(
             base_location.pop_back();
         location = fmt::format("{}/{}/{}", base_location, namespace_name, table_name);
     }
-    else if (auto namespace_table_location = catalog->getDefaultTableLocation(namespace_name, table_name))
+    else if (auto namespace_table_location = getNamespaceTableLocation(*catalog, namespace_name, table_name))
     {
         /// The namespace has a location of its own, e.g. Glue `LocationUri`: the table goes under it.
         location = *namespace_table_location;
+
+        /// The table is read back from `storage_endpoint` with the bucket of the location as a path prefix,
+        /// see `getStorageEndpointForTable`, so the location has to name the same objects.
+        if (!settings[DatabaseDataLakeSetting::storage_endpoint].value.empty()
+            && settings[DatabaseDataLakeSetting::storage_uri_style].value != S3UriStyle::VIRTUAL_HOSTED
+            && DataLake::parseStorageTypeFromLocation(location) == DatabaseDataLakeStorageType::S3)
+        {
+            auto table_metadata = DataLake::TableMetadata().withLocation();
+            if (settings[DatabaseDataLakeSetting::force_add_bucket])
+                table_metadata.withForceAddBucket();
+            table_metadata.setLocation(location);
+
+            String path = Poco::URI(getStorageEndpointForTable(table_metadata)).getPath();
+            while (path.starts_with('/'))
+                path.erase(0, 1);
+            while (path.ends_with('/'))
+                path.pop_back();
+            location = "s3://" + path;
+        }
     }
     else
     {
