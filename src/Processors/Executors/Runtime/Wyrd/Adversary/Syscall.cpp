@@ -34,4 +34,8 @@ void progressHint()
         current->threadProgress();
 }
 
+void trace(std::string)
+{
+}
+
 }

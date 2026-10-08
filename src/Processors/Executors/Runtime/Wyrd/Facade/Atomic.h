@@ -9,14 +9,28 @@
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Simulation/InjectFault.h>
 #    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
+#    include <fmt/format.h>
 #elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
+#    include <Processors/Executors/Runtime/Wyrd/Adversary/Syscall.h>
+#    include <fmt/format.h>
 #endif
 
 namespace DB::Runtime::Wyrd
 {
 
 #if defined(WYRD_SIMULATION) || defined(WYRD_ADVERSARY)
+
+template <typename T>
+auto formatArgument(const T & value)
+{
+    if constexpr (std::is_pointer_v<T>)
+        return fmt::ptr(value);
+    else if constexpr (std::is_enum_v<T>)
+        return fmt::underlying(value);
+    else
+        return value;
+}
 
 template <typename T>
 class Atomic
@@ -36,6 +50,7 @@ public:
     {
         injectFault("atomic::load", location);
         T result = impl.load(order);
+        trace(fmt::format("atomic::load -> {}", formatArgument(result)));
         return result;
     }
 
@@ -43,12 +58,14 @@ public:
     {
         injectFault("atomic::store", location);
         impl.store(desired, order);
+        trace(fmt::format("atomic::store -> {}", formatArgument(desired)));
     }
 
     T exchange(T desired, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::exchange", location);
         T result = impl.exchange(desired, order);
+        trace(fmt::format("atomic::exchange -> {}", formatArgument(result)));
         return result;
     }
 
@@ -58,6 +75,7 @@ public:
         bool result = !spuriousFailure(location) && impl.compare_exchange_weak(expected, desired, success, failure);
         if (!result)
             expected = impl.load(failure);
+        trace(fmt::format("atomic::compare_exchange_weak -> {}, saw {}", result, formatArgument(expected)));
         return result;
     }
 
@@ -65,6 +83,7 @@ public:
     {
         injectFault("atomic::compare_exchange_strong", location);
         bool result = impl.compare_exchange_strong(expected, desired, success, failure);
+        trace(fmt::format("atomic::compare_exchange_strong -> {}, saw {}", result, formatArgument(expected)));
         return result;
     }
 
@@ -72,6 +91,7 @@ public:
     {
         injectFault("atomic::fetch_add", location);
         T result = impl.fetch_add(delta, order);
+        trace(fmt::format("atomic::fetch_add -> {}", formatArgument(result)));
         return result;
     }
 
@@ -79,6 +99,7 @@ public:
     {
         injectFault("atomic::fetch_sub", location);
         T result = impl.fetch_sub(delta, order);
+        trace(fmt::format("atomic::fetch_sub -> {}", formatArgument(result)));
         return result;
     }
 
@@ -89,6 +110,7 @@ public:
         injectFault("atomic::wait", location);
         while (impl.load(order) == old)
             futexWait(this, location);
+        trace(fmt::format("atomic::wait -> {}", formatArgument(impl.load(order))));
     }
 
     void notify_one(std::source_location location = std::source_location::current())
