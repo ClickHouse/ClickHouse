@@ -452,7 +452,7 @@ class Runner:
     @staticmethod
     def check_post_run() -> None:
         if config.init_environment == Environment.MACOS:
-            # Swap shares the APFS container with `/`, and only a reboot frees it.
+            # Swap files share the APFS container with `/`.
             free_gib = shutil.disk_usage("/").free / 2**30
             if free_gib < config.macos_min_free_gib:
                 raise RuntimeError(f"Out of disk space: {free_gib:.1f} GiB free on rootfs")
