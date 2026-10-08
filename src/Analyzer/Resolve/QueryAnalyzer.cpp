@@ -7767,17 +7767,29 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     for (const auto & prefixed : apply_prefixed_names)
         ++prefixed_name_count[prefixed.name];
 
-    auto is_same_expression = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    /// Compared like the duplicated aliases above, except the root alias: a prefixed name is not an alias.
+    auto is_equal_without_root_alias = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
     {
-        constexpr IQueryTreeNode::CompareOptions options{.compare_aliases = false};
-        if (lhs->isEqual(*rhs, options))
+        if (lhs->getAlias() == rhs->getAlias())
+            return lhs->isEqual(*rhs);
+
+        auto lhs_without_alias = lhs->clone();
+        lhs_without_alias->removeAlias();
+        auto rhs_without_alias = rhs->clone();
+        rhs_without_alias->removeAlias();
+        return lhs_without_alias->isEqual(*rhs_without_alias);
+    };
+
+    auto is_same_expression = [&](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        if (is_equal_without_root_alias(lhs, rhs))
             return true;
 
         const auto * lhs_constant = lhs->as<ConstantNode>();
         const auto * rhs_constant = rhs->as<ConstantNode>();
-        if (lhs_constant && lhs_constant->getSourceExpression() && lhs_constant->getSourceExpression()->isEqual(*rhs, options))
+        if (lhs_constant && lhs_constant->getSourceExpression() && is_equal_without_root_alias(lhs_constant->getSourceExpression(), rhs))
             return true;
-        return rhs_constant && rhs_constant->getSourceExpression() && rhs_constant->getSourceExpression()->isEqual(*lhs, options);
+        return rhs_constant && rhs_constant->getSourceExpression() && is_equal_without_root_alias(rhs_constant->getSourceExpression(), lhs);
     };
 
     std::unordered_map<std::string_view, QueryTreeNodePtr> projection_prefixed_name_to_node;

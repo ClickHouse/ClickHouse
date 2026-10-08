@@ -14,11 +14,13 @@ SELECT * APPLY (toString, 'f_'), tuple(toString(a) AS f_a), tuple(toTypeName(a) 
 WITH x -> * APPLY (toTypeName, 'f_') AS l1, x -> * APPLY (toString, 'f_') AS l2 SELECT l1(1), l2(1) FROM (SELECT 1 AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 WITH x -> * APPLY (toString, 'f_') AS l1 SELECT l1(1), toTypeName(a) AS f_a FROM (SELECT 1 AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 SELECT * APPLY (x -> x, 'f_') APPLY (x -> x), * APPLY (toTypeName, 'f_') FROM (SELECT 1 AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT r.* APPLY (toString, 'f_'), toString(l.number) AS `f_r.number` FROM numbers(2) AS l CROSS JOIN numbers(2) AS r; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
 SELECT * APPLY (toString, 'f_'), * APPLY (toString, 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> x, 'f_') APPLY (x -> x), * APPLY (x -> x, 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (toTypeName, 'f_'), toTypeName(a) AS f_a FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> (SELECT 1), 'f_'), (SELECT 1) AS f_a FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT r.* APPLY (toString, 'f_'), toString(r.number) AS `f_r.number` FROM numbers(1) AS l CROSS JOIN numbers(1) AS r FORMAT TSVWithNames;
 
 SELECT toString(a) AS f_a, tuple(* APPLY (toTypeName, 'f_')) FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 WITH b_number AS a_number, 42 AS b_number SELECT tuple(* APPLY (toString, 'a_')), tuple(* APPLY (toTypeName, 'b_')) FROM numbers(1) FORMAT TSVWithNames;
