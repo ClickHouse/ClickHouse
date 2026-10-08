@@ -234,6 +234,9 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 {
     state = State::INITIALIZING;
     last_commited_delivery_tag = 0;
+    /// Deliveries of the old channel can no longer be acked and the broker redelivers them.
+    /// Keeping them would insert duplicates and mix delivery tags of two channels in one commit.
+    received.clear();
 
     consumer_channel = connection.createChannel();
     consumer_channel->onReady([&]()
