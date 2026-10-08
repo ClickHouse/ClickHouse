@@ -99,9 +99,10 @@ public:
     /// Rows where null_map[i] != 0 are skipped and emitted as empty strings.
     /// For FixedString, getDataAt returns the value with null-byte padding; trimRight removes it.
     /// For String, trailing zero bytes are valid data and must not be trimmed.
-    /// Snowball stemming never lengthens a word, so upper_bound bytes is a safe pre-allocation.
     MutableColumnPtr stemColumn(const IColumn & col, size_t input_rows_count, const NullMap * null_map = nullptr)
     {
+        /// upper_bound is only an initial estimate: some stemmers lengthen a word (e.g. Turkish maps
+        /// the ASCII 'i' to the 2-byte 'ı'), so the loop grows res_data when the output overflows it.
         size_t upper_bound = 0;
         const bool is_fixed_string = checkAndGetColumn<ColumnFixedString>(&col) != nullptr;
         if (const auto * col_str = checkAndGetColumn<ColumnString>(&col))
@@ -131,7 +132,10 @@ public:
             if (is_fixed_string)
                 trimRight(word, '\0');
             std::string_view stemmed = stem(word);
-            chassert(data_size + stemmed.size() <= res_data.size());
+
+            /// Stemming can lengthen the word, grow the output buffer.
+            if (data_size + stemmed.size() > res_data.size())
+                res_data.resize(data_size + stemmed.size());
 
             memcpy(res_data.data() + data_size, stemmed.data(), stemmed.size());
             data_size += stemmed.size();
@@ -229,7 +233,7 @@ Each input string must be a single, lowercase word — strings containing whites
 Passing uppercase characters produces undefined results.
 Returns String for scalar inputs (including FixedString) and Array(String) for array inputs.
 Nullable and LowCardinality variants of String and FixedString are supported.
-The list of supported language identifiers is available in [system.stemmers](/reference/system-tables/stemmers).
+The list of supported language identifiers is available in [system.stemmers](/operations/system-tables/stemmers).
 )";
     FunctionDocumentation::Syntax syntax = "stem(word, language)";
     FunctionDocumentation::Arguments arguments = {
@@ -240,7 +244,7 @@ The list of supported language identifiers is available in [system.stemmers](/re
          "Array(Nullable(String)), or Array(Nullable(FixedString)).",
          {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
         {"language",
-         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/reference/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
+         "Language whose stemming rules will be applied. The canonical identifiers are listed in [system.stemmers](/operations/system-tables/stemmers) (e.g. 'english', 'german', 'porter'). "
          "Snowball also accepts 2- or 3-letter ISO 639 codes (e.g. 'en', 'eng') as aliases where defined, but coverage varies by language — prefer the names from `system.stemmers` for portability.",
          {"String"}},
     };

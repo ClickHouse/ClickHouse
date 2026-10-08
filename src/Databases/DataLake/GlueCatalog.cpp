@@ -475,8 +475,7 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     }
 }
 
-ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(
-    const DB::StorageID & storage_id, const TableMetadata & /* table_metadata */)
+ICatalog::CredentialsRefreshCallback GlueCatalog::getCredentialsConfigurationCallback(const DB::StorageID & storage_id)
 {
     /// The AWS SDK credentials provider chain (instance profile, STS assume-role,
     /// web-identity, etc.) refreshes its cached credentials internally before
@@ -726,7 +725,7 @@ bool GlueCatalog::updateSchema(
     return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
-void GlueCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
+void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
     Aws::Glue::Model::DeleteTableRequest request;
     request.SetDatabaseName(namespace_name);

@@ -2,19 +2,17 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadPool.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
-#include <base/sleep.h>
 
 #include <utility>
 
@@ -43,11 +41,6 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int ASYNC_LOAD_CANCELED;
-}
-
-namespace FailPoints
-{
-    extern const char merge_tree_marks_load_sync_sleep[];
 }
 
 MergeTreeMarksGetter::MergeTreeMarksGetter(MarkCache::MappedPtr marks_, size_t num_columns_in_mark_)
@@ -301,8 +294,6 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
 
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 {
-    fiu_do_on(FailPoints::merge_tree_marks_load_sync_sleep, { sleepForMilliseconds(100); });
-
     MarkCache::MappedPtr loaded_marks;
 
     auto data_part_storage = data_part_reader->getDataPartStorage();
@@ -340,17 +331,14 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
 {
     /// Avoid queueing jobs into thread pool if marks are in cache
-    if (mark_cache)
+    auto data_part_storage = data_part_reader->getDataPartStorage();
+    auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+    if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
     {
-        auto data_part_storage = data_part_reader->getDataPartStorage();
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
-        if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
-        {
-            ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
-            auto promise = std::promise<MarkCache::MappedPtr>();
-            promise.set_value(std::move(loaded_marks));
-            return promise.get_future();
-        }
+        ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
+        auto promise = std::promise<MarkCache::MappedPtr>();
+        promise.set_value(std::move(loaded_marks));
+        return promise.get_future();
     }
 
     return scheduleFromThreadPoolUnsafe<MarkCache::MappedPtr>(

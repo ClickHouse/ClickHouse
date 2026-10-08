@@ -89,7 +89,7 @@ La configuración puede definirse de distintas formas: para una cuenta de usuari
 1. Configuración de la cuenta de usuario.
 2. La configuración de los roles predeterminados de la cuenta de usuario. Si una configuración está definida en algunos roles, el orden en que se aplica no está definido.
 3. La configuración de los perfiles de configuración asignados a un usuario o a sus roles predeterminados. Si una configuración está definida en algunos perfiles, el orden en que se aplica no está definido.
-4. Configuración aplicada a todo el servidor de forma predeterminada o desde el [perfil predeterminado](/es/reference/settings/server-settings/settings/default#default_profile).
+4. Configuración aplicada a todo el servidor de forma predeterminada o desde el [perfil predeterminado](/es/reference/settings/server-settings/settings#default_profile).
 
 <div id="role-management">
   ### Rol
@@ -120,8 +120,6 @@ Los privilegios pueden concederse a un rol mediante la consulta [GRANT](/es/refe
 </div>
 
 La política de filas es un filtro que define qué filas están disponibles para un usuario o un rol. Una política de filas contiene filtros para una tabla concreta, así como una lista de roles y/o usuarios a los que se aplica esta política de filas.
-
-Una política de filas se aplica cuando los datos de la tabla se leen localmente. Para una tabla [Distributed](/es/reference/engines/table-engines/special/distributed), u otra tabla que delega la lectura en servidores remotos, defina la política en las tablas subyacentes de cada servidor: una política en la propia tabla respaldada por servidores remotos no puede aplicarse a la consulta enviada, por lo que se rechazan las lecturas a través de ella. Esta política en una tabla subyacente no se aplica cuando el iniciador envía un plan de lectura ya creado, por lo que mantenga [`serialize_query_plan = 0`](/es/reference/settings/session-settings/serialize#serialize_query_plan) para los usuarios cuyas políticas de filas deban aplicarse (consulte el [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
 <Note>
   Las políticas de filas solo tienen sentido si tienes acceso de solo lectura. Si puedes modificar una tabla o copiar particiones entre tablas, las restricciones de las políticas de filas dejan de tener efecto.
@@ -172,7 +170,7 @@ Consultas de gestión:
 
 * Configure un directorio para almacenar la configuración.
 
-  ClickHouse almacena las configuraciones de las entidades de acceso en la carpeta definida en el parámetro de configuración del servidor [access&#95;control&#95;path](/es/reference/settings/server-settings/settings/access-control#access_control_path).
+  ClickHouse almacena las configuraciones de las entidades de acceso en la carpeta definida en el parámetro de configuración del servidor [access&#95;control&#95;path](/es/reference/settings/server-settings/settings#access_control_path).
 
 * Habilite el control de acceso y la gestión de cuentas basado en SQL para al menos una cuenta de usuario.
 

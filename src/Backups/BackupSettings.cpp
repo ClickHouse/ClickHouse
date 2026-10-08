@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
 #include <Core/SettingsFields.h>
@@ -18,14 +16,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
     extern const int WRONG_BACKUP_SETTINGS;
 }
-
-#if CLICKHOUSE_CLOUD
-#define LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
-    M(UInt64, resumable_backup_batch_size) \
-    M(UInt64, resumable_backup_batch_size_bytes)
-#else
-#define LIST_OF_CLOUD_BACKUP_SETTINGS(M)
-#endif
 
 /// List of backup settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_BACKUP_SETTINGS(M) \
@@ -52,7 +42,6 @@ namespace ErrorCodes
     M(Bool, allow_checksums_from_remote_paths) \
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
     M(Bool, backup_data_from_refreshable_materialized_view_targets) \
-    LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
@@ -97,13 +86,6 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 
     if (query.cluster_host_ids)
         res.cluster_host_ids = Util::clusterHostIDsFromAST(*query.cluster_host_ids);
-
-#if CLICKHOUSE_CLOUD
-    if (res.resumable_backup_batch_size == 0)
-        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size` must be greater than 0");
-    if (res.resumable_backup_batch_size_bytes == 0)
-        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size_bytes` must be greater than 0");
-#endif
 
     return res;
 }

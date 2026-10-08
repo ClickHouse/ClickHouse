@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-FP="claim_inject_stale_part_dir"
+FP="create_empty_part_inject_stale_dir"
 
 function cleanup()
 {
@@ -22,10 +22,16 @@ CREATE TABLE t_empty_part_stale_tmp (a Int32) ENGINE = MergeTree() PARTITION BY 
 "
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_empty_part_stale_tmp SELECT number FROM numbers(60)"
 
-# DROP PARTITION covers the dropped parts with a new empty part. The failpoint injects a stale
-# tmp_empty_<part> directory, as an interrupted DROP/DETACH/MOVE/REPLACE PARTITION would leave behind.
-# This used to fail with "New empty part is about to materialize but the directory already exist";
-# now the claim reclaims it. Arm the server-wide failpoint for this one query only.
+# DROP PARTITION covers the dropped parts with a new empty part. The failpoint makes
+# createEmptyPart() find a pre-existing temporary directory for that empty part, simulating a
+# stale leftover from a previously interrupted DROP/DETACH/MOVE/REPLACE PARTITION (the part was
+# promoted to PreActive with a deferred rename and then rolled back, leaving tmp_empty_<part> on
+# disk). createEmptyPart() must reclaim the stale directory instead of aborting the server with
+# LOGICAL_ERROR "New empty part is about to materialize but the directory already exist".
+#
+# Enable, drop and disable the failpoint in a single client invocation so the server-wide
+# failpoint is armed only for this one DROP PARTITION. send_logs_level=error hides the expected
+# "Removing old temporary directory" warning emitted while reclaiming the stale directory.
 $CLICKHOUSE_CLIENT --send_logs_level=error --multiquery --query "
 SYSTEM ENABLE FAILPOINT $FP;
 ALTER TABLE t_empty_part_stale_tmp DROP PARTITION 2;

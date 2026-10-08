@@ -1,7 +1,5 @@
 #include <Columns/IColumn.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/AsynchronousMetrics.h>
@@ -16,8 +14,7 @@ ColumnsDescription StorageSystemAsynchronousMetrics::getColumnsDescription()
     auto description = ColumnsDescription
     {
         {"metric", std::make_shared<DataTypeString>(), "Metric name."},
-        {"value", std::make_shared<DataTypeFloat64>(), "Metric value. For key-value metrics (broken down per CPU core, block device, disk, ...) it is NaN, and the values are in the `key_values` column."},
-        {"key_values", std::make_shared<DataTypeMap>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), std::make_shared<DataTypeFloat64>()), "Values of a key-value metric, e.g. keyed by the CPU core number or the block device name. Empty for scalar metrics."},
+        {"value", std::make_shared<DataTypeFloat64>(), "Metric value."},
         {"description", std::make_shared<DataTypeString>(), "Metric description."},
     };
 
@@ -41,14 +38,7 @@ void StorageSystemAsynchronousMetrics::fillData(MutableColumns & res_columns, Co
     {
         res_columns[0]->insert(name_value.first);
         res_columns[1]->insert(name_value.second.value);
-
-        Map key_values;
-        key_values.reserve(name_value.second.key_values.size());
-        for (const auto & [key, value] : name_value.second.key_values)
-            key_values.push_back(Tuple{key, value});
-        res_columns[2]->insert(key_values);
-
-        res_columns[3]->insert(name_value.second.documentation);
+        res_columns[2]->insert(name_value.second.documentation);
     }
 }
 

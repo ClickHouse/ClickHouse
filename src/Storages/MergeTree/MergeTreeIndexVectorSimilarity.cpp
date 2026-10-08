@@ -307,9 +307,9 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorVectorSimilarity::getGranuleAnd
 namespace
 {
 
-/// Check a few things to prevent undefined behavior further down in Usearch
+/// Check two things to prevent undefined behavior further down in Usearch
 /// - No vector element is +inf, -inf or nan.
-/// - In the case of i8 quantization (which is obscure): additionally, the squared vector magnitude must be non-zero and finite.
+/// - In the case of i8 quantization (which is obscure): additionally, the vector magnitude must not be zero.
 template <typename T>
 void checkVectorIsSane(
     const T * vector,
@@ -342,9 +342,9 @@ void checkVectorIsSane(
         }
     }
 
-    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && (magnitude_squared == 0.0 || !std::isfinite(magnitude_squared)))
+    if (scalar_kind == unum::usearch::scalar_kind_t::i8_k && magnitude_squared == 0.0)
         throw Exception(error_code,
-            "Zero-magnitude or non-finite vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
+            "Zero-magnitude vectors for vector similarity index ({}) are not supported with `i8` quantization", context);
 }
 
 template <typename Column>
@@ -559,14 +559,9 @@ NearestNeighbours MergeTreeIndexConditionVectorSimilarity::calculateApproximateN
 
     size_t limit = parameters->limit;
     if (parameters->additional_filters_present || is_rescoring)
-    {
         /// Additional filters mean post-filtering which means that matches may be removed. To compensate, allow to fetch more rows by a factor.
         /// Similarly, if rescoring is on, fetch more neighbours from the index and pass them for the final re-ranking by ORDER BY ... LIMIT.
-        /// The product is compared with the cap while it is still a double: a LIMIT close to the maximum of UInt64 multiplied by the
-        /// factor exceeds the range of size_t, and the conversion of such a value is undefined behavior.
-        const double scaled_limit = static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier);
-        limit = (scaled_limit >= static_cast<double>(max_limit)) ? max_limit : static_cast<size_t>(scaled_limit);
-    }
+        limit = std::min(static_cast<size_t>(static_cast<double>(limit) * static_cast<double>(index_fetch_multiplier)), max_limit);
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to

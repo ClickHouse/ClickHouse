@@ -29,6 +29,11 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     auto query_plan = std::make_unique<QueryPlan>();
     auto new_context = Context::createCopy(context);
 
+    /// The local shard reads the table itself, like the remote shards do: the inserted block
+    /// of a materialized view (whose query contains this `remote` or `Distributed` read) must not
+    /// replace the source table here.
+    new_context->clearViewSource();
+
     if (build_logical_plan && !default_database.empty())
         new_context->setCurrentDatabase(default_database);
 
@@ -43,9 +48,6 @@ std::unique_ptr<QueryPlan> createLocalPlan(
     select_query_options.build_logical_plan = build_logical_plan;
     select_query_options.is_local_shard_plan
         = !build_logical_plan && processed_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-    /// A logical plan is serialized and shipped to a shard, which sends the blocks back over the
-    /// network, so it must keep marshalling. Only the plan executed in this process must skip it.
-    select_query_options.is_local_plan_for_distributed_query = !build_logical_plan;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {

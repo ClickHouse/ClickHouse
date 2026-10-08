@@ -145,7 +145,7 @@ public:
             context = Context::getGlobalContextInstance();
         read_settings = context->getReadSettings();
         write_settings = context->getWriteSettings();
-        timeouts = ConnectionTimeouts::getDistributedCacheTimeouts(context->getSettingsRef());
+        timeouts = ConnectionTimeouts::getTCPTimeoutsWithoutFailover(context->getSettingsRef());
         receive_throttler = context->getDistributedCacheReadThrottler();
         send_throttler = context->getDistributedCacheWriteThrottler();
         distributed_cache_log = context->getDistributedCacheLog();
@@ -155,10 +155,6 @@ public:
         distributed_cache_server = DistributedCache::Registry::instance()
                                        .getSnapshot(read_settings.distributed_cache_settings.read_only_from_current_az)
                                        .chooseServer(hash.get128());
-
-        /// Both write() and read() require a non-null server for the holder's whole lifetime.
-        if (!distributed_cache_server)
-            DistributedCache::Client::throwNoServerAvailable(DistributedCache::Protocol::RequestType::Write);
     }
 
     ~TemporaryFileInDistributedCache() override
@@ -166,11 +162,7 @@ public:
         try
         {
             if (cache_client)
-            {
                 cache_client->makeDropCacheRequest(file_key, /*connection_info_hash=*/0, /*is_temporary_data=*/true);
-                /// The hold is released — the connection can be reused by someone else.
-                cache_client->setForbidReconnect(false);
-            }
         }
         catch (...)
         {

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <map>
 #include <optional>
 #include <Backups/BackupDataFileNameGeneratorType.h>
@@ -112,19 +110,6 @@ struct BackupSettings
     /// transient data that can be recomputed. Targets with APPEND or regular
     /// materialized views are always backed up because they may store history.
     bool backup_data_from_refreshable_materialized_view_targets = false;
-
-#if CLICKHOUSE_CLOUD
-    /// Maximum number of logical backup files processed between Keeper checkpoints. Each checkpoint is a
-    /// barrier: the writer pool drains and waits for the slowest file of the batch before the batch is
-    /// recorded, so a small value costs parallelism, not just Keeper round-trips. Backups of tens of
-    /// millions of files are ordinary for this feature, which is why the default is not in the thousands.
-    /// The replayed work after a failure stays bounded by `resumable_backup_batch_size_bytes` below.
-    UInt64 resumable_backup_batch_size = 50000;
-
-    /// Target number of unique new data bytes written between Keeper checkpoints. This is what bounds the
-    /// data a retry has to copy again; the file count above bounds per-file overhead for small files.
-    UInt64 resumable_backup_batch_size_bytes = 10ULL * 1024 * 1024 * 1024;
-#endif
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

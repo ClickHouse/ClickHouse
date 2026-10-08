@@ -28,7 +28,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `event_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت السجل بدقة الميكروثانية.
 * `thread_name` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم خيط التنفيذ الذي جرى منه التسجيل.
 * `thread_id` ([UInt64](/ar/reference/data-types/int-uint)) — معرّف خيط التنفيذ في نظام التشغيل.
-* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/ar/reference/data-types/enum)) — مستوى السجل. القيم الممكنة: 1 أو &#39;Fatal&#39;، 2 أو &#39;Critical&#39;، 3 أو &#39;Error&#39;، 4 أو &#39;Warning&#39;، 5 أو &#39;Notice&#39;، 6 أو &#39;Information&#39;، 7 أو &#39;Debug&#39;، 8 أو &#39;Trace&#39;، 9 أو &#39;Test&#39;.
+* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/ar/reference/data-types/enum)) — مستوى السجل. القيم الممكنة: 1 أو &#39;Fatal&#39;، 2 أو &#39;Critical&#39;، 3 أو &#39;Error&#39;، 4 أو &#39;Warning&#39;، 5 أو &#39;Notice&#39;، 6 أو &#39;Information&#39;، 7 أو &#39;Debug&#39;، 8 أو &#39;Trace&#39;.
 * `query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام.
 * `logger_name` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المُسجِّل (مثل DDLWorker).
 * `message` ([String](/ar/reference/data-types/string)) — الرسالة نفسها.
@@ -64,6 +64,7 @@ hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397
+microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information

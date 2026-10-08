@@ -33,7 +33,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `plan_step_name` ([String](/ko/reference/data-types/string)) — 이 프로세서를 생성한 쿼리 계획 단계의 이름입니다. 프로세서가 어떤 단계에서도 추가되지 않은 경우 값은 비어 있습니다.
 * `plan_step_description` ([String](/ko/reference/data-types/string)) — 이 프로세서를 생성한 쿼리 계획 단계의 설명입니다. 프로세서가 어떤 단계에서도 추가되지 않은 경우 값은 비어 있습니다.
 * `plan_group` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 계획 단계에서 생성된 경우의 프로세서 그룹입니다. 그룹은 동일한 쿼리 계획 단계에서 추가된 프로세서들을 논리적으로 구분한 단위입니다. 그룹은 EXPLAIN PIPELINE 결과를 보기 좋게 표시하는 용도로만 사용됩니다.
-* `initial_query_id` ([String](/ko/reference/data-types/string)) — 동일한 쿼리 체인 내 초기 쿼리의 ID입니다.
+* `initial_query_id` ([String](/ko/reference/data-types/string)) — 초기 쿼리의 ID입니다(분산 쿼리 실행의 경우).
 * `query_id` ([String](/ko/reference/data-types/string)) — 쿼리의 ID입니다.
 * `name` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 프로세서의 이름입니다.
 * `elapsed_us` ([UInt64](/ko/reference/data-types/int-uint)) — 이 프로세서가 실행된 시간(마이크로초)입니다.

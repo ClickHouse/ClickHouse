@@ -1,5 +1,5 @@
 -- default value
-v2_with_positions
+v1_with_codec
 -- invalid value is rejected
 -- v0_initial version: round-trip read
 1024

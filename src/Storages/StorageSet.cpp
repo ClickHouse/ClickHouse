@@ -366,9 +366,9 @@ void registerStorageSet(StorageFactory & factory)
     }, StorageFactory::StorageFeatures{ .supports_settings = true, .has_builtin_setting_fn = SetSettings::hasBuiltin, },
     Documentation{
         .description = R"DOCS_MD(
-<Note>
+:::note
 In ClickHouse Cloud, if your service was created with a version earlier than 25.4, you will need to set the compatibility to at least 25.4 using  `SET compatibility=25.4`.
-</Note>
+:::
 
 A data set that is always in RAM. It is intended for use on the right side of the `IN` operator (see the section "IN operators").
 
@@ -385,7 +385,7 @@ When creating a table, the following settings are applied:
 
 #### Persistent {#persistent}
 
-Disables persistency for the Set and [Join](/reference/engines/table-engines/special/join) table engines.
+Disables persistency for the Set and [Join](/engines/table-engines/special/join) table engines.
 
 Reduces the I/O overhead. Suitable for scenarios that pursue performance and do not require persistence.
 

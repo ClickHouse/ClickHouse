@@ -1,5 +1,0 @@
---- buffered: a failure before any delayed byte is pushed yields a proper error response
-the connection was not aborted: OK
-a non-200 status was sent: OK
-the error reason reaches the client: OK
-no partial packet stream before the error: OK

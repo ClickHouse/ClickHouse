@@ -1,15 +1,10 @@
 #include <Core/Field.h>
 
-#include <Common/IntervalKind.h>
-
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserStreamSettings.h>
-#include <Parsers/parseIntervalKind.h>
 
 namespace DB
 {
@@ -74,95 +69,24 @@ bool parseCursorObject(IParser::Pos & pos, Expected & expected, Map & flat, cons
     return true;
 }
 
-std::optional<Map> parseCursorClause(IParser::Pos & pos, Expected & expected)
-{
-    Map flat;
-    if (!parseCursorObject(pos, expected, flat, ""))
-        return std::nullopt;
-    return flat;
-}
-
-std::optional<WatermarkSettings> parseWatermarkClause(IParser::Pos & pos, Expected & expected)
-{
-    ParserKeyword s_for{Keyword::FOR};
-    if (!s_for.ignore(pos, expected))
-        return std::nullopt;
-
-    ASTPtr column_ast;
-    ParserIdentifier identifier_p;
-    if (!identifier_p.parse(pos, column_ast, expected))
-        return std::nullopt;
-
-    ParserKeyword s_as{Keyword::AS};
-    if (!s_as.ignore(pos, expected))
-        return std::nullopt;
-
-    ASTPtr expression_ast;
-    ParserExpression expression_p;
-    if (!expression_p.parse(pos, expression_ast, expected))
-        return std::nullopt;
-
-    WatermarkSettings watermark;
-    watermark.column = getIdentifierName(column_ast);
-    watermark.expression = std::move(expression_ast);
-
-    ParserKeyword s_idle_timeout{Keyword::IDLE_TIMEOUT};
-    if (s_idle_timeout.ignore(pos, expected))
-    {
-        if (!ParserKeyword{Keyword::INTERVAL}.ignore(pos, expected))
-            return std::nullopt;
-
-        ASTPtr num_intervals_ast;
-        if (!ParserUnsignedInteger{}.parse(pos, num_intervals_ast, expected))
-            return std::nullopt;
-
-        IntervalKind interval_kind;
-        if (!parseIntervalKind(pos, expected, interval_kind))
-            return std::nullopt;
-
-        const auto num_intervals = num_intervals_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
-        watermark.idle_timeout = std::chrono::milliseconds(static_cast<Int64>(num_intervals) * interval_kind.toAvgMilliseconds());
-    }
-
-    return watermark;
-}
-
 }
 
 bool ParserStreamSettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserKeyword s_bounded{Keyword::BOUNDED};
-    ParserKeyword s_unordered{Keyword::UNORDERED};
     ParserKeyword s_cursor{Keyword::CURSOR};
-    ParserKeyword s_watermark{Keyword::WATERMARK};
 
-    auto stream_settings = make_intrusive<ASTStreamSettings>();
-
-    if (s_bounded.ignore(pos, expected))
-        stream_settings->setSubscribeForUpdates(false);
-
-    if (s_unordered.ignore(pos, expected))
-        stream_settings->setUnordered(true);
+    ASTStreamSettings::StreamSettings settings;
 
     if (s_cursor.ignore(pos, expected))
     {
-        auto cursor = parseCursorClause(pos, expected);
-        if (!cursor.has_value())
+        Map flat;
+        if (!parseCursorObject(pos, expected, flat, ""))
             return false;
 
-        stream_settings->setCursor(buildCursorTree(cursor.value()));
+        settings.cursor_tree = std::move(flat);
     }
 
-    if (s_watermark.ignore(pos, expected))
-    {
-        auto watermark = parseWatermarkClause(pos, expected);
-        if (!watermark.has_value())
-            return false;
-
-        stream_settings->setWatermark(std::make_shared<WatermarkSettings>(std::move(watermark.value())));
-    }
-
-    node = std::move(stream_settings);
+    node = make_intrusive<ASTStreamSettings>(std::move(settings));
 
     return true;
 }

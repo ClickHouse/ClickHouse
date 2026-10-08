@@ -6,7 +6,7 @@ tags: ['Desempenho e otimizações']
 keywords: ['Consultas custosas', 'Uso de memória']
 ---
 
-<div id="using-the-systemquery-log-table">
+<div id="using-the-systemquery_log-table">
   ## Usando a tabela `system.query_log`
 </div>
 
@@ -29,7 +29,6 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -51,16 +50,10 @@ A resposta será semelhante a:
 ```
 
 <Note>
-  Se você não tiver uma tabela `system.query_log`, provavelmente o logging de consultas não está habilitado. Consulte os detalhes da [configuração `query_log`](/pt-BR/reference/settings/server-settings/settings/query#query_log) para saber como habilitá-lo.
+  Se você não tiver uma tabela `system.query_log`, provavelmente o logging de consultas não está habilitado. Consulte os detalhes da [configuração `query_log`](/pt-BR/reference/settings/server-settings/settings#server_configuration_parameters-query-log) para saber como habilitá-lo.
 </Note>
 
-<Note>
-  **`query_log` contém mais do que as consultas que você enviou**
-
-  Uma única consulta enviada pode aparecer em várias linhas: a consulta inicial (`is_initial_query = 1`) mais etapas derivadas ou internas (`is_initial_query = 0`), como consultas secundárias para execução distribuída ou consultas internas usadas para avaliar views. Essas linhas internas têm seus próprios valores de `query_id` — atribuídos pelo ClickHouse e, às vezes, incluindo um rótulo como `queryView...` — portanto, não presuma que todo `query_id` corresponda ao que seu cliente informou. Para atribuir o uso à consulta exatamente como você a executou, filtre por `is_initial_query = 1` ou faça a correspondência com `query_id = initial_query_id`. Consulte [Como identificar as consultas custosas](/pt-BR/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries#initial_query_id-vs-query_id) e a [referência de `query_log`](/pt-BR/reference/system-tables/query_log) para mais detalhes.
-</Note>
-
-Se você não tiver um cluster, poderá consultar diretamente a sua tabela `system.query_log`:
+Se você não tiver um cluster, poderá simplesmente consultar diretamente a sua tabela `system.query_log`:
 
 ```sql
 SELECT
@@ -73,7 +66,6 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
-    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

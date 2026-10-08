@@ -9,7 +9,6 @@
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
@@ -183,7 +182,7 @@ ColumnsDescription StorageArrowFlight::getTableStructureFromData(
     }
     auto schema = std::move(schema_result).ValueOrDie();
 
-    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", getFormatSettings(context_));
+    auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, nullptr, "Arrow", /* format_settings= */ {});
     return ColumnsDescription::fromNamesAndTypes(header.getNamesAndTypes());
 }
 
@@ -246,17 +245,8 @@ public:
             descriptor = arrow::flight::FlightDescriptor::Path({dataset_name});
         }
 
-        /// Mirrors `ArrowFlight::arrowConversionSettings`, including which schema settings it does not read
-        /// from the context; see the note there.
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
-        /// Without a context there are no settings to read: reject a type with no Arrow mapping rather than
-        /// silently push it to the remote server as opaque bytes.
-        if (context)
-        {
-            arrow_settings.output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef());
-            arrow_settings.format_settings = getFormatSettings(context);
-        }
 
         CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
         std::shared_ptr<arrow::Table> table;
@@ -352,7 +342,7 @@ void registerStorageArrowFlight(StorageFactory & factory)
                 config.dataset_name,
                 args.columns,
                 args.constraints,
-                args.getLocalContext());
+                args.getContext());
         },
         {
             .supports_schema_inference = true,
@@ -372,10 +362,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
 
 **Engine Parameters**
 
-- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used. [String](/reference/data-types/string).
-- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting). [String](/reference/data-types/string).
-- `username` — Username for basic HTTP authentication. [String](/reference/data-types/string).
-- `password` — Password for basic HTTP authentication. [String](/reference/data-types/string).
+- `host:port` — Address of the remote Arrow Flight server. If the port is omitted, the default port `8815` is used. [String](/sql-reference/data-types/string).
+- `dataset_name` — Identifier of the dataset on the Flight server (used as a PATH descriptor or in a `SELECT *` query depending on the `arrow_flight_request_descriptor_type` setting). [String](/sql-reference/data-types/string).
+- `username` — Username for basic HTTP authentication. [String](/sql-reference/data-types/string).
+- `password` — Password for basic HTTP authentication. [String](/sql-reference/data-types/string).
 
 If `username` and `password` are omitted, authentication is not used (this works only if the Arrow Flight server allows unauthenticated access).
 
@@ -383,7 +373,7 @@ The column list is optional — if omitted, the schema is inferred from the remo
 
 ## Named Collections {#named-collections}
 
-The engine supports [named collections](/concepts/features/configuration/server-config/named-collections) for storing connection parameters:
+The engine supports [named collections](/operations/named-collections) for storing connection parameters:
 
 ```sql
 CREATE TABLE remote_flight_data
@@ -446,10 +436,10 @@ INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
 
 ## See Also {#see-also}
 
-- [arrowFlight table function](/reference/functions/table-functions/arrowflight)
-- [Arrow Flight Interface](/concepts/features/interfaces/arrowflight)
+- [arrowFlight table function](/sql-reference/table-functions/arrowflight)
+- [Arrow Flight Interface](/interfaces/arrowflight)
 - [Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
-- [Arrow format integration in ClickHouse](/reference/formats/Arrow/Arrow)
+- [Arrow format integration in ClickHouse](/interfaces/formats/Arrow)
 )DOCS_MD",
             .syntax = "ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password'])",
         });
