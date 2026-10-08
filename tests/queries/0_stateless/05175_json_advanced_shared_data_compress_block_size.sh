@@ -24,7 +24,9 @@ block_mean()
         object_shared_data_buckets_for_wide_part = 8, object_shared_data_buckets_for_compact_part = 8,
         index_granularity = 8192, min_compress_block_size = $4, max_compress_block_size = 1048576"
     $CLICKHOUSE_CLIENT -q "INSERT INTO $1 SELECT $5 FROM numbers(10000) SETTINGS type_json_skip_duplicated_paths = 1, max_insert_block_size = 100000"
-    $CLICKHOUSE_CLIENT -q "SELECT $6 FROM $1 FORMAT Null SETTINGS log_comment = '$1'"
+    # The counters must come from the node that reads: with parallel replicas the coordinator can hand
+    # the whole part to another replica, whose ProfileEvents never reach the initiator's query_log row.
+    $CLICKHOUSE_CLIENT -q "SELECT $6 FROM $1 FORMAT Null SETTINGS log_comment = '$1', enable_parallel_replicas = 0"
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
     $CLICKHOUSE_CLIENT -q "
     SELECT intDiv(ProfileEvents['CompressedReadBufferBytes'], nullIf(ProfileEvents['CompressedReadBufferBlocks'], 0))

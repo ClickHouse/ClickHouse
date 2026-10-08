@@ -404,7 +404,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Skip if projection was applied. A non-null analysis result alone does not imply
     /// a projection: join-order estimation runs index analysis for join relations and
-    /// memoizes the result (see estimateReadRowsCount in optimizeJoin.cpp).
+    /// memoizes the result (see estimateReadRowsCount in RelationStatisticsEstimator.cpp).
     if (auto analyzed = reading_step->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
         return;
 
@@ -495,6 +495,10 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         reading_step, analyzed_result, filter_step, read_node, query_plan, /*allow_partial_split=*/ !stops_reading_early);
 
     if (split_result.fully_replaced)
+        return;
+
+    /// `trySplitNonIntersectingParts` can return before running these checks, e.g. for a `Nullable` key.
+    if (stops_reading_early || !reading_step->getIndexReadTasks().empty())
         return;
 
     const auto & context = reading_step->getContext();
@@ -690,7 +694,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Compute primary key expression and project to PK columns only.
     /// Add all header columns as inputs so that unused ones are properly consumed
-    /// and can be dropped by tryRemoveUnusedColumns.
+    /// and can be dropped by `removeUnusedColumns`.
     {
         auto dag = primary_key_dag.clone();
         NamesWithAliases projection;

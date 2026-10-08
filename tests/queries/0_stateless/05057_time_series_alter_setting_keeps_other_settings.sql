@@ -11,7 +11,7 @@ CREATE TABLE ts ENGINE = TimeSeries
 SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0,
          filter_by_min_time_and_max_time = 0, samples_index_granularity = 1024;
 
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m1', {'job': 'j1'}, [(1, 1.)]);
 
 -- The tests below print the names of the settings kept in the outer `SETTINGS` clause of the create
 -- query. That clause is the first line starting with `SETTINGS` of the formatted create query - the rest
@@ -27,7 +27,7 @@ SELECT arraySort(extractAll(arrayFirst(line -> line LIKE 'SETTINGS %', splitByCh
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
 
 SELECT '-- `tags_to_columns` survives the alter, so the dedicated column is still filled';
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m2', {'job': 'j2'}, [(2, 2.)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m2', {'job': 'j2'}, [(2, 2.)]);
 SELECT metric_name, job FROM timeSeriesTags(ts) ORDER BY metric_name;
 
 SELECT '-- the settings are kept in the metadata too, so they still apply after a reload';
@@ -35,7 +35,7 @@ DETACH TABLE ts;
 ATTACH TABLE ts;
 SELECT arraySort(extractAll(arrayFirst(line -> line LIKE 'SETTINGS %', splitByChar('\n', formatQuery(create_table_query))), '([a-z_]+) = '))
 FROM system.tables WHERE database = currentDatabase() AND name = 'ts';
-INSERT INTO ts (metric_name, tags, time_series) VALUES ('m3', {'job': 'j3'}, [(3, 3.)]);
+INSERT INTO ts (metric_name, tags, samples) VALUES ('m3', {'job': 'j3'}, [(3, 3.)]);
 SELECT metric_name, job FROM timeSeriesTags(ts) ORDER BY metric_name;
 
 SELECT '-- `MODIFY SETTING` sees the other settings, so a conflicting value is rejected';

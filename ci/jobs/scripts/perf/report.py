@@ -28,7 +28,9 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 unstable_backward_incompatible_queries = 0
-benchmarks = {"clickbench", "tpch", "tpcds"}
+# The Iceberg TPC-H twins run the same SF10 queries as tpch.xml and need the
+# same per-query budget, whether their dataset is local or on job-local S3.
+benchmarks = {"clickbench", "tpch", "tpcds", "iceberg_suite_local_tpch", "iceberg_suite_s3_tpch"}
 
 # max seconds to run one query by itself, not counting preparation
 # by default it's 2 seconds, but for benchmarks it's 8 seconds
@@ -392,7 +394,8 @@ if args.report == "main":
         exit(0)
 
     run_error_rows = tsvRows("run-errors.tsv")
-    error_tests += len(run_error_rows)
+    # row[0] is the test name, and one failing test can produce several rows.
+    error_tests += len({row[0] for row in run_error_rows if row})
     addSimpleTable("Run Errors", ["Test", "Error"], run_error_rows)
     if run_error_rows:
         errors_explained.append(
@@ -721,8 +724,10 @@ if args.report == "main":
         #
         # This threshold must stay synchronized with SLOWER_QUERIES_FAIL_THRESHOLD
         # in ci/jobs/performance_tests.py: that script discards the status
-        # embedded here and recomputes the final Praktika status by reparsing the
-        # "N slower" message below, so the effective gate lives there.
+        # embedded here and recomputes the final Praktika status. In
+        # `master_head` mode the performance dashboard's per-query verdict is
+        # the gate; the "N slower" message below is reparsed only for the
+        # cumulative `release_base` mode, so the effective gate lives there.
         if slower_queries > 10:
             status = "failure"
         message_array.append(str(slower_queries) + " slower")

@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-shared-merge-tree, no-parallel-replicas
+-- Tags: no-replicated-database, no-shared-merge-tree, no-parallel-replicas, no-parallel, no-fasttest
 -- Regression test for #105912: SIGSEGV in `canSkipConversionToNullable` when
 -- the metadata snapshot a `MutateTask` ended up using no longer contains a
 -- column that the queued `READ_COLUMN` command targets.

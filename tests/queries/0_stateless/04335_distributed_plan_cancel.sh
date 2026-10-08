@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-old-analyzer
-# no-old-analyzer: make_distributed_plan requires the analyzer.
+# Tags: no-fasttest
 # Checks that cancelling a distributed-plan query terminates it promptly and reports the cancellation,
 # for both exchange kinds and both ways of running the tasks. Streaming exercises waking tasks blocked
 # on in-memory exchanges, Persisted the stage-dependency wait under the executor mutex, and remote
 # execution the workers' cancellation, whose closed exchange sockets must not become the error.
 
 set -e
+
+# Cancelling is what this test does, and a worker task that outlives the initiator's bounded wait for a
+# terminal state is reported at Warning. The runner fails a test whose stderr is not empty, and the line
+# can arrive on any of this test's clients, so keep only Error and above for all of them.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=error
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -52,17 +56,15 @@ function run_cancel_check()
         cat "$client_log"
     fi
 
-    # Remote tasks run as queries of their own under the initiator's id. Kill only once one of them
-    # reads; a kill during planning would exercise no worker at all.
-    if [ "$execute_locally" -eq 0 ]; then
-        local reading=0
-        for _ in {1..600}; do
-            reading=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE initial_query_id = '$query_id' AND query_id != '$query_id' AND read_rows > 0")
-            [ "$reading" -ge 1 ] && break
-            sleep 0.1
-        done
-        echo "workers reading: $((reading >= 1))"
-    fi
+    # A task is a query of its own under the initiator's id in both execution modes. Kill only once
+    # one of them reads; a kill during planning would exercise no worker at all.
+    local reading=0
+    for _ in {1..600}; do
+        reading=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE initial_query_id = '$query_id' AND query_id != '$query_id' AND read_rows > 0")
+        [ "$reading" -ge 1 ] && break
+        sleep 0.1
+    done
+    echo "workers reading: $((reading >= 1))"
 
     # SYNC waits for the query to actually terminate; bound it so a cancellation hang fails the
     # test instead of hanging the runner. The bound must absorb a loaded sanitizer box (the flaky

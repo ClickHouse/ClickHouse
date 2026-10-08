@@ -33,15 +33,29 @@ private:
 
 using FinishCounterPtr = std::shared_ptr<FinishCounter>;
 
-/// Sums the match totals reported by each probe stream as it drains.
+/// Sums the match totals reported by each probe stream as it drains. A stream that counted no matches
+/// reports nothing, and then the sum counts no matches either.
 class RightRowsMatchCounter
 {
 public:
-    void add(size_t matched_right_rows_) { matched_right_rows.fetch_add(matched_right_rows_, std::memory_order_relaxed); }
-    size_t get() const { return matched_right_rows.load(std::memory_order_relaxed); }
+    void add(std::optional<size_t> matched_right_rows_)
+    {
+        if (matched_right_rows_)
+            matched_right_rows.fetch_add(*matched_right_rows_, std::memory_order_relaxed);
+        else
+            counted_every_match.store(false, std::memory_order_relaxed);
+    }
+
+    std::optional<size_t> get() const
+    {
+        if (!counted_every_match.load(std::memory_order_relaxed))
+            return {};
+        return matched_right_rows.load(std::memory_order_relaxed);
+    }
 
 private:
     std::atomic_size_t matched_right_rows{0};
+    std::atomic_bool counted_every_match{true};
 };
 
 using RightRowsMatchCounterPtr = std::shared_ptr<RightRowsMatchCounter>;
@@ -109,9 +123,24 @@ private:
     size_t max_block_size;
 
     RightRowsMatchCounterPtr match_counter;
-    size_t matched_right_rows = 0;
+    std::optional<size_t> matched_right_rows = 0;
 
     Block readExecute(Chunk & chunk);
+};
+
+class RuntimeFilter;
+using RuntimeFilterConstPtr = std::shared_ptr<const RuntimeFilter>;
+
+/// Attached to the "seal" chunk emitted through the optional seal port of
+/// FillingRightJoinSideTransform when the build side of a JOIN is complete. The seal itself is
+/// a pure completion signal; the runtime filter is an optional payload for pruning the gated
+/// probe-side read (see SealGatedReadTransform).
+struct RuntimeFilterSealInfo : public ChunkInfoCloneable<RuntimeFilterSealInfo>
+{
+    RuntimeFilterSealInfo() = default;
+    RuntimeFilterSealInfo(const RuntimeFilterSealInfo & other) = default;
+
+    RuntimeFilterConstPtr filter;
 };
 
 /// Fills Join with block from right table.
@@ -125,6 +154,16 @@ public:
 
     InputPort * addTotalsPort();
 
+    /// An optional payload for the seal: the completed runtime filter built from this join's
+    /// build side, if there is one.
+    using SealPayloadGetter = std::function<RuntimeFilterConstPtr()>;
+
+    /// Adds an extra output port emitting a single "seal" chunk when the whole build side is
+    /// complete (the hash table is ready to be probed). Only the transform which completes
+    /// the build emits, the seal ports of the concurrent others just finish, so resizing all
+    /// of them to one stream yields exactly one seal. Called by the join pipeline wiring.
+    OutputPort * addSealPort(SealPayloadGetter seal_payload_getter_);
+
     Status prepare() override;
     void work() override;
 
@@ -132,6 +171,10 @@ public:
     bool spillOnSize(size_t bytes) override;
 
 private:
+    /// Emit the seal (if this transform completed the build and emit is allowed) and finish
+    /// the seal port.
+    void finishSealPort(bool emit);
+
     JoinPtr join;
     FinishCounterPtr finish_counter;
     Chunk chunk;
@@ -139,6 +182,11 @@ private:
     bool for_totals = false;
     bool set_totals = false;
     bool post_build_phase = false;
+
+    OutputPort * seal_port = nullptr;
+    SealPayloadGetter seal_payload_getter;
+    bool seal_done = false;
+    bool completed_the_build = false;
 };
 
 class DelayedBlocksTask : public ChunkInfoCloneable<DelayedBlocksTask>
