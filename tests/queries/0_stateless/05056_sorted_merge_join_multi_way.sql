@@ -61,6 +61,14 @@ FROM (EXPLAIN PIPELINE SELECT sum(a.v) + sum(b.v) + sum(c.v) FROM mwj_a AS a RIG
 SELECT 'right_left_key_falls_through', countIf(explain LIKE '%MergeJoinTransform%') = 1, countIf(explain LIKE '%FillingRightJoinSide%') >= 1
 FROM (EXPLAIN PIPELINE SELECT sum(a.v) + sum(b.v) + sum(c.v) FROM mwj_a AS a RIGHT JOIN mwj_b AS b ON a.id = b.id INNER JOIN mwj_c AS c ON a.id = c.id SETTINGS join_algorithm = 'sorted_merge,hash');
 
+-- The same with `USING`: the key column of a `RIGHT JOIN ... USING` carries the value of the right key on
+-- every row, so the order of the right side reaches the join above, both through the table columns and
+-- through the `USING` column itself.
+SELECT 'right_using_chain_all_merge', countIf(explain LIKE '%MergeJoinTransform%') = 2, countIf(explain LIKE '%FillingRightJoinSide%') = 0, countIf(explain LIKE '%MergeSortingTransform%') = 0
+FROM (EXPLAIN PIPELINE SELECT sum(a.v) + sum(b.v) + sum(c.v) FROM mwj_a AS a RIGHT JOIN mwj_b AS b USING (id) RIGHT JOIN mwj_c AS c USING (id) SETTINGS join_algorithm = 'sorted_merge,hash');
+SELECT 'right_using_chain_key_selected', countIf(explain LIKE '%MergeJoinTransform%') = 2, countIf(explain LIKE '%FillingRightJoinSide%') = 0, countIf(explain LIKE '%MergeSortingTransform%') = 0
+FROM (EXPLAIN PIPELINE SELECT sum(id), sum(c.v) FROM mwj_a AS a RIGHT JOIN mwj_b AS b USING (id) RIGHT JOIN mwj_c AS c USING (id) SETTINGS join_algorithm = 'sorted_merge,hash');
+
 -- A FULL merge join interleaves the unmatched rows of both sides, so no column of its output is sorted.
 SELECT 'full_falls_through', countIf(explain LIKE '%MergeJoinTransform%') = 1, countIf(explain LIKE '%FillingRightJoinSide%') >= 1
 FROM (EXPLAIN PIPELINE SELECT sum(a.v) + sum(b.v) + sum(c.v) FROM mwj_a AS a FULL JOIN mwj_b AS b ON a.id = b.id INNER JOIN mwj_c AS c ON a.id = c.id SETTINGS join_algorithm = 'sorted_merge,hash');
@@ -125,6 +133,9 @@ SELECT 'right_then_inner',
 SELECT 'inner_then_right',
     (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM mwj_a AS a INNER JOIN mwj_b AS b ON a.id = b.id RIGHT JOIN mwj_c AS c ON a.id = c.id SETTINGS join_algorithm = 'sorted_merge,hash')
   = (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM mwj_a AS a INNER JOIN mwj_b AS b ON a.id = b.id RIGHT JOIN mwj_c AS c ON a.id = c.id SETTINGS join_algorithm = 'hash');
+SELECT 'right_using_chain',
+    (SELECT (sum(a.v), sum(b.v), sum(c.v), sum(id), count()) FROM mwj_a AS a RIGHT JOIN mwj_b AS b USING (id) RIGHT JOIN mwj_c AS c USING (id) SETTINGS join_algorithm = 'sorted_merge,hash')
+  = (SELECT (sum(a.v), sum(b.v), sum(c.v), sum(id), count()) FROM mwj_a AS a RIGHT JOIN mwj_b AS b USING (id) RIGHT JOIN mwj_c AS c USING (id) SETTINGS join_algorithm = 'hash');
 
 SELECT 'inner_chain_use_nulls',
     (SELECT (sum(a.v), sum(b.v), sum(c.v), count()) FROM mwj_a AS a LEFT JOIN mwj_b AS b ON a.id = b.id LEFT JOIN mwj_c AS c ON a.id = c.id SETTINGS join_algorithm = 'sorted_merge,hash', join_use_nulls = 1)
