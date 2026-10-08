@@ -40,11 +40,24 @@ UInt64 keyDomain(const RelationStats & relation, const String & column)
     return 0;
 }
 
+Float64 unionWidth(Float64 width, Float64 rows, Float64 other_width, Float64 other_rows)
+{
+    if (width <= 0)
+        return other_width;
+    if (other_width <= 0)
+        return width;
+    if (rows > 0 && other_rows > 0)
+        return (width * rows + other_width * other_rows) / (rows + other_rows);
+    return std::max(width, other_width);
+}
+
 void addUnionColumnStats(
     std::unordered_map<String, ColumnStats> & result,
     const Names & result_columns,
     const std::unordered_map<String, ColumnStats> & other,
-    const Names & other_columns)
+    const Names & other_columns,
+    UInt64 result_rows,
+    UInt64 other_rows)
 {
     for (size_t position = 0; position < result_columns.size() && position < other_columns.size(); ++position)
     {
@@ -59,7 +72,10 @@ void addUnionColumnStats(
             ? 0
             : saturatingAdd(stats.num_distinct_values, other_distinct_values);
         if (other_column != other.end())
+        {
             stats.domain_distinct_values = std::max(stats.domain_distinct_values, other_column->second.domain_distinct_values);
+            stats.avg_bytes = unionWidth(stats.avg_bytes, Float64(result_rows), other_column->second.avg_bytes, Float64(other_rows));
+        }
     }
 }
 

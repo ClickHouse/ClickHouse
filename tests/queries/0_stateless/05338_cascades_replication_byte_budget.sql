@@ -22,6 +22,7 @@ DROP TABLE IF EXISTS t_cb_fact;
 DROP TABLE IF EXISTS t_cb_dim;
 DROP TABLE IF EXISTS t_cb_unk;
 DROP TABLE IF EXISTS t_cb_scan;
+DROP TABLE IF EXISTS t_cb_wide;
 CREATE TABLE t_cb_scan (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
 INSERT INTO t_cb_scan SELECT number % 5, number FROM numbers(100000);
 CREATE TABLE t_cb_fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '';
@@ -30,6 +31,8 @@ CREATE TABLE t_cb_unk (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTING
 INSERT INTO t_cb_fact SELECT number % 5, number FROM numbers(1000);
 INSERT INTO t_cb_dim SELECT number, concat('nm_', toString(number)) FROM numbers(5);
 INSERT INTO t_cb_unk SELECT number, number FROM numbers(100);
+CREATE TABLE t_cb_wide (k UInt64, name String) ENGINE = MergeTree ORDER BY k SETTINGS auto_statistics_types = '', ratio_of_defaults_for_sparse_serialization = 1;
+INSERT INTO t_cb_wide SELECT number, repeat('w', 2000) FROM numbers(5);
 
 SELECT '-- 5 rows of 18 bytes fit the budget: the dimension is broadcast';
 SET param__internal_join_table_stat_hints = '{"t_cb_fact": {"cardinality": 10000000, "avg_row_bytes": 16, "distinct_keys": {"k": 5}}, "t_cb_dim": {"cardinality": 5, "avg_row_bytes": 18, "distinct_keys": {"k": 5}}}';
@@ -64,6 +67,12 @@ EXPLAIN SELECT count() FROM t_cb_fact AS f
 JOIN (SELECT k FROM (SELECT k, count() AS c FROM t_cb_scan GROUP BY k) WHERE toString(k) LIKE '%3%' AND k = 3) AS s ON f.k = s.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_max_bytes_to_broadcast = 2000, query_plan_filter_push_down = 0;
 
+SELECT '-- a UNION ALL is as wide as its inputs weighted by their rows: 5 rows of 18 and 5 of 2000 bytes do not fit a budget of 2000 bytes';
+-- Without the weighting the union took the first input's 18 bytes and its 10 rows fit.
+SET param__internal_join_table_stat_hints = '{"t_cb_fact": {"cardinality": 10000000, "avg_row_bytes": 16, "distinct_keys": {"k": 5}}, "t_cb_dim": {"cardinality": 5, "avg_row_bytes": 18, "distinct_keys": {"k": 5}}, "t_cb_wide": {"cardinality": 5, "avg_row_bytes": 2000, "distinct_keys": {"k": 5}}}';
+EXPLAIN SELECT count() FROM t_cb_fact AS f JOIN (SELECT k FROM t_cb_dim UNION ALL SELECT k FROM t_cb_wide) AS u ON f.k = u.k
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_max_bytes_to_broadcast = 2000;
+
 SELECT '-- results do not depend on the shape';
 SELECT count(), min(name) FROM t_cb_fact AS f JOIN t_cb_dim AS d ON f.k = d.k
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1;
@@ -74,3 +83,4 @@ DROP TABLE t_cb_fact;
 DROP TABLE t_cb_dim;
 DROP TABLE t_cb_unk;
 DROP TABLE t_cb_scan;
+DROP TABLE t_cb_wide;

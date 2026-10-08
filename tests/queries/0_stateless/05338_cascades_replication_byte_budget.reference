@@ -80,6 +80,22 @@ Expression ((Project names + Projection))
                       Aggregating
                         Expression ((Before GROUP BY + Change column names to column identifiers))
                           ReadFromMergeTree (ParallelRead default.t_cb_scan)
+-- a UNION ALL is as wide as its inputs weighted by their rows: 5 rows of 18 and 5 of 2000 bytes do not fit a budget of 2000 bytes
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Shuffle HashJoin )
+            Expression (Change column names to column identifiers)
+              ShuffleExchange
+                ReadFromMergeTree (ParallelRead default.t_cb_fact)
+            ScatterExchange
+              Union
+                Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                  ReadFromMergeTree (default.t_cb_dim)
+                Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                  ReadFromMergeTree (default.t_cb_wide)
 -- results do not depend on the shape
 1000	nm_0
 1000

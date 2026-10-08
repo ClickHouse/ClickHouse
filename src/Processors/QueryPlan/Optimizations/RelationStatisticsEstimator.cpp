@@ -304,23 +304,33 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * union_step = typeid_cast<const UnionStep *>(step))
     {
         /// `UNION ALL`: the rows and the bounds of the inputs add up, each unknown when an input's
-        /// is; a column's values add up too, matched by position, unknown when an input's are.
+        /// is; a column's values add up too, matched by position, unknown when an input's are. The
+        /// row width is the inputs' widths weighted by their rows, known when every input's is.
         RelationStats stats;
         stats.estimated_rows = 0;
         stats.max_rows = 0;
+        Float64 row_bytes = 0;
+        bool row_bytes_known = true;
         const auto & input_headers = union_step->getInputHeaders();
         for (size_t child_index = 0; child_index < node.children.size(); ++child_index)
         {
             auto child_stats = estimateReadRowsCount(*node.children[child_index], filter);
+            row_bytes_known &= child_stats.avg_row_bytes.has_value();
+            row_bytes = unionWidth(
+                row_bytes, Float64(stats.estimated_rows.value_or(0)), child_stats.avg_row_bytes.value_or(0), Float64(child_stats.estimated_rows.value_or(0)));
+            if (child_index == 0)
+                stats.column_stats = std::move(child_stats.column_stats);
+            else if (child_index < input_headers.size())
+                addUnionColumnStats(
+                    stats.column_stats, input_headers[0]->getNames(), child_stats.column_stats, input_headers[child_index]->getNames(),
+                    stats.estimated_rows.value_or(0), child_stats.estimated_rows.value_or(0));
             stats.estimated_rows = addRows(stats.estimated_rows, child_stats.estimated_rows);
             stats.max_rows = addRows(stats.max_rows, child_stats.max_rows);
             stats.imprecise_estimate |= child_stats.imprecise_estimate;
             stats.estimate_from_defaults |= child_stats.estimate_from_defaults;
-            if (child_index == 0)
-                stats.column_stats = std::move(child_stats.column_stats);
-            else if (child_index < input_headers.size())
-                addUnionColumnStats(stats.column_stats, input_headers[0]->getNames(), child_stats.column_stats, input_headers[child_index]->getNames());
         }
+        if (row_bytes_known)
+            stats.avg_row_bytes = row_bytes;
         return stats;
     }
 

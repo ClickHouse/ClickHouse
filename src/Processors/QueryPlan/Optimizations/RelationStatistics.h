@@ -65,13 +65,20 @@ struct GroupCountEstimate
     std::optional<UInt64> max_rows;
 };
 
+/// Width of a `UNION ALL` row or value from the widths of two inputs (zero = unknown): weighted by
+/// the inputs' rows, the wider one when the rows are unknown.
+Float64 unionWidth(Float64 width, Float64 rows, Float64 other_width, Float64 other_rows);
+
 /// Column statistics of a `UNION ALL`: adds the `other` input's values to `result`, matching the
-/// columns by position (`result_columns` names the output, `other_columns` the other input).
+/// columns by position (`result_columns` names the output, `other_columns` the other input); the
+/// rows of both inputs (zero = unknown) weight the value widths.
 void addUnionColumnStats(
     std::unordered_map<String, ColumnStats> & result,
     const Names & result_columns,
     const std::unordered_map<String, ColumnStats> & other,
-    const Names & other_columns);
+    const Names & other_columns,
+    UInt64 result_rows,
+    UInt64 other_rows);
 
 /// The largest known key NDV, capped by the rows: the groups are at least that many when the NDV is
 /// exact, and real keys are correlated more often than not. `key_distinct_values` holds one NDV per

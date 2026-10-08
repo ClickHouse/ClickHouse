@@ -724,23 +724,27 @@ ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep
 ExpressionStatistics StatisticsDerivation::deriveUnionStatistics(
     const UnionStep & union_step, const std::function<const ExpressionStatistics &(size_t)> & input_statistics, size_t input_count)
 {
-    /// `UNION ALL`: rows and bounds add up. The output takes the first input's column names; a
-    /// column's NDV is at most the sum over the inputs, unknown when an input's is. Equal values
-    /// on every row of one input say nothing about the union, so no equivalence survives.
+    /// `UNION ALL`: rows and bounds add up, the widths are weighted by the rows. The output takes
+    /// the first input's column names; a column's NDV is at most the sum over the inputs, unknown
+    /// when an input's is. Equal values on every row of one input say nothing about the union, so
+    /// no equivalence survives.
     ExpressionStatistics result = input_statistics(0);
     result.equivalences = {};
     const auto & input_headers = union_step.getInputHeaders();
     for (size_t input_index = 1; input_index < input_count; ++input_index)
     {
         const auto & other = input_statistics(input_index);
+        result.estimated_bytes_per_row = QueryPlanOptimizations::unionWidth(
+            result.estimated_bytes_per_row, result.estimated_row_count, other.estimated_bytes_per_row, other.estimated_row_count);
+        QueryPlanOptimizations::addUnionColumnStats(
+            result.column_statistics, input_headers.at(0)->getNames(), other.column_statistics, input_headers.at(input_index)->getNames(),
+            roundToRowCount(result.estimated_row_count), roundToRowCount(other.estimated_row_count));
         result.rows_unknown |= other.rows_unknown;
         result.estimate_from_defaults |= other.estimate_from_defaults;
         result.estimated_row_count += other.estimated_row_count;
         result.min_row_count += other.min_row_count;
         result.max_row_count += other.max_row_count;
         result.estimated_distinct_bound += other.estimated_distinct_bound;
-        QueryPlanOptimizations::addUnionColumnStats(
-            result.column_statistics, input_headers.at(0)->getNames(), other.column_statistics, input_headers.at(input_index)->getNames());
     }
     return result;
 }

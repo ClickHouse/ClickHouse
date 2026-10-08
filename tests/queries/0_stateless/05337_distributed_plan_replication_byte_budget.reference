@@ -69,6 +69,23 @@ Expression ((Project names + Projection))
       Aggregating (partial)
         Expression ((Before GROUP BY + Change column names to column identifiers))
           ReadFromMergeTree (default.t_rb_small)
+-- a UNION ALL is as wide as its inputs weighted by their rows: 2000 rows of 16 and 2000 bytes do not fit a budget of 100000 bytes
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ShuffleExchange (by hash([__table1.k]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.t_rb_big)
+            ScatterExchange (by hash([__table2.k]))
+              Union
+                Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                  ReadFromMergeTree (default.t_rb_small)
+                GatherExchange
+                  Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
+                    ReadFromMergeTree (default.t_rb_wide)
 -- results do not depend on the shape
 14300
 14300
