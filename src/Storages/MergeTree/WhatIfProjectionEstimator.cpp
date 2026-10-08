@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnSparse.h>
+#include <Common/FailPoint.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
@@ -44,6 +45,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char whatif_projection_scan_cut_short[];
+}
 
 namespace Setting
 {
@@ -280,6 +286,12 @@ bool buildProjectionPart(
     Block block;
     while (executor.pull(block))
     {
+        /// a test stops the read here, as a time limit in `break` mode does
+        bool cut_short = false;
+        fiu_do_on(FailPoints::whatif_projection_scan_cut_short, { cut_short = true; });
+        if (cut_short)
+            break;
+
         if (!block.rows())
             continue;
 
@@ -643,7 +655,7 @@ bool tryEstimateProjection(
     const ConditionTemplate<KeyCondition>::Ptr & part_offset_condition,
     const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
     SortOrderHelp sort_help,
-    bool has_filter,
+    bool nothing_to_serve,
     std::string_view relaxing_setting,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
@@ -737,6 +749,14 @@ bool tryEstimateProjection(
         {
             result.empirical_unsupported_reason
                 = "The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)";
+            return false;
+        }
+        /// a time limit in `break` mode or a cancelled query stops the read without an error
+        if (part_data.rows != part->index_granularity->getRowsCountInRanges(ranges))
+        {
+            result.empirical_unsupported_reason = "The projection scan was cut short by a time limit in `break` mode or a cancelled query";
+            /// the same time limit also stops the output, so only the log shows why the estimate is missing
+            LOG_DEBUG(log, "{}", result.empirical_unsupported_reason);
             return false;
         }
 
@@ -839,7 +859,6 @@ bool tryEstimateProjection(
     }
 
     /// with `relaxing_setting` the optimizer takes any usable projection
-    const bool nothing_to_serve = !has_filter && sort_help != SortOrderHelp::Helps;
     if (!relaxing_setting.empty() && (result.verdict != "chosen" || nothing_to_serve))
     {
         String cost;
@@ -1069,13 +1088,15 @@ WhatIfCandidateResult evaluateProjection(
             key_condition.reset();
     }
 
-    /// both lift the gate below; read from the read's own context, as the optimizer does
+    /// read the setting from the context of the read, as the optimizer does
     const auto & read_settings = read_step->getContext()->getSettingsRef();
     const std::string_view relaxing_setting = read_settings[Setting::force_optimize_projection] ? "force_optimize_projection"
         : read_settings[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
 
-    /// same gate as the optimizer: needs a filter or a useful sort order
-    if (!filter_dag && sort_help != SortOrderHelp::Helps && relaxing_setting.empty())
+    /// as the optimizer does: without a filter, any `ORDER BY` passes if `optimize_read_in_order` is on
+    const bool nothing_to_serve
+        = !filter_dag && (sort_help == SortOrderHelp::NoOrderBy || sort_help == SortOrderHelp::ReadInOrderDisabled);
+    if (nothing_to_serve && relaxing_setting.empty())
     {
         result.not_applicable_reason = fmt::format("Query has no filter predicate, and {}", describe(sort_help));
         return result;
@@ -1087,7 +1108,7 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (tryEstimateProjection(
                 result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
-                sort_help, filter_dag != nullptr, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
+                sort_help, nothing_to_serve, relaxing_setting, read_step, baseline_parts, analysis.selected_marks,
                 settings.projection_scan_budget_rows, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
