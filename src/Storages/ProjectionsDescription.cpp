@@ -17,6 +17,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Analyzer/AggregationUtils.h>
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/QueryNode.h>
@@ -271,6 +272,26 @@ private:
     const size_t max_rows_allowed;
 };
 
+/// The names the expressions of a projection query have before the Analyzer resolves them.
+/// The nodes are held, so that the address of a node discarded by the analysis is not reused by another one.
+using ProjectionUnresolvedNodeNames = std::unordered_map<QueryTreeNodePtr, String>;
+
+/// Remembers the names of the functions of `node` as they are written in the projection query.
+void collectUnresolvedNodeNames(const QueryTreeNodePtr & node, ProjectionUnresolvedNodeNames & result)
+{
+    if (node->getNodeType() == QueryTreeNodeType::FUNCTION)
+    {
+        ConvertToASTOptions ast_options;
+        ast_options.add_cast_for_constants = false;
+        ast_options.fully_qualified_identifiers = false;
+        result.emplace(node, node->toAST(ast_options)->getColumnName());
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child)
+            collectUnresolvedNodeNames(child, result);
+}
+
 /** The Analyzer names the columns of a query plan by its own rules: a column is named by the
   * identifier of its table expression (`__table1.a`), a constant is suffixed with its data type
   * (`1_UInt8`), a set is named by its key. A projection, on the other hand, stores its columns under
@@ -278,9 +299,19 @@ private:
   * of the files in the projection part (see `sample_block`).
   *
   * Collects the map from the names the Analyzer gives to the expressions of `query_tree` to the
-  * names the projection stores them under, so that the result of the pipeline can be renamed back.
+  * candidate names the projection may store them under, so that the result of the pipeline can be
+  * renamed back. There may be more than one candidate, because resolving a function changes its name:
+  * the canonical name replaces an alias (`SUM` becomes `sum`), and the nulls action and the types of
+  * the arguments may select another aggregate function (`count() IGNORE NULLS` becomes `count`, `sum`
+  * of `NULL` becomes `nothingNull`). The name the function has before the resolution is the one the
+  * query is written with, while the name after it is the one of a rewrite the old analysis also does
+  * (`countDistinct` becomes `uniqExact`).
   */
-void collectProjectionColumnNames(const QueryTreeNodePtr & node, const PlannerContext & planner_context, NameToNameMap & result)
+void collectProjectionColumnNames(
+    const QueryTreeNodePtr & node,
+    const PlannerContext & planner_context,
+    const ProjectionUnresolvedNodeNames & unresolved_node_names,
+    std::unordered_map<String, Names> & result)
 {
     auto node_type = node->getNodeType();
     if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::CONSTANT
@@ -294,12 +325,26 @@ void collectProjectionColumnNames(const QueryTreeNodePtr & node, const PlannerCo
         ast_options.use_source_expression_for_constants = true;
         ast_options.add_cast_for_constants = false;
         ast_options.fully_qualified_identifiers = false;
-        result.emplace(calculateActionNodeName(node, planner_context), node->toAST(ast_options)->getColumnName());
+
+        auto & candidates = result[calculateActionNodeName(node, planner_context)];
+        auto add_candidate = [&](String candidate)
+        {
+            if (std::find(candidates.begin(), candidates.end(), candidate) == candidates.end())
+                candidates.push_back(std::move(candidate));
+        };
+
+        add_candidate(node->toAST(ast_options)->getColumnName());
+
+        const QueryTreeNodePtr * unresolved_node = &node;
+        if (const auto * constant_node = node->as<ConstantNode>(); constant_node && constant_node->hasSourceExpression())
+            unresolved_node = &constant_node->getSourceExpression();
+        if (auto it = unresolved_node_names.find(*unresolved_node); it != unresolved_node_names.end())
+            add_candidate(it->second);
     }
 
     for (const auto & child : node->getChildren())
         if (child)
-            collectProjectionColumnNames(child, planner_context, result);
+            collectProjectionColumnNames(child, planner_context, unresolved_node_names, result);
 }
 
 /** The `ORDER BY` expression of a projection is appended to its `SELECT` list
@@ -330,7 +375,12 @@ StoragePtr createProjectionQuerySource(const ColumnsDescription & columns, Virtu
 }
 
 /// Builds the query tree of the `SELECT` of a projection over `source` and runs the analysis passes on it.
-QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const StoragePtr & source, const ContextPtr & context)
+/// If `unresolved_node_names` is set, remembers the names of the functions before the analysis.
+QueryTreeNodePtr buildProjectionQueryTree(
+    const ASTPtr & query_ast,
+    const StoragePtr & source,
+    const ContextPtr & context,
+    ProjectionUnresolvedNodeNames * unresolved_node_names = nullptr)
 {
     auto query_tree = buildQueryTree(query_ast, context);
     auto & query_node = query_tree->as<QueryNode &>();
@@ -356,6 +406,9 @@ QueryTreeNodePtr buildProjectionQueryTree(const ASTPtr & query_ast, const Storag
             group_by_key_node = std::move(wrapped_key_node);
         }
     }
+
+    if (unresolved_node_names)
+        collectUnresolvedNodeNames(query_tree, *unresolved_node_names);
 
     QueryTreePassManager query_tree_pass_manager(context);
     addQueryTreePasses(query_tree_pass_manager, /*only_analyze=*/true);
@@ -945,13 +998,14 @@ Block ProjectionDescription::calculateByQuery(
 
     auto select_query_options = SelectQueryOptions{processing_stage}.ignoreASTOptimizations().ignoreSettingConstraints();
 
-    auto query_tree = buildProjectionQueryTree(query_ast_copy ? query_ast_copy : query_ast, source, mut_context);
+    ProjectionUnresolvedNodeNames unresolved_node_names;
+    auto query_tree = buildProjectionQueryTree(query_ast_copy ? query_ast_copy : query_ast, source, mut_context, &unresolved_node_names);
     removeDuplicateProjectionColumns(query_tree);
 
     InterpreterSelectQueryAnalyzer interpreter(query_tree, mut_context, select_query_options);
     auto builder = interpreter.buildQueryPipeline();
-    NameToNameMap projection_column_names;
-    collectProjectionColumnNames(query_tree, *interpreter.getPlanner().getPlannerContext(), projection_column_names);
+    std::unordered_map<String, Names> projection_column_names;
+    collectProjectionColumnNames(query_tree, *interpreter.getPlanner().getPlannerContext(), unresolved_node_names, projection_column_names);
     builder.resize(1);
 
     // Generate aggregated blocks with rows less or equal than the original block.
@@ -973,8 +1027,15 @@ Block ProjectionDescription::calculateByQuery(
     Block projection_block;
     for (const auto & column : pipeline_block)
     {
-        auto it = projection_column_names.find(column.name);
-        String projection_column_name = it == projection_column_names.end() ? column.name : it->second;
+        /// Prefer the candidate name the projection metadata describes.
+        String projection_column_name = column.name;
+        if (auto it = projection_column_names.find(column.name); it != projection_column_names.end())
+        {
+            const auto & candidates = it->second;
+            auto candidate_it = std::find_if(
+                candidates.begin(), candidates.end(), [&](const String & candidate) { return sample_block.has(candidate); });
+            projection_column_name = candidate_it == candidates.end() ? candidates.front() : *candidate_it;
+        }
         if (projection_block.has(projection_column_name))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
