@@ -67,7 +67,6 @@
 #include <Parsers/QueryParameterVisitor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDictionary.h>
@@ -1143,9 +1142,8 @@ static std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> analyzed_join, const ColumnsWithTypeAndName & left_sample_columns, std::unique_ptr<QueryPlan> & joined_plan, ContextPtr context)
 {
     auto right_sample_block = joined_plan->getCurrentHeader();
-    /// The old analyzer has no join-order pass, so the right side is sized by walking `joined_plan`.
-    const auto rhs_size_estimation = QueryPlanOptimizations::estimateReadRowsCount(*joined_plan->getRootNode()).estimated_rows;
-    const auto build_layout = analyzed_join->preferParallelHashLayout(rhs_size_estimation)
+    /// The old analyzer has no estimate of the right table size.
+    const auto build_layout = analyzed_join->preferParallelHashLayout(/*rhs_size_estimation=*/std::nullopt)
         ? HashJoinBuildLayout::twoLevel(context->getSettingsRef()[Setting::max_threads])
         : HashJoinBuildLayout::oneBucket(1);
     const auto & join_algorithms = analyzed_join->getEnabledJoinAlgorithms();
