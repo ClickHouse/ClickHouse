@@ -251,13 +251,11 @@ SET dialect = 'clickhouse_json';
 
 ## enable_json_lazy_type_hints {#enable_json_lazy_type_hints}
 
-<BetaBadge/>
-
 **Aliases**: `allow_experimental_json_lazy_type_hints`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Lazy JSON type hints are now Beta. An alias for setting 'allow_experimental_json_lazy_type_hints'."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "New experimental setting for lazy JSON type hints. At the time the setting was named `allow_experimental_json_lazy_type_hints`, which is now an alias of it."}]}, {"id": "row-3","items": [{"label": "26.10"},{"label": "0"},{"label": "Lazy `JSON` type hints are now GA. This also applies to the alias `allow_experimental_json_lazy_type_hints`."}]}]}/>
 
 Enables lazy type hints for the [JSON](/reference/data-types/newjson) type.
 
@@ -404,6 +402,16 @@ The downside is potentially higher memory usage.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."}]}]}/>
 
 Enables the `Quantized` compression codec.
+
+## enable_reads_from_columns_cache {#enable_reads_from_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control reading from columns cache"}]}]}/>
+
+Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 
 ## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
@@ -589,6 +597,16 @@ Disabled by default.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Enable vertical final by default again after fixing bug"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Use vertical final by default"}]}]}/>
 
 If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
+
+## enable_writes_to_columns_cache {#enable_writes_to_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control writing to columns cache"}]}]}/>
+
+Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 
 ## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 

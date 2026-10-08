@@ -70,6 +70,31 @@ spec:
         storage: 5Gi
 ```
 
+### Leadership handover on termination {#keeper-leadership-handover}
+
+The Keeper container has a default `preStop` hook that asks the replica to hand off Raft
+leadership before it stops, and waits for the handover to complete before letting the
+container terminate. This runs on every graceful stop of the container, not just
+operator-initiated rollouts: a descheduler eviction, a node drain, or an autoscaler
+action all trigger the same hook, since it is a kubelet-level `preStop` handler rather
+than reconcile-loop logic.
+
+Without this, restarting the current leader leaves the ensemble without a leader until a
+new election completes, which can take several seconds under load and shows up to
+ClickHouse as Keeper connection loss and elevated query latency. The hook asks the
+replica to yield leadership (Keeper's `ydld` four-letter-word command, sent over the
+`http_control` port) and then polls the replica's status until it is no longer the
+leader, rather than firing the request and immediately letting the container stop — a
+fire-and-forget request can still lose the race with `SIGTERM` under write load, so
+waiting is what keeps the leaderless window bounded.
+
+The hook needs no configuration and degrades gracefully: on Keeper versions older than
+26.3, which don't yet serve the leadership commands used here, the request is a no-op and
+the container stops as it would without the hook. It runs a shell script, so it requires
+`bash` in the image; if you run a distroless or scratch Keeper image, override or remove
+it via `containerTemplate.lifecycle` — see
+[API Reference](/products/kubernetes-operator/reference/api-reference#containertemplatespec).
+
 ## Storage configuration {#storage-configuration}
 
 Configure persistent storage with `dataVolumeClaimSpec`, a standard Kubernetes

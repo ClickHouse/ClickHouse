@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -166,13 +167,14 @@ public:
         size_t max_block_size_,
         String remote_table_schema_,
         TableNameOrQuery remote_table_or_query_,
-        postgres::PoolWithFailoverPtr pool_
-    )
+        NameSet local_only_columns_,
+        postgres::PoolWithFailoverPtr pool_)
         : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
         , remote_table_or_query(remote_table_or_query_)
+        , local_only_columns(std::move(local_only_columns_))
         , pool(std::move(pool_))
     {
     }
@@ -190,6 +192,7 @@ public:
             max_block_size,
             remote_table_schema,
             remote_table_or_query,
+            local_only_columns,
             pool);
     }
 
@@ -201,7 +204,12 @@ public:
             /// The user-provided query is passed to PostgreSQL as is, wrapped into a subquery to project
             /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
             /// reject any outer filter under external_table_strict_query.
-            rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context);
+            rejectOuterFilterForQueryBackedExternalSourceIfStrict(
+                query_info,
+                storage_snapshot->metadata->getColumns().getAllPhysical(),
+                context,
+                storage_snapshot->storage.getStorageID(),
+                local_only_columns);
             query = buildQueryForExternalDatabaseSubquery(
                 remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
         }
@@ -213,16 +221,23 @@ public:
 
             /// Connection is already made to the needed database, so it should not be present in the query;
             /// remote_table_schema is empty if it is not specified, will access only table_name.
+            ///
+            /// All physical columns are pushdown-eligible: a `MATERIALIZED` column is a column of the remote
+            /// table (its value is written there on `INSERT` and read back from there), so a predicate over it
+            /// is pushed down like one over an ordinary column.
             query = transformQueryForExternalDatabase(
                 query_info,
                 required_source_columns,
-                storage_snapshot->metadata->getColumns().getOrdinary(),
+                storage_snapshot->metadata->getColumns().getAllPhysical(),
                 IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
+                storage_snapshot->storage.getStorageID(),
                 context,
-                transform_query_limit);
+                transform_query_limit,
+                {},
+                local_only_columns);
         }
         LOG_TRACE(logger, "Query: {}", query);
 
@@ -233,6 +248,7 @@ public:
     size_t max_block_size;
     String remote_table_schema;
     TableNameOrQuery remote_table_or_query;
+    NameSet local_only_columns;
     postgres::PoolWithFailoverPtr pool;
 };
 
@@ -269,6 +285,7 @@ void StoragePostgreSQL::readImpl(
         max_block_size,
         remote_table_schema,
         remote_table_or_query,
+        getLocalOnlyColumnNames(storage_snapshot->metadata),
         pool);
     query_plan.addStep(std::move(reading));
 }
@@ -805,10 +822,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
+    ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
+    const StorageID * table_id, const ASTSetQuery * settings)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
@@ -831,8 +851,15 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         }
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
+        /// Identifiers are quoted only when they need to be: PostgreSQL folds an unquoted identifier to
+        /// lower case, while a quoted one is matched case-sensitively, so force-quoting every identifier
+        /// would make `(SELECT Foo FROM t)` look for the column `Foo` instead of `foo` and break queries
+        /// that rely on the ordinary unquoted name resolution. A name without upper-case characters is
+        /// quoted nonetheless: PostgreSQL resolves `"where"` and `where` to the same column, but rejects the
+        /// latter as a syntax error, so a source such as `(SELECT "where" FROM "group")` keeps its quotes.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)
@@ -880,7 +907,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);
@@ -1074,6 +1102,14 @@ Instead of a table name, the `table` argument can be a `SELECT` query that is pa
 ```sql
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to PostgreSQL, so it must not end with a semicolon. The `schema` parameter does not apply to a passed query: qualify the table names in the query instead.
+
+With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL(postgres_creds, database = 'test', query = 'SELECT a, b FROM schema1.t1 JOIN schema1.t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/reference/functions/table-functions/postgresql) table function.

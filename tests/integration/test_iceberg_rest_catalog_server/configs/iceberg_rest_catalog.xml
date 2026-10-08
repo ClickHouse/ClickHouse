@@ -2,5 +2,6 @@
     <iceberg_rest_catalog>
         <port>8182</port>
         <warehouse>my_warehouse</warehouse>
+        <base_location>s3://warehouse/my_warehouse</base_location>
     </iceberg_rest_catalog>
 </clickhouse>

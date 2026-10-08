@@ -374,7 +374,7 @@ struct Reader
         /// Note that older parquet writers may omit dictionary info in file metadata, so we don't
         /// necessarily know in advance whether the column chunk has a dictionary.
         Dictionary dictionary;
-        /// When the dictionary is decoded on the pruning path (`BloomFilterBlocksOrDictionary` stage),
+        /// When the dictionary is decoded on the pruning path (`Dictionary` stage),
         /// its decoded footprint is reserved live against the shared pruning-stage budget through this
         /// handle so it is visible to every row group pruning in parallel, not only after the batch
         /// flushes (see `PruningMemoryReservation`, `ReadManager::runTask` / `pruningMemoryReservation`,
@@ -495,6 +495,9 @@ struct Reader
 
         std::atomic<ReadStage> stage {ReadStage::NotStarted};
         std::atomic<size_t> stage_tasks_remaining {0};
+
+        /// Admitted by ReadManager::admitTopKRowGroups and not fully read yet.
+        std::atomic<bool> holds_top_k_admission {false};
     };
 
     struct Step
@@ -576,12 +579,15 @@ struct Reader
     /// the reader only produces type defaults for it while the threshold comes from the values the
     /// pipeline puts in their place, so the filter must not be applied at all.
     bool top_k_column_is_read = false;
+    /// `row_groups` are ordered by the TopN sort column's statistics instead of file position.
+    bool row_groups_ordered_by_top_k = false;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
     void init(const ReadOptions & options_, const Block & sample_block_, FormatFilterInfoPtr format_filter_info_);
 
-    static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher);
+    /// `footer_read_size` overrides the initial footer read size; 0 sizes it adaptively to the file.
+    static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
     void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
     void preparePrewhere();
 
@@ -590,7 +596,7 @@ struct Reader
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
     /// On the dictionary-filter pruning path, pass a bounded `reservation` (see
     /// `ReadManager::pruningMemoryReservation`): the decoded dictionary's full footprint is predicted
-    /// from the page header and reserved live against the shared `BloomFilterBlocksOrDictionary` stage
+    /// from the page header and reserved live against the shared `Dictionary` stage
     /// budget *before* anything is decoded, so a dictionary that would push the pruning memory past the
     /// reader's high watermark - across the several row groups pruning in parallel - is rejected before
     /// `Dictionary::decode` allocates anything and false is returned so the caller falls back to a full
@@ -609,9 +615,24 @@ struct Reader
     /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
     bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
 
-    /// Returns false if the row group was filtered out and should be skipped.
+    /// Returns false if the row group was filtered out and should be skipped, using only the bloom
+    /// filters whose blocks have been read (`BloomFilterBlocks` stage). Columns that have no bloom
+    /// filter, including the ones that will be checked against their dictionary page in the next
+    /// stage, are left out of the filter map and so treated as "may match"; a bloom filter has no
+    /// false negatives, so a `false` here is final and the dictionary pages need not be read at all.
+    /// When the row group is not ruled out, also clears `use_dictionary_filter` on every column whose
+    /// own bloom filter reported a definite miss for each of its atoms (e.g. `a` in `a = 1 OR b = 2`
+    /// where only `b = 2` keeps the row group alive): the dictionary of such a column can only confirm
+    /// the miss, so its page is not read and `applyBloomAndDictionaryFilters` uses the bloom filter
+    /// for it instead.
+    bool applyBloomFilters(RowGroup & row_group);
+
+    /// Returns false if the row group was filtered out and should be skipped. Runs after
+    /// `applyBloomFilters` on the row groups it did not rule out, and re-evaluates the whole
+    /// condition, this time preferring the exact dictionary filter for every column that has a
+    /// decoded dictionary page.
     /// `reservation` bounds the value sets built for dictionary filtering; it is the memory
-    /// still available for pruning, charged live to the shared `BloomFilterBlocksOrDictionary` stage
+    /// still available for pruning, charged live to the shared `Dictionary` stage
     /// counter for the lifetime of each value set, so several dictionary-filtered columns in this row
     /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
     /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
@@ -657,9 +678,18 @@ private:
         Prefetcher & prefetcher;
         ColumnChunk & column;
 
+        /// Whether `findAnyHash` was called at all, and whether any call reported a possible match.
+        /// `probed && !found` means every atom on this column that was evaluated is definitely false
+        /// (a bloom filter has no false negatives), so its exact dictionary filter could only agree.
+        bool probed = false;
+        bool found = false;
+
         BloomFilterLookup(Prefetcher & prefetcher_, ColumnChunk & column_) : prefetcher(prefetcher_), column(column_) {}
 
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
+
+    private:
+        bool probe(const std::vector<uint64_t> & hashes);
     };
 
     /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the

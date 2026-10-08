@@ -38,6 +38,7 @@ import argparse
 import logging
 import os
 import shlex
+import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -53,7 +54,6 @@ from cherry_pick_branches import (
     select_backport_branches,
 )
 from ci_buddy import CIBuddy
-from ci_utils import Shell
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
@@ -72,9 +72,14 @@ from github_helper import (
 )
 from pr_info import Labels
 from report import GITHUB_JOB_URL
-from s3_helper import S3Helper
 from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
+
+# The siblings above resolve through `sys.path[0]`, which is this script's own
+# directory; `ci.praktika` needs the repo root on the path as well.
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.git import Git  # noqa: E402
+from ci.praktika.s3 import S3  # noqa: E402
 
 
 class BackportException(Exception):
@@ -213,9 +218,8 @@ close it.
         return f"backport/{name}/{pr_number}"
 
     def pre_check(self):
-        self._backported = Shell.check(
-            f"git merge-base --is-ancestor {self.pr.merge_commit_sha} {self.REMOTE}/{self.name}",
-            verbose=True,
+        self._backported = Git.is_ancestor(
+            self.pr.merge_commit_sha, f"{self.REMOTE}/{self.name}"
         )
         if self._backported:
             print(
@@ -522,10 +526,7 @@ close it.
                 self.cherrypick_pr.number,
             )
             return False
-        if not Shell.check(
-            f"git merge-base --is-ancestor {base_parents[0]} {remote_release}",
-            verbose=True,
-        ):
+        if not Git.is_ancestor(base_parents[0], remote_release):
             logging.info(
                 "Retry of cherry-pick PR #%s skipped: its base is not built on %s",
                 self.cherrypick_pr.number,
@@ -1600,7 +1601,11 @@ def run_once(args):
 
     gh = GitHub(token)
     temp_path = Path(TEMP_PATH)
-    gh_cache = GitHubCache(gh.cache_path, temp_path, S3Helper())
+    if not IS_CI:
+        # `S3` reads and writes the real bucket unless local mode is set, and it
+        # keys that off its own variable rather than off `CI`.
+        os.environ["PRAKTIKA_LOCAL_RUN"] = "1"
+    gh_cache = GitHubCache(gh.cache_path, temp_path, S3)
     gh_cache.download()
 
     bpp = BackportPRs(gh, args.repo, args.dry_run)

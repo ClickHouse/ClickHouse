@@ -27,6 +27,7 @@
 #include <Access/Common/AccessType.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/typeid_cast.h>
 
 
@@ -148,6 +149,24 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
             return true;
     }
     return false;
+}
+
+/// Comparing against the dictionary's keys is not equivalent to `dictGet` when either the probe
+/// expression's type or the dictionary's declared key type has a dynamic structure or a `Variant` at any level.
+/// For `Variant` and `Dynamic` the divergence is the key conversion: `dictGet` casts the key to the
+/// dictionary's key type (`IDictionary::convertKeyColumns`), and such a key carries NULL in a
+/// discriminator instead of a `Nullable` wrapper, so the cast turns a NULL row into that type's default
+/// and looks that key up, while `IN` and `=` treat the row as NULL. A `Nullable` key is unaffected:
+/// there the cast propagates the NULL. A `JSON` key diverges either way: `convertKeyColumns` skips an
+/// equal-typed probe, yet the key constant the rewrite folds in does not compare equal to that value read
+/// from a column; a convertible probe is cast for `dictGet` while the emitted comparison keeps it uncast.
+/// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
+bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
+{
+    if (key_type.hasDynamicStructure())
+        return true;
+
+    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested); });
 }
 
 bool isRewriteSemanticallySafe(
@@ -319,6 +338,9 @@ public:
             return;
         }
 
+        if (keyTypeBreaksInverseLookupEquivalence(*dictget_function_info.key_expr_node->getResultType()))
+            return;
+
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
         auto helper = FunctionDictHelper(getContext());
         const String dict_name = dictget_function_info.dict_name_node->getValue().safeGet<String>();
@@ -360,6 +382,12 @@ public:
         else
         {
             return;
+        }
+
+        for (const auto & key_col : key_cols)
+        {
+            if (keyTypeBreaksInverseLookupEquivalence(*key_col.type))
+                return;
         }
 
         /// For complex-key dictionaries, `dictGet` and `IN` don't have the same `NULL` key semantics.

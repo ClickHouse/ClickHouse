@@ -1,5 +1,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -699,5 +700,82 @@ TEST(StreamingExchangeTransport, OnlyTheEmptyEndOfStreamMarkerIsAccepted)
         expect_rejected([&] { packet_of(body); }, what, "the body reader");
     }
 }
+
+namespace
+{
+
+/// Runs `pipeline`, cancels it the way `KILL QUERY` does once `should_cancel` returns true, and returns how long
+/// the executor took to return after the cancel.
+std::chrono::milliseconds waitAfterCancel(QueryPipeline & pipeline, const std::function<bool()> & should_cancel)
+{
+    pipeline.setNumThreads(2);
+    std::optional<std::chrono::steady_clock::time_point> cancelled_at;
+    CompletedPipelineExecutor executor(pipeline);
+    executor.setCancelCallback([&]
+    {
+        if (!cancelled_at && should_cancel())
+            cancelled_at = std::chrono::steady_clock::now();
+        return cancelled_at.has_value();
+    }, /*interactive_timeout_ms_=*/ 10);
+    EXPECT_NO_THROW(executor.execute());
+    if (!cancelled_at)
+    {
+        ADD_FAILURE() << "the pipeline ended before the cancel";
+        return {};
+    }
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - *cancelled_at);
+}
+
+constexpr Int64 well_before_the_handshake_timeout_ms = StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS * 1000 / 2;
+
+}
+
+/// A cancel stops a source that waits for the `SinkHello` of a peer that never answers, instead of the query
+/// waiting for the handshake timeout.
+TEST(StreamingExchangeTransport, CancelStopsTheWaitForTheSinkHello)
+{
+    MainThreadStatus::getInstance();
+
+    std::atomic<bool> hello_received = false;
+    ExchangeTest::FakePeer peer([&](Poco::Net::StreamSocket & socket)
+    {
+        ExchangeTest::receiveSourceHello(socket);
+        hello_received = true;
+        /// Keeps the connection open until the source closes it.
+        socket.poll(Poco::Timespan(60, 0), Poco::Net::Socket::SELECT_READ);
+    });
+
+    auto header = makeHeader();
+    auto receiving = makeReceivingPipeline(header, peer.port(), /*source_hands_packets=*/ false, std::make_shared<CollectingSink>(header));
+    EXPECT_LT(waitAfterCancel(receiving, [&] { return hello_received.load(); }).count(), well_before_the_handshake_timeout_ms);
+}
+
+#if defined(OS_LINUX)
+/// The same for a connect that gets no answer: Linux drops a SYN to a listener whose accept queue is full.
+TEST(StreamingExchangeTransport, CancelStopsTheWaitForTheConnect)
+{
+    MainThreadStatus::getInstance();
+
+    Poco::Net::ServerSocket listener(Poco::Net::SocketAddress("127.0.0.1", 0), /*backlog=*/ 1);
+    /// Connections that are never accepted, until one gets no answer.
+    std::vector<Poco::Net::StreamSocket> queued;
+    bool queue_full = false;
+    while (!queue_full && queued.size() < 16)
+    {
+        auto & socket = queued.emplace_back();
+        socket.connectNB(listener.address());
+        queue_full = !socket.poll(Poco::Timespan(0, 200'000), Poco::Net::Socket::SELECT_WRITE | Poco::Net::Socket::SELECT_ERROR);
+    }
+    if (!queue_full)
+        GTEST_SKIP() << "the kernel answered every connect to a listener that accepts none";
+
+    auto header = makeHeader();
+    auto receiving = makeReceivingPipeline(header, listener.address().port(), /*source_hands_packets=*/ false, std::make_shared<CollectingSink>(header));
+    const auto started = std::chrono::steady_clock::now();
+    /// Half a second is long enough for the source to be waiting in its connect.
+    EXPECT_LT(waitAfterCancel(receiving, [&] { return std::chrono::steady_clock::now() - started > std::chrono::milliseconds(500); }).count(),
+        well_before_the_handshake_timeout_ms);
+}
+#endif
 
 #endif

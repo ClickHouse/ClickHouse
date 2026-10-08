@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 
+#include <algorithm>
 #include <limits>
 
 #include <Interpreters/ActionsDAG.h>
@@ -7,6 +8,36 @@
 
 namespace DB::QueryPlanOptimizations
 {
+
+void updateJoinKeyDistinctCounts(
+    ColumnStats & left_stats,
+    ColumnStats & right_stats,
+    JoinKind kind,
+    JoinStrictness strictness)
+{
+    bool update_left = false;
+    bool update_right = false;
+    if (strictness == JoinStrictness::Semi)
+    {
+        /// Only the output side is filtered to matching keys; the other side is not in the output.
+        update_left = kind == JoinKind::Left;
+        update_right = kind == JoinKind::Right;
+    }
+    else if (strictness != JoinStrictness::Anti)
+    {
+        /// An outer join preserves the named side, so only the non-preserved side can lose key values.
+        update_left = kind == JoinKind::Inner || kind == JoinKind::Right
+            || kind == JoinKind::Cross || kind == JoinKind::Comma;
+        update_right = kind == JoinKind::Inner || kind == JoinKind::Left
+            || kind == JoinKind::Cross || kind == JoinKind::Comma;
+    }
+
+    const UInt64 minimum = std::min(left_stats.num_distinct_values, right_stats.num_distinct_values);
+    if (update_left)
+        left_stats.num_distinct_values = minimum;
+    if (update_right)
+        right_stats.num_distinct_values = minimum;
+}
 
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
