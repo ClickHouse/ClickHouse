@@ -451,6 +451,8 @@ void SerializationMapWithKeyColumns::enumerateStreams(
     MapKeyManifest manifest;
     if (with_key_columns_state)
         manifest = with_key_columns_state->manifest;
+    else if (settings.map_key_columns_manifest)
+        manifest = *settings.map_key_columns_manifest;
     else if (data.column)
         manifest = collectManifestFromColumn(*data.column);
 

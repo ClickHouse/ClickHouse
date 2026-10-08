@@ -433,6 +433,10 @@ public:
         using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
         CheckStreamExistsCallback check_stream_exists_callback;
 
+        /// Keys of a `with_key_columns` Map in the current data part. Without a deserialize state
+        /// or a sample column, the per-key streams of the part can be enumerated only from it.
+        const MapKeyManifest * map_key_columns_manifest = nullptr;
+
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
     };

@@ -67,6 +67,8 @@ void SerializationMapWithKeyColumnsKeysOrValues::enumerateStreams(
     MapKeyManifest manifest;
     if (keys_or_values_state)
         manifest = key_columns.getManifestFromState(keys_or_values_state->with_key_columns_state);
+    else if (settings.map_key_columns_manifest)
+        manifest = *settings.map_key_columns_manifest;
 
     /// `m.keys` names the keys from the manifest and filters them with `.exists_`.
     /// `m.values` still needs each key's value stream.

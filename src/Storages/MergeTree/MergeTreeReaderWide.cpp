@@ -1054,6 +1054,8 @@ void MergeTreeReaderWide::addStreams(
         return IMergeTreeDataPart::getStreamNameForColumn(
             name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings).has_value();
     };
+    if (const auto part = data_part_info_for_read->getDataPart())
+        enumerate_settings.map_key_columns_manifest = part->tryGetMapKeyColumnsManifest(name_and_type.getNameInStorage());
     auto enumerate_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type);
     serialization->enumerateStreams(enumerate_settings, callback, enumerate_data);
 
