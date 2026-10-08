@@ -1,6 +1,7 @@
 i64_neg: has a negative value count or size INCORRECT_DATA
 i64_size_neg: has a negative value count or size INCORRECT_DATA
 str_bytes_neg: has a negative value count or size INCORRECT_DATA
+i64_neg pruned: 0	0
 nul_neg: has a negative value count or size INCORRECT_DATA
 nul: 1	15228578409069794350
 nul_huge: 1	15228578409069794350

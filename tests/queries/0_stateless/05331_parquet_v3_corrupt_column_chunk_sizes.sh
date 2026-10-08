@@ -3,8 +3,8 @@
 # no-fasttest: needs the Parquet format, which is not built in fasttest.
 
 # A negative ColumnMetaData.num_values, total_uncompressed_size or size_statistics.unencoded_byte_array_data_bytes
-# is rejected with INCORRECT_DATA. A positive one implying 2^61 bytes or more is only capped or ignored as a memory
-# estimate, so the file still reads correctly.
+# in a row group the query reads is rejected with INCORRECT_DATA. A positive one implying 2^61 bytes or more is only
+# capped or ignored as a memory estimate, so the file still reads correctly.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -90,7 +90,9 @@ negative() {
     echo "$1: $(grep -o -m1 'has a negative value count or size' <<< "$out") $(grep -o -m1 'INCORRECT_DATA' <<< "$out")"
 }
 for f in i64_neg i64_size_neg str_bytes_neg; do negative $f ""; done
-# Without the checks, a corrupt num_values = null_count would silently prune the row group.
+# A row group pruned by statistics is not read, so it is not checked.
+echo "i64_neg pruned: $(read_file i64_neg "WHERE x > 1000")"
+# A corrupt num_values = null_count must not silently prune the row group.
 negative nul_neg "WHERE x = 5"
 for f in nul nul_huge; do echo "$f: $(read_file $f "WHERE x = 5")"; done
 

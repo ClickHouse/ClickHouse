@@ -915,18 +915,6 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             continue; /// Empty row groups are valid in Parquet; skip them.
         if (meta->columns.size() != total_primitive_columns_in_file)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Row group {} has unexpected number of columns: {} != {}", row_group_idx, meta->columns.size(), total_primitive_columns_in_file);
-        for (const auto & column_info : primitive_columns)
-        {
-            const auto & column_meta = meta->columns.at(column_info.column_idx).meta_data;
-            const auto & size_statistics = column_meta.size_statistics;
-            if (column_meta.num_values < 0 || column_meta.total_uncompressed_size < 0
-                || (column_meta.__isset.size_statistics && size_statistics.__isset.unencoded_byte_array_data_bytes
-                    && size_statistics.unencoded_byte_array_data_bytes < 0))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Column '{}' in row group {} has a negative value count or size: num_values {}, total_uncompressed_size {}, unencoded_byte_array_data_bytes {}",
-                    column_info.name, row_group_idx, column_meta.num_values, column_meta.total_uncompressed_size,
-                    size_statistics.unencoded_byte_array_data_bytes);
-        }
 
         total_rows += size_t(meta->num_rows); // before potentially skipping the row group
 
@@ -2464,6 +2452,23 @@ void Reader::intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group)
     }
     if (num_rows == 0)
         return;
+
+    /// Only row groups that the query reads are checked.
+    if (row_group.need_to_process)
+    {
+        for (size_t i = 0; i < primitive_columns.size(); ++i)
+        {
+            const auto & column_meta = row_group.columns[i].meta->meta_data;
+            const auto & size_statistics = column_meta.size_statistics;
+            if (column_meta.num_values < 0 || column_meta.total_uncompressed_size < 0
+                || (column_meta.__isset.size_statistics && size_statistics.__isset.unencoded_byte_array_data_bytes
+                    && size_statistics.unencoded_byte_array_data_bytes < 0))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Column '{}' in row group {} has a negative value count or size: num_values {}, total_uncompressed_size {}, unencoded_byte_array_data_bytes {}",
+                    primitive_columns[i].name, row_group.row_group_idx, column_meta.num_values, column_meta.total_uncompressed_size,
+                    size_statistics.unencoded_byte_array_data_bytes);
+        }
+    }
 
     size_t rows_per_subgroup = num_rows;
     if (options.format.parquet.max_block_size > 0)
