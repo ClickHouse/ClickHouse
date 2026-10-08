@@ -252,6 +252,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         query_context->setSetting("enable_materialized_cte", true);
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+    query_context->setAllowEmptyTimeSeriesTagName(true);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 

@@ -24,7 +24,10 @@ public:
     static constexpr auto name = "timeSeriesReplaceTag";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesReplaceTag>(context); }
-    explicit FunctionTimeSeriesReplaceTag(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    explicit FunctionTimeSeriesReplaceTag(ContextPtr context)
+        : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector())
+        , allow_empty_tag_name(context->getAllowEmptyTimeSeriesTagName())
+    {}
 
     String getName() const override { return name; }
 
@@ -67,7 +70,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
-        auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
+        auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1, allow_empty_tag_name);
         auto replacement = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 2);
 
         /// We need to allow empty src_tag here.
@@ -87,6 +90,7 @@ public:
 
 private:
     std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
+    bool allow_empty_tag_name = false;
 };
 
 

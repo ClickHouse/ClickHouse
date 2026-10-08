@@ -25,7 +25,10 @@ public:
     static constexpr auto name = "timeSeriesExtractTag";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesExtractTag>(context); }
-    explicit FunctionTimeSeriesExtractTag(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    explicit FunctionTimeSeriesExtractTag(ContextPtr context)
+        : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector())
+        , allow_empty_tag_name(context->getAllowEmptyTimeSeriesTagName())
+    {}
 
     String getName() const override { return name; }
 
@@ -65,7 +68,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
-        auto tag_to_extract = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
+        auto tag_to_extract = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1, allow_empty_tag_name);
 
         auto tag_values = ColumnString::create();
         auto null_map = ColumnUInt8::create();
@@ -78,6 +81,7 @@ public:
 
 private:
     std::shared_ptr<const ContextTimeSeriesTagsCollector> tags_collector;
+    bool allow_empty_tag_name = false;
 };
 
 
