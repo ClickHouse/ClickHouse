@@ -504,8 +504,7 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     auto final_state = Task::State::Done;
     try
     {
-        /// When the reader supports zero-copy reads (page cache cells or a memory-mapped file),
-        /// reference its data instead of allocating a buffer and copying data into it.
+        /// Reference the reader's data (page cache cells or a memory-mapped file) instead of copying it.
         /// Decoders read up to PADDING_FOR_SIMD bytes on both sides of a range, as `task->buf` allows,
         /// so a range closer than that to either end of the file is copied.
         if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0
