@@ -62,8 +62,8 @@ SELECT arraySort(groupArray((v, r))) FROM (SELECT v, RANK() OVER (ORDER BY v ROW
 SELECT arraySort(groupArray((v, r))) FROM (SELECT v, DENSE_RANK() OVER (ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r FROM (SELECT arrayJoin(['a', 'a', 'a', 'a', 'b', 'b', 'b', 'c']) AS v)) SETTINGS max_block_size = 2;
 SELECT arraySort(groupArray((p, v, r))) FROM (SELECT p, v, RANK() OVER (PARTITION BY p ORDER BY v ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r FROM (SELECT arrayJoin([(1, 'a'), (1, 'a'), (1, 'a'), (2, 'a'), (2, 'a'), (2, 'b'), (2, 'b')]) AS t, t.1 AS p, t.2 AS v)) SETTINGS max_block_size = 2;
 SELECT arraySort(groupArray(r)) FROM (SELECT RANK() OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS r FROM numbers(10)) SETTINGS max_block_size = 2;
--- A frame starting after the current row lets the transform drop blocks the peer group check
--- still reads back into.
+-- A frame starting after the current row lets the transform release every block before the
+-- current row, so the ranks must not depend on reading earlier rows back.
 SELECT sum(r), sum(d) FROM (SELECT RANK() OVER (PARTITION BY intDiv(number, 50) ORDER BY intDiv(number, 3) ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) AS r, DENSE_RANK() OVER (PARTITION BY intDiv(number, 50) ORDER BY intDiv(number, 3) ROWS BETWEEN 1 FOLLOWING AND 2 FOLLOWING) AS d FROM numbers(600)) SETTINGS max_block_size = 1;
 SELECT sum(r), sum(d) FROM (SELECT RANK() OVER (PARTITION BY number % 7 ORDER BY intDiv(number, 11) ROWS BETWEEN 3 FOLLOWING AND 9 FOLLOWING) AS r, DENSE_RANK() OVER (PARTITION BY number % 7 ORDER BY intDiv(number, 11) ROWS BETWEEN 3 FOLLOWING AND 9 FOLLOWING) AS d FROM numbers(600)) SETTINGS max_block_size = 2;
 

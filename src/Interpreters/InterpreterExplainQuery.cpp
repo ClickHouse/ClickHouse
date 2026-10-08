@@ -1382,6 +1382,15 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+
+            auto outer_thread_group = CurrentThread::getGroup();
+            if (!outer_thread_group)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
+
+            /// Keep the group alive until the plan and pipeline release their operator trackers.
+            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
+            analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
+
             QueryPlan plan = std::move(analyzed.plan);
             ContextPtr context = analyzed.context;
             auto parallel_replicas_builder = analyzed.parallel_replicas_builder;
@@ -1406,67 +1415,65 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-            watch.restart();
-            auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
-            planning_ns += watch.elapsed();
-
-            watch.restart();
-            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
-
-            pipeline.setNormalizedQueryHash(query_context->getNormalizedQueryHash());
-            auto to_complete = options.to_stage == QueryProcessingStage::Complete;
-            auto quota = (!inner_ignore_quota && to_complete) ? context->getQuota() : nullptr;
-
-            /// setLimitsAndQuota attaches a transform, so it must run before the pipeline is completed below.
-            if (!inner_ignore_limits && to_complete)
+            QueryPipeline pipeline;
+            StepProfilerPtr step_profiler;
+            UInt64 execute_ns = 0;
             {
-                auto limits = StreamLocalLimits::forQueryResult(context->getSettingsRef());
-                pipeline.setLimitsAndQuota(limits, quota);
-            }
-
-            if (quota)
-                pipeline.setQuota(quota);
-
-            pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
-
-            /// Inspect the materialized pipeline rather than the plan: remote execution always shows up as one of
-            /// these sources, including when it comes from nested sub-plans the plan walk would miss.
-            for (const auto & processor : pipeline.getProcessors())
-            {
-                const auto * proc_ptr = processor.get();
-                if (dynamic_cast<const RemoteSource *>(proc_ptr)
-                    || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
-                    || dynamic_cast<const RemoteExtremesSource *>(proc_ptr)
-                    || dynamic_cast<const DelayedSource *>(proc_ptr))
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                        "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
-            }
-
-            planning_ns += watch.elapsed();
-
-            auto step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
-            pipeline.setStepProfiler(step_profiler);
-
-            CompletedPipelineExecutor executor(pipeline);
-
-            if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
-                executor.setCancelCallback(
-                    std::move(cancel_callback),
-                    query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
-
-            auto outer_thread_group = CurrentThread::getGroup();
-            if (!outer_thread_group)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
-
-            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
-            analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
-
-            watch.restart();
-            {
+                /// Operator trackers created during pipeline construction must have the same parent as during execution.
                 ThreadGroupSwitcher switcher(analyze_thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, /*allow_existing_group=*/true);
+
+                watch.restart();
+                auto pipeline_builder = plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings(context), false);
+                planning_ns += watch.elapsed();
+
+                watch.restart();
+                pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
+
+                pipeline.setNormalizedQueryHash(query_context->getNormalizedQueryHash());
+                auto to_complete = options.to_stage == QueryProcessingStage::Complete;
+                auto quota = (!inner_ignore_quota && to_complete) ? context->getQuota() : nullptr;
+
+                /// setLimitsAndQuota attaches a transform, so it must run before the pipeline is completed below.
+                if (!inner_ignore_limits && to_complete)
+                {
+                    auto limits = StreamLocalLimits::forQueryResult(context->getSettingsRef());
+                    pipeline.setLimitsAndQuota(limits, quota);
+                }
+
+                if (quota)
+                    pipeline.setQuota(quota);
+
+                pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
+
+                /// Inspect the materialized pipeline rather than the plan: remote execution always shows up as one of
+                /// these sources, including when it comes from nested sub-plans the plan walk would miss.
+                for (const auto & processor : pipeline.getProcessors())
+                {
+                    const auto * proc_ptr = processor.get();
+                    if (dynamic_cast<const RemoteSource *>(proc_ptr)
+                        || dynamic_cast<const RemoteTotalsSource *>(proc_ptr)
+                        || dynamic_cast<const RemoteExtremesSource *>(proc_ptr)
+                        || dynamic_cast<const DelayedSource *>(proc_ptr))
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "EXPLAIN ANALYZE doesn't support queries executed in distributed mode");
+                }
+
+                planning_ns += watch.elapsed();
+
+                step_profiler = std::make_shared<StepProfiler>(plan, analyzed.time);
+                pipeline.setStepProfiler(step_profiler);
+
+                CompletedPipelineExecutor executor(pipeline);
+
+                if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
+                    executor.setCancelCallback(
+                        std::move(cancel_callback),
+                        query_context->getSettingsRef()[Setting::interactive_delay] / 1000);
+
+                watch.restart();
                 executor.execute();
+                execute_ns = watch.elapsed();
             }
-            UInt64 execute_ns = watch.elapsed();
 
             UInt64 total_time_ns = planning_ns + execute_ns;
 

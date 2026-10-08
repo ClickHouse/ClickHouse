@@ -134,6 +134,10 @@ How many times a single-level aggregation hash table was converted to two-level 
 
 How many hash tables were inited as two-level for aggregation.
 
+### AggregationHavingPrefilterGroupsSkipped {#aggregationhavingprefiltergroupsskipped}
+
+Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).
+
 ### AggregationOptimizedEqualRangesOfKeys {#aggregationoptimizedequalrangesofkeys}
 
 For how many blocks optimization of equal ranges of keys was applied
@@ -337,6 +341,10 @@ How many messages have been dropped from text_log due to the async log queue bei
 ### AsyncLoggingTextLogTotalMessages {#asyncloggingtextlogtotalmessages}
 
 How many messages (accepted or dropped) have been sent to the async queue for the text_log
+
+### AutomaticParallelReplicasProbePlansBuilt {#automaticparallelreplicasprobeplansbuilt}
+
+Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins
 
 ### AzureClients {#azureclients}
 
@@ -594,10 +602,6 @@ Number of times writing a file segment into the filesystem cache was stopped mid
 
 Prepare buffer time
 
-### CachedReadBufferPredownloadedBytes {#cachedreadbufferpredownloadedbytes}
-
-Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data
-
 ### CachedReadBufferPredownloadedFromSourceBytes {#cachedreadbufferpredownloadedfromsourcebytes}
 
 Bytes read from filesystem cache source for predownload (from remote fs, etc)
@@ -677,6 +681,22 @@ Total time spent while coalescing sorted columns
 ### CollapsingSortedMilliseconds {#collapsingsortedmilliseconds}
 
 Total time spent while collapsing sorted columns
+
+### ColumnsCacheEvictedBytes {#columnscacheevictedbytes}
+
+Number of bytes evicted from the columns cache.
+
+### ColumnsCacheEvictedEntries {#columnscacheevictedentries}
+
+Number of entries evicted from the columns cache.
+
+### ColumnsCacheHits {#columnscachehits}
+
+Number of times a deserialized column was found in the columns cache.
+
+### ColumnsCacheMisses {#columnscachemisses}
+
+Number of times a deserialized column was not found in the columns cache.
 
 ### CommonBackgroundExecutorTaskCancelMicroseconds {#commonbackgroundexecutortaskcancelmicroseconds}
 
@@ -2162,7 +2182,7 @@ Number of file segments which unexpectedly failed to be evicted during dynamic f
 
 ### FilesystemCacheFailedReserveAttempts {#filesystemcachefailedreserveattempts}
 
-Number of failed file cache space reservation attempts.
+Number of failed file cache space reservation attempts, including reserve-ahead attempts that were retried with the exact size (see FilesystemCacheReserveAheadRetries).
 
 ### FilesystemCacheFailToReserveSpaceBecauseOfCacheResize {#filesystemcachefailtoreservespacebecauseofcacheresize}
 
@@ -2231,6 +2251,10 @@ Lock filesystem cache time for read in priority queue
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 Lock filesystem cache time for write to priority queue
+
+### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
+
+Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size
 
 ### FilesystemCacheReserveAttempts {#filesystemcachereserveattempts}
 
@@ -4184,6 +4208,10 @@ The total number of row groups read from parquet data
 
 The total number of rows that were passed through filter
 
+### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
+
+The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
+
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
 Total time spent holding data parts lock in MergeTree tables
@@ -4419,6 +4447,14 @@ Total time a query was sleeping to conform 'max_local_write_bandwidth' throttlin
 ### QueryMaskingRulesMatch {#querymaskingrulesmatch}
 
 Number of times query masking rules was successfully matched.
+
+### QueryMemoryDriftSettled {#querymemorydriftsettled}
+
+Number of queries that ended with memory still charged to them (or over-credited). The difference is taken off the per-user tracker, so that it ends at zero for the query.
+
+### QueryMemoryDriftSettledBytes {#querymemorydriftsettledbytes}
+
+Absolute amount of bytes taken off per-user trackers when queries ended, that is, how far per-query accounting was off.
 
 ### QueryMemoryLimitExceeded {#querymemorylimitexceeded}
 
@@ -4883,6 +4919,10 @@ Number of granules examined for read time pruning by JOIN Runtime Filters
 ### RuntimeFilterGranulesDropped {#runtimefiltergranulesdropped}
 
 Number of granules pruned at read time by JOIN Runtime Filters
+
+### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
+
+Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
 
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
@@ -5940,13 +5980,17 @@ Number of times a header has not been found in the cache.
 
 Number of advance operations performed in lazy posting list mode.
 
+### TextIndexLazyBlocksSkippedDense {#textindexlazyblocksskippeddense}
+
+Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.
+
 ### TextIndexLazyBlocksSkippedResolved {#textindexlazyblocksskippedresolved}
 
-Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
 
 ### TextIndexLazyBruteForceEarlyExits {#textindexlazybruteforceearlyexits}
 
-Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.
+Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.
 
 ### TextIndexLazyBruteForceIntersections {#textindexlazybruteforceintersections}
 
@@ -5974,7 +6018,11 @@ Number of fully-dense segments padded as a whole (memset for OR, increment for A
 
 ### TextIndexLazySegmentsSkippedResolved {#textindexlazysegmentsskippedresolved}
 
-Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
+
+### TextIndexPatternBypassCacheHits {#textindexpatternbypasscachehits}
+
+Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 

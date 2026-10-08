@@ -15,6 +15,7 @@
 #include <base/arithmeticOverflow.h>
 #include <base/defines.h>
 
+#include <algorithm>
 #include <optional>
 #include <ranges>
 
@@ -136,10 +137,10 @@ Block materializeHeader(Block header)
     return header;
 }
 
-std::vector<size_t> findPositions(const Block & header, const SortDescription & columns)
+std::vector<size_t> findPositions(const Block & header, const SortDescription & description)
 {
-    return columns
-        | std::views::transform([&](const auto & column) { return header.getPositionByName(column.column_name); })
+    return description
+        | std::views::transform([&](const SortColumnDescription & column) { return header.getPositionByName(column.column_name); })
         | std::ranges::to<std::vector<size_t>>();
 }
 
@@ -177,6 +178,18 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
         return frame;
 
     return window_function->getDefaultFrame().value_or(frame);
+}
+
+bool needsSeparateOrderByPeerGroups(const WindowFrame & frame, const std::vector<WindowFunctionDescription> & functions)
+{
+    if (frame.type != WindowFrame::FrameType::ROWS)
+        return false;
+
+    return std::ranges::any_of(functions, [](const WindowFunctionDescription & function)
+    {
+        const auto * window_function = dynamic_cast<const IWindowFunction *>(function.aggregate_function.get());
+        return window_function && window_function->needsOrderByPeerGroup();
+    });
 }
 
 /// We need convert offsets to order by type to be able to use them in shift function.
@@ -230,6 +243,7 @@ WindowTransformParams WindowTransformParams::create(
     auto should_materialize = markColumnsToMaterialize(header, window_description.partition_by, window_description.order_by, functions);
     auto frame = applyFunctionDefaultFrame(window_description.frame, functions);
     auto range_offset_comparator = chooseRangeOffsetComparator(header, frame, order_by_indices);
+    auto separate_order_by_peer_groups = needsSeparateOrderByPeerGroups(frame, functions);
     auto description = prepareDescriptionForExecution(header, window_description, frame, order_by_indices);
 
     return WindowTransformParams{
@@ -239,6 +253,7 @@ WindowTransformParams WindowTransformParams::create(
         std::move(order_by_indices),
         std::move(should_materialize),
         std::move(range_offset_comparator),
+        separate_order_by_peer_groups,
     };
 }
 
@@ -248,12 +263,6 @@ bool WindowTransformParams::arePeers(const Columns & lhs, size_t lhs_row, const 
         return false;
 
     // For RANGE and GROUPS frames, rows that compare equal on the ORDER BY key are peers; without ORDER BY all rows are.
-    return haveEqualOrderByValues(lhs, lhs_row, rhs, rhs_row);
-}
-
-bool WindowTransformParams::haveEqualOrderByValues(const Columns & lhs, size_t lhs_row, const Columns & rhs, size_t rhs_row) const
-{
-    // Unlike arePeers, this does not depend on the frame type.
     for (const size_t key : order_by_indices)
         if (lhs[key]->compareAt(lhs_row, rhs_row, *rhs[key], /*nan_direction_hint=*/1) != 0)
             return false;

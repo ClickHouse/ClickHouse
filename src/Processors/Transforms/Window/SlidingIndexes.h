@@ -1,0 +1,35 @@
+#pragma once
+
+#include <Columns/IColumn_fwd.h>
+#include <Processors/Transforms/Window/WindowTransformParams.h>
+
+#include <cstdint>
+#include <optional>
+#include <vector>
+
+namespace DB
+{
+
+struct SlidingIndex
+{
+    std::vector<bool> partition_starts;
+    std::vector<bool> peer_group_starts;
+    /// Peer group starts by the ORDER BY values whatever the frame type, filled only if
+    /// WindowTransformParams::separate_order_by_peer_groups is set.
+    std::vector<bool> order_by_peer_group_starts;
+};
+
+class SlidingIndexes
+{
+public:
+    explicit SlidingIndexes(const WindowTransformParams & params_);
+
+    SlidingIndex calculate(const Columns & materialized_columns, int64_t rows_count);
+
+private:
+    const WindowTransformParams & params;
+    std::optional<Columns> last_partition_key;
+    std::optional<Columns> last_order_key;
+};
+
+}

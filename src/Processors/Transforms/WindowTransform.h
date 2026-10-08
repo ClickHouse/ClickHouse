@@ -4,7 +4,9 @@
 
 #include <Interpreters/WindowDescription.h>
 
+#include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
+#include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
@@ -68,10 +70,7 @@ public:
 
     /* Implementation details.
      */
-    void advancePartitionEnd();
-
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
-    bool haveEqualOrderByValues(const RowNumber & x, const RowNumber & y) const;
 
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffset();
@@ -101,6 +100,12 @@ public:
     void updateAggregationState();
     void writeOutCurrentRow();
 
+    // The start of the current ORDER BY peer group, which rank() and dense_rank() read whatever the frame type.
+    const RowPoint & orderByPeerGroupStart() const
+    {
+        return params.separate_order_by_peer_groups ? order_by_peer_group_start : peer_group_start;
+    }
+
     /// Data for window transform itself.
     const WindowTransformParams params;
 
@@ -121,37 +126,21 @@ public:
     std::unique_ptr<Arena> arena;
 
     SlidingBlocks blocks;
+    SlidingIndexes indexes;
     // The next block we are going to pass to the consumer.
     Int64 next_output_block_number = 0;
 
-    // Boundaries of the current partition.
-    // partition_start doesn't point to a valid block, because we want to drop
-    // the blocks early to save memory. We still have to track it so that we can
-    // cut off a PRECEDING frame at the partition start.
-    // The `partition_end` is past-the-end, as usual. When
-    // partition_ended = false, it still haven't ended, and partition_end is the
-    // next row to check.
-    RowNumber partition_start;
-    RowNumber partition_end;
-    bool partition_ended = false;
+    // The current partition. Its start doesn't point to a valid block, because
+    // we want to drop the blocks early to save memory. We still have to track it
+    // so that we can cut off a PRECEDING frame at the partition start.
+    Partition partition;
 
     // The row for which we are now computing the window functions.
-    RowNumber current_row;
-    // The start of current peer group, needed for CURRENT ROW frame start.
-    // For ROWS frame, always equal to the current row, and for RANGE and GROUP
-    // frames may be earlier.
-    RowNumber peer_group_start;
-
-    // Row and group numbers in partition for calculating rank() and friends.
-    Int64 current_row_number = 1;
-    // The frame-relative peer group: for ROWS frames it is the current row alone.
-    Int64 peer_group_start_row_number = 1;
-    Int64 peer_group_number = 1;
-    // The ORDER BY peer group used by rank() and dense_rank(): rows comparing equal w/ORDER BY,
-    // independent of the frame type. Tracked only when some function reads it.
-    bool needs_order_by_peer_group = false;
-    Int64 order_by_peer_group_start_row_number = 1;
-    Int64 order_by_peer_group_number = 1;
+    RowPoint current;
+    // The start of current peer group.
+    RowPoint peer_group_start;
+    // Updated only if params.separate_order_by_peer_groups is set, see orderByPeerGroupStart().
+    RowPoint order_by_peer_group_start;
 
     // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
     // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
