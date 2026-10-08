@@ -1163,6 +1163,33 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
+    DECLARE(Bool, apply_string_filters_during_scan, false, R"(
+Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
+
+When a `PREWHERE` condition contains a conjunct that searches for a non-empty substring in a `String` (or `Nullable(String)`) column
+(`LIKE`, `position`, `startsWith`, `endsWith`, or equality with a non-empty string), the reader checks every value against this condition
+during deserialization and reads non-matching values as empty strings. This makes reading faster and lowers memory usage when the condition
+is selective, because the data of non-matching values is not copied into the column. The result of the query does not change,
+because the rows with non-matching values are guaranteed to be filtered out by `PREWHERE`, and such conditions never match an empty string.
+
+The filter is disabled adaptively at runtime if it turns out to be non-selective.
+
+Also allows the `WHERE` to `PREWHERE` optimization to move substring search conditions (`LIKE`, `position`, `startsWith`, `endsWith`)
+even when they use all queried columns (normally that is pointless, but with this setting the scan itself becomes cheaper).
+Equality with a constant string is not moved for this reason: it is still applied during the scan when it is already in `PREWHERE`.
+
+Supported for reading from `MergeTree` tables and from the `Parquet` format.
+
+Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
+(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
+the amount of data read from disk when the values are replaced by empty strings.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, false, "New setting to push down substring search conditions on String columns from PREWHERE into the column scan."}) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows you to specify how [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize), or [`TRUNCATE`](/reference/statements/truncate) queries wait for their operations to complete.
@@ -2272,6 +2299,15 @@ The effective window is at least twice the heap's reserved size, so a heap alway
 This has no effect on `GROUP BY keys LIMIT K` queries without `ORDER BY`, where the freeze is always disabled: that shape's plan contains a synthesized sort that only pays off while the heap bounds the hash table, so freezing the heap would leave a plan slower than the un-optimized one.
 )", EXPERIMENTAL, \
         {"26.8", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."}) \
+    DECLARE(Bool, group_by_top_k_optimization_shared_boundary, true, R"(
+For `enable_group_by_top_k_optimization`: share the tightest skip boundary between the aggregation threads. Each thread publishes the boundary of its own top-K set once per processed block when it has tightened, and every thread skips rows against the best published boundary instead of only its own. A set of `K` keys strictly better than a row proves the row cannot reach the final result regardless of which thread holds them, so the sharing does not change the result; it only lets threads whose local keys rank poorly (e.g. when the key values are clustered across the table) skip rows they would otherwise aggregate for nothing.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, true, "New setting: share the tightest top-K skip boundary between aggregation threads, so threads whose local keys rank poorly can skip rows against a boundary published by another thread. previous_value=false so `compatibility` with versions before 26.10 restores per-thread boundaries."}) \
     DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
 Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
 
@@ -4590,6 +4626,82 @@ Possible values:
 - Positive integer.
 - `0` — unlimited (default)
 )", 0)\
+    DECLARE(UInt64, max_temporary_tables, 0, R"(
+The maximum number of temporary tables that can exist in one session at the same time.
+Only tables created with `CREATE TEMPORARY TABLE` are counted: tables with external data sent with a query and the
+temporary tables built internally for `GLOBAL IN` / `GLOBAL JOIN` or materialized CTEs are not.
+
+The limit is checked when a new temporary table is created, and an exception with the `TOO_MANY_TABLES` error code is
+thrown if the session already has this number of temporary tables. Replacing an existing temporary table with
+`CREATE OR REPLACE TEMPORARY TABLE` does not increase the number of tables and is always allowed.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the number of temporary tables in a session."}) \
+    DECLARE(UInt64, max_temporary_table_memory_usage, 0, R"(
+The maximum number of bytes of memory that one temporary table with the `Memory` engine can hold.
+It applies to tables created with `CREATE TEMPORARY TABLE`, including the default temporary table engine
+(see `default_temporary_table_engine`), and is counted in the same way as `total_bytes` in `system.tables`.
+
+The limit is checked on every `INSERT` into the table (including `CREATE TEMPORARY TABLE ... AS SELECT`), while the data
+is being received and again before it is added: if the table would exceed it, the `INSERT` throws an exception with the
+`TOO_MANY_BYTES` error code and the data is not added. An `INSERT` that writes with several threads (see
+`max_insert_threads`) adds the data of every thread separately, so the data of some threads may already be added when
+another one throws, but the table never exceeds the limit. The value is taken from the settings of the `INSERT` query.
+The limit is also checked after a mutation (`ALTER TABLE ... UPDATE`, `MATERIALIZE COLUMN`, etc.), with the value from
+the settings of the `ALTER` query: if the mutated data would exceed it, the mutation throws an exception with the
+`TOO_MANY_BYTES` error code and the data is left unchanged.
+
+Note that the `max_bytes_to_keep` setting of the `Memory` engine is different: it evicts the oldest data instead of
+rejecting the new one. If both are set, the eviction is applied first.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the memory usage of a temporary table with the `Memory` engine."}) \
+    DECLARE(UInt64, max_temporary_table_size_bytes_compressed, 0, R"(
+The maximum size in bytes of the data on disk (compressed) of one temporary table with an engine of the `MergeTree` family.
+It applies to tables created with `CREATE TEMPORARY TABLE` and is counted in the same way as `total_bytes` in `system.tables`,
+that is, as the sum of the sizes of the active data parts.
+
+The limit is checked on every `INSERT` into the table (including `CREATE TEMPORARY TABLE ... AS SELECT`) before each new
+data part is committed: if the table would exceed it, the `INSERT` throws an exception with the `TOO_MANY_BYTES` error
+code and the part is not added. Parts committed earlier by the same `INSERT` stay in the table, as with any other
+error during an `INSERT` of multiple blocks. The value is taken from the settings of the `INSERT` query.
+
+The operations that add existing parts to the table are limited in the same way, with the value from the settings of
+their query: `ATTACH PART`, `ATTACH PARTITION`, `ATTACH PARTITION ... FROM`, `REPLACE PARTITION ... FROM`
+and `CREATE TEMPORARY TABLE ... CLONE AS`. They are rejected as a whole, unless they do
+not increase the size of the table. For `ATTACH PARTITION`, the check is done once for all its parts before they are
+attached, so writes running concurrently with it may make the table exceed the limit slightly.
+
+The parts written by background merges and mutations (`ALTER TABLE ... UPDATE`,
+`MATERIALIZE COLUMN`, etc.) are not checked, so a mutation that makes the data larger can make the table exceed the limit.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the compressed size of a temporary table with an engine of the `MergeTree` family."}) \
+    DECLARE(UInt64, max_temporary_table_size_bytes_uncompressed, 0, R"(
+The maximum size in bytes of the uncompressed data of one temporary table with an engine of the `MergeTree` family.
+It applies to tables created with `CREATE TEMPORARY TABLE` and is counted in the same way as `total_bytes_uncompressed`
+in `system.tables`.
+
+The limit is checked in the same way as `max_temporary_table_size_bytes_compressed`.
+
+Possible values:
+
+- Positive integer.
+- `0` — unlimited (default)
+)", 0, \
+        {"26.10", 0, 0, "New setting to limit the uncompressed size of a temporary table with an engine of the `MergeTree` family."}) \
     \
     DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
 Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation.
@@ -4854,7 +4966,7 @@ Possible values:
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
     DECLARE(Bool, optimize_read_in_reverse_order_final, true, R"(
-Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables, and from [Merge](../../engines/table-engines/special/merge.md) tables when every underlying table supports it. Takes effect only when [optimize_read_in_order](#optimize_read_in_order) is also enabled.
 
 Possible values:
 
@@ -5992,7 +6104,7 @@ Possible values:
 Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
 
 The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
-Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead, and get the timeout as a Keeper error (`ZOPERATIONTIMEOUT`) that they handle like other Keeper errors.
 `SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
 
 Possible values:
@@ -6774,6 +6886,37 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
+    DECLARE(String, query_cache_on_disk_cache_name, "", R"(
+The name of a filesystem cache (an entry of the `filesystem_caches` section of the server configuration) which stores entries of the [query cache](/concepts/features/performance/caches/query-cache) on disk. If a name is given (and [use_query_cache](#use_query_cache) is enabled), query results are additionally cached in (and served from) the specified filesystem cache. The on-disk query cache provides more space than the in-memory query cache, survives server restarts, and works independently of the in-memory query cache: settings [enable_reads_from_query_cache_on_disk](#enable_reads_from_query_cache_on_disk) and [enable_writes_to_query_cache_on_disk](#enable_writes_to_query_cache_on_disk) control it separately from the in-memory query cache. The entries in the filesystem cache are ordinary entries of the filesystem cache: they are not held from deletion and they are evicted by the same rules as any other data in it. `SYSTEM CLEAR FILESYSTEM CACHE '<name>'` removes them together with everything else in the filesystem cache, and `SYSTEM CLEAR QUERY CACHE` removes the entries of the query cache on disk from the filesystem cache named by this setting, leaving all other data in place. A dedicated filesystem cache for query results is recommended.
+
+Possible values:
+
+- Empty string - The query cache on disk is disabled
+- The name of a preconfigured filesystem cache
+)", 0, \
+        {"26.10", "", "", "New setting to store entries of the query cache on disk in the named filesystem cache."}) \
+    DECLARE(String, query_cache_on_disk_codec, "ZSTD(3)", R"(
+The compression codec for entries of the [query cache](/concepts/features/performance/caches/query-cache) on disk (see [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name)). Only affects writing; reading is independent of this setting because the compressed data is self-describing.
+)", 0, \
+        {"26.10", "ZSTD(3)", "ZSTD(3)", "New setting to control the compression codec of query cache entries on disk."}) \
+    DECLARE(Bool, enable_writes_to_query_cache_on_disk, true, R"(
+If turned on (and [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are stored in the [query cache](/concepts/features/performance/caches/query-cache) on disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", true, true, "New setting to control whether query results are written to the query cache on disk."}) \
+    DECLARE(Bool, enable_reads_from_query_cache_on_disk, true, R"(
+If turned on (and [query_cache_on_disk_cache_name](#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are retrieved from the [query cache](/concepts/features/performance/caches/query-cache) on disk. If reads are enabled for both the in-memory and the on-disk query cache, the lookup is attempted first from memory and only on a miss from disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+)", 0, \
+        {"26.10", true, true, "New setting to control whether query results are read from the query cache on disk."}) \
     DECLARE(Bool, query_cache_for_subqueries, false, R"(
 If turned on, subquery results may be written to and read from the [query cache](/concepts/features/performance/caches/query-cache). This enables propagation of `use_query_cache` into all subqueries.
 
@@ -6803,14 +6946,18 @@ Possible values:
 )", 0, \
         {"24.4", "save", "throw", "The query cache no longer caches results of queries against system tables"}) \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 0, R"(
-The maximum amount of memory (in bytes) the current user may allocate in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum amount of memory (in bytes) the current user may allocate in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 
 - Positive integer >= 0.
 )", 0) \
     DECLARE(UInt64, query_cache_max_entries, 0, R"(
-The maximum number of query results the current user may store in the [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+The maximum number of query results the current user may store in the in-memory [query cache](/concepts/features/performance/caches/query-cache). 0 means unlimited.
+
+This limit does not apply to the query cache on disk (setting `query_cache_on_disk_cache_name`), whose entries are bounded by the size of the underlying filesystem cache instead.
 
 Possible values:
 
