@@ -844,8 +844,8 @@ def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_clu
     blocker_ids = [f"grpc_read_ahead_blocker_{prefix}_{i}" for i in range(2)]
     waiter_id = f"grpc_read_ahead_waiter_{prefix}"
 
-    chunk = b"1\n" * (128 * 1024)
-    num_chunks = 256  # 64 MiB in total, far above the read-ahead limit and HTTP/2 flow control windows.
+    # Each chunk alone exceeds the read-ahead limit of 1 MiB.
+    chunk = b"1\n" * (1024 * 1024)
     sent_chunks = 0
 
     pool = Pool(4)
@@ -871,9 +871,7 @@ def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_clu
             input_data=b"1\n",
             next_query_info=True,
         )
-        for _ in range(num_chunks):
-            if stop_sending.is_set():
-                break
+        while not stop_sending.is_set():
             yield clickhouse_grpc_pb2.QueryInfo(
                 external_tables=[
                     clickhouse_grpc_pb2.ExternalTable(
@@ -903,14 +901,18 @@ def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_clu
 
         wait_for_queue_length(node, 1)
 
-        # The server must stop reading the stream while the query is queued, so the client
-        # can never push all the chunks. Without the limit they are read within a second.
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            assert sent_chunks < num_chunks, (
-                "The server read all the external table data of a queued query"
-            )
-            time.sleep(0.1)
+        # The server reads one extra message ahead per liveness poll (every 500 ms in this config).
+        # Once the read-ahead limit is reached, it must stop reading, so after the HTTP/2 flow control
+        # windows and socket buffers fill up, the client can make no more progress. Without the limit,
+        # the client keeps pushing a chunk per poll for as long as the query is queued.
+        time.sleep(3)
+        sent_before = sent_chunks
+        time.sleep(4)
+        sent_after = sent_chunks
+        assert sent_after - sent_before <= 1, (
+            f"The server kept reading the external table data of a queued query: "
+            f"{sent_after - sent_before} more chunks were sent"
+        )
     finally:
         stop_sending.set()
         for qid in blocker_ids:
