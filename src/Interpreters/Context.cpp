@@ -657,7 +657,7 @@ struct ContextSharedPart : boost::noncopyable
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
-    std::atomic<bool> use_ddl_workload = false;      /// Route DDL queries through the `ddl_workload` setting instead of `workload`
+    bool use_ddl_workload TSA_GUARDED_BY(mutex) = false;      /// Route DDL queries through the `ddl_workload` setting instead of `workload`
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
@@ -1530,7 +1530,7 @@ ContextData::ContextData(const ContextData &o) :
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
-    is_ddl_query(o.is_ddl_query),
+    ddl_scheduling(o.ddl_scheduling),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
@@ -2767,16 +2767,13 @@ ClassifierPtr Context::getWorkloadClassifier() const
         .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
         .priority = Priority{query_settings[Setting::workload_priority]},
     };
-    // The classifier is cached, so a DDL query keeps the mode in effect when it first asks for it,
-    // even if `use_ddl_workload` is reloaded while it runs.
-    const bool use_ddl_workload = getUseDDLWorkload();
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
     {
-        if (!is_ddl_query)
+        if (ddl_scheduling == DDLScheduling::NotDDL)
             classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
-        else if (use_ddl_workload)
+        else if (ddl_scheduling == DDLScheduling::DDLWorkload)
         {
             /// `ddl_workload` has its own constraints and is not validated against those of `workload`.
             const String & ddl_workload = query_settings[Setting::ddl_workload];
@@ -2795,8 +2792,10 @@ ClassifierPtr Context::getWorkloadClassifier() const
 
 void Context::setDDLQuery()
 {
+    /// Read before `mutex` to avoid locking the shared mutex under it.
+    const bool use_ddl_workload = getUseDDLWorkload();
     std::lock_guard lock(mutex);
-    is_ddl_query = true;
+    ddl_scheduling = use_ddl_workload ? DDLScheduling::DDLWorkload : DDLScheduling::Exempt;
 }
 
 void Context::releaseQuerySlot() const
@@ -2894,12 +2893,14 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
 
 bool Context::getUseDDLWorkload() const
 {
-    return shared->use_ddl_workload.load(std::memory_order_relaxed);
+    SharedLockGuard lock(shared->mutex);
+    return shared->use_ddl_workload;
 }
 
 void Context::setUseDDLWorkload(bool use_ddl_workload)
 {
-    shared->use_ddl_workload.store(use_ddl_workload, std::memory_order_relaxed);
+    std::lock_guard lock(shared->mutex);
+    shared->use_ddl_workload = use_ddl_workload;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -4384,14 +4385,14 @@ void Context::makeQueryContext()
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
-    is_ddl_query = false; // The source may be a DDL context (OPTIMIZE ... DRY RUN); a merge always uses the merge workload
+    ddl_scheduling = DDLScheduling::NotDDL; // The source may be a DDL context (OPTIMIZE ... DRY RUN); a merge always uses the merge workload
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
-    is_ddl_query = false; // Likewise, a mutation always uses the mutation workload, even if copied from a DDL context
+    ddl_scheduling = DDLScheduling::NotDDL; // Likewise, a mutation always uses the mutation workload, even if copied from a DDL context
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 

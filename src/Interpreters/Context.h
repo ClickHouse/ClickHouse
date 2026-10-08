@@ -663,10 +663,16 @@ protected:
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
 
-    /// The query is a DDL or administrative statement, scheduled according to the `use_ddl_workload`
+    /// How a DDL or administrative query is scheduled, fixed by `setDDLQuery` from the `use_ddl_workload`
     /// server setting (see getWorkloadClassifier). Copied to child contexts, so the sub-queries a DDL
-    /// runs are scheduled the same way.
-    bool is_ddl_query = false;
+    /// runs are scheduled the same way, even if the setting is reloaded meanwhile.
+    enum class DDLScheduling : uint8_t
+    {
+        NotDDL,
+        DDLWorkload,
+        Exempt,
+    };
+    DDLScheduling ddl_scheduling = DDLScheduling::NotDDL;
 
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
@@ -1027,7 +1033,7 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    /// Marks the query as a DDL or administrative statement (see `is_ddl_query`).
+    /// Marks the query as a DDL or administrative statement (see `ddl_scheduling`).
     /// Must be called before the workload classifier is first acquired.
     void setDDLQuery();
     /// Release the query slot early so the client can reuse it for its next query.
