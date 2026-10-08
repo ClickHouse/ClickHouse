@@ -1393,19 +1393,16 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
-    /// Resolve explicit IN PARTITION ids (if any) before starting mutation, once: the resolved commands
-    /// are passed on to `startMutation`, so `prepareMutationEntry` pins exactly these partitions and does
-    /// not evaluate the partition expressions a second time.
+    /// A command whose partition is not a scope (`IN PARTITION ALL`) is never resolved;
+    /// validate it here, so that it is rejected before the mutation starts.
+    /// The partitions of a scoped command are resolved exactly once, by `prepareMutationEntry`, under
+    /// the `alter_lock` below: a partition expression may depend on the table state (e.g. a subquery
+    /// over this table), so it must be evaluated after the mutation is ordered with metadata `ALTER`s.
     /// Unlike the replicated case there is no need to analyze the predicate here:
     /// parts of unaffected partitions are skipped by `canSkipMutationCommandForPart`.
-    MutationCommands resolved_commands = commands;
-    resolvePartitionIdsOfScopedCommands(resolved_commands, query_context);
-
-    /// A command whose partition is not a scope (`IN PARTITION ALL`) is left unresolved above;
-    /// validate it here, so that it is rejected before the mutation starts.
-    for (const auto & command : resolved_commands)
+    for (const auto & command : commands)
     {
-        if (command.partition_ids)
+        if (command.has_partition)
             continue;
 
         auto alter = command.ast();
@@ -1435,7 +1432,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
                 "You can change this timeout with `lock_acquire_timeout` setting",
                 query_context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
         }
-        version = startMutation(resolved_commands, query_context);
+        version = startMutation(commands, query_context);
     }
 
     if (query_context->getSettingsRef()[Setting::mutations_sync] > 0 || query_context->getCurrentTransaction())
