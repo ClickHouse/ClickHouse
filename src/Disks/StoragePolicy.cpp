@@ -117,6 +117,8 @@ StoragePolicy::StoragePolicy(
                         "Disk move factor have to be in [0., 1.] interval, but set to {} in storage policy {}",
                         move_factor, backQuote(name));
 
+    backup_metadata_only = config.getBool(config_prefix + ".backup_metadata_only", false);
+
     buildVolumeIndices();
     LOG_TRACE(log, "Storage policy {} created, total volumes {}", name, volumes.size());
 }
@@ -263,17 +265,6 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
             res = volume_unreserved_space;
     }
     return res.value_or(-1ULL);
-}
-
-
-bool StoragePolicy::isReadOnly() const
-{
-    /// Mirrors the volume filter in `reserve`: a policy where every volume is read-only
-    /// cannot satisfy any reservation and fails with READONLY.
-    for (const auto & volume : volumes)
-        if (!volume->isReadOnly())
-            return false;
-    return true;
 }
 
 

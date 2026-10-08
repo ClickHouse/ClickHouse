@@ -9970,8 +9970,41 @@ MergeTreeData::PartsBackupEntries MergeTreeData::backupParts(
     return res;
 }
 
+bool MergeTreeData::skipBackupDataForBackupMetadataOnlyPolicy() const
+{
+    auto policy = getStoragePolicy();
+    if (!policy->isBackupMetadataOnly())
+        return false;
+
+    LOG_INFO(log, "Not backing up the data of table {}: storage policy {} is backup_metadata_only",
+        getStorageID().getNameForLogs(), policy->getName());
+    return true;
+}
+
+bool MergeTreeData::skipRestoreDataForBackupMetadataOnlyPolicy(const std::optional<ASTs> & partitions) const
+{
+    auto policy = getStoragePolicy();
+    if (!policy->isBackupMetadataOnly())
+        return false;
+
+    if (partitions)
+        throw Exception(
+            ErrorCodes::CANNOT_RESTORE_TABLE,
+            "Cannot restore specific partitions of table {}: storage policy {} is backup_metadata_only, "
+            "so the table shows all the data of its storage and the partition filter cannot be applied",
+            getStorageID().getNameForLogs(),
+            policy->getName());
+
+    LOG_INFO(log, "Not restoring the data of table {}: storage policy {} is backup_metadata_only",
+        getStorageID().getNameForLogs(), policy->getName());
+    return true;
+}
+
 void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
+    if (skipRestoreDataForBackupMetadataOnlyPolicy(partitions))
+        return;
+
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;

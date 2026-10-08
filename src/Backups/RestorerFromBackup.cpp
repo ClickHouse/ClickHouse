@@ -17,15 +17,16 @@
 #include <Databases/DatabaseBackup.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
+#include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Disks/IStoragePolicy.h>
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
 #include <Common/FailPoint.h>
@@ -105,6 +106,29 @@ namespace
     bool isSystemResourcesTableName(const QualifiedTableName & table_name)
     {
         return (table_name.database == DatabaseCatalog::SYSTEM_DATABASE) && (table_name.table == "resources");
+    }
+
+    /// Whether the table defined by `create_query`, or an inner table of the view it defines, is on a storage policy
+    /// marked `backup_metadata_only`: the data of such a table stays on its storage, under a path derived from its UUID.
+    bool usesBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_query, const ContextPtr & context)
+    {
+        auto uses = [&](const ASTStorage * storage)
+        {
+            if (!storage || !storage->settings)
+                return false;
+            const auto * policy_name = storage->settings->changes.tryGet("storage_policy");
+            return policy_name && context->getStoragePolicy(policy_name->safeGet<String>())->isBackupMetadataOnly();
+        };
+
+        if (uses(create_query.storage))
+            return true;
+        if (create_query.targets)
+        {
+            for (const auto * inner_engine : create_query.targets->getInnerEngines())
+                if (uses(inner_engine))
+                    return true;
+        }
+        return false;
     }
  }
 
@@ -866,9 +890,29 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
                 "as a mount, or restore the selected partitions without mount_readonly_parts_from_snapshot.");
 #endif
 
-        /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
-        /// The generated UUID will be ignored if the database does not support UUIDs.
-        restore_coordination->generateUUIDForTable(*create_table_query);
+        if (create_table_query->uuid != UUIDHelpers::Nil && usesBackupMetadataOnlyStoragePolicy(*create_table_query, context))
+        {
+            /// `RESTORE` doesn't restore the data of a table on a `backup_metadata_only` storage policy, the table finds it on
+            /// its storage under a path derived from its UUID. So the table keeps the UUID it has in the backup.
+            auto existing_table = DatabaseCatalog::instance().tryGetByUUID(create_table_query->uuid).second;
+            if (existing_table)
+            {
+                auto existing_table_id = existing_table->getStorageID();
+                if (existing_table_id.database_name != table_name.database || existing_table_id.table_name != table_name.table)
+                    throw Exception(
+                        ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "The table is on a storage policy marked backup_metadata_only, so it keeps its UUID {} from the backup "
+                        "to find its data on the storage, but table {} already has this UUID",
+                        toString(create_table_query->uuid),
+                        existing_table_id.getNameForLogs());
+            }
+        }
+        else
+        {
+            /// Generate a new UUID for a table (the same table on different hosts must use the same UUID, `restore_coordination` will make it so).
+            /// The generated UUID will be ignored if the database does not support UUIDs.
+            restore_coordination->generateUUIDForTable(*create_table_query);
+        }
 
         /// Add the clause `IF NOT EXISTS` if that is specified in the restore settings.
         create_table_query->if_not_exists = (restore_settings.create_table == RestoreTableCreationMode::kCreateIfNotExists);
@@ -1056,33 +1100,6 @@ void RestorerFromBackup::insertDataToTable(const QualifiedTableName & table_name
         ThreadName::RESTORE_TABLE_DATA);
 }
 
-bool RestorerFromBackup::shouldRestoreTableData(
-    const QualifiedTableName & table_name, const StoragePtr & storage, const std::optional<ASTs> & partitions) const
-{
-    chassert(storage);
-
-    auto policy = storage->getStoragePolicy();
-    if (!policy || !policy->isReadOnly())
-        return true;
-
-    if (partitions)
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Cannot restore specific partitions of table {} onto read-only storage policy {}: its data is served "
-            "directly by the read-only storage, so the requested partition filter cannot be applied",
-            table_name.getFullName(),
-            policy->getName());
-
-    LOG_INFO(
-        log,
-        "Skipping restore of data for table {}: storage policy {} has no writable disk, the data is expected "
-        "to be already present on the read-only storage",
-        table_name.getFullName(),
-        policy->getName());
-
-    return false;
-}
-
 void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_name, StoragePtr storage, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     try
@@ -1094,10 +1111,6 @@ void RestorerFromBackup::insertDataToTableImpl(const QualifiedTableName & table_
                 "Table engine {} doesn't support partitions",
                 storage->getName());
         }
-
-        if (!shouldRestoreTableData(table_name, storage, partitions))
-            return;
-
         storage->restoreDataFromBackup(*this, data_path_in_backup, partitions);
     }
     catch (Exception & e)
