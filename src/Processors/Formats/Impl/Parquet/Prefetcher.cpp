@@ -518,9 +518,6 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
         /// Decoders read up to PADDING_FOR_SIMD bytes on both sides of a range, as `task->buf` allows.
         if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)
         {
-            if (mmap_reader && task->read_entirely)
-                mmap_reader->adviseWillNeed(task->offset, task->length);
-
             auto cached_regions = reader->readBigAtRetainCells(task->length, task->offset);
             size_t bytes_read = 0;
             for (const auto & region : cached_regions)
@@ -529,8 +526,14 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof: offset {}, length {}, bytes read {}, expected file size {}",
                     task->offset, task->length, bytes_read, file_size);
 
-            if (cached_regions.size() == 1 && cached_regions[0].readable_before >= PADDING_FOR_SIMD
-                && cached_regions[0].readable_after >= PADDING_FOR_SIMD)
+            bool zero_copy = cached_regions.size() == 1 && cached_regions[0].readable_before >= PADDING_FOR_SIMD
+                && cached_regions[0].readable_after >= PADDING_FOR_SIMD;
+
+            /// The mapping has not been read yet, and a copy reads all of the range.
+            if (mmap_reader)
+                mmap_reader->adviseWillNeed(task->offset, task->length, task->read_entirely || !zero_copy);
+
+            if (zero_copy)
             {
                 /// We got lucky and the Task's range is all in one cache cell. Zero-copy it.
                 auto & cr = cached_regions[0];

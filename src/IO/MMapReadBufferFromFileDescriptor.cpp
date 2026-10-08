@@ -141,7 +141,6 @@ VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> MMapReadBufferFromFil
         return {};
 
     n = std::min(n, mapped.getLength() - offset);
-    adviseWillNeedOnce(mapped.getFD(), mapped.getOffset() + offset, n);
 
     VectorWithMemoryTracking<CachedRegion> regions;
     regions.push_back(CachedRegion{
@@ -155,11 +154,15 @@ VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> MMapReadBufferFromFil
     return regions;
 }
 
-void MMapReadBufferFromFileDescriptor::adviseWillNeed(size_t offset, size_t n) const
+void MMapReadBufferFromFileDescriptor::adviseWillNeed(size_t offset, size_t n, bool entire_range) const
 {
     if (offset >= mapped.getLength())
         return;
-    adviseWillNeedInPieces(mapped.getFD(), mapped.getOffset() + offset, std::min(n, mapped.getLength() - offset));
+    n = std::min(n, mapped.getLength() - offset);
+    if (entire_range)
+        adviseWillNeedInPieces(mapped.getFD(), mapped.getOffset() + offset, n);
+    else
+        adviseWillNeedOnce(mapped.getFD(), mapped.getOffset() + offset, n);
 }
 
 }
