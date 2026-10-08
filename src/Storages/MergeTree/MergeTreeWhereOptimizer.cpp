@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/TypeTree.h>
@@ -12,6 +13,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -33,6 +35,9 @@ namespace Setting
     extern const SettingsBool move_primary_key_columns_to_end_of_prewhere;
     extern const SettingsBool allow_reorder_prewhere_conditions;
     extern const SettingsBool use_statistics;
+    extern const SettingsBool apply_string_filters_during_scan;
+    extern const SettingsBool use_columns_cache;
+    extern const SettingsBool enable_writes_to_columns_cache;
 }
 
 namespace
@@ -158,8 +163,10 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
 MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::optimize(const ActionsDAG & filter_dag,
     const std::string & filter_column_name,
     const ContextPtr & context,
-    bool is_final)
+    bool is_final,
+    const NameSet & columns_read_before_filter)
 {
+    const auto & settings = context->getSettingsRef();
     WhereOptimizerContext where_optimizer_context;
     where_optimizer_context.context = context;
     where_optimizer_context.array_joined_names = {};
@@ -169,6 +176,10 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
     where_optimizer_context.allow_reorder_prewhere_conditions = context->getSettingsRef()[Setting::allow_reorder_prewhere_conditions];
     where_optimizer_context.is_final = is_final;
     where_optimizer_context.use_statistics = context->getSettingsRef()[Setting::use_statistics] && estimator != nullptr;
+    /// The reader does not apply string value filters when it may write the columns to the columns cache.
+    where_optimizer_context.apply_string_filters_during_scan = settings[Setting::apply_string_filters_during_scan]
+        && !(settings[Setting::use_columns_cache] && settings[Setting::enable_writes_to_columns_cache]);
+    where_optimizer_context.columns_read_before_filter = &columns_read_before_filter;
 
     RPNBuilderTreeNode node(&filter_dag.findInOutputs(filter_column_name), context);
 
@@ -424,8 +435,11 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
-            /// Do not move conditions involving all queried columns.
-            && info.columns.size() < queried_columns.size();
+            /// Do not move conditions involving all queried columns,
+            /// unless the condition can be used as a string filter during the scan:
+            /// then it is beneficial on its own, because the reader skips copying the non-matching values.
+            && (info.columns.size() < queried_columns.size()
+                || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
 
         infos.push_back(std::move(info));
     }
@@ -584,7 +598,8 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 && !cannotBeMoved(conjunct, where_optimizer_context)
                 && (!where_optimizer_context.is_final || isDeterministicExpressionOverSortingKey(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
-                && columns.size() < queried_columns.size();
+                && (columns.size() < queried_columns.size()
+                    || (where_optimizer_context.apply_string_filters_during_scan && isConditionSuitableForStringValueFilter(conjunct, where_optimizer_context)));
             res.emplace_back(std::move(cond));
         }
         return res;
@@ -756,6 +771,104 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
             return false;
 
     return true;
+}
+
+bool MergeTreeWhereOptimizer::isConditionSuitableForStringValueFilter(
+    const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
+{
+    if (!node.isFunction())
+        return false;
+
+    auto function_node = node.toFunctionNode();
+    auto function_name = function_node.getFunctionName();
+
+    if (function_node.getArgumentsSize() != 2)
+        return false;
+
+    /// A full String or Nullable(String) column (the scan filter does not support subcolumns),
+    /// which is not read by the existing PREWHERE or the row policy (then the scan filter is not applied).
+    auto is_string_column = [&](const RPNBuilderTreeNode & argument)
+    {
+        if (argument.isFunction() || argument.isConstant() || argument.isSubqueryOrSet())
+            return false;
+
+        if (where_optimizer_context.columns_read_before_filter
+            && where_optimizer_context.columns_read_before_filter->contains(argument.getColumnName()))
+            return false;
+
+        auto column = storage_metadata->getColumns().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, argument.getColumnName());
+        return column && !column->isSubcolumn() && isString(removeNullable(column->type));
+    };
+
+    auto get_constant_string = [](const RPNBuilderTreeNode & argument) -> std::optional<String>
+    {
+        Field value;
+        DataTypePtr type;
+        if (!argument.tryGetConstant(value, type) || value.getType() != Field::Types::String)
+            return {};
+        /// Only a `String` constant, the same restriction as in `extractStringValueFilters`:
+        /// a `FixedString` one carries its zero padding in the `Field`, so no filter is extracted for it.
+        if (!isString(removeLowCardinality(removeNullable(type))))
+            return {};
+        return value.safeGet<String>();
+    };
+
+    /// `position(column, 'needle')` with a non-empty needle.
+    auto is_position = [&](const RPNBuilderTreeNode & argument)
+    {
+        if (!argument.isFunction())
+            return false;
+
+        auto position_node = argument.toFunctionNode();
+        if (position_node.getFunctionName() != "position" || position_node.getArgumentsSize() != 2)
+            return false;
+
+        auto needle = get_constant_string(position_node.getArgumentAt(1));
+        return needle && !needle->empty() && is_string_column(position_node.getArgumentAt(0));
+    };
+
+    if (function_name == "like")
+    {
+        auto pattern = get_constant_string(function_node.getArgumentAt(1));
+        return pattern && likePatternHasStringValueFilterConditions(*pattern) && is_string_column(function_node.getArgumentAt(0));
+    }
+
+    if (function_name == "startsWith" || function_name == "endsWith")
+    {
+        auto needle = get_constant_string(function_node.getArgumentAt(1));
+        return needle && !needle->empty() && is_string_column(function_node.getArgumentAt(0));
+    }
+
+    /// Note: equality with a constant string is not accepted here on purpose, although the scan
+    /// filter supports it. Plain equality is too common: relaxing the rule for it would change
+    /// the plans of too many queries where the primary key index does the job anyway.
+
+    if (function_name == "equals" || function_name == "notEquals" || function_name == "greater" || function_name == "less"
+        || function_name == "greaterOrEquals" || function_name == "lessOrEquals")
+    {
+        /// A comparison of `position(column, 'needle')` with a constant that rejects the zero result.
+        for (size_t position_position : {0, 1})
+        {
+            if (!is_position(function_node.getArgumentAt(position_position)))
+                continue;
+
+            Field constant;
+            DataTypePtr type;
+            if (!function_node.getArgumentAt(1 - position_position).tryGetConstant(constant, type))
+                return false;
+
+            auto result_at_zero = evaluatePositionComparisonAtZero(function_name, constant, position_position == 0);
+            return result_at_zero && !*result_at_zero;
+        }
+
+        return false;
+    }
+
+    /// A `position` result used directly as a condition means it must be non-zero.
+    if (function_name == "position")
+        return is_position(node);
+
+    return false;
 }
 
 /// Constant folding turns a lambda whose captured columns are all constants into a constant
