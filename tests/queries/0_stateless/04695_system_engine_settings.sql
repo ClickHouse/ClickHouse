@@ -34,11 +34,19 @@ SELECT count() FROM
 );
 
 -- Verify settings a table takes from elsewhere unless its definition states them are not listed: format settings,
--- PostgreSQL's pool settings, MySQL's mysql_datatypes_support_level, NATS and RabbitMQ credentials
+-- PostgreSQL's pool settings, MySQL's mysql_datatypes_support_level, NATS and RabbitMQ credentials, and the settings
+-- that fall back to server settings or the server configuration when not stated
 SELECT count() FROM system.engine_settings
 WHERE name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'output\_format\_%'
     OR name IN ('postgresql_connection_pool_size', 'mysql_datatypes_support_level', 'nats_username', 'nats_password',
-                'nats_token', 'nats_credential_file', 'rabbitmq_username', 'rabbitmq_password');
+                'nats_token', 'nats_credential_file', 'rabbitmq_username', 'rabbitmq_password')
+    OR (engine_name = 'Kafka' AND name IN ('kafka_max_block_size', 'kafka_poll_max_batch_size', 'kafka_poll_timeout_ms',
+        'kafka_flush_interval_ms', 'kafka_security_protocol', 'kafka_sasl_mechanism', 'kafka_sasl_username',
+        'kafka_sasl_password', 'kafka_compression_codec', 'kafka_compression_level'))
+    OR (engine_name = 'FileLog' AND name IN ('max_block_size', 'poll_max_batch_size', 'poll_timeout_ms'))
+    OR (engine_name = 'NATS' AND name IN ('nats_max_block_size', 'nats_flush_interval_ms'))
+    OR (engine_name = 'RabbitMQ' AND name IN ('rabbitmq_max_block_size', 'rabbitmq_flush_interval_ms'))
+    OR (engine_name IN ('S3Queue', 'AzureQueue') AND name = 'keeper_path');
 
 -- Verify an engine keeps its own settings: Set lists only these, without the format settings its class includes
 SELECT name FROM system.engine_settings WHERE engine_name = 'Set' ORDER BY name;
