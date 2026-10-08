@@ -49,16 +49,8 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay
-        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-    return !isFreshTableDefinition(mode, query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay;
+    return !isFreshTableDefinition(mode, query.attach_short_syntax) || isSecondaryDDLReplay(local_context)
+        || local_context->isRecoveryFromStoredMetadata();
 }
 
 
