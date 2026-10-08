@@ -1,0 +1,14 @@
+unset / processed before	1
+unset / buckets before	0
+unset / processed after refusal	1
+unset / buckets setting	2
+unset / processed after	0
+unset / bucket 0	1	unset.csv
+unset / bucket 1	1	unset.csv
+one / buckets setting	2
+one / processed after	1	one.csv
+one / buckets after	0
+conc / bucket 1 before	1
+conc / buckets setting	2
+conc / bucket 0	1	bucket0.csv
+conc / bucket 1	1	bucket1.csv
