@@ -2972,21 +2972,21 @@ try
                         ? WorkloadSettings::unlimited
                         : static_cast<Int64>(concurrent_threads_soft_limit);
 
-                    ServerResourceLimits workload_limits;
-                    workload_limits.respect_cpu_limit = respect_cpu_limit;
-                    workload_limits.respect_memory_limit = respect_memory_limit;
-                    workload_limits.implicit_default_workload = implicit_default_workload;
-                    workload_limits.cpu_slots = respect_cpu_limit ? cpu_slots : WorkloadSettings::unlimited;
+                    ResourceManagerConfiguration resource_manager_config;
+                    resource_manager_config.respect_cpu_limit = respect_cpu_limit;
+                    resource_manager_config.respect_memory_limit = respect_memory_limit;
+                    resource_manager_config.implicit_default_workload = implicit_default_workload;
+                    resource_manager_config.cpu_slots = respect_cpu_limit ? cpu_slots : WorkloadSettings::unlimited;
                     /// `max_server_memory_usage == 0` means "no server memory cap" (unlimited); the
                     /// workload scheduler's unlimited sentinel is `WorkloadSettings::unlimited`, not 0,
                     /// so translate it rather than installing a zero-byte reservation budget.
-                    workload_limits.memory_bytes = (respect_memory_limit && max_server_memory_usage != 0)
+                    resource_manager_config.memory_bytes = (respect_memory_limit && max_server_memory_usage != 0)
                         ? static_cast<Int64>(max_server_memory_usage)
                         : WorkloadSettings::unlimited;
-                    /// `updateServerLimits` owns both the implicit server-limit resources and the
+                    /// `updateConfiguration` owns both the implicit server-limit resources and the
                     /// storage-side resource-name resolution, keeping them consistent; the resolution is
                     /// not flipped separately here.
-                    global_context->getResourceManager()->updateServerLimits(workload_limits);
+                    global_context->getResourceManager()->updateConfiguration(resource_manager_config);
                 }
             }
 

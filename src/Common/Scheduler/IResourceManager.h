@@ -54,11 +54,11 @@ public:
 
 using ClassifierPtr = std::shared_ptr<IClassifier>;
 
-/// Resolved server-wide limits pushed into the resource manager so it can apply them to the
-/// implicit root workload of the relevant resource. Values are already reduced from the raw server
-/// settings (`*_num`/`*_ratio_to_cores`/`*_to_ram_ratio`) to a single effective number; a limit
-/// that is off or unbounded is represented as `WorkloadSettings::unlimited`.
-struct ServerResourceLimits
+/// Resolved server-limit configuration pushed into the resource manager: the server-wide CPU/memory
+/// limits plus the flags that enable mirroring them and synthesizing the `default` workload. Limit
+/// values are already reduced from the raw server settings (`*_num`/`*_ratio_to_cores`/`*_to_ram_ratio`)
+/// to a single effective number; a limit that is off or unbounded is `WorkloadSettings::unlimited`.
+struct ResourceManagerConfiguration
 {
     /// When true, the server CPU-concurrency limit is enforced through the workload scheduler: a
     /// combined `MASTER THREAD, WORKER THREAD` resource is created if the operator declared none,
@@ -106,10 +106,11 @@ public:
     using VisitorFunc = std::function<void(const String & resource, const String & path, ISchedulerNode * node)>;
     virtual void forEachNode(VisitorFunc visitor) = 0;
 
-    /// Applies resolved server-wide limits to the per-resource implicit root workloads. Called on
-    /// startup and on every server-settings reload. Default implementation does nothing for managers
-    /// that do not support server-limit mirroring.
-    virtual void updateServerLimits(const ServerResourceLimits &) {}
+    /// Applies the server-limit configuration to the per-resource implicit root workloads (and
+    /// synthesizes the `default` workload when requested). Called on startup and on every
+    /// server-settings reload. The default implementation does nothing for managers that do not
+    /// support server-limit mirroring.
+    virtual void updateConfiguration(const ResourceManagerConfiguration &) {}
 };
 
 using ResourceManagerPtr = std::shared_ptr<IResourceManager>;

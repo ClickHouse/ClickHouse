@@ -389,7 +389,7 @@ void WorkloadResourceManager::createOrUpdateResource(const String & resource_nam
     // Re-apply the latest server-wide limits after any resource create OR replace: a newly created
     // operator resource must take over the implicit one, and a CREATE OR REPLACE that changes the
     // relevant role must re-derive the implicit resource and root accordingly.
-    applyServerLimitsLocked();
+    applyConfigurationLocked();
 }
 
 void WorkloadResourceManager::deleteResource(const String & resource_name)
@@ -401,7 +401,7 @@ void WorkloadResourceManager::deleteResource(const String & resource_name)
         // Re-apply the latest server-wide limits: if the dropped resource was the operator CPU/memory
         // resource while the feature is enabled, the implicit server-limit resource must be recreated
         // so the budget keeps applying without waiting for the next config reload.
-        applyServerLimitsLocked();
+        applyConfigurationLocked();
     }
     else // Resource to be deleted does not exist -- do nothing, throwing exceptions from a subscription is pointless
         LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
@@ -416,23 +416,23 @@ WorkloadResourceManager::ResourcePtr WorkloadResourceManager::createImplicitReso
     return resource;
 }
 
-void WorkloadResourceManager::updateServerLimits(const ServerResourceLimits & limits)
+void WorkloadResourceManager::updateConfiguration(const ResourceManagerConfiguration & config)
 {
     std::unique_lock lock{mutex};
-    current_limits = limits;
-    applyServerLimitsLocked();
+    current_config = config;
+    applyConfigurationLocked();
 }
 
-void WorkloadResourceManager::applyServerLimitsLocked()
+void WorkloadResourceManager::applyConfigurationLocked()
 {
     // The implicit `default` workload is gated independently of the resource-limit settings.
     applyImplicitDefaultWorkloadLocked();
 
-    const bool any_enabled = current_limits.respect_cpu_limit || current_limits.respect_memory_limit;
+    const bool any_enabled = current_config.respect_cpu_limit || current_config.respect_memory_limit;
 
     // Keep the default (unlimited) behavior without touching any scheduler node while nothing is
     // requested and nothing has ever been applied.
-    if (!any_enabled && !server_limits_applied)
+    if (!any_enabled && !configuration_applied)
         return;
 
     // CPU concurrency budget on a combined `MASTER THREAD, WORKER THREAD` resource. The manager owns the
@@ -441,8 +441,8 @@ void WorkloadResourceManager::applyServerLimitsLocked()
         CostUnit::CPUNanosecond,
         String(IMPLICIT_CPU_RESOURCE_NAME),
         {ResourceAccessMode::MasterThread, ResourceAccessMode::WorkerThread},
-        current_limits.respect_cpu_limit,
-        current_limits.cpu_slots,
+        current_config.respect_cpu_limit,
+        current_config.cpu_slots,
         [](WorkloadSettings & s, Int64 v) { s.max_concurrent_threads = v; },
         [this](bool on) { storage->setResolveCPUToImplicit(on); });
 
@@ -451,18 +451,18 @@ void WorkloadResourceManager::applyServerLimitsLocked()
         CostUnit::MemoryByte,
         String(IMPLICIT_MEMORY_RESOURCE_NAME),
         {ResourceAccessMode::MemoryReservation},
-        current_limits.respect_memory_limit,
-        current_limits.memory_bytes,
+        current_config.respect_memory_limit,
+        current_config.memory_bytes,
         [](WorkloadSettings & s, Int64 v) { s.max_memory = v; },
         [this](bool on) { storage->setResolveMemoryToImplicit(on); });
 
-    server_limits_applied = any_enabled;
+    configuration_applied = any_enabled;
 }
 
 void WorkloadResourceManager::applyImplicitDefaultWorkloadLocked()
 {
     const String default_name(DEFAULT_WORKLOAD_NAME);
-    if (current_limits.implicit_default_workload)
+    if (current_config.implicit_default_workload)
     {
         // Synthesize a `default` workload under the implicit root if the operator declared none, so a
         // query with `workload='default'` resolves to a real workload node. Not persisted through the

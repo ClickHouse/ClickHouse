@@ -134,7 +134,7 @@ public:
     bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & workload_name, const ClassifierSettings & settings) override;
     void forEachNode(VisitorFunc visitor) override;
-    void updateServerLimits(const ServerResourceLimits & limits) override;
+    void updateConfiguration(const ResourceManagerConfiguration & config) override;
 
 private:
     // Forward declarations
@@ -354,12 +354,12 @@ private:
     void createOrUpdateResource(const String & resource_name, const ASTPtr & ast);
     void deleteResource(const String & resource_name);
 
-    /// Applies `current_limits` to the per-resource implicit roots (see `updateServerLimits`).
+    /// Applies `current_config` to the per-resource implicit roots (see `updateConfiguration`).
     /// Assumes `mutex` is held.
-    void applyServerLimitsLocked();
+    void applyConfigurationLocked();
 
     /// Synthesizes or removes the implicit `default` workload according to
-    /// `current_limits.implicit_default_workload`. Gated independently of the resource-limit settings.
+    /// `current_config.implicit_default_workload`. Gated independently of the resource-limit settings.
     /// An operator-declared `default` is never removed. Assumes `mutex` is held.
     void applyImplicitDefaultWorkloadLocked();
 
@@ -402,13 +402,13 @@ private:
     std::unordered_map<String, WorkloadPtr> workloads; // TSA_GUARDED_BY(mutex);
     std::unordered_map<String, ResourcePtr> resources; // TSA_GUARDED_BY(mutex);
 
-    /// Latest server-wide limits pushed via `updateServerLimits`. Kept so they can be re-applied to
+    /// Latest server-wide limits pushed via `updateConfiguration`. Kept so they can be re-applied to
     /// resources created later (e.g. an operator resource created after the feature was enabled).
-    ServerResourceLimits current_limits; // TSA_GUARDED_BY(mutex);
+    ResourceManagerConfiguration current_config; // TSA_GUARDED_BY(mutex);
 
     /// True once any server limit has been applied. Lets the all-features-off default path skip work
     /// entirely, while still resetting roots the one time the feature transitions from on to off.
-    bool server_limits_applied = false; // TSA_GUARDED_BY(mutex);
+    bool configuration_applied = false; // TSA_GUARDED_BY(mutex);
 
     /// True while the `default` workload currently in `workloads` was synthesized by this manager (as
     /// opposed to declared by the operator). Ensures only a synthesized `default` is removed when the
