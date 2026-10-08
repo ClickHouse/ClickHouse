@@ -79,7 +79,7 @@ using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
     FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
-    bool fixed_string_to_string_strip_trailing_zeros_without_context);
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override);
 
 FunctionBasePtr createFunctionBaseCast(
     const FunctionConvertSettingsPtr & settings,
@@ -181,7 +181,7 @@ public:
         , diagnostic(std::move(diagnostic_))
         , keep_nullable(keep_nullable_)
         , data_type_validation_settings(data_type_validation_settings_)
-        , convert_settings(createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Ignore, false))
+        , convert_settings(createFunctionConvertSettings(context_, FormatSettings::DateTimeOverflowBehavior::Ignore, {}))
     {
     }
 
@@ -201,7 +201,7 @@ public:
         CastType cast_type,
         std::optional<CastDiagnostic> diagnostic,
         ContextPtr context_,
-        bool fixed_string_to_string_strip_trailing_zeros_without_context)
+        std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override)
     {
         if (cast_type == CastType::accurateOrNull && !canContainNull(*to))
         {
@@ -215,7 +215,7 @@ public:
 
         return createFunctionBaseCast(
             createFunctionConvertSettings(
-                context_, FormatSettings::DateTimeOverflowBehavior::Saturate, fixed_string_to_string_strip_trailing_zeros_without_context),
+                context_, FormatSettings::DateTimeOverflowBehavior::Saturate, fixed_string_to_string_strip_trailing_zeros_override),
             getNameImpl(cast_type, true), arguments, to, diagnostic, cast_type);
     }
 
@@ -304,10 +304,10 @@ FunctionBasePtr createInternalCast(
     CastType cast_type,
     std::optional<CastDiagnostic> diagnostic,
     ContextPtr context,
-    bool fixed_string_to_string_strip_trailing_zeros_without_context)
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override)
 {
     return CastOverloadResolverImpl::createInternalCast(
-        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, fixed_string_to_string_strip_trailing_zeros_without_context);
+        std::move(from), std::move(to), cast_type, std::move(diagnostic), context, fixed_string_to_string_strip_trailing_zeros_override);
 }
 
 REGISTER_FUNCTION(CastOverloadResolvers)

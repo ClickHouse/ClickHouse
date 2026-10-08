@@ -28,15 +28,15 @@ struct CastDiagnostic
     std::string column_to;
 };
 
-/// Without a `context`, `fixed_string_to_string_strip_trailing_zeros_without_context` stands for the setting
-/// `cast_fixed_string_to_string_strip_trailing_zeros`.
+/// If `fixed_string_to_string_strip_trailing_zeros_override` is set, it takes the place of the setting
+/// `cast_fixed_string_to_string_strip_trailing_zeros`, which is taken from `context` otherwise (and is false without it).
 FunctionBasePtr createInternalCast(
     ColumnWithTypeAndName from,
     DataTypePtr to,
     CastType cast_type,
     std::optional<CastDiagnostic> diagnostic,
     ContextPtr context,
-    bool fixed_string_to_string_strip_trailing_zeros_without_context = false);
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override = {});
 
 /// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
 /// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted
