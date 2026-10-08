@@ -4,11 +4,12 @@ import html
 import json
 import os
 import re
-import sys
 from pathlib import Path
 
 from praktika.result import Result
 from praktika.utils import Shell, Utils
+
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
@@ -51,6 +52,7 @@ class ClickHouseBinary:
 
         print("Starting ClickHouse server")
         print("Command: ", self.start_cmd)
+        kill_leftover_server_processes()
         self.log_fd = open(self.log_file, "w")
         self.proc = subprocess.Popen(
             self.start_cmd, stderr=subprocess.STDOUT, stdout=self.log_fd, shell=True
@@ -286,18 +288,18 @@ def generate_html_report(
                     f"{reset_color}\n"
                 )
                 f.write(
-                    f"  These tests were not failing before. "
-                    f"Each entry shows the test file, position, query, and failure reason.\n"
+                    "  These tests were not failing before. "
+                    "Each entry shows the test file, position, query, and failure reason.\n"
                 )
                 # Collect unique test files and show per-file reproduction commands
                 new_test_files = sorted(
                     set(d["test_name"] for d in new_failures.values())
                 )
                 f.write(
-                    f"\n  To reproduce via sqllogictest (ClickHouse must be running):\n"
-                    f"  <span style='color: blue;'>"
-                    f"git clone https://github.com/gregrahn/sqllogictest.git"
-                    f" /tmp/sqllogictest</span>\n\n"
+                    "\n  To reproduce via sqllogictest (ClickHouse must be running):\n"
+                    "  <span style='color: blue;'>"
+                    "git clone https://github.com/gregrahn/sqllogictest.git"
+                    " /tmp/sqllogictest</span>\n\n"
                 )
                 for tf in new_test_files:
                     subdir = os.path.dirname(tf)
@@ -417,7 +419,7 @@ def generate_html_report(
                 # Failure classification by reason
                 classified = classify_failures(report)
                 if classified:
-                    f.write(f"    Failure categories:\n")
+                    f.write("    Failure categories:\n")
                     for count, cat, cat_examples in classified:
                         pct = 100.0 * count / fail if fail else 0
                         f.write(
@@ -644,10 +646,10 @@ def main():
                                 f" /tmp/sqllogic_input/{subdir}/"
                             )
                             print(
-                                f"  python3 tests/sqllogic/runner.py"
-                                f" complete-test"
-                                f" --input-dir /tmp/sqllogic_input"
-                                f" --out-dir /tmp/sqllogic_output"
+                                "  python3 tests/sqllogic/runner.py"
+                                " complete-test"
+                                " --input-dir /tmp/sqllogic_input"
+                                " --out-dir /tmp/sqllogic_output"
                             )
                         displayed = 0
                         for fid in sorted(new_failures.keys()):

@@ -1,0 +1,6 @@
+unrelated local	160000	86400320000
+unrelated distributed	160000	86400320000
+unrelated read distributes	1
+derived local	80000	3200520000
+derived distributed	80000	3200520000
+derived read distributes	1

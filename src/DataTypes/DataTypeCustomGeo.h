@@ -11,6 +11,12 @@ public:
     DataTypePointName() : DataTypeCustomFixedName("Point") {}
 };
 
+class DataTypeMultiPointName : public DataTypeCustomFixedName
+{
+public:
+    DataTypeMultiPointName() : DataTypeCustomFixedName("MultiPoint") {}
+};
+
 class DataTypeLineStringName : public DataTypeCustomFixedName
 {
 public:

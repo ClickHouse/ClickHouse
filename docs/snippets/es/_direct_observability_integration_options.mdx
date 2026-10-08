@@ -1,0 +1,47 @@
+---
+title: Opciones de integración directa para observabilidad
+---
+
+<div id="direct-grafana">
+  ### Integración directa del plugin de Grafana
+</div>
+
+El plugin de fuente de datos de ClickHouse para Grafana permite visualizar y explorar datos directamente desde ClickHouse mediante las tablas del sistema. Este enfoque resulta útil para monitorizar el rendimiento y crear dashboards personalizados para un análisis detallado del sistema.
+Para obtener información sobre la instalación y configuración del plugin, consulte el [plugin de fuente de datos](/es/integrations/connectors/data-visualization/grafana/index) de ClickHouse. Para una configuración de monitorización completa con el mix-in de Prometheus-Grafana, dashboards preconfigurados y reglas de alerta, consulte [Supervise ClickHouse con el nuevo mix-in de Prometheus-Grafana](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in).
+
+<div id="direct-datadog">
+  ### Integración directa con Datadog
+</div>
+
+Datadog ofrece un plugin de Monitoring de ClickHouse para su agente que consulta directamente las tablas del sistema. Esta integración proporciona una supervisión integral de la base de datos con reconocimiento del clúster mediante la funcionalidad `clusterAllReplicas`.
+
+<Note>
+  Esta integración no se recomienda para implementaciones de ClickHouse Cloud debido a su incompatibilidad con el comportamiento de inactividad orientado a optimizar costes y a las limitaciones operativas de la capa de proxy de Cloud.
+</Note>
+
+<div id="system-tables">
+  ### Uso directo de las tablas del sistema
+</div>
+
+Puede realizar un análisis exhaustivo del rendimiento de las consultas conectándose directamente a las tablas del sistema de ClickHouse, en particular a `system.query_log`, y consultándolas de forma directa. Con la consola SQL o `clickhouse client`, los equipos pueden identificar consultas lentas, analizar el consumo de recursos y seguir los patrones de uso en toda la organización.
+
+**Análisis del rendimiento de las consultas**
+
+Puede usar los logs de consultas de las tablas del sistema para realizar análisis del rendimiento de las consultas.
+
+**Consulta de ejemplo**: encuentre las 5 consultas de mayor duración en todas las réplicas del clúster:
+
+```sql
+SELECT
+    type,
+    event_time, 
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```

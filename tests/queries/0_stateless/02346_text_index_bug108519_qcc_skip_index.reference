@@ -1,0 +1,16 @@
+index_path	0
+skip_indexes_off	1
+no_cache	1
+index_path	0
+ignore_index	1
+index_path_still_prunes	0
+rowlevel_populate	1
+rowlevel_qcc_prunes	1
+two_idx_populate_a	0
+two_idx_ignore_a	1
+alter_populate	0
+alter_no_stale_read	1
+disj_off_consults_entry	0
+disj_same_reuses_entry	1
+namecol_read_b_consults_entry	0
+namecol_reuse_a_reuses_entry	1

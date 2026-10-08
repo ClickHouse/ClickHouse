@@ -1,0 +1,16 @@
+--- partial column SELECT grant: must NOT leak column z ---
+SHOW CREATE: ACCESS_DENIED
+DESCRIBE:    ACCESS_DENIED
+z via DESCRIBE name col present? no
+--- partial SHOW COLUMNS grant: must NOT leak column z ---
+SHOW CREATE: ACCESS_DENIED
+DESCRIBE:    ACCESS_DENIED
+--- all columns granted individually still does not imply table-level SHOW COLUMNS ---
+SHOW CREATE: ACCESS_DENIED
+DESCRIBE:    ACCESS_DENIED
+--- full table SELECT grant: SHOW CREATE / DESCRIBE legitimately work ---
+SHOW CREATE: CREATE TABLE
+DESCRIBE columns:
+x
+y
+z

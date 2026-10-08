@@ -1,0 +1,28 @@
+-- schemata: the exact MySQL-dialect introspection query
+utf8mb4_0900_ai_ci	NO
+-- schemata: lowercase aliases resolve too
+utf8mb4_0900_ai_ci	NO
+-- tables: MySQL-specific columns
+MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+-- tables: ENGINE is NULL for views, as in MySQL
+VIEW	\N	\N
+-- tables: ENGINE is NULL for system views too
+SYSTEM VIEW	\N
+-- tables: ENGINE is kept for real table engines that do not store data on disk
+FOREIGN TABLE	Memory	Memory
+-- columns: MySQL-specific columns (lowercase)
+a			id + 1	\N
+id	PRI			\N
+m			id * 2	\N
+s				\N
+-- columns: MySQL-specific columns (uppercase)
+a			id + 1	\N
+id	PRI			\N
+m			id * 2	\N
+s				\N
+-- collations: the collation advertised in SCHEMATA/TABLES is discoverable
+utf8mb4_0900_ai_ci	utf8mb4	255	Yes	Yes	0	NO PAD
+-- collations: lowercase aliases resolve too
+utf8mb4_0900_ai_ci	utf8mb4	255	Yes	Yes	0	NO PAD
+-- collations: the binary pseudo-collation stamped on non-string columns is discoverable
+binary	binary	63	Yes	Yes	1	NO PAD

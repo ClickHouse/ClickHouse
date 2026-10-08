@@ -99,7 +99,7 @@ public:
         if (needle.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Length of 'needle' argument must be greater than 0.");
 
-        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false>(needle);
+        const OptimizedRegularExpression holder = Regexps::createRegexp<false, false, false, false>(needle);
         const auto & regexp = holder.getRE2();
 
         if (!regexp)
@@ -135,11 +135,14 @@ public:
                 std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data();
-                const auto * end = pos + current_row.size();
+                // Match over the whole row, advancing the start offset, so that the characters before the current
+                // position are seen as context for zero-width assertions such as `\b` and `^`.
+                const auto * begin = current_row.data();
+                const auto * pos = begin;
+                const auto * end = begin + current_row.size();
                 while (pos < end
-                    && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED,
+                    && regexp->Match({begin, current_row.size()},
+                        pos - begin, current_row.size(), RE2::UNANCHORED,
                         matched_groups.data(), static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
@@ -176,11 +179,14 @@ public:
                 const auto & current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data();
-                const auto * end = pos + current_row.size();
+                // Match over the whole row, advancing the start offset, so that the characters before the current
+                // position are seen as context for zero-width assertions such as `\b` and `^`.
+                const auto * begin = current_row.data();
+                const auto * pos = begin;
+                const auto * end = begin + current_row.size();
                 while (pos < end
-                    && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED, matched_groups.data(),
+                    && regexp->Match({begin, current_row.size()},
+                        pos - begin, current_row.size(), RE2::UNANCHORED, matched_groups.data(),
                         static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.

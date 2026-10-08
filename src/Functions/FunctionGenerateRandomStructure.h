@@ -38,6 +38,11 @@ public:
     static String generateRandomStructure(size_t seed, const ContextPtr & context);
     static String generateRandomDataType(pcg64 & rng, bool allow_suspicious_lc_types, bool allow_complex_types);
 
+    /// Test-only seam: the depth-limit fallback in writeRandomType is unreachable from SQL at the
+    /// shipped MAX_DEPTH (a 36M-seed sweep maxed out at depth 16), so this lets a unit test drive it
+    /// deterministically with a reduced limit. Returns one random type for the given seed and depth cap.
+    static String generateRandomTypeForTest(size_t seed, bool allow_suspicious_lc_types, size_t max_depth);
+
 private:
     bool allow_suspicious_lc_types;
 };

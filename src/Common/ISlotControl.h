@@ -90,6 +90,25 @@ public:
     /// Take one granted slot or wait until it is available.
     [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
 
+    /// Adjust the maximum number of slots the allocation wants.
+    ///
+    /// The allocation's `max` (set initially by allocate(min, max)) becomes mutable: the
+    /// consumer can raise or lower it to express "I want up to N slots" at runtime.
+    ///
+    /// Contract for implementations:
+    ///  - `new_max` MUST be > 0. Implementations may chassert this. A request for zero slots
+    ///    has no sensible behavior here (use allocation destruction to release the work).
+    ///  - Growing `max`: if the allocation was previously saturated (had received its full
+    ///    max and was no longer a waiter), it MUST be re-added to the scheduler's waiter
+    ///    list so it may receive further grants.
+    ///  - Shrinking `max`: does NOT reclaim already-granted slots; the scheduler simply
+    ///    stops issuing new grants beyond `new_max`. Already-acquired slots remain valid.
+    ///  - Idempotent: setMax(current) is a no-op.
+    ///  - Must NOT be called while holding the implementation's internal scheduler lock —
+    ///    implementations may take that lock internally.
+    /// Default implementation is a no-op (for allocations that don't need dynamic sizing).
+    virtual void setMax(SlotCount /*new_max*/) {}
+
     /// For tests. Returns true iff resource request is currently enqueued into the scheduler.
     virtual bool isRequesting() const { return false; }
 };

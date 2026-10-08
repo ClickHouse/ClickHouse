@@ -33,6 +33,7 @@ enum class MetadataStorageType : uint8_t
     Plain,
     PlainRewritable,
     StaticWeb,
+    WebIndex,
     Memory,
 };
 
@@ -59,5 +60,8 @@ struct DataSourceDescription
     /// Returns a string with the name and all the fields of the DataSourceDescription
     String toString() const;
 };
+
+class IDisk;
+bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk);
 
 }

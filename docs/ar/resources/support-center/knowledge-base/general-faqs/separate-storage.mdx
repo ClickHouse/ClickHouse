@@ -1,0 +1,14 @@
+---
+slug: /faq/operations/deploy-separate-storage-and-compute
+title: 'هل يمكن نشر ClickHouse مع فصل التخزين والحوسبة؟'
+sidebarTitle: 'هل يمكن نشر ClickHouse مع فصل التخزين والحوسبة؟'
+toc_hidden: true
+toc_priority: 20
+description: 'توضح هذه الصفحة ما إذا كان يمكن نشر ClickHouse مع فصل التخزين والحوسبة'
+doc_type: 'guide'
+keywords: ['التخزين', 'تهيئة القرص', 'تنظيم البيانات', 'إدارة وحدات التخزين', 'طبقات التخزين']
+---
+
+الإجابة المختصرة هي &quot;نعم&quot;.
+
+يمكن استخدام التخزين الكائني (S3 وGCS) كخلفية تخزين أساسية مرنة لبيانات جداول ClickHouse. وقد نُشرت أدلة [MergeTree المدعوم بـ S3](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse) و[MergeTree المدعوم بـ GCS](/ar/reference/functions/table-functions/gcs). في هذا التكوين، لا يُخزَّن محليًا على عقد الحوسبة سوى البيانات الوصفية. ويمكنك بسهولة توسيع موارد الحوسبة أو تقليصها في هذا الإعداد، إذ لا تحتاج العقد الإضافية إلا إلى نسخ البيانات الوصفية.

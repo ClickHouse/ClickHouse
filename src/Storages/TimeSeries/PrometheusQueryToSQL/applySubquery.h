@@ -12,6 +12,6 @@ namespace DB::PrometheusQueryToSQL
 /// Subquery is evaluated by evaluating its expression at multiple times, and to do that
 /// `NodeEvaluationRangeGetter` considers subqueries and modifies the evaluation range of the `expression`,
 /// so this function does only one thing - it changes the result type to RANGE_VECTOR.
-SQLQueryPiece applySubquery(const PQT::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context);
+SQLQueryPiece applySubquery(const PrometheusQueryTree::Subquery * subquery_node, SQLQueryPiece && expression, ConverterContext & context);
 
 }

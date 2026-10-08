@@ -1,0 +1,13 @@
+top level prunes	1
+tuple element prunes identically	1
+1
+1
+3226
+-- a dotted element name colliding with a nested path returns the dotted element
+999	111
+2	0
+-- a positional tuple hint reads element values, not defaults
+0	0
+1	1
+2	2
+1

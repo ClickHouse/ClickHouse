@@ -24,11 +24,32 @@ function check_log()
 {
     interval=$1
 
-    # Check that the amount of events collected is correct, leaving a 80% of margin.
+    # Check that the amount of events collected is correct.
+    # Upper bound: rows are emitted on wall-clock time for as long as the query is
+    # alive, so it is derived from the observed sampling window of the query's own
+    # rows. `+2` covers `dateDiff` millisecond truncation plus the always-emitted
+    # final row; `start_time IS NOT NULL` keeps a missing `QueryFinish` row a failure.
+    # Lower bound is only 1: the sampling task can be starved on an oversubscribed
+    # runner, the more so the smaller the interval, so a bound that grows as the
+    # interval shrinks is backwards. The final row makes 1 always attainable.
     $CLICKHOUSE_CLIENT -m -q """
         SELECT '--Interval $interval: check that amount of events is correct';
+        WITH
+        (
+            SELECT query_start_time_microseconds
+            FROM system.query_log
+            WHERE event_date >= yesterday()
+              AND event_time >= now() - 600
+              AND current_database = currentDatabase()
+              AND query_id = '${query_prefix}_${interval}'
+              AND type = 'QueryFinish'
+            ORDER BY event_time_microseconds DESC
+            LIMIT 1
+        ) AS start_time
         SELECT
-            count() BETWEEN ((ceil(2500 / $interval) - 1) * 0.2) AND ((ceil(2500 / $interval) + 1) * 1.8)
+            start_time IS NOT NULL
+            AND count() BETWEEN 1
+                AND (intDiv(dateDiff('millisecond', start_time, max(event_time_microseconds)), $interval) + 2)
         FROM system.query_metric_log
         WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${query_prefix}_${interval}'
     """

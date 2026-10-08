@@ -101,7 +101,7 @@ enum RuleType
     RuleTypeAll = 0,        // default, with regex, compatible with old scheme
     RuleTypePlain = 1,      // plain metrics, with regex, compatible with old scheme
     RuleTypeTagged = 2,     // tagged metrics, with regex, compatible with old scheme
-    RuleTypeTagList = 3     // tagged metrics, with regex (converted to  RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')
+    RuleTypeTagList = 3     // tagged metrics, with regex (converted to RuleTypeTagged from string like 'retention=10min ; env=(staging|prod)')
 };
 
 const String & ruleTypeStr(RuleType rule_type);
@@ -150,6 +150,8 @@ struct Params
     Graphite::Patterns patterns_tagged;
     void updateHash(SipHash & hash) const;
 };
+
+bool operator==(const Params & a, const Params & b);
 
 using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;
 

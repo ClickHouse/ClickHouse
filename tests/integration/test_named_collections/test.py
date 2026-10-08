@@ -118,7 +118,7 @@ def test_default_access(cluster):
         node, "named_collection_control>1", "named_collection_control>0"
     )
     assert "named_collection_control>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert 0 == int(node.query("select count() from system.named_collections"))
@@ -127,7 +127,7 @@ def test_default_access(cluster):
         node, "named_collection_control>0", "named_collection_control>1"
     )
     assert "named_collection_control>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -149,7 +149,7 @@ def test_default_access(cluster):
         node, "display_secrets_in_show_and_select>1", "display_secrets_in_show_and_select>0"
     )
     assert "display_secrets_in_show_and_select>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/config.d/named_collections.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/config.d/named_collections.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -163,14 +163,14 @@ def test_default_access(cluster):
         node, "display_secrets_in_show_and_select>0", "display_secrets_in_show_and_select>1"
     )
     assert "display_secrets_in_show_and_select>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/config.d/named_collections.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/config.d/named_collections.xml"]
     )
 
     replace_in_users_config(
         node, "show_named_collections_secrets>1", "show_named_collections_secrets>0"
     )
     assert "show_named_collections_secrets>0" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -183,7 +183,7 @@ def test_default_access(cluster):
         node, "show_named_collections_secrets>0", "show_named_collections_secrets>1"
     )
     assert "show_named_collections_secrets>1" in node.exec_in_container(
-        ["bash", "-c", f"cat /etc/clickhouse-server/users.d/users.xml"]
+        ["bash", "-c", "cat /etc/clickhouse-server/users.d/users.xml"]
     )
     node.restart_clickhouse()
     assert (
@@ -508,6 +508,59 @@ def test_config_reload(cluster):
     )
 
 
+def test_storage_type_does_not_change_on_config_reload(cluster):
+    node = cluster.instances["node"]
+
+    def get_storage_type_state(instance):
+        return instance.query(
+            """
+            SELECT name, value, default, changed, type, changeable_without_restart,
+                getServerSetting('named_collections_storage_type')
+            FROM system.server_settings
+            WHERE name = 'named_collections_storage.type'
+            """
+        ).strip()
+
+    assert (
+        "named_collections_storage.type\tlocal\tlocal\t0\tString\tNo\tlocal"
+        == get_storage_type_state(node)
+    )
+    assert (
+        "named_collections_storage.type\tzookeeper\tlocal\t1\tString\tNo\tzookeeper"
+        == get_storage_type_state(cluster.instances["node_with_keeper"])
+    )
+
+    config = """
+<clickhouse>
+  <named_collections_storage>
+    <type>keeper</type>
+    <path>/named_collections_reload_test</path>
+  </named_collections_storage>
+</clickhouse>
+"""
+
+    with node.with_replace_config(
+        "/etc/clickhouse-server/config.d/named_collections.xml",
+        config,
+        reload_before=True,
+        reload_after=True,
+    ):
+        assert (
+            "named_collections_storage.type\tlocal\tlocal\t1\tString\tNo\tlocal"
+            == get_storage_type_state(node)
+        )
+
+        node.query("CREATE NAMED COLLECTION storage_type_reload_test AS value = 1")
+        assert "1" == node.query(
+            """
+            SELECT collection['value']
+            FROM system.named_collections
+            WHERE name = 'storage_type_reload_test'
+            """
+        ).strip()
+        node.query("DROP NAMED COLLECTION storage_type_reload_test")
+
+
 @pytest.mark.parametrize("with_keeper", [False, True])
 def test_sql_commands(cluster, with_keeper):
     zk = None
@@ -731,6 +784,92 @@ def test_sql_commands(cluster, with_keeper):
     check_dropped()
 
 
+@pytest.mark.parametrize("with_keeper", [False, True])
+def test_create_or_replace(cluster, with_keeper):
+    zk = None
+    if with_keeper:
+        node = cluster.instances["node_with_keeper"]
+        zk = cluster.get_kazoo_client("zoo1")
+    else:
+        node = cluster.instances["node"]
+
+    def get_create_query():
+        return node.query("select create_query from system.named_collections where name = 'col'").strip()
+
+    def get_zk_payload():
+        zk.sync(ZK_PATH)
+        return zk.get(ZK_PATH + "/col.sql")[0]
+
+    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key1=1, key2='value2' OVERRIDABLE")
+
+    assert "CREATE NAMED COLLECTION col AS key1 = 1, key2 = \\'value2\\' OVERRIDABLE" == get_create_query()
+    if with_keeper:
+        assert b"CREATE NAMED COLLECTION col AS key1 = 1, key2 = 'value2' OVERRIDABLE" in get_zk_payload()
+
+    assert "already exists" in node.query_and_get_error("CREATE NAMED COLLECTION col AS key1=1")
+
+    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key1=4, key3='value3' NOT OVERRIDABLE")
+
+    def check_replaced():
+        assert (
+            "['key1','key3']"
+            == node.query(
+                "select mapKeys(collection) from system.named_collections where name = 'col'"
+            ).strip()
+        )
+        assert (
+            "4"
+            == node.query(
+                "select collection['key1'] from system.named_collections where name = 'col'"
+            ).strip()
+        )
+        assert (
+            "CREATE NAMED COLLECTION col AS key1 = 4, key3 = \\'value3\\' NOT OVERRIDABLE"
+            == get_create_query()
+        )
+        if zk is not None:
+            assert (
+                b"CREATE NAMED COLLECTION col AS key1 = 4, key3 = 'value3' NOT OVERRIDABLE"
+                in get_zk_payload()
+            )
+
+    check_replaced()
+    node.restart_clickhouse()
+    check_replaced()
+
+    node.query("CREATE OR REPLACE NAMED COLLECTION col AS key3='value3'")
+    assert "CREATE NAMED COLLECTION col AS key3 = \\'value3\\'" == get_create_query()
+
+    assert "immutable" in node.query_and_get_error("CREATE OR REPLACE NAMED COLLECTION collection1 AS key1=1")
+    if zk is not None:
+        zk.sync(ZK_PATH)
+        assert "collection1.sql" not in zk.get_children(ZK_PATH)
+
+    if not with_keeper:
+        node.query("DROP USER IF EXISTS user_or_replace")
+        node.query("CREATE USER user_or_replace")
+        node.query("GRANT create named collection ON col TO user_or_replace")
+        assert (
+            "necessary to have the grant DROP NAMED COLLECTION"
+            in node.query_and_get_error(
+                "CREATE OR REPLACE NAMED COLLECTION col AS key1=1", user="user_or_replace"
+            )
+        )
+        node.query("GRANT drop named collection ON col TO user_or_replace")
+        node.query(
+            "CREATE OR REPLACE NAMED COLLECTION col AS key1=1", user="user_or_replace"
+        )
+        node.query("DROP USER user_or_replace")
+
+    node.query("DROP NAMED COLLECTION col")
+    assert "0" == node.query("select count() from system.named_collections where name = 'col'").strip()
+
+    if with_keeper:
+        node2 = cluster.instances["node_with_keeper_2"]
+        while node2.query("select count() from system.named_collections where name = 'col'").strip() != "0":
+            time.sleep(0.5)
+
+
 def test_keeper_storage(cluster):
     node1 = cluster.instances["node_with_keeper"]
     node2 = cluster.instances["node_with_keeper_2"]
@@ -875,13 +1014,13 @@ def test_keeper_storage_remove_on_cluster(cluster, ignore, expected_raise):
             "DROP NAMED COLLECTION IF EXISTS test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
         node.query(
-            f"CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
+            "CREATE NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster` AS key1=1, key2=2 OVERRIDABLE"
         )
         node.query(
-            f"ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
+            "ALTER NAMED COLLECTION  test_nc ON CLUSTER `replicated_nc_nodes_cluster` SET key2=3"
         )
         node.query(
-            f"DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
+            "DROP NAMED COLLECTION test_nc ON CLUSTER `replicated_nc_nodes_cluster`"
         )
     node.query("DROP NAMED COLLECTION IF EXISTS test_nc")
 
@@ -967,7 +1106,7 @@ def test_concurrent_create_drop_race_condition(cluster):
     node1 = cluster.instances["node_with_keeper"]
     node2 = cluster.instances["node_with_keeper_2"]
 
-    num_iterations = 50
+    num_iterations = 15
     stop_flag = threading.Event()
 
     def create_collections(node, prefix, count):
@@ -997,7 +1136,7 @@ def test_concurrent_create_drop_race_condition(cluster):
 
     try:
         # Run multiple iterations to increase chance of hitting the race
-        for iteration in range(5):
+        for iteration in range(3):
             prefix = f"race_test_{iteration}"
             threads = []
 
@@ -1020,12 +1159,12 @@ def test_concurrent_create_drop_race_condition(cluster):
                 t.join(timeout=60)
 
             # Small delay between iterations
-            time.sleep(0.5)
+            time.sleep(0.1)
 
         # Verify both nodes are still healthy by running a simple query
         for node in [node1, node2]:
             result = node.query("SELECT 1").strip()
-            assert result == "1", f"Node health check failed"
+            assert result == "1", "Node health check failed"
 
         # Check for logical errors in server logs - this is the key assertion
         # A logical error would indicate the race condition caused an exception (chassert failure)

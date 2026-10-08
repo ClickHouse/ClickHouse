@@ -1,0 +1,202 @@
+---
+sidebarTitle: 'Glosario'
+description: 'Definiciones de conceptos de bases de datos y terminología de ClickHouse, con énfasis en los comportamientos que difieren de los de las bases de datos transaccionales.'
+title: 'Glosario'
+slug: /concepts/glossary
+keywords: ['glosario', 'definiciones', 'terminología']
+mode: 'wide'
+doc_type: 'reference'
+---
+
+{/* sin glosario */}
+
+import { Glossary } from '/snippets/es/components/Glossary/Glossary.jsx'
+
+Un glosario de conceptos de bases de datos y terminología de ClickHouse, que explica las diferencias de los términos habituales de bases de datos en ClickHouse.
+
+export const glossaryMetadata = {
+  delete: { learnMore: '/deletes/overview' },
+  deduplication: { aliases: ['filas duplicadas', 'restricción de unicidad'], learnMore: '/guides/developer/deduplication' },
+  dictionary: { learnMore: '/dictionary' },
+  'distributed-table': { learnMore: '/engines/table-engines/special/distributed' },
+  final: { aliases: ['aún veo duplicados', 'fusión en tiempo de consulta'], code: true, learnMore: '/sql-reference/statements/select/from#final-modifier' },
+  granule: { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design' },
+  'incremental-materialized-view': { aliases: ['disparador de inserción'], learnMore: '/materialized-view/incremental-materialized-view' },
+  json: { code: true, learnMore: '/sql-reference/data-types/newjson' },
+  'materialized-view': { aliases: ['MV', 'consulta almacenada', 'disparador de inserción', 'tabla dinámica', 'tablas dinámicas'], learnMore: '/materialized-views' },
+  merge: { learnMore: '/merges' },
+  mergetree: { code: true, learnMore: '/engines/table-engines/mergetree-family/mergetree' },
+  mutation: { aliases: ['ALTER UPDATE', 'ALTER DELETE', 'sentencia MERGE'], learnMore: '/concepts/best-practices/avoid-mutations' },
+  'nullable-column': { aliases: ['NULL', 'NULL frente al valor predeterminado'], learnMore: '/sql-reference/data-types/nullable' },
+  parts: { learnMore: '/concepts/core-concepts/parts' },
+  partition: { aliases: ['PARTITION BY', 'poda de particiones'], learnMore: '/partitions' },
+  'partitioning-key': { learnMore: '/concepts/core-concepts/partitions' },
+  'primary-key': { aliases: ['ORDER BY', 'clave de ordenación', 'clave única', 'restricción de unicidad'], learnMore: '/concepts/core-concepts/primary-indexes' },
+  projection: { aliases: ['proyección frente a vista materializada', 'ordenación alternativa'], learnMore: '/data-modeling/projections' },
+  'refreshable-materialized-view': { aliases: ['vista materializada programada', 'actualizar vista materializada', 'consulta programada', 'consultas programadas'], learnMore: '/materialized-view/refreshable-materialized-view' },
+  replacingmergetree: { aliases: ['upsert', 'deduplicación', 'aún tengo duplicados', 'sentencia MERGE'], code: true, learnMore: '/guides/replacing-merge-tree' },
+  'secondary-index': { learnMore: '/optimize/skipping-indexes' },
+  'skipping-index': { learnMore: '/optimize/skipping-indexes' },
+  'sorting-key': { aliases: ['ORDER BY', 'clave primaria', 'orden en disco', 'clave de agrupamiento', 'columnas de agrupamiento', 'tabla agrupada', 'CLUSTER BY'], learnMore: '/concepts/best-practices/choosing-a-primary-key' },
+  'sparse-index': { learnMore: '/guides/clickhouse/data-modelling/sparse-primary-indexes' },
+  'table-engine': { learnMore: '/engines/table-engines' },
+  transaction: { learnMore: '/guides/developer/transactional' },
+  ttl: { aliases: ['expiración', 'retención', 'retención de datos'], code: true, learnMore: '/concepts/features/operations/delete/ttl' },
+  update: { aliases: ['actualización de fila', 'actualización ligera'], legacyIds: ['lightweight-update'], learnMore: '/updating-data/overview' },
+  upsert: { aliases: ['ON CONFLICT', 'insertar o actualizar', 'sentencia MERGE'], learnMore: '/guides/replacing-merge-tree' },
+  warehouse: { aliases: ['separación de cómputo y almacenamiento', 'almacén virtual', 'almacenes virtuales'], learnMore: '/cloud/reference/warehouses' },
+}
+
+<Glossary metadata={glossaryMetadata}>
+  ## Atomicidad
+
+  La atomicidad implica que una operación se observa por completo o no se observa en absoluto. En ClickHouse, una inserción en una partición de una tabla de la familia `MergeTree` es atómica cuando sus filas se escriben como un único bloque. Una inserción que abarca varias particiones es atómica de forma independiente para cada partición, y una inserción en una tabla distribuida es atómica de forma independiente para cada segmento. Las transacciones de múltiples sentencias siguen siendo experimentales y están restringidas.
+
+  ## Block
+
+  Un block es un lote columnar autodescriptivo de filas que se utiliza para el procesamiento de consultas y la transferencia de datos. Los blocks son unidades de runtime y de transmisión; las data parts y los granules son conceptos independientes de almacenamiento e indexación. Procesar los valores de columna en blocks permite la ejecución vectorizada.
+
+  ## Cluster
+
+  Un conjunto de nodos (servidores) que trabajan de forma conjunta para almacenar y procesar datos.
+
+  ## CMEK
+
+  En ClickHouse Cloud, las claves de cifrado gestionadas por el cliente (CMEK) permiten que la clave del servicio de gestión de claves (KMS) del cliente proteja la clave de cifrado de datos (DEK) empleada para los datos en reposo.
+
+  ## Eliminar
+
+  En las tablas de la familia `MergeTree`, eliminar filas puede consistir en marcarlas como eliminadas con `DELETE FROM`, reescribir las partes de datos afectadas con `ALTER TABLE ... DELETE` o eliminar de forma eficiente una partición completa. Las eliminaciones ligeras ocultan las filas en las consultas posteriores antes de que los datos se eliminen físicamente durante las fusiones en segundo plano.
+
+  ## Deduplicación
+
+  La deduplicación puede referirse a distintos mecanismos en ClickHouse. En la deduplicación de versiones de filas, motores como `ReplacingMergeTree` identifican las versiones duplicadas mediante la clave de ordenación y las resuelven durante las fusiones en segundo plano dentro de una partición. Por su parte, los motores de tablas replicadas pueden deduplicar los bloques de inserción reintentados según sus identificadores de bloque.
+
+  ## Diccionario
+
+  Un diccionario proporciona acceso key-value a datos de referencia desde una fuente in-memory o external. Para lookups compatibles basados en key, las funciones de diccionario o un `JOIN` directo con el diccionario permiten evitar escanear repetidamente una tabla de referencia.
+
+  ## Tabla distribuida
+
+  Una tabla distribuida en ClickHouse es un tipo especial de tabla que no almacena datos por sí misma, sino que proporciona una vista unificada para el procesamiento distribuido de consultas en varios servidores de un clúster.
+
+  ## `FINAL`
+
+  `FINAL` es un modificador de consulta que aplica las transformaciones de fusión de un motor durante la lectura de los datos, sin fusionar físicamente las partes almacenadas. Puede devolver resultados ya reconciliados de motores como `ReplacingMergeTree` antes de que finalicen las fusiones en segundo plano, a costa de un consumo adicional de cómputo y memoria en el momento de la consulta.
+
+  ## Granule
+
+  Un granule es el grupo lógico más pequeño de filas que ClickHouse lee para el pruning del primary index. De forma predeterminada, contiene hasta 8192 filas, aunque la adaptive index granularity puede generar granules más pequeños. Por lo general, el primary index almacena una entry por granule.
+
+  ## Vista materializada incremental
+
+  Una vista materializada incremental ejecuta su consulta a medida que se insertan datos en una tabla de origen y escribe el resultado en una tabla de destino. Procesa únicamente los bloques recién insertados, no el estado actual completo de la tabla de origen, y los cambios en las tablas de la derecha unidas mediante join no la vuelven a activar.
+
+  ## `JSON`
+
+  El tipo `JSON` almacena documentos semiestructurados cuyos paths y tipos pueden variar de una fila a otra. ClickHouse almacena los paths descubiertos como subcolumnas, de modo que las consultas pueden leer campos individuales de forma eficiente. Utilice columnas tipadas o tipos estructurales como `Tuple` cuando el esquema sea estable.
+
+  ## Archivo de marcas (mark file)
+
+  Un mark file almacena los desplazamientos que permiten localizar los granules dentro de los datos de columna comprimidos. Cada mark registra un desplazamiento en el archivo comprimido y otro dentro del bloque descomprimido correspondiente, lo que permite a ClickHouse posicionarse en un granule sin necesidad de leer la columna completa.
+
+  ## Vista materializada
+
+  ClickHouse dispone de dos modelos de vista materializada. Una vista materializada incremental actúa como un trigger en el momento de la inserción que procesa los bloques recién insertados, mientras que una vista materializada actualizable vuelve a ejecutar periódicamente su consulta sobre el conjunto de datos completo. Las funcionalidades con nombres similares en otras bases de datos pueden combinar ambos comportamientos, por lo que no siempre existe una correspondencia unívoca.
+
+  ## Merge
+
+  Un merge en ClickHouse es una operación de almacenamiento en segundo plano que combina data parts inmutables pequeños en partes más grandes dentro de la misma partición. Según el table engine, los merges también pueden agregar, colapsar o reemplazar filas; no son lo mismo que una sentencia SQL `MERGE` transaccional.
+
+  ## `MergeTree`
+
+  Un `MergeTree` en ClickHouse es un motor de tablas diseñado para altas tasas de ingesta y grandes volúmenes de datos. Es el motor de almacenamiento principal de ClickHouse y ofrece funcionalidades como almacenamiento columnar, particionado personalizado, índices primarios dispersos y compatibilidad con fusiones de datos en segundo plano.
+
+  ## Mutation
+
+  En las tablas de la familia `MergeTree`, una mutación modifica o elimina datos existentes mediante comandos como `ALTER TABLE ... UPDATE` o `ALTER TABLE ... DELETE`. A diferencia de una actualización de fila en OLTP, reescribe las partes de datos afectadas y normalmente se ejecuta de forma asíncrona; las partes se reemplazan a medida que quedan listas, por lo que la operación no constituye una transacción atómica sobre toda la tabla.
+
+  ## Columna Nullable
+
+  Una columna debe usar `Nullable(T)` para distinguir `NULL` de los valores ordinarios de tipo `T`, incluidos valores como `0` o una cadena vacía. ClickHouse almacena por separado una máscara de nulos, lo que añade sobrecarga de almacenamiento y procesamiento; por ello, use columnas nullable cuando los valores ausentes tengan una semántica relevante, y no como opción predeterminada.
+
+  ## Mutación sobre la marcha
+
+  Cuando `apply_mutations_on_fly` está habilitado tanto para una mutación como para las lecturas posteriores, ClickHouse aplica las actualizaciones o eliminaciones pendientes durante las consultas `SELECT`, de modo que sus resultados son visibles antes de que se reescriban las partes almacenadas. Aun así, la mutación se materializa de forma asíncrona en segundo plano.
+
+  ## Partes
+
+  Una data part es un conjunto inmutable de archivos en el almacenamiento que contiene una parte de las filas de una tabla. Las partes se crean mediante inserciones y se combinan mediante fusiones en segundo plano dentro de una partición. A diferencia de una partición, que es una agrupación lógica de datos, una parte es una unidad física de almacenamiento gestionada por ClickHouse.
+
+  ## Partición
+
+  Una partición es una agrupación lógica de partes de datos en una tabla de la familia `MergeTree`. El particionamiento sirve principalmente para operaciones de administración de datos, como eliminar, mover y aplicar políticas de retención a conjuntos de datos. La poda de particiones puede beneficiar a las consultas que seleccionan solo unas pocas particiones, pero las claves de ordenación y las claves primarias suelen ser más importantes para el rendimiento de las consultas.
+
+  ## Clave de particionamiento
+
+  Una clave de particionamiento es la expresión de la cláusula `PARTITION BY` de una tabla. Las filas que generan el mismo ID de partición pertenecen a la misma partición lógica, mientras que inserciones independientes pueden crear data parts distintos dentro de esa partición. Esta agrupación habilita operaciones como eliminar, mover o archivar una partición completa.
+
+  ## Clave primaria
+
+  A diferencia de la clave primaria en muchas bases de datos transaccionales, la clave primaria de ClickHouse no es una restricción de unicidad a nivel de fila. Define las columnas de un índice primario disperso que permite a ClickHouse omitir granules durante la lectura. De forma predeterminada, coincide con la clave de ordenación definida por `ORDER BY`; si se define por separado, debe ser un prefijo de dicha clave de ordenación.
+
+  ## Proyección
+
+  Una projection es una representación mantenida automáticamente de los datos de una tabla con un orden alternativo, un subconjunto de columnas o una agregación precalculada. ClickHouse puede elegirla de forma automática al consultar la tabla original. Las projections pueden duplicar los datos almacenados y añadir sobrecarga de escritura, aunque las projections con `_part_offset` permiten reducir el almacenamiento a cambio de lecturas adicionales de la tabla base.
+
+  ## Vista materializada actualizable
+
+  Una vista materializada actualizable vuelve a ejecutar periódicamente su consulta sobre el conjunto de datos completo y reemplaza o añade el resultado almacenado según una programación. A diferencia de una vista materializada incremental, no se activa con cada bloque insertado y puede utilizar consultas complejas. Puede sustituir a una consulta programada que materialice un resultado `SELECT`, pero no es un planificador de propósito general para sentencias DDL o DML arbitrarias.
+
+  ## `ReplacingMergeTree`
+
+  `ReplacingMergeTree` modela las actualizaciones y los upserts aceptando varias versiones de filas con la misma clave de ordenación y conservando una sola versión durante las fusiones en segundo plano. La deduplicación es eventual y no una garantía de unicidad en el momento de la inserción, por lo que las consultas pueden ver varias versiones hasta que utilicen `FINAL`, una lógica de consulta equivalente, o hasta que se fusionen las partes correspondientes.
+
+  ## Réplica
+
+  Una réplica es un servidor o una instancia de cómputo que mantiene los mismos datos lógicos de una tabla que las demás réplicas, o accede a ellos, para aportar disponibilidad y capacidad de consulta. Con `ReplicatedMergeTree`, cada réplica mantiene una copia independiente de los datos; en cambio, las réplicas de ClickHouse Cloud que usan `SharedMergeTree` comparten el almacenamiento de objetos.
+
+  ## Índice secundario
+
+  En ClickHouse, el equivalente más cercano a un índice secundario convencional suele ser un data skipping index. En lugar de localizar filas individuales mediante un árbol B, almacena metadata de grupos de granules, de modo que ClickHouse puede evitar la lectura de blocks que no pueden contener valores coincidentes.
+
+  ## Segmento
+
+  Un segmento es un subconjunto lógico de los datos de una tabla asignado a un servidor o a un grupo de réplicas en una implementación distribuida. La segmentación reparte los datos y la carga de consultas entre los servidores; las réplicas ofrecen acceso redundante o paralelo a los datos de cada segmento.
+
+  ## Índice de salto de datos (skipping index)
+
+  Un índice data skipping almacena metadata compacta de uno o varios granules consecutivos, de modo que ClickHouse pueda evitar la lectura de blocks que no puedan coincidir con una consulta. Resulta más eficaz cuando los valores indexados guardan correlación con el orden de la table, y puede aportar escaso beneficio cuando los valores coincidentes están presentes en la mayoría de los blocks indexados.
+
+  ## Clave de ordenación
+
+  En una tabla de la familia `MergeTree`, la cláusula `ORDER BY` define la clave de ordenación: el orden físico de las filas dentro de cada data part. Cumple una función similar a la de las columnas o claves de clustering de otras bases de datos analíticas, pero ClickHouse la utiliza para mantener un orden lexicográfico definido de las filas. Si no se especifica una clave primaria aparte, la clave de ordenación pasa a ser también la clave primaria; ambas claves están relacionadas, pero no tienen por qué ser idénticas.
+
+  ## Índice disperso
+
+  Un índice primario disperso almacena los valores de clave de cada granule en lugar de una entrada por fila. ClickHouse utiliza estas entradas para identificar los granules candidatos y luego lee sus filas. Como su tamaño crece en función de los granules y no de las filas, el índice suele ser lo bastante pequeño como para mantenerlo en memoria.
+
+  ## Motor de tabla
+
+  Los motores de tabla de ClickHouse determinan cómo se escriben, almacenan y acceden los datos. `MergeTree` es el motor de tabla más común y permite insertar rápidamente grandes volúmenes de datos que se procesan en segundo plano.
+
+  ## Transacción
+
+  En ClickHouse, el alcance de las garantías transaccionales difiere del de una base de datos OLTP típica. Las inserciones que cumplen los requisitos son atómicas a nivel de bloque o de partición, mientras que las transacciones convencionales de múltiples sentencias con `COMMIT` y `ROLLBACK` siguen siendo experimentales y presentan restricciones importantes.
+
+  ## `TTL`
+
+  Las reglas `TTL` mueven, eliminan o agregan datos una vez que una expresión los hace elegibles. La expiración no es inmediata: ClickHouse suele aplicar las acciones sobre los datos expirados durante las fusiones en segundo plano, por lo que las filas expiradas pueden seguir en disco y ser devueltas por las consultas hasta que una fusión procese las partes correspondientes.
+
+  ## Actualización
+
+  ClickHouse está optimizado para datos inmutables y con gran volumen de anexados, más que para actualizaciones frecuentes de filas in situ. Las actualizaciones suelen modelarse insertando nuevas versiones con motores de tabla especializados, o bien se ejecutan como mutaciones que reescriben las partes de datos afectadas.
+
+  ## Upsert
+
+  Las tablas de la familia `MergeTree` no realizan un upsert transaccional del tipo `INSERT ... ON CONFLICT`. Los upserts suelen modelarse insertando una versión más reciente de la fila en un motor como `ReplacingMergeTree`. Las versiones antiguas se resuelven durante las fusiones en segundo plano, por lo que las consultas pueden necesitar `FINAL` o una lógica equivalente hasta que se produzca la fusión.
+
+  ## Warehouse
+
+  En ClickHouse Cloud, un warehouse es un conjunto de services que comparten los mismos datos, pero disponen de recursos de compute y endpoints independientes. En los sistemas donde un warehouse representa un único cluster de compute, el equivalente más cercano es un service individual de ClickHouse; un warehouse de ClickHouse agrupa varios services.
+</Glossary>

@@ -4,6 +4,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/Jemalloc.h>
 #include <Common/PageCache.h>
+#include <Common/IMemoryReleasableCache.h>
 #include <IO/ReadBufferFromFile.h>
 
 #include <atomic>
@@ -90,6 +91,7 @@ struct MemoryWorkerConfig
     bool correct_tracker = false;
     uint64_t decay_adjustment_period_ms = 0;
     bool use_cgroup = true;
+    double rss_speculative_reserve_ratio = 0.0;
     double dynamic_hard_limit_ratio = 0.0;
 };
 
@@ -101,6 +103,9 @@ class MemoryWorker
 {
 public:
     MemoryWorker(MemoryWorkerConfig config, std::shared_ptr<PageCache> page_cache_);
+
+    /// Register (or, with nullptr, unregister) a cache to resize on every tick, see `releasable_cache`.
+    void setReleasableCache(std::shared_ptr<IMemoryReleasableCache> cache);
 
     enum class MemoryUsageSource : uint8_t
     {
@@ -132,7 +137,13 @@ public:
 
     ~MemoryWorker();
 private:
-    uint64_t getMemoryUsage(bool log_error);
+    struct MemoryUsage
+    {
+        Int64 resident = 0;
+        Int64 allocated = 0;
+    };
+
+    MemoryUsage getMemoryUsage(bool log_error);
 
     void updateResidentMemoryThread();
 
@@ -156,6 +167,7 @@ private:
     double purge_dirty_pages_threshold_ratio;
     uint64_t page_size = 0;
     std::chrono::milliseconds decay_adjustment_period_ms{0};
+    double rss_speculative_reserve_ratio = 0.0;
 
     /// Scaling factor the dynamic adjustment applies to `resident + available` to compute
     /// the new hard limit. Mirrors `max_server_memory_usage_to_ram_ratio` and is refreshed
@@ -241,6 +253,12 @@ private:
     std::shared_ptr<ICgroupsReader> cgroups_reader;
 
     std::shared_ptr<PageCache> page_cache;
+
+    /// Another cache that gives memory back on demand, resized on every tick like the page cache.
+    /// Set after construction, once the cache exists. See `IMemoryReleasableCache`.
+    std::mutex releasable_cache_mutex;
+    std::shared_ptr<IMemoryReleasableCache> releasable_cache;
+    std::shared_ptr<IMemoryReleasableCache> getReleasableCache();
 
 #if USE_JEMALLOC
     void purgeDirtyPagesThread();

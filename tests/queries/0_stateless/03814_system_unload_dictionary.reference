@@ -1,0 +1,19 @@
+1. Load dictionary by querying it, then check it is LOADED
+one
+test_unload_dict	LOADED
+2. Unload dictionary, then check it is NOT_LOADED
+test_unload_dict	NOT_LOADED
+3. Query again triggers lazy reload, then check it is LOADED
+two
+test_unload_dict	LOADED
+4. Unload, then explicitly reload
+test_unload_dict	NOT_LOADED
+test_unload_dict	LOADED
+5. Data is still correct after reload
+three
+6. Lazy reload picks up updated source data
+four
+7. Unloading an already unloaded dictionary keeps it NOT_LOADED
+test_unload_dict	NOT_LOADED
+test_unload_dict	NOT_LOADED
+8. Unloading a non-existent dictionary fails

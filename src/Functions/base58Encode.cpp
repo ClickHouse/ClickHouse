@@ -16,7 +16,7 @@ using FunctionBase58Encode = FunctionBaseXXConversion<Base58EncodeImpl>;
 REGISTER_FUNCTION(Base58Encode)
 {
     FunctionDocumentation::Description description = R"(
-Encodes a string using [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html) encoding.
+Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01) encoding.
 )";
     FunctionDocumentation::Syntax syntax = "base58Encode(plaintext)";
     FunctionDocumentation::Arguments arguments = {

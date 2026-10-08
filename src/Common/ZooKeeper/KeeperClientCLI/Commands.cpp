@@ -1,4 +1,5 @@
 
+#include <ranges>
 #include <algorithm>
 #include <chrono>
 #include <Common/StringUtils.h>

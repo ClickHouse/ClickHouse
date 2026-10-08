@@ -1,0 +1,35 @@
+Validation
+Results are same as brute force
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+Direct index read
+2048
+1
+0
+Merge path re-encodes positions
+1
+1
+1
+1
+1
+1
+1
+1
+Blocks are read and skipped through the index
+1
+1	1

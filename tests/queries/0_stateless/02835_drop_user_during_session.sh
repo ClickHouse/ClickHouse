@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-debug, no-random-settings, no-random-merge-tree-settings, no-fasttest
+# Tags: long, no-debug, no-random-settings, no-random-merge-tree-settings, no-fasttest
 # no-fasttest: Busy slow wait
+# long: busy-waits on session teardown + session_log flush; can cross the 180s flaky-check backstop on slow sanitizer builds
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -65,7 +66,7 @@ timeout 10s bash -c "http_with_session_id_session ${TEST_USER}" >/dev/null 2>&1 
 
 wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
-${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null &
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC SETTINGS kill_throw_if_noop = false" >/dev/null &
 
 wait
 
@@ -82,7 +83,7 @@ wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP ROLE ${TEST_ROLE}"
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
 
-${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null &
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC SETTINGS kill_throw_if_noop = false" >/dev/null &
 
 wait
 
@@ -99,7 +100,7 @@ wait_for_queries_start $TEST_USER 3
 ${CLICKHOUSE_CLIENT} -q "DROP SETTINGS PROFILE '${TEST_PROFILE}'"
 ${CLICKHOUSE_CLIENT} -q "DROP USER ${TEST_USER}"
 
-${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null &
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC SETTINGS kill_throw_if_noop = false" >/dev/null &
 
 wait
 

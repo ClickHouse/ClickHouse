@@ -225,10 +225,10 @@ private:
 /// They return false for *expected* procfs failures (the pid vanished, a
 /// seccomp profile denies `open`, malformed contents), but they are NOT
 /// `noexcept`: a memory-limit `exception` thrown while allocating a
-/// `/proc/<pid>` path string is allowed to propagate. Every caller
-/// (`recordPidAcquired`, `recordReleased`) runs them inside a try/catch, so
-/// such an `exception` is logged and sampling is skipped, instead of hitting
-/// `std::terminate` at a `noexcept` boundary.
+/// `/proc/<pid>` path string is allowed to propagate. The callers in this
+/// file (`recordPidAcquired`, `recordReleased`, `sampleExecutablePeak`) run
+/// them inside a try/catch, so such an `exception` is logged and sampling is
+/// skipped, instead of hitting `std::terminate` at a `noexcept` boundary.
 namespace UDFProcfs
 {
     /// Recursively enumerate the root pid plus every descendant by walking
@@ -254,6 +254,12 @@ namespace UDFProcfs
 
     /// Parse VmHWM from /proc/<pid>/status, converted to bytes.
     bool readPeakRss(pid_t pid, UInt64 & bytes);
+
+    /// Parse VmRSS from /proc/<pid>/status, converted to bytes.
+    bool readCurrentRss(pid_t pid, UInt64 & bytes);
+
+    /// Return true if /proc/<pid>/stat can be read and reports the process as a zombie.
+    bool isZombie(pid_t pid);
 }
 
 }

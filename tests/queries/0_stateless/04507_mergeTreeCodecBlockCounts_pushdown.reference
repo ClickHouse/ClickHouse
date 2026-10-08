@@ -1,0 +1,48 @@
+all rows
+all_1_1_0	a	a	['LZ4']
+all_1_1_0	b	b	['ZSTD(1)']
+all_2_2_0	a	a	['LZ4']
+all_2_2_0	b	b	['ZSTD(1)']
+where part_name
+all_1_1_0	a
+all_1_1_0	b
+where column
+all_1_1_0	a
+all_2_2_0	a
+where substream
+all_1_1_0	b
+all_2_2_0	b
+where part_name and column
+all_2_2_0	b
+where column and map, only column is pushed down
+all_1_1_0	a	['LZ4']
+all_2_2_0	a	['LZ4']
+where column and map, no match
+0
+where map only, nothing is pushed down
+all_1_1_0	b
+all_2_2_0	b
+where column or map, nothing is pushed down
+all_1_1_0	a
+all_1_1_0	b
+all_2_2_0	a
+all_2_2_0	b
+where column or substream, whole or is pushed down
+all_1_1_0	b
+all_2_2_0	b
+where part_name in
+all_1_1_0	a
+all_1_1_0	b
+where part_name matches nothing
+0
+codec sums: baseline, column, mixed, part_name, in, substream, or, unpushed or
+4
+2
+2
+2
+2
+2
+2
+4
+fewer files than baseline: column, mixed, part_name, in, substream, or. as many as baseline: unpushed or
+1	1	1	1	1	1	1

@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'Example of using the Resample combinator with avg'
+keywords: ['avg', 'Resample', 'combinator', 'examples', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'reference'
+---
+
+## Description {#description}
+
+The [`Resample`](/reference/functions/aggregate-functions/combinators#-resample) 
+combinator can be applied to the [`count`](/reference/functions/aggregate-functions/count)
+aggregate function to count values of a specified key column in a fixed number
+of intervals (`N`).
+
+## Example usage {#example-usage}
+
+### Basic example {#basic-example}
+
+Let's look at an example. We'll create a table which contains the `name`, `age` and
+`wage` of employees, and we'll insert some data into it:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Let's get the average wage of the people whose age lies in the intervals of `[30,60)` 
+and `[60,75)` (`[` is exclusive and `)` is inclusive). Since we use integer 
+representation for age, we get ages in the intervals `[30, 59]` and `[60,74]`. 
+To do so we apply the `Resample` combinator to the `avg` aggregate function.
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+## See also {#see-also}
+- [`count`](/reference/functions/aggregate-functions/count)
+- [`Resample combinator`](/reference/functions/aggregate-functions/combinators#-resample)

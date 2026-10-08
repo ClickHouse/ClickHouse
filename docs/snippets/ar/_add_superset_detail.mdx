@@ -1,0 +1,47 @@
+---
+title: إضافة تفاصيل حول Superset
+---
+
+<Accordion title="تشغيل Apache Superset في Docker">
+  يوفّر Superset إرشادات حول [تثبيت Superset محليًا باستخدام Docker Compose](https://superset.apache.org/docs/installation/installing-superset-using-docker-compose/). بعد تنزيل مستودع Apache Superset من GitHub، يمكنك تشغيل أحدث شيفرة تطوير أو وسمًا محددًا. نوصي بالإصدار 2.0.0 لأنه أحدث إصدار لم يُصنَّف على أنه `pre-release`.
+
+  هناك بعض المهام التي يجب إنجازها قبل تشغيل `docker compose`:
+
+  1. إضافة برنامج التشغيل الرسمي ClickHouse Connect
+  2. الحصول على مفتاح API لـ Mapbox وإضافته كمتغير بيئة (اختياري)
+  3. تحديد إصدار Superset المراد تشغيله
+
+  <Tip>
+    يجب تشغيل الأوامر أدناه من المستوى الأعلى في مستودع GitHub، `superset`.
+  </Tip>
+
+  ## برنامج التشغيل الرسمي ClickHouse Connect
+
+  لإتاحة برنامج التشغيل ClickHouse Connect ضمن نشر Superset، أضِفه إلى ملف المتطلبات المحلي:
+
+  ```bash
+  echo "clickhouse-connect" >> ./docker/requirements-local.txt
+  ```
+
+  ## Mapbox
+
+  هذا اختياري؛ يمكنك عرض بيانات المواقع في Superset من دون مفتاح API لـ Mapbox، لكن ستظهر لك رسالة تفيد بأنه ينبغي إضافة مفتاح، كما ستكون صورة خلفية الخريطة مفقودة (أي سترى نقاط البيانات فقط، وليس خلفية الخريطة). يوفّر Mapbox فئة مجانية إذا رغبت في استخدامه.
+
+  تستخدم بعض التصورات النموذجية التي تطلب منك الأدلة إنشاءها بيانات المواقع، مثل بيانات خطوط الطول ودوائر العرض. ويتضمن Superset دعمًا لخرائط Mapbox. ولاستخدام تصورات Mapbox، تحتاج إلى مفتاح API لـ Mapbox. سجّل في [الفئة المجانية من Mapbox](https://account.mapbox.com/auth/signup/)، ثم أنشئ مفتاح API.
+
+  اجعل مفتاح API متاحًا لـ Superset:
+
+  ```bash
+  echo "MAPBOX_API_KEY=pk.SAMPLE-Use-your-key-instead" >> docker/.env-non-dev
+  ```
+
+  ## نشر الإصدار 2.0.0 من Superset
+
+  لنشر الإصدار 2.0.0، شغّل:
+
+  ```bash
+  git checkout 2.0.0
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml pull
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml up
+  ```
+</Accordion>

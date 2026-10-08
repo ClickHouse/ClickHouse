@@ -1,0 +1,15 @@
+4
+7
+5
+hello world
+0.5
+3	5
+1
+SELECT 1\nSETTINGS max_threads = {threads:UInt64}
+BAD_QUERY_PARAMETER
+UNKNOWN_QUERY_PARAMETER
+1
+BackupQuery
+RestoreQuery
+SYNTAX_ERROR
+SYNTAX_ERROR

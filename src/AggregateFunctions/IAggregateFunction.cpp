@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -15,6 +16,18 @@ extern const int NOT_IMPLEMENTED;
 DataTypePtr IAggregateFunction::getStateType() const
 {
     return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters);
+}
+
+DataTypePtr IAggregateFunction::getStateTypeWithVersionOf(const IAggregateFunction & nested) const
+{
+    std::optional<size_t> version;
+    /// The state type has to be held in a named variable: `getStateType` returns a fresh
+    /// `DataTypePtr` by value, and a temporary would be destroyed at the end of the full
+    /// expression, leaving `nested_state` dangling.
+    const DataTypePtr nested_state_type = nested.getStateType();
+    if (const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested_state_type.get()))
+        version = nested_state->getVersionIfExplicit();
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
 }
 
 DataTypePtr IAggregateFunction::getNormalizedStateType() const
@@ -107,6 +120,12 @@ void IAggregateFunction::parallelizeMergePrepare(
         ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
 }
 
+char * IAggregateFunction::serializeToMemory(ConstAggregateDataPtr __restrict, char *, std::optional<size_t>) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED, "Method serializeToMemory is not implemented for {}, it reported no serialized size bound", getName());
+}
+
 void IAggregateFunction::mergeStateFromDifferentVariant(
     AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
 {
@@ -120,7 +139,7 @@ void IAggregateFunction::mergeStateFromDifferentVariant(
         toString(rhs.getStateVariant()));
 }
 
-void IAggregateFunction::merge(
+void IAggregateFunction::mergeImpl(
     AggregateDataPtr __restrict /*place*/,
     ConstAggregateDataPtr /*rhs*/,
     ThreadPool & /*thread_pool*/,

@@ -1,0 +1,10 @@
+-- without SHOW COLUMNS: denied (existing column)
+ACCESS_DENIED
+-- without SHOW COLUMNS: denied for a non-existing table (no existence oracle)
+ACCESS_DENIED
+-- without SHOW COLUMNS: denied for a non-existing database (no existence oracle)
+ACCESS_DENIED
+-- with SHOW COLUMNS: existing column
+1
+-- with SHOW COLUMNS: non-existing column
+0

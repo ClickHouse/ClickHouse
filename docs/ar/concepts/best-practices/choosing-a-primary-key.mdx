@@ -1,0 +1,181 @@
+---
+slug: /best-practices/choosing-a-primary-key
+sidebarTitle: 'اختيار المفتاح الأساسي'
+title: 'اختيار المفتاح الأساسي'
+description: 'صفحة تشرح كيفية اختيار المفتاح الأساسي في ClickHouse'
+keywords: ['المفتاح الأساسي']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+> نستخدم مصطلح &quot;مفتاح الترتيب&quot; بالتبادل للإشارة إلى &quot;المفتاح الأساسي&quot; في هذه الصفحة. ومن الناحية الدقيقة، [يختلف المفهومان في ClickHouse](/ar/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)، لكن لأغراض هذا المستند يمكن للقراء استخدامهما بالتبادل، بحيث يشير مفتاح الترتيب إلى الأعمدة المحددة في `ORDER BY` للجدول.
+
+لاحظ أن المفتاح الأساسي في ClickHouse يعمل [بشكل مختلف جدًا](/ar/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) عمّا قد يتوقعه من اعتاد على مصطلحات مشابهة في قواعد بيانات OLTP مثل Postgres.
+
+يُعد اختيار مفتاح أساسي فعّال في ClickHouse أمرًا بالغ الأهمية لأداء الاستعلامات وكفاءة التخزين. ينظّم ClickHouse البيانات في أجزاء، ويحتوي كل جزء منها على فهرسه الأساسي المتناثر الخاص به. ويُسرّع هذا الفهرس الاستعلامات بدرجة كبيرة من خلال تقليل حجم البيانات التي يجري فحصها. بالإضافة إلى ذلك، ولأن المفتاح الأساسي يحدّد الترتيب الفعلي للبيانات على القرص، فإنه يؤثر مباشرةً في كفاءة الضغط. فالبيانات المرتبة على نحو أمثل تُضغط بكفاءة أكبر، مما يعزّز الأداء أكثر من خلال تقليل I/O.
+
+1. عند اختيار مفتاح ترتيب، أعطِ الأولوية للأعمدة التي تُستخدم كثيرًا في مرشحات الاستعلام (أي عبارة `WHERE`)، وخصوصًا تلك التي تستبعد أعدادًا كبيرة من الصفوف.
+2. كما أن الأعمدة ذات الارتباط العالي مع البيانات الأخرى في الجدول تكون مفيدة أيضًا، لأن التخزين المتجاور يحسّن نسب الضغط وكفاءة الذاكرة أثناء عمليات `GROUP BY` و`ORDER BY`.
+
+<br />
+
+يمكن تطبيق بعض القواعد البسيطة للمساعدة في اختيار مفتاح ترتيب. وقد تتعارض النقاط التالية أحيانًا، لذا انظر فيها بالترتيب. **يمكنك تحديد عدد من المفاتيح من خلال هذه العملية، ويكون 4-5 منها كافيًا عادةً**:
+
+<Info>
+  **مهم**
+
+  يجب تحديد مفاتيح الترتيب عند إنشاء الجدول، ولا يمكن إضافتها لاحقًا. ويمكن إضافة ترتيب إضافي إلى الجدول بعد إدخال البيانات (أو قبله) عبر ميزة تُعرف باسم الإسقاطات. انتبه إلى أن ذلك يؤدي إلى تكرار البيانات. مزيد من التفاصيل [هنا](/ar/reference/statements/alter/projection).
+</Info>
+
+<div id="example">
+  ## مثال
+</div>
+
+تأمّل الجدول `posts_unordered` التالي. يحتوي هذا الجدول على صف لكل منشور في Stack Overflow.
+
+لا يحتوي هذا الجدول على مفتاح أساسي، كما يدل عليه `ORDER BY tuple()`.
+
+```sql
+CREATE TABLE posts_unordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 
+  'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime,
+  `Score` Int32,
+  `ViewCount` UInt32,
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime,
+  `LastActivityDate` DateTime,
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16,
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense`LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime,
+  `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+لنفترض أن مستخدمًا يرغب في حساب عدد الأسئلة المُرسلة بعد عام 2024، ويمثل هذا نمط الوصول الأكثر شيوعًا لديه.
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.055 sec. Processed 59.82 million rows, 361.34 MB (1.09 billion rows/s., 6.61 GB/s.)
+```
+
+لاحظ عدد الصفوف والبايتات التي قرأها هذا الاستعلام. من دون مفتاح أساسي، يتعين على الاستعلامات فحص البيانات بالكامل.
+
+يؤكد استخدام `EXPLAIN indexes=1` وجود فحص كامل للجدول بسبب غياب الفهرسة.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain───────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                 │
+│   Aggregating                                             │
+│     Expression (Before GROUP BY)                          │
+│       Expression                                          │
+│         ReadFromMergeTree (stackoverflow.posts_unordered) │
+└───────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.003 sec.
+```
+
+افترض أن جدولًا باسم `posts_ordered` يحتوي على البيانات نفسها، وقد عُرِّف باستخدام `ORDER BY` بالشكل `(PostTypeId, toDate(CreationDate))`، أي:
+
+```sql
+CREATE TABLE posts_ordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 
+  'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+...
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+تبلغ cardinality الخاصة بـ`PostTypeId` 8، ما يجعله الخيار المنطقي للمدخل الأول في مفتاح الترتيب لدينا. وبما أن التصفية على مستوى التاريخ يُرجَّح أن تكون كافية (مع أنها ستفيد أيضًا مرشحات التاريخ والوقت)، فإننا نستخدم `toDate(CreationDate)` بوصفه المكوّن الثاني من مفتاحنا. ويساعد ذلك أيضًا على إنشاء فهرس أصغر، لأن التاريخ يمكن تمثيله باستخدام 16 بت، مما يسرّع التصفية.
+
+يوضح الرسم المتحرك التالي كيفية إنشاء فهرس أساسي متناثر محسَّن لجدول منشورات Stack Overflow. وبدلًا من فهرسة الصفوف الفردية، يستهدف الفهرس كتلًا من الصفوف:
+
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="المفتاح الأساسي" />
+
+إذا تكرر الاستعلام نفسه على جدول يستخدم مفتاح الترتيب هذا:
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.013 sec. Processed 196.53 thousand rows, 1.77 MB (14.64 million rows/s., 131.78 MB/s.)
+```
+
+يستفيد هذا الاستعلام الآن من الفهرسة المتفرقة، مما يقلّل بشكل كبير كمية البيانات المقروءة ويُسرّع وقت التنفيذ بمقدار أربعة أضعاف - لاحظ انخفاض عدد الصفوف والبايتات المقروءة.
+
+يمكن تأكيد استخدام الفهرس باستخدام `EXPLAIN indexes=1`.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain─────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                   │
+│   Aggregating                                                                               │
+│     Expression (Before GROUP BY)                                                            │
+│       Expression                                                                            │
+│         ReadFromMergeTree (stackoverflow.posts_ordered)                                     │
+│         Indexes:                                                                            │
+│           PrimaryKey                                                                        │
+│             Keys:                                                                           │
+│               PostTypeId                                                                    │
+│               toDate(CreationDate)                                                          │
+│             Condition: and((PostTypeId in [1, 1]), (toDate(CreationDate) in [19723, +Inf))) │
+│             Parts: 14/14                                                                    │
+│             Granules: 39/7578                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.004 sec.
+```
+
+بالإضافة إلى ذلك، نعرض بصريًا كيف يستبعد الفهرس المتناثر جميع كتل الصفوف التي لا يمكن أن تحتوي على أي نتائج مطابقة لاستعلام المثال الخاص بنا:
+
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="المفتاح الأساسي" />
+
+<Note>
+  ستُرتَّب جميع الأعمدة في الجدول استنادًا إلى قيمة مفتاح الترتيب المحدد، سواء أكانت مُدرجة في المفتاح نفسه أم لا. على سبيل المثال، إذا استُخدم `CreationDate` كمفتاح، فسيطابق ترتيب القيم في جميع الأعمدة الأخرى ترتيب القيم في العمود `CreationDate`. ويمكن تحديد عدة مفاتيح ترتيب — وعندها سيكون الترتيب وفق الدلالات نفسها لعبارة `ORDER BY` في استعلام `SELECT`.
+</Note>
+
+يمكن العثور على دليل متقدم شامل حول اختيار المفاتيح الأساسية [هنا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+للتعمق أكثر في كيفية تحسين مفاتيح الترتيب للضغط وزيادة تحسين التخزين، راجع الأدلة الرسمية حول [الضغط في ClickHouse](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) و[مرمِّزات ضغط الأعمدة](/ar/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).

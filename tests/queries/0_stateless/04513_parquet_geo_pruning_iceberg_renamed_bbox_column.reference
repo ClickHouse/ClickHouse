@@ -1,0 +1,10 @@
+=== all rows ===
+1
+2
+3
+4
+=== south texas ===
+1
+2
+=== pruned_row_groups (expect 1) ===
+ParquetPrunedRowGroups: 1 (increment)

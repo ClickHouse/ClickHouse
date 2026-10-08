@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE empty (n UInt64) ENGINE = MergeTree() ORDER BY n;
 
 -- A query that reproduces the problem, it has a JOIN of two empty tables followed by some window functions.
@@ -71,7 +72,7 @@ SELECT trimLeft(explain) FROM (
             )
         SELECT lead
         FROM window2
-        SETTINGS max_threads = 20, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0 -- CI may inject False; changes Resize pipeline structure after window functions
+        SETTINGS max_threads = 20, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0, query_plan_optimize_join_order_randomize = 0, join_algorithm = 'parallel_hash' -- pin settings CI may randomize; a plain `hash` join keeps the pipeline single-threaded and changes the Resize structure
 ) WHERE explain LIKE '%Resize%' LIMIT 3;
 
 
@@ -103,7 +104,7 @@ SELECT trimLeft(explain) FROM (
             )
         SELECT lead
         FROM window2
-        SETTINGS max_threads = 2000, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0 -- CI may inject False; changes Resize pipeline structure after window functions
+        SETTINGS max_threads = 2000, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0, query_plan_optimize_join_order_randomize = 0, join_algorithm = 'parallel_hash' -- pin settings CI may randomize; a plain `hash` join keeps the pipeline single-threaded and changes the Resize structure
 ) WHERE explain LIKE '%Resize%' LIMIT 3; -- {serverError LIMIT_EXCEEDED}
 
 
@@ -135,7 +136,7 @@ SELECT trimLeft(explain) FROM (
             )
         SELECT lead
         FROM window2
-        SETTINGS max_threads = 300, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0 -- CI may inject False; changes Resize pipeline structure after window functions
+        SETTINGS max_threads = 300, enable_parallel_replicas=0, query_plan_enable_multithreading_after_window_functions = 1, max_threads_min_free_memory_per_thread = 0, query_plan_optimize_join_order_randomize = 0, join_algorithm = 'parallel_hash' -- pin settings CI may randomize; a plain `hash` join keeps the pipeline single-threaded and changes the Resize structure
 ) WHERE explain LIKE '%Resize%' LIMIT 1;
 
 DROP TABLE empty;

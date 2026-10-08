@@ -1,0 +1,30 @@
+---
+date: 2023-03-01
+title: "Capturer côté client le log du serveur des requêtes"
+description: "Découvrez comment capturer côté client le log du serveur pour les requêtes, même avec différents paramètres de journalisation, à l’aide du paramètre client `send_logs_level`."
+tags: ['Administration du serveur']
+keywords: ['Log du serveur']
+---
+
+<div id="learn-how-to-capture-server-logs-of-queries-at-the-client">
+  ## Découvrez comment récupérer côté client le log du serveur pour les requêtes.
+</div>
+
+Un client peut consulter le log du serveur — même à un niveau différent de celui configuré pour le niveau de journalisation du serveur — en définissant le paramètre client `send_logs_level`.
+
+Par exemple, supposons que le client exécute :
+
+```sql
+SET send_logs_level = 'trace';
+```
+
+Le client recevra des logs de trace même si le niveau de journalisation du serveur est défini sur info.
+
+Un cas d’usage utile consiste à utiliser `send_logs_level` pour surveiller l’insertion de lignes dans une table `Distributed` :
+
+* Activez les logs dans `clickhouse-client` avec `SET send_logs_level = 'trace';`
+* Exécutez votre requête `INSERT`
+* Les insertions dans une table distribuée sont asynchrones par défaut. Les données sont écrites dans un tampon local sur disque, puis envoyées aux serveurs distants en arrière-plan.
+* Les logs seront envoyés depuis tous les nœuds participant au traitement de la requête (traçage distribué)
+
+Pour vérifier l’état des insertions distribuées, consultez la [table `system.distribution_queue`](/fr/reference/system-tables/distribution_queue). Cette table contient des informations sur les fichiers locaux en file d’attente avant leur envoi aux shards. Ces fichiers locaux contiennent de nouvelles parts créées lors de l’insertion de nouvelles données dans la table `Distributed` en mode asynchrone.

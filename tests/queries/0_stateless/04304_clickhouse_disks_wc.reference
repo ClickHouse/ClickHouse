@@ -1,0 +1,16 @@
+--- full ---
+2 5 24
+--- bytes ---
+24
+--- lines ---
+2
+--- words ---
+5
+--- lines+words ---
+2 5
+--- no trailing newline ---
+0 2 7
+--- empty ---
+0 0 0
+--- directory ---
+is a directory

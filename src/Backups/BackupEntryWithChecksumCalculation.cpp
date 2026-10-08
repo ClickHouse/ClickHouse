@@ -1,5 +1,6 @@
 #include <Backups/BackupEntryWithChecksumCalculation.h>
 #include <IO/HashingReadBuffer.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents

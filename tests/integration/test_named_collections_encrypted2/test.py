@@ -94,6 +94,7 @@ def wait_zk_child_absent(zk, path, child, timeout=10):
 
 
 def check_encrypted(zk, collection):
+    zk.sync(ZK_PATH)
     content = zk.get(f"{ZK_PATH}/{collection}.sql")[0]
     assert content[:3] == b"ENC"
     return content
@@ -345,7 +346,7 @@ def test_named_collection_grants_visibility_in_system_grants(cluster):
     node1.query("GRANT SHOW NAMED COLLECTIONS ON barfoo TO grants_vis_user")
     node1.query("GRANT ALTER NAMED COLLECTION ON foobar TO grants_vis_user")
 
-    grants = node1.query(
+    node1.query(
         """
         SELECT access_type, database, table, column
         FROM system.grants
@@ -749,6 +750,7 @@ def test_new_replica_encrypted_data_integrity(stopped_node3):
         password='P@ssw0rd!Complex#123'
     """)
 
+    zk.sync(ZK_PATH)
     content = zk.get(f"{ZK_PATH}/encrypted_coll.sql")[0]
     assert content[:3] == b"ENC"
     assert b"super_secret_api_key_12345" not in content

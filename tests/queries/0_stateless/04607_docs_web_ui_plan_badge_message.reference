@@ -1,0 +1,6 @@
+ClickHouse <span class="accent">Reference</span>
+function badgePayload(name, attributes) {
+(payload ? ' ' + payload : '')
+available in the Scale and Enterprise plans. To upgrade, visit the plans page in the cloud console.
+Contact support to enable this feature.
+1

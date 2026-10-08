@@ -156,7 +156,7 @@ def test_reconfig_remove_2_and_leader(started_cluster):
     # before continuing with the checks
     for i in range(100):
         if any(
-            "leader" in ku.send_4lw_cmd(cluster, node, f"mntr")
+            "leader" in ku.send_4lw_cmd(cluster, node, "mntr")
             for node in [node2, node3]
         ):
             break

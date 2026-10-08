@@ -1,12 +1,10 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <base/types.h>
 
-#include <memory>
-#include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace DB
@@ -14,36 +12,60 @@ namespace DB
 
 class IDataPartStorage;
 
-/// UNIQUE KEY — primitive file-I/O helpers for `delete_bitmap_{N}.rbm`
-/// sidecar files. The on-disk filename encodes a `block_number`; the
-/// public write/read API speaks a caller-provided `version`, materialised
-/// one-to-one as `delete_bitmap_{version}.rbm`.
+/// Primitive file-I/O helpers for delete-bitmap files
 namespace DeleteBitmapFileOps
 {
-    /// Every `delete_bitmap_{N}.rbm` file in the part directory parsed to
-    /// (block_number, name). Filesystem iteration order.
-    std::vector<std::pair<UInt64, std::string>> enumerateFiles(const IDataPartStorage & storage);
+    /// One bitmap file: which part it kills into, and at which version. Every file names its
+    /// target; only a carried one names its version too, a staged one taking its holder's. This
+    /// type is what knows the difference, so the name on disk, the `system.parts` string and the
+    /// sort order all come from here.
+    struct BitmapFile
+    {
+        BitmapVersion version = 0;
+        std::string target;
 
-    /// Entry with the highest block number, or std::nullopt if empty.
-    std::optional<std::pair<UInt64, std::string>> pickHighest(
-        const std::vector<std::pair<UInt64, std::string>> & files);
+        /// No committed transaction has csn 0, so a recorded version can only be an inherited one.
+        bool isCarried() const { return version != 0; }
 
-    /// Atomic write: tmp-file + fsync + dir-sync rename. Not internally
-    /// synchronised — caller serialises concurrent writers to the same target.
-    void writeBitmapToStorage(
-        IDataPartStorage & storage,
-        UInt64 version,
-        const DeleteBitmap & bitmap,
-        const String & diag_part_name = "");
+        std::string fileName() const
+        {
+            return isCarried()
+                ? DeleteBitmap::fileNameForCarriedTarget(version, target)
+                : DeleteBitmap::fileNameForStagedTarget(target);
+        }
 
-    /// Read `delete_bitmap_{version}.rbm`. Throws `FILE_DOESNT_EXIST` if missing.
-    std::shared_ptr<DeleteBitmap> readBitmapFromStorage(
-        const IDataPartStorage & storage,
-        UInt64 version,
-        const String & diag_part_name = "");
+        /// The `system.parts` form: the name without the prefix and suffix all of them share.
+        std::string toString() const;
 
-    /// Highest version on disk, or 0 if none.
-    UInt64 getCurrentVersionFromStorage(const IDataPartStorage & storage);
+        bool operator==(const BitmapFile & other) const = default;
+    };
+
+    /// Every bitmap file in the part directory, in filesystem order. Anything else there is
+    /// somebody else's file.
+    std::vector<BitmapFile> enumerateFiles(const IDataPartStorage & storage);
+
+    /// By target, then by version -- numerically, so a listing does not start putting
+    /// `delete_bitmap_10_for_x` before `delete_bitmap_9_for_x` once a table crosses csn 10.
+    void sortByVersion(std::vector<BitmapFile> & files);
+
+    /// Stage a bitmap file for the given holder
+    MergeTreeDataPartChecksum stageBitmap(
+        IDataPartStorage & holder,
+        const BitmapFile & file,
+        const DeleteBitmap & bitmap);
+
+    /// Copy a bitmap file under a carried name. The version travels with the bytes: renumbering
+    /// it to the destination's csn would land a copy newest-by-number and stale-by-content.
+    MergeTreeDataPartChecksum carryBitmap(
+        const IDataPartStorage & from,
+        const BitmapFile & from_file,
+        IDataPartStorage & to,
+        const BitmapFile & to_file);
+
+    /// Null when the file is absent -- the one outcome a caller interprets rather than treats as
+    /// a failure.
+    DeleteBitmapPtr tryReadBitmap(const IDataPartStorage & holder, const BitmapFile & file);
+
 }
 
 }

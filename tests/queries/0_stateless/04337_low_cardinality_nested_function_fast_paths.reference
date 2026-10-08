@@ -1,0 +1,56 @@
+arrayElement Array(LowCardinality)
+1	alpha	beta	gamma	
+2	beta	delta	delta	
+3				
+4	alpha	alphabet	alphabet	
+mapContainsKeyLike and mapExtractKeyLike
+1	1	1	{'alpha':'one'}
+2	0	0	{}
+3	0	0	{}
+4	1	1	{'alpha':'again','alphabet':'letters'}
+mapContainsValueLike and mapExtractValueLike
+1	1	1	{'k1':'alpha'}
+2	0	0	{}
+3	0	0	{}
+4	1	1	{'k1':'alpha','k5':'alphabet'}
+constant map fallbacks
+0	one
+1	one
+0	String	one
+1	String	one
+0	1	{'alpha':'one'}
+1	1	{'alpha':'one'}
+0	1	{'alpha':'one'}
+1	1	{'alpha':'one'}
+0	1	{'k1':'alpha'}
+1	1	{'k1':'alpha'}
+nullable argument fallbacks
+x	Nullable(String)
+\N	Nullable(String)
+1	{'alpha':'one'}
+\N	{}
+1	{'k1':'alpha'}
+\N	{}
+10
+low cardinality nullable arguments
+\N	Nullable(String)
+x	Nullable(String)
+\N	Nullable(String)
+x	Nullable(String)
+\N	Nullable(String)
+v	Nullable(String)
+\N	Nullable(String)
+10	LowCardinality(Nullable(UInt8))
+10	LowCardinality(Nullable(UInt8))
+low cardinality result types
+x	LowCardinality(String)
+x	LowCardinality(Nullable(String))
+low cardinality nullable patterns
+1	Nullable(UInt8)
+\N	Nullable(UInt8)
+{'key1':'v'}	Map(String, String)
+1	Nullable(UInt8)
+{'k':'val1'}	Map(String, String)
+low cardinality map key type checks
+v	String
+	String

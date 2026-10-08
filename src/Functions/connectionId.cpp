@@ -9,12 +9,16 @@ namespace DB
 {
 
 /// Get the connection Id. It's used for MySQL handler only.
-class FunctionConnectionId final : public IFunction, WithContext
+class FunctionConnectionId final : public IFunction
 {
 public:
     static constexpr auto name = "connectionId";
 
-    explicit FunctionConnectionId(ContextPtr context_) : WithContext(context_) {}
+    /// The connection id is a property of the query, so capture it here instead of keeping a reference to
+    /// the context. A function built while analyzing a subquery can be executed after the context that
+    /// built it is gone - e.g. a scalar subquery whose expression actions are reused by the outer query -
+    /// and looking the context up at execution time throws `Context has expired`.
+    explicit FunctionConnectionId(const ContextPtr & context_) : connection_id(context_->getClientInfo().connection_id) {}
 
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionConnectionId>(context_); }
 
@@ -30,8 +34,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return result_type->createColumnConst(input_rows_count, getContext()->getClientInfo().connection_id);
+        return result_type->createColumnConst(input_rows_count, connection_id);
     }
+
+private:
+    const UInt64 connection_id;
 };
 
 REGISTER_FUNCTION(ConnectionId)

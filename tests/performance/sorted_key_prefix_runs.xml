@@ -1,0 +1,20 @@
+<test>
+    <!-- Sorted-stream operators on a two-column key: long runs of the leading column, short groups ended by the second one. -->
+    <create_query>CREATE TABLE sorted_key_prefix_runs (a String, b String, x UInt64) ENGINE = MergeTree ORDER BY (a, b)</create_query>
+    <fill_query>INSERT INTO sorted_key_prefix_runs SELECT concat('k', toString(sipHash64(intDiv(number, 2) % 1000))), hex(sipHash64(intDiv(number, 2))), number FROM numbers_mt(5000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE sorted_key_prefix_runs FINAL</fill_query>
+
+    <create_query>CREATE TABLE sorted_key_prefix_runs_replacing (a String, b String, x UInt64) ENGINE = ReplacingMergeTree ORDER BY (a, b)</create_query>
+    <fill_query>SYSTEM STOP MERGES sorted_key_prefix_runs_replacing</fill_query>
+    <fill_query>INSERT INTO sorted_key_prefix_runs_replacing SELECT a, b, x FROM sorted_key_prefix_runs SETTINGS optimize_on_insert = 0, max_insert_threads = 1, max_threads = 1</fill_query>
+
+    <query>SELECT DISTINCT a, b FROM sorted_key_prefix_runs FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT sum(x) OVER (ORDER BY a, b) FROM sorted_key_prefix_runs FORMAT Null</query>
+    <query>SELECT count() OVER (ORDER BY a, b GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM sorted_key_prefix_runs FORMAT Null</query>
+    <query>SELECT row_number() OVER (PARTITION BY a, b ORDER BY x) FROM sorted_key_prefix_runs FORMAT Null SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM sorted_key_prefix_runs AS l INNER JOIN sorted_key_prefix_runs AS r USING (a, b) FORMAT Null SETTINGS join_algorithm = 'partial_merge'</query>
+    <query>SELECT count() FROM sorted_key_prefix_runs_replacing FINAL FORMAT Null SETTINGS enable_vertical_final = 0, max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS sorted_key_prefix_runs</drop_query>
+    <drop_query>DROP TABLE IF EXISTS sorted_key_prefix_runs_replacing</drop_query>
+</test>

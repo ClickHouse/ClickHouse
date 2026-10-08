@@ -11,6 +11,7 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
+#include <Storages/IStreamingStorage.h>
 #include <Common/thread_local_rng.h>
 
 namespace DB
@@ -24,7 +25,7 @@ using INATSProducerPtr = std::unique_ptr<INATSProducer>;
 
 struct NATSSettings;
 
-class StorageNATS final : public IStorage, WithContext
+class StorageNATS final : public IStreamingStorage, WithContext
 {
 public:
     StorageNATS(
@@ -33,7 +34,9 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
-        LoadingStrictnessLevel mode);
+        LoadingStrictnessLevel mode,
+        bool authentication_determined_by_table_,
+        bool fresh_definition_);
 
     ~StorageNATS() override;
 
@@ -45,6 +48,7 @@ public:
 
     void startup() override;
     void shutdown(bool is_drop) override;
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     /// This is a bad way to let storage know in shutdown() that table is going to be dropped. There are some actions which need
     /// to be done only when table is dropped (not when detached). Also connection must be closed only in shutdown, but those
@@ -72,6 +76,9 @@ public:
     void pushConsumer(INATSConsumerPtr consumer);
     INATSConsumerPtr popConsumer();
     INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+
+    /// Makes the streaming task subscribe the consumers again before its next cycle.
+    void markConsumersNotReady() { consumers_ready.store(false); }
 
     const String & getFormatName() const { return format_name; }
 
@@ -111,13 +118,19 @@ private:
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
-    /// Needed for tell MV or producer background tasks
-    /// that they must finish as soon as possible.
-    std::atomic<bool> shutdown_called{false};
-    std::atomic<bool> mv_attached = false;
+
+    /// One-shot request from STOP/PAUSE: unsubscribe and drop buffered messages.
+    std::atomic<bool> subscription_stale{false};
+
+    /// Shared by `initializeConsumersFunc` and `threadFunc`, which can run concurrently, so it is atomic
+    /// and claimed via the CAS overload of `StreamingBackgroundControl::claimCycle`.
+    std::atomic<UInt64> last_seen_refresh_epoch = 0;
 
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
+    bool fresh_definition;
+
+    void scheduleStreamingTasksImpl() override;
 
     INATSConsumerPtr createConsumer();
     INATSProducerPtr createProducer(String subject);
@@ -126,13 +139,18 @@ private:
 
     /// Functions working in the background
     void initializeConsumersFunc();
-    void streamingToViewsFunc();
+    void threadFunc();
 
     void createConsumersConnection();
     void createConsumers();
+    void dropConsumers();
 
     bool subscribeConsumers();
+    /// Replaces the subscription of every consumer that stopped consuming and has an empty queue.
+    void resubscribeStaleConsumers();
     void unsubscribeConsumers();
+    /// Unsubscribes the consumers in the pool which are still subscribed, without touching `consumers_ready`.
+    void unsubscribeHandedBackConsumers();
 
     void stopEventLoop();
 
@@ -144,7 +162,7 @@ private:
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePoolTaskHolder & task);
 
-    bool streamToViews();
+    bool streamToViews(UInt64 cycle_epoch);
     bool checkDependencies(const StorageID & table_id);
 };
 

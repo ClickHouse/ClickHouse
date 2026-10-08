@@ -3,8 +3,6 @@ import pytest
 
 from helpers.iceberg_utils import (
     generate_data,
-    get_uuid_str,
-    get_creation_expression,
     get_creation_expression,
     get_uuid_str,
     write_iceberg_from_df,

@@ -1,0 +1,113 @@
+---
+description: 'Документация по клиентской утилите ClickHouse Keeper'
+sidebarTitle: 'clickhouse-keeper-client'
+slug: /operations/utilities/clickhouse-keeper-client
+title: 'Утилита clickhouse-keeper-client'
+doc_type: 'reference'
+---
+
+Клиентское приложение для взаимодействия с ClickHouse Keeper по собственному протоколу.
+
+<div id="clickhouse-keeper-client">
+  ## Ключи
+</div>
+
+* `-q QUERY`, `--query=QUERY` — Запрос для выполнения. Если этот параметр не указан, `clickhouse-keeper-client` запустится в интерактивном режиме.
+* `-h HOST`, `--host=HOST` — Хост сервера. Значение по умолчанию: `localhost`.
+* `-p N`, `--port=N` — Порт сервера. Значение по умолчанию: 9181
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — Задаёт путь к файлу конфигурации, из которого берётся строка подключения. Значение по умолчанию: `config.xml`.
+* `--password=PASSWORD` — Пароль для аутентификации. Его также можно задать через переменную окружения `CLICKHOUSE_KEEPER_PASSWORD` или в XML-файле конфигурации по пути `<zookeeper><password>`.
+* `--identity=IDENTITY` — Идентификатор для схемы аутентификации `digest`. Его также можно задать через переменную окружения `CLICKHOUSE_KEEPER_IDENTITY` или в XML-файле конфигурации по пути `<zookeeper><identity>`.
+* `--connection-timeout=TIMEOUT` — Задаёт тайм-аут подключения в секундах. Значение по умолчанию: 10s.
+* `--session-timeout=TIMEOUT` — Задаёт тайм-аут сеанса в секундах. Значение по умолчанию: 10s.
+* `--operation-timeout=TIMEOUT` — Задаёт тайм-аут операции в секундах. Значение по умолчанию: 10s.
+* `--history-file=FILE_PATH` — Задаёт путь к файлу истории. Значение по умолчанию: `~/.keeper-client-history`.
+* `--log-level=LEVEL` — Задаёт уровень логирования. Значение по умолчанию: `information`.
+* `--no-confirmation` — Если указан, не требует подтверждения для ряда команд. Значение по умолчанию: `false` в интерактивном режиме и `true` в режиме запроса
+* `--help` — Показывает справку.
+
+<div id="clickhouse-keeper-client-env">
+  ## Переменные окружения
+</div>
+
+* `CLICKHOUSE_KEEPER_PASSWORD` — Используется в качестве пароля по умолчанию, если `--password` не указан в командной строке.
+* `CLICKHOUSE_KEEPER_IDENTITY` — Используется в качестве идентификатора по умолчанию, если `--identity` не указан в командной строке.
+
+<div id="clickhouse-keeper-client-auth">
+  ## Аутентификация
+</div>
+
+При подключении к серверу Keeper, требующему аутентификации, пароль выбирается в следующем порядке приоритета (используется первое найденное значение):
+
+1. аргумент командной строки `--password`
+2. переменная окружения `CLICKHOUSE_KEEPER_PASSWORD`
+3. `<zookeeper><password>` в XML-файле конфигурации, указанном через `--config-file`
+
+Тот же порядок приоритета действует для `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
+
+Пример XML-файла конфигурации с настройками аутентификации:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <password>secret</password>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="clickhouse-keeper-client-example">
+  ## Пример
+</div>
+
+```bash
+./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
+Connected to ZooKeeper at [::1]:9181 with session_id 137
+/ :) ls
+keeper foo bar
+/ :) cd 'keeper'
+/keeper :) ls
+api_version
+/keeper :) cd 'api_version'
+/keeper/api_version :) ls
+
+/keeper/api_version :) cd 'xyz'
+Path /keeper/api_version/xyz does not exist
+/keeper/api_version :) cd ../../
+/ :) ls
+keeper foo bar
+/ :) get 'keeper/api_version'
+2
+```
+
+<div id="clickhouse-keeper-client-commands">
+  ## Команды
+</div>
+
+* `ls '[path]' [watch_id]` -- Выводит список узлов для указанного пути (по умолчанию: cwd). При необходимости устанавливает наблюдение за дочерними узлами с идентификатором `watch_id`
+* `cd '[path]'` -- Изменяет рабочий путь (по умолчанию `.`)
+* `cp '<src>' '<dest>'`  -- Копирует узел &#39;src&#39; в путь &#39;dest&#39;
+* `cpr '<src>' '<dest>'`  -- Копирует поддерево узла &#39;src&#39; в путь &#39;dest&#39;
+* `mv '<src>' '<dest>'`  -- Перемещает узел &#39;src&#39; в путь &#39;dest&#39;
+* `mvr '<src>' '<dest>'`  -- Перемещает поддерево узла &#39;src&#39; в путь &#39;dest&#39;
+* `exists '<path>' [watch_id]` -- Возвращает `1`, если узел существует, иначе `0`. При необходимости устанавливает наблюдение с идентификатором `watch_id`
+* `set '<path>' <value> [version]` -- Обновляет значение узла. Обновление выполняется только при совпадении версии (по умолчанию: -1)
+* `create '<path>' <value> [mode]` -- Создает новый узел с указанным значением
+* `touch '<path>'` -- Создает новый узел с пустой строкой в качестве значения. Не генерирует исключение, если узел уже существует
+* `get '<path>' [watch_id]` -- Возвращает значение узла. При необходимости устанавливает наблюдение за данными с идентификатором `watch_id`
+* `watch <watch_id> [timeout_seconds]` -- Ожидает событие наблюдения с идентификатором `watch_id` и выводит тип события и путь. Если указан `timeout_seconds`, возвращает ошибку по истечении заданного тайм-аута
+* `rm '<path>' [version]` -- Удаляет узел только при совпадении версии (по умолчанию: -1)
+* `rmr '<path>' [limit]` -- Рекурсивно удаляет путь, если размер поддерева меньше указанного ограничения. Требуется подтверждение (ограничение по умолчанию = 100)
+* `flwc <command>` -- Выполняет команду из четырех букв
+* `help` -- Выводит это сообщение
+* `get_direct_children_number '[path]'` -- Возвращает количество непосредственных дочерних узлов для указанного пути
+* `get_all_children_number '[path]'` -- Возвращает общее количество дочерних узлов для указанного пути
+* `get_stat '[path]'` -- Возвращает статистику узла (по умолчанию `.`)
+* `find_super_nodes <threshold> '[path]'` -- Находит для указанного пути узлы, количество дочерних узлов у которых превышает заданный порог (по умолчанию `.`)
+* `delete_stale_backups` -- Удаляет узлы ClickHouse, используемые для резервных копий и ставшие неактивными
+* `find_big_family [path] [n]` -- Возвращает n узлов с наибольшим числом потомков в поддереве (по умолчанию path = `.` и n = 10)
+* `sync '<path>'` -- Синхронизирует узел между процессами и лидером
+* `reconfig <add|remove|set> "<arg>" [version]` -- Перенастраивает кластер Keeper. См. /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

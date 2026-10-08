@@ -1,0 +1,6 @@
+rejected: --tcp_port=-1
+rejected: --tcp_port=70000
+rejected: --http_port=-1
+rejected: --http_port=99999
+accepted: tcp=0 http=0
+accepted: tcp=65535 http=65535

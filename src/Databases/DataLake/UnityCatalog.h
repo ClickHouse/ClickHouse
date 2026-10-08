@@ -28,7 +28,9 @@ public:
 
     bool empty() const override;
 
-    DB::Names getTables() const override;
+    CatalogTables getTables() const override;
+
+    Namespaces getNamespaces() const override;
 
     bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
 
@@ -49,23 +51,42 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
+
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
+
+    /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
+    /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
+    void createTable(
+        const String & namespace_name,
+        const String & table_name,
+        const String & table_location,
+        Poco::JSON::Object::Ptr metadata_content) const override;
+
 private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
-    DB::HTTPHeaderEntry auth_header;
+    const std::string bearer_token;
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
 
-    Poco::Net::HTTPBasicCredentials credentials{};
-
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
-    DB::Names getTablesForSchema(const std::string & schema, size_t limit = 0) const;
+    /// Throw if the catalog `warehouse` has no schema `schema_name` (or the catalog itself does not exist), so
+    /// a misconfigured namespace stays an error instead of being reported as an absent table by `existsTable`.
+    void checkNamespaceExists(const std::string & schema_name) const;
+
+    CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;
+    CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void getCredentials(const String & table_id, TableMetadata & metadata) const;
 
-    Poco::JSON::Object::Ptr requestReadCredentials(const String & table_id) const;
+    Poco::JSON::Object::Ptr requestCredentials(const String & table_id, const String & operation) const;
 
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
     std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
@@ -75,7 +96,12 @@ private:
         const std::string & table_name,
         TableMetadata & result) const;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
+
+    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+
+    ICatalog::CredentialsRefreshCallback getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation);
 };
 
 }

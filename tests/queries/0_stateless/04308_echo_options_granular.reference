@@ -24,3 +24,34 @@ select 1+1
 Query id: 04308_fixed_id
 
 04308_fixed_id
+--- echo-query-separator ---
+
+-- // -- // -- // --
+SELECT 1 + 1
+
+2
+--- echo-query-separator without echo-formatted ---
+select 1+1
+2
+--- echo-formatted without separator (default) ---
+
+SELECT 1 + 1
+
+2
+--- echo-query-separator multi-query ---
+
+-- // --
+SELECT 1 + 1
+
+2
+
+-- // --
+SELECT 2 + 2
+
+4
+--- local: echo-query-separator ---
+
+-- // -- // -- // --
+SELECT 1 + 1
+
+2

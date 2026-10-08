@@ -1,16 +1,22 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/like.h>
 #include <Functions/array/arrayConcat.h>
 #include <Functions/array/arrayFilter.h>
@@ -22,11 +28,19 @@
 #include <Functions/identity.h>
 #include <Functions/FunctionFactory.h>
 
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 #include <ranges>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_lazy_columns_replication;
+}
 
 namespace ErrorCodes
 {
@@ -45,17 +59,55 @@ namespace ErrorCodes
   * from Map arguments and possibly modify other columns.
 */
 template <typename Impl, typename Adapter, typename Name>
-class FunctionMapToArrayAdapter final : public IFunction
+class FunctionMapToArrayAdapter : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapToArrayAdapter>(); }
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMapToArrayAdapter>(context); }
+
+    explicit FunctionMapToArrayAdapter(const ContextPtr & context)
+        : enable_lazy_columns_replication(context->getSettingsRef()[Setting::enable_lazy_columns_replication])
+    {
+    }
+
     String getName() const override { return name; }
+
+    static constexpr bool has_low_cardinality_specialization
+        = requires(const ColumnsWithTypeAndName & args, const DataTypePtr & type, size_t rows)
+        {
+            Adapter::executeWithLowCardinalityColumns(args, type, rows);
+        };
+
+    /// Fast path hook for FunctionWithLowCardinalityFastPath (see FunctionLowCardinalityFastPath.h).
+    /// Only adapters that implement executeWithLowCardinalityColumns have it, and only those
+    /// functions are registered wrapped in the mixin.
+    ColumnPtr tryExecuteLowCardinality(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+        requires has_low_cardinality_specialization
+    {
+        return Adapter::executeWithLowCardinalityColumns(arguments, result_type, input_rows_count);
+    }
+
+    /// Functions that return a Map by selecting or reordering the original key-value pairs
+    /// (`mapFilter`, `mapSort` and its variants, `mapConcat`) must keep the exact key and value
+    /// types of the input Map, including `LowCardinality`. The generic
+    /// `useDefaultImplementationForLowCardinalityColumns` machinery strips nested `LowCardinality`
+    /// recursively (as it does for arrays), which would silently turn `Map(LowCardinality(String), String)`
+    /// into `Map(String, String)` and corrupt the metadata of a table created from such an expression.
+    /// `mapApply` is excluded because it rebuilds the elements from the lambda result, so its element
+    /// types follow the lambda (just like `arrayMap`).
+    static constexpr bool preserve_nested_low_cardinality = Adapter::preserve_low_cardinality && !std::is_same_v<Impl, FunctionArrayMap>;
 
     bool isVariadic() const override { return impl.isVariadic(); }
     size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
     bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return impl.useDefaultImplementationForLowCardinalityColumns(); }
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        if constexpr (preserve_nested_low_cardinality)
+            return false;
+        return impl.useDefaultImplementationForLowCardinalityColumns();
+    }
     bool useDefaultImplementationForConstants() const override { return impl.useDefaultImplementationForConstants(); }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override  { return false; }
 
@@ -85,7 +137,7 @@ public:
                     "Function {} requires at least one argument, passed {}", getName(), arguments.size());
 
         auto nested_arguments = arguments;
-        Adapter::extractNestedTypesAndColumns(nested_arguments);
+        extractNestedTypesAndColumns(nested_arguments);
 
         constexpr bool impl_has_get_return_type = requires
         {
@@ -127,12 +179,46 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         auto nested_arguments = arguments;
-        Adapter::extractNestedTypesAndColumns(nested_arguments);
-        return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
+        extractNestedTypesAndColumns(nested_arguments);
+
+        if constexpr (preserve_nested_low_cardinality)
+        {
+            /// We disabled the default LowCardinality implementation to keep the key/value types in
+            /// the result type, so the framework no longer strips LowCardinality from the arguments.
+            /// The nested `impl` (e.g. `arrayFilter`) operates on full columns and its lambda argument
+            /// types were declared without LowCardinality, so we strip it here and restore it on the
+            /// result to match the declared result type.
+            const auto nested_result_type = Adapter::extractResultType(result_type);
+            const auto nested_result_type_no_lc = recursiveRemoveLowCardinality(nested_result_type);
+
+            for (auto & argument : nested_arguments)
+            {
+                argument.column = recursiveRemoveLowCardinality(argument.column);
+                argument.type = recursiveRemoveLowCardinality(argument.type);
+            }
+
+            auto nested_result = impl.executeImpl(nested_arguments, nested_result_type_no_lc, input_rows_count);
+            nested_result = recursiveLowCardinalityTypeConversion(nested_result, nested_result_type_no_lc, nested_result_type);
+            return Adapter::wrapColumn(std::move(nested_result));
+        }
+        else
+            return Adapter::wrapColumn(impl.executeImpl(nested_arguments, Adapter::extractResultType(result_type), input_rows_count));
     }
 
 private:
+    /// Adapters that synthesize a lambda-like ColumnFunction take the lazy replication flag
+    /// to defer the physical replication of the captured column: the capture stays lazy
+    /// (ColumnReplicated) until the lambda is executed.
+    void extractNestedTypesAndColumns(ColumnsWithTypeAndName & nested_arguments) const
+    {
+        if constexpr (requires { Adapter::extractNestedTypesAndColumns(nested_arguments, enable_lazy_columns_replication); })
+            Adapter::extractNestedTypesAndColumns(nested_arguments, enable_lazy_columns_replication);
+        else
+            Adapter::extractNestedTypesAndColumns(nested_arguments);
+    }
+
     Impl impl;
+    bool enable_lazy_columns_replication;
 };
 
 
@@ -189,6 +275,9 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
     using MapAdapterBase<MapToNestedAdapter, Name>::extractNestedTypes;
     using MapAdapterBase<MapToNestedAdapter, Name>::extractNestedTypesAndColumns;
 
+    /// Functions returning a Map should keep the key/value types (including LowCardinality) of the input.
+    static constexpr bool preserve_low_cardinality = returns_map;
+
     static DataTypePtr extractNestedType(const DataTypeMap & type_map)
     {
         return type_map.getNestedType();
@@ -221,11 +310,41 @@ struct MapToNestedAdapter : public MapAdapterBase<MapToNestedAdapter<Name, retur
     }
 };
 
+/// Adapter for mapEntries. It exposes singular public tuple field names while reusing
+/// the Map's existing nested Array(Tuple(...)) column without materializing entries.
+template <typename Name>
+struct MapEntriesAdapter : public MapAdapterBase<MapEntriesAdapter<Name>, Name>
+{
+    using MapAdapterBase<MapEntriesAdapter, Name>::extractNestedTypes;
+    using MapAdapterBase<MapEntriesAdapter, Name>::extractNestedTypesAndColumns;
+
+    /// mapEntries follows Array semantics and strips nested LowCardinality, like mapKeys/mapValues.
+    static constexpr bool preserve_low_cardinality = false;
+
+    static DataTypePtr extractNestedType(const DataTypeMap & type_map)
+    {
+        return std::make_shared<DataTypeArray>(
+            std::make_shared<DataTypeTuple>(type_map.getKeyValueTypes(), Names{"key", "value"}));
+    }
+
+    static ColumnPtr extractNestedColumn(const ColumnMap & column_map)
+    {
+        return column_map.getNestedColumnPtr();
+    }
+
+    static DataTypePtr extractResultType(const DataTypePtr & result_type) { return result_type; }
+    static DataTypePtr wrapType(DataTypePtr type) { return type; }
+    static ColumnPtr wrapColumn(ColumnPtr column) { return column; }
+};
+
 /// Adapter that extracts array with keys or values from Map columns.
 template <typename Name, size_t position>
 struct MapToSubcolumnAdapter
 {
     static_assert(position <= 1, "position of Map subcolumn must be 0 or 1");
+
+    /// These functions return an Array or a scalar, not a Map (the array convention strips nested LowCardinality).
+    static constexpr bool preserve_low_cardinality = false;
 
     static void extractNestedTypes(DataTypes & types)
     {
@@ -344,6 +463,11 @@ struct MapLikeAdapter
     /// so the first user-facing argument is not a lambda.
     static constexpr bool first_argument_is_lambda = false;
 
+    /// These functions match keys/values with `LIKE`, which is defined only for String/FixedString.
+    /// Their LowCardinality handling is left to the generic machinery (nested LowCardinality is not
+    /// preserved), except for the specialized path in executeWithLowCardinalityColumns.
+    static constexpr bool preserve_low_cardinality = false;
+
     static void checkTypes(const DataTypes & types)
     {
         if (types.size() != 2)
@@ -355,10 +479,10 @@ struct MapLikeAdapter
         if (!map_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Map", Name::name);
 
-        if (!isStringOrFixedString(types[1]))
+        if (!isStringOrFixedString(removeLowCardinality(types[1])))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be String or FixedString", Name::name);
 
-        auto subcolumn_type = position == 0 ? map_type->getKeyType() : map_type->getValueType();
+        auto subcolumn_type = removeLowCardinality(position == 0 ? map_type->getKeyType() : map_type->getValueType());
 
         if (!isStringOrFixedString(subcolumn_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} type of map for function {} must be String or FixedString", position == 0 ? "Key" : "Value", Name::name);
@@ -368,8 +492,11 @@ struct MapLikeAdapter
     {
         checkTypes(types);
         const auto & map_type = assert_cast<const DataTypeMap &>(*types[0]);
+        auto pattern_type = removeLowCardinality(types[1]);
+        auto key_type = recursiveRemoveLowCardinality(map_type.getKeyType());
+        auto value_type = recursiveRemoveLowCardinality(map_type.getValueType());
 
-        DataTypes lambda_argument_types{types[1], map_type.getKeyType(), map_type.getValueType()};
+        DataTypes lambda_argument_types{pattern_type, key_type, value_type};
 
         DataTypePtr result_type;
 
@@ -378,16 +505,17 @@ struct MapLikeAdapter
         else
             result_type = FunctionMapValueLike().getReturnTypeImpl(lambda_argument_types);
 
-        DataTypes argument_types{map_type.getKeyType(), map_type.getValueType()};
+        DataTypes argument_types{key_type, value_type};
         auto function_type = std::make_shared<DataTypeFunction>(argument_types, result_type);
 
-        types = {function_type, types[0]};
+        types = {function_type, std::make_shared<DataTypeMap>(key_type, value_type)};
         MapToNestedAdapter<Name, returns_map>::extractNestedTypes(types);
     }
 
-    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
+    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments, bool enable_lazy_columns_replication)
     {
         checkTypes(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
+        convertLowCardinalityColumnsToFull(arguments);
 
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
         const auto & pattern_arg = arguments[1];
@@ -412,12 +540,93 @@ struct MapLikeAdapter
             /// Here we create ColumnFunction with already captured pattern column.
             /// Nested function will append keys and values column and it will work as desired lambda.
             auto function_base = std::make_shared<FunctionToFunctionBaseAdaptor>(function, lambda_argument_types, result_type);
-            function_column = ColumnFunction::create(pattern_arg.column->size(), std::move(function_base), ColumnsWithTypeAndName{pattern_arg});
+            function_column = ColumnFunction::create(
+                pattern_arg.column->size(),
+                std::move(function_base),
+                ColumnsWithTypeAndName{pattern_arg},
+                /*is_short_circuit_argument_=*/ false,
+                /*is_function_compiled_=*/ false,
+                /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                /*allow_lazy_replicated_captures_=*/ enable_lazy_columns_replication);
         }
 
         ColumnWithTypeAndName function_arg{function_column, function_type, position == 0 ? "__function_map_key_like" :  "__function_map_value_like"};
         arguments = {function_arg, arguments[0]};
         MapToNestedAdapter<Name, returns_map>::extractNestedTypesAndColumns(arguments);
+    }
+
+    static ColumnPtr executeWithLowCardinalityColumns(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
+        size_t input_rows_count)
+    {
+        /// This fast path builds one dictionary-match bitmap for the whole block, so the LIKE pattern must be constant.
+        /// Non-constant patterns remain supported by falling back to the generic LowCardinality handling below.
+        if (arguments.size() != 2 || !arguments[0].column || !arguments[1].column || !isColumnConst(*arguments[1].column))
+            return nullptr;
+
+        if (getNullPresense(arguments).has_nullable)
+            return nullptr;
+
+        /// The generic LowCardinality handling already supports LowCardinality(String) patterns.
+        /// Keep this specialized path to ordinary constant patterns, which can be cloned directly for dictionary evaluation.
+        if (typeid_cast<const DataTypeLowCardinality *>(arguments[1].type.get()))
+            return nullptr;
+
+        DataTypes types;
+        types.reserve(arguments.size());
+        for (const auto & argument : arguments)
+            types.push_back(argument.type);
+        checkTypes(types);
+
+        const auto * map_column = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
+        if (!map_column)
+            return nullptr;
+
+        const auto & map = *map_column;
+        const auto * low_cardinality_column = typeid_cast<const ColumnLowCardinality *>(&map.getNestedData().getColumn(position));
+        if (!low_cardinality_column)
+            return nullptr;
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
+        DataTypePtr selected_type = position == 0 ? map_type.getKeyType() : map_type.getValueType();
+        DataTypePtr selected_dictionary_type = removeLowCardinality(selected_type);
+
+        auto run_like_on_dictionary_values = [&](ColumnPtr dictionary_values)
+        {
+            auto pattern_column = arguments[1].column->cloneResized(dictionary_values->size());
+            ColumnsWithTypeAndName like_arguments{
+                {dictionary_values, selected_dictionary_type, ""},
+                {std::move(pattern_column), arguments[1].type, ""},
+            };
+
+            FunctionLike like(/*context*/ nullptr);
+            auto like_result_type = like.getReturnTypeImpl(DataTypes{selected_dictionary_type, arguments[1].type});
+            return like.executeImpl(like_arguments, like_result_type, like_arguments[0].column->size());
+        };
+
+        auto dictionary_matches_column = LowCardinalityExecutionHelpers::dictionaryMatchesForSelectedIndexes(
+            *low_cardinality_column, run_like_on_dictionary_values);
+        const auto & dictionary_matches = assert_cast<const ColumnUInt8 &>(*dictionary_matches_column).getData();
+
+        auto low_cardinality_view = LowCardinalityExecutionHelpers::LowCardinalityArrayView{
+            .elements = *low_cardinality_column,
+            .offsets = map.getNestedColumn().getOffsets(),
+            .rows = input_rows_count,
+        };
+        if constexpr (returns_map)
+        {
+            auto filter_and_offsets = low_cardinality_view.filterByDictionaryMatches(dictionary_matches);
+            auto filtered_nested_data = map.getNestedData().filter(filter_and_offsets.filter, filter_and_offsets.result_size);
+            ColumnPtr filtered_map = ColumnMap::create(
+                ColumnArray::create(std::move(filtered_nested_data), std::move(filter_and_offsets.offsets)));
+            filtered_map = recursiveRemoveLowCardinality(filtered_map);
+            return filtered_map;
+        }
+        else
+        {
+            return low_cardinality_view.existsByDictionaryMatches(dictionary_matches);
+        }
     }
 
     static DataTypePtr extractResultType(const DataTypePtr & result_type)
@@ -445,6 +654,9 @@ using FunctionMapKeys = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolu
 struct NameMapValues { static constexpr auto name = "mapValues"; };
 using FunctionMapValues = FunctionMapToArrayAdapter<FunctionIdentity, MapToSubcolumnAdapter<NameMapValues, 1>, NameMapValues>;
 
+struct NameMapEntries { static constexpr auto name = "mapEntries"; };
+using FunctionMapEntries = FunctionMapToArrayAdapter<FunctionIdentity, MapEntriesAdapter<NameMapEntries>, NameMapEntries>;
+
 struct NameMapContainsKey { static constexpr auto name = "mapContainsKey"; };
 using FunctionMapContainsKey = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsKey>, MapToSubcolumnAdapter<NameMapContainsKey, 0>, NameMapContainsKey>;
 
@@ -464,16 +676,20 @@ struct NameMapAll { static constexpr auto name = "mapAll"; };
 using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAdapter<NameMapAll, false>, NameMapAll>;
 
 struct NameMapContainsKeyLike { static constexpr auto name = "mapContainsKeyLike"; };
-using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsKeyLike, false, 0>, NameMapContainsKeyLike>;
+using FunctionMapContainsKeyLike = FunctionWithLowCardinalityFastPath<
+    FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsKeyLike, false, 0>, NameMapContainsKeyLike>>;
 
 struct NameMapContainsValueLike { static constexpr auto name = "mapContainsValueLike"; };
-using FunctionMapContainsValueLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsValueLike, false, 1>, NameMapContainsValueLike>;
+using FunctionMapContainsValueLike = FunctionWithLowCardinalityFastPath<
+    FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsValueLike, false, 1>, NameMapContainsValueLike>>;
 
 struct NameMapExtractKeyLike { static constexpr auto name = "mapExtractKeyLike"; };
-using FunctionMapExtractKeyLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractKeyLike, true, 0>, NameMapExtractKeyLike>;
+using FunctionMapExtractKeyLike = FunctionWithLowCardinalityFastPath<
+    FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractKeyLike, true, 0>, NameMapExtractKeyLike>>;
 
 struct NameMapExtractValueLike { static constexpr auto name = "mapExtractValueLike"; };
-using FunctionMapExtractValueLike = FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractValueLike, true, 1>, NameMapExtractValueLike>;
+using FunctionMapExtractValueLike = FunctionWithLowCardinalityFastPath<
+    FunctionMapToArrayAdapter<FunctionArrayFilter, MapLikeAdapter<NameMapExtractValueLike, true, 1>, NameMapExtractValueLike>>;
 
 struct NameMapSort { static constexpr auto name = "mapSort"; };
 struct NameMapReverseSort { static constexpr auto name = "mapReverseSort"; };
@@ -484,6 +700,117 @@ using FunctionMapSort = FunctionMapToArrayAdapter<FunctionArraySort, MapToNested
 using FunctionMapReverseSort = FunctionMapToArrayAdapter<FunctionArrayReverseSort, MapToNestedAdapter<NameMapReverseSort>, NameMapReverseSort>;
 using FunctionMapPartialSort = FunctionMapToArrayAdapter<FunctionArrayPartialSort, MapToNestedAdapter<NameMapPartialSort>, NameMapPartialSort>;
 using FunctionMapPartialReverseSort = FunctionMapToArrayAdapter<FunctionArrayPartialReverseSort, MapToNestedAdapter<NameMapPartialReverseSort>, NameMapPartialReverseSort>;
+
+class FunctionMapRemove final : public IFunction
+{
+public:
+    static constexpr auto name = "mapRemove";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionMapRemove>(context);
+    }
+
+    explicit FunctionMapRemove(const ContextPtr & context)
+        : is_distinct_from_resolver(FunctionFactory::instance().get("isDistinctFrom", context))
+    {
+    }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 2; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get());
+        if (!map_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "First argument for function {} must be a Map, found {}", getName(), arguments[0]->getName());
+
+        const auto key_type = recursiveRemoveLowCardinality(map_type->getKeyType());
+        const auto remove_key_type = recursiveRemoveLowCardinality(arguments[1]);
+        is_distinct_from_resolver->getReturnType({
+            {nullptr, key_type, "key"},
+            {nullptr, remove_key_type, "remove_key"}});
+        return arguments[0];
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
+    {
+        auto map_column = arguments[0].column->convertToFullColumnIfConst();
+        const auto & map = assert_cast<const ColumnMap &>(*map_column);
+        const auto & nested_map = map.getNestedColumn();
+        const auto & offsets = nested_map.getOffsets();
+
+        if (nested_map.getData().empty())
+            return map_column;
+
+        const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
+        auto key_column = recursiveRemoveLowCardinality(map.getNestedData().getColumnPtr(0));
+        auto key_type = recursiveRemoveLowCardinality(map_type.getKeyType());
+
+        auto remove_key_column = recursiveRemoveLowCardinality(arguments[1].column);
+        auto remove_key_type = recursiveRemoveLowCardinality(arguments[1].type);
+        auto replicated_remove_key = remove_key_column->replicate(offsets);
+
+        const size_t map_elements_count = key_column->size();
+        ColumnPtr filter;
+
+        if (const auto comparison_type = tryGetLeastSupertype(DataTypes{key_type, remove_key_type}))
+        {
+            key_column = castColumn(ColumnWithTypeAndName{key_column, key_type, "key"}, comparison_type);
+            replicated_remove_key = castColumn(
+                ColumnWithTypeAndName{replicated_remove_key, remove_key_type, "remove_key"}, comparison_type);
+
+            auto keep = ColumnUInt8::create(map_elements_count);
+            auto & keep_data = keep->getData();
+
+            if (const auto * const_remove_key = checkAndGetColumn<ColumnConst>(replicated_remove_key.get()))
+            {
+                PaddedPODArray<Int8> compare_results;
+                key_column->compareColumn(
+                    const_remove_key->getDataColumn(),
+                    0,
+                    nullptr,
+                    compare_results,
+                    /* direction = */ 1,
+                    /* nan_direction_hint = */ 1);
+
+                for (size_t i = 0; i < map_elements_count; ++i)
+                    keep_data[i] = static_cast<UInt8>(compare_results[i] != 0);
+            }
+            else
+            {
+                for (size_t i = 0; i < map_elements_count; ++i)
+                    keep_data[i] = static_cast<UInt8>(key_column->compareAt(i, i, *replicated_remove_key, 1) != 0);
+            }
+
+            filter = std::move(keep);
+        }
+        else
+        {
+            /// Preserve comparison support for types such as mixed signed/unsigned arrays, where
+            /// FunctionComparison has a dedicated path even though no least supertype exists.
+            /// This fallback uses isDistinctFrom semantics, which treat NaN values as distinct.
+            ColumnsWithTypeAndName comparison_arguments{
+                {key_column, key_type, "key"},
+                {replicated_remove_key, remove_key_type, "remove_key"}};
+            auto comparison = is_distinct_from_resolver->build(comparison_arguments);
+            filter = comparison->execute(
+                comparison_arguments, comparison->getResultType(), map_elements_count, /* dry_run = */ false);
+        }
+
+        auto filtered_nested_map = ArrayFilterImpl::execute(nested_map, std::move(filter));
+        return ColumnMap::create(std::move(filtered_nested_map));
+    }
+
+private:
+    FunctionOverloadResolverPtr is_distinct_from_resolver;
+};
 
 REGISTER_FUNCTION(MapMiscellaneous)
 {
@@ -512,7 +839,7 @@ If elements with the same key exist in more than one input map, all elements are
     /// mapKeys documentation
     FunctionDocumentation::Description description_mapKeys = R"(
 Returns the keys of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns).
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 With the setting enabled, the function only reads the `keys` subcolumn instead of the entire map.
 The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM table`.
 )";
@@ -536,7 +863,7 @@ The query `SELECT mapKeys(m) FROM table` is transformed to `SELECT m.keys FROM t
     /// mapValues documentation
     FunctionDocumentation::Description description_mapValues = R"(
 Returns the values of a given map.
-This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/operations/settings/settings#optimize_functions_to_subcolumns).
+This function can be optimized by enabling setting [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 With the setting enabled, the function only reads the `values` subcolumn instead of the entire map.
 The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FROM table`.
 )";
@@ -556,6 +883,28 @@ The query `SELECT mapValues(m) FROM table` is transformed to `SELECT m.values FR
     FunctionDocumentation::Category category_mapValues = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapValues = {description_mapValues, syntax_mapValues, arguments_mapValues, {}, returned_value_mapValues, examples_mapValues, introduced_in_mapValues, category_mapValues};
     factory.registerFunction<FunctionMapValues>(documentation_mapValues);
+
+    /// mapEntries documentation
+    FunctionDocumentation::Description description_mapEntries = R"(
+Returns the key-value pairs of a map as an array of named tuples with fields `key` and `value`.
+Duplicate keys are preserved.
+)";
+    FunctionDocumentation::Syntax syntax_mapEntries = "mapEntries(map)";
+    FunctionDocumentation::Arguments arguments_mapEntries = {
+        {"map", "Map to extract entries from.", {"Map(K, V)"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapEntries = {"Returns an array containing the key-value pairs from the map.", {"Array(Tuple(key K, value V))"}};
+    FunctionDocumentation::Examples examples_mapEntries = {
+    {
+        "Usage example",
+        "SELECT mapEntries(map('k1', 'v1', 'k2', 'v2'))",
+        "[('k1','v1'),('k2','v2')]"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapEntries = {26, 10};
+    FunctionDocumentation::Category category_mapEntries = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapEntries = {description_mapEntries, syntax_mapEntries, arguments_mapEntries, {}, returned_value_mapEntries, examples_mapEntries, introduced_in_mapEntries, category_mapEntries};
+    factory.registerFunction<FunctionMapEntries>(documentation_mapEntries);
 
     /// mapContainsKey documentation
     FunctionDocumentation::Description description_mapContainsKey = R"(
@@ -624,6 +973,29 @@ Filters a map by applying a function to each map element.
     FunctionDocumentation::Category category_mapFilter = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapFilter = {description_mapFilter, syntax_mapFilter, arguments_mapFilter, {}, returned_value_mapFilter, examples_mapFilter, introduced_in_mapFilter, category_mapFilter};
     factory.registerFunction<FunctionMapFilter>(documentation_mapFilter);
+
+    FunctionDocumentation::Description description_mapRemove = R"(
+Removes all entries from a map whose key equals the specified key. If several entries have the same key, all matching entries are removed.
+NULLs are compared as values: a NULL removal key does not match a non-NULL key, and NULL components in composite keys match other NULL components.
+For key types with a common supertype, NaN keys follow map lookup semantics, so a NaN removal key matches a NaN map key.
+)";
+    FunctionDocumentation::Syntax syntax_mapRemove = "mapRemove(map, key)";
+    FunctionDocumentation::Arguments arguments_mapRemove = {
+        {"map", "Map to remove matching entries from.", {"Map(K, V)"}},
+        {"key", "Key whose matching entries are removed. Type must be comparable with the key type of the map.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapRemove = {"Returns the map with all entries whose key does not match the specified key.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapRemove = {
+        {
+            "Usage example",
+            "SELECT mapRemove(map('k1', 1, 'k2', 2), 'k1')",
+            "{'k2':2}"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapRemove = {26, 10};
+    FunctionDocumentation::Category category_mapRemove = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapRemove = {description_mapRemove, syntax_mapRemove, arguments_mapRemove, {}, returned_value_mapRemove, examples_mapRemove, introduced_in_mapRemove, category_mapRemove};
+    factory.registerFunction<FunctionMapRemove>(documentation_mapRemove);
 
     /// mapApply documentation
     FunctionDocumentation::Description description_mapApply = R"(
@@ -847,10 +1219,10 @@ INSERT INTO tab VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
 SELECT mapContainsValueLike(a, 'a%') FROM tab;
         )",
         R"(
-┌─mapContainsV⋯ke(a, 'a%')─┐
-│                        1 │
-│                        0 │
-└──────────────────────────┘
+┌─mapContainsValueLike(a, 'a%')─┐
+│                             1 │
+│                             0 │
+└───────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapContainsValueLike = {25, 5};

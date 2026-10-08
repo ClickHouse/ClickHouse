@@ -1,0 +1,81 @@
+---
+slug: /tips-and-tricks/too-many-parts
+sidebarTitle: 'Too many parts'
+doc_type: 'guide'
+keywords: [
+  'clickhouse too many parts',
+  'erreur too many parts',
+  'insertion par lot clickhouse',
+  'problème d’explosion des parts',
+  'performances des fusions clickhouse',
+  'optimisation des insertions par lot',
+  'clickhouse async inserts',
+  'problèmes liés aux petites insertions',
+  'gestion des parts clickhouse',
+  'optimisation des performances d’insertion',
+  'stratégie de traitement par lots clickhouse',
+  'modèles d’insertion en base de données'
+]
+title: 'Leçons - problème Too many parts'
+description: 'Solutions et prévention du problème Too Many Parts'
+---
+
+*Ce guide fait partie d’une série d’enseignements tirés des rencontres de la communauté. Pour découvrir d’autres solutions concrètes et retours d’expérience, vous pouvez [parcourir les contenus par problème spécifique](/fr/resources/support-center/tips-and-tricks/community-wisdom).*
+*Besoin d’autres conseils pour optimiser les performances ? Consultez le guide des retours de la communauté sur l’[optimisation des performances](/fr/resources/support-center/tips-and-tricks/performance-optimization).*
+
+<div id="understanding-the-problem">
+  ## Comprendre le problème
+</div>
+
+ClickHouse déclenche une erreur &quot;Too many parts&quot; pour éviter une forte dégradation des performances. Les petites parts posent plusieurs problèmes : de moins bonnes performances des requêtes, car il faut lire et fusionner davantage de fichiers pendant leur exécution ; une utilisation mémoire plus élevée, puisque chaque part nécessite des métadonnées en mémoire ; une compression moins efficace, car les petits blocs de données se compressent moins bien ; un surcoût d’E/S lié à un plus grand nombre de descripteurs de fichiers et d’opérations de repositionnement ; et des fusions en arrière-plan plus lentes, ce qui augmente la charge de l’ordonnanceur de fusion.
+
+**Documentation associée**
+
+* [Moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree)
+* [Parts](/fr/concepts/core-concepts/parts)
+* [Table système Parts](/fr/reference/system-tables/parts)
+
+<div id="recognize-parts-problem">
+  ## Repérer le problème tôt
+</div>
+
+Cette requête surveille la fragmentation des tables en analysant le nombre et la taille des parts dans toutes les tables actives. Elle identifie les tables présentant un nombre excessif de parts ou des parts trop petites, qui peuvent nécessiter une optimisation des fusions. Utilisez-la régulièrement pour repérer les problèmes de fragmentation avant qu’ils n’affectent les performances des requêtes.
+
+```sql runnable editable
+-- Challenge: Replace with your actual database and table names for production use
+-- Experiment: Adjust the part count thresholds (1000, 500, 100) based on your system
+SELECT 
+    database,
+    table,
+    count() as total_parts,
+    sum(rows) as total_rows,
+    round(avg(rows), 0) as avg_rows_per_part,
+    min(rows) as min_rows_per_part,
+    max(rows) as max_rows_per_part,
+    round(sum(bytes_on_disk) / 1024 / 1024, 2) as total_size_mb,
+    CASE 
+        WHEN count() > 1000 THEN 'CRITICAL - Too many parts (>1000)'
+        WHEN count() > 500 THEN 'WARNING - Many parts (>500)'
+        WHEN count() > 100 THEN 'CAUTION - Getting many parts (>100)'
+        ELSE 'OK - Reasonable part count'
+    END as parts_assessment,
+    CASE 
+        WHEN avg(rows) < 1000 THEN 'POOR - Very small parts'
+        WHEN avg(rows) < 10000 THEN 'FAIR - Small parts'
+        WHEN avg(rows) < 100000 THEN 'GOOD - Medium parts'
+        ELSE 'EXCELLENT - Large parts'
+    END as part_size_assessment
+FROM system.parts
+WHERE active = 1
+  AND database NOT IN ('system', 'information_schema')
+GROUP BY database, table
+ORDER BY total_parts DESC
+LIMIT 20;
+```
+
+<div id="video-sources">
+  ## Sources vidéo
+</div>
+
+* [INSERTS asynchrones rapides, concurrents et cohérents dans ClickHouse](https://www.youtube.com/watch?v=AsMPEfN5QtM) - Un membre de l’équipe ClickHouse explique les async inserts et le problème « Too many parts »
+* [ClickHouse en production à grande échelle](https://www.youtube.com/watch?v=liTgGiTuhJE) - Stratégies concrètes de traitement par lots issues de plateformes d’observabilité

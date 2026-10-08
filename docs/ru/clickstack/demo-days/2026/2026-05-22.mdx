@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-22
+title: 'Демо-дни — 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'Демо-дни ClickStack от 2026-05-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Демо-дни']
+---
+
+<div id="clickcannon-data-generation-update">
+  ## Обновление генерации данных в ClickCannon
+</div>
+
+*Демо от [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="Видеопроигрыватель YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) — это инструмент, который мы используем внутри компании для сайзинга: он генерирует большие объёмы данных OpenTelemetry и одновременно выполняет запросы, чтобы оценить, какие ресурсы понадобятся клиентам при заданной рабочей нагрузке по приёму данных и запросам. На OpenHouse мы впервые представили его публично, а Spencer показал последнюю версию.
+
+Теперь вместо предварительной подготовки данных на диске генератор можно настраивать прямо в конфигурации. Включите его, задайте число потоков, количество строк в блоке, общее число строк в секунду и несколько ограничений по памяти. Больше не нужно заранее выгружать на диск два терабайта тестовых данных — именно из-за этого инструмент раньше было сложно распространять.
+
+Мы будем рекомендовать ClickCannon всё большему числу пользователей для собственных задач по сайзингу. Репозиторий доступен по адресу [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon).
+
+<div id="date-input-for-full-screen-tiles-and-source-scoped-filters">
+  ## Ввод даты для полноэкранных плиток и фильтров с областью действия по источникам
+</div>
+
+*Демонстрация от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Одновременно появились два связанных улучшения панели мониторинга. Когда вы разворачиваете отдельную плитку на весь экран, для нее теперь доступны собственные выбор времени и селектор детализации, не зависящие от временного диапазона самой панели мониторинга. Это значит, что вы можете приблизить большой исторический диапазон для одной конкретной метрики (например, одного графика на панели мониторинга ClickHouse cluster), не заставляя обновляться все остальные плитки на панели мониторинга. Имя панели мониторинга теперь также отображается в заголовке вкладки браузера.
+
+Второе изменение — область действия фильтров панели мониторинга по источникам. Фильтры можно ограничить так, чтобы они применялись только к плиткам, использующим определенные источники, а не ко всем плиткам сразу. На панели мониторинга со смешанными источниками, объединяющей, например, журналы и трассировки, можно не допустить, чтобы фильтр затронул плитку, к которой он не относится.
+
+**Связанные PR:** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: Небольшие улучшения панели мониторинга, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: Добавить область действия по источникам для фильтров панели мониторинга
+
+<div id="text-index-recognised-on-lower-body">
+  ## Текстовый индекс распознаётся для lower(Body)
+</div>
+
+*Демо от [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Небольшое, но важное исправление, связанное с корректностью регистронезависимого поиска. Если для вашего источника определён текстовый индекс на `lower(Body)` без аргумента препроцессора, планировщик запросов ранее генерировал условие `hasAllTokens(Body, ...)`. Поскольку это выражение не совпадало с выражением индекса, текстовый индекс не использовался, и запрос переходил к полному сканированию.
+
+Теперь запрос генерируется как `hasAllTokens(lower(Body), ...)`, что соответствует выражению индекса. Регистронезависимый поиск по источникам, настроенным таким образом, теперь корректно ускоряется текстовым индексом.
+
+**Связанный PR:** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: поддержка текстового индекса на lower(Body) без препроцессора
+
+<div id="simpler-event-deltas-experience">
+  ## Упрощённая работа с Event Deltas
+</div>
+
+*Демо от [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Раньше в Event Deltas был нужен дополнительный шаг. Нужно было нажать кнопку, чтобы перейти в режим сравнения, прежде чем выделять область на тепловой карте. Теперь этого шага нет: при загрузке сразу появляются столбцы распределения, а как только вы выделяете область на тепловой карте, столбцы переключаются в режим сравнения выделения с фоном. Щёлкните вне выделенной области — и интерфейс вернётся к режиму всех spans.
+
+Изначально это изменение попало в OSS несколько недель назад, но его часть отсутствовала в Управляемом ClickStack. Теперь этот пробел устранён, и упрощённый сценарий одинаков в обеих версиях.
+
+**Связанный PR:** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: always-on attribute distribution mode
+
+<div id="dashboard-table-of-contents-and-bulk-collapse">
+  ## Оглавление панели мониторинга и массовое сворачивание
+</div>
+
+*Демонстрация от [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Когда на панели мониторинга становится больше нескольких секций (а это именно то, чего мы хотим, потому что секции помогают организовать большую панель мониторинга), навигация по ней становится неудобной. Том добавил оглавление на правой боковой панели, где перечислены все секции и откуда можно сразу переходить к нужной. Также появился элемент управления для массового сворачивания и разворачивания, который сразу скрывает содержимое всех секций, чтобы можно было быстро просмотреть структуру длинной панели мониторинга, не прокручивая её целиком.
+
+Пока функция всё ещё в черновом виде, но уже полезна для многосекционных панелей мониторинга, которые мы поставляем для представлений ClickHouse cluster и Kubernetes.
+
+**Связанные PR:** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): add Table of Contents right rail with bulk collapse/expand
+
+<div id="column-resize-persisted-across-sessions">
+  ## Изменение ширины столбцов сохраняется между сеансами
+</div>
+
+*Демо от [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+По вчерашнему сообщению от клиента: при изменении ширины столбца в таблице результатов она должна сохраняться. Теперь это работает именно так. Ширина столбцов хранится в локальном хранилище и привязывается к ID таблицы, поэтому для разных таблиц сохраняется независимая структура столбцов. Закройте браузер, вернитесь позже — столбцы останутся в том виде, в котором вы их оставили. Добавление или удаление столбца из таблицы тоже не сбрасывает ширину остальных столбцов.
+
+**Связанный PR:** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) fix: persist column widths in search results table

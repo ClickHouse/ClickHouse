@@ -83,7 +83,7 @@ SnowflakeId toSnowflakeId(uint64_t snowflake)
 uint64_t fromSnowflakeId(SnowflakeId components)
 {
     return (components.timestamp << (machine_id_bits_count + machine_seq_num_bits_count) |
-            components.machine_id << (machine_seq_num_bits_count) |
+            components.machine_id << machine_seq_num_bits_count |
             components.machine_seq_num);
 }
 
@@ -234,8 +234,8 @@ See section ["Snowflake ID generation"](#snowflake-id-generation) for implementa
     )";
     FunctionDocumentation::Syntax syntax = "generateSnowflakeID([expr, [machine_id]])";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional."},
-        {"machine_id", "A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional."}
+        {"expr", "An arbitrary [expression](/reference/syntax#expressions) used to bypass [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional."},
+        {"machine_id", "A machine ID, the lowest 10 bits are used. [Int64](/reference/data-types/int-uint). Optional."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the Snowflake ID.", {"UInt64"}};
     FunctionDocumentation::Examples examples = {

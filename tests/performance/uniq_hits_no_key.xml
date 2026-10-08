@@ -1,0 +1,22 @@
+<test>
+    <settings>
+        <max_memory_usage>30000000000</max_memory_usage>
+    </settings>
+
+    <substitutions>
+        <substitution>
+           <name>col</name>
+           <values>
+               <value>UserID</value>
+               <value>SearchEngineID</value>
+               <value>RegionID</value>
+               <value>SearchPhrase</value>
+               <value>ClientIP</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT uniq({col}) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT uniqExact({col}) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT uniqHLL12({col}) FROM hits_100m_single FORMAT Null</query>
+</test>

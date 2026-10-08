@@ -1,0 +1,18 @@
+---
+sidebarTitle: '設定の構成'
+slug: /manage/settings
+title: '設定の構成'
+description: '特定のユーザーまたはロールに対して ClickHouse Cloud サービスの設定を構成する方法'
+keywords: ['ClickHouse Cloud', '設定の構成', 'クラウド設定', 'ユーザー設定', 'ロール設定']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+特定の[ユーザー](/ja/concepts/features/security/access-rights#user-account-management)または[ロール](/ja/concepts/features/security/access-rights#role-management)に対して ClickHouse Cloud サービスの設定を指定するには、[SQL ベースの Settings Profiles](/ja/concepts/features/security/access-rights#settings-profiles-management)を使用する必要があります。Settings Profiles を適用すると、サービスが停止したり、アイドル状態になったり、アップグレードされたりしても、設定した内容が保持されます。Settings Profiles の詳細については、[このページ](/ja/concepts/features/configuration/settings/settings-profiles)をご覧ください。
+
+なお、XML ベースの Settings Profiles と[設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)は、現在 ClickHouse Cloud ではサポートされていません。
+
+ClickHouse Cloud サービスに指定できる設定の詳細については、[ドキュメント](/ja/reference/settings/index)でカテゴリ別のすべての設定を参照してください。
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Cloud settings sidebar" border />

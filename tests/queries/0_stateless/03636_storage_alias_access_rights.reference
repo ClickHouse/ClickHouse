@@ -15,6 +15,12 @@ Test TRUNCATE with permission
 Test OPTIMIZE without permission
 ACCESS_DENIED
 Test OPTIMIZE with permission
+Test CHECK TABLE without permission
+ACCESS_DENIED
+Test CHECK TABLE with alias permission only
+ACCESS_DENIED
+Test CHECK TABLE with both alias and target permission
+1
 Test ALTER without permission
 ACCESS_DENIED
 Test ALTER with permission

@@ -1,0 +1,87 @@
+---
+slug: /best-practices/use-materialized-views
+sidebarTitle: '구체화된 뷰(materialized view) 사용'
+title: '구체화된 뷰(materialized view) 사용'
+description: 'materialized view를 설명하는 페이지'
+keywords: ['materialized views', '메달리온 아키텍처']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse는 두 가지 유형의 materialized view를 지원합니다: [**증분형**](/ko/concepts/features/materialized-views/incremental-materialized-view)과 [**갱신 가능**](/ko/concepts/features/materialized-views/refreshable-materialized-view)입니다. 둘 다 결과를 미리 계산하고 저장해 쿼리 성능을 높이도록 설계되었지만, 기반 쿼리가 언제 어떻게 실행되는지, 어떤 workload에 적합한지, 데이터 최신성을 어떻게 유지하는지에서 큰 차이가 있습니다.
+
+**[타입 관련](/ko/concepts/best-practices/select-data-type) 및 [프라이머리 키 최적화](/ko/concepts/best-practices/choosing-a-primary-key)에 대한 기존 모범 사례를 적용했다는 전제하에, 성능 개선이 필요한 특정 쿼리 패턴에는 materialized view 사용을 검토하는 것이 좋습니다.**
+
+**증분형 materialized view**는 실시간으로 업데이트됩니다. 새 데이터가 원본 테이블에 삽입되면 ClickHouse는 materialized view의 쿼리를 새 데이터 블록에 자동으로 적용하고, 그 결과를 별도의 대상 테이블에 기록합니다. 시간이 지나면서 ClickHouse는 이러한 부분 결과를 머지하여 완전하고 최신 상태의 뷰를 만듭니다. 이 방식은 계산 비용을 삽입 시점으로 옮기고 새 데이터만 처리하므로 매우 효율적입니다. 그 결과, 대상 테이블에 대한 `SELECT` 쿼리는 빠르고 가볍습니다. 증분형 뷰는 모든 집계 함수를 지원하며, 각 쿼리가 삽입되는 데이터셋의 작고 최근 부분 집합에 대해서만 수행되므로 페타바이트 규모의 데이터까지도 잘 확장됩니다.
+
+<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="materialized view" />
+
+반면 **갱신 가능 구체화 뷰**는 일정에 따라 업데이트됩니다. 이러한 뷰는 주기적으로 전체 쿼리를 다시 실행하고 그 결과로 대상 테이블을 덮어씁니다. 이는 Postgres와 같은 전통적인 OLTP 데이터베이스의 materialized view와 유사합니다.
+
+<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Refreshable materialized view diagram" />
+
+증분형 materialized view와 갱신 가능 구체화 뷰 중 무엇을 선택할지는 주로 쿼리의 성격, 데이터 변경 빈도, 그리고 각 행이 삽입될 때마다 뷰 업데이트에 반영되어야 하는지 또는 주기적 갱신으로 충분한지에 따라 달라집니다. 이러한 절충점을 이해하는 것은 ClickHouse에서 성능이 뛰어나고 확장 가능한 materialized view를 설계하는 데 핵심적입니다.
+
+<div id="when-to-use-incremental-materialized-views">
+  ## 증분형 materialized view를 사용해야 하는 경우
+</div>
+
+증분형 materialized view는 일반적으로 더 권장됩니다. 원본 테이블에 새 데이터가 들어올 때마다 실시간으로 자동 갱신되기 때문입니다. 모든 집계 함수를 지원하며, 특히 단일 테이블에 대한 집계에 매우 효과적입니다. 삽입 시점에 결과를 증분 방식으로 계산하므로, 쿼리는 훨씬 더 작은 데이터 부분 집합을 대상으로 실행됩니다. 따라서 이러한 뷰는 페타바이트 규모의 데이터까지도 무리 없이 확장할 수 있습니다. 대부분의 경우 전체 클러스터 성능에 눈에 띄는 영향을 주지 않습니다.
+
+다음과 같은 경우 증분형 materialized view를 사용하십시오:
+
+* 삽입이 발생할 때마다 갱신되는 실시간 쿼리 결과가 필요합니다.
+* 대량의 데이터를 자주 집계하거나 필터링해야 합니다.
+* 쿼리가 단일 테이블에 대한 단순한 변환이나 집계를 포함합니다.
+
+증분형 materialized view의 예시는 [여기](/ko/concepts/features/materialized-views/incremental-materialized-view)를 참조하십시오.
+
+<div id="when-to-use-refreshable-materialized-views">
+  ## 갱신 가능 구체화 뷰를 사용해야 하는 경우
+</div>
+
+갱신 가능 구체화 뷰는 쿼리를 증분 방식이 아니라 주기적으로 실행하고, 빠르게 조회할 수 있도록 쿼리 결과 집합을 저장합니다.
+
+이 기능은 쿼리 성능이 매우 중요하고(예: 1밀리초 미만의 지연 시간), 약간 오래된 결과를 허용할 수 있을 때 가장 유용합니다. 쿼리를 매번 전체적으로 다시 실행하므로, 갱신 가능 뷰는 계산이 비교적 빠르거나 드문 인터벌(예: 매시간)로 실행해도 되는 쿼리에 가장 적합합니다. 예를 들면 &quot;상위 N개&quot; 결과를 캐싱하거나 룩업 테이블을 유지하는 경우입니다.
+
+시스템에 과도한 부하가 걸리지 않도록 실행 빈도는 신중하게 조정해야 합니다. 상당한 리소스를 소비하는 매우 복잡한 쿼리는 주의해서 스케줄링해야 합니다 — 이러한 쿼리는 캐시에 영향을 주고 CPU와 메모리를 소모하여 전체 클러스터 성능을 저하시킬 수 있습니다. 클러스터 과부하를 피하려면 쿼리 실행 시간이 갱신 인터벌보다 충분히 짧아야 합니다. 예를 들어, 쿼리 자체를 계산하는 데 최소 10초가 걸린다면 뷰를 10초마다 갱신하도록 스케줄링하지 마십시오.
+
+<div id="summary">
+  ## 요약
+</div>
+
+요약하면, 다음과 같은 경우 갱신 가능 구체화 뷰를 사용하십시오:
+
+* 캐시된 쿼리 결과를 즉시 사용할 수 있어야 하고, 최신성이 약간 지연되어도 허용 가능한 경우
+* 쿼리 결과 집합에서 상위 N개가 필요한 경우
+* 결과 집합의 크기가 시간이 지나도 무한정 증가하지 않는 경우. 그렇지 않으면 대상 뷰의 성능이 저하됩니다.
+* 여러 테이블이 관련된 복잡한 조인이나 비정규화를 수행하며, 원본 테이블이 변경될 때마다 업데이트가 필요한 경우
+* 배치 워크플로를 구축하거나, 비정규화 작업을 수행하거나, DBT DAG와 유사한 뷰 종속성을 생성하는 경우
+
+갱신 가능 구체화 뷰의 예시는 [여기](/ko/concepts/features/materialized-views/refreshable-materialized-view)에서 확인하십시오.
+
+<div id="append-vs-replace-mode">
+  ### APPEND vs REPLACE 모드
+</div>
+
+갱신 가능 구체화 뷰는 대상 테이블(target table)에 데이터를 쓰는 두 가지 모드인 `APPEND`와 `REPLACE`를 지원합니다. 이 모드는 뷰가 갱신될 때 뷰 쿼리의 결과가 어떻게 기록되는지를 정의합니다.
+
+`REPLACE`는 기본 동작입니다. 뷰가 갱신될 때마다 대상 테이블의 기존 내용은 최신 쿼리 결과로 완전히 덮어써집니다. 이는 결과 집합(result set) 캐싱처럼 뷰가 항상 최신 상태를 반영해야 하는 사용 사례에 적합합니다.
+
+반면 `APPEND`는 기존 내용을 대체하는 대신 새 행을 대상 테이블 끝에 추가할 수 있게 합니다. 이를 통해 주기적 스냅샷을 저장하는 등의 추가 사용 사례를 지원합니다. `APPEND`는 각 갱신이 서로 다른 시점을 나타내거나, 결과를 이력으로 누적해 보관하려는 경우 특히 유용합니다.
+
+다음과 같은 경우 `APPEND` 모드를 선택하십시오:
+
+* 이전 갱신의 이력을 유지하려는 경우.
+* 주기적 스냅샷이나 보고서를 생성하는 경우.
+* 갱신된 결과를 시간 경과에 따라 점진적으로 수집해야 하는 경우.
+
+다음과 같은 경우 `REPLACE` 모드를 선택하십시오:
+
+* 가장 최근 결과만 필요한 경우.
+* 오래된 데이터를 완전히 폐기해야 하는 경우.
+* 뷰가 현재 상태 또는 lookup을 나타내는 경우.
+
+[Medallion architecture](https://clickhouse.com/blog/building-a-medallion-architecture-for-bluesky-json-data-with-clickhouse)를 구축하는 경우 `APPEND` 기능의 활용 사례를 확인할 수 있습니다.

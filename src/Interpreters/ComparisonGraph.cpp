@@ -40,9 +40,16 @@ ASTPtr normalizeAtom(const ASTPtr & atom, ContextPtr)
     {
         if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
         {
-            auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
-            new_func->setIsOperator(func->isOperator());
-            res = new_func;
+            /// The AST here is not analyzed, so a malformed comparison with the wrong number of
+            /// arguments (e.g. `less(x)` from a fuzzed constraint expression) can reach this point.
+            /// Only binary comparisons can be normalized by swapping their arguments; anything else
+            /// is left unchanged and ignored later, where `arguments.size() == 2` is checked.
+            if (func->arguments && func->arguments->children.size() == 2)
+            {
+                auto new_func = makeASTOperator(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
+                new_func->setIsOperator(func->isOperator());
+                res = new_func;
+            }
         }
     }
 
@@ -436,10 +443,16 @@ ComparisonGraphCompareResult ComparisonGraph<Node>::compare(const Node & left, c
 template <ComparisonGraphNodeType Node>
 bool ComparisonGraph<Node>::isPossibleCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const
 {
+    using enum ComparisonGraphCompareResult;
+
+    /// See `isAlwaysCompare`: an atom the graph does not know rules nothing out, and comparing its
+    /// arguments would fail the query where they cannot be ordered against a constraint's bound.
+    if (expected == UNKNOWN)
+        return true;
+
     const auto result = compare(left, right);
 
-    using enum ComparisonGraphCompareResult;
-    if (expected == UNKNOWN || result == UNKNOWN)
+    if (result == UNKNOWN)
         return true;
 
     if (expected == result)
@@ -473,10 +486,18 @@ bool ComparisonGraph<Node>::isPossibleCompare(ComparisonGraphCompareResult expec
 template <ComparisonGraphNodeType Node>
 bool ComparisonGraph<Node>::isAlwaysCompare(ComparisonGraphCompareResult expected, const Node & left, const Node & right) const
 {
+    using enum ComparisonGraphCompareResult;
+
+    /// The atom is not one of the comparisons the graph knows - `a IN (5, 8, 12)` is one such atom -
+    /// so nothing follows from it either way. Answering before the arguments are compared also keeps
+    /// their constants out of `compare`, which has no order to put an `IN` list and the scalar bound
+    /// of a constraint in and would fail the whole query over it.
+    if (expected == UNKNOWN)
+        return false;
+
     const auto result = compare(left, right);
 
-    using enum ComparisonGraphCompareResult;
-    if (expected == UNKNOWN || result == UNKNOWN)
+    if (result == UNKNOWN)
         return false;
 
     if (expected == result)

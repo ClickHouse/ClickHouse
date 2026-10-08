@@ -1,6 +1,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <DataTypes/TypeTree.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -40,12 +42,12 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
-                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type{}",
                     this->result_type->getName(),
-                    getName());
+                    getName(),
+                    getNumericVariantSupertypeHint(type.getPtr()));
         };
-        check_not_dynamic_or_variant(*this->result_type);
-        this->result_type->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*this->result_type, check_not_dynamic_or_variant);
     }
 
     String getName() const override
@@ -120,7 +122,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (isMin)
             this->data(place).setIfSmaller(this->data(rhs), arena);
@@ -131,6 +133,22 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf, *serialization);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> /* version */) const override
+    {
+        return singleValueSerializedSizeBound<Data>();
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        if constexpr (HasSerializedSizeBound<Data>)
+        {
+            this->data(place).write(dst, *serialization);
+            return dst;
+        }
+        else
+            return IAggregateFunction::serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
@@ -298,9 +316,13 @@ SELECT department, max(revenue) FROM sales GROUP BY department ORDER BY departme
         "Note about non-aggregate maximum",
         R"(
 -- If you need non-aggregate function to choose a maximum of two values, see greatest():
-SELECT greatest(a, b) FROM table;
+SELECT greatest(a, b) FROM values('a Int32, b Int32', (1, 2), (5, 3));
         )",
         R"(
+┌─greatest(a, b)─┐
+│              2 │
+│              5 │
+└────────────────┘
         )"
     }
     };

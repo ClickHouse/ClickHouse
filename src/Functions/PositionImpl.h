@@ -26,7 +26,7 @@ struct PositionCaseSensitiveASCII
     using MultiSearcherInBigHaystack = MultiVolnitsky;
 
     /// For searching single substring, that is different each time. This object is created for each row of data. It must have cheap initialization.
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
+    using SearcherInSmallHaystack = CaseSensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -63,7 +63,7 @@ struct PositionCaseInsensitiveASCII
     /// `Volnitsky` is not used here, because one person has measured that this is better. It will be good if you question it.
     using SearcherInBigHaystack = ASCIICaseInsensitiveStringSearcher;
     using MultiSearcherInBigHaystack = MultiVolnitskyCaseInsensitive;
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ true>;
+    using SearcherInSmallHaystack = ASCIICaseInsensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t /*haystack_size_hint*/)
     {
@@ -96,7 +96,7 @@ struct PositionCaseSensitiveUTF8
 {
     using SearcherInBigHaystack = VolnitskyUTF8;
     using MultiSearcherInBigHaystack = MultiVolnitskyUTF8;
-    using SearcherInSmallHaystack = StdLibASCIIStringSearcher</*CaseInsensitive*/ false>;
+    using SearcherInSmallHaystack = CaseSensitiveStringSearcher;
 
     static SearcherInBigHaystack createSearcherInBigHaystack(const char * needle_data, size_t needle_size, size_t haystack_size_hint)
     {
@@ -388,6 +388,11 @@ struct PositionImpl
                 /// An empty string is always at any position in `haystack`.
                 res[i] = start;
             }
+            else if (haystack_size == 0)
+            {
+                /// A non-empty needle is never found in an empty haystack; do not pay the searcher initialization.
+                res[i] = 0;
+            }
             else
             {
                 /// It is assumed that the StringSearcher is not very difficult to initialize.
@@ -450,6 +455,10 @@ struct PositionImpl
             else if (0 == needle_size)
             {
                 res[i] = start;
+            }
+            else if (haystack.empty())
+            {
+                res[i] = 0;
             }
             else
             {

@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 #include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -38,6 +39,11 @@ namespace DB
         bool useDefaultImplementationForConstants() const override
         {
             return true;
+        }
+
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
         }
 
     private:
@@ -134,7 +140,19 @@ namespace DB
             return true;
         }
 
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+        /// The result for a row depends on the rows processed before it, so it is not
+        /// predictable from a single evaluation, even within one query.
+        bool isDeterministic() const override
+        {
+            return false;
+        }
+
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
+        }
+
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     private:
         DataTypes argument_types;
@@ -158,15 +176,20 @@ namespace DB
 
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
+            /// `getReturnTypeImpl` is called on `LowCardinality`-stripped types, so strip them here too:
+            /// otherwise the checks below reject a `LowCardinality(DateTime)` pair the function handles.
+            const auto begin_type = recursiveRemoveLowCardinality(arguments[0].type);
+            const auto end_type = recursiveRemoveLowCardinality(arguments[1].type);
+
             // The type of the second argument must match with that of the first one.
-            if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
+            if (unlikely(!end_type->equals(*begin_type)))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
             }
 
             // Validate the argument type early so that unsupported types
             // (e.g. NULL literals) are rejected before execution.
-            WhichDataType which(arguments[0].type);
+            WhichDataType which(begin_type);
             if (!which.isDate() && !which.isDateTime() && !which.isDateTime64())
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -197,6 +220,16 @@ namespace DB
             return true;
         }
 
+        bool isDeterministic() const override
+        {
+            return false;
+        }
+
+        bool isDeterministicInScopeOfQuery() const override
+        {
+            return false;
+        }
+
         bool useDefaultImplementationForNulls() const override
         {
             return false;
@@ -212,16 +245,16 @@ The start time is included in the event, while the end time is excluded.
 Columns with a start time and an end time must be of the same data type.
 The function calculates the total number of active (concurrent) events for each event start time.
 
-:::tip Requirements
+<Tip title="Requirements">
 Events must be ordered by the start time in ascending order.
 If this requirement is violated the function raises an exception.
 Every data block is processed separately.
 If events from different data blocks overlap then they can not be processed correctly.
-:::
+</Tip>
 
-:::warning Deprecated
-It is advised to use [window functions](/sql-reference/window-functions) instead.
-:::
+<Warning title="Deprecated">
+It is advised to use [window functions](/reference/functions/window-functions) instead.
+</Warning>
 )";
         FunctionDocumentation::Syntax syntax = "runningConcurrency(start, end)";
         FunctionDocumentation::Arguments arguments = {
@@ -233,6 +266,9 @@ It is advised to use [window functions](/sql-reference/window-functions) instead
         {
             "Usage example",
             R"(
+CREATE TABLE example_table (start Date, end Date) ENGINE = Memory;
+INSERT INTO example_table VALUES ('2025-03-03', '2025-03-11'), ('2025-03-06', '2025-03-08'), ('2025-03-07', '2025-03-09'), ('2025-03-11', '2025-03-12');
+
 SELECT start, runningConcurrency(start, end) FROM example_table;
             )",
             R"(
@@ -240,7 +276,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 │ 2025-03-03 │                              1 │
 │ 2025-03-06 │                              2 │
 │ 2025-03-07 │                              3 │
-│ 2025-03-11 │                              2 │
+│ 2025-03-11 │                              1 │
 └────────────┴────────────────────────────────┘
             )"
         }

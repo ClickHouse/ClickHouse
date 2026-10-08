@@ -1,0 +1,40 @@
+---
+description: 'Detalles sobre backup/restauración hacia o desde un endpoint de Azure Blob Storage'
+sidebarTitle: 'AzureBlobStorage'
+slug: /operations/backup/azure
+title: 'BACKUP/RESTAURACIÓN hacia o desde Azure Blob Storage'
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/es/_syntax.mdx';
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+<Syntax />
+
+<div id="configuring-backuprestore-to-use-an-azureblobstorage-endpoint">
+  ## Configuración de BACKUP / restauración para usar un endpoint de AzureBlobStorage
+</div>
+
+Para escribir copias de seguridad en un contenedor de AzureBlobStorage, necesita la siguiente información:
+
+* cadena de conexión/URL del endpoint de AzureBlobStorage,
+* Contenedor,
+* Ruta,
+* Nombre de la cuenta (si se especifica la URL)
+* Clave de la cuenta (si se especifica la URL)
+
+El destino de una copia de seguridad se especificará de la siguiente manera:
+
+```sql
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+```
+
+```sql
+BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+```

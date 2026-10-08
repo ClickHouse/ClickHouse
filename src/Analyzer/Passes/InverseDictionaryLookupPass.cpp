@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <cmath>
 #include <optional>
 
 #include <Analyzer/ColumnNode.h>
@@ -6,8 +8,8 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
-#include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
@@ -15,14 +17,21 @@
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsExternalDictionaries.h>
+#include <Storages/StorageDictionary.h>
+#include <TableFunctions/ITableFunction.h>
 
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
+
 #include <Core/Settings.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/typeid_cast.h>
 
 
@@ -34,8 +43,15 @@ namespace Setting
 extern const SettingsUInt64 max_bytes_in_set;
 extern const SettingsUInt64 max_rows_in_set;
 extern const SettingsOverflowMode set_overflow_mode;
+extern const SettingsBool make_distributed_plan;
+extern const SettingsBool enable_cascades_optimizer;
 extern const SettingsBool optimize_inverse_dictionary_lookup;
 extern const SettingsBool rewrite_in_to_join;
+}
+
+namespace ErrorCodes
+{
+extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -124,16 +140,6 @@ bool isInMemoryLayout(const String & type_name)
     return supported_layouts.contains(type_name);
 }
 
-template <typename Node>
-void resolveNode(const Node & node, const ContextPtr & context)
-{
-    if (node->isResolved())
-        return;
-
-    QueryTreeNodePtr querytree_node = node;
-    QueryAnalysisPass(/*only_analyze*/ false).run(querytree_node, context);
-}
-
 bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
 {
     auto type = removeNullable(key_expr_node->getResultType());
@@ -147,6 +153,212 @@ bool hasNullableComponentInComplexKey(const QueryTreeNodePtr & key_expr_node)
             return true;
     }
     return false;
+}
+
+/// Comparing against the dictionary's keys is not equivalent to `dictGet` when either the probe
+/// expression's type or the dictionary's declared key type has a dynamic structure or a `Variant` at any level.
+/// For `Variant` and `Dynamic` the divergence is the key conversion: `dictGet` casts the key to the
+/// dictionary's key type (`IDictionary::convertKeyColumns`), and such a key carries NULL in a
+/// discriminator instead of a `Nullable` wrapper, so the cast turns a NULL row into that type's default
+/// and looks that key up, while `IN` and `=` treat the row as NULL. A `Nullable` key is unaffected:
+/// there the cast propagates the NULL. A `JSON` key diverges either way: `convertKeyColumns` skips an
+/// equal-typed probe, yet the key constant the rewrite folds in does not compare equal to that value read
+/// from a column; a convertible probe is cast for `dictGet` while the emitted comparison keeps it uncast.
+/// `Dynamic` and `JSON` always report a dynamic structure, a `Variant` over fixed alternatives does not.
+bool keyTypeBreaksInverseLookupEquivalence(const IDataType & key_type)
+{
+    if (key_type.hasDynamicStructure())
+        return true;
+
+    return anyInTypeTree(key_type, [](const IDataType & nested) { return isVariant(nested); });
+}
+
+/// Check whether `dictGet` accepts this key expression shape for the dictionary's key columns.
+/// It mirrors what `dictGet` does with its third argument: the outer `Nullable` is stripped
+/// (`columnGetNested`), a `Tuple` supplies one lookup column per element, and a non-tuple
+/// expression is the bare form that only a single key column accepts. `IDictionary::convertKeyColumns`
+/// then rejects any other shape - but it does so when the query executes, not when it is
+/// analyzed, so a mismatched probe reaches this pass. Rewriting it would replace the
+/// `TYPE_MISMATCH` (or `ILLEGAL_TYPE_OF_ARGUMENT`) that `dictGet` throws with a result, so the
+/// caller skips the rewrite entirely and leaves such a query unoptimized.
+bool keyExpressionMatchesDictionaryStructure(
+    const QueryTreeNodePtr & key_expr_node, const DictionaryStructure & dict_structure)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+
+    /// A simple-key dictionary takes the key value itself; `convertKeyColumns` cannot cast a
+    /// `Tuple` to the key type. Complex keys accept the tuple form with one element per key
+    /// column, and the bare form only when there is a single key column.
+    if (!dict_structure.key)
+        return !key_expr_tuple_type;
+
+    if (key_expr_tuple_type)
+        return key_expr_tuple_type->getElements().size() == dict_structure.key->size();
+
+    return dict_structure.key->size() == 1;
+}
+
+/// A complex-key dictionary with a single key column accepts both the bare key expression
+/// (`dictGet(..., k)`) and its one-element tuple wrapper (`dictGet(..., tuple(k))`). The
+/// rewrites compare the key expression with bare key values: scalar constants produced by
+/// `dictGetKeys` or a single-column `SELECT` from `dictionary(...)`. Unwrap the tuple,
+/// otherwise the rewrite pits `Tuple(T)` against `T` and fails with `ILLEGAL_TYPE_OF_ARGUMENT`.
+/// The tuple can also be `Nullable` (e.g. produced by `if(cond, tuple(k), NULL)`):
+/// `tupleElement` propagates the `NULL` to the extracted element, and a `NULL` key behaves
+/// the same on both sides of the rewrite (`dictGet` returns `NULL`, so the comparison is
+/// `NULL`; `NULL IN (...)` is `NULL` as well).
+/// Simple-key dictionaries are intentionally not affected: for them `dictGet` rejects the
+/// tuple form even without this optimization.
+void unwrapSingleColumnTupleKey(QueryTreeNodePtr & key_expr_node, const ContextPtr & context)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get());
+    if (!key_expr_tuple_type)
+        return;
+
+    chassert(key_expr_tuple_type->getElements().size() == 1);
+
+    /// Unwrap a syntactic `tuple(k)` expression to `k`. `tuple` produces one element per argument
+    /// and never returns `Nullable`, so a one-element tuple result means exactly one argument.
+    if (const auto * key_expr_function = key_expr_node->as<FunctionNode>();
+        key_expr_function && key_expr_function->getFunctionName() == "tuple")
+    {
+        chassert(key_expr_function->getArguments().getNodes().size() == 1);
+        key_expr_node = key_expr_function->getArguments().getNodes().front();
+        return;
+    }
+
+    /// Extract the element from other expressions with a possibly `Nullable` one-element tuple
+    /// type, such as a column of type `Tuple(UUID)`.
+    key_expr_node = createTupleElementFunction(context, key_expr_node, 1);
+}
+
+/// Check whether the key column type is the common supertype, so that the rewrite needs no explicit
+/// cast of the probe. For numeric types, this permits only total widening, such as a narrow integer
+/// expression against a wide key type. `getLeastSupertype` also checks floating-point precision:
+/// it refuses `Int64` with `Float64` because there are not enough mantissa bits, so an integer
+/// expression passes only when the float key type represents every input value exactly.
+/// `canReplaceWithDictGetKeys` uses the same common-supertype criterion for the attribute side.
+/// The caller checks nullable lookup semantics separately from this type comparison.
+bool canCompareKeyWithoutCast(const DataTypePtr & expr_type, const DataTypePtr & key_col_type)
+{
+    const DataTypePtr stripped_expr_type = removeLowCardinalityAndNullable(expr_type);
+    const DataTypePtr stripped_key_col_type = removeLowCardinalityAndNullable(key_col_type);
+    const DataTypePtr supertype = tryGetLeastSupertype(DataTypes{stripped_expr_type, stripped_key_col_type});
+    return supertype && supertype->equals(*stripped_key_col_type);
+}
+
+/// The type of the key component a single-column complex key is compared with: the element type of
+/// the (possibly `Nullable`) one-element tuple wrapper, which `unwrapSingleColumnTupleKey` extracts
+/// once the rewrite is known to proceed, and the expression type otherwise. Computing it here lets
+/// the caller decide on the rewrite before building the `tupleElement` node.
+DataTypePtr singleColumnKeyProbeType(const QueryTreeNodePtr & key_expr_node)
+{
+    const DataTypePtr key_expr_type = removeNullable(key_expr_node->getResultType());
+    if (const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(key_expr_type.get()))
+    {
+        chassert(key_expr_tuple_type->getElements().size() == 1);
+        return key_expr_tuple_type->getElements().front();
+    }
+    return key_expr_node->getResultType();
+}
+
+/// Check every key component against its dictionary column type. The expression must have a valid
+/// key shape; for a single key column `key_expr_type` is the type of the (unwrapped) component.
+bool canCompareKeysWithoutCasts(const DataTypePtr & key_expr_type, const NamesAndTypes & key_cols)
+{
+    if (key_cols.size() == 1)
+        return canCompareKeyWithoutCast(key_expr_type, key_cols.front().type);
+
+    /// `keyExpressionMatchesDictionaryStructure` guarantees a tuple with one element per key column.
+    const auto * key_expr_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(key_expr_type).get());
+    chassert(key_expr_tuple_type && key_expr_tuple_type->getElements().size() == key_cols.size());
+
+    const DataTypes & key_expr_elements = key_expr_tuple_type->getElements();
+    for (size_t i = 0; i < key_cols.size(); ++i)
+    {
+        if (!canCompareKeyWithoutCast(key_expr_elements[i], key_cols[i].type))
+            return false;
+    }
+    return true;
+}
+
+/// A simple key is looked up as `UInt64` whatever integer type it is declared with, so `dictGet`
+/// converts a signed probe with `castColumnAccurate`: a negative value throws `CANNOT_CONVERT_TYPE`.
+/// Mirror that conversion with `accurateCast` to `UInt64`, which for integer types is the same
+/// conversion: no setting takes part in it, it prepares successfully for every integer pair, so
+/// empty inputs and unselected branches behave as with the lookup, it is evaluated lazily under
+/// short-circuit evaluation like `dictGet`, and every server version that runs this pass knows the
+/// function, so the rewritten query can be shipped to remote servers.
+///
+/// A `Nullable` or `LowCardinality(Nullable)` probe is converted to `Nullable(UInt64)`, requested
+/// explicitly so that `cast_keep_nullable` cannot change the result type. That matches the lookup:
+/// `dictGet` receives a low-cardinality probe as a full column, strips the `Nullable`, converts the
+/// nested values and yields `NULL` for the `NULL` rows, as the comparison with the converted
+/// `Nullable` probe does. What a `NULL` row hides in the nested column, and whether it is looked
+/// at, is an implementation detail of how the probe was produced and executed, on both sides.
+///
+/// Only the native signed integers are converted; the 128- and 256-bit ones and the non-integer
+/// probes are left to the caller, which keeps the lookup for them.
+///
+/// Returns false when the probe is not a native signed integer expression.
+bool convertSimpleKeyProbe(QueryTreeNodePtr & key_expr_node, const ContextPtr & context)
+{
+    const DataTypePtr & probe_type = key_expr_node->getResultType();
+    if (!WhichDataType(removeLowCardinalityAndNullable(probe_type)).isNativeInt())
+        return false;
+
+    DataTypePtr lookup_type = std::make_shared<DataTypeUInt64>();
+    if (isNullableOrLowCardinalityNullable(probe_type))
+        lookup_type = makeNullable(lookup_type);
+
+    auto lookup_type_node = std::make_shared<ConstantNode>(lookup_type->getName(), std::make_shared<DataTypeString>());
+    key_expr_node = createResolvedFunction(context, "accurateCast", {key_expr_node, std::move(lookup_type_node)});
+    return true;
+}
+
+/// Check whether equality with this key column value differs from a dictionary lookup, which matches
+/// keys by their stored representation, as membership in a set does.
+/// Equality with a null key column can produce `NULL` for a non-null probe, whereas a dictionary
+/// lookup misses that key. The same holds for a null inside a `Tuple` value, but nulls inside `Array`
+/// or `Map` values do not propagate through the container comparison, so `nulls_propagate` is reset
+/// below them.
+/// Equality compares floating-point values numerically: `NaN` equals nothing, although the lookup
+/// finds a `NaN` key, and `0` equals `-0`, although the lookup tells them apart. `Array`, `Map` and
+/// `Tuple` comparisons recurse into the same numeric comparison of their elements, so floating-point
+/// values are checked at any nesting depth.
+bool keyColumnDiffersUnderEquality(const Field & component, bool nulls_propagate)
+{
+    switch (component.getType())
+    {
+        case Field::Types::Null:
+            return nulls_propagate;
+        case Field::Types::Float64:
+        {
+            const Float64 value = component.safeGet<Float64>();
+            return std::isnan(value) || value == 0;
+        }
+        case Field::Types::Tuple:
+            return std::ranges::any_of(
+                component.safeGet<Tuple>(),
+                [nulls_propagate](const Field & element) { return keyColumnDiffersUnderEquality(element, nulls_propagate); });
+        case Field::Types::Array:
+            return std::ranges::any_of(
+                component.safeGet<Array>(), [](const Field & element) { return keyColumnDiffersUnderEquality(element, false); });
+        case Field::Types::Map:
+            /// Each element of a `Map` field is a `(key, value)` tuple.
+            return std::ranges::any_of(
+                component.safeGet<Map>(), [](const Field & element) { return keyColumnDiffersUnderEquality(element, false); });
+        default:
+            return false;
+    }
+}
+
+/// Each key returned by `dictGetKeys` is a key-column value or a tuple of key-column values.
+bool keyDiffersUnderEquality(const Field & key)
+{
+    return keyColumnDiffersUnderEquality(key, true);
 }
 
 bool isRewriteSemanticallySafe(
@@ -226,6 +438,45 @@ bool isRewriteSemanticallySafe(
     return comparison_result.tryGet<UInt64>(comparison_result_uint) && comparison_result_uint == 0;
 }
 
+/// Whether `dictGetX(dict, attr, key) = const` can be rewritten as `key IN dictGetKeys(dict, attr, const)`.
+/// The rewrite is only semantically equivalent under the three conditions checked below.
+bool canReplaceWithDictGetKeys(
+    const String & attr_comparison_function_name,
+    const String & dictget_function_name,
+    const DataTypePtr & dict_attr_col_type,
+    const DataTypePtr & dictget_return_type,
+    const DataTypePtr & const_arg_type)
+{
+    /// `dictGetKeys` finds rows where the attribute equals the constant. Other operators
+    /// (`<`, `like`, ...) ask for non-equality matches that `dictGetKeys` does not implement,
+    /// so the rewrite would change the predicate semantics. Skip optimization for such case.
+    if (attr_comparison_function_name != "equals")
+        return false;
+
+    /// The `dictGet`-family function must not perform an internal cast of the attribute that the
+    /// rewrite would lose. For the generic `dictGet`, the return type is the attribute type by
+    /// construction; for `dictGetX`, the return type must equal the attribute type.
+    /// Example: attribute `d` is `Date` and the query uses `dictGetDateTime(..., 'd', id)`.
+    /// `dictGetDateTime` casts the `Date` attribute to `DateTime` at runtime, so the comparison
+    /// happens in `DateTime` space. Rewriting to `dictGetKeys` would drop that cast and compare
+    /// in `Date` space instead, changing the predicate semantics. Skip optimization for such case.
+    if (dictget_function_name != "dictGet" && !dict_attr_col_type->equals(*dictget_return_type))
+        return false;
+
+    /// `=` coerces both sides to a least common supertype at the comparison site, while
+    /// `dictGetKeys` casts the comparison value to the attribute type internally. For the rewrite
+    /// to be equivalent, the supertype must be the attribute type itself. Otherwise the internal
+    /// cast can lose information that `=` would preserve.
+    /// Example: attribute `d` is `Date`, constant is `toDateTime('2025-01-01 12:00:00')`. We promote
+    /// both to `DateTime`, promoting `Date('2025-01-01')` to `DateTime('2025-01-01 00:00:00')`,
+    /// so the original predicate is false at noon. The rewrite would truncate `DateTime` to
+    /// `Date` inside `dictGetKeys` and find a spurious match for row `Date('2025-01-01')`. Skip
+    /// optimization for such case.
+    const DataTypePtr stripped_attr_type = removeLowCardinalityAndNullable(dict_attr_col_type);
+    const DataTypePtr stripped_const_type = removeLowCardinalityAndNullable(const_arg_type);
+    const DataTypePtr supertype = tryGetLeastSupertype(DataTypes{stripped_attr_type, stripped_const_type});
+    return supertype && supertype->equals(*stripped_attr_type);
+}
 
 class InverseDictionaryLookupVisitor : public InDepthQueryTreeVisitorWithContext<InverseDictionaryLookupVisitor>
 {
@@ -236,17 +487,6 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (!getSettings()[Setting::optimize_inverse_dictionary_lookup])
-            return;
-
-        if (getSettings()[Setting::rewrite_in_to_join])
-            return;
-
-        /// We build an `IN` set from the dictionary subquery, which respects `max_rows_in_set`,
-        /// `max_bytes_in_set` and `set_overflow_mode`. With `set_overflow_mode = 'break'`, the set
-        /// can be truncated and not contain all required elements, so the optimization can produce
-        /// wrong results. Skip optimization for such case.
-        if ((getSettings()[Setting::max_rows_in_set] != 0 || getSettings()[Setting::max_bytes_in_set] != 0)
-            && getSettings()[Setting::set_overflow_mode] == OverflowMode::BREAK)
             return;
 
         auto * node_function = node->as<FunctionNode>();
@@ -290,13 +530,7 @@ public:
             return;
         }
 
-        /// The rewrite produces `IN (SELECT ... FROM dictionary(...))`, and the `dictionary()`
-        /// table function requires the `CREATE TEMPORARY TABLE` grant; if it is missing, skip the
-        /// optimization to avoid `ACCESS_DENIED`. Checked only after a rewrite candidate is found:
-        /// getAccess touches the access storage, and query analysis must not depend on it for
-        /// queries without `dictGet` predicates (in particular internal queries, which otherwise
-        /// block whenever the replicated access storage is being refreshed).
-        if (!isCreateTemporaryTableGranted())
+        if (keyTypeBreaksInverseLookupEquivalence(*dictget_function_info.key_expr_node->getResultType()))
             return;
 
         /// Type of the attribute and key columns are not present in the query. So, we have to fetch dictionary and get the column types.
@@ -312,7 +546,7 @@ public:
             return;
 
 
-        std::vector<NameAndTypePair> key_cols;
+        NamesAndTypes key_cols;
 
         const auto & dict_structure = dict->getStructure();
 
@@ -342,6 +576,12 @@ public:
             return;
         }
 
+        for (const auto & key_col : key_cols)
+        {
+            if (keyTypeBreaksInverseLookupEquivalence(*key_col.type))
+                return;
+        }
+
         /// For complex-key dictionaries, `dictGet` and `IN` don't have the same `NULL` key semantics.
         /// e.g: `dictGet(..., (k1, k2))` vs `(k1, k2) IN (SELECT k1, k2 FROM dictionary(...))`
         /// Example: if `k1` is `Nullable(UInt64)` and the dictionary has `(NULL, 'a')`,
@@ -352,6 +592,44 @@ public:
         /// `NULL` for `id = NULL`.
         if (dict_structure.key && hasNullableComponentInComplexKey(dictget_function_info.key_expr_node))
             return;
+
+        /// A key expression whose shape `dictGet` would reject must not be rewritten: the
+        /// rewrites below can turn the error it throws into a result.
+        if (!keyExpressionMatchesDictionaryStructure(dictget_function_info.key_expr_node, dict_structure))
+            return;
+
+        /// A complex-key dictionary with a single key column also accepts the `tuple`-wrapped call
+        /// form. The rewrites compare against the bare key component, so the decision below is made
+        /// on the component type, and the wrapper is removed only once the rewrite is known to proceed.
+        const bool single_column_complex_key = dict_structure.key && key_cols.size() == 1;
+        const DataTypePtr probe_type = single_column_complex_key
+            ? singleColumnKeyProbeType(dictget_function_info.key_expr_node)
+            : dictget_function_info.key_expr_node->getResultType();
+
+        /// `dictGet` converts each key column with `castColumnAccurate`. Keep the lookup when a comparison
+        /// would need an explicit cast, such as `String` to `UUID` or `Int16` to `UInt8`.
+        /// Public `accurateCast` has different conversion settings and prepares conversions before execution,
+        /// so it cannot preserve the lookup's behavior for empty inputs and skipped branches. Replacement
+        /// expressions must also use functions understood by remote servers, which reanalyze generated SQL.
+        /// Comparisons that only widen key values need no cast and keep the expression usable for indices.
+        ///
+        /// The one conversion that is mirrored is a signed probe of a simple key, whose lookup type is
+        /// `UInt64` by construction (`key_cols` above): a dictionary declared with a signed key and probed
+        /// with that very type is the common case, and skipping it would switch the optimization off for
+        /// all such dictionaries (`03906_dict_case_distributed_predicate_pushdown` depends on it firing).
+        /// `convertSimpleKeyProbe` explains why `accurateCast` is exact there. Like any other expression
+        /// in the probe, the conversion is evaluated wherever the rewritten predicate is, and it is not
+        /// evaluated where the predicate is replaced without looking at the probe: the zero-match
+        /// constant fold below, and `IN` over a set that turns out empty.
+        if (!canCompareKeysWithoutCasts(probe_type, key_cols))
+        {
+            if (!dict_structure.id || !convertSimpleKeyProbe(dictget_function_info.key_expr_node, getContext()))
+                return;
+        }
+        else if (single_column_complex_key)
+        {
+            unwrapSingleColumnTupleKey(dictget_function_info.key_expr_node, getContext());
+        }
 
         const String attr_col_name = dictget_function_info.attr_col_name_node->getValue().safeGet<String>();
 
@@ -374,9 +652,164 @@ public:
                 getContext()))
             return;
 
+        const String dictget_function_name = dict_side == Side::LHS ? static_cast<FunctionNode *>(arguments[0].get())->getFunctionName()
+                                                                    : static_cast<FunctionNode *>(arguments[1].get())->getFunctionName();
+
+        const bool can_replace_with_dictgetkeys = canReplaceWithDictGetKeys(
+            attr_comparison_function_name,
+            dictget_function_name,
+            dict_attr_col_type,
+            dictget_function_info.return_type,
+            const_arg_node->getResultType());
+
+        if (can_replace_with_dictgetkeys)
+        {
+            /// Preserve the original result type of the comparison node.
+            /// For example, original "equals(...)" might have result type Nullable(UInt8),
+            /// while "IN" might return UInt8.
+            DataTypePtr original_result_type = node_function->getResultType();
+            auto preserve_result_type = [&](QueryTreeNodePtr replacement_node)
+            {
+                if (original_result_type && replacement_node && !replacement_node->getResultType()->equals(*original_result_type))
+                    return createCastFunction(std::move(replacement_node), original_result_type, getContext());
+                return replacement_node;
+            };
+
+            /// Build dictGetKeys('dict_name', 'attr_name', value_expr)
+            auto dict_get_keys_fn = std::make_shared<FunctionNode>("dictGetKeys");
+            auto & dict_get_keys_args = dict_get_keys_fn->getArguments().getNodes();
+
+            dict_get_keys_args.push_back(dictget_function_info.dict_name_node);
+            dict_get_keys_args.push_back(dictget_function_info.attr_col_name_node);
+            dict_get_keys_args.push_back(dict_side == Side::LHS ? arguments[1] : arguments[0]);
+
+            QueryAnalyzer analyzer(false);
+            QueryTreeNodePtr node_function_ptr = dict_get_keys_fn;
+            analyzer.resolveConstantExpression(node_function_ptr, nullptr, getContext());
+
+            /// `resolveConstantExpression` intentionally skips folding large constants
+            /// (see `column->byteSize() < 1_MiB` in `src/Analyzer/Resolve/resolveFunction.cpp`).
+            /// In that case `dictGetKeys` remains a `FunctionNode`; fall back to the IN-subquery
+            /// path below instead of throwing.
+            if (const auto * keys_constant = node_function_ptr->as<ConstantNode>())
+            {
+                const Field & keys_field = keys_constant->getValue();
+
+                if (keys_field.getType() != Field::Types::Array)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR, "dictGetKeys expected to return Array field. Actual type: {}", keys_field.getType());
+
+                const auto & keys_array = keys_field.safeGet<Array>();
+                const size_t keys_size = keys_array.size();
+
+                /// No keys -> the predicate is always false. We can replace the entire comparison
+                /// with the constant `0`, but only when the predicate's result type is not Nullable
+                /// (`Nullable(UInt8)` or `LowCardinality(Nullable(UInt8))`). For Nullable predicates
+                /// `dictGet` can produce `NULL` per row (e.g. when the key column is `Nullable` and
+                /// the row's key is `NULL`, or when the attribute itself is `Nullable`), and
+                /// `NULL = const` is `NULL`. Replacing such a row with `0` flips a NULL into a
+                /// non-null `0` - observable via `isNull(predicate)`.
+                /// `SELECT count() WHERE isNull(predicate)` returns `1` without the rewrite and
+                /// `0` with it.
+                ///
+                /// Like any constant fold, this replaces the predicate without evaluating the
+                /// key expression. Exceptions from that expression, such as an explicit user-supplied
+                /// cast or the `UInt64` conversion this pass inserts for a signed simple-key probe,
+                /// are therefore skipped together with the lookup.
+                if (keys_size == 0 && original_result_type && !isNullableOrLowCardinalityNullable(original_result_type))
+                {
+                    auto zero_type = std::make_shared<DataTypeUInt8>();
+                    auto zero_node = std::make_shared<ConstantNode>(Field(UInt8(0)), zero_type);
+                    node = preserve_result_type(zero_node);
+                    return;
+                }
+
+                /// A single key can use equality unless equality matches different rows than the lookup.
+                /// Keep membership for keys containing `NULL`, where equality would turn a false lookup
+                /// predicate into `NULL` for non-null probes, and for floating-point `NaN` and zero keys.
+                if (keys_size == 1 && !keyDiffersUnderEquality(keys_array.front()))
+                {
+                    const Field & single_key_field = keys_array.front();
+
+                    const DataTypePtr & single_key_value_type
+                        = assert_cast<const DataTypeArray &>(*keys_constant->getResultType()).getNestedType();
+
+                    auto single_key_const = std::make_shared<ConstantNode>(single_key_field, single_key_value_type);
+
+                    auto equals_node = std::make_shared<FunctionNode>("equals");
+                    equals_node->markAsOperator();
+                    equals_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, single_key_const};
+                    resolveOrdinaryFunctionNodeByName(*equals_node, "equals", getContext());
+
+                    node = preserve_result_type(equals_node);
+                    return;
+                }
+
+                /// Multiple keys and the keys above use membership in the constant array of keys.
+                /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+                const auto in_function_name = getInFunctionNameForPassCreatedNode(
+                    "in", dictget_function_info.key_expr_node->getResultType(), getContext());
+                if (!in_function_name)
+                    return;
+
+                /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
+                auto keys_const_node = std::make_shared<ConstantNode>(keys_field, keys_constant->getResultType());
+
+                auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
+                in_function_node->markAsOperator();
+                in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, keys_const_node};
+                resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
+
+                node = preserve_result_type(in_function_node);
+                return;
+            }
+        }
+
+        /// The `IN (SELECT ... FROM dictionary(...))` rewrite below conflicts with a forced IN->JOIN
+        /// rewrite and with the Cascades distributed planner's own IN handling, so skip it in those
+        /// cases. The constant-fold rewrites above stay enabled.
+        if (getSettings()[Setting::rewrite_in_to_join]
+            || (getSettings()[Setting::make_distributed_plan] && getSettings()[Setting::enable_cascades_optimizer]))
+            return;
+
+        /// We build an `IN` set from the dictionary subquery, which respects `max_rows_in_set`,
+        /// `max_bytes_in_set` and `set_overflow_mode`. With `set_overflow_mode = 'break'`, the set
+        /// can be truncated and not contain all required elements, so the optimization can produce
+        /// wrong results. Skip optimization for such case.
+        if ((getSettings()[Setting::max_rows_in_set] != 0 || getSettings()[Setting::max_bytes_in_set] != 0)
+            && getSettings()[Setting::set_overflow_mode] == OverflowMode::BREAK)
+            return;
+
+        /// Only the `IN (SELECT ... FROM dictionary(...))` rewrite below uses the `dictionary()`
+        /// table function, which requires the `CREATE TEMPORARY TABLE` grant; if it is missing, skip
+        /// the optimization to avoid `ACCESS_DENIED`. The constant-fold path above (`key = const`,
+        /// `key IN [..]`, or `0`) does not build a `dictionary()` subquery and only needs the normal
+        /// dictionary access of `dictGetKeys`, so it is intentionally not gated by this grant.
+        /// Checked only here, right before building the subquery: `getAccess` touches the access
+        /// storage, and query analysis must not depend on it for queries that do not reach this path
+        /// (in particular internal queries, which otherwise block whenever the replicated access
+        /// storage is being refreshed).
+        if (!isCreateTemporaryTableGranted())
+            return;
+
+        /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
+        const auto in_function_name = getInFunctionNameForPassCreatedNode(
+            "in", dictget_function_info.key_expr_node->getResultType(), getContext());
+        if (!in_function_name)
+            return;
+
         auto dict_table_function = std::make_shared<TableFunctionNode>("dictionary");
         dict_table_function->getArguments().getNodes().push_back(dictget_function_info.dict_name_node);
-        resolveNode(dict_table_function, getContext());
+
+        auto dict_table_storage = std::make_shared<StorageDictionary>(
+            StorageID(ITableFunction::getDatabaseName(), "dictionary"),
+            dict_name,
+            ColumnsDescription{StorageDictionary::getNamesAndTypes(dict_structure, /*validate_id_type*/ false)},
+            String{},
+            StorageDictionary::Location::Custom,
+            getContext());
+
+        dict_table_function->resolve({}, std::move(dict_table_storage), getContext(), {});
 
         NameAndTypePair attr_col{attr_col_name, dict_attr_col_type};
         auto attr_col_node = std::make_shared<ColumnNode>(attr_col, dict_table_function);
@@ -401,7 +834,7 @@ public:
         /// SELECT key_col FROM dictionary(dict_name) WHERE attr_name = const_value
         auto subquery_node = std::make_shared<QueryNode>(Context::createCopy(getContext()));
         subquery_node->setIsSubquery(true);
-        subquery_node->getJoinTree() = dict_table_function;
+        subquery_node->getJoinTreeNode() = dict_table_function;
         subquery_node->getWhere() = attr_comparison_function_node;
 
         for (const auto & key_col_node : key_cols)
@@ -410,11 +843,11 @@ public:
         }
         subquery_node->resolveProjectionColumns(key_cols);
 
-        auto in_function_node = std::make_shared<FunctionNode>("in");
+        auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
         in_function_node->markAsOperator();
         QueryTreeNodePtr querytree_subquery_node = subquery_node;
         in_function_node->getArguments().getNodes() = {dictget_function_info.key_expr_node, querytree_subquery_node};
-        resolveOrdinaryFunctionNodeByName(*in_function_node, "in", getContext());
+        resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, getContext());
 
         /// Preserve the original result type of the comparison node.
         /// For example, original "equals(...)" might have result type Nullable(UInt8),

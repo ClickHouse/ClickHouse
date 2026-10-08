@@ -852,36 +852,148 @@ void ExpressionActions::execute(
         }
     }
 
-    if (project_inputs)
-    {
-        block.clear();
-    }
-    else if (allow_duplicates_in_input)
-    {
-        /// This case is the same as when the input is projected
-        /// since we do not need any input columns.
-        block.clear();
-    }
-    else
-    {
-        ::sort(execution_context.inputs_pos.rbegin(), execution_context.inputs_pos.rend());
-        for (auto input : execution_context.inputs_pos)
-            if (input >= 0)
-                block.erase(input);
-    }
-
     Block res;
+    res.reserve(result_positions.size() + block.columns());
 
+    /// Note: `result_positions` may reference the same column position more than once
+    /// (e.g. when an output node is requested twice), so keep copying here rather than moving.
     for (auto pos : result_positions)
         if (execution_context.columns[pos].column)
             res.insert(execution_context.columns[pos]);
 
-    for (auto && item : block)
-        res.insert(std::move(item));
+    /// Carry through the input columns that were not consumed as action inputs.
+    /// `project_inputs`/`allow_duplicates_in_input` drop all inputs; otherwise keep the ones whose
+    /// block position was not bound to a required input (i.e. is not present in `inputs_pos`).
+    ///
+    /// Previously the consumed inputs were removed with `Block::erase` one by one. Each such erase is
+    /// O(columns) (a vector shift plus a full rescan of `index_by_name` to fix up positions), so the
+    /// loop was O(columns^2) overall — pathological for very wide inputs, e.g. the hundreds of QBit
+    /// bit-plane sub-columns fed into a single `*DistanceTransposed` call. Build the surviving columns
+    /// in a single pass instead, without ever mutating `block`'s name index.
+    if (!project_inputs && !allow_duplicates_in_input)
+    {
+        std::vector<bool> consumed(block.columns(), false);
+        for (auto input : execution_context.inputs_pos)
+            if (input >= 0)
+                consumed[input] = true;
+
+        size_t pos = 0;
+        for (auto && item : block)
+        {
+            if (!consumed[pos])
+                res.insert(std::move(item));
+            ++pos;
+        }
+    }
 
     block.swap(res);
 
     num_rows = execution_context.num_rows;
+}
+
+std::vector<ssize_t> ExpressionActions::getInputPositions(const Block & header) const
+{
+    std::vector<ssize_t> inputs_pos(required_columns.size(), -1);
+
+    for (size_t pos = 0; pos < header.columns(); ++pos)
+    {
+        auto it = input_positions.find(header.getByPosition(pos).name);
+        if (it != input_positions.end())
+        {
+            for (auto input_pos : it->second)
+            {
+                if (inputs_pos[input_pos] < 0)
+                {
+                    inputs_pos[input_pos] = pos;
+                    break;
+                }
+            }
+        }
+    }
+
+    return inputs_pos;
+}
+
+Columns ExpressionActions::executeOnColumns(
+    Columns columns,
+    const Block & header,
+    const std::vector<ssize_t> & input_positions_for_header,
+    size_t & num_rows,
+    bool dry_run,
+    CheckCancelled check_cancelled) const
+{
+    /// The chunk must match the fixed input header positionally. The block-based path validated this
+    /// implicitly via `Block::cloneWithColumns`; keep the same guard here, because both `header.getByPosition`
+    /// and the cached `input_positions_for_header` index the inputs by position without bounds checks.
+    if (columns.size() != header.columns())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot execute expression on columns positionally: the input header [{}] has {} columns, "
+            "but {} columns were given",
+            header.dumpStructure(), header.columns(), columns.size());
+
+    /// Build the inputs positionally from the fixed header; no `Block` (and hence no name index) is created.
+    ColumnsWithTypeAndName inputs;
+    inputs.reserve(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto & structure = header.getByPosition(i);
+        inputs.emplace_back(std::move(columns[i]), structure.type, structure.name);
+    }
+
+    ExecutionContext execution_context
+    {
+        .inputs = inputs,
+        .num_rows = num_rows,
+    };
+    /// Fixed header => the input mapping is the same for every chunk and is precomputed by the caller.
+    execution_context.inputs_pos = input_positions_for_header;
+    execution_context.columns.resize(num_columns);
+
+    for (const auto & action : actions)
+    {
+        try
+        {
+            executeAction(action, execution_context, dry_run, /*allow_duplicates_in_input=*/false, settings.enable_lazy_columns_replication);
+            checkLimits(execution_context.columns);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while executing '{}'", action.toString()));
+            throw;
+        }
+
+        if (check_cancelled && check_cancelled())
+        {
+            num_rows = 0;
+            auto empty = sample_block.cloneEmptyColumns();
+            return Columns(std::make_move_iterator(empty.begin()), std::make_move_iterator(empty.end()));
+        }
+    }
+
+    Columns res;
+    res.reserve(result_positions.size() + inputs.size());
+
+    /// Result columns first, in `sample_block`/`result_positions` order (a position may repeat).
+    for (auto pos : result_positions)
+        if (execution_context.columns[pos].column)
+            res.push_back(execution_context.columns[pos].column);
+
+    /// Then the input columns that were not consumed as action inputs (unless the inputs are projected away).
+    if (!project_inputs)
+    {
+        std::vector<bool> consumed(inputs.size(), false);
+        for (auto input : execution_context.inputs_pos)
+            if (input >= 0)
+                consumed[input] = true;
+
+        for (size_t i = 0; i < inputs.size(); ++i)
+            if (!consumed[i])
+                res.push_back(inputs[i].column);
+    }
+
+    num_rows = execution_context.num_rows;
+    return res;
 }
 
 void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input, CheckCancelled check_cancelled) const

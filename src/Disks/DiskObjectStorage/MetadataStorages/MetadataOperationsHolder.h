@@ -4,7 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataStorageTransactionState.h>
 
-#include <vector>
+#include <deque>
 
 namespace DB
 {
@@ -19,12 +19,13 @@ class MetadataOperationsHolder
     void rollback(size_t until_pos, Exception & rollback_reason) noexcept;
 
 public:
+    void prependOperation(MetadataOperationPtr && operation);
     void addOperation(MetadataOperationPtr && operation);
     void commit();
     void finalize() noexcept;
 
 private:
-    std::vector<MetadataOperationPtr> operations;
+    std::deque<MetadataOperationPtr> operations;
     MetadataStorageTransactionState state{MetadataStorageTransactionState::PREPARING};
 };
 

@@ -1,0 +1,5 @@
+1
+--- A lazy-materialized TopK plan populates the QCC and a re-run reuses it
+04538_cold	0	0
+04538_reuse	1	1
+04538_difflimit	0	0

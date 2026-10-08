@@ -2,6 +2,7 @@
 -- Since 323299fe, KeyCondition folds `x = NaN` to ALWAYS_FALSE and `x <> NaN` to ALWAYS_TRUE,
 -- so `= NaN` queries short-circuit before partition/statistics pruning (no Indexes in EXPLAIN),
 -- while `<> NaN` queries proceed through the normal pruning pipeline.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_nan;
 
@@ -11,13 +12,12 @@ CREATE TABLE test_stats_nan (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(dt)
 ORDER BY tuple()
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'minmax';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic';
 
 SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 -- =============================================================================
 -- Case 1: Float64 with NaN values

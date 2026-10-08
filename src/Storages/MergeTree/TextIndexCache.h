@@ -49,11 +49,13 @@ public:
     {
     }
 
-    template <typename... Args>
-    static UInt128 hash(Args... args)
+    static UInt128 hash(std::string_view index_id, std::string_view token)
     {
         SipHash hasher;
-        (hasher.update(args),...);
+        hasher.update(UInt8{0}); /// Token postings, including negative cache entries.
+        hasher.update(index_id.size());
+        hasher.update(index_id);
+        hasher.update(token);
         return hasher.get128();
     }
 
@@ -66,6 +68,51 @@ public:
         else
             ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
         return std::move(cache_entry);
+    }
+
+    void setNotFound(UInt128 key)
+    {
+        set(key, notFoundEntry());
+    }
+
+    void setPatternBypass(UInt128 key)
+    {
+        set(key, patternBypassEntry());
+    }
+
+    static bool isNotFound(const MappedPtr & entry)
+    {
+        return entry == notFoundEntry();
+    }
+
+    static bool isPatternBypass(const MappedPtr & entry)
+    {
+        return entry == patternBypassEntry();
+    }
+
+    static UInt128 hashPatternBypass(const String & index_id, UInt128 patterns_hash, UInt64 max_postings_to_read)
+    {
+        SipHash hasher;
+        hasher.update(UInt8{1}); /// Pattern bypass entries must not alias arbitrary token bytes.
+        hasher.update(index_id);
+        hasher.update(patterns_hash);
+        hasher.update(max_postings_to_read);
+        return hasher.get128();
+    }
+
+private:
+    static const MappedPtr & notFoundEntry()
+    {
+        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        return entry;
+    }
+
+    static const MappedPtr & patternBypassEntry()
+    {
+        /// An empty TokenPostingsInfo has a nonzero weight, so sentinel entries
+        /// remain bounded by both the byte and entry-count cache limits.
+        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        return entry;
     }
 };
 
@@ -105,17 +152,17 @@ public:
     }
 };
 
-/// Discriminators mixed into the cache key so the three cell kinds occupy disjoint key spaces.
+/// Discriminators mixed into the cache key so the cell kinds occupy disjoint key spaces.
 enum class TextIndexPostingsCacheKind : UInt8
 {
     Roaring = 0,
     Segment = 1,
-    Flat = 2,
+    Phrase = 3, /// phrase-search result, a sorted array of doc ids
 };
 
 /// A single cell of TextIndexPostingsCache. It holds one of:
 ///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
-///   - FlatPostingsPtr:       a flattened sorted array of analyzer-folded postings (prebuilt or embedded cursor);
+///   - FlatPostingsPtr:       a sorted array of doc ids of a phrase-search result;
 ///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
 /// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
 /// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.

@@ -1,0 +1,27 @@
+---
+description: 'Документация по оптимизации на основе профиля'
+sidebarTitle: 'Оптимизация на основе профиля (PGO)'
+slug: /operations/optimizing-performance/profile-guided-optimization
+title: 'Оптимизация на основе профиля'
+doc_type: 'guide'
+---
+
+Оптимизация на основе профиля (PGO) — это метод оптимизации компилятора, при котором программа оптимизируется на основе профиля времени выполнения.
+
+Согласно результатам тестов, PGO помогает повысить производительность ClickHouse. По результатам тестов прирост QPS в наборе тестов ClickBench достигает 15%. Более подробные результаты доступны [здесь](https://pastebin.com/xbue3HMU). Выигрыш в производительности зависит от вашей типичной рабочей нагрузки — результаты могут быть как лучше, так и хуже.
+
+Подробнее о PGO в ClickHouse можно прочитать в соответствующем [issue](https://github.com/ClickHouse/ClickHouse/issues/44567) на GitHub.
+
+<div id="how-to-build-clickhouse-with-pgo">
+  ## Как собрать ClickHouse с PGO?
+</div>
+
+Существует два основных вида PGO: [инструментирование](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) и [сэмплирование](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) (также известное как AutoFDO). В этом руководстве описывается инструментирование PGO для ClickHouse.
+
+1. Соберите ClickHouse в режиме instrumented. В Clang это можно сделать, передав параметр `-fprofile-generate` в `CXXFLAGS`.
+2. Запустите instrumented ClickHouse на типичной рабочей нагрузке. Здесь следует использовать вашу обычную рабочую нагрузку. Один из вариантов — использовать [ClickBench](https://github.com/ClickHouse/ClickBench) в качестве примера такой нагрузки. ClickHouse в режиме instrumented может работать медленно, поэтому учитывайте это и не запускайте его в средах, критичных к производительности.
+3. Скомпилируйте ClickHouse еще раз, используя флаги компилятора `-fprofile-use` и профили, собранные на предыдущем шаге.
+
+Более подробное руководство по применению PGO приведено в [документации](https://clang.llvm.org/docs/UsersManual.html#profile-guided-optimization) Clang.
+
+Если вы собираетесь собирать типичную рабочую нагрузку непосредственно в production-среде, рекомендуем попробовать сэмплирование PGO.

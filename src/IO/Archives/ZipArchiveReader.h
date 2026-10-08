@@ -5,6 +5,7 @@
 #if USE_MINIZIP
 #include <IO/Archives/IArchiveReader.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <memory>
 #include <mutex>
 
 
@@ -73,10 +74,18 @@ private:
     /// The stream pointer is opaque here (StreamFromReadBuffer* in the .cpp file).
     /// It's non-null when reading from a buffer via archive_read_function,
     /// null when reading from a file path.
+    ///
+    /// `opaque` keeps the heap-allocated `StreamFromReadBuffer::Opaque` struct alive
+    /// for the entire lifetime of the underlying `unzFile` handle. The minizip library
+    /// stores the `opaque` pointer internally during `unzOpen2_64` and dereferences it
+    /// from every subsequent stream callback (`readFileFunc`, `seekFunc`, `tellFunc`).
+    /// Allocating `Opaque` on the heap and pinning it via this shared pointer prevents
+    /// use-after-scope when post-open callbacks need to record exception state.
     struct RawHandleWithStream
     {
         RawHandle handle = nullptr;
         void * stream = nullptr;
+        std::shared_ptr<void> opaque;
     };
 
     RawHandleWithStream acquireRawHandle();

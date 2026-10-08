@@ -1,11 +1,34 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdlib>
+#include <limits>
+#include <new>
 #include <type_traits>
 
+#include <base/defines.h>
+
+/// Not used directly anymore (the allocation machinery moved to the .cpp), but kept so
+/// the set of symbols this widely-included header transitively provides (e.g. config.h
+/// macros) does not change for downstream translation units.
 #include <Common/AllocationInterceptors.h>
 #include <Common/CurrentMemoryTracker.h>
+
+
+/// The throw is kept in a cold, never-inlined helper so that allocate() (which is
+/// inlined into hot allocation sites) does not carry exception-handling machinery.
+[[noreturn]] [[gnu::cold]] NO_INLINE inline void throwBadAllocFromAllocatorWithMemoryTracking()
+{
+    throw std::bad_alloc();
+}
+
+/// Out-of-line allocation primitives. Keeping the tracker + malloc + onAlloc/onFree
+/// machinery in the .cpp lets allocate()/deallocate() inline to a single call, the same
+/// shape std::allocator has (operator new/delete are also out-of-line calls). With the
+/// machinery inlined, the container's fill-constructor became too large to inline into
+/// callers and turned into an out-of-line call, which perturbed register allocation in
+/// hot functions. `alignment == 0` selects the default (max_align_t) path.
+[[nodiscard]] void * allocateWithMemoryTracking(size_t bytes, size_t alignment);
+void deallocateWithMemoryTracking(void * p, size_t bytes) noexcept;
 
 
 /// Implementation of std::allocator interface that tracks memory with MemoryTracker.
@@ -37,42 +60,16 @@ struct AllocatorWithMemoryTracking
 
     [[nodiscard]] T * allocate(size_t n)
     {
-        if (n > std::numeric_limits<size_t>::max() / sizeof(T))
-            throw std::bad_alloc();
+        if (n > std::numeric_limits<size_t>::max() / sizeof(T)) [[unlikely]]
+            throwBadAllocFromAllocatorWithMemoryTracking();
 
-        size_t bytes = n * sizeof(T);
-        auto trace = CurrentMemoryTracker::alloc(bytes);
-
-        T * p = nullptr;
-        if constexpr (alignof(T) > alignof(std::max_align_t))
-        {
-            const int res = __real_posix_memalign(reinterpret_cast<void **>(&p), alignof(T), bytes);
-            if (res != 0)
-                // We don't have to, but to be sure
-                p = nullptr;
-        }
-        else
-        {
-            p = static_cast<T *>(__real_malloc(bytes));
-        }
-        if (!p)
-        {
-            [[maybe_unused]] auto rollback_trace = CurrentMemoryTracker::free(bytes);
-            throw std::bad_alloc();
-        }
-
-        trace.onAlloc(p, bytes);
-
-        return p;
+        constexpr size_t alignment = alignof(T) > alignof(std::max_align_t) ? alignof(T) : 0;
+        return static_cast<T *>(allocateWithMemoryTracking(n * sizeof(T), alignment));
     }
 
     void deallocate(T * p, size_t n) noexcept
     {
-        size_t bytes = n * sizeof(T);
-
-        __real_free(p);
-        auto trace = CurrentMemoryTracker::free(bytes);
-        trace.onFree(p, bytes);
+        deallocateWithMemoryTracking(p, n * sizeof(T));
     }
 };
 

@@ -40,7 +40,7 @@ public:
     virtual bool has(const String & object_name) const = 0;
 
     /// Get all user defined object names.
-    virtual Strings getAllObjectNames() const = 0;
+    virtual VectorWithMemoryTracking<String> getAllObjectNames() const = 0;
 
     /// Get all user defined objects.
     virtual VectorWithMemoryTracking<std::pair<String, ASTPtr>> getAllObjects() const = 0;

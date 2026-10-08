@@ -156,6 +156,7 @@ namespace
         std::vector<std::vector<const ActionsDAG *>> actions_chain;
         const DistinctStep * inner_distinct_step = nullptr;
         const IQueryPlanStep * aggregation_before_distinct = nullptr;
+        bool has_cube_or_rollup = false;
         const QueryPlan::Node * node = distinct_node;
         while (!node->children.empty())
         {
@@ -170,6 +171,9 @@ namespace
                 logDebug("aggregation pass: stopped by allow check on step", current_step->getName());
                 break;
             }
+
+            if (typeid_cast<const CubeStep *>(current_step) || typeid_cast<const RollupStep *>(current_step))
+                has_cube_or_rollup = true;
 
             if (typeid_cast<const WindowStep *>(current_step))
             {
@@ -195,6 +199,12 @@ namespace
 
         if (aggregation_before_distinct)
         {
+            /// CUBE/ROLLUP/GROUPING SETS emit extra rows with key columns defaulted, which can
+            /// collide with real group values, so the output is not distinct on the keys: keep DISTINCT.
+            /// CUBE/ROLLUP are a separate step above Aggregating; GROUPING SETS lives inside it.
+            if (has_cube_or_rollup)
+                return false;
+
             if (actions_chain.empty())
                 actions_chain.push_back(std::move(dag_stack));
 
@@ -202,12 +212,16 @@ namespace
 
             if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(aggregation_before_distinct); aggregating_step)
             {
+                if (aggregating_step->isGroupingSets())
+                    return false;
                 return compareAggregationKeysWithDistinctColumns(
                     aggregating_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }
             if (const auto * merging_aggregated_step = typeid_cast<const MergingAggregatedStep *>(aggregation_before_distinct);
                 merging_aggregated_step)
             {
+                if (merging_aggregated_step->isGroupingSets())
+                    return false;
                 return compareAggregationKeysWithDistinctColumns(
                     merging_aggregated_step->getParams().keys, distinct_columns, std::move(actions_chain));
             }

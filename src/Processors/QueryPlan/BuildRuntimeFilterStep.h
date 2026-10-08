@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
 
 namespace DB
 {
@@ -16,13 +17,9 @@ public:
         const DataTypePtr & filter_column_type_,
         String filter_name_,
         String filter_key_,
-        UInt64 exact_values_limit_,
-        UInt64 bloom_filter_bytes_,
-        UInt64 bloom_filter_hash_functions_,
+        RuntimeFilterBuildOptions build_options_,
         Float64 pass_ratio_threshold_for_disabling,
-        UInt64 blocks_to_skip_before_reenabling,
-        Float64 max_ratio_of_set_bits_in_bloom_filter,
-        bool allow_to_use_not_exact_filter_);
+        UInt64 blocks_to_skip_before_reenabling);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -31,10 +28,22 @@ public:
 
     const String & getFilterColumnName() const { return filter_column_name; }
     const String & getFilterName() const { return filter_name; }
+    const String & getFilterKey() const { return filter_key; }
+
+    /// Make the built filter record its key values/range (see track_key_range). Called by plan
+    /// optimizations whose pruning consumes them, e.g. markSealGatedReading.
+    void enableKeyRangeTracking() { build_options.track_key_range = true; }
+
+    /// Whether the completed filter is guaranteed to convert into a positive primary-key
+    /// predicate (see buildRuntimeRangePredicate): positive containment semantics
+    /// (an ANTI-join NOT-contains filter can never prune positively) and a key type whose
+    /// [min, max] envelope survives an exact-set overflow. Gating a read on a seal that
+    /// fails this could only delay the probe side and then scan it unpruned.
+    bool canSealPrunePrimaryKey() const;
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -57,14 +66,9 @@ private:
     /// serialized) so it never enters a plan-step hash. Empty for a deserialized step (then inert).
     String filter_key;
 
-    UInt64 exact_values_limit;
-    UInt64 bloom_filter_bytes;
-    UInt64 bloom_filter_hash_functions;
+    RuntimeFilterBuildOptions build_options;
     Float64 pass_ratio_threshold_for_disabling;
     UInt64 blocks_to_skip_before_reenabling;
-    Float64 max_ratio_of_set_bits_in_bloom_filter;
-
-    bool allow_to_use_not_exact_filter;
 };
 
 }

@@ -51,6 +51,9 @@
 #include <boost/container/flat_map.hpp>
 #include <Common/TerminalSize.h>
 #include <Common/ErrnoException.h>
+#include <Common/ThreadPool.h>
+#include <IO/SharedThreadPools.h>
+#include <Common/scope_guard_safe.h>
 #include <bit>
 
 
@@ -1215,6 +1218,13 @@ try
 {
     using namespace DB;
     namespace po = boost::program_options;
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     registerFormats();
 

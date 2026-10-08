@@ -140,7 +140,7 @@ TEST(PlannerJoinTreeEmptyProjectionGuard, SubqueryWithEmptyProjectionThrowsUnsup
     auto * outer = query_tree->as<QueryNode>();
     ASSERT_NE(outer, nullptr) << "Outer node must be a QueryNode";
 
-    auto & join_tree = outer->getJoinTree();
+    auto & join_tree = outer->getJoinTreeNode();
     auto * inner = join_tree->as<QueryNode>();
     ASSERT_NE(inner, nullptr) << "Outer query's join tree must be the inner subquery QueryNode";
 

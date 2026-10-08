@@ -1,0 +1,152 @@
+---
+slug: '/examples/aggregate-function-combinators/avgState'
+title: 'avgState'
+description: 'Ejemplo del uso del combinador avgState'
+keywords: ['avg', 'state', 'combinador', 'ejemplos', 'avgState']
+sidebarTitle: 'avgState'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+El combinador [`State`](/es/reference/functions/aggregate-functions/combinators#-state)
+puede aplicarse a la función [`avg`](/es/reference/functions/aggregate-functions/avg)
+para generar un estado intermedio de tipo `AggregateFunction(avg, T)`, donde
+`T` es el tipo especificado para el promedio.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+En este ejemplo, veremos cómo usar el tipo `AggregateFunction`,
+junto con la función `avgState` para agregar datos de tráfico de sitios web.
+
+Primero, cree la tabla de origen para los datos de tráfico del sitio web:
+
+```sql
+CREATE TABLE raw_page_views
+(
+    page_id UInt32,
+    page_name String,
+    response_time_ms UInt32,  -- Tiempo de respuesta de la página en milisegundos
+    viewed_at DateTime DEFAULT now()
+)
+ENGINE = MergeTree()
+ORDER BY (page_id, viewed_at);
+```
+
+Cree la tabla de agregación que almacenará los tiempos de respuesta promedio. Tenga en cuenta que
+`avg` no puede usar el tipo `SimpleAggregateFunction`, ya que requiere un estado complejo
+(una suma y un recuento). Por ello, se utiliza el tipo `AggregateFunction`:
+
+```sql
+CREATE TABLE page_performance
+(
+    page_id UInt32,
+    page_name String,
+    avg_response_time AggregateFunction(avg, UInt32)  -- Almacena el estado necesario para el cálculo del promedio
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY page_id;
+```
+
+Crea una vista materializada incremental que actuará como disparador de inserción para
+los nuevos datos y almacenará el estado intermedio en la tabla de destino definida anteriormente:
+
+```sql
+CREATE MATERIALIZED VIEW page_performance_mv
+TO page_performance
+AS SELECT
+    page_id,
+    page_name,
+    avgState(response_time_ms) AS avg_response_time  -- Usando el combinador -State
+FROM raw_page_views
+GROUP BY page_id, page_name;
+```
+
+Inserte algunos datos iniciales en la tabla de origen para crear una parte en disco:
+
+```sql
+INSERT INTO raw_page_views (page_id, page_name, response_time_ms) VALUES
+    (1, 'Homepage', 120),
+    (1, 'Homepage', 135),
+    (2, 'Products', 95),
+    (2, 'Products', 105),
+    (3, 'About', 80),
+    (3, 'About', 90);
+```
+
+Inserta más datos para crear una segunda parte en disco:
+
+```sql
+INSERT INTO raw_page_views (page_id, page_name, response_time_ms) VALUES
+(1, 'Homepage', 150),
+(2, 'Products', 110),
+(3, 'About', 70),
+(4, 'Contact', 60),
+(4, 'Contact', 65);
+```
+
+Examine la tabla de destino `page_performance`:
+
+```sql
+SELECT 
+    page_id,
+    page_name,
+    avg_response_time,
+    toTypeName(avg_response_time)
+FROM page_performance
+```
+
+```response
+┌─page_id─┬─page_name─┬─avg_response_time─┬─toTypeName(avg_response_time)──┐
+│       1 │ Homepage  │ �                 │ AggregateFunction(avg, UInt32) │
+│       2 │ Products  │ �                 │ AggregateFunction(avg, UInt32) │
+│       3 │ About     │ �                 │ AggregateFunction(avg, UInt32) │
+│       1 │ Homepage  │ �                 │ AggregateFunction(avg, UInt32) │
+│       2 │ Products  │ n                 │ AggregateFunction(avg, UInt32) │
+│       3 │ About     │ F                 │ AggregateFunction(avg, UInt32) │
+│       4 │ Contact   │ }                 │ AggregateFunction(avg, UInt32) │
+└─────────┴───────────┴───────────────────┴────────────────────────────────┘
+```
+
+Observe que la columna `avg_response_time` es de tipo `AggregateFunction(avg, UInt32)`
+y almacena información de estado intermedio. Observe también que los datos de la fila para
+`avg_response_time` no son de utilidad y que aparecen caracteres extraños como
+`�, n, F, }`. Esto se debe a que el terminal intenta mostrar datos binarios como texto.
+El motivo es que los tipos `AggregateFunction` almacenan su estado en un
+formato binario optimizado para un almacenamiento y procesamiento eficientes, no para
+ser legible por humanos. Este estado binario contiene toda la información necesaria para
+calcular el promedio.
+
+Para utilizarlo, use el combinador `Merge`:
+
+```sql
+SELECT
+    page_id,
+    page_name,
+    avgMerge(avg_response_time) AS average_response_time_ms
+FROM page_performance
+GROUP BY page_id, page_name
+ORDER BY page_id;
+```
+
+Ahora vemos los promedios correctos:
+
+```response
+┌─page_id─┬─page_name─┬─average_response_time_ms─┐
+│       1 │ Homepage  │                      135 │
+│       2 │ Products  │       103.33333333333333 │
+│       3 │ About     │                       80 │
+│       4 │ Contact   │                     62.5 │
+└─────────┴───────────┴──────────────────────────┘
+```
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [`avg`](/es/reference/functions/aggregate-functions/avg)
+* [`State`](/es/reference/functions/aggregate-functions/combinators#-state)

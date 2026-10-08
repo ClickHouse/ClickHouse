@@ -3,9 +3,15 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/Context.h>
+
+#include <functional>
+#include <limits>
 
 
 namespace DB
@@ -16,13 +22,25 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+namespace Setting
+{
+    extern const SettingsBool compile_regular_expressions;
+    extern const SettingsUInt64 min_count_to_compile_regular_expression;
+}
+
 template <typename Impl, typename Name>
 class FunctionStringReplace final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionStringReplace>(); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionStringReplace>(context); }
+
+    explicit FunctionStringReplace(ContextPtr context)
+    {
+        if (context && context->getSettingsRef()[Setting::compile_regular_expressions])
+            regexp_jit_min_count = context->getSettingsRef()[Setting::min_count_to_compile_regular_expression];
+    }
 
     String getName() const override { return name; }
 
@@ -52,8 +70,18 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
+        std::function<void()> check_cancellation = makeCancellationCheck(name);
+
+        /// Before materialization: expanding a constant into a full column is itself unbounded.
+        if (check_cancellation)
+            check_cancellation();
+
         ColumnPtr column_haystack = arguments[0].column;
         column_haystack = column_haystack->convertToFullColumnIfConst();
+
+        /// After materialization, so that a deadline crossed by the expansion above is observed too.
+        if (check_cancellation)
+            check_cancellation();
 
         const ColumnPtr column_needle = arguments[1].column;
         const ColumnPtr column_replacement = arguments[2].column;
@@ -71,15 +99,21 @@ public:
 
         if (col_haystack && col_needle_const && col_replacement_const)
         {
-            Impl::vectorConstantConstant(
-                col_haystack->getChars(), col_haystack->getOffsets(),
-                col_needle_const->getValue<String>(),
-                col_replacement_const->getValue<String>(),
-                col_res->getChars(), col_res->getOffsets(),
-                input_rows_count);
-            return col_res;
+            const String needle = col_needle_const->getValue<String>();
+            const String replacement = col_replacement_const->getValue<String>();
+            auto & res_chars = col_res->getChars();
+            auto & res_offsets = col_res->getOffsets();
+            /// Only impls that opt in (currently `ReplaceRegexpImpl`) take the JIT compile-count threshold.
+            if constexpr (requires { Impl::vectorConstantConstant(col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement, res_chars, res_offsets, input_rows_count, regexp_jit_min_count, check_cancellation); })
+                Impl::vectorConstantConstant(
+                    col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
+                    res_chars, res_offsets, input_rows_count, regexp_jit_min_count, check_cancellation);
+            else
+                Impl::vectorConstantConstant(
+                    col_haystack->getChars(), col_haystack->getOffsets(), needle, replacement,
+                    res_chars, res_offsets, input_rows_count, check_cancellation);
         }
-        if (col_haystack && col_needle_vector && col_replacement_const)
+        else if (col_haystack && col_needle_vector && col_replacement_const)
         {
             Impl::vectorVectorConstant(
                 col_haystack->getChars(),
@@ -89,10 +123,10 @@ public:
                 col_replacement_const->getValue<String>(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count);
-            return col_res;
+                input_rows_count,
+                check_cancellation);
         }
-        if (col_haystack && col_needle_const && col_replacement_vector)
+        else if (col_haystack && col_needle_const && col_replacement_vector)
         {
             Impl::vectorConstantVector(
                 col_haystack->getChars(),
@@ -102,10 +136,10 @@ public:
                 col_replacement_vector->getOffsets(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count);
-            return col_res;
+                input_rows_count,
+                check_cancellation);
         }
-        if (col_haystack && col_needle_vector && col_replacement_vector)
+        else if (col_haystack && col_needle_vector && col_replacement_vector)
         {
             Impl::vectorVectorVector(
                 col_haystack->getChars(),
@@ -116,10 +150,10 @@ public:
                 col_replacement_vector->getOffsets(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count);
-            return col_res;
+                input_rows_count,
+                check_cancellation);
         }
-        if (col_haystack_fixed && col_needle_const && col_replacement_const)
+        else if (col_haystack_fixed && col_needle_const && col_replacement_const)
         {
             Impl::vectorFixedConstantConstant(
                 col_haystack_fixed->getChars(),
@@ -128,12 +162,24 @@ public:
                 col_replacement_const->getValue<String>(),
                 col_res->getChars(),
                 col_res->getOffsets(),
-                input_rows_count);
-            return col_res;
+                input_rows_count,
+                check_cancellation);
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+
+        /// One check on the single exit path, covering every fast path that copies the column in one bulk
+        /// operation and returns without reaching a throttled loop, including any added later.
+        if (check_cancellation)
+            check_cancellation();
+
+        return col_res;
     }
+
+private:
+    /// Compile-count threshold for JIT-compiling regular expressions, or `size_t(-1)` to disable.
+    size_t regexp_jit_min_count = std::numeric_limits<size_t>::max();
 };
 
 }

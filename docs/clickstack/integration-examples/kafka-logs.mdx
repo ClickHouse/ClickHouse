@@ -1,0 +1,310 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-logs
+title: 'Monitoring Kafka logs with ClickStack'
+sidebarTitle: 'Kafka logs'
+description: 'Monitoring Kafka Logs with ClickStack'
+doc_type: 'guide'
+keywords: ['Kafka', 'logs', 'OTEL', 'ClickStack', 'broker monitoring', 'Log4j']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+**TL;DR**
+
+Collect and visualize Kafka broker logs (Log4j format) in ClickStack using the OTel `filelog` receiver. Includes a demo dataset and pre-built dashboard.
+</Info>
+
+## Integration with existing Kafka {#existing-kafka}
+
+This section covers configuring your existing Kafka installation to send broker logs to ClickStack by modifying the ClickStack OTel collector configuration.
+If you would like to test the Kafka logs integration before configuring your own existing setup, you can test with our preconfigured setup and sample data in the ["Demo dataset"](/clickstack/integration-examples/kafka-logs#demo-dataset) section.
+
+### Prerequisites {#prerequisites}
+- ClickStack instance running
+- Existing Kafka installation (version 2.0 or newer)
+- Access to Kafka log files (`server.log`, `controller.log`, etc.)
+
+<Steps>
+<Step title="Verify Kafka logging configuration" id="verify-kafka">
+
+Kafka uses Log4j and writes logs to the directory specified by the `kafka.logs.dir` system property or the `LOG_DIR` environment variable. Check your log file location:
+
+```bash
+# Default locations
+ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+ls /var/log/kafka/        # RPM/DEB package installations
+```
+
+Key Kafka log files:
+- **`server.log`**: General broker logs (startup, connections, replication, errors)
+- **`controller.log`**: Controller-specific events (leader election, partition reassignment)
+- **`state-change.log`**: Partition and replica state transitions
+
+Kafka's default Log4j pattern produces lines like:
+
+```text
+[2026-03-09 14:23:45,123] INFO [KafkaServer id=0] started (kafka.server.KafkaServer)
+```
+
+<Note>
+For Docker-based Kafka deployments (e.g., `confluentinc/cp-kafka`), the default Log4j configuration only includes a console appender — there is no file appender, so logs are written to stdout only. To use the `filelog` receiver, you'll need to redirect logs to a file, either by adding a file appender to `log4j.properties` or by piping stdout (e.g., `| tee /var/log/kafka/server.log`).
+</Note>
+</Step>
+<Step title="Create a custom OTel collector configuration for Kafka" id="custom-otel">
+
+ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
+
+Create a file named `kafka-logs-monitoring.yaml` with the following configuration:
+
+```yaml
+receivers:
+  filelog/kafka:
+    include:
+      - /var/log/kafka/server.log
+      - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+      - /var/log/kafka/state-change.log  # optional, same as above
+    start_at: beginning
+    multiline:
+      line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+    operators:
+      - type: regex_parser
+        regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+        parse_from: body
+        parse_to: attributes
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%d %H:%M:%S,%L'
+        severity:
+          parse_from: attributes.severity
+
+      - type: move
+        from: attributes.message
+        to: body
+
+      - type: add
+        field: attributes.source
+        value: "kafka"
+
+      - type: add
+        field: resource["service.name"]
+        value: "kafka-production"
+
+service:
+  pipelines:
+    logs/kafka:
+      receivers: [filelog/kafka]
+      processors:
+        - memory_limiter
+        - transform
+        - batch
+      exporters:
+        - clickhouse
+```
+
+<Note>
+- You only define new receivers and pipelines in the custom config. The processors (`memory_limiter`, `transform`, `batch`) and exporters (`clickhouse`) are already defined in the base ClickStack configuration — you just reference them by name.
+- The `multiline` configuration ensures stack traces are captured as a single log entry.
+- This configuration uses `start_at: beginning` to read all existing logs when the collector starts. For production deployments, change to `start_at: end` to avoid re-ingesting logs on collector restarts.
+</Note>
+</Step>
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
+
+To enable custom collector configuration in your existing ClickStack deployment, you must:
+
+1. Mount the custom config file at `/etc/otelcol-contrib/custom.config.yaml`
+2. Set the environment variable `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+3. Mount your Kafka log directory so the collector can read them
+
+<Tabs>
+<Tab title="Docker Compose">
+
+Update your ClickStack deployment configuration:
+```yaml
+services:
+  clickstack:
+    # ... existing configuration ...
+    environment:
+      - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+      # ... other environment variables ...
+    volumes:
+      - ./kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+      - /var/log/kafka:/var/log/kafka:ro
+      # ... other volumes ...
+```
+
+</Tab>
+<Tab title="Docker Run (All-in-One Image)">
+
+If you're using the all-in-one image with docker, run:
+```bash
+docker run --name clickstack \
+  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  -v "$(pwd)/kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -v /var/log/kafka:/var/log/kafka:ro \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+</Tab>
+</Tabs>
+
+<Note>
+Ensure the ClickStack collector has appropriate permissions to read the Kafka log files. In production, use read-only mounts (`:ro`) and follow the principle of least privilege.
+</Note>
+</Step>
+<Step title="Verify Logs in HyperDX" id="verifying-logs">
+
+Once configured, log into HyperDX and verify that logs are flowing:
+
+<Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Search view"/>
+
+<Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Log view"/>
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+Test the Kafka logs integration with a pre-generated sample dataset before configuring your production systems.
+
+<Steps>
+<Step title="Download the sample dataset" id="download-sample">
+
+Download the sample log file:
+
+```bash
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/server.log
+```
+</Step>
+<Step title="Create test collector configuration" id="test-config">
+
+Create a file named `kafka-logs-demo.yaml` with the following configuration:
+
+```yaml
+cat > kafka-logs-demo.yaml << 'EOF'
+receivers:
+  filelog/kafka:
+    include:
+      - /tmp/kafka-demo/server.log
+    start_at: beginning
+    multiline:
+      line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+    operators:
+      - type: regex_parser
+        regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+        parse_from: body
+        parse_to: attributes
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%Y-%m-%d %H:%M:%S,%L'
+        severity:
+          parse_from: attributes.severity
+
+      - type: move
+        from: attributes.message
+        to: body
+
+      - type: add
+        field: attributes.source
+        value: "kafka-demo"
+
+      - type: add
+        field: resource["service.name"]
+        value: "kafka-demo"
+
+service:
+  pipelines:
+    logs/kafka-demo:
+      receivers: [filelog/kafka]
+      processors:
+        - memory_limiter
+        - transform
+        - batch
+      exporters:
+        - clickhouse
+EOF
+```
+</Step>
+<Step title="Run ClickStack with demo configuration" id="run-demo">
+
+Run ClickStack with the demo logs and configuration:
+
+```bash
+docker run --name clickstack-demo \
+  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  -v "$(pwd)/kafka-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -v "$(pwd)/server.log:/tmp/kafka-demo/server.log:ro" \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+## Verify logs in HyperDX {#verify-demo-logs}
+
+Once ClickStack is running:
+
+1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
+2. Navigate to the Search view and set the source to `Logs`
+3. Set the time range to include **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
+
+<Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Search view"/>
+
+<Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Log view"/>
+</Step>
+</Steps>
+
+## Dashboards and visualization {#dashboards}
+
+<Steps>
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
+</Step>
+<Step title="Import pre-built dashboard" id="import-dashboard">
+
+1. Open HyperDX and navigate to the Dashboards section.
+2. Click "Import Dashboard" in the upper right corner under the ellipses.
+
+<Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard"/>
+
+3. Upload the kafka-logs-dashboard.json file and click finish import.
+
+<Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Finish importing Kafka logs dashboard"/>
+</Step>
+<Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
+
+For the demo dataset, set the time range to include **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+
+<Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Kafka Logs example dashboard"/>
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+**Verify the effective config includes your filelog receiver:**
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+**Check for collector errors:**
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+```
+
+**Verify Kafka log format matches the expected pattern:**
+```bash
+tail -1 /var/log/kafka/server.log
+```
+
+If your Kafka installation uses a custom Log4j pattern, adjust the `regex_parser` regex accordingly.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/features/alerts) for critical events (broker failures, replication errors, consumer group issues)
+- Combine with [Kafka Metrics](/clickstack/integration-examples/kafka-metrics) for comprehensive Kafka monitoring
+- Create additional [dashboards](/clickstack/features/dashboards/overview) for specific use cases (controller events, partition reassignment)
+
+## Going to production {#going-to-production}
+
+This guide extends ClickStack's built-in OpenTelemetry Collector for quick setup. For production deployments, we recommend running your own OTel Collector and sending data to ClickStack's OTLP endpoint. See [Sending OpenTelemetry data](/clickstack/ingesting-data/opentelemetry) for production configuration.

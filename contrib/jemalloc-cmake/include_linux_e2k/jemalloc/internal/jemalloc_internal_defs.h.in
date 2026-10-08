@@ -127,6 +127,13 @@
 #undef JEMALLOC_TLS_MODEL
 
 /*
+ * Defined when the TSD thread-locals use the initial-exec (static) TLS model,
+ * i.e. live at a fixed offset from the thread pointer.  Gates the fast path of
+ * JEMALLOC_TLS_ADDR (see tsd_internals.h).
+ */
+#undef JEMALLOC_TLS_MODEL_INITIAL_EXEC
+
+/*
  * JEMALLOC_DEBUG enables assertions and other sanity checks, and disables
  * inline functions.
  */

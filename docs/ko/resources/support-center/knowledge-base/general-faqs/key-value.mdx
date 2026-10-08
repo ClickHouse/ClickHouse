@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/key-value
+title: 'ClickHouse를 키-값 스토리지로 사용할 수 있나요?'
+toc_hidden: true
+toc_priority: 101
+description: 'ClickHouse를 키-값 스토리지로 사용할 수 있는지에 대해 자주 묻는 질문에 답변합니다.'
+doc_type: '참고'
+keywords: ['키-값', '데이터 모델', '사용 사례', '스키마 설계', '스토리지 패턴']
+---
+
+짧게 답하면 **&quot;아니요&quot;**입니다. 키-값 워크로드는 ClickHouse를 <span class="text-danger">**사용하지 말아야 할**</span> 대표적인 사례 중 하나입니다. ClickHouse는 어디까지나 [OLAP](/ko/resources/support-center/knowledge-base/general-faqs/olap) 시스템이며, 이미 훌륭한 키-값 스토리지 시스템이 많이 있습니다.
+
+하지만 상황에 따라서는 키-값과 유사한 쿼리에 ClickHouse를 사용하는 것이 여전히 합리적일 수 있습니다. 보통은 예산이 제한된 제품에서 이런 상황이 발생합니다. 주된 워크로드는 분석 중심이어서 ClickHouse에 잘 맞지만, 동시에 높은 요청 처리량이나 엄격한 지연 시간 요구 사항은 없으면서 키-값 패턴이 필요한 보조 프로세스가 있는 경우입니다. 예산이 무제한이라면 이 보조 워크로드를 위해 별도의 키-값 데이터베이스를 구축했겠지만, 현실적으로는 스토리지 시스템을 하나 더 운영하는 데 따른 추가 비용(모니터링, 백업 등)이 발생하므로 이를 피하고 싶을 수 있습니다.
+
+권장 사항을 따르지 않고 ClickHouse에서 일부 키-값형 쿼리를 실행하기로 했다면, 다음 팁을 참고하십시오.
+
+* ClickHouse에서 포인트 쿼리 비용이 큰 주된 이유는 기본 [MergeTree table engine family](/ko/reference/engines/table-engines/mergetree-family/mergetree)의 희소 프라이머리 인덱스 때문입니다. 이 인덱스는 데이터의 각 행을 직접 가리킬 수 없고, 대신 매 N번째 행만 가리킵니다. 따라서 시스템은 인접한 N번째 행부터 원하는 행까지 스캔해야 하며, 그 과정에서 불필요한 데이터도 함께 읽게 됩니다. 키-값 시나리오에서는 `index_granularity` 설정으로 N 값을 줄이는 것이 유용할 수 있습니다.
+* ClickHouse는 각 컬럼을 각각 별도의 파일 집합에 저장하므로, 완전한 행 하나를 구성하려면 해당 파일들을 모두 읽어야 합니다. 파일 수는 컬럼 수에 비례해 선형적으로 증가하므로, 키-값 시나리오에서는 컬럼 수를 많이 늘리지 말고 payload 전체를 JSON, Protobuf 또는 적절한 직렬화 포맷으로 인코딩한 단일 `String` 컬럼에 넣는 것이 나을 수 있습니다.
+* 일반 `MergeTree` 테이블 대신 [Join](/ko/reference/engines/table-engines/special/join) 테이블 엔진과 데이터를 조회하는 [joinGet](/ko/reference/functions/regular-functions/other-functions#joinGet) 함수를 사용하는 대안적 접근 방식도 있습니다. 이 방법은 더 나은 쿼리 성능을 제공할 수 있지만, 사용성과 안정성 측면에서 일부 문제가 있을 수 있습니다. [사용 예시](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00800_versatile_storage_join.sql#L49-L51)는 여기에서 확인할 수 있습니다.

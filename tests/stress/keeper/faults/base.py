@@ -1,12 +1,10 @@
 import copy
-import os
 import random
 import shlex
 import subprocess
 import threading
 import time
 
-import yaml
 from keeper.faults.registry import fault_registry
 from keeper.framework.core.settings import (
     CLIENT_PORT,
@@ -196,7 +194,7 @@ def _step_parallel(step, nodes, leader, ctx):
     """
     subs = step.get("steps") or []
     if not subs:
-        print(f"Parallel fault step has no sub-steps configured, skipping")
+        print("Parallel fault step has no sub-steps configured, skipping")
         return
 
     parent_dur = step.get("duration_s")

@@ -1,23 +1,19 @@
 import argparse
 import atexit
 import dataclasses
-import fcntl
 import http.client
 import os
-import pty
-import re
-import select
 import shlex
 import subprocess
 import sys
 import time
 import urllib.parse
-from enum import Enum
 from pathlib import Path
 
 sys.path.append("./")
 from typing import List
 
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.jobs.scripts.stack_trace_reader import StackTraceReader
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -82,7 +78,7 @@ class TestResult:
                     query_result.description.expected_results
                     != query_result.description.actual_results
                 ):
-                    info += f"Result mismatch:\n"
+                    info += "Result mismatch:\n"
                     info += f"Expected: {query_result.description.expected_results}\n"
                     info += f"Actual:   {query_result.description.actual_results}\n"
                 else:
@@ -122,6 +118,11 @@ class ClickHouseSetup:
         self.start_command = f"{self.binary_path} server -- --path {self.work_dir} --user_files_path {self.work_dir}/user_files --logger.log {self.server_log} --logger.errorlog {self.server_err_log} > /dev/null 2>&1"
 
     def start_server(self):
+        if self.proc is None:
+            # Right before the very first start, clear any clickhouse-server
+            # leaked by a previous CI job on this reused runner; otherwise its
+            # held ports make this start fail (see kill_leftover_server_processes).
+            kill_leftover_server_processes()
         if not self.proc or self.proc.poll() is not None:
             self.proc = subprocess.Popen(
                 self.start_command,
@@ -197,7 +198,6 @@ class ClickHouseSetup:
         test_name = test_name.split(".")[0]
         test_file = Path(f"./ci/jobs/queries/{test_name}.sql")
         expected_results_file = Path(f"./ci/jobs/queries/{test_name}.reference")
-        result = {}
         if not test_file.exists():
             raise Exception(f"Test file {test_file} does not exist")
 
@@ -270,12 +270,12 @@ if __name__ == "__main__":
         action="extend",
     )
     args = parser.parse_args()
-    Shell.check(f"rm -rf /home/max/work/ClickHouse/ci/tmp/wd/")
+    Shell.check("rm -rf /home/max/work/ClickHouse/ci/tmp/wd/")
     Shell.check(f"chmod +x {args.path}")
     Shell.check(f"{args.path} --version", strict=True)
 
     def cleanup():
-        Shell.check(f"pkill -f 'clickhouse server'", verbose=True, strict=False)
+        Shell.check("pkill -f 'clickhouse server'", verbose=True, strict=False)
 
     atexit.register(cleanup)
     CH = ClickHouseSetup(args.workdir, args.path)

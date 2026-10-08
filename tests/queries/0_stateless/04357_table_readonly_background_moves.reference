@@ -1,0 +1,5 @@
+initial readonly disk:
+default
+writable control moved to remote: OK
+readonly disk after control moved:
+default

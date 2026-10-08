@@ -8,14 +8,32 @@
 namespace DB::PrometheusQueryToSQL
 {
 
+namespace
+{
+    /// Checks whether the specified AST is the zero group, i.e. either the literal 0 or CAST(0, 'UInt64').
+    bool isZeroGroupAST(const ASTPtr & group)
+    {
+        if (const auto * literal = group->as<const ASTLiteral>())
+            return literal->value == Field{0u};
+        if (const auto * function = group->as<const ASTFunction>(); function && (function->name == "CAST") && function->arguments
+            && (function->arguments->children.size() == 2))
+        {
+            const auto * value = function->arguments->children[0]->as<const ASTLiteral>();
+            const auto * type = function->arguments->children[1]->as<const ASTLiteral>();
+            return value && type && (value->value == Field{0u}) && (type->value == Field{"UInt64"});
+        }
+        return false;
+    }
+}
+
 ASTPtr transformGroupASTForBinaryOperator(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     ASTPtr && group,
     bool drop_metric_name,
     bool & metric_name_dropped)
 {
     /// Group #0 always means a group with no tags.
-    if (const auto * literal = group->as<const ASTLiteral>(); literal && literal->value == Field{0u})
+    if (isZeroGroupAST(group))
     {
         metric_name_dropped = true;
         return std::move(group);
@@ -27,7 +45,7 @@ ASTPtr transformGroupASTForBinaryOperator(
         {
             /// on() means we ignore all tags.
             metric_name_dropped = true;
-            return make_intrusive<ASTLiteral>(0u);
+            return makeASTFunction("CAST", make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UInt64"));
         }
         else
         {

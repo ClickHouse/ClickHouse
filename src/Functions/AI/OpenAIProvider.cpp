@@ -16,41 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
-
-namespace
-{
-String extractProviderError(const String & response_body, int status_code)
-{
-    try
-    {
-        Poco::JSON::Parser err_parser;
-        auto err_json = err_parser.parse(response_body);
-        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
-        if (err_obj && err_obj->has("error"))
-        {
-            auto err = err_obj->getObject("error");
-            if (err)
-            {
-                String msg = err->optValue<String>("message", "");
-                String type = err->optValue<String>("type", "");
-                if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-    size_t max_len = 256;
-    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
-        response_body.substr(0, std::min(response_body.size(), max_len)));
-}
-}
-
 
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_)
@@ -59,8 +26,10 @@ OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_
 {
 }
 
-AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
+void OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
+    response = {};
+
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
     root->set("temperature", ai_request.temperature);
@@ -96,6 +65,8 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     http_request.setContentType("application/json");
     if (!api_key.empty()) /// not all providers need API key
         http_request.set("Authorization", "Bearer " + api_key);
+    chassert(!ai_request.function_name.empty());
+    http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -114,16 +85,25 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    AIResponse ai_response;
+    /// A malformed body was still charged for, so read the usage before the checks below can throw.
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+        {
+            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+            response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
+        }
+    }
 
     auto choices = json_obj->getArray("choices");
     if (!choices || choices->size() == 0)
@@ -140,24 +120,42 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
         throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI chat response is missing output message");
 
-    ai_response.result = message->optValue<String>("content", "");
-    ai_response.finish_reason = choice->optValue<String>("finish_reason", "stop");
+    response.result = message->optValue<String>("content", "");
 
-    if (json_obj->has("usage"))
+    /// A structured-output safety refusal arrives as a populated `message.refusal` with a null
+    /// `content`, and `finish_reason` stays "stop" because the generation itself ended normally.
+    auto refusal = message->optValue<String>("refusal", "");
+    if (!refusal.empty())
     {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-        {
-            ai_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
-            ai_response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
-        }
+        response.result = refusal;
+        response.raw_finish_reason = "refusal";
+        response.finish_reason = FinishReason::ContentFilter;
     }
-
-    return ai_response;
+    else
+    {
+        /// Map OpenAI's `finish_reason` onto the canonical `FinishReason`. An absent field means the
+        /// generation completed normally. OpenAI reuses "stop" for both a natural end and a stop-sequence
+        /// hit, so a stop sequence does not look like truncation.
+        response.raw_finish_reason = choice->optValue<String>("finish_reason", "stop");
+        if (response.raw_finish_reason == "stop")
+            response.finish_reason = FinishReason::Complete;
+        else if (response.raw_finish_reason == "length")
+            response.finish_reason = FinishReason::Truncated;
+        else if (response.raw_finish_reason == "content_filter")
+            response.finish_reason = FinishReason::ContentFilter;
+        else if (response.raw_finish_reason == "tool_calls" || response.raw_finish_reason == "function_call")
+            response.finish_reason = FinishReason::RequiresAction;
+        else
+            response.finish_reason = FinishReason::Unknown;
+    }
 }
 
-AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts)
+void OpenAIProvider::embed(
+    const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response)
 {
+    response.embeddings.clear();
+    response.input_tokens = 0;
+
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_embedding_request.model);
 
@@ -179,6 +177,8 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     http_request.setContentType("application/json");
     if (!api_key.empty()) /// not all providers need API key
         http_request.set("Authorization", "Bearer " + api_key);
+    chassert(!ai_embedding_request.function_name.empty());
+    http_request.set("X-ClickHouse-AI-Function", ai_embedding_request.function_name);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -197,17 +197,24 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    AIEmbeddingResponse ai_embedding_response;
-    ai_embedding_response.embeddings.resize(ai_embedding_request.inputs.size());
+    /// A malformed body was still charged for, so read the usage before the checks below can throw.
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+    }
+
+    response.embeddings.resize(ai_embedding_request.inputs.size());
 
     auto data_arr = json_obj->getArray("data");
     if (!data_arr)
@@ -232,10 +239,10 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
 
         /// `index` tells us which input this embedding corresponds to. Defaults to `i` when missing (TEI).
         UInt64 idx = item->optValue<UInt64>("index", i);
-        if (idx >= ai_embedding_response.embeddings.size())
+        if (idx >= response.embeddings.size())
             throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} is out of range (expected < {})",
-                i, idx, ai_embedding_response.embeddings.size());
+                i, idx, response.embeddings.size());
         if (seen[idx])
             throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} duplicates an earlier entry", i, idx);
@@ -247,17 +254,8 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
                 "AI embedding response 'data[{}].embedding' is missing or not an array", i);
 
         for (unsigned j = 0; j < embedding_arr->size(); ++j)
-            ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
+            response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
     }
-
-    if (json_obj->has("usage"))
-    {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-            ai_embedding_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
-    }
-
-    return ai_embedding_response;
 }
 
 }

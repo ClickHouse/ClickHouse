@@ -65,6 +65,9 @@ namespace ProfileEvents
 
     extern const Event S3Clients;
     extern const Event TinyS3Clients;
+
+    extern const Event S3HeadObject;
+    extern const Event DiskS3HeadObject;
 }
 
 namespace CurrentMetrics
@@ -87,6 +90,8 @@ namespace ErrorCodes
 
 namespace S3
 {
+
+static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
 
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
@@ -158,10 +163,10 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
-                "Attempt {}/{} failed with retryable error: {}, {}",
+                "Attempt {}/{} failed with a retryable error, HTTP response code: {}, error: {}",
                 httpResponseOutcome.GetRetryCount() + 1,
                 GetMaxAttempts(),
-                static_cast<size_t>(error.GetResponseCode()),
+                error.GetResponseCode(),
                 error.GetMessage());
     }
 }
@@ -172,11 +177,11 @@ void Client::RetryStrategy::RequestBookkeeping(
     if (httpResponseOutcome.IsSuccess())
         LOG_TRACE(
             log,
-            "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
+            "Attempt {}/{} succeeded with HTTP response code: {}; the previous attempt failed with HTTP response code: {}, error: {}",
             httpResponseOutcome.GetRetryCount() + 1,
             GetMaxAttempts(),
-            static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
-            static_cast<size_t>(lastError.GetResponseCode()),
+            httpResponseOutcome.GetResult()->GetResponseCode(),
+            lastError.GetResponseCode(),
             lastError.GetMessage());
     RequestBookkeeping(httpResponseOutcome);
 }
@@ -194,7 +199,7 @@ void verifyClientConfiguration(const Aws::Client::ClientConfiguration & client_c
 
 void addAdditionalAMZHeadersToCanonicalHeadersList(
     Aws::AmazonWebServiceRequest & request,
-    const HTTPHeaderEntries & extra_headers
+    const NormalizedHTTPHeaderEntries & extra_headers
 )
 {
     for (const auto & [name, value] : extra_headers)
@@ -386,7 +391,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
 void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
-    auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
+    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -414,6 +419,16 @@ template void Client::setKMSHeaders<CopyObjectRequest>(CopyObjectRequest & reque
 template void Client::setKMSHeaders<PutObjectRequest>(PutObjectRequest & request) const;
 
 Model::HeadObjectOutcome Client::HeadObject(HeadObjectRequest & request) const
+{
+    /// One exit for all attempts (initial, wrong-region, redirected), so a killed query is reported
+    /// as a cancellation instead of the stale S3/network outcome.
+    auto outcome = headObjectInternal(request);
+    if (!outcome.IsSuccess())
+        CurrentThread::checkIfNotCancelled();
+    return outcome;
+}
+
+Model::HeadObjectOutcome Client::headObjectInternal(HeadObjectRequest & request) const
 {
     const auto & bucket = request.GetBucket();
 
@@ -536,6 +551,46 @@ Model::CreateMultipartUploadOutcome Client::CreateMultipartUpload(CreateMultipar
         request, [this](Model::CreateMultipartUploadRequest & req) { return CreateMultipartUpload(req); });
 }
 
+bool Client::isObjectWrittenWithIdempotencyId(
+    const Aws::String & bucket, const Aws::String & key, const Aws::String & idempotency_id, bool warn_if_unproven) const
+{
+    if (idempotency_id.empty())
+        return false;
+
+    Expect404ResponseScope scope; /// The object is absent whenever the write did not land.
+
+    ProfileEvents::increment(ProfileEvents::S3HeadObject);
+    if (isClientForDisk())
+        ProfileEvents::increment(ProfileEvents::DiskS3HeadObject);
+
+    /// Not `HeadObjectRequest().WithBucket(...)`: that returns the SDK's base, so `auto` drops our wrapper.
+    HeadObjectRequest head_request;
+    head_request.SetBucket(bucket);
+    head_request.SetKey(key);
+
+    auto head_outcome = HeadObject(head_request);
+
+    const auto logs_level = warn_if_unproven ? LogsLevel::warning : LogsLevel::information;
+    const auto priority = warn_if_unproven ? Poco::Message::PRIO_WARNING : Poco::Message::PRIO_INFORMATION;
+
+    if (!head_outcome.IsSuccess())
+    {
+        LOG_IMPL(
+            log, logs_level, priority,
+            "There is no readable object at the key to prove the write by. Key: {}, Bucket: {}, HeadObject error: {}",
+            key, bucket, head_outcome.GetError().GetMessage());
+        return false;
+    }
+
+    const auto & metadata = head_outcome.GetResult().GetMetadata();
+    auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+    if (it != metadata.end() && it->second == idempotency_id)
+        return true;
+
+    LOG_IMPL(log, logs_level, priority, "The object at the key is another write's. Key: {}, Bucket: {}", key, bucket);
+    return false;
+}
+
 Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const
 {
     auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
@@ -544,18 +599,25 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    if (!outcome.IsSuccess()
-        && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
-    {
-        auto check_request = HeadObjectRequest()
-                                 .WithBucket(bucket)
-                                 .WithKey(key);
-        auto check_outcome = HeadObject(check_request);
+    /// A replayed completion reports NO_SUCH_UPLOAD, its upload id consumed, or a 412 when it was
+    /// conditional -- and so does an abort over somebody else's object. Only the stamped id separates them.
+    const bool may_be_replay_of_a_landed_completion = !outcome.IsSuccess()
+        && (outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD
+            || outcome.GetError().GetExceptionName() == "PreconditionFailed");
 
-        /// if the key exists, than MultipartUpload has been completed at some of the retries
-        /// rewrite outcome with success status
-        if (check_outcome.IsSuccess())
+    if (may_be_replay_of_a_landed_completion)
+    {
+        /// A 412 can be an ordinary lost race for the key; an upload id the server no longer has cannot.
+        const bool warn_if_unproven = outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
+
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), warn_if_unproven))
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was completed by an earlier attempt of this upload ({}). Key: {}, Bucket: {}",
+                outcome.GetError().GetExceptionName(), key, bucket);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+        }
     }
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)
@@ -591,8 +653,23 @@ Model::CopyObjectOutcome Client::CopyObject(CopyObjectRequest & request) const
 
 Model::PutObjectOutcome Client::PutObject(PutObjectRequest & request) const
 {
-    return doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
+    auto outcome = doRequestWithRetryNetworkErrors</*IsReadMethod*/ false>(
         request, [this](Model::PutObjectRequest & req) { return PutObject(req); });
+
+    /// A replayed conditional PUT fails its own condition; only the stamped id tells that from a lost race.
+    if (!outcome.IsSuccess() && outcome.GetError().GetExceptionName() == "PreconditionFailed")
+    {
+        const auto & key = request.GetKey();
+        const auto & bucket = request.GetBucket();
+
+        if (isObjectWrittenWithIdempotencyId(bucket, key, request.getIdempotencyId(), /* warn_if_unproven= */ false))
+        {
+            LOG_INFO(log, "Object was put by an earlier attempt of this write. Key: {}, Bucket: {}", key, bucket);
+            outcome = Aws::S3::Model::PutObjectOutcome(Aws::S3::Model::PutObjectResult());
+        }
+    }
+
+    return outcome;
 }
 
 Model::PutObjectTaggingOutcome Client::PutObjectTagging(PutObjectTaggingRequest & request) const
@@ -663,11 +740,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
 
-    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
     if (client_settings.is_s3express_bucket)
         request.setIsS3ExpressBucket();
-    else if (client_settings.disable_checksum)
-        request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -697,6 +771,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
+
+        CurrentThread::checkIfNotCancelled();
 
         const auto & error = result.GetError();
 
@@ -814,8 +890,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 // update ClickHouse-specific attempt number in the request
                 // to help choose the right timeouts on the HTTP client which depends on retry attempt number
-                auto clickhouse_request_attempt = getClickhouseAttemptNumber(request_);
-                setClickhouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
+                auto clickhouse_request_attempt = getClickHouseAttemptNumber(request_);
+                setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
@@ -889,7 +965,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {}", sleep_ms, error.GetResponseCode());
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after a retryable error, HTTP response code: {}", sleep_ms, error.GetResponseCode());
             break;
         }
     }
@@ -960,12 +1036,7 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
 
     if (api_mode == ApiMode::GCS)
-    {
-        /// some GCS requests don't like S3 specific headers that the client sets
-        /// all "x-amz-*" headers have to be either converted or deleted
-        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
-        httpRequest->DeleteHeader("x-amz-api-version");
-    }
+        translateHeadersToGCS(*httpRequest);
 }
 
 std::string Client::getGCSOAuthToken() const
@@ -1045,7 +1116,15 @@ std::optional<S3::URI> Client::getURIFromError(const Aws::S3::S3Error & error) c
     auto uri = resolved_endpoint.GetResult().GetURI();
     uri.SetAuthority(endpoint);
 
-    return S3::URI(uri.GetURIString());
+    S3::URI result(uri.GetURIString());
+
+    /// The endpoint is taken from an attacker-controllable 301 response (Location header or
+    /// <Endpoint> XML), so validate it against RemoteHostFilter before following the redirect,
+    /// otherwise a malicious S3 server can redirect us to internal hosts (SSRF). This mirrors
+    /// the Poco 307 path in PocoHTTPClient. Throws UNACCEPTABLE_URL.
+    client_configuration.remote_host_filter.checkURL(result.uri);
+
+    return result;
 }
 
 // Do a list request because head requests don't have body in response
@@ -1111,6 +1190,12 @@ void ClientCache::clearCache()
     }
 }
 
+ClientCacheRegistry & ClientCacheRegistry::instance()
+{
+    static ClientCacheRegistry registry;
+    return registry;
+}
+
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);
@@ -1142,9 +1227,10 @@ size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
     return it->second.second;
 }
 
-void ClientCacheRegistry::pruneExpiredCachesLocked()
+void ClientCacheRegistry::pruneUnusedCachesLocked()
 {
-    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.expired(); });
+    /// The registry itself is the only owner left, so no client can observe the cache disappearing.
+    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.use_count() == 1; });
 }
 
 std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket)
@@ -1156,16 +1242,15 @@ std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const s
     UInt128 key = hash.get128();
 
     std::lock_guard lock(cache_by_key_mutex);
-    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
-    {
-        if (auto cached = it->second.lock(); cached)
-            return cached;
-        cache_by_endpoint_bucket.erase(it);
-    }
-    auto cache = std::make_shared<ClientCache>();
-    cache_by_endpoint_bucket[key] = cache;
 
-    pruneExpiredCachesLocked();
+    if (cache_by_endpoint_bucket.size() >= MAX_CACHES_BY_ENDPOINT_AND_BUCKET)
+        pruneUnusedCachesLocked();
+
+    if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
+        return it->second;
+
+    auto cache = std::make_shared<ClientCache>();
+    cache_by_endpoint_bucket.emplace(key, cache);
 
     return cache;
 }
@@ -1192,7 +1277,9 @@ void ClientCacheRegistry::clearCacheForAll()
 
     {
         std::lock_guard lock(cache_by_key_mutex);
-        pruneExpiredCachesLocked();
+        pruneUnusedCachesLocked();
+        for (const auto & [_, cache] : cache_by_endpoint_bucket)
+            cache->clearCache();
     }
 }
 
@@ -1238,7 +1325,7 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     const String & secret_access_key,
     const String & server_side_encryption_customer_key_base64,
     ServerSideEncryptionKMSConfig sse_kms_config,
-    HTTPHeaderEntries headers,
+    NormalizedHTTPHeaderEntries headers,
     CredentialsConfiguration credentials_configuration,
     const String & session_token,
     const std::shared_ptr<ClientCache> & shared_cache)
@@ -1268,9 +1355,12 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);
 
     // we need to force environment credentials if explicit credentials are empty and we have role_arn
-    // this is a crutch because we know that we have environment credentials on our Cloud
-    credentials_configuration.use_environment_credentials =
-        credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
+    // this is a crutch because we know that we have environment credentials on our Cloud.
+    // For user-facing requests (forbid_implicit_credentials) the same is done by getCredentialsProvider
+    // itself, which allows the role_arn STS base while refusing the other server-managed sources.
+    if (!credentials_configuration.forbid_implicit_credentials)
+        credentials_configuration.use_environment_credentials =
+            credentials_configuration.use_environment_credentials || (credentials.IsEmpty() && !credentials_configuration.role_arn.empty());
 
     auto credentials_provider = getCredentialsProvider(client_configuration, credentials, credentials_configuration);
 

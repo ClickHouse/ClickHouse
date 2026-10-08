@@ -1,28 +1,10 @@
-import glob
-import json
 import logging
 import os
-import random
-import string
-import time
-import uuid
-from datetime import datetime
 
 import pytest
-from delta import *
-from deltalake.writer import write_deltalake
-from minio.deleteobjects import DeleteObject
-from pyspark.sql.functions import (
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
 
-import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
-from helpers.config_cluster import minio_access_key
-from helpers.config_cluster import minio_secret_key
 from test_storage_delta.test import (
     get_spark,
     write_delta_from_file,
@@ -64,6 +46,9 @@ def started_cluster():
             with_minio=True,
             main_configs=[
                 "configs/config.d/use_environment_credentials.xml",
+            ],
+            user_configs=[
+                "configs/allow_server_credentials.xml",
             ],
             env_variables={
                 "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",

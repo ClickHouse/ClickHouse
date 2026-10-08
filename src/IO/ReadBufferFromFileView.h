@@ -25,14 +25,24 @@ public:
     void prefetch(Priority priority) override;
     void setReadUntilPosition(size_t position) override;
     void setReadUntilEnd() override;
+    void setRequestMap(ByteRangeSet ranges) override;
 
     bool nextImpl() override;
     off_t seek(off_t off, int whence) override;
 
     off_t getPosition() override;
 
+    /// `nextImpl` swaps state into `impl` and calls `impl->next()`, but `impl` may still have its
+    /// own pending data, tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under
+    /// set()+next(). Force the `read(dest, n)` fallback, which drains via `eof() -> next()` at the
+    /// outer level and never bypasses `impl`.
+    bool supportsExternalBufferMode() const override { return false; }
+
 private:
     size_t getRightBound() const;
+
+    /// Clips the map to the view's slice and moves it into the archive.
+    ByteRangeSet toArchiveRanges(const ByteRangeSet & ranges) const;
 
     /// Resizes working buffer if it exceeds the right bound.
     void resizeWorkingBuffer();

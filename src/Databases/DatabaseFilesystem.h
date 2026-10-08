@@ -23,7 +23,7 @@ class Context;
 class DatabaseFilesystem : public IDatabase, protected WithContext
 {
 public:
-    DatabaseFilesystem(const String & name, const String & path, ContextPtr context);
+    DatabaseFilesystem(const String & name, const String & path, ContextPtr context, bool is_internal_metadata_replay);
 
     String getEngineName() const override { return "Filesystem"; }
 
@@ -53,7 +53,9 @@ protected:
 
     std::string getTablePath(const std::string & table_name) const;
 
-    void addTable(const std::string & table_name, StoragePtr table_storage) const;
+    /// Returns the storage that ended up in the cache: `table_storage`, or the one a concurrent call
+    /// for the same name inserted first.
+    StoragePtr addTable(const std::string & table_name, StoragePtr table_storage) const;
 
     bool checkTableFilePath(const std::string & table_path, ContextPtr context_, bool throw_on_error) const;
 

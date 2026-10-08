@@ -1,12 +1,18 @@
 #pragma once
 
+#include <limits>
 #include <type_traits>
+#include <absl/base/attributes.h>
 #include <base/types.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/Volnitsky.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/isValidUTF8.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnNumbers.h>
 #include <Functions/Regexps.h>
+#include <Interpreters/JIT/CompileRegexp.h>
 
 namespace DB
 {
@@ -20,56 +26,32 @@ inline bool likePatternMatchesEverything(std::string_view pattern)
     return !pattern.empty() && pattern.find_first_not_of('%') == std::string_view::npos;
 }
 
-/// Is the [I]LIKE expression equivalent to a substring search?
-inline bool likePatternIsSubstring(std::string_view pattern, String & res)
+/// `likePatternIsSubstring` lives in `Common/likePatternToRegexp.h` so it can be shared with the
+/// `optimize_or_like_chain` rewrite passes; it is declared in namespace `DB` (templated on
+/// `is_similar_to`) and used unqualified below.
+
+
+/// Matches an anchored literal within one row, given the leftmost occurrence the column-wide search found in
+/// it. A case-insensitive pattern never gets an anchored kind, so comparing bytes is enough.
+inline bool matchesAnchoredLiteral(
+    RegexpMatchKind kind, std::string_view literal, const UInt8 * row_begin, const UInt8 * row_end, const UInt8 * occurrence)
 {
-    /// TODO: ignore multiple leading or trailing %
-    if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
-        return false;
+    const size_t row_size = row_end - row_begin;
 
-    res.clear();
-    res.reserve(pattern.size() - 2);
-
-    const char * pos = pattern.data() + 1;
-    const char * const end = pattern.data() + pattern.size() - 1;
-
-    while (pos < end)
+    switch (kind)
     {
-        switch (*pos)
-        {
-            case '%':
-            case '_':
-                return false;
-            case '\\':
-                ++pos;
-                if (pos == end)
-                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
-                    return false;
-
-                switch (*pos)
-                {
-                    /// Known LIKE escape sequences:
-                    case '%':
-                    case '_':
-                    case '\\':
-                        res += *pos;
-                        break;
-                    /// For all other escape sequences, the backslash loses its special meaning
-                    default:
-                        res += '\\';
-                        res += *pos;
-                        break;
-                }
-
-                break;
-            default:
-                res += *pos;
-                break;
-        }
-        ++pos;
+        case RegexpMatchKind::Prefix:
+            return occurrence == row_begin;
+        case RegexpMatchKind::Suffix:
+            /// The leftmost occurrence says nothing about the tail, so compare the tail itself.
+            return row_size >= literal.size() && 0 == memcmp(row_end - literal.size(), literal.data(), literal.size());
+        case RegexpMatchKind::Exact:
+            return row_size == literal.size();
+        case RegexpMatchKind::General:
+        case RegexpMatchKind::Substring:
+            chassert(false); /// The caller checks the kind.
+            return false;
     }
-
-    return true;
 }
 
 }
@@ -80,7 +62,8 @@ struct MatchTraits
 enum class Syntax : uint8_t
 {
     Like,
-    Re2
+    Re2,
+    SimilarTo
 };
 
 enum class Case : uint8_t
@@ -110,10 +93,38 @@ struct MatchImpl
     using ResultType = UInt8;
 
     static constexpr bool is_like = (syntax_ == MatchTraits::Syntax::Like);
+    static constexpr bool is_similar_to = (syntax_ == MatchTraits::Syntax::SimilarTo);
+    static constexpr bool is_like_or_similar_to = is_like || is_similar_to;
     static constexpr bool case_insensitive = (case_ == MatchTraits::Case::Insensitive);
     static constexpr bool negate = (result_ == MatchTraits::Result::Negate);
 
     using Searcher = std::conditional_t<case_insensitive, VolnitskyCaseInsensitiveUTF8, VolnitskyUTF8>;
+
+#ifndef NDEBUG
+    /// Assert that the JIT-compiled matcher agrees with RE2 for every row. Debug builds only.
+    static void verifyMatchAgainstRE2(
+        const ColumnString::Chars & haystack_data,
+        const ColumnString::Offsets & haystack_offsets,
+        const String & needle,
+        const PaddedPODArray<UInt8> & res,
+        size_t input_rows_count)
+    {
+        const auto regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle));
+        size_t prev_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const char * data = reinterpret_cast<const char *>(&haystack_data[prev_offset]);
+            const size_t size = haystack_offsets[i] - prev_offset;
+            /// Byte-wise matching only matches RE2 (UTF-8 mode) on valid UTF-8; invalid UTF-8 may differ.
+            if (UTF8::isValidUTF8(&haystack_data[prev_offset], size))
+            {
+                const bool re2_match = regexp.match(data, size);
+                chassert(res[i] == static_cast<UInt8>(negate ^ re2_match));
+            }
+            prev_offset = haystack_offsets[i];
+        }
+    }
+#endif
 
     static void vectorConstant(
         const ColumnString::Chars & haystack_data,
@@ -122,7 +133,8 @@ struct MatchImpl
         [[maybe_unused]] const ColumnPtr & start_pos_,
         PaddedPODArray<UInt8> & res,
         [[maybe_unused]] ColumnUInt8 * res_null,
-        size_t input_rows_count)
+        size_t input_rows_count,
+        size_t regexp_jit_min_count = std::numeric_limits<size_t>::max())
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
         chassert(!res_null);
@@ -136,18 +148,54 @@ struct MatchImpl
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - col [not] [i]like '%' / '%%' / any run of '%'
+        /// - col [not] similar to '%' / '%%' / any run of '%'
         /// - match(col, '.*')
-        if ((is_like && impl::likePatternMatchesEverything(needle))
-            || (!is_like && (needle == ".*" || needle == ".*?")))
+        /// Kept ahead of the JIT fast path below: `.*` / `.*?` belong to the JIT-compilable subset, but this
+        /// constant fill is `O(rows)` with no per-row work, whereas the compiled matcher would run (and set up
+        /// captures) for every row. Letting the shortcut own these patterns keeps the cheap path cheap.
+        if ((is_like_or_similar_to && impl::likePatternMatchesEverything(needle))
+            || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
         {
             for (auto & x : res)
                 x = !negate;
             return;
         }
 
-        /// Special case that the [I]LIKE expression reduces to finding a substring in a string
+        /// Fast path: a JIT-compiled matcher for a simple regular expression (see `CompileRegexp.h`).
+        /// LIKE and SIMILAR TO patterns are not regular expressions (the needle is not an RE2 pattern),
+        /// so they never take this path.
+        if constexpr (!is_like_or_similar_to)
+        {
+            if (regexp_jit_min_count != std::numeric_limits<size_t>::max())
+            {
+                /// `match`/`extract` build RE2 with `RE_DOT_NL` (see `Regexps::createRegexp`), so `.` matches newline.
+                if (auto matcher = getRegexpJITMatcher(needle, case_insensitive, /* dot_all */ true, regexp_jit_min_count))
+                {
+                    /// Allocated once per call (not per row); reused for every row below.
+                    VectorWithMemoryTracking<const uint8_t *> capture_starts(matcher.num_captures);
+                    VectorWithMemoryTracking<const uint8_t *> capture_ends(matcher.num_captures);
+
+                    size_t prev_offset = 0;
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                    {
+                        const auto * str_begin = reinterpret_cast<const uint8_t *>(haystack_data.data() + prev_offset);
+                        const auto * str_end = reinterpret_cast<const uint8_t *>(haystack_data.data() + haystack_offsets[i]);
+                        const bool matched = matcher.func(str_begin, str_end, str_begin, capture_starts.data(), capture_ends.data()) == 1;
+                        res[i] = negate ^ matched;
+                        prev_offset = haystack_offsets[i];
+                    }
+
+#ifndef NDEBUG
+                    verifyMatchAgainstRE2(haystack_data, haystack_offsets, needle, res, input_rows_count);
+#endif
+                    return;
+                }
+            }
+        }
+
+        /// Special case that the [I]LIKE or SIMILAR TO expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && likePatternIsSubstring<is_similar_to>(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -186,13 +234,14 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial = false;
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+        const RegexpMatchKind match_kind = regexp.getMatchKind();
 
         if (required_substring.empty())
         {
@@ -218,7 +267,7 @@ struct MatchImpl
         }
         else
         {
-            /// NOTE This almost matches with the case of impl::likePatternIsSubstring.
+            /// NOTE This almost matches with the case of likePatternIsSubstring.
 
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.begin() + haystack_data.size();
@@ -244,7 +293,16 @@ struct MatchImpl
                 {
                     /// And if it does not, if necessary, we check the regexp.
                     if (is_trivial)
+                    {
                         res[i] = !negate;
+                    }
+                    else if (isAnchoredLiteralMatchKind(match_kind))
+                    {
+                        const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                        const UInt8 * const row_end = begin + haystack_offsets[i];
+
+                        res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, row_end, pos);
+                    }
                     else
                     {
                         const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
@@ -254,7 +312,7 @@ struct MatchImpl
                           *  so that it can match when `required_substring` occurs into the string several times,
                           *  and at the first occurrence, the regexp is not a match.
                           */
-                        const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                        const size_t start_pos = required_substring_is_prefix ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                         const size_t end_pos = str_size;
 
                         const bool match = regexp.getRE2()->Match(
@@ -300,8 +358,9 @@ struct MatchImpl
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - col [not] [i]like '%' / '%%' / any run of '%'
+        /// - col [not] similar to '%' / '%%' / any run of '%'
         /// - match(col, '.*')
-        if ((is_like && impl::likePatternMatchesEverything(needle)) || (!is_like && (needle == ".*" || needle == ".*?")))
+        if ((is_like_or_similar_to && impl::likePatternMatchesEverything(needle)) || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
         {
             for (auto & x : res)
                 x = !negate;
@@ -310,7 +369,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like_or_similar_to && likePatternIsSubstring<is_similar_to>(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -354,13 +413,14 @@ struct MatchImpl
             return;
         }
 
-        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, /*no_capture*/ true, case_insensitive>(needle));
+        const auto & regexp = OptimizedRegularExpression(Regexps::createRegexp<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle));
 
         String required_substring;
         bool is_trivial = false;
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+        const RegexpMatchKind match_kind = regexp.getMatchKind();
 
         if (required_substring.empty())
         {
@@ -417,6 +477,12 @@ struct MatchImpl
                         /// And if it does not, if necessary, we check the regexp.
                         if (is_trivial)
                             res[i] = !negate;
+                        else if (isAnchoredLiteralMatchKind(match_kind))
+                        {
+                            const UInt8 * const row_begin = next_pos - N;
+
+                            res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, next_pos, pos);
+                        }
                         else
                         {
                             const char * str_data = reinterpret_cast<const char *>(next_pos - N);
@@ -425,7 +491,7 @@ struct MatchImpl
                             *  so that it can match when `required_substring` occurs into the string several times,
                             *  and at the first occurrence, the regexp is not a match.
                             */
-                            const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                            const size_t start_pos = required_substring_is_prefix ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                             const size_t end_pos = N;
 
                             const bool match = regexp.getRE2()->Match(
@@ -454,13 +520,12 @@ struct MatchImpl
 
     /// Match a single haystack against a single needle pattern.
     /// Shared by `vectorVector`, `vectorFixedVector` and `constantVector` (the cases where the needle is non-constant)
-    /// so that their per-row logic stays in sync. `regexp` and `required_substr` are reused scratch storage owned by the caller.
+    /// so that their per-row logic stays in sync. `required_substr` is reused scratch storage owned by the caller.
     static UInt8 matchOneRow(
         const char * haystack_data,
         size_t haystack_length,
         std::string_view needle,
         Regexps::LocalCacheTable & cache,
-        Regexps::RegexpPtr & regexp,
         String & required_substr)
     {
         const auto * const haystack_begin = reinterpret_cast<const UInt8 *>(haystack_data);
@@ -468,12 +533,13 @@ struct MatchImpl
 
         /// Shortcut for the silly but practical case that the pattern matches everything/nothing independently of the haystack:
         /// - 'foo' [not] [i]like '%' / '%%' / any run of '%'
+        /// - 'foo' [not] similar to '%' / '%%' / any run of '%'
         /// - match('foo', '.*')
-        if ((is_like && impl::likePatternMatchesEverything(needle))
-            || (!is_like && (needle == ".*" || needle == ".*?")))
+        if ((is_like_or_similar_to && impl::likePatternMatchesEverything(needle))
+            || (!is_like_or_similar_to && (needle == ".*" || needle == ".*?")))
             return !negate;
 
-        if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+        if (is_like_or_similar_to && likePatternIsSubstring<is_similar_to>(needle, required_substr))
         {
             if (required_substr.size() > haystack_length)
                 return negate;
@@ -483,18 +549,18 @@ struct MatchImpl
             return negate ^ (match != haystack_end);
         }
 
-        regexp = cache.getOrSet<is_like, /*no_capture*/ true, case_insensitive>(String(needle));
+        const OptimizedRegularExpression & regexp = cache.getOrSet<is_like, is_similar_to, /*no_capture*/ true, case_insensitive>(needle);
 
         bool is_trivial = false;
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
-        regexp->getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
+        regexp.getAnalyzeResult(required_substr, is_trivial, required_substring_is_prefix);
 
         if (required_substr.empty())
         {
-            if (!regexp->getRE2()) /// An empty regexp. Always matches.
+            if (!regexp.getRE2()) /// An empty regexp. Always matches.
                 return !negate;
 
-            const bool match = regexp->getRE2()->Match(
+            const bool match = regexp.getRE2()->Match(
                 {haystack_data, haystack_length}, 0, haystack_length, re2::RE2::UNANCHORED, nullptr, 0);
             return negate ^ match;
         }
@@ -508,9 +574,12 @@ struct MatchImpl
         if (is_trivial)
             return !negate; /// no wildcards in pattern
 
+        if (isAnchoredLiteralMatchKind(regexp.getMatchKind()))
+            return negate ^ impl::matchesAnchoredLiteral(regexp.getMatchKind(), required_substr, haystack_begin, haystack_end, match);
+
         const size_t start_pos = required_substring_is_prefix ? (match - haystack_begin) : 0;
         const size_t end_pos = haystack_length;
-        const bool match2 = regexp->getRE2()->Match(
+        const bool match2 = regexp.getRE2()->Match(
             {haystack_data, haystack_length}, start_pos, end_pos, re2::RE2::UNANCHORED, nullptr, 0);
         return negate ^ match2;
     }
@@ -542,7 +611,6 @@ struct MatchImpl
         size_t prev_needle_offset = 0;
 
         Regexps::LocalCacheTable cache;
-        Regexps::RegexpPtr regexp;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -553,7 +621,7 @@ struct MatchImpl
                 reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
                 needle_offset[i] - prev_needle_offset);
 
-            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, regexp, required_substr);
+            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, required_substr);
 
             prev_haystack_offset = haystack_offsets[i];
             prev_needle_offset = needle_offset[i];
@@ -587,7 +655,6 @@ struct MatchImpl
         size_t prev_needle_offset = 0;
 
         Regexps::LocalCacheTable cache;
-        Regexps::RegexpPtr regexp;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -598,7 +665,7 @@ struct MatchImpl
                 reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
                 needle_offset[i] - prev_needle_offset);
 
-            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, regexp, required_substr);
+            res[i] = matchOneRow(cur_haystack_data, cur_haystack_length, needle, cache, required_substr);
 
             prev_haystack_offset += N;
             prev_needle_offset = needle_offset[i];
@@ -630,7 +697,6 @@ struct MatchImpl
         size_t prev_needle_offset = 0;
 
         Regexps::LocalCacheTable cache;
-        Regexps::RegexpPtr regexp;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -638,7 +704,7 @@ struct MatchImpl
                 reinterpret_cast<const char *>(&needle_data[prev_needle_offset]),
                 needle_offsets[i] - prev_needle_offset);
 
-            res[i] = matchOneRow(haystack_data, haystack_length, needle, cache, regexp, required_substr);
+            res[i] = matchOneRow(haystack_data, haystack_length, needle, cache, required_substr);
 
             prev_needle_offset = needle_offsets[i];
         }

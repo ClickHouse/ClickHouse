@@ -22,12 +22,11 @@
 --   * `max_threads`, `max_final_threads`, `max_parsing_threads`  - declared default `0` (auto)
 --   * `max_download_threads`                                     - declared default `4` (explicit)
 -- The previous attempt to fix this by overriding `setChanged(false)` to hard-code the auto state
--- regressed `max_download_threads` to `'auto(N)'` instead of `4`. This test pins the spec for both
+-- regressed `max_download_threads` to `auto(N)` instead of `4`. This test pins the spec for both
 -- groups and adds `getSetting` checks so the runtime `Field` type and value are also asserted.
 --
--- We use `startsWith(value, '''auto(')` (single-quoted because `system.settings.value` quotes the
--- string itself) to assert that the auto state is preserved without depending on the actual core
--- count.
+-- We use `startsWith(value, 'auto(')` to assert that the auto state is preserved without depending
+-- on the actual core count.
 
 -- 1. Initial state: undo any session-level value the test runner may have injected via
 --    randomized settings, then assert auto for the three auto-defaulted settings. This step
@@ -36,43 +35,43 @@
 SET max_threads = DEFAULT;
 SET max_final_threads = DEFAULT;
 SET max_parsing_threads = DEFAULT;
-SELECT 'max_threads',         startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_threads';
-SELECT 'max_final_threads',   startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_final_threads';
-SELECT 'max_parsing_threads', startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_parsing_threads';
+SELECT 'max_threads',         startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_threads';
+SELECT 'max_final_threads',   startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_final_threads';
+SELECT 'max_parsing_threads', startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_parsing_threads';
 
 -- 2. Setting an explicit value clears auto.
 SET max_threads = 4;
 SET max_final_threads = 5;
 SET max_parsing_threads = 6;
-SELECT 'after-set max_threads',         startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_threads';
-SELECT 'after-set max_final_threads',   startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_final_threads';
-SELECT 'after-set max_parsing_threads', startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_parsing_threads';
+SELECT 'after-set max_threads',         startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_threads';
+SELECT 'after-set max_final_threads',   startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_final_threads';
+SELECT 'after-set max_parsing_threads', startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_parsing_threads';
 
 -- 3. SET = DEFAULT must restore auto for all three settings.
 SET max_threads = DEFAULT;
 SET max_final_threads = DEFAULT;
 SET max_parsing_threads = DEFAULT;
-SELECT 'after-default max_threads',         startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_threads';
-SELECT 'after-default max_final_threads',   startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_final_threads';
-SELECT 'after-default max_parsing_threads', startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_parsing_threads';
+SELECT 'after-default max_threads',         startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_threads';
+SELECT 'after-default max_final_threads',   startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_final_threads';
+SELECT 'after-default max_parsing_threads', startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_parsing_threads';
 
 -- 4. Resetting an already-auto setting must keep it auto.
 SET max_threads = DEFAULT;
-SELECT 'idempotent max_threads', startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_threads';
+SELECT 'idempotent max_threads', startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_threads';
 
 -- 5. Multiple-setting form `SET a = DEFAULT, b = DEFAULT` must restore auto for all.
 SET max_threads = 7, max_final_threads = 8, max_parsing_threads = 9;
 SET max_threads = DEFAULT, max_final_threads = DEFAULT, max_parsing_threads = DEFAULT;
-SELECT 'multi-default max_threads',         startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_threads';
-SELECT 'multi-default max_final_threads',   startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_final_threads';
-SELECT 'multi-default max_parsing_threads', startsWith(value, '''auto(') FROM system.settings WHERE name = 'max_parsing_threads';
+SELECT 'multi-default max_threads',         startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_threads';
+SELECT 'multi-default max_final_threads',   startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_final_threads';
+SELECT 'multi-default max_parsing_threads', startsWith(value, 'auto(') FROM system.settings WHERE name = 'max_parsing_threads';
 
 -- 6. `max_download_threads` is the only `SettingFieldMaxThreads` setting with a non-zero declared
 --    default (`4`). Its DEFAULT must restore the explicit value, NOT auto. The earlier
 --    `setChanged`-based fix attempt regressed exactly this case.
 SET max_download_threads = DEFAULT;
 SELECT 'max_download_threads default',
-       startsWith(value, '''auto(') AS is_auto, value
+       startsWith(value, 'auto(') AS is_auto, value
 FROM system.settings WHERE name = 'max_download_threads';
 
 SET max_download_threads = 1;
@@ -80,19 +79,19 @@ SELECT 'max_download_threads after-set', value FROM system.settings WHERE name =
 
 SET max_download_threads = DEFAULT;
 SELECT 'max_download_threads after-default',
-       startsWith(value, '''auto(') AS is_auto, value
+       startsWith(value, 'auto(') AS is_auto, value
 FROM system.settings WHERE name = 'max_download_threads';
 
 -- 7. `max_download_threads = 0` should switch to auto (the `SettingFieldMaxThreads` convention),
 --    and the subsequent DEFAULT must still restore the declared `4` - it must NOT remember "this
 --    setting is currently auto" and stay auto.
 SET max_download_threads = 0;
-SELECT 'max_download_threads after-zero', startsWith(value, '''auto(')
+SELECT 'max_download_threads after-zero', startsWith(value, 'auto(')
 FROM system.settings WHERE name = 'max_download_threads';
 
 SET max_download_threads = DEFAULT;
 SELECT 'max_download_threads after-default-from-auto',
-       startsWith(value, '''auto(') AS is_auto, value
+       startsWith(value, 'auto(') AS is_auto, value
 FROM system.settings WHERE name = 'max_download_threads';
 
 -- 8. `getSetting` must return a numeric (`UInt`-family) `Field` for every `SettingFieldMaxThreads`

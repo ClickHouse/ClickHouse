@@ -76,4 +76,52 @@ struct AIOContext : private boost::noncopyable
     ~AIOContext();
 };
 
+#elif defined(OS_DARWIN)
+
+#    include <aio.h>
+#    include <sys/types.h>
+
+/// macOS has POSIX aio but not Linux AIO and not FreeBSD's SIGEV_KEVENT notification. POSIX aio
+/// also caps outstanding operations at _SC_AIO_MAX (90 here), which the SSD cache's read window can
+/// exceed - and the caller only retries io_submit on EINTR, not the EAGAIN that would follow. So
+/// this shim performs the I/O synchronously behind the io_submit/io_getevents interface (used only
+/// by the SSD cache dictionary storage). Requests are set up as FreeBSD-style aiocb; results are
+/// read Linux-style via io_event::res.
+
+struct iocb
+{
+    struct aiocb aio;
+    long aio_data;
+};
+
+struct io_event
+{
+    long data;    /// copied from iocb::aio_data
+    ssize_t res;  /// bytes transferred, or -1 on error
+};
+
+struct DarwinAIOContext;
+using aio_context_t = DarwinAIOContext *;
+
+int io_setup(unsigned nr, aio_context_t * ctxp);
+
+int io_destroy(aio_context_t ctx);
+
+/// last argument is an array of pointers technically speaking
+int io_submit(aio_context_t ctx, long nr, struct iocb * iocbpp[]);
+
+int io_getevents(aio_context_t ctx, long min_nr, long max_nr, struct io_event * events, struct timespec * timeout);
+
+
+struct AIOContext : private boost::noncopyable
+{
+    aio_context_t ctx = nullptr;
+
+    AIOContext() = default;
+    explicit AIOContext(unsigned int nr_events);
+    ~AIOContext();
+    AIOContext(AIOContext && rhs) noexcept;
+    AIOContext & operator=(AIOContext && rhs) noexcept;
+};
+
 #endif

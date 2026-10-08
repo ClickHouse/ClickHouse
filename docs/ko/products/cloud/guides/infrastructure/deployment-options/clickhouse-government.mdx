@@ -1,0 +1,62 @@
+---
+title: 'ClickHouse Government'
+slug: /cloud/infrastructure/clickhouse-government
+keywords: ['government', 'fips', 'fedramp', 'gov cloud']
+description: 'ClickHouse Government 서비스 개요'
+doc_type: '참고'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse Government는 ClickHouse Cloud에서 실행되는 것과 동일한 독점 버전의 ClickHouse와 ClickHouse Operator로 구성된 자체 배포 패키지로, 컴퓨트와 스토리지를 분리하도록 구성되어 있으며 정부 기관과 공공 부문 조직의 엄격한 요구 사항을 충족할 수 있도록 강화되었습니다.
+
+<Info>
+  **참고**
+
+  ClickHouse Government는 정부 기관, 공공 부문 조직 또는 이러한 기관과 조직을 대상으로 소프트웨어를 판매하는 클라우드 소프트웨어 회사를 위해 설계되었으며, 전용 인프라를 완전히 제어하고 관리할 수 있도록 합니다. 최소 배포 크기는 2 TB입니다. 이 옵션은 [문의하기](https://clickhouse.com/government)를 통해서만 이용할 수 있습니다.
+</Info>
+
+<div id="benefits-over-os">
+  ## 오픈 소스 대비 장점
+</div>
+
+다음 기능은 ClickHouse Government를 자가 관리형 오픈 소스 배포와 차별화합니다:
+
+* 컴퓨트와 스토리지의 네이티브 분리
+* [shared merge tree](/ko/products/cloud/features/infrastructure/shared-merge-tree) 및 [warehouse](/ko/products/cloud/features/infrastructure/warehouses) 기능과 같은 Cloud 전용 기능
+* ClickHouse Cloud에서 완전히 테스트되고 검증된 ClickHouse 데이터베이스 및 오퍼레이터 버전
+* Authorization to Operate (ATO) 획득을 앞당기기 위한 [NIST Risk Management Framework (RMF)](https://csrc.nist.gov/projects/risk-management/about-rmf) 문서
+* 백업 및 스케일링 작업을 포함한 프로그래밍 방식 운영용 API
+
+<div id="architecture">
+  ## 아키텍처
+</div>
+
+ClickHouse Government는 배포 환경 내에서 완전히 독립적으로 구성되며, 클라우드 네이티브 방식으로 컴퓨트와 스토리지를 분리하는 아키텍처를 제공합니다.
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Government 아키텍처" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## 지원되는 구성
+</div>
+
+ClickHouse Government는 현재 다음 구성에서 지원됩니다:
+
+| 환경  | 오케스트레이션                          | 스토리지                        | 상태    |
+| :-- | :------------------------------- | :-------------------------- | :---- |
+| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 사용 가능 |
+| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | 프리뷰   |
+
+<div id="onboarding-process">
+  ## 온보딩 절차
+</div>
+
+고객은 사용 사례에 맞는 ClickHouse Government 검토 상담을 요청하려면 [문의해 주십시오](https://clickhouse.com/company/contact?loc=nav). 최소 규모 요구 사항을 충족하고 지원되는 구성에 배포되는 사용 사례만 검토합니다. 온보딩은 제한적으로 제공됩니다. 설치 시에는 AWS ECR에서 다운로드한 image와 Helm 차트를 사용하여 ClickHouse를 배포할 대상 환경별 설치 가이드를 따라야 합니다.

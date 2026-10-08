@@ -1,0 +1,66 @@
+---
+slug: /dictionary/best-practices
+title: 'Bonnes pratiques pour les dictionnaires'
+sidebarTitle: 'Bonnes pratiques'
+description: 'Recommandations pour choisir les layouts de dictionnaire, savoir quand utiliser des dictionnaires plutôt que des JOIN, et surveiller l’utilisation des dictionnaires.'
+doc_type: 'guide'
+keywords: ['dictionary', 'dictionaries', 'layout', 'dictGet', 'JOIN', 'hashed', 'flat', 'performance']
+---
+
+Cette page fournit des recommandations pratiques pour choisir le bon layout de dictionnaire, comprendre quand les dictionnaires sont plus performants que les JOIN (et quand ils ne le sont pas), et surveiller l’utilisation des dictionnaires.
+
+Pour une introduction aux dictionnaires avec des exemples détaillés, consultez le [guide principal des dictionnaires](/fr/concepts/features/dictionaries/index).
+
+<div id="when-to-use-dictionaries-vs-joins">
+  ## Quand utiliser des dictionnaires plutôt que des JOINs
+</div>
+
+Les dictionnaires sont particulièrement adaptés lorsqu&#39;un côté d&#39;un JOIN est une table de correspondance qui tient en mémoire. Avec un JOIN standard, ClickHouse construit une table de hachage à partir du côté droit avant de l&#39;interroger avec le côté gauche — même si la plupart des lignes sont ensuite écartées par les filtres `WHERE`. Bien que les versions récentes (24.12+) appliquent les filtres avant les JOINs dans de nombreux cas, cela n&#39;élimine pas toujours ce surcoût. Avec un dictionnaire, vous appelez `dictGet` directement, de sorte que les lookups ne s&#39;effectuent que sur les lignes qui ont déjà passé le filtrage.
+
+Cependant, `dictGet` n&#39;est pas toujours le bon choix. Si vous devez appeler `dictGet` sur un grand pourcentage des lignes d&#39;une table — par exemple, dans une condition `WHERE` telle que `dictGet('dict', 'elevation', id) > 1800` — il peut être préférable d&#39;utiliser une colonne classique avec des index natifs. ClickHouse peut utiliser `PREWHERE` pour ignorer des granules sur une colonne classique, mais `dictGet` est évalué ligne par ligne sans prise en charge des index.
+
+En règle générale :
+
+* Utilisez des dictionnaires pour remplacer les JOINs sur de petites tables de dimension lorsque la clé de lookup est déjà disponible.
+* Utilisez des colonnes classiques et des index lorsque vous filtrez sur la valeur récupérée sur un grand nombre de lignes.
+
+<div id="choosing-a-layout">
+  ## Choisir un layout
+</div>
+
+La clause `LAYOUT` contrôle la structure de données interne du dictionnaire. Tous les layouts disponibles sont documentés dans la [référence des layouts](/fr/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory).
+
+Lorsque vous choisissez un layout, suivez les recommandations suivantes :
+
+* **`flat`** — le layout le plus rapide (recherche simple par décalage dans un tableau), mais les clés doivent être de type `UInt64` et sont limitées à 500 000 par défaut (`max_array_size`). Idéal pour des clés entières croissantes monotones dans des tables de petite ou moyenne taille. Les distributions de clés clairsemées (par exemple, des valeurs de clé 1 et 500 000) gaspillent de la mémoire, car le tableau est dimensionné en fonction de la plus grande clé. Si vous atteignez la limite des 500k, c&#39;est généralement le signe qu&#39;il faut passer à `hashed_array`.
+* **`hashed_array`** — le choix par défaut recommandé pour la plupart des cas d&#39;usage. Stocke les attributs dans des tableaux, avec une table de hachage qui associe les clés aux indices des tableaux. Presque aussi rapide que `hashed`, mais plus économe en mémoire, surtout lorsqu&#39;il y a beaucoup d&#39;attributs.
+* **`hashed`** — stocke l&#39;intégralité du dictionnaire dans une table de hachage. Peut être plus rapide que `hashed_array` lorsque vous avez très peu d&#39;attributs, mais consomme davantage de mémoire à mesure que leur nombre augmente.
+* **`complex_key_hashed` / `complex_key_hashed_array`** — utilisez-les lorsque les clés ne peuvent pas être converties en `UInt64` (par exemple, des clés `String`). Ils présentent les mêmes compromis de performance que leurs équivalents non complexes.
+* **`sparse_hashed`** — réduit l&#39;utilisation de la mémoire au prix d&#39;une consommation CPU plus élevée par rapport à `hashed`. C&#39;est rarement le meilleur choix : il n&#39;est réellement efficace que lorsque vous n&#39;avez qu&#39;un seul attribut. Dans la plupart des cas, `hashed_array` est plus adapté.
+* **`cache` / `ssd_cache`** — ne mettent en cache que les clés fréquemment consultées. Utile lorsque l&#39;ensemble du dataset ne tient pas en mémoire, mais les recherches peuvent interroger la source en cas de cache miss. Non recommandé pour les charges de travail sensibles à la latence.
+* **`direct`** — interroge la source à chaque recherche, sans stockage en mémoire. À utiliser lorsque les données changent trop fréquemment pour être mises en cache ou lorsque le dictionnaire est trop volumineux pour tenir en mémoire.
+
+<div id="monitoring-dictionary-usage">
+  ## Suivi de l’utilisation des dictionnaires
+</div>
+
+Suivez la consommation mémoire et l’état via la table [`system.dictionaries`](/fr/reference/system-tables/dictionaries) :
+
+```sql
+SELECT
+    name,
+    status,
+    element_count,
+    formatReadableSize(bytes_allocated) AS size,
+    query_count,
+    hit_rate,
+    found_rate,
+    last_exception
+FROM system.dictionaries
+```
+
+Colonnes clés :
+
+* `bytes_allocated` — mémoire consommée par le dictionnaire. Les dictionnaires stockent les données non compressées, donc cette valeur peut être nettement supérieure à la taille de la table compressée.
+* `hit_rate` et `found_rate` — utiles pour évaluer l’efficacité du layout `cache`.
+* `last_exception` — vérifiez ce point lorsqu’un dictionnaire ne parvient pas à se charger ou à s’actualiser.

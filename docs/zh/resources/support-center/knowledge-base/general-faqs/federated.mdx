@@ -1,0 +1,28 @@
+---
+title: 'ClickHouse 支持联邦查询吗？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/federated
+description: 'ClickHouse 支持丰富的联邦查询和混合查询'
+doc_type: 'reference'
+keywords: ['federated', 'hybrid', 'postgres', 'mysql', 'sqlite', 'odbc', 'jdbc']
+---
+
+在分析型数据库中，ClickHouse 对联邦查询和混合查询执行的支持最为全面。
+
+它支持查询以下外部数据源：
+
+* PostgreSQL
+* MySQL
+* MongoDB
+* Redis
+* 任何 ODBC 数据源
+* 任何 JDBC 数据源
+* 任何 Arrow Flight 数据源
+* 流式数据源，例如 Kafka 和 RabbitMQ
+* 数据湖，例如 Iceberg、Delta Lake、Apache Hudi、Apache Paimon
+* 位于共享存储中的外部文件，例如 AWS S3、GCS、Minio、Cloudflare R2、Azure Blob 存储、Alicloud OSS、Tencent COS，以及本地存储中的文件，并支持多种数据格式
+
+ClickHouse 可以在单个查询中关联多种不同的数据源。它还提供混合查询执行选项，结合本地资源，并将部分查询卸载到远程机器上执行。
+
+更值得一提的是，ClickHouse 无需移动数据即可加速对外部数据源的查询。例如，针对 MySQL 数据的聚合查询如果在 ClickHouse 上运行，处理速度会更快，因为更快的查询引擎足以抵消数据移动带来的开销。

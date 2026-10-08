@@ -1,0 +1,24 @@
+--- filter wraps the query ---
+3
+4
+--- select + order compose ---
+40
+30
+20
+10
+0
+--- sort with +/- prefixes ---
+4
+3
+2
+1
+0
+--- page over limit ---
+2
+3
+--- sort and order together is rejected ---
+cannot be specified together
+--- compression in an in-query SETTINGS clause is rejected ---
+shapes the HTTP response body
+--- compression = DEFAULT (a default_settings reset) is rejected too ---
+shapes the HTTP response body

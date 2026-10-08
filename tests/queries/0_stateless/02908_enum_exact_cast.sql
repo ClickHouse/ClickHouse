@@ -1,6 +1,17 @@
 -- Tags: no-parallel, no-parallel-replicas, no-async-insert
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+-- The test distinguishes the sync `INSERT VALUES (NULL)` path (which raises
+-- `clientError TYPE_MISMATCH` because the client parses VALUES locally and rejects
+-- `NULL` into a non-nullable `Enum`) from the async path (which raises
+-- `serverError TYPE_MISMATCH` because the server parses VALUES). With
+-- `send_table_structure_on_insert_with_inline_data=0` the client stops parsing inline
+-- `VALUES` and the server-side parser raises the error in both the sync and async cases,
+-- so the sync-path annotation `-- { clientError TYPE_MISMATCH }` fails to match (it is
+-- now a `serverError`). Pin the legacy client-parses-VALUES path; the test is about the
+-- client-vs-server error-attribution boundary for the `INSERT VALUES (NULL)` flow, which
+-- the new inline-insert path collapses.
 
---- GitHub issue 56144 
+--- GitHub issue 56144
 --- Tests number values of enum are validated during insertion.
 
 SELECT 'Table insertion';

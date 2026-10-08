@@ -1,0 +1,14 @@
+1	1
+0
+1	1
+0
+1	1
+LowCardinality(Nullable(String))
+LowCardinality(Nullable(String))	p	0	0
+LowCardinality(Nullable(String))	p	0	0
+LowCardinality(Nullable(String))	\N	1	1
+LowCardinality(Nullable(String))	\N	1	1
+LowCardinality(Nullable(String))	p	0	0
+LowCardinality(Nullable(String))	p	0	0
+LowCardinality(Nullable(String))	\N	1	1
+LowCardinality(Nullable(String))	\N	1	1

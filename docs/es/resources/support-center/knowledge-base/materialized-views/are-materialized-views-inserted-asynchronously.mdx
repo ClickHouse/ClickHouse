@@ -1,0 +1,24 @@
+---
+title: ¿Las vistas materializadas se insertan de forma síncrona?
+description: Este artículo de la base de conocimientos explora si las vistas materializadas se insertan de forma síncrona
+date: 2023-03-01
+tags: ['Modelado de datos']
+keywords: ['vista materializada']
+---
+
+<div id="are-materialized-views-inserted-synchronously">
+  ## ¿Las vistas materializadas reciben inserciones de forma síncrona?
+</div>
+
+**Pregunta:** Cuando se insertan nuevas filas en una tabla de origen, esas filas nuevas también se envían a todas las vistas materializadas de esa tabla de origen. ¿Las inserciones en las vistas materializadas se realizan de forma síncrona? Es decir, una vez que el servidor confirma correctamente la inserción al cliente, ¿significa eso que todas las vistas materializadas se han actualizado por completo y ya están disponibles para consultas?
+
+**Respuesta:**
+
+1. Cuando un `INSERT` se completa correctamente, los datos se insertan tanto en la tabla como en todas las vistas materializadas.
+2. La inserción no es atómica con respecto a las vistas materializadas. Mientras el `INSERT` está en curso, los clientes concurrentes pueden ver un estado intermedio en el que los datos se han insertado en la tabla principal, pero no en las vistas materializadas, o viceversa.
+3. Si utiliza [inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts), estas recopilan los datos y realizan internamente una inserción normal, devolviendo al cliente el mismo tipo de respuesta que las inserciones normales. Si el cliente recibió una confirmación de éxito de una inserción asíncrona con la opción `wait_for_async_insert` (como ocurre de forma predeterminada), los datos se insertan tanto en la tabla como en todas sus vistas materializadas.
+
+**Pregunta:** ¿Qué ocurre con las vistas materializadas encadenadas/en cascada?
+
+**Respuesta:**
+Se aplican las mismas reglas: un `INSERT` con una respuesta correcta significa que los datos se insertaron en cada vista materializada de la cadena. La inserción no es atómica.

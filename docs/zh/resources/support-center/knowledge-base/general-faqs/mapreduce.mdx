@@ -1,0 +1,15 @@
+---
+slug: /faq/general/mapreduce
+title: '为什么不使用 MapReduce 之类的系统？'
+toc_hidden: true
+toc_priority: 110
+description: '本页说明了为什么应使用 ClickHouse 而不是 MapReduce'
+keywords: ['MapReduce']
+doc_type: 'reference'
+---
+
+我们可以把 MapReduce 这类系统称为分布式计算系统，其中 reduce 操作以分布式排序为基础。这一类中最常见的开源解决方案是 [Apache Hadoop](http://hadoop.apache.org)。
+
+由于延迟较高，这些系统并不适合在线查询。换句话说，它们不能作为 Web 界面的后端。这类系统对实时数据更新也没有太大用处。如果操作结果以及所有中间结果 (如果有) 都位于单台服务器的 RAM 中——而在线查询通常就是这种情况——那么分布式排序并不是执行 reduce 操作的最佳方式。在这种情况下，使用哈希表才是执行 reduce 操作的最优方式。优化 map-reduce 任务的一种常见方法，是在 RAM 中使用哈希表进行预聚合 (部分 reduce) 。这种优化需要由用户手动完成。对于简单的 map-reduce 任务来说，分布式排序是性能下降的主要原因之一。
+
+大多数 MapReduce 实现都允许你在集群上执行任意代码。但对于 OLAP，声明式查询语言更适合快速开展实验。例如，Hadoop 有 Hive 和 Pig。对于 Spark，还可以考虑 Cloudera Impala 或 Shark (已过时) ，以及 Spark SQL、Presto 和 Apache Drill。与专用系统相比，这类任务的执行性能远非最优，而相对较高的延迟也使这些系统难以作为 Web 界面的后端使用。

@@ -1,0 +1,12 @@
+We recommend creating a dedicated user for the collector rather than reusing `default`. Connect to your service via the SQL console and run:
+
+```sql
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+<Tip>
+Replace the password in the snippet above with a strong value.
+</Tip>
+
+The collector creates the schema for logs, traces, and metrics inside the `otel` database on first use. For more guidance on production user setup, see [Going to production](/clickstack/managing/production#create-a-database-ingestion-user-managed).

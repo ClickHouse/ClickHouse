@@ -1,0 +1,100 @@
+-- Tags: long
+-- Tagged `long` because the throwing wide-integer (Int256/UInt256) divisions and Decimal
+-- scale conversions in this file are ~1000x slower under sanitizers, which pushes a single
+-- run over the flaky-check per-test time limit even though it is ~0.2s on a release build.
+--
+-- Exceptional cases of comparison and arithmetic over mixed type pairs involving
+-- Decimal and 128/256-bit integers. Companion of 04513_type_pair_matrix_comparison
+-- and 04514_type_pair_matrix_arithmetic, which cover the non-throwing matrix.
+--
+-- This file covers comparison overflow during Decimal scale conversion and integer division
+-- by zero; 04520_type_pair_matrix_division_overflow_errors covers division overflow of the most
+-- negative value and unsupported type-pair combinations. The two files are split only to fit
+-- each within the flaky-check per-run time budget.
+--
+-- Every case, throwing and non-throwing alike, is exercised in all four constness shapes:
+-- vector/vector, left-const, right-const, and both-const. DecimalComparison::applyMixed and
+-- FunctionBinaryArithmetic have distinct executor branches per constness (and modulo/moduloLegacy
+-- route a right-constant divisor through ModuloByConstantImpl::vectorConstant with its own zero
+-- and lowest() checks), so a regression on the constant side would be missed by the vector/vector
+-- shape alone. The both-const shape uses identity(...) so the analyzer does not fold the
+-- expression away before the executor runs.
+
+-- A throwing infix comparison "a <op> b" in all four constness shapes.
+{% macro cmp_throws(a, op, b, err) -%}
+SELECT materialize({{ a }}) {{ op }} materialize({{ b }}); -- { serverError {{ err }} }
+SELECT {{ a }} {{ op }} materialize({{ b }}); -- { serverError {{ err }} }
+SELECT materialize({{ a }}) {{ op }} {{ b }}; -- { serverError {{ err }} }
+SELECT identity({{ a }}) {{ op }} identity({{ b }}); -- { serverError {{ err }} }
+{%- endmacro %}
+
+-- A throwing function call "fn(a, b)" in all four constness shapes.
+{% macro fn_throws(fn, a, b, err) -%}
+SELECT {{ fn }}(materialize({{ a }}), materialize({{ b }})); -- { serverError {{ err }} }
+SELECT {{ fn }}({{ a }}, materialize({{ b }})); -- { serverError {{ err }} }
+SELECT {{ fn }}(materialize({{ a }}), {{ b }}); -- { serverError {{ err }} }
+SELECT {{ fn }}(identity({{ a }}), identity({{ b }})); -- { serverError {{ err }} }
+{%- endmacro %}
+
+-- The non-throwing overflow-check-disabled comparisons, packed into one SELECT that shares the
+-- trailing SETTINGS clause. wa/wb wrap the two operands: materialize gives a vector column,
+-- identity gives a ColumnConst that the analyzer does not fold away, so calling this with the four
+-- (wa, wb) combinations exercises DecimalComparison's vectorVector, constantVector, vectorConstant,
+-- and both-const branches with the overflow check off.
+{% macro overflow_disabled_row(wa, wb) -%}
+SELECT
+    {{ wa }}(CAST('18446744073709551615', 'UInt64')) > {{ wb }}(toDecimal32('1.5', 2)),
+    {{ wa }}(toUInt64(9223372036854775807)) > {{ wb }}(toDecimal64('1.5', 4)),
+    {{ wa }}(toDecimal32('1.5', 2)) = {{ wb }}(CAST('115792089237316195423570985008687907853269984665640564039457584007913129639935', 'UInt256')) SETTINGS decimal_check_overflow = 0;
+{%- endmacro %}
+
+-- The extreme values that must compare without overflowing, in all four constness shapes.
+{% macro extreme_row(wa, wb) -%}
+SELECT
+    {{ wa }}(CAST('-170141183460469231731687303715884105728', 'Int128')) < {{ wb }}(toDecimal32('1.5', 2)),
+    {{ wa }}(CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')) != {{ wb }}(toDecimal64('1.5', 4));
+{%- endmacro %}
+
+SELECT '-- comparison overflow during scale conversion';
+{{ cmp_throws("CAST('18446744073709551615', 'UInt64')", '>', "toDecimal32('1.5', 2)", 'DECIMAL_OVERFLOW') }}
+{{ cmp_throws("toUInt64(9223372036854775807)", '>', "toDecimal64('1.5', 4)", 'DECIMAL_OVERFLOW') }}
+{{ cmp_throws("toDecimal32('1.5', 2)", '=', "CAST('115792089237316195423570985008687907853269984665640564039457584007913129639935', 'UInt256')", 'DECIMAL_OVERFLOW') }}
+
+-- The same comparisons, and the extreme values that must compare without overflowing, in all four
+-- constness shapes. With the overflow check off (or with values that stay below overflow) these do
+-- not throw, but DecimalComparison still dispatches on constness, so a regression that appeared
+-- only when one side stayed a ColumnConst would be missed by the vector/vector shape alone.
+SELECT '-- the same comparisons with the overflow check disabled, vector/vector';
+{{ overflow_disabled_row('materialize', 'materialize') }}
+SELECT '-- the same in the left-const shape';
+{{ overflow_disabled_row('identity', 'materialize') }}
+SELECT '-- the same in the right-const shape';
+{{ overflow_disabled_row('materialize', 'identity') }}
+SELECT '-- the same in the both-const shape';
+{{ overflow_disabled_row('identity', 'identity') }}
+
+SELECT '-- extreme values that must compare without overflow, vector/vector';
+{{ extreme_row('materialize', 'materialize') }}
+SELECT '-- the same in the left-const shape';
+{{ extreme_row('identity', 'materialize') }}
+SELECT '-- the same in the right-const shape';
+{{ extreme_row('materialize', 'identity') }}
+SELECT '-- the same in the both-const shape';
+{{ extreme_row('identity', 'identity') }}
+
+-- The same extreme values in the reverse operand order do overflow: with the Decimal on the left,
+-- DecimalComparison scales the wide integer up to the Decimal scale (the scale_right instantiation),
+-- which is a distinct path from the wide-int-on-the-left (scale_left) direction above that compares
+-- them without overflow.
+SELECT '-- the reverse operand order overflows during scale conversion';
+{{ cmp_throws("toDecimal32('1.5', 2)", '>', "CAST('-170141183460469231731687303715884105728', 'Int128')", 'DECIMAL_OVERFLOW') }}
+{{ cmp_throws("toDecimal64('1.5', 4)", '!=', "CAST('-57896044618658097711785492504343953926634992332820282019728792003956564819968', 'Int256')", 'DECIMAL_OVERFLOW') }}
+
+SELECT '-- division by zero in every width direction';
+{{ fn_throws('intDiv', 'toUInt256(1)', 'toUInt8(0)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('intDiv', 'toUInt8(1)', 'toUInt256(0)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('intDiv', 'toInt256(1)', 'toInt256(0)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('modulo', 'toInt256(-1)', 'toUInt64(0)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('modulo', 'toUInt64(1)', 'toUInt256(0)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('positiveModulo', 'toInt128(-1)', 'toUInt32(0)', 'ILLEGAL_DIVISION') }}
+{{ fn_throws('moduloLegacy', 'toUInt256(1)', 'toUInt8(0)', 'ILLEGAL_DIVISION') }}

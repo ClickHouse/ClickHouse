@@ -1,0 +1,25 @@
+---
+title: Host de escuta
+---
+
+A comunicação externa pela interface de rede é habilitada ao ativar a configuração
+listen&#95;host. Isso garante que o host do servidor ClickHouse possa ser acessado por outros
+hosts:
+
+```xml
+<listen_host>0.0.0.0</listen_host>
+```
+
+A porta da API HTTP está configurada como `8123`:
+
+```xml
+<http_port>8123</http_port>
+```
+
+A porta TCP usada para comunicação pelo protocolo nativo do ClickHouse entre clickhouse-client
+e outras ferramentas nativas do ClickHouse, e entre clickhouse-server e outros clickhouse-servers
+é definida como `9000`:
+
+```xml
+<tcp_port>9000</tcp_port>
+```

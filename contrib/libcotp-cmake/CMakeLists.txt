@@ -10,10 +10,20 @@ endif()
 set (LIBCOTP_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libcotp")
 set (LIBCOTP_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/libcotp")
 
+# Mirrors the upstream source list for the OpenSSL HMAC/hash backend, without
+# the optional validation helpers (`COTP_ENABLE_VALIDATION`), which we do not use.
 set(SRCS
+    "${LIBCOTP_SOURCE_DIR}/src/ctx.c"
     "${LIBCOTP_SOURCE_DIR}/src/otp.c"
+    "${LIBCOTP_SOURCE_DIR}/src/strerror.c"
+    "${LIBCOTP_SOURCE_DIR}/src/yaotp.c"
     "${LIBCOTP_SOURCE_DIR}/src/utils/base32.c"
+    "${LIBCOTP_SOURCE_DIR}/src/utils/otpauth_uri.c"
+    "${LIBCOTP_SOURCE_DIR}/src/utils/pct.c"
+    "${LIBCOTP_SOURCE_DIR}/src/utils/secure_zero.c"
+    "${LIBCOTP_SOURCE_DIR}/src/utils/whash_openssl.c"
     "${LIBCOTP_SOURCE_DIR}/src/utils/whmac_openssl.c"
+    "${LIBCOTP_SOURCE_DIR}/src/utils/yaotp_uri.c"
 )
 
 add_library (_libcotp ${SRCS})

@@ -1,0 +1,16 @@
+classify before update
+0
+metadata
+LOADED	NaiveBayes	['ngram']	['class_id','count']	['UInt32','UInt64']
+exists
+1
+classify after update, before reload
+0
+classify after reload
+1
+exists after drop
+0
+query_count after five function lookups
+5
+query_count after three more dictGet lookups
+8

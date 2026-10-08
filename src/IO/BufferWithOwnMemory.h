@@ -1,21 +1,14 @@
 #pragma once
 
+#include <IO/BufferBase.h>
 #include <boost/noncopyable.hpp>
 
 #include <Common/Allocator.h>
-#include <Common/ProfileEvents.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
-
-
-namespace ProfileEvents
-{
-    extern const Event IOBufferAllocs;
-    extern const Event IOBufferAllocBytes;
-}
 
 
 namespace DB
@@ -77,36 +70,7 @@ struct Memory : boost::noncopyable, Allocator
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
-    void resize(size_t new_size, bool deallocate_if_empty = false)
-    {
-        if (!m_data)
-        {
-            alloc(new_size);
-            return;
-        }
-
-        if (new_size == 0 && deallocate_if_empty)
-        {
-            dealloc();
-            m_size = m_capacity = 0;
-            return;
-        }
-
-        if (new_size <= m_capacity - pad_right)
-        {
-            m_size = new_size;
-            return;
-        }
-
-        size_t new_capacity = withPadding(new_size);
-
-        size_t diff = new_capacity - m_capacity;
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, diff);
-
-        m_data = static_cast<char *>(Allocator::realloc(m_data, m_capacity, new_capacity, alignment));
-        m_capacity = new_capacity;
-        m_size = new_size;
-    }
+    void resize(size_t new_size, bool deallocate_if_empty = false);
 
 private:
     static size_t withPadding(size_t value)
@@ -119,23 +83,7 @@ private:
         return res;
     }
 
-    void alloc(size_t new_size)
-    {
-        if (!new_size)
-        {
-            m_data = nullptr;
-            return;
-        }
-
-        size_t new_capacity = withPadding(new_size);
-
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocs);
-        ProfileEvents::increment(ProfileEvents::IOBufferAllocBytes, new_capacity);
-
-        m_data = static_cast<char *>(Allocator::alloc(new_capacity, alignment));
-        m_capacity = new_capacity;
-        m_size = new_size;
-    }
+    void alloc(size_t new_size);
 
     void dealloc()
     {
@@ -157,6 +105,37 @@ class BufferWithOwnMemory : public Base
 protected:
     Memory<> memory{};
     const bool use_existing_memory;
+
+    /// Adaptive sizing of a write buffer (see `use_adaptive_write_buffer` in WriteSettings): the
+    /// buffer starts at a small initial size and `growAdaptiveBufferAfterFlush` doubles it after
+    /// every full flush, up to `adaptive_buffer_max_size`, so one of many rarely-filled buffers
+    /// (e.g. one per column stream of a wide part) only pays for the memory it actually needs.
+    bool use_adaptive_buffer_size = false;
+    size_t adaptive_buffer_max_size = 0;
+
+    /// The initial allocation of an adaptive buffer. The maximum caps it, so an out-of-range
+    /// initial size is never passed straight to the allocator (e.g. a fuzzed
+    /// adaptive_write_buffer_initial_size).
+    static size_t adaptiveBufferInitialSize(bool use_adaptive, size_t initial_size, size_t max_size)
+    {
+        return use_adaptive ? std::min(initial_size, max_size) : max_size;
+    }
+
+    void enableAdaptiveBufferGrowth(bool use_adaptive, size_t max_size)
+    {
+        use_adaptive_buffer_size = use_adaptive;
+        adaptive_buffer_max_size = max_size;
+    }
+
+    /// Call at the end of nextImpl; grows only when the flush used the whole buffer.
+    void growAdaptiveBufferAfterFlush()
+    {
+        if (!Base::available() && use_adaptive_buffer_size && memory.size() < adaptive_buffer_max_size)
+        {
+            memory.resize(std::min(memory.size() * 2, adaptive_buffer_max_size));
+            this->BufferBase::set(memory.data(), memory.size(), 0);
+        }
+    }
 
 public:
     /// If non-nullptr 'existing_memory' is passed,

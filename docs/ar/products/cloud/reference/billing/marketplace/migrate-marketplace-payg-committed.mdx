@@ -1,0 +1,97 @@
+---
+slug: /cloud/billing/marketplace/migrate
+title: 'ترحيل الفوترة من الدفع حسب الاستخدام (PAYG) إلى عقد التزام بالإنفاق في سوق سحابية'
+description: 'الترحيل من الدفع حسب الاستخدام إلى عقد التزام بالإنفاق.'
+keywords: ['سوق', 'الفوترة', 'PAYG', 'الدفع حسب الاستخدام', 'عقد التزام بالإنفاق']
+doc_type: 'guide'
+---
+
+إذا كانت مؤسسة ClickHouse لديك تُفوَّتر حاليًا من خلال اشتراك نشط (أو طلب) بنظام الدفع حسب الاستخدام (PAYG) عبر سوق سحابية، وكنت ترغب في ترحيل الفوترة إلى عقد التزام بالإنفاق عبر السوق السحابية نفسها، فيُرجى قبول عرضك الجديد ثم اتباع الخطوات أدناه وفقًا لمزوّد الخدمة السحابية الذي تستخدمه.
+
+<div id="important-notes">
+  ## ملاحظات مهمة
+</div>
+
+يرجى ملاحظة أن إلغاء اشتراكك في Marketplace PAYG لا يؤدي إلى حذف حسابك في ClickHouse Cloud، بل ينهي فقط علاقة الفوترة عبر marketplace. وبعد الإلغاء، سيتوقف نظامنا عن فوترة خدمات ClickHouse Cloud من خلال marketplace. (ملاحظة: هذه العملية ليست فورية، وقد تستغرق بضع دقائق حتى تكتمل).
+
+بعد إلغاء اشتراكك في marketplace، إذا كانت لدى مؤسسة ClickHouse الخاصة بك بطاقة ائتمان محفوظة، فسنحمّل الرسوم على تلك البطاقة في نهاية دورة الفوترة، ما لم يتم ربط اشتراك marketplace جديد قبل ذلك.
+
+إذا لم يتم إعداد بطاقة ائتمان بعد الإلغاء، فسيكون لديك 14 يومًا لإضافة بطاقة ائتمان صالحة أو اشتراك جديد في cloud marketplace إلى مؤسستك. وإذا لم يتم إعداد طريقة دفع خلال تلك الفترة، فسيتم تعليق خدماتك وستُعتبر مؤسستك غير ملتزمة بـ[الامتثال للفوترة](/ar/products/cloud/reference/billing/billing-compliance).
+
+سيتم تحميل أي استخدام يتراكم بعد إلغاء الاشتراك على طريقة الدفع الصالحة التالية التي يتم إعدادها، سواء كانت رصيدًا مدفوعًا مسبقًا أو اشتراك marketplace أو بطاقة ائتمان، وبهذا الترتيب.
+
+إذا كانت لديك أي أسئلة أو كنت بحاجة إلى دعم بشأن المشكلات المتعلقة بتهيئة مؤسستك لاشتراك marketplace جديد، فيرجى التواصل مع ClickHouse [support](https://clickhouse.com/support/program) للحصول على المساعدة.
+
+<div id="aws-marketplace">
+  ## AWS Marketplace
+</div>
+
+إذا كنت تريد استخدام معرّف حساب AWS نفسه لترحيل اشتراك PAYG الخاص بك إلى عقد التزام بالإنفاق، فإن الطريقة التي نوصي بها هي [التواصل مع فريق المبيعات](https://clickhouse.com/company/contact) لإجراء هذا التعديل. ويعني ذلك عدم الحاجة إلى أي خطوات إضافية، كما لن يحدث أي انقطاع في مؤسسة أو services الخاصة بك على ClickHouse.
+
+إذا كنت تريد استخدام معرّف حساب AWS مختلفًا لترحيل مؤسسة الخاصة بك على ClickHouse من اشتراك PAYG إلى عقد التزام بالإنفاق، فاتبع هذه الخطوات:
+
+<div id="cancel-aws-payg">
+  ### خطوات إلغاء اشتراك AWS PAYG
+</div>
+
+1. **انتقل إلى [AWS Marketplace](https://us-east-1.console.aws.amazon.com/marketplace)**
+2. **انقر على زر &quot;Manage Subscriptions&quot;**
+3. **انتقل إلى &quot;Your Subscriptions&quot;:**
+   * انقر على &quot;Manage Subscriptions&quot;
+4. **اعثر على ClickHouse Cloud في القائمة:**
+   * ابحث عن ClickHouse Cloud وانقر عليه ضمن &quot;Your Subscriptions&quot;
+5. **ألغِ الاشتراك:**
+   * ضمن &quot;Agreement&quot;، انقر على القائمة المنسدلة أو الزر &quot;Actions&quot; بجوار ClickHouse Cloud
+   * اختر &quot;Cancel subscription&quot;
+
+> **ملاحظة:** إذا احتجت إلى مساعدة في إلغاء اشتراكك (على سبيل المثال، إذا لم يكن زر إلغاء الاشتراك متاحًا)، يُرجى التواصل مع [دعم AWS](https://support.console.aws.amazon.com/support/home#/).
+
+بعد ذلك، اتبع هذه [الخطوات](/ar/products/cloud/reference/billing/marketplace/aws-marketplace-committed) لتهيئة مؤسسة الخاصة بك في ClickHouse وفق عقد التزام بالإنفاق الجديد على AWS الذي وافقت عليه.
+
+<div id="gcp-marketplace">
+  ## GCP Marketplace
+</div>
+
+<div id="cancel-gcp-payg">
+  ### خطوات إلغاء طلب GCP بنظام PAYG
+</div>
+
+1. **انتقل إلى [Google Cloud Marketplace Console](https://console.cloud.google.com/marketplace):**
+   * تأكد من أنك مسجّل الدخول إلى حساب GCP الصحيح وأنك اخترت المشروع المناسب
+2. **اعثر على طلب ClickHouse الخاص بك:**
+   * في القائمة اليسرى، انقر على &quot;طلباتك&quot;
+   * اعثر على طلب ClickHouse الصحيح ضمن قائمة الطلبات النشطة
+3. **ألغِ الطلب:**
+   * اعثر على قائمة النقاط الثلاث إلى يسار طلبك واتبع التعليمات لإلغاء طلب ClickHouse
+
+> **ملاحظة:** للحصول على مساعدة في إلغاء هذا الطلب، يُرجى التواصل مع [دعم GCP](https://cloud.google.com/support/docs/get-billing-support).
+
+بعد ذلك، اتبع هذه [الخطوات](/ar/products/cloud/reference/billing/marketplace/gcp-marketplace-committed) لتهيئة مؤسسة الخاصة بك في ClickHouse لاستخدام عقد التزام بالإنفاق الجديد في GCP.
+
+<div id="azure-marketplace">
+  ## Azure Marketplace
+</div>
+
+<div id="cancel-azure-payg">
+  ### خطوات إلغاء اشتراك Azure بنظام PAYG
+</div>
+
+1. **انتقل إلى [Microsoft Azure Portal](http://portal.azure.com)**
+2. **انتقل إلى &quot;Subscriptions&quot;**
+3. **اعثر على اشتراك ClickHouse النشط الذي تريد إلغاءه**
+4. **ألغِ الاشتراك:**
+   * انقر على اشتراك ClickHouse Cloud لفتح تفاصيل الاشتراك
+   * حدّد زر &quot;Cancel subscription&quot;
+
+> **ملاحظة:** للحصول على مساعدة في إلغاء هذا الطلب، يُرجى فتح تذكرة دعم في Microsoft Azure Portal.
+
+بعد ذلك، اتبع هذه [الخطوات](/ar/products/cloud/reference/billing/marketplace/azure-marketplace-committed) لتهيئة مؤسسة ClickHouse الخاصة بك للعمل مع عقد التزام بالإنفاق الجديد في Azure.
+
+<div id="linking-requirements">
+  ## متطلبات الربط بعقد التزام بالإنفاق
+</div>
+
+> **ملاحظة:** لربط مؤسستك بعقد التزام بالإنفاق في Marketplace:
+>
+> * يجب أن يكون المستخدم الذي يتبع هذه الخطوات مستخدمًا بصلاحية Admin في مؤسسة ClickHouse التي يُربط بها الاشتراك
+> * يجب سداد جميع الفواتير غير المدفوعة على المؤسسة (يُرجى التواصل مع [support](https://clickhouse.com/support/program) لدى ClickHouse إذا كانت لديك أي أسئلة)

@@ -1,6 +1,6 @@
 #include <Functions/FunctionBase64Conversion.h>
 
-#if USE_BASE64
+#if USE_SIMDUTF
 #include <Functions/FunctionFactory.h>
 
 namespace DB
@@ -20,6 +20,7 @@ REGISTER_FUNCTION(Base64Decode)
 {
     FunctionDocumentation::Description description = R"(
 Decodes a string from [Base64](https://en.wikipedia.org/wiki/Base64) representation, according to RFC 4648.
+Since version 26.7, the whitespace characters space, tab (`\t`), line feed (`\n`), carriage return (`\r`), and form feed (`\f`) in the input are ignored (earlier versions rejected input containing them). Vertical tab (`\v`) and any other characters outside the Base64 alphabet are rejected.
 Throws an exception in case of error.
 
 )";

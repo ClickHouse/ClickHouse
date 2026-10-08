@@ -1,0 +1,63 @@
+---
+slug: '/examples/aggregate-function-combinators/countIf'
+title: 'countIf'
+description: 'countIf 조합자의 사용 예시'
+keywords: ['count', 'if', 'combinator', '예시', 'countIf']
+sidebarTitle: 'countIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`If`](/ko/reference/functions/aggregate-functions/combinators#-if) 조합자는 조건이 참인
+행 수를 세기 위해 [`count`](/ko/reference/functions/aggregate-functions/count)
+함수에 적용할 수 있으며,
+이 경우 `countIf` 집계 조합자 함수를 사용합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+이 예시에서는 사용자 로그인 시도를 저장하는 테이블(table)을 생성하고,
+성공한 로그인 횟수를 계산하기 위해 `countIf`를 사용합니다.
+
+```sql title="Query"
+CREATE TABLE login_attempts(
+    user_id UInt32,
+    timestamp DateTime,
+    is_successful UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO login_attempts VALUES
+    (1, '2024-01-01 10:00:00', 1),
+    (1, '2024-01-01 10:05:00', 0),
+    (1, '2024-01-01 10:10:00', 1),
+    (2, '2024-01-01 11:00:00', 1),
+    (2, '2024-01-01 11:05:00', 1),
+    (2, '2024-01-01 11:10:00', 0);
+
+SELECT
+    user_id,
+    countIf(is_successful = 1) AS successful_logins
+FROM login_attempts
+GROUP BY user_id;
+```
+
+`countIf` 함수는 각 사용자별로 `is_successful = 1`인 행만 계산합니다.
+
+```response title="Response"
+   ┌─user_id─┬─successful_logins─┐
+1. │       1 │                 2 │
+2. │       2 │                 2 │
+   └─────────┴───────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`count`](/ko/reference/functions/aggregate-functions/count)
+* [`If 조합자`](/ko/reference/functions/aggregate-functions/combinators#-if)

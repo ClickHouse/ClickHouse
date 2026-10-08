@@ -1,0 +1,13 @@
+initial
+c_a	CHECK	a < 10
+c_b	CHECK	b < 10
+after modify c_a
+c_a	CHECK	a < 100
+c_b	CHECK	b < 10
+15	1
+after modify c_b
+c_a	CHECK	a < 100
+c_b	ASSUME	b < 1000
+final
+c_a	CHECK	a < 100
+c_b	ASSUME	b < 1000

@@ -10,6 +10,8 @@
 -- the index require both parts per branch, pruning granules that contain a branch word but not the
 -- common run without affecting the result.
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

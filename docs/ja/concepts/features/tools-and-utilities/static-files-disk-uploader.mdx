@@ -1,0 +1,94 @@
+---
+slug: /operations/utilities/static-files-disk-uploader
+title: 'clickhouse-static-files-disk-uploader'
+keywords: ['clickhouse-static-files-disk-uploader', 'utility', 'disk', 'uploader']
+description: 'clickhouse-static-files-disk-uploader ユーティリティについて説明します'
+doc_type: 'guide'
+---
+
+指定した ClickHouse テーブルのメタデータを含むデータディレクトリを出力します。このメタデータを使用すると、ディスクを基盤とする読み取り専用データセットを含む ClickHouse テーブルを別のサーバー上に作成できます。
+
+このツールをデータ移行に使用しないでください。代わりに、[`BACKUP` と `RESTORE` コマンド](/ja/concepts/features/backup-restore/overview)を使用してください。
+
+<div id="usage">
+  ## 使い方
+</div>
+
+```bash
+$ clickhouse static-files-disk-uploader [args]
+```
+
+<div id="commands">
+  ## コマンド
+</div>
+
+| コマンド                     | 説明                                                                |
+| ------------------------ | ----------------------------------------------------------------- |
+| `-h`, `--help`           | ヘルプ情報を表示します                                                       |
+| `--metadata-path [path]` | 指定したテーブルのメタデータが格納されているパス                                          |
+| `--test-mode`            | `test` モードを有効にします。このモードでは、指定した URL にテーブルのメタデータを含む PUT リクエストを送信します |
+| `--link`                 | ファイルを出力ディレクトリにコピーする代わりに、シンボリックリンクを作成します                           |
+| `--url [url]`            | `test` モードで使用する Web サーバーの URL                                     |
+| `--output-dir [dir]`     | `non-test` モードでファイルの出力先となるディレクトリ                                  |
+
+<div id="retrieve-metadata-path-for-the-specified-table">
+  ## 指定したテーブルのメタデータパスを取得する
+</div>
+
+`clickhouse-static-files-disk-uploader` を使用するには、対象のテーブルのメタデータパスを取得する必要があります。
+
+1. ターゲットテーブルとデータベースを指定して、次のクエリを実行します。
+
+<br />
+
+```sql
+SELECT data_paths
+  FROM system.tables
+  WHERE name = 'mytable' AND database = 'default';
+```
+
+2. これにより、指定したテーブルのデータディレクトリのパスが返されます:
+
+<br />
+
+```response
+┌─data_paths────────────────────────────────────────────┐
+│ ['./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/'] │
+└───────────────────────────────────────────────────────┘
+```
+
+<div id="output-table-metadata-directory-to-the-local-filesystem">
+  ## テーブルのメタデータディレクトリをローカルファイルシステムに出力する
+</div>
+
+出力先ディレクトリ `output` と指定したメタデータパスを使用して、次のコマンドを実行します。
+
+```bash
+$ clickhouse static-files-disk-uploader --output-dir output --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+成功すると、次のメッセージが表示され、`output` ディレクトリには指定したテーブルのメタデータが格納されます。
+
+```repsonse
+Data path: "/Users/john/store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee", destination path: "output"
+```
+
+<div id="output-table-metadata-directory-to-an-external-url">
+  ## テーブルのメタデータディレクトリを外部URLに出力する
+</div>
+
+この手順は、データディレクトリをローカルファイルシステムに出力する手順とほぼ同じですが、`--test-mode` フラグを追加で指定します。出力先ディレクトリの代わりに、`--url` フラグで対象URLを指定する必要があります。
+
+`test` モードを有効にすると、テーブルのメタデータディレクトリは PUT リクエストで指定したURLにアップロードされます。
+
+```bash
+$ clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+<div id="using-the-table-metadata-directory-to-create-a-clickhouse-table">
+  ## テーブルのメタデータディレクトリを使用して ClickHouse テーブルを作成する
+</div>
+
+テーブルのメタデータディレクトリを取得したら、それを使って別のサーバー上に ClickHouse テーブルを作成できます。
+
+デモについては、[こちらの GitHub リポジトリ](https://github.com/ClickHouse/web-tables-demo)を参照してください。この例では、`web` ディスクを使ってテーブルを作成しています。これにより、そのテーブルを別のサーバー上のデータセットにアタッチできます。

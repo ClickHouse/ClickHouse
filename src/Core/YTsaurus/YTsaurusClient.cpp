@@ -287,7 +287,7 @@ YTsaurusClient::SchemaDescription YTsaurusClient::getTableSchema(const String & 
     }
 
     auto columns_array = schema_json->get("$value").extract<Poco::JSON::Array::Ptr>();
-    std::unordered_map<String, DataTypePtr> yt_columns;
+    UnorderedMapWithMemoryTracking<String, DataTypePtr> yt_columns;
 
     for (const auto& yt_column : *columns_array) {
         const auto & yt_column_json = yt_column.extract<Poco::JSON::Object::Ptr>();

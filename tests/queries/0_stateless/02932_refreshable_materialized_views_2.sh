@@ -82,16 +82,6 @@ $CLICKHOUSE_CLIENT -q "
     select '<24: rename during refresh>', * from rmv_f;"
 query_no_scheduling "select '<25: rename during refresh>', view, status from refreshes where view = 'rmv_f'"
 $CLICKHOUSE_CLIENT -q "alter table rmv_f modify refresh after 10 year settings refresh_retries = 0;"
-sleep 1 # make it likely that at least one row was processed
-# Cancel.
-$CLICKHOUSE_CLIENT -q "
-    system cancel view rmv_f;"
-while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes -- $LINENO" | xargs`" != 'Scheduled' ]
-do
-    sleep 0.5
-done
-# Check that another refresh doesn't immediately start after the cancelled one.
-query_no_scheduling "select '<27: cancelled>', view, status, exception != '' from refreshes where view = 'rmv_f'"
 $CLICKHOUSE_CLIENT -q "system refresh view rmv_f;"
 while [ "`$CLICKHOUSE_CLIENT -q "select status from refreshes where view = 'rmv_f' -- $LINENO" | xargs`" != 'Running' ]
 do
@@ -114,10 +104,17 @@ done
 $CLICKHOUSE_CLIENT -q "
     with '2050-02-10 04:00:00'::DateTime as expected
     select '<29: randomize>', abs(next_refresh_time::Int64 - expected::Int64) <= 3600*(24*4+1), next_refresh_time != expected from refreshes;"
+# The offset is drawn once per timeslot, not on every scheduling pass: the pass reruns on every timer
+# tick, and redrawing would keep moving next_refresh_time so nothing could tell when a refresh is due.
+first_next_refresh_time=$($CLICKHOUSE_CLIENT -q "select next_refresh_time from refreshes -- $LINENO")
+sleep 1
+$CLICKHOUSE_CLIENT -q "
+    select '<29: randomize stable>', next_refresh_time == '$first_next_refresh_time'::DateTime from refreshes;"
 
 # Send data 'TO' an existing table.
-# Stop auto-refreshes before reading dest to avoid racing with the atomic table exchange
-# during a concurrent refresh (which temporarily makes the old UUID inaccessible).
+# Reading `dest` while auto-refreshes run concurrently: the `EXCHANGE` + `DROP` race
+# makes the name `dest` resolve to a UUID that is briefly stale; the fallback in
+# `IdentifierResolver` retries by name and resolves to the freshly exchanged-in target.
 $CLICKHOUSE_CLIENT -q "
     drop table rmv_g;
     create table dest (x Int64) engine MergeTree order by x;

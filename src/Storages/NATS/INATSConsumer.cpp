@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <utility>
 #include <Storages/NATS/INATSConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -25,35 +27,84 @@ INATSConsumer::INATSConsumer(
     , log(log_)
     , stopped(stopped_)
     , queue_name(subscribe_queue_name)
-    , received(queue_size_)
+    , queue_size(queue_size_)
+    , received(std::make_shared<ConcurrentBoundedQueue<MessageData>>(queue_size_))
 {
+}
+
+std::shared_ptr<ConcurrentBoundedQueue<INATSConsumer::MessageData>> INATSConsumer::loadReceived() const
+{
+    std::lock_guard lock(received_mutex);
+    return received;
+}
+
+void INATSConsumer::storeReceived(std::shared_ptr<ConcurrentBoundedQueue<MessageData>> queue)
+{
+    std::lock_guard lock(received_mutex);
+    received = std::move(queue);
 }
 
 bool INATSConsumer::isSubscribed() const
 {
     return !subscriptions.empty();
 }
+
+bool INATSConsumer::hasClosedSubscription() const
+{
+    return std::ranges::any_of(
+        subscriptions, [](const auto & subscription) { return !natsSubscription_IsValid(subscription.get()); });
+}
+
+bool INATSConsumer::hasConnectionReconnected() const
+{
+    return connection->getReconnectCount() != connection_reconnect_count;
+}
+
+bool INATSConsumer::isConnectionConnected() const
+{
+    return connection->isConnected();
+}
+
+void INATSConsumer::subscribe()
+{
+    if (isSubscribed())
+        return;
+
+    if (loadReceived()->isFinished())
+        storeReceived(std::make_shared<ConcurrentBoundedQueue<MessageData>>(queue_size));
+
+    /// Read before subscribing, so that a reconnect racing `subscribeImpl` is still reported.
+    const UInt64 reconnect_count_before_subscribe = connection->getReconnectCount();
+
+    subscribeImpl();
+
+    connection_reconnect_count = reconnect_count_before_subscribe;
+}
+
 void INATSConsumer::unsubscribe()
 {
-    if (stopped)
+    for (auto & subscription : subscriptions)
     {
-        received.finish();
+        /// The client closes a subscription itself when its fetch is terminated, so draining an
+        /// already-closed one is expected rather than a problem.
+        const bool was_closed = !natsSubscription_IsValid(subscription.get());
 
-        for (auto & subscription : subscriptions)
+        auto status = natsSubscription_DrainTimeout(subscription.get(), DRAIN_TIMEOUT_MS);
+        if (status != NATS_OK)
         {
-            auto status = natsSubscription_DrainTimeout(subscription.get(), DRAIN_TIMEOUT_MS);
-            if (status != NATS_OK)
-            {
+            if (was_closed)
+                LOG_DEBUG(log, "A subscription of consumer {} was already closed by the NATS client",
+                    static_cast<void *>(this));
+            else
                 LOG_WARNING(log, "Failed to start draining a subscription of consumer {}: {}",
                     static_cast<void *>(this), natsStatus_GetText(status));
-                continue;
-            }
-
-            status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
-            if (status != NATS_OK)
-                LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
-                    static_cast<void *>(this), natsStatus_GetText(status));
+            continue;
         }
+
+        status = natsSubscription_WaitForDrainCompletion(subscription.get(), DRAIN_TIMEOUT_MS);
+        if (status != NATS_OK)
+            LOG_WARNING(log, "A subscription of consumer {} did not finish draining: {}",
+                static_cast<void *>(this), natsStatus_GetText(status));
     }
 
     subscriptions.clear();
@@ -61,17 +112,121 @@ void INATSConsumer::unsubscribe()
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 
-ReadBufferPtr INATSConsumer::consume()
+void INATSConsumer::finishAndReturnUnprocessed(SkippedMessages skipped_messages_action)
 {
-    if (stopped || !received.tryPop(current))
+    /// Without a subscription there is nothing to return the leftovers through.
+    if (!isSubscribed())
+    {
+        loadReceived()->finish();
+        dropBuffered();
+        return;
+    }
+
+    nackMessages(consumed_messages);
+
+    if (skipped_messages_action == SkippedMessages::Acknowledge)
+        ackMessages(skipped_messages);
+    else
+        nackMessages(skipped_messages);
+
+    /// After `finish` a message the NATS client thread delivers fails to push and `onMsg` returns it.
+    auto queue = loadReceived();
+    queue->finish();
+
+    MessageData buffered;
+    while (queue->tryPop(buffered))
+    {
+        if (buffered.msg)
+            nackMessage(buffered.msg.get());
+    }
+}
+
+void INATSConsumer::dropBuffered()
+{
+    consumed_messages.clear();
+    skipped_messages.clear();
+    auto queue = loadReceived();
+    MessageData dropped;
+    while (queue->tryPop(dropped)) {}
+}
+
+ReadBufferPtr INATSConsumer::consume(std::optional<UInt64> timeout_ms)
+{
+    if (stopped)
         return nullptr;
 
+    auto queue = loadReceived();
+    const bool popped = timeout_ms ? queue->tryPop(current, *timeout_ms) : queue->tryPop(current);
+    if (!popped)
+        return nullptr;
+
+    if (current.msg)
+        consumed_messages.push_back(std::move(current.msg));
+
     return std::make_shared<ReadBufferFromMemory>(current.message);
+}
+
+void INATSConsumer::ackMessages(std::vector<NatsMsgPtr> & messages)
+{
+    for (auto & msg : messages)
+    {
+        auto status = natsMsg_Ack(msg.get(), nullptr);
+        if (status != NATS_OK)
+            LOG_WARNING(log, "Failed to acknowledge a message in consumer {}: {} (server may redeliver it)",
+                static_cast<void *>(this), natsStatus_GetText(status));
+    }
+    messages.clear();
+}
+
+void INATSConsumer::nackMessages(std::vector<NatsMsgPtr> & messages)
+{
+    for (auto & msg : messages)
+        nackMessage(msg.get());
+    messages.clear();
+}
+
+void INATSConsumer::ackConsumed()
+{
+    ackMessages(consumed_messages);
+    ackMessages(skipped_messages);
+}
+
+void INATSConsumer::markLastConsumedSkipped()
+{
+    /// Core NATS messages are not recorded.
+    if (consumed_messages.empty())
+        return;
+
+    skipped_messages.push_back(std::move(consumed_messages.back()));
+    consumed_messages.pop_back();
+}
+
+void INATSConsumer::dropConsumed()
+{
+    consumed_messages.clear();
+    skipped_messages.clear();
+}
+
+void INATSConsumer::returnConsumed()
+{
+    /// The handles are only usable while the subscription they arrived on is alive.
+    if (!isSubscribed())
+    {
+        dropConsumed();
+        return;
+    }
+
+    nackMessages(consumed_messages);
+    nackMessages(skipped_messages);
 }
 
 void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, void * consumer)
 {
     auto * nats_consumer = static_cast<INATSConsumer *>(consumer);
+
+    /// For JetStream, keep the message so it can be acknowledged only after it has been inserted.
+    /// For core NATS there is no ack, so it is destroyed right away.
+    NatsMsgPtr owned_msg(nats_consumer->needsAck() ? msg : nullptr, &natsMsg_Destroy);
 
     try
     {
@@ -84,21 +239,30 @@ void INATSConsumer::onMsg(natsConnection *, natsSubscription *, natsMsg * msg, v
             MessageData data = {
                 .message = message_received,
                 .subject = subject,
+                .msg = std::move(owned_msg),
             };
-            if (!nats_consumer->received.push(std::move(data)))
+            auto queue = nats_consumer->loadReceived();
+            if (!queue->push(std::move(data)))
             {
                 LOG_DEBUG(nats_consumer->log, "Consumer {} is shutting down, dropping a message", static_cast<void *>(nats_consumer));
                 nats_consumer->nackMessage(msg);
             }
         }
+        else if (nats_consumer->needsAck())
+        {
+            /// empty JetStream message: ack so it is not redelivered
+            natsMsg_Ack(msg, nullptr);
+        }
     }
     catch (...)
     {
         tryLogCurrentException(nats_consumer->log, "Could not push to received queue");
-        nats_consumer->nackMessage(msg);
+        if (owned_msg)
+            nats_consumer->nackMessage(owned_msg.get());
     }
 
-    natsMsg_Destroy(msg);
+    if (!nats_consumer->needsAck())
+        natsMsg_Destroy(msg);
 }
 
 void INATSConsumer::nackMessage(natsMsg *)

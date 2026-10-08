@@ -10,6 +10,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -424,8 +425,11 @@ struct CreateRequest : virtual Request
     String data;
     bool is_ephemeral = false;
     bool is_sequential = false;
+    bool is_container = false;
     ACLs acls;
     bool include_stats = false;
+    bool include_ttl = false;
+    int64_t ttl = 0;
 
     /// should it succeed if node already exists
     bool not_exists = false;
@@ -433,8 +437,14 @@ struct CreateRequest : virtual Request
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size() + data.size()
-            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL); }
+    size_t bytesSize() const override
+    {
+        auto base_size = path.size() + data.size()
+            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL);
+        if (include_ttl)
+            base_size += sizeof(ttl);
+        return base_size;
+    }
 };
 
 struct CreateResponse : virtual Response
@@ -556,14 +566,40 @@ enum class ListRequestType : uint8_t
     EPHEMERAL_ONLY
 };
 
+enum class ListOptionsVersion : int32_t
+{
+    V1 = 1,
+};
+
+struct ListOptions
+{
+    ListRequestType filter = ListRequestType::ALL;
+    bool with_stat = false;
+    bool with_data = false;
+    bool recursive = false;
+    uint32_t max_results = 0;
+    bool shuffle = false;
+
+    void validate() const;
+};
+
+ListOptionsVersion requiredListOptionsVersion(const ListOptions & options);
+
 struct ListRequest : virtual Request
 {
     String path;
 
+    /// FILTERED_LIST extension.
+    std::optional<ListRequestType> list_request_type;
+
+    /// LIST_WITH_STAT_AND_DATA extension.
+    std::optional<bool> with_stat;
+    std::optional<bool> with_data;
+
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
 
-    size_t bytesSize() const override { return path.size(); }
+    size_t bytesSize() const override { return path.size() + sizeof(list_request_type) + sizeof(with_stat) + sizeof(with_data); }
 };
 
 struct ListResponse : virtual Response
@@ -585,6 +621,37 @@ struct ListResponse : virtual Response
             size += child_data.size();
         return size;
     }
+};
+
+struct ListWithOptionsRequest : virtual Request
+{
+    String path;
+    ListOptionsVersion options_version = ListOptionsVersion::V1;
+    ListOptions options;
+
+    void addRootPath(const String & root_path) override;
+    String getPath() const override { return path; }
+    size_t bytesSize() const override
+    {
+        return path.size() + sizeof(options_version) + sizeof(options);
+    }
+};
+
+struct ListWithOptionsResponse : virtual Response
+{
+    std::vector<String> names;
+    Stat stat;
+    std::vector<Stat> stats;
+    std::vector<String> data;
+    bool truncated = false;
+
+    /// Decoder context copied from the matching request. It is not serialized.
+    ListOptionsVersion expected_options_version = ListOptionsVersion::V1;
+    bool expected_with_stat = false;
+    bool expected_with_data = false;
+
+    void removeRootPath(const String &) override {}
+    size_t bytesSize() const override;
 };
 
 struct ListRecursiveRequest : virtual ListRequest
@@ -712,6 +779,7 @@ using ReconfigCallback = std::function<void(const ReconfigResponse &)>;
 using MultiCallback = std::function<void(const MultiResponse &)>;
 using GetACLCallback = std::function<void(const GetACLResponse &)>;
 using ListRecursiveCallback = std::function<void(const ListRecursiveResponse &)>;
+using ListWithOptionsCallback = std::function<void(const ListWithOptionsResponse &)>;
 
 /// For watches.
 enum State
@@ -827,6 +895,12 @@ public:
         const String & path,
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) = 0;
+
+    virtual void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) = 0;
 
     virtual void exists(
         const String & path,

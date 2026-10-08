@@ -1,0 +1,91 @@
+---
+slug: /cloud/get-started/cloud/use-cases/data_lake_and_warehouse
+title: 'データウェアハウジング'
+description: 'データレイクの柔軟性とClickHouse Cloudの高い性能を組み合わせて、モダンなデータウェアハウスアーキテクチャを構築します'
+keywords: ['データウェアハウス', 'データレイク', 'レイクハウス', 'Iceberg', 'Delta Lake', 'Hudi', 'Parquet', 'オープンテーブルフォーマット', 'ハイブリッドアーキテクチャ', 'ユースケース']
+sidebarTitle: 'データウェアハウジング'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+現代のデータウェアハウスでは、ストレージとコンピュートはもはや密結合ではありません。代わりに、ストレージ、ガバナンス、クエリ処理を担う、独立しながらも相互に連携するレイヤーによって、ワークフローに適したツールを柔軟に選択できます。
+
+クラウドオブジェクトストレージに オープンテーブルフォーマット と ClickHouse のような高性能クエリエンジンを組み合わせることで、データレイクのオープン性を損なうことなく、ACID トランザクション、スキーマ適用、高速な分析クエリといったデータベース並みの機能を利用できます。この組み合わせにより、高性能と、相互運用性に優れた費用対効果の高いストレージを両立でき、従来の分析ワークロードから最新の AI/ML ワークロードまで支えられます。
+
+<div id="benefits">
+  ## このアーキテクチャで得られるもの
+</div>
+
+オープンなオブジェクトストレージとテーブルフォーマットを、クエリエンジンとしての ClickHouse と組み合わせることで、次のような利点が得られます。
+
+| 利点                  | 説明                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **一貫したテーブル更新**      | テーブル状態へのアトミックな commit により、同時書き込みが発生してもデータの破損や不完全なデータは生じません。これにより、生のデータレイクにおける最大の課題の 1 つを解決できます。                                                             |
+| **スキーマ管理**          | 検証の強制とスキーマ進化の追跡により、スキーマの不整合が原因でデータが使えなくなる「データスワンプ」問題を防げます。                                                                                                  |
+| **クエリパフォーマンス**      | 索引、統計情報、データスキッピングやクラスタリングといったデータレイアウトの最適化により、SQL クエリを専用のデータウェアハウスに匹敵する速度で実行できます。さらに ClickHouse の列指向 engine と組み合わせることで、この特性はオブジェクトストレージに保存されたデータにも当てはまります。   |
+| **ガバナンス**           | カタログとテーブルフォーマットにより、行レベルおよびカラムレベルできめ細かなアクセス制御と監査が可能になり、基本的なデータレイクでは不十分だったセキュリティ制御を補えます。                                                                      |
+| **ストレージとコンピュートの分離** | ストレージとコンピュートは、汎用オブジェクトストレージ上でそれぞれ独立してスケールでき、独自仕様のウェアハウスストレージより大幅に低コストです。こうした分離は最新のクラウドウェアハウスでは一般的ですが、オープンフォーマットであれば、データに合わせて *どの* コンピュートエンジンをスケールさせるかを選べます。 |
+
+<div id="architecture">
+  ## ClickHouseが支えるデータウェアハウスの仕組み
+</div>
+
+データはストリーミングプラットフォームや既存のウェアハウスからオブジェクトストレージを経由してClickHouseに取り込まれ、そこで変換・最適化されたうえで、BI/AIツールに提供されます。
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouseのデータウェアハウジングアーキテクチャ" />
+  </div>
+
+  <ExclusiveGroup name="dw-arch">
+    <AccordionGroup>
+      <Accordion title="データインジェスト" defaultOpen>
+        大量データをロードする場合は、通常、S3やGCSのようなオブジェクトストアを中継先として利用します。ClickHouseは[Parquet](/ja/guides/clickhouse/data-formats/parquet)の高い読み取り性能を備えており、[S3 table engine](/ja/reference/engines/table-engines/integrations/s3)を使って毎秒数億行のデータをロードできます。リアルタイムストリーミングでは、[ClickPipes](/ja/integrations/clickpipes/home)がKafkaやConfluentのようなプラットフォームに直接接続します。
+
+        また、Snowflake、BigQuery、Databricksなどの既存のデータウェアハウスからデータをオブジェクトストレージにエクスポートし、[table engines](/ja/reference/engines/table-engines)経由でClickHouseにロードすることで移行することもできます。
+      </Accordion>
+
+      <Accordion title="クエリ実行">
+        S3やGCSのようなオブジェクトストア上のデータに直接クエリを実行できるほか、[Iceberg](/ja/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/ja/reference/engines/table-engines/integrations/deltalake)、[Hudi](/ja/reference/engines/table-engines/integrations/hudi)などのオープンテーブルフォーマットを使用するデータレイクにも、直接または[AWS Glue Catalog](/ja/guides/use-cases/data-warehousing/glue-catalog)、[Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog)、[Iceberg REST](/ja/guides/use-cases/data-warehousing/rest-catalog)のようなデータカタログ経由でクエリできます。
+
+        ClickHouse Cloudでは、[query cache](/ja/concepts/features/performance/caches/query-cache)、[スパースインデックス](/ja/concepts/features/performance/skip-indexes/skipping-indexes)、[projections](/ja/concepts/features/projections/projections)を標準で利用できるほか、70種類以上のファイルフォーマットや、日付、配列、JSON、geo、さらに大規模な近似集計に対応するSQL関数も利用できます。
+      </Accordion>
+
+      <Accordion title="データ変換">
+        ClickHouseの[materialized views](/ja/concepts/features/materialized-views)は、変換処理を自動化します。ソーステーブルに新しいデータが挿入されるとトリガーされるため、専用のパイプラインを構築しなくても、到着したデータをその場で抽出・集計・加工できます。
+
+        より複雑なモデリングには、ClickHouseの[dbt integration](/ja/integrations/connectors/data-ingestion/etl-tools/dbt)を使って、変換をバージョン管理されたSQLモデルとして定義できます。
+      </Accordion>
+
+      <Accordion title="インテグレーション">
+        ClickHouseには、[Tableau](/ja/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse)や[Looker](/ja/integrations/connectors/data-visualization/looker-and-clickhouse)などのBIツール向けネイティブコネクタがあります。ネイティブコネクタがないツールでも、[MySQL wire protocol](/ja/concepts/features/interfaces/mysql)経由で接続できます。[MCPサーバー](/ja/guides/use-cases/ai-ml/MCP)はClickHouseをLLMに接続して対話型分析を可能にし、柔軟な[RBAC](/ja/concepts/features/security/access-rights)制御によって読み取り専用テーブルを安全に公開できます。
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>
+
+<div id="hybrid-architecture-the-best-of-both-worlds">
+  ## ハイブリッドアーキテクチャ: 両方の利点を活かす
+</div>
+
+データレイクをクエリするだけでなく、超低レイテンシが求められるユースケース — リアルタイムダッシュボード、運用分析、インタラクティブなアプリケーションなど — に向けて、パフォーマンスクリティカルなデータを ClickHouse ネイティブの [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ストレージに取り込むこともできます。
+
+これにより、階層化されたデータ戦略を採用できます。高頻度でアクセスされるホットデータは、サブ秒のクエリ応答を実現する ClickHouse の最適化されたストレージに配置し、完全なデータ履歴はデータレイクに保持したままクエリ可能です。また、ClickHouse の materialized view を使用して、データレイク内のデータを継続的に変換・集約し、最適化されたテーブルへ自動的に反映させることもできます。これにより、2 つの層を自動的に橋渡しできます。
+
+データをどこに置くかは、技術的な制約ではなく、パフォーマンス要件に基づいて決められます。
+
+<Tip>
+  **ClickHouse Academy**
+
+  さらに詳しく知りたい方は、無料の [ClickHouse を使ったデータウェアハウジング](https://clickhouse.com/learn/data-warehousing) コースをご受講ください。
+</Tip>

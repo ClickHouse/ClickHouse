@@ -1,0 +1,92 @@
+---
+title: Как создать словарь ClickHouse со строковыми ключами и значениями
+description: Узнайте, как создать словарь ClickHouse со строковыми ключами и значениями, используя таблицу MergeTree в качестве источника, и ознакомьтесь с примерами настройки и использования.
+date: 2023-07-10
+tags: ['Моделирование данных']
+keywords: ['Словарь', 'Строковые ключи', 'Строковые значения']
+---
+
+<div id="question">
+  ## Вопрос
+</div>
+
+Как создать словарь ClickHouse со строковыми ключами и строковыми значениями на основе таблицы MergeTree
+
+<div id="answer">
+  ## Ответ
+</div>
+
+* Создайте таблицу-источник для словаря
+
+```
+CREATE TABLE db1.table1_dict_source
+(
+  id UInt32,
+  email String,
+  name String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+* Вставить строки
+
+```
+INSERT INTO db1.table1_dict_source
+(id, email, name)
+VALUES
+(1, 'me@domain.com', 'me'),
+(2, 'you@domain.com', 'you');
+```
+
+* Создайте  словарь, в котором и ключ, и значение имеют тип String
+
+```
+CREATE DICTIONARY db1.table1_dict
+(
+    email String,
+    name String
+)
+PRIMARY KEY email
+SOURCE(
+CLICKHOUSE(
+TABLE 'table1_dict_source'
+USER 'default'
+PASSWORD 'ClickHouse123!'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 0 MAX 1000);
+```
+
+* Проверьте словарь
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_dict;
+
+SELECT *
+FROM db1.table1_dict
+
+Query id: 098396ce-11dd-4c71-a0e1-40723dd67ddc
+
+┌─email──────────┬─name─┐
+│ me@domain.com  │ me   │
+│ you@domain.com │ you  │
+└────────────────┴──────┘
+
+2 rows in set. Elapsed: 0.001 sec. 
+```
+
+Вы также можете использовать функцию dictGet, чтобы получать из словаря значения, например:
+
+```
+SELECT dictGet('db1.table1_dict', 'name', 'me@domain.com');
+```
+
+Ответ:
+
+```
+┌─dictGet('db1.table1_dict', 'name', 'me@domain.com')─┐
+│ me                                                  │
+└─────────────────────────────────────────────────────┘
+```
+
+Подробнее — [https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions)

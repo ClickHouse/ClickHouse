@@ -19,11 +19,12 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Libdeflate.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/formatReadable.h>
-#include <Common/HashTable/HashSet.h>
+#include <bit>
 #include <DataTypes/DataTypeEnum.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeCustom.h>
@@ -557,6 +558,59 @@ struct ConverterNumberAsFixedString
     size_t fixedStringSize() { return sizeof(T); }
 };
 
+/// Serialize a wide integer as a Parquet fixed-length `DECIMAL`. The extra leading byte preserves
+/// the full unsigned range and sign-extends signed values. Building the result byte by byte makes
+/// the conversion independent of host endianness.
+template <typename T>
+struct ConverterWideIntegerAsDecimal
+{
+    static constexpr size_t encoded_size = sizeof(T) + 1;
+    static constexpr size_t num_limbs = sizeof(T) / sizeof(UInt64);
+    static_assert(sizeof(T) % sizeof(UInt64) == 0);
+    using Statistics = StatisticsFixedStringCopy<encoded_size, /*SIGNED=*/ true>;
+
+    const ColumnVector<T> & column;
+    PODArray<uint8_t> data_buf;
+    PODArray<parquet::FixedLenByteArray> ptr_buf;
+
+    explicit ConverterWideIntegerAsDecimal(const ColumnPtr & c) : column(assert_cast<const ColumnVector<T> &>(*c)) {}
+
+    const parquet::FixedLenByteArray * getBatch(size_t offset, size_t count)
+    {
+        data_buf.resize(count * encoded_size);
+        ptr_buf.resize(count);
+        for (size_t i = 0; i < count; ++i)
+        {
+            uint8_t * out = data_buf.data() + i * encoded_size;
+            const T & source = column.getData()[offset + i];
+            if constexpr (std::numeric_limits<T>::is_signed)
+                out[0] = source < 0 ? 0xff : 0;
+            else
+                out[0] = 0;
+
+            /// `wide::integer` stores limbs in native order. Visit them from least to most
+            /// significant and emit each limb from least to most significant byte into the output
+            /// buffer backwards, producing big-endian bytes without repeatedly shifting `T`.
+            for (size_t limb_idx = 0; limb_idx < num_limbs; ++limb_idx)
+            {
+                const size_t native_limb_idx = std::endian::native == std::endian::little
+                    ? limb_idx
+                    : num_limbs - limb_idx - 1;
+                const UInt64 limb = source.items[native_limb_idx];
+                for (size_t byte_idx = 0; byte_idx < sizeof(UInt64); ++byte_idx)
+                {
+                    const size_t output_idx = encoded_size - 1 - limb_idx * sizeof(UInt64) - byte_idx;
+                    out[output_idx] = static_cast<uint8_t>(limb >> (byte_idx * 8));
+                }
+            }
+            ptr_buf[i].ptr = out;
+        }
+        return ptr_buf.data();
+    }
+
+    size_t fixedStringSize() { return encoded_size; }
+};
+
 struct ConverterJSON
 {
     using Statistics = StatisticsStringCopy;
@@ -630,6 +684,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
+#if USE_LIBDEFLATE
+    /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
+    /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
+    /// range (e.g. level 0 = store) keep using the streaming path below.
+    if (method == CompressionMethod::Gzip && level >= 1 && level <= 12)
+    {
+        scratch.resize(Libdeflate::compressBound(method, level, source.size()));
+        size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
+        scratch.resize(compressed_size);
+        return scratch;
+    }
+#endif
+
     switch (method)
     {
         case CompressionMethod::None:
@@ -685,6 +752,9 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 method,
                 level,
                 /*zstd_window_log*/ 0,
+                /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
+                /// this dispatch never sees it, so the snappy mode here is irrelevant.
+                SnappyMode::Basic,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());
@@ -726,6 +796,38 @@ void addToEncodingsUsed(ColumnChunkWriteState & s, parq::Encoding::type e)
         s.column_chunk.meta_data.encodings.push_back(e);
 }
 
+/// Maintain PageEncodingStats as we write pages. Readers use it to tell whether a column chunk is
+/// fully dictionary-encoded (so the dictionary holds the complete set of values), which enables
+/// dictionary-based row group filtering.
+void addToEncodingStats(ColumnChunkWriteState & s, const parq::PageHeader & header)
+{
+    parq::Encoding::type encoding{};
+    if (header.__isset.dictionary_page_header)
+        encoding = header.dictionary_page_header.encoding;
+    else if (header.__isset.data_page_header)
+        encoding = header.data_page_header.encoding;
+    else if (header.__isset.data_page_header_v2)
+        encoding = header.data_page_header_v2.encoding;
+    else
+        return;
+
+    auto & stats = s.column_chunk.meta_data.encoding_stats;
+    for (parq::PageEncodingStats & st : stats)
+    {
+        if (st.page_type == header.type && st.encoding == encoding)
+        {
+            st.__set_count(st.count + 1);
+            return;
+        }
+    }
+    parq::PageEncodingStats st;
+    st.__set_page_type(header.type);
+    st.__set_encoding(encoding);
+    st.__set_count(1);
+    stats.push_back(std::move(st));
+    s.column_chunk.meta_data.__isset.encoding_stats = true;
+}
+
 void writePage(const parq::PageHeader & header, const PODArray<char> & compressed, ColumnChunkWriteState & s, bool add_to_offset_index, size_t first_row_index, WriteBuffer & out)
 {
     size_t header_size = serializeThriftStruct(header, out);
@@ -750,46 +852,97 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
 
     s.column_chunk.meta_data.total_uncompressed_size += header.uncompressed_page_size + header_size;
     s.column_chunk.meta_data.total_compressed_size += compressed_page_size;
+
+    addToEncodingStats(s, header);
 }
 
-void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
+/// Folds the oversized bloom filter built by `writeColumnImpl` down to the smallest size that still meets the requested
+/// false positive probability, and fills in its header. See the comment at the construction of the filter in
+/// `writeColumnImpl` for why it starts oversized.
+void foldBloomFilter(ColumnChunkIndexes & indexes, BloomFilterData && unfolded_data, const WriteOptions & options)
 {
     /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+    const size_t num_blocks = unfolded_data.size() / 8;
 
-    if (hashes.empty())
+    if (num_blocks == 0)
         return;
 
-    static constexpr UInt32 salt[8] = {
-        0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+    /// The number of blocks is a power of two by construction (see `writeColumnImpl`), so the filter can be halved
+    /// exactly `countr_zero(num_blocks)` times and every fold below leaves a power of two.
+    chassert(std::has_single_bit(num_blocks));
 
-    /// There appear to be undocumented requirements:
-    ///  * number of blocks must be a power of two,
-    ///  * bloom filter size must be at most 128 MiB.
-    /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
-    /// requires this.
-    double requested_num_blocks = static_cast<double>(hashes.size()) * options.bloom_filter_bits_per_value / 256;
-    size_t num_blocks = 1;
-    while (static_cast<double>(num_blocks) < requested_num_blocks)
+    /// The false positive probability (fpp) that the bloom filter parameters ask for. A split block bloom filter sets
+    /// k = 8 bits per inserted value (one in each of the 8 words of its block), and the filter is sized to spend
+    /// c = `bits_per_value` bits per value, so its expected fpp is given by the classic bloom filter approximation
+    ///     f = (1 - e^(-k / c))^k
+    /// (the probability that a bit is still unset after inserting n values into m bits is about e^(-k * n / m), and an
+    /// absent value passes only if all k bits it checks are set), see http://tfk.mit.edu/pdf/bloom.pdf, section 2,
+    /// and https://parquet.apache.org/docs/file-format/bloomfilter/#sizing-an-sbbf.
+    const double fpp = std::pow(1 - std::exp(-8 / options.bloom_filter_bits_per_value), 8);
+
+    /// The fpp of the concrete filter follows from the fraction of set bits (the fill rate): a membership check tests
+    /// 8 bits, so an absent value passes with probability about fill_rate^8.
+    size_t total_set_bits = 0;
+    for (size_t i = 0; i < num_blocks * 8; ++i)
+        total_set_bits += std::popcount(unfolded_data[i]);
+    if (total_set_bits == 0)
+        return;
+
+    const double fill_rate = static_cast<double>(total_set_bits) / (static_cast<double>(num_blocks) * 256);
+
+    indexes.bloom_filter_data = std::move(unfolded_data);
+    BloomFilterData & data = indexes.bloom_filter_data;
+
+    /// Folding merges neighboring blocks by OR-ing them, which halves the filter and yields exactly the filter that
+    /// would have been built with half the blocks (see the merge loop below for why). Every fold increases the fill
+    /// rate and with it the fpp: OR-ing two blocks with fill rate p leaves a bit unset with probability (1 - p)^2, so
+    /// the fill rate of the merged block is 1 - (1 - p)^2. Fold as often as the fpp estimated that way stays within
+    /// the requested one. A filter sized for all values of the column chunk is at or below the requested fpp before
+    /// the first fold, so at least the unfolded filter is always kept.
+    const int max_folds = std::countr_zero(num_blocks);
+    double one_minus_fill_rate = 1.0 - fill_rate;
+    UInt32 folds = 0;
+    for (int i = 0; i < max_folds; ++i)
     {
-        if (num_blocks >= 4 * 1024 * 1024)
-            return;
-        num_blocks *= 2;
+        one_minus_fill_rate = one_minus_fill_rate * one_minus_fill_rate;
+        const double folded_fill_rate = 1.0 - one_minus_fill_rate;
+        if (std::pow(folded_fill_rate, 8) > fpp)
+            break;
+        ++folds;
     }
-    PODArray<UInt32> & data = indexes.bloom_filter_data;
-    data.reserve_exact(num_blocks * 8);
-    data.resize_fill(num_blocks * 8);
-    for (const auto & cell : hashes)
+
+    if (folds > 0)
     {
-        size_t h = cell.key;
-        size_t block_idx = ((h >> 32) * num_blocks) >> 32;
-        chassert(block_idx < num_blocks);
-        UInt32 x = UInt32(h); // overflow to take the lower 32 bits
-        for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+        /// Merge each group of 2^folds consecutive blocks into one block. A value goes to block
+        /// `((h >> 32) * num_blocks) >> 32` (see the hashing in `writeColumnImpl`), i.e. the block index is taken from
+        /// the top bits of the hash, so a filter with half the blocks puts a value into block `i / 2` where this filter
+        /// put it into block `i`: blocks `2 * i` and `2 * i + 1` together hold exactly the values that block `i` of the
+        /// smaller filter would hold, and OR-ing them gives that block bit for bit. The same holds for 2^folds
+        /// consecutive blocks after several halvings. The reader derives the block index from the number of blocks in
+        /// the file and thus finds every value where the folded filter put it.
+        /// The merge is done in place: group `i` lands in block `i`, which is at or before the first block of the
+        /// group, so no block that is still to be read is overwritten.
+        const size_t group_size = size_t(1) << folds;
+        const size_t new_num_blocks = num_blocks >> folds;
+        for (size_t i = 0; i < new_num_blocks; ++i)
         {
-            UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
-            size_t bit_idx = y >> 27;
-            data[block_idx * 8 + word_idx] |= 1u << bit_idx;
+            UInt32 * dst = &data[i * 8];
+            const UInt32 * src = &data[i * group_size * 8];
+            /// For i = 0 the destination is the first block of the group itself, so there is nothing to move
+            /// (and `memcpy` is not allowed on identical or overlapping regions).
+            if (dst != src)
+                memcpy(dst, src, 8 * sizeof(UInt32));
+            for (size_t j = 1; j < group_size; ++j)
+            {
+                const UInt32 * block = src + j * 8;
+                for (size_t w = 0; w < 8; ++w)
+                    dst[w] |= block[w];
+            }
         }
+        /// `resize` only moves the logical end; also release the capacity of the unfolded filter, because the folded
+        /// filters of completed row groups stay in memory until `flushBloomFilters`.
+        data.resize(new_num_blocks * 8);
+        data.shrink_to_fit();
     }
 
     /// Fill out the paperwork.
@@ -839,12 +992,16 @@ void writeColumnImpl(
     }
 
     s.column_chunk.meta_data.__isset.size_statistics = true;
-    if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-        s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
-    if (s.max_rep > 0)
-        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
-    if (s.max_def > 0)
-        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+    auto reset_size_statistics = [&]
+    {
+        if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+            s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
+        if (s.max_rep > 0)
+            s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+        if (s.max_def > 0)
+            s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
+    };
+    reset_size_statistics();
 
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
@@ -868,12 +1025,56 @@ void writeColumnImpl(
     PODArray<char> encoded;
     PODArray<char> compressed_maybe;
 
-    /// Hash set to deduplicate the values before calculating bloom filter size.
+    /// Bloom filter of this column chunk, if requested.
+    ///
+    /// Why the filter starts sized for all values and is folded afterwards: a bloom filter has to be sized for the
+    /// number of distinct values it will hold, which is not known when the column chunk is started. The writer used
+    /// to find it by deduplicating the hashes of all values in a hash set first, which costs a hash set the size of
+    /// the column chunk and, for unlucky value distributions, degenerates into an excessive number of collisions
+    /// (https://github.com/ClickHouse/ClickHouse/issues/105295). Instead, the filter is sized under the assumption
+    /// that all values are distinct, the largest size it can ever need, so it meets the requested false positive
+    /// probability for any data. Once all values are hashed into it, its fill rate reveals how many distinct values
+    /// it actually received, and `foldBloomFilter` halves it as long as the requested false positive probability holds.
+    /// Folding a split block bloom filter yields exactly the filter that would have been built with fewer blocks,
+    /// so nothing is lost compared to knowing the right size upfront, and the cost is a larger temporary buffer
+    /// instead of a hash set. The same approach was adopted by arrow-rs: https://github.com/apache/arrow-rs/pull/9628
+    ///
     /// Possible future optimization: if using dictionary encoding, take already-deduplicated values
     /// from the dictionary instead.
-    std::optional<HashSet<UInt64, TrivialHash>> hashes_for_bloom_filter;
+    std::optional<BloomFilterData> bloom_data;
     if (options.write_bloom_filter)
-        hashes_for_bloom_filter.emplace(); // allocates memory for initial size
+    {
+        /// There appear to be undocumented requirements:
+        ///  * number of blocks must be a power of two,
+        ///  * bloom filter size must be at most 128 MiB.
+        /// At least arrow's parquet::BlockSplitBloomFilter::Init (which we use to read bloom filters)
+        /// requires this. A column chunk that would need a bigger filter gets none.
+        /// Only the entries at the maximum definition level are hashed into the filter, so size it for the number of
+        /// leaf values in the primitive column, not for `num_values`, which also counts the null and empty-array
+        /// placeholders of a repeated or nullable leaf (a sparse `Array(Nullable(T))` may have hundreds of
+        /// placeholders per value).
+        const double requested_num_blocks
+            = static_cast<double>(s.primitive_column->size()) * options.bloom_filter_bits_per_value / 256;
+        size_t num_blocks = 1;
+        bool too_many_blocks = false;
+        while (static_cast<double>(num_blocks) < requested_num_blocks)
+        {
+            if (num_blocks >= 4 * 1024 * 1024)
+            {
+                too_many_blocks = true;
+                break;
+            }
+            num_blocks *= 2;
+        }
+        if (!too_many_blocks)
+        {
+            bloom_data.emplace();
+            bloom_data->reserve_exact(num_blocks * 8);
+            /// `BloomFilterData` zeroes freshly allocated memory in the allocator, so plain `resize` is
+            /// enough here; `resize_fill` would `memset` the whole buffer on top of that.
+            bloom_data->resize(num_blocks * 8);
+        }
+    }
 
     /// Start of current page.
     size_t def_offset = 0; // index in def and rep
@@ -1056,30 +1257,47 @@ void writeColumnImpl(
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);
 
             if (options.write_page_statistics || options.write_column_chunk_statistics)
-/// Workaround for clang bug: https://github.com/llvm/llvm-project/issues/63630
-#ifdef MEMORY_SANITIZER
-#pragma clang loop vectorize(disable)
-#endif
                 for (size_t i = 0; i < data_count; ++i)
                     page_statistics.add(converted[i]);
 
-            if (hashes_for_bloom_filter.has_value())
+            if (bloom_data.has_value())
             {
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+                /// Hash the value into its block of the split block bloom filter: 8 bits per value, one in each
+                /// of the 8 words of the block, at positions derived from the lower 32 bits of the hash and the salt.
+                /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/
+                auto & bd = *bloom_data;
+                const size_t num_blocks = bd.size() / 8;
+                static constexpr UInt32 salt[8] = {
+                    0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
+
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
-                        h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
                     else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-                        h = XXH64(converted[i].ptr, converted[i].len, seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
                     else
                     {
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
-                        h = XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
+                        h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
-                    hashes_for_bloom_filter->insert(h);
+                    const size_t block_idx = ((h >> 32) * num_blocks) >> 32;
+                    chassert(block_idx < num_blocks);
+                    const UInt32 x = UInt32(h); // overflow to take the lower 32 bits
+                    for (size_t word_idx = 0; word_idx < 8; ++word_idx)
+                    {
+                        const UInt32 y = x * salt[word_idx]; // overflow to take the lower 32 bits
+                        const size_t bit_idx = y >> 27;
+                        bd[block_idx * 8 + word_idx] |= 1u << bit_idx;
+                    }
                 }
+#pragma clang diagnostic pop
             }
 
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
@@ -1112,7 +1330,11 @@ void writeColumnImpl(
                 use_dictionary = false;
 
                 s.indexes = {};
-                /// (no need to clear hashes_for_bloom_filter)
+                /// Everything the discarded pass accumulated is about to be accumulated again.
+                /// (no need to clear hashes_for_bloom_filter: the same values hash to the same set)
+                reset_size_statistics();
+                page_statistics.clear();
+                total_statistics.clear();
 
 #ifndef NDEBUG
                 /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we
@@ -1161,8 +1383,8 @@ void writeColumnImpl(
         addToEncodingsUsed(s, encoding);
     }
 
-    if (hashes_for_bloom_filter.has_value())
-        makeBloomFilter(*hashes_for_bloom_filter, s.indexes, options);
+    if (bloom_data.has_value())
+        foldBloomFilter(s.indexes, *std::move(bloom_data), options);
 }
 
 }
@@ -1174,6 +1396,8 @@ void writeColumnChunkBody(
 
     /// We'll be updating these as we go.
     s.column_chunk.meta_data.__set_encodings({});
+    s.column_chunk.meta_data.encoding_stats.clear();
+    s.column_chunk.meta_data.__isset.encoding_stats = false;
     s.column_chunk.meta_data.__set_total_compressed_size(0);
     s.column_chunk.meta_data.__set_total_uncompressed_size(0);
     s.column_chunk.meta_data.__set_data_page_offset(-1);
@@ -1278,14 +1502,22 @@ void writeColumnChunkBody(
             break;
 
         #define F(source_type) \
-            writeColumnImpl<parquet::FLBAType>( \
-                s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
+            if (options.output_wide_integer_as_decimal) \
+                writeColumnImpl<parquet::FLBAType>( \
+                    s, options, out, ConverterWideIntegerAsDecimal<source_type>(s.primitive_column)); \
+            else \
+                writeColumnImpl<parquet::FLBAType>( \
+                    s, options, out, ConverterNumberAsFixedString<source_type>(s.primitive_column))
         case TypeIndex::UInt128: F(UInt128); break;
         case TypeIndex::UInt256: F(UInt256); break;
         case TypeIndex::Int128:  F(Int128); break;
         case TypeIndex::Int256:  F(Int256); break;
-        case TypeIndex::IPv6:    F(IPv6); break;
         #undef F
+
+        case TypeIndex::IPv6:
+            writeColumnImpl<parquet::FLBAType>(
+                s, options, out, ConverterNumberAsFixedString<IPv6>(s.primitive_column));
+            break;
 
         case TypeIndex::UUID:
             writeColumnImpl<parquet::FLBAType>(s,
@@ -1483,6 +1715,7 @@ void writeFileFooter(FileWriteState & file,
         {
             if (type->getCustomName() &&
                 (type->getCustomName()->getName() == WKBPointTransform::name ||
+                type->getCustomName()->getName() == WKBMultiPointTransform::name ||
                 type->getCustomName()->getName() == WKBLineStringTransform::name ||
                 type->getCustomName()->getName() == WKBPolygonTransform::name ||
                 type->getCustomName()->getName() == WKBMultiLineStringTransform::name ||

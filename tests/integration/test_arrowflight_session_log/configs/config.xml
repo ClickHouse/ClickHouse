@@ -1,0 +1,9 @@
+<clickhouse>
+    <arrowflight_port>8888</arrowflight_port>
+
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </session_log>
+</clickhouse>

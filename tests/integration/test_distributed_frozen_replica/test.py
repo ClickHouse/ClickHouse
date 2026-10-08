@@ -129,7 +129,13 @@ def test_distributed_query(
     # Stop fetches on node2 so that it will be considered stale and node1 is tried first
     node2.query("SYSTEM STOP FETCHES")
     try:
-        node1.query("DELETE FROM local_table WHERE i = 5")
+        # lightweight_deletes_sync defaults to 2 (wait on all replicas); node2 is
+        # deliberately stalled above, so the default would block until node2 applies
+        # the mutation. Wait only on node1 (=1) to keep node2 stale, as intended.
+        node1.query(
+            "DELETE FROM local_table WHERE i = 5",
+            settings={"lightweight_deletes_sync": 1},
+        )
         node1.query("INSERT INTO local_table VALUES (5, now())")
         time.sleep(10)
         assert (
@@ -188,7 +194,13 @@ def test_distributed_query_network_timeout(
     # Stop fetches on node2 so that it will be considered stale and node1 is tried first
     node2.query("SYSTEM STOP FETCHES")
     try:
-        node1.query("DELETE FROM local_table WHERE i = 5")
+        # lightweight_deletes_sync defaults to 2 (wait on all replicas); node2 is
+        # deliberately stalled above, so the default would block until node2 applies
+        # the mutation. Wait only on node1 (=1) to keep node2 stale, as intended.
+        node1.query(
+            "DELETE FROM local_table WHERE i = 5",
+            settings={"lightweight_deletes_sync": 1},
+        )
         node1.query("INSERT INTO local_table VALUES (5, now())")
         time.sleep(10)
         assert (

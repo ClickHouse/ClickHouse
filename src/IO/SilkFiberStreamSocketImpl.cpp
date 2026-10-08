@@ -116,9 +116,13 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
             "Silk::FiberStreamSocketImpl::sendBytes: non-zero flags ({}) not supported",
             flags);
 
+    chassert(getBlocking());
+
     int total = 0;
     const char * ptr = static_cast<const char *>(buffer);
-    Poco::Timespan timeout = getSendTimeout();
+    Poco::Timespan remaining = getSendTimeout();
+    const bool has_timeout = remaining.totalMicroseconds() > 0;
+
     while (total < length)
     {
         throttleSend(static_cast<size_t>(length - total), getBlocking());
@@ -129,11 +133,15 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
         silk::FiberScheduler::write(sockfd(), &iov, 1, 0, &bytes_written, &future);
 
         int r = 0;
-        if (timeout.totalMicroseconds() > 0)
+        if (has_timeout)
         {
+            if (remaining.totalMicroseconds() <= 0)
+                throw Poco::TimeoutException("Send timed out", peerAddress().toString());
+
+            const Poco::Timestamp started;
             r = silk::FiberFuture::waitWithTimeout(
                 &future,
-                static_cast<uint64_t>(timeout.totalMicroseconds()) * 1000);
+                static_cast<uint64_t>(remaining.totalMicroseconds()) * 1000);
             if (r == ETIMEDOUT)
             {
                 future.cancel();
@@ -141,6 +149,9 @@ int FiberStreamSocketImpl::sendBytes(const void * buffer, int length, int flags)
                 if (r == ECANCELED)
                     throw Poco::TimeoutException("Send timed out", peerAddress().toString());
             }
+
+            const Poco::Timespan elapsed = Poco::Timestamp() - started;
+            remaining = (elapsed < remaining) ? (remaining - elapsed) : Poco::Timespan(0);
         }
         else
         {
@@ -199,6 +210,16 @@ int FiberStreamSocketImpl::receiveBytes(void * buffer, int length, int flags)
     useRecvThrottlerBudget(static_cast<int>(bytes_read));
 
     return static_cast<int>(bytes_read);
+}
+
+void FiberStreamSocketImpl::setBlocking(bool flag)
+{
+    if (!flag)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Non-blocking mode is not supported for Silk fibers aware sockets.");
+
+    Poco::Net::StreamSocketImpl::setBlocking(flag);
 }
 
 }

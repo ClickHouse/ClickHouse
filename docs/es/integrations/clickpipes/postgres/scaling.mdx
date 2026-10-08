@@ -1,0 +1,105 @@
+---
+title: 'Escalado de DB ClickPipes mediante OpenAPI'
+description: 'Cómo escalar Postgres ClickPipes mediante OpenAPI'
+slug: /integrations/clickpipes/postgres/scaling
+sidebarTitle: 'Escalado'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'CDC', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Warning>
+  **La mayoría de los usuarios no necesitarán esta API**
+
+  La configuración predeterminada de DB ClickPipes está diseñada para gestionar la mayoría de las cargas de trabajo sin necesidad de ajustes. Si cree que su carga de trabajo requiere escalado, abra un [caso de soporte](https://clickhouse.com/support/program) y le orientaremos sobre la configuración óptima para su caso de uso.
+</Warning>
+
+La API de escalado puede ser útil para:
+
+* Cargas iniciales grandes (más de 4 TB)
+* Migrar una cantidad moderada de datos lo más rápido posible
+* Admitir más de 8 ClickPipes de CDC en el mismo servicio
+
+Antes de intentar escalar, tenga en cuenta lo siguiente:
+
+* Asegurarse de que la base de datos de origen tenga suficiente capacidad disponible
+* Ajustar primero el [paralelismo y el particionado de la carga inicial](/es/integrations/clickpipes/postgres/parallel-initial-load) al crear un ClickPipe
+* Comprobar si hay [transacciones de larga duración](/es/integrations/clickpipes/postgres/controlling-sync#transactions) en el origen que puedan estar provocando retrasos en la CDC
+
+**Aumentar la escala incrementará proporcionalmente sus costes de cómputo de ClickPipes.** Si está aumentando la escala solo para las cargas iniciales, es importante reducirla después de que finalice el snapshot para evitar cargos inesperados. Para obtener más información sobre los precios, consulte [Precios de Postgres CDC](/es/products/cloud/reference/billing/clickpipes/index).
+
+<div id="prerequisites">
+  ## Requisitos previos para este proceso
+</div>
+
+Antes de empezar, necesitará:
+
+1. Una [API key de ClickHouse](/es/products/cloud/features/admin-features/api/openapi) con permisos de Admin en el servicio de ClickHouse Cloud de destino.
+2. Un DB ClickPipe (Postgres, MySQL o MongoDB) que se haya aprovisionado en el servicio en algún momento. La infraestructura de CDC se crea junto con el primer ClickPipe, y los endpoints de escalado quedan disponibles a partir de ese momento.
+
+<div id="cdc-scaling-steps">
+  ## Pasos para escalar DB ClickPipes
+</div>
+
+Configure las siguientes variables de entorno antes de ejecutar cualquier comando:
+
+```bash
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_ID=<Your ClickHouse service ID>
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+```
+
+Obtenga la configuración actual de escalado (opcional):
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# example result:
+{
+  "result": {
+    "replicaCpuMillicores": 2000,
+    "replicaMemoryGb": 8
+  },
+  "requestId": "04310d9e-1126-4c03-9b05-2aa884dbecb7",
+  "status": 200
+}
+```
+
+Configure el escalado deseado. Las configuraciones admitidas incluyen entre 1 y 32 núcleos de CPU, con la memoria (GB) establecida en 4× el número de núcleos:
+
+```bash
+cat <<EOF | tee cdc_scaling.json
+{
+  "replicaCpuMillicores": 32000,
+  "replicaMemoryGb": 128
+}
+EOF
+
+curl --silent --user $KEY_ID:$KEY_SECRET \
+-X PATCH -H "Content-Type: application/json" \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+-d @cdc_scaling.json | jq
+```
+
+Espera a que la configuración se aplique (normalmente, 3-5 minutos). Una vez finalizado el escalado, el endpoint GET reflejará los nuevos valores:
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# example result:
+{
+  "result": {
+    "replicaCpuMillicores": 32000,
+    "replicaMemoryGb": 128
+  },
+  "requestId": "5a76d642-d29f-45af-a857-8c4d4b947bf0",
+  "status": 200
+}
+```

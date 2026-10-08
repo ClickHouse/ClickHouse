@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 
+#include <Core/ProtocolDefines.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 
@@ -74,6 +75,16 @@ struct ParallelReadRequest
     /// Identifies the data stream for coordinator dispatch (e.g. table name, projection name).
     String stream_id;
 
+    /// Parallel-replicas protocol version of the replica that produced this request. For network
+    /// requests it is set at deserialization time on the initiator side (see
+    /// `Connection::receiveParallelReadRequest`); for in-process requests from the initiator's
+    /// own local plan it stays at the default `DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION` (this
+    /// build always speaks the latest version with itself). NOT serialized over the wire. The
+    /// coordinator uses it to decide how to degrade gracefully for requesters that pre-date a
+    /// given feature (e.g. an old follower that sent a bare-table stream_id where the new
+    /// coordinator only knows `#split_i` streams).
+    UInt64 replica_protocol_version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
+
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
     String describe() const;
     static ParallelReadRequest deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
@@ -132,13 +143,38 @@ struct InitialAllRangesAnnouncement
     /// Identifies the data stream for coordinator dispatch (e.g. table name, projection name).
     String stream_id;
 
+    /// See the matching field on `ParallelReadRequest`. Populated at deserialization time on the
+    /// initiator side, NOT serialized. Defaults to the latest version for in-process construction.
+    UInt64 replica_protocol_version = DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION;
+
     void serialize(WriteBuffer & out, UInt64 initiator_pr_protocol_version, UInt64 initiator_tcp_protocol_version) const;
     String describe();
     static InitialAllRangesAnnouncement deserialize(ReadBuffer & i, UInt64 replica_pr_protocol_version);
 };
 
+/// InitialAllRangesAnnouncementResponse is sent by the initiator back to the announcing replica.
+/// It carries the authoritative set of parts the coordinator has registered for the given stream
+/// (as announced by the snapshot replica during planning). Followers use it to size their per-part
+/// state to exactly the parts the stream owns, avoiding phantom consumers and tightening RPC
+/// payloads. An empty `parts` list means the stream does not exist on the coordinator
+/// (e.g. follower over-announced more splits than the initiator created); the follower's pool
+/// for that stream should immediately mark itself finished.
+///
+/// The callback wraps the response in `std::optional`: `std::nullopt` means the initiator is on
+/// an older protocol version and did not send a response. An engaged optional means the response
+/// was received, even if `parts` is empty.
+struct InitialAllRangesAnnouncementResponse
+{
+    RangesInDataPartsDescription parts;
+    String stream_id;
 
-using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
+    void serialize(WriteBuffer & out, UInt64 replica_pr_protocol_version, UInt64 replica_tcp_protocol_version) const;
+    String describe() const;
+    static InitialAllRangesAnnouncementResponse deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
+};
+
+
+using MergeTreeAllRangesCallback = std::function<std::optional<InitialAllRangesAnnouncementResponse>(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 }

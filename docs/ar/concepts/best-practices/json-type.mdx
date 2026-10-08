@@ -1,0 +1,315 @@
+---
+slug: /best-practices/use-json-where-appropriate
+sidebarTitle: 'استخدام JSON'
+title: 'استخدم JSON عند الاقتضاء'
+description: 'صفحة تشرح متى يُستخدم JSON'
+keywords: ['JSON']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+import WhenToUseJson from '/snippets/ar/_when-to-use-json.mdx';
+
+يقدّم ClickHouse الآن نوع عمود JSON أصليًا، وهو مصمَّم للتعامل مع البيانات شبه المنظَّمة والديناميكية. ومن المهم توضيح أن **هذا نوع عمود وليس تنسيق بيانات**—فيمكنك إدراج JSON في ClickHouse كسلسلة نصية أو عبر التنسيقات المدعومة مثل [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)، لكن هذا لا يعني أنك تستخدم نوع عمود JSON. ولا ينبغي استخدام نوع JSON إلا عندما يكون هيكل بياناتك ديناميكيًا، لا لمجرد أنك تخزّن بيانات بتنسيق JSON.
+
+<WhenToUseJson />
+
+<div id="considerations-and-tips-for-using-json">
+  ## اعتبارات ونصائح لاستخدام JSON
+</div>
+
+يتيح نوع JSON تخزينًا عموديًا فعّالًا عبر تسطيح المسارات إلى أعمدة فرعية. لكن المرونة تتطلب أيضًا قدرًا من الانضباط. ولاستخدامه بفعالية:
+
+* **حدِّد أنواع المسارات** باستخدام [تلميحات في تعريف العمود](/ar/reference/data-types/newjson) لتحديد أنواع الأعمدة الفرعية المعروفة، وتجنّب استدلال الأنواع غير الضروري.
+* **تخطَّ بعض المسارات** إذا لم تكن بحاجة إلى قيمها، باستخدام [SKIP و SKIP REGEXP](/ar/reference/data-types/newjson) لتقليل التخزين وتحسين الأداء.
+* **تجنّب ضبط [`max_dynamic_paths`](/ar/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) على قيمة مرتفعة جدًا**—إذ تؤدي القيم الكبيرة إلى زيادة استهلاك الموارد وتقليل الكفاءة. وكقاعدة عامة، اجعله أقل من 10,000.
+
+<Info>
+  **تلميحات الأنواع**
+
+  توفّر تلميحات الأنواع أكثر من مجرد وسيلة لتجنّب استدلال الأنواع غير الضروري، إذ إنها تلغي بالكامل طبقة عدم المباشرة في التخزين والمعالجة. فمسارات JSON التي تتضمن تلميحات أنواع تُخزَّن دائمًا بالطريقة نفسها التي تُخزَّن بها الأعمدة التقليدية، من دون الحاجة إلى [**أعمدة التمييز**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) أو التحليل الديناميكي وقت الاستعلام. وهذا يعني أنه عند تحديد تلميحات الأنواع بشكل جيد، تحقق حقول JSON المتداخلة الأداء والكفاءة نفسيهما كما لو أنها صُممت منذ البداية كحقول من المستوى الأعلى. ونتيجةً لذلك، بالنسبة إلى مجموعات البيانات المتسقة في معظمها مع الاستفادة في الوقت نفسه من مرونة JSON، توفّر تلميحات الأنواع وسيلة عملية للحفاظ على الأداء من دون الحاجة إلى إعادة هيكلة المخطط أو مسار إدخال البيانات.
+</Info>
+
+<div id="advanced-features">
+  ## الميزات المتقدمة
+</div>
+
+* **يمكن استخدام أعمدة JSON في المفاتيح الأساسية** مثل أي أعمدة أخرى. ولا يمكن تحديد خوارزميات الضغط لعمود فرعي.
+* وهي تدعم الفحص الداخلي عبر دوال مثل [`JSONAllPathsWithTypes()` و `JSONDynamicPaths()`](/ar/reference/data-types/newjson#introspection-functions).
+* يمكنك قراءة الكائنات الفرعية المتداخلة باستخدام الصياغة `.^`.
+* قد تختلف بنية الاستعلام عن SQL القياسية، وقد تتطلب تحويل أنواع خاصًا أو عوامل خاصة للحقول المتداخلة.
+
+للحصول على إرشادات إضافية، راجع[ توثيق JSON في ClickHouse](/ar/reference/data-types/newjson) أو اطّلع على منشور مدونتنا[ نوع بيانات JSON جديد وقوي في ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+تأمل نموذج JSON التالي، الذي يمثّل صفًا من [مجموعة بيانات Python PyPI](https://clickpy.clickhouse.com/):
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+لنفترض أن هذا المخطّط ثابت، وأن الأنواع فيه يمكن تحديدها بوضوح. وحتى إذا كانت البيانات بتنسيق NDJSON ‏(صف JSON واحد في كل سطر)، فلا حاجة إلى استخدام نوع JSON لمثل هذا المخطّط. يكفي تعريف المخطّط باستخدام الأنواع التقليدية.
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+وأدرِج صفوف JSON:
+
+```sql
+INSERT INTO pypi FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"ES","project":"clickhouse-connect","type":"bdist_wheel","installer":"pip","python_minor":"3.9","system":"Linux","version":"0.3.0"}
+```
+
+لنأخذ [مجموعة بيانات arXiv](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download) التي تضم 2.5 مليون ورقة علمية. يمثّل كل صف في مجموعة البيانات هذه، والموزعة بصيغة NDJSON، ورقةً أكاديمية منشورة. ويظهر أدناه صفٌّ نموذجي:
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+رغم أن JSON هنا معقّد ويحتوي على بُنى متداخلة، فإنه يمكن التنبؤ به. لن يتغير عدد الحقول ولا أنواعها. ومع أنه يمكننا استخدام النوع JSON في هذا المثال، يمكننا أيضًا ببساطة تعريف البنية بشكل صريح باستخدام النوعين [Tuples](/ar/reference/data-types/tuple) و[Nested](/ar/reference/data-types/nested-data-structures/index):
+
+```sql
+CREATE TABLE arxiv
+(
+  `id` String,
+  `submitter` String,
+  `authors` String,
+  `title` String,
+  `comments` String,
+  `journal-ref` String,
+  `doi` String,
+  `report-no` String,
+  `categories` String,
+  `license` String,
+  `abstract` String,
+  `versions` Array(Tuple(created String, version String)),
+  `update_date` Date,
+  `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+مرة أخرى، يمكننا إدراج البيانات بتنسيق JSON:
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}
+```
+
+لنفترض أنه تمت إضافة عمود آخر باسم `tags`. إذا كانت هذه مجرد قائمة من السلاسل النصية، فيمكننا تمثيلها على أنها `Array(String)`، لكن لنفترض أنه يمكنك إضافة هياكل وسوم عشوائية بأنواع مختلطة (لاحظ أن `score` قد يكون سلسلة نصية أو عددًا صحيحًا). مستند JSON المعدَّل لدينا:
+
+```sql
+{
+ "id": "2101.11408",
+ "submitter": "Daniel Lemire",
+ "authors": "Daniel Lemire",
+ "title": "Number Parsing at a Gigabyte per Second",
+ "comments": "Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/",
+ "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+ "doi": "10.1002/spe.2984",
+ "report-no": null,
+ "categories": "cs.DS cs.MS",
+ "license": "http://creativecommons.org/licenses/by/4.0/",
+ "abstract": "With disks and networks providing gigabytes per second ....\n",
+ "versions": [
+ {
+   "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+   "version": "v1"
+ },
+ {
+   "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+   "version": "v2"
+ }
+ ],
+ "update_date": "2022-11-07",
+ "authors_parsed": [
+ [
+   "Lemire",
+   "Daniel",
+   ""
+ ]
+ ],
+ "tags": {
+   "tag_1": {
+     "name": "ClickHouse user",
+     "score": "A+",
+     "comment": "A good read, applicable to ClickHouse"
+   },
+   "28_03_2025": {
+     "name": "professor X",
+     "score": 10,
+     "comment": "Didn't learn much",
+     "updates": [
+       {
+         "name": "professor X",
+         "comment": "Wolverine found more interesting"
+       }
+     ]
+   }
+ }
+}
+```
+
+في هذه الحالة، يمكننا نمذجة مستندات arXiv إما بالكامل بصيغة JSON أو ببساطة بإضافة عمود `tags` من نوع JSON. نوفّر كلا المثالين أدناه:
+
+```sql
+CREATE TABLE arxiv
+(
+  `doc` JSON(update_date Date)
+)
+ENGINE = MergeTree
+ORDER BY doc.update_date
+```
+
+<Note>
+  نقدّم تلميحًا للنوع للعمود `update_date` في تعريف JSON، لأننا نستخدمه في الترتيب/المفتاح الأساسي. وهذا يساعد ClickHouse على معرفة أن هذا العمود لن تكون قيمته NULL، ويضمن أيضًا معرفة أي عمود فرعي `update_date` يجب استخدامه (إذ قد يوجد أكثر من عمود فرعي واحد لكل نوع، ولولا ذلك لكان الأمر ملتبسًا).
+</Note>
+
+يمكننا إدراج في هذا الجدول وعرض المخطط المستنتج لاحقًا باستخدام الدالة [`JSONAllPathsWithTypes`](/ar/reference/functions/regular-functions/json-functions#JSONAllPathsWithTypes) وoutput format [`PrettyJSONEachRow`](/ar/reference/formats/JSON/PrettyJSONEachRow):
+
+```sql
+INSERT INTO arxiv FORMAT JSONAsObject 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+```sql
+SELECT JSONAllPathsWithTypes(doc)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(doc)": {
+    "abstract": "String",
+    "authors": "String",
+    "authors_parsed": "Array(Array(Nullable(String)))",
+    "categories": "String",
+    "comments": "String",
+    "doi": "String",
+    "id": "String",
+    "journal-ref": "String",
+    "license": "String",
+    "submitter": "String",
+    "tags.28_03_2025.comment": "String",
+    "tags.28_03_2025.name": "String",
+    "tags.28_03_2025.score": "Int64",
+    "tags.28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tags.tag_1.comment": "String",
+    "tags.tag_1.name": "String",
+    "tags.tag_1.score": "String",
+    "title": "String",
+    "update_date": "Date",
+    "versions": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))"
+  }
+}
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+بدلًا من ذلك، يمكننا تمثيل ذلك باستخدام المخطط السابق وعمود JSON باسم `tags`. ويُفضَّل هذا النهج عمومًا لأنه يقلّل من مقدار الاستدلال الذي يتطلبه ClickHouse:
+
+```sql
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String)),
+    `tags` JSON()
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+```sql
+INSERT INTO arxiv FORMAT JSONEachRow 
+{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and\n  https://github.com/lemire/simple_fastfloat_benchmark/","journal-ref":"Software: Practice and Experience 51 (8), 2021","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"With disks and networks providing gigabytes per second ....\n","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]],"tags":{"tag_1":{"name":"ClickHouse user","score":"A+","comment":"A good read, applicable to ClickHouse"},"28_03_2025":{"name":"professor X","score":10,"comment":"Didn't learn much","updates":[{"name":"professor X","comment":"Wolverine found more interesting"}]}}}
+```
+
+يمكننا الآن استنتاج أنواع البيانات للعمود الفرعي `tags`.
+
+```sql
+SELECT JSONAllPathsWithTypes(tags)
+FROM arxiv
+FORMAT PrettyJSONEachRow
+
+{
+  "JSONAllPathsWithTypes(tags)": {
+    "28_03_2025.comment": "String",
+    "28_03_2025.name": "String",
+    "28_03_2025.score": "Int64",
+    "28_03_2025.updates": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+    "tag_1.comment": "String",
+    "tag_1.name": "String",
+    "tag_1.score": "String"
+  }
+}
+```
+
+```response
+1 row in set. Elapsed: 0.002 sec.
+```

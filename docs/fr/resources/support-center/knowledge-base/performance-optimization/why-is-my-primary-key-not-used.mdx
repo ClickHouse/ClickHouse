@@ -1,0 +1,253 @@
+---
+title: Pourquoi ma clé primaire n’est-elle pas utilisée ? Comment puis-je le vérifier ?
+description: "Explique une raison fréquente pour laquelle une clé primaire n’est pas utilisée pour le tri et comment le vérifier"
+date: 2024-12-12
+tags: ['Performances et optimisations']
+keywords: ['Clé primaire']
+---
+
+<div id="checking-your-primary-key">
+  ## Vérifier votre clé primaire
+</div>
+
+Il peut arriver que les utilisateurs constatent qu’une requête est plus lente que prévu alors qu’ils pensent trier ou filtrer sur une clé primaire. Dans cet article, nous montrons comment vérifier que la clé est bien utilisée et présentons les raisons courantes pour lesquelles ce n’est pas le cas.
+
+<div id="create-table">
+  ## Créer une table
+</div>
+
+Considérons la table simple suivante :
+
+```sql
+CREATE TABLE logs
+(
+    `code` LowCardinality(String),
+    `timestamp` DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY (code, toUnixTimestamp(timestamp))
+```
+
+Notez que notre clé de tri comprend `toUnixTimestamp(timestamp)` en deuxième position.
+
+<div id="populate-data">
+  ## Insérer des données
+</div>
+
+Insérez 100 M de lignes dans cette table :
+
+```sql
+INSERT INTO logs SELECT
+ ['200', '404', '502', '403'][toInt32(randBinomial(4, 0.1)) + 1] AS code,
+    now() + toIntervalMinute(number) AS timestamp
+FROM numbers(100000000)
+
+0 rows in set. Elapsed: 15.845 sec. Processed 100.00 million rows, 800.00 MB (6.31 million rows/s., 50.49 MB/s.)
+
+SELECT count()
+FROM logs
+
+┌───count()─┐
+│ 100000000 │ -- 100.00 million
+└───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="basic-filtering">
+  ## Filtrage de base
+</div>
+
+Si nous filtrons par code, nous pouvons voir dans le résultat le nombre de lignes analysées : `49.15 thousand`. Notez qu&#39;il s&#39;agit d&#39;un sous-ensemble du total de 100 M de lignes.
+
+```sql
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌────────c─┐
+│ 65607542 │ -- 65.61 million
+└──────────┘
+
+1 row in set. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
+Peak memory usage: 92.70 KiB.
+```
+
+De plus, nous pouvons vérifier que l’index est utilisé avec la clause `EXPLAIN indexes=1` :
+
+```sql
+EXPLAIN indexes = 1
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   AggregatingProjection                                            │
+│     Expression (Before GROUP BY)                                   │
+│       Filter ((WHERE + Change column names to column identifiers)) │
+│         ReadFromMergeTree (default.logs)                           │
+│         Indexes:                                                   │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               code                                                 │
+│             Condition: (code in ['200', '200'])                    │
+│             Parts: 3/3 │
+│             Granules: 8012/12209 │
+│     ReadFromPreparedSource (_minmax_count_projection)              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Remarquez que le nombre de granules analysés, `8012`, ne représente qu&#39;une fraction du total, `12209`. La section mise en évidence ci-dessous confirme l&#39;utilisation du code de clé primaire.
+
+```bash
+PrimaryKey
+  Keys: 
+   code 
+```
+
+Les granules constituent l’unité de traitement des données dans ClickHouse, chacune contenant généralement 8 192 lignes. Pour en savoir plus sur les granules et sur la façon dont elles sont filtrées, nous vous recommandons de consulter [ce guide](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#mark-files-are-used-for-locating-granules).
+
+<Note>
+  Le filtrage sur des clés situées plus loin dans une clé de tri n’est pas aussi efficace que le filtrage sur celles qui apparaissent plus tôt dans l’uplet. Pour comprendre pourquoi, consultez [cette section](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
+</Note>
+
+<div id="multi-key-filtering">
+  ## Filtrage par plusieurs clés
+</div>
+
+Supposons que nous filtrions par `code` et `timestamp` :
+
+```sql
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─count()─┐
+│  689742 │
+└─────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 712.70 thousand rows, 6.41 MB (88.92 million rows/s., 799.27 MB/s.)
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                                                                                         │
+│   Aggregating                                                                                                                                                     │
+│     Expression (Before GROUP BY)                                                                                                                                  │
+│       Expression                                                                                                                                                  │
+│         ReadFromMergeTree (default.logs)                                                                                                                          │
+│         Indexes:                                                                                                                                                  │
+│           PrimaryKey                                                                                                                                              │
+│             Keys:                                                                                                                                                 │
+│               code                                                                                                                                                │
+│               toUnixTimestamp(timestamp)                                                                                                                          │
+│             Condition: and((toUnixTimestamp(timestamp) in (-Inf, 1767225600]), and((toUnixTimestamp(timestamp) in [1735689600, +Inf)), (code in ['200', '200']))) │
+│             Parts: 3/3 │
+│             Granules: 87/12209 │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.002 sec.
+
+```
+
+Dans ce cas, les deux clés de tri sont utilisées pour filtrer les lignes, de sorte qu’il suffit de ne lire que `87` granules.
+
+<div id="using-keys-in-sorting">
+  ## Utilisation des clés pour le tri
+</div>
+
+ClickHouse peut également exploiter les clés de tri pour effectuer le tri plus efficacement. Plus précisément,
+
+Lorsque le paramètre [optimize&#95;read&#95;in&#95;order](/fr/reference/statements/select/order-by#optimization-of-data-reading) est activé (par défaut), le serveur ClickHouse utilise l&#39;index de la table et lit les données dans l&#39;ordre de la clé ORDER BY. Cela permet d&#39;éviter de lire toutes les données lorsqu&#39;une clause LIMIT est spécifiée. Ainsi, les queries sur de gros volumes de données avec de petites limites sont traitées plus rapidement. Voir [ici](/fr/reference/statements/select/order-by#optimization-of-data-reading) et [ici](/fr/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order#what-about-optimize_read_in_order) pour plus de détails.
+
+Cela nécessite toutefois que les clés utilisées soient alignées.
+
+Par exemple, prenons la requête suivante :
+
+```sql
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─code─┬───────────────timestamp─┐
+│ 200 │ 2025-01-01 00:00:01.000 │
+│ 200 │ 2025-01-01 00:00:45.000 │
+│ 200 │ 2025-01-01 00:01:01.000 │
+│ 200 │ 2025-01-01 00:01:45.000 │
+│ 200 │ 2025-01-01 00:02:01.000 │
+│ 200 │ 2025-01-01 00:03:01.000 │
+│ 200 │ 2025-01-01 00:03:45.000 │
+│ 200 │ 2025-01-01 00:04:01.000 │
+│ 200 │ 2025-01-01 00:05:45.000 │
+│ 200 │ 2025-01-01 00:06:01.000 │
+└──────┴─────────────────────────
+
+10 rows in set. Elapsed: 0.009 sec. Processed 712.70 thousand rows, 6.41 MB (80.13 million rows/s., 720.27 MB/s.)
+Peak memory usage: 125.50 KiB.
+```
+
+Nous pouvons confirmer ici que l’optimisation n’a pas été utilisée en recourant à `EXPLAIN pipeline` :
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─explain───────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                  │
+│ ExpressionTransform                                                           │
+│   (Limit)                                                                     │
+│   Limit │
+│     (Sorting)                                                                 │
+│     MergingSortedTransform 12 → 1 │
+│       MergeSortingTransform × 12 │
+│         LimitsCheckingTransform × 12 │
+│           PartialSortingTransform × 12 │
+│             (Expression)                                                      │
+│             ExpressionTransform × 12 │
+│               (Expression)                                                    │
+│               ExpressionTransform × 12 │
+│                 (ReadFromMergeTree)                                           │
+│                 MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 12 0 → 1 │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+15 rows in set. Elapsed: 0.004 sec.
+```
+
+Ici, la ligne `MergeTreeSelect(pool: ReadPool, algorithm: Thread)` n’indique pas l’utilisation de l’optimisation, mais plutôt une lecture standard. Cela s’explique par le fait que la clé de tri de notre table utilise `toUnixTimestamp(Timestamp)` **et NON** `timestamp`.  La correction de ce décalage résout le problème :
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY toUnixTimestamp(timestamp) ASC
+LIMIT 10
+
+┌─explain──────────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                     │
+│ ExpressionTransform                                                              │
+│   (Limit)                                                                        │
+│   Limit │
+│     (Sorting)                                                                    │
+│     MergingSortedTransform 3 → 1 │
+│       BufferChunks × 3 │
+│         (Expression)                                                             │
+│         ExpressionTransform × 3 │
+│           (Expression)                                                           │
+│           ExpressionTransform × 3 │
+│             (ReadFromMergeTree)                                                  │
+│             MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 3 0 → 1 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.003 sec.
+```

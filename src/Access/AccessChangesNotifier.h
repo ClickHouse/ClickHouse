@@ -4,8 +4,8 @@
 #include <base/scope_guard.h>
 #include <list>
 #include <mutex>
-#include <queue>
 #include <unordered_map>
+#include <vector>
 
 
 namespace DB
@@ -18,11 +18,24 @@ public:
     AccessChangesNotifier();
     ~AccessChangesNotifier();
 
-    using OnChangedHandler
-        = std::function<void(const UUID & /* id */, const AccessEntityPtr & /* new or changed entity, null if removed */)>;
+    /// A single access entity change. `entity` is the new or changed entity, or null if the entity was removed.
+    struct Change
+    {
+        UUID id;
+        AccessEntityPtr entity;
+        AccessEntityType type{};
+    };
 
-    /// Subscribes for all changes.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
+    /// A handler is called once per delivered batch with the changes of that batch that match the subscription.
+    /// sendNotifications drains the current queue into a batch, delivers it, and repeats until the queue is empty.
+    /// A refresh that touches many entities therefore arrives as a single call, and handler-enqueued changes are
+    /// also delivered before sendNotifications returns (as additional batches).
+    using OnChangedHandler = std::function<void(const std::vector<Change> & changes)>;
+
+    /// Subscribes for all changes of entities of a given type.
+    /// A by-type handler is called on every sendNotifications(), even when no entity of that type changed
+    /// (with an empty `changes`), so a recomputation that threw (and left its work pending) is retried on
+    /// the next call without waiting for a fresh access change; it must therefore be cheap when idle.
     scope_guard subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler);
 
     template <typename EntityClassT>
@@ -32,7 +45,7 @@ public:
     }
 
     /// Subscribes for changes of a specific entry.
-    /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
+    /// A by-id handler is called only when its entity actually changed in the batch.
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler);
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler);
 
@@ -60,13 +73,7 @@ private:
     /// shared_ptr is here for safety because AccessChangesNotifier can be destroyed before all subscriptions are removed.
     std::shared_ptr<Handlers> handlers;
 
-    struct Event
-    {
-        UUID id;
-        AccessEntityPtr entity;
-        AccessEntityType type{};
-    };
-    std::queue<Event> queue;
+    std::vector<Change> queue;
     std::mutex queue_mutex;
     std::mutex sending_notifications;
 };

@@ -1,0 +1,36 @@
+---
+description: 'При выполнении запросов ClickHouse использует различные кэши.'
+sidebarTitle: 'Кэши'
+slug: /operations/caches
+title: 'Типы кэшей'
+keywords: ['кэш']
+doc_type: 'reference'
+---
+
+При выполнении запросов ClickHouse использует различные кэши, чтобы ускорить их
+и сократить количество операций чтения с диска и записи на диск.
+
+Основные типы кэшей:
+
+* `mark_cache` — кэш [меток](/ru/resources/develop-contribute/introduction/architecture#merge-tree), используемых движками таблиц семейства [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
+* `uncompressed_cache` — кэш несжатых данных, используемых движками таблиц семейства [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
+* Кэш страниц операционной системы (косвенно используется для файлов с фактическими данными).
+
+Есть и ряд дополнительных кэшей:
+
+* DNS-кэш.
+* Кэш [Regexp](/ru/reference/formats/Regexp).
+* Кэш скомпилированных выражений.
+* Кэш [индекса векторного сходства](/ru/reference/engines/table-engines/mergetree-family/annindexes).
+* Кэш [текстового индекса](/ru/reference/engines/table-engines/mergetree-family/textindexes#caching).
+* Кэш схем [формата Avro](/ru/reference/formats/Avro/Avro).
+* Кэш данных [Dictionaries](/ru/reference/statements/create/dictionary).
+* Кэш автоопределения схемы.
+* [Файловый кэш](/ru/concepts/features/configuration/server-config/storing-data) для S3, Azure, Local и других дисков.
+* [Кэш страниц в пространстве пользователя](/ru/concepts/features/performance/caches/userspace-page-cache)
+* [Кэш запросов](/ru/concepts/features/performance/caches/query-cache).
+* [Кэш условий запроса](/ru/concepts/features/performance/caches/query-condition-cache).
+* Кэш схем форматов.
+
+Если вам нужно очистить один из кэшей — для настройки производительности, устранения неполадок или обеспечения согласованности данных, —
+вы можете использовать оператор [`SYSTEM CLEAR ... CACHE`](/ru/reference/statements/system).

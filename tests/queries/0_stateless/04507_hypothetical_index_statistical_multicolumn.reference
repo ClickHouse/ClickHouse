@@ -1,0 +1,8 @@
+--- statistical: filter on index column only ---
+  status:       applicable
+  source:           statistical
+  empirical_status: disabled
+--- statistical: filter touches non-index column, bails to applicability_only ---
+  status:       applicable
+  source:           applicability_only
+  empirical_status: disabled

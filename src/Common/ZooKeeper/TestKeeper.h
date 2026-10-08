@@ -69,6 +69,12 @@ public:
         uint32_t get_children_recursive_nodes_limit,
         ListRecursiveCallback callback) override;
 
+    void listWithOptions(
+        const String & path,
+        const ListOptions & options,
+        ListWithOptionsCallback callback,
+        WatchCallbackPtrOrEventPtr watch) override;
+
     void exists(
         const String & path,
         ExistsCallback callback,
@@ -127,6 +133,8 @@ public:
         ACLs acls;
         bool is_ephemeral = false;
         bool is_sequental = false;
+        bool is_ttl = false;
+        int64_t ttl = 0;
         Stat stat{};
         int32_t seq_num = 0;
     };
@@ -157,11 +165,15 @@ private:
     Watches watches;
     Watches list_watches; /// Watches for 'list' request (watches on children).
 
+    int64_t last_ttl_cleanup_ms = 0;
+
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
     RequestsQueue requests_queue{1};
 
     void pushRequest(RequestInfo && request);
     void exprireRequest(RequestInfo && request);
+
+    void clearExpiredTTLNodes();
 
     ThreadFromGlobalPool processing_thread;
 

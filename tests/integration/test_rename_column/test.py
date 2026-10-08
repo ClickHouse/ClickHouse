@@ -130,6 +130,14 @@ def drop_distributed_table(node, table_name):
     time.sleep(1)
 
 
+def sync_distributed_table(node, nodes_to_sync, table_name):
+    # The spool must drain before a replica has anything to fetch, so the order matters.
+    # Any replica can serve a shard leg under load_balancing=RANDOM, so all are synced.
+    node.query("SYSTEM FLUSH DISTRIBUTED {}".format(table_name))
+    for node_to_sync in nodes_to_sync:
+        node_to_sync.query("SYSTEM SYNC REPLICA {}_replicated".format(table_name))
+
+
 def insert(
     node,
     table_name,
@@ -141,6 +149,7 @@ def insert(
     with_many_parts=False,
     offset=0,
     with_time_column=False,
+    async_insert=False,
 ):
     if col_names is None:
         col_names = ["num", "num2"]
@@ -149,36 +158,32 @@ def insert(
             query = ["SET max_partitions_per_insert_block = 10000000"]
             if with_many_parts:
                 query.append("SET max_insert_block_size = 256")
+            col0 = col_names[0]
+            col1 = col_names[1]
             if with_time_column:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk}) ORDER BY ALL".format(
-                        table_name=table_name,
-                        chunk=chunk,
-                        col0=col_names[0],
-                        col1=col_names[1],
-                    )
+                    f"INSERT INTO {table_name} ({col0}, {col1}, time)"
+                    f" SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time"
+                    f" FROM numbers_mt({chunk}) ORDER BY ALL"
+                    f" SETTINGS async_insert={int(async_insert)}"
                 )
             elif slow:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL SETTINGS function_sleep_max_microseconds_per_block = 0".format(
-                        table_name=table_name,
-                        chunk=chunk,
-                        col0=col_names[0],
-                        col1=col_names[1],
-                    )
+                    f"INSERT INTO {table_name} ({col0}, {col1})"
+                    f" SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1}"
+                    f" FROM numbers_mt({chunk}) ORDER BY ALL"
+                    f" SETTINGS function_sleep_max_microseconds_per_block = 0,"
+                    f" async_insert={int(async_insert)}"
                 )
             else:
                 query.append(
-                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL".format(
-                        table_name=table_name,
-                        chunk=chunk,
-                        col0=col_names[0],
-                        col1=col_names[1],
-                        offset=str(offset),
-                    )
+                    f"INSERT INTO {table_name} ({col0},{col1})"
+                    f" SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1}"
+                    f" FROM numbers_mt({chunk}) ORDER BY ALL"
+                    f" SETTINGS async_insert={int(async_insert)}"
                 )
             node.query(";\n".join(query))
-        except QueryRuntimeException as ex:
+        except QueryRuntimeException:
             if not ignore_exception:
                 raise
 
@@ -217,7 +222,7 @@ def select(
                     ):
                         continue
                     assert r == expected_result
-            except QueryRuntimeException as ex:
+            except QueryRuntimeException:
                 if not ignore_exception:
                     raise
             break
@@ -267,6 +272,37 @@ def rename_column_on_cluster(
 
         if i >= iterations:
             break
+
+
+def _num2_converged(nodes, table_name):
+    return all(
+        node.query(
+            "SELECT count() FROM system.columns "
+            "WHERE database = 'default' AND table IN ('{t}', '{t}_replicated') "
+            "AND name = 'num2'".format(t=table_name)
+        ).strip()
+        == "2"
+        for node in nodes
+    )
+
+
+def wait_for_rename_to_num2(nodes, table_name, attempts=12, poll_seconds=5):
+    # Best-effort cleanup renames + async ON CLUSTER replication can leave the
+    # column as foo2/foo3 on some replicas. Re-drive the idempotent rename-back
+    # until num2 is present on every node's Distributed and _replicated tables,
+    # so the strict queries below do not race schema convergence (UNKNOWN_IDENTIFIER).
+    tables = [table_name, "%s_replicated" % table_name]
+    for _ in range(attempts):
+        if _num2_converged(nodes, table_name):
+            return
+        for old_name in ("foo2", "foo3"):
+            for table in tables:
+                rename_column_on_cluster(nodes[0], table, old_name, "num2", 1, True)
+        time.sleep(poll_seconds)
+    if not _num2_converged(nodes, table_name):
+        raise Exception(
+            "columns did not converge to num2 for {} on all nodes".format(table_name)
+        )
 
 
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
@@ -591,6 +627,72 @@ def test_rename_with_parallel_slow_insert(started_cluster):
         drop_table(nodes, table_name)
 
 
+def test_rename_with_async_insert_select(started_cluster):
+    """RENAME COLUMN must not be blocked by a running local INSERT ... SELECT.
+
+    The destination table's lockForShare is released before the pipeline runs, on both
+    the synchronous fallback and the async queue route; see the comment above that
+    acquisition in InterpreterInsertQuery.cpp.
+
+    This test does not cover the self reference lock ordering hazard documented next to
+    that same acquisition.
+    """
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
+    table_name = "test_rename_with_async_insert_select"
+    drop_table(nodes, table_name)
+    try:
+        create_table(nodes, table_name)
+
+        rename_start = None
+        rename_end = None
+        insert_end = None
+
+        def timed_rename():
+            nonlocal rename_start, rename_end
+            rename_start = time.time()
+            rename_column(node1, table_name, "num2", "foo2")
+            rename_end = time.time()
+
+        def timed_insert():
+            nonlocal insert_end
+            # The rename can proceed immediately regardless of async_insert, per the
+            # docstring above: this query's destination lockForShare is already released by
+            # the time the SELECT runs. The flush may fail with Code 16 if the rename beat
+            # it to the column; that is expected async insert behaviour.
+            insert(
+                node1, table_name, 10000, ["num", "num2"],
+                1,
+                True,   # ignore_exception — flush may legitimately fail after rename
+                True,   # slow — SELECT sleeps ~10 s so the rename has a clear window
+                async_insert=True,
+            )
+            insert_end = time.time()
+
+        p = Pool(2)
+        insert_task = p.apply_async(timed_insert)
+        time.sleep(0.5)  # let the SELECT start before firing the rename
+        rename_task = p.apply_async(timed_rename)
+
+        insert_task.get(timeout=60)
+        rename_task.get(timeout=10)
+
+        # The rename must have completed well before the insert finished,
+        # demonstrating it was not blocked by the running SELECT.
+        assert rename_end is not None and insert_end is not None
+        assert rename_end < insert_end, (
+            f"rename finished at {rename_end:.2f} but insert finished at {insert_end:.2f}: "
+            "rename was blocked by the async INSERT ... SELECT"
+        )
+
+        # Restore the original column name and verify the table is still readable.
+        rename_column(node1, table_name, "foo2", "num2")
+        select(node1, table_name, "num2")
+    finally:
+        drop_table(nodes, table_name)
+
+
 def test_rename_with_parallel_ttl_move(started_cluster):
     if node1.is_built_with_sanitizer():
         pytest.skip("Consume tons of memory with sanitizer")
@@ -732,11 +834,13 @@ def test_rename_distributed(started_cluster):
     try:
         create_distributed_table(node1, table_name)
         insert(node1, table_name, 1000)
+        sync_distributed_table(node1, nodes, table_name)
 
         rename_column_on_cluster(node1, table_name, "num2", "foo2")
         rename_column_on_cluster(node1, "%s_replicated" % table_name, "num2", "foo2")
 
         insert(node1, table_name, 1000, col_names=["num", "foo2"])
+        sync_distributed_table(node1, nodes, table_name)
 
         select(node1, table_name, "foo2", "1998\n", poll=30)
     finally:
@@ -809,14 +913,7 @@ def test_rename_distributed_parallel_insert_and_select(started_cluster):
         for task in tasks:
             task.get(timeout=240)
 
-        rename_column_on_cluster(node1, table_name, "foo2", "num2", 1, True)
-        rename_column_on_cluster(
-            node1, "%s_replicated" % table_name, "foo2", "num2", 1, True
-        )
-        rename_column_on_cluster(node1, table_name, "foo3", "num2", 1, True)
-        rename_column_on_cluster(
-            node1, "%s_replicated" % table_name, "foo3", "num2", 1, True
-        )
+        wait_for_rename_to_num2(nodes, table_name)
 
         insert(node1, table_name, 1000, col_names=["num", "num2"])
         select(node1, table_name, "num2")

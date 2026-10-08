@@ -9,8 +9,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Base container name
-base_container="cont-$(echo "${CLICKHOUSE_TEST_UNIQUE_NAME}" | tr _ -)"
+# Base container name. Azure caps container names at 64 chars and a per-config suffix is appended
+# below, so the full ${CLICKHOUSE_TEST_UNIQUE_NAME} does not fit. Shorten it without losing
+# uniqueness: a readable prefix, a hash of the *full* test name, and the database. Truncating the
+# test name alone would not do - several 03008_azure_plain_rewritable_* tests share their first 24
+# characters. The test name must stay in the name at all because `clickhouse-test --database=X`
+# runs every test against one shared database.
+base_container="cont-$(echo "${CLICKHOUSE_TEST_NAME}" | tr _ - | cut -c1-16)-$(echo -n "${CLICKHOUSE_TEST_NAME}" | md5sum | cut -c1-6)-$(echo "${CLICKHOUSE_DATABASE}" | tr _ -)"
 
 declare -A disk_configs
 

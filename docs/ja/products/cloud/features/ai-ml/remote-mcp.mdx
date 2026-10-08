@@ -1,0 +1,138 @@
+---
+sidebarTitle: 'Remote MCPサーバー'
+slug: /cloud/features/ai-ml/remote-mcp
+title: 'Cloud の Remote MCP'
+description: 'ClickHouse Cloud におけるリモートMCP機能の説明'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP', 'Model Context Protocol', 'remote MCP']
+doc_type: 'reference'
+---
+
+すべてのユーザーが Cloud Console を通じて ClickHouse を利用しているわけではありません。
+たとえば、多くの開発者は使い慣れたコードエディタや CLI エージェントから直接作業したり、独自の構成でデータベースに接続したりしています。一方で、Anthropic Claude のような汎用 AI アシスタントを使って、調査や探索の大半を進めるユーザーもいます。
+こうしたユーザーや、その代わりに動作するエージェント型ワークロードには、複雑なセットアップやカスタムのインフラストラクチャなしで、ClickHouse Cloud に安全にアクセスしてクエリを実行できる手段が必要です。
+
+ClickHouse Cloud の リモートMCPサーバー機能は、外部エージェントが分析コンテキストを取得するために利用できる標準インターフェイスを提供することで、この課題に対応します。
+MCP (Model Context Protocol) は、LLM を利用した AI アプリケーションが構造化データにアクセスするための標準です。
+このインテグレーションにより、外部エージェントはデータベースやテーブルの一覧表示、スキーマの確認、スコープが制限された読み取り専用の SELECT クエリの実行を行えます。
+認証は OAuth で処理されます。サーバーは ClickHouse Cloud 上で完全マネージド型として提供されるため、セットアップや保守は不要です。
+
+これにより、分析、要約、コード生成、探索などの用途に応じて、エージェント型ツールは ClickHouse に簡単に接続し、必要なデータを取得できるようになります。
+
+<div id="remote-vs-oss">
+  ## Remote MCPサーバーとオープンソースMCPサーバーの比較
+</div>
+
+ClickHouse には、2 つのMCPサーバーがあります。
+
+|             | リモートMCPサーバー (Cloud)                                     | オープンソースMCPサーバー                                                           |
+| ----------- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **ソース**     | ClickHouse Cloud が完全マネージドで提供                            | GitHub 上の [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
+| **トランスポート** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`)    | ローカル stdio                                                               |
+| **対応環境**    | ClickHouse Cloud サービス                                   | あらゆる ClickHouse インスタンス (セルフホストまたは Cloud)                                 |
+| **認証**      | Cloud の認証情報を使用する OAuth 2.0                              | 環境変数                                                                     |
+| **ツール**     | クエリ実行、スキーマ探索、サービス管理、バックアップ、ClickPipes、請求をカバーする 13 個のツール | 3 個のツール: `run_select_query`, `list_databases`, `list_tables`             |
+| **セットアップ**  | インストール不要。MCPクライアント をエンドポイントに向けて認証します。                   | サーバーをローカルにインストールして実行                                                     |
+
+リモートMCPサーバーは、管理すべきインフラストラクチャなしで、サービス管理、バックアップ監視、ClickPipe の可視化、請求データなどを含む、ClickHouse Cloud との最も充実したインテグレーションを提供します。
+セルフホストの ClickHouse インスタンスについては、[オープンソースMCPサーバーのガイド](/ja/guides/use-cases/ai-ml/MCP/index)を参照してください。
+
+<div id="enabling">
+  ## リモートMCPサーバーの有効化
+</div>
+
+リモートMCPサーバーが接続を受け付けられるようにするには、事前に各サービスごとに有効化する必要があります。
+ClickHouse Cloudコンソールで対象のサービスを開き、**Connect** ボタンをクリックして **MCP** を選択し、有効化してください。
+スクリーンショット付きの詳しい手順については、[セットアップガイド](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)を参照してください。
+
+<div id="endpoint">
+  ## エンドポイント
+</div>
+
+有効にすると、リモートMCPサーバーは次のエンドポイントで利用できます。
+
+```text
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="authentication">
+  ## 認証
+</div>
+
+リモートMCPサーバーへのすべてのアクセスは、OAuth 2.0 によって認証されます。
+MCPクライアントが初めて接続する際には OAuth フローが開始され、ユーザーが ClickHouse Cloud の認証情報でサインインするためのブラウザーウィンドウが開きます。
+アクセスできる範囲は、認証されたユーザーにアクセス権限が付与されている組織とサービスに限定されます。追加のAPIキー設定は不要です。
+
+<div id="safety">
+  ## 安全性
+</div>
+
+リモートMCPサーバーで公開されるすべてのツールは**読み取り専用**です。各ツールのMCPメタデータには `readOnlyHint: true` の注記が付いています。データの変更、サービス設定の変更、または破壊的な操作を実行できるツールはありません。
+
+<div id="available-tools">
+  ## 利用可能なツール
+</div>
+
+リモートMCPサーバーは、以下のカテゴリに分類された13個のツールを提供しています。
+
+<div id="query-and-schema">
+  ### クエリとスキーマの探索
+</div>
+
+これらのツールを使用すると、エージェントは利用可能なデータを確認し、分析クエリを実行できます。
+
+| ツール                | 説明                                               | パラメータ                                                                             |
+| ------------------ | ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `run_select_query` | ClickHouse service に対して読み取り専用の SELECT クエリを実行します。 | `query` (有効な ClickHouse SQL の SELECT クエリ) 、`serviceId`                            |
+| `list_databases`   | ClickHouse service で利用可能なすべてのデータベースを一覧表示します。     | `serviceId`                                                                       |
+| `list_tables`      | データベース内のすべてのテーブルを、カラム定義を含めて一覧表示します。              | `serviceId`、`database`、必要に応じて `like` または `notLike` (テーブル名を絞り込むための SQL LIKE パターン)  |
+
+<div id="organizations">
+  ### 組織
+</div>
+
+| ツール                        | 説明                                               | パラメーター           |
+| -------------------------- | ------------------------------------------------ | ---------------- |
+| `get_organizations`        | 認証済みユーザーがアクセスできる ClickHouse Cloud のすべての組織を取得します。 | なし               |
+| `get_organization_details` | 1 つの組織の詳細を返します。                                  | `organizationId` |
+
+<div id="services">
+  ### サービス
+</div>
+
+| ツール                   | 説明                                     | パラメータ                         |
+| --------------------- | -------------------------------------- | ----------------------------- |
+| `get_services_list`   | ClickHouse Cloud 組織内のすべてのサービスを一覧表示します。 | `organizationId`              |
+| `get_service_details` | 特定のサービスの詳細を取得します。                      | `organizationId`; `serviceId` |
+
+<div id="backups">
+  ### バックアップ
+</div>
+
+| Tool                               | 説明                                 | パラメータ                                     |
+| ---------------------------------- | ---------------------------------- | ----------------------------------------- |
+| `list_service_backups`             | サービスのすべてのバックアップを、最新のものから順に一覧表示します。 | `organizationId`; `serviceId`             |
+| `get_service_backup_details`       | 1 つのバックアップの詳細を返します。                | `organizationId`; `serviceId`; `backupId` |
+| `get_service_backup_configuration` | サービスのバックアップ設定 (スケジュールと保持設定) を返します。 | `organizationId`; `serviceId`             |
+
+<div id="clickpipes">
+  ### ClickPipes
+</div>
+
+| ツール               | 説明                                    | パラメータ                                        |
+| ----------------- | ------------------------------------- | -------------------------------------------- |
+| `list_clickpipes` | サービスに設定されているすべての ClickPipes を一覧表示します。 | `organizationId`; `serviceId`                |
+| `get_clickpipe`   | 指定した ClickPipe の詳細を返します。              | `organizationId`; `serviceId`; `clickPipeId` |
+
+<div id="billing">
+  ### 請求
+</div>
+
+| Tool                    | 説明                                                  | パラメータ                                                                   |
+| ----------------------- | --------------------------------------------------- | ----------------------------------------------------------------------- |
+| `get_organization_cost` | 組織の請求額と利用コストのデータを取得します。総額と、エンティティごとの日次コストレコードを返します。 | `organizationId`、必要に応じて `from_date` と `to_date` (YYYY-MM-DD、最大31日間の範囲)  |
+
+<div id="getting-started">
+  ## はじめに
+</div>
+
+リモートMCPサーバーを有効にし、MCPクライアントに接続する手順については、[セットアップガイド](/ja/products/cloud/features/ai-ml/mcp/remote-mcp)を参照してください。

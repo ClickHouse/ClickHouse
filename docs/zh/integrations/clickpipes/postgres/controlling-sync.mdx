@@ -1,0 +1,80 @@
+---
+title: '控制 Postgres ClickPipe 的同步'
+description: '关于控制 Postgres ClickPipe 同步的文档'
+slug: /integrations/clickpipes/postgres/sync_control
+sidebarTitle: '同步控制'
+keywords: ['同步控制', 'postgres', 'clickpipes', '批次大小', '同步间隔']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本文档介绍如何在 Postgres ClickPipe 处于 **CDC (运行中) 模式** 时控制同步过程。
+
+<div id="overview">
+  ## 概述
+</div>
+
+数据库 ClickPipes 的架构由两个并行过程组成：从源数据库拉取，以及向目标数据库推送。拉取过程由同步配置控制，该配置定义了数据拉取的频率，以及每次拉取的数据量。这里的“每次”指一个批次，因为 ClickPipe 是按批次拉取和推送数据的。
+
+控制 Postgres ClickPipe 同步的方式主要有两种。当以下任一设置生效时，ClickPipe 就会开始推送。
+
+<div id="interval">
+  ### 同步间隔
+</div>
+
+管道的同步间隔，是指 ClickPipe 从源数据库拉取记录的持续时间 (以秒为单位) 。将已拉取的数据推送到 ClickHouse 所花费的时间不计入该间隔。
+
+默认值为 **1 分钟**。
+同步间隔可设置为任意正整数，但建议保持在 10 秒以上。
+
+<div id="batch-size">
+  ### 拉取批次大小
+</div>
+
+拉取批次大小是指 ClickPipe 单次从源数据库拉取的记录数。这里的记录包括对属于该管道的表执行的插入、更新和删除操作。
+
+默认值为 **100,000** 条记录。
+建议的安全上限为 1000 万。
+
+<div id="transactions">
+  ### 一个例外：源数据库上的长事务
+</div>
+
+当源数据库上有事务在运行时，ClickPipe 会一直等待，直到收到该事务的 COMMIT 后才会继续处理。这会**覆盖**同步间隔和拉取批次大小。
+
+<div id="configuring">
+  ### 配置同步设置
+</div>
+
+你可以在创建 ClickPipe 时设置同步间隔和拉取批次大小，也可以在编辑现有 ClickPipe 时进行设置。
+创建 ClickPipe 时，这些设置会显示在创建向导的第二步，如下所示：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="创建同步设置" size="md" />
+
+编辑现有 ClickPipe 时，你可以前往该管道的 **设置** 选项卡，暂停管道，然后点击此处的 **配置**：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="编辑同步按钮" size="md" />
+
+这会打开一个包含同步设置的弹出面板，你可以在其中修改同步间隔和拉取批次大小：
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="编辑同步设置" size="md" />
+
+<div id="tweaking">
+  ### 调整同步设置以帮助缓解 replication slot 增长
+</div>
+
+下面我们来看看如何使用这些设置来处理 CDC 管道中过大的 replication slot。
+向 ClickHouse 推送数据所需的时间，并不会随着从源数据库拉取数据所需时间的增加而线性增长。可以利用这一点来缩小过大的 replication slot。
+通过同时增大同步间隔和拉取批次大小，ClickPipe 就能一次性从源数据库拉取大量数据，然后再将其推送到 ClickHouse。
+
+<div id="monitoring">
+  ### 监控同步控制行为
+</div>
+
+你可以在 ClickPipe 的 **指标** 选项卡中的 **CDC 同步** 表中查看每个批次的耗时。请注意，此处的耗时包含推送时间；此外，如果没有新行传入，ClickPipe 会等待，这段等待时间也会计入耗时。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC 同步表" size="md" />

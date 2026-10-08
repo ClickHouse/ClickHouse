@@ -1,0 +1,196 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-12
+title: 'أيام العروض التوضيحية - 2026-06-12'
+sidebarTitle: '2026-06-12'
+description: 'أيام العروض التوضيحية لـ ClickStack بتاريخ 2026-06-12'
+doc_type: 'guide'
+keywords: ['ClickStack', 'أيام العروض التوضيحية']
+---
+
+<div id="schema-migration-tool">
+  ## أداة ترحيل المخطط
+</div>
+
+*عرض توضيحي من [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/jRKTN30ghAo" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أداة ترحيل المخطط هي ميزة جديدة في ClickStack لا تزال قيد التطوير النشط، وتتيح للمستخدمين بدء عمليات ترحيل مخطط ClickHouse ومراقبتها مباشرةً من واجهة المستخدم. يعرض Warren كيفية تفعيل أداة الترحيل، وإنشاء فهرس للبحث النصي الكامل على العمود `body`، ثم إزالته مع متابعة التقدم عبر عرض حيّ للسجلات.
+
+ومن المخطط أن يأتي لاحقًا دعم تغييرات المخطط على مستوى بيئة النشر، بما يقرّب هذه الميزة من التوافر العام. 
+
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## مرشحات المصدر للتنبيهات وMCP
+</div>
+
+*عرض توضيحي من [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يستعرض Drew توسعًا كبيرًا في دعم مرشحات المصدر عبر ClickStack. ويمكن الآن تهيئة التنبيهات على بطاقات لوحات المعلومات وبطاقات Raw SQL التي تتطلب مرشحات مصدر، مع إرشادات مضمنة واضحة عند غياب المرشحات أو عندما لا يتضمن الاستعلام `filter macro` ليتم إدراجه. كما تدعم تنبيهات البحث المحفوظ السلوك نفسه.
+
+أصبحت مرشحات المصدر الآن مُراعاةً في كامل تجربة خريطة الخدمات، مع تمرير التحديدات إلى صفحات البحث المرتبطة واللوحات الجانبية للتتبعات.
+
+كما أصبح MCP مدركًا أيضًا لمرشحات المصدر. إذ يمكن للوكلاء اكتشاف متطلبات المرشحات، واسترجاع القيم المتاحة، وتمرير المرشحات إلى أدوات الاستعلام. وتُرشَّح قيم المرشحات على نحو متقاطع، بحيث يمكن لاختيار واحد أن يضيّق القيم المتوافقة للمرشحات الأخرى. وعند إغفال المرشحات المطلوبة، يمكن لـ MCP تحديدها تلقائيًا والإبلاغ عن القيم التي طُبِّقت. وتشير نتائج التقييم الأولية إلى عدم وجود تأثير قابل للقياس على المصادر التي لا تستخدم مرشحات المصدر.
+
+**طلبات السحب ذات الصلة:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) ميزة: إظهار أيقونة على البطاقات التي تحتوي على مرشحات مستبعدة ضمن نطاق المصدر، [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) ميزة: إضافة تحديد النطاق بحسب المصدر إلى مرشحات لوحات المعلومات
+
+<div id="candidate-columns-when-building-sources">
+  ## الأعمدة المرشحة عند إنشاء المصادر
+</div>
+
+*عرض توضيحي من [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PA-6sDjdjIM" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+عند إنشاء مصدر، يقترح ClickStack الآن حقولًا مرشحة من الجدول الأساسي للمساعدة في ملء نموذج الإعداد. وتُعرَض الاقتراحات على شكل وسوم قابلة للنقر، بينما يميّز التحقق بين الحقول غير الموجودة والحقول الصالحة التي تتطلب مرشحات المصدر قبل أن يمكن حلّها.
+
+كما يسلّط تحذير جديد الضوء على الحالات التي جرى فيها إعداد تعبير body بدون عمود ضمني. وقد اكتملت هذه الميزة إلى حد كبير، ولم يتبقَّ سوى بعض اللمسات الطفيفة على واجهة المستخدم وتحسينات على التحقق.
+
+**طلبات السحب ذات الصلة:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
+
+<div id="anomaly-alerts-with-group-by">
+  ## تنبيهات الشذوذ مع group-by (قيد العمل)
+</div>
+
+*عرض توضيحي بواسطة [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يعالج هذا العمل تحديًا يتعلق بسهولة الاستخدام في اكتشاف الشذوذ ضمن السلاسل الزمنية المجمّعة. إذ إن عرض نطاقات الشذوذ على جميع السلاسل دفعةً واحدة يجعل المخطط سريعًا غير قابل للقراءة. ويُظهر نهج هيمانشو نطاقات الشذوذ عبر وسيلة الإيضاح عند التحويم، مع الاستمرار في عرضها مباشرةً على المخطط عند تحديد سلسلة واحدة.
+
+لا تزال هذه الميزة قيد التطوير النشط، وما زالت بحاجة إلى مزيد من التحسينات قبل الإصدار.
+
+<div id="mcp-eval-multi-model-selector">
+  ## محدد التقييم متعدد النماذج في MCP
+</div>
+
+*عرض توضيحي يقدّمه [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يدعم إطار تقييم MCP الآن تشغيل مجموعة تقييم واحدة على عدة نماذج بالتزامن. ويستعرض Brandon هذه الميزة عبر مقارنة Fable وOpus وSonnet في تنفيذ واحد بعد إطلاق Fable.
+
+في مجموعتَي التقييم لكلٍّ من ClickHouse وHyperDX، حقق Fable نتائج أقوى بشكل ملحوظ في الأسئلة الخاصة بـ ClickStack. لو كان بإمكاننا فقط استخدام هذا النموذج :).
+
+**طلبات السحب ذات الصلة:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): support multi-model comparison in eval batches, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: AI eval framework for benchmarking MCP servers
+
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## جميع أدوات الاستقصاء في دفتر الملاحظات تستخدم الآن MCP
+</div>
+
+*عرض توضيحي من [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lJnrfmQswpQ" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تُنفَّذ الآن جميع أدوات الاستقصاء في دفتر الملاحظات عبر ClickStack MCP بدلًا من تنفيذ منفصل. ورغم عدم وجود أي تغيير مرئي للمستخدمين، فإن هذا التوحيد يزيل مسارات التعليمات البرمجية المكررة ويوفر أساسًا للتشغيل البيني مستقبلًا بين دفتر الملاحظات وagent المحلي.
+
+بطاقات Raw SQL في دفتر الملاحظات هي المخطط لها بعد ذلك.
+
+<div id="datadog-receiver">
+  ## مستقبِل Datadog
+</div>
+
+*عرض توضيحي من [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/P0VVuN_yL6Q" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يستعرض Spencer التحسينات التي أُدخلت على مستقبِل Datadog.
+
+سابقًا، كانت حمولات سجلات Datadog تُستوعَب في الغالب كبيانات JSON غير مهيكلة داخل متن الرسالة. أمّا الآن، فيستخرج المستقبِل الحقول الأساسية ويحوّلها إلى سمات قياسية للموارد والسجلات في OpenTelemetry، مثل معرّفات التتبّع، ومعرّفات span، والطوابع الزمنية، والبيانات الوصفية لطلبات HTTP.
+
+كما تُوسَّع معرّفات التتبّع الرقمية ذات 64 بت في Datadog إلى تنسيق OpenTelemetry ذي 128 بت، مما يتيح الربط الصحيح للتتبّع داخل ClickStack. ومن المتوقّع تضمين المستقبِل في توزيعة ClickStack collector، مع التخطيط لإجراء المزيد من الاختبارات على الربط الشامل للتتبّع من البداية إلى النهاية.
+
+<div id="event-patterns-any-column">
+  ## أنماط الأحداث: أي عمود
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/5uGZ69YNV74" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يمكن الآن تشغيل تحليل أنماط الأحداث على أي عمود نصّي، بدلًا من أن يقتصر على `Body`. كما أُضيف محدد عمود جديد تكون قيمته الافتراضية `Body` للحفاظ على السلوك الحالي، مع إتاحة اختيار أي عمود يمكن تمثيله كسلسلة نصية.
+
+ويستعرض Aaron أيضًا منطق التمويه المستخدم لتطبيع المحتوى المتغير قبل أن تُجمِّع خوارزمية Drain الأحداث في أنماط. ولا تزال هذه الميزة قيد المراجعة، لكن من المتوقع أن تصبح متاحة قريبًا.
+
+**طلبات السحب ذات الصلة:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: إضافة محدد لعمود الأنماط لمطابقة أنماط الأحداث على أي عمود
+
+<div id="span-links">
+  ## روابط span (قيد العمل)
+</div>
+
+*عرض توضيحي من [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/SK-T5J3YcQE" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يستعرض Alex عملاً أوليًا لدعم روابط span في عارض trace ضمن ClickStack. وتُعد روابط span مفهومًا في OpenTelemetry يتيح لـ spans الإشارة إلى spans ذات صلة في traces أخرى، وهي من ميزات التتبّع كثيرة الطلب.
+
+يعرض التنفيذ الحالي spans المرتبطة وattributes الخاصة بها مباشرةً داخل لوحة trace. ولا يزال التصميم وأسلوب العرض قيد التحسين، لذا يُرجى اعتباره عملًا لا يزال قيد التطوير.
+
+**طلبات السحب ذات الصلة:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): إظهار روابط span في عارض trace
+
+<div id="time-series-highlighting-on-hover">
+  ## تمييز السلاسل الزمنية عند تمرير المؤشر
+</div>
+
+*عرض توضيحي من [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QhyWYDE-stY" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تُبرز المخططات الزمنية متعددة السلاسل الآن السلسلة الأقرب إلى المؤشر. وهذا يجعل تحديد الخطوط الفردية أسهل بكثير في المخططات المزدحمة التي تحتوي على عدد كبير من قيم `group-by`.
+
+جاءت هذه الميزة استجابةً للملاحظات الواردة من الفرق التي تنتقل من Grafana إلى ClickStack.
+
+**طلبات السحب ذات الصلة:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: highlight the series nearest the cursor in time chart tooltips
+
+<div id="duplicate-series">
+  ## نسخ سلسلة
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PnhU_CtRFc4" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أُضيف إجراء للنسخ إلى منشئ المخططات. ويمكن للمستخدمين الآن نسخ إعدادات سلسلة موجودة وإجراء تعديلات بسيطة عليها، بدلًا من إعادة إنشاء سلسلة مشابهة من الصفر.
+
+يستعرض Alex سير العمل من خلال إنشاء مقارنة بين P50 وP95.
+
+**طلبات السحب ذات الصلة:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): نسخ سلسلة في منشئ المخططات
+
+<div id="editable-pill-filters">
+  ## مرشحات الشرائح القابلة للتحرير (قيد العمل)
+</div>
+
+*عرض توضيحي من [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/T7q_qkhWjUU" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أصبحت شرائح المرشحات قابلة للتحرير مباشرةً داخل واجهة Search. وتشمل الوظائف الأولية التبديل بين وضعي التضمين والاستبعاد، وتحرير القيم في موضعها، ونسخ المرشحات مباشرةً من الشريحة.
+
+لا يزال هذا العمل قيد التنفيذ، مع التخطيط لإضافة مزيد من الوظائف والتحسينات قبل الإصدار.
+
+**طلبات السحب ذات الصلة:** [#2455](https://github.com/hyperdxio/hyperdx/pull/2455) feat(search): editable filter pills, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): allow free-text values when editing a filter pill

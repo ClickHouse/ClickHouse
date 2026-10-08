@@ -30,7 +30,7 @@ endif()
 # * default-engine: Needed for its s3 client (we can't pass our own s3 client via ffi)
 clickhouse_import_crate(
     MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml"
-    FEATURES "default-engine-native-tls, test-ffi, tracing"
+    FEATURES "default-engine-native-tls, test-ffi, tracing, arrow"
 )
 clickhouse_config_crate_flags(delta_kernel_ffi)
 
@@ -40,13 +40,22 @@ set(DELTA_KERNEL_TARGET_PATH ${DELTA_KERNEL_RS_BINARY_DIR}/include)
 corrosion_set_env_vars(delta_kernel_ffi
         "CARGO_HOME=${CMAKE_BINARY_DIR}/contrib/corrosion-cmake/"
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
-        "OPENSSL_LIBS=ssl:crypto"
+        # Empty, so that `openssl-sys` does not bundle a copy of OpenSSL into the archive:
+        # the binary links `OpenSSL::SSL` and `OpenSSL::Crypto` below.
+        "OPENSSL_LIBS="
         "OPENSSL_STATIC=1"
         "OPENSSL_LIB_DIR=${CMAKE_BINARY_DIR}/contrib/openssl-cmake/"
         "OPENSSL_INCLUDE_DIR=${ClickHouse_SOURCE_DIR}/contrib/openssl-cmake/common/include/"
         # The build-script for `openssl-sys` expects all includes to be in one path
         # but the CMake build for OpenSSL results in headers in two different places
         "CFLAGS=${RUST_CFLAGS} -I ${ClickHouse_SOURCE_DIR}/contrib/openssl/include/")
+
+# aws-lc-sys's memcmp_check links a small test binary via cc; clang adds
+# -lgcc_s / -lgcc_eh by default but the bundled Linux sysroot ships only
+# libgcc.a.
+if (OS_LINUX)
+    corrosion_set_env_vars(delta_kernel_ffi "LDFLAGS=-nodefaultlibs -lc -lgcc")
+endif()
 
 target_include_directories(delta_kernel_ffi INTERFACE "${DELTA_KERNEL_TARGET_PATH}/")
 target_link_libraries(delta_kernel_ffi INTERFACE OpenSSL::Crypto OpenSSL::SSL)

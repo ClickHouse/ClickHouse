@@ -1,0 +1,15 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"i8":-7,"u8":255,"i64":123456789012345,"u64":18446744073709551615,"f64":3.5,"s":"hello","fs":"abc","b":true,"d":"2026-06-20","dt":"2026-06-20 12:00:00","dt64":"2026-06-20 12:00:00.123","uuid":"00000000-0000-0000-0000-000000000001","dec":1.5,"en":"a","arr":[1,2,3],"tup":[1,"x"],"m":{"k1":"v1","k2":"v2"},"n_null":null,"n_val":5,"lc":"lc"}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"text":"he said \"hi\"\t\\ é 日本"}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"a \"quoted\" \\ key":42}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"a":1,"b":"x"}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":null}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"a":"b"}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"num":1,"str":"x"}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"properties":"foo"}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","id":"x","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","id":"y","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","id":"","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","id":42,"geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}
+{"type":"FeatureCollection","features":[{"type":"Feature","id":"a\"b","geometry":{"type":"Point","coordinates":[1,2]},"properties":{}}]}

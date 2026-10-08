@@ -118,6 +118,11 @@ public:
         return nested_func->getDefaultVersion();
     }
 
+    DataTypePtr getStateType() const override
+    {
+        return this->getStateTypeWithVersionOf(*nested_func);
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         nested_func->create(place);
@@ -188,7 +193,7 @@ public:
             nested_func->add(place, nested, i, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -201,7 +206,7 @@ public:
         nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
     }
@@ -214,6 +219,16 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
@@ -229,6 +244,11 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertMergeResultInto(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override

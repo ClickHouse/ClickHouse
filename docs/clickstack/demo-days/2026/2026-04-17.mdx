@@ -1,0 +1,92 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/04/2026-04-17
+title: 'Demo days - 2026-04-17'
+sidebarTitle: '2026-04-17'
+description: 'ClickStack demo days for 2026-04-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Summarize logs and traces {#summarize-logs-and-traces}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/TWsFyWt-tD8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+HyperDX now has an AI summarize feature that works across logs, traces, and patterns. The new summarize button condenses your telemetry data into a readable summary, letting you quickly understand what happened across a set of events without manually reading through them one by one.
+
+The architecture is designed to hook into Anthropic (or similar) APIs, and is built to support follow-up conversation so users can continue asking questions after the initial summary.
+
+**Related PRs:** [#2108](https://github.com/hyperdxio/hyperdx/pull/2108) feat: AI summarize with extensible subjects, trace context, and security hardening, [#2100](https://github.com/hyperdxio/hyperdx/pull/2100) Implement real AI summarize callbacks with smart tone mode
+
+## Event deltas heatmap into chart builder {#event-deltas-heatmap-into-chart-builder}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/BLVhIQjocwE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+The Event Deltas heatmap visualization is being migrated into the main chart builder, making it available as a standard chart type alongside HyperDX's other visualizations. Previously it only lived in its own dedicated view; now it works inside the chart explorer alongside the rest of the chart types.
+
+Once complete, users will be able to drop the Event Deltas heatmap directly into dashboard tiles, where it supports the same field filtering and time range controls you'd expect from any other chart. The work is currently in progress.
+
+**Related PRs:** [#2107](https://github.com/hyperdxio/hyperdx/pull/2107) feat: Wire heatmap chart into dashboard editor and tile rendering, [#2102](https://github.com/hyperdxio/hyperdx/pull/2102) Implement reusable Heatmap chart with Event Deltas support
+
+## Benchmarking for schema improvements {#benchmarking-for-schema-improvements}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Aaron walks through benchmarking results for HyperDX's updated default OpenTelemetry logs schema. The key change is dropping the legacy `timestamp_time` column (a 32-bit Unix timestamp with second-level granularity) in favor of relying solely on `timestamp`, which provides nanosecond precision and removes one column from the schema. Across a broad set of query benchmarks, the updated schema performs as well or better than the old one in nearly every case.
+
+The final schema also includes read order optimizations that show meaningful gains on selective queries. Searching for a relatively rare map value ran roughly twice as fast compared to the baseline, and high-frequency value lookups showed even greater improvement. Insert performance is marginally higher (more columns to maintain), but query performance across the board is on par or improved, making this a straightforward upgrade.
+
+**Related PRs:** [#2125](https://github.com/hyperdxio/hyperdx/pull/2125) feat: optimized default otel-logs schema
+
+## Improvements to autocomplete {#improvements-to-autocomplete}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/8zDZx49uYQo" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+HyperDX's autocomplete is getting a major overhaul to support much higher cardinality and faster value loading. The new implementation is backed by rollup tables ( `AggregatingMergeTrees` that pre-aggregates key-value pairs in 15-minute time buckets), so rather than querying raw data on every keystroke, the system reads from a much smaller pre-computed dataset. In a live demo against a 230 million row staging instance, autocomplete loaded values for high-cardinality fields like `hostname` quickly and without noticeable lag.
+
+The system supports both a key-only rollup (returning all keys but no attached values, for lower cardinality overhead) and a full key-value rollup. If only a key rollup is present, the system falls back to the existing fetch-values strategy for the value lookup step. If no rollup table is detected at all, it falls back gracefully to the current behaviour. Aaron also notes that a future allow-list UI for controlling which keys get value rollups would be a useful addition for customers with especially high cardinality data.
+
+**Related PRs:** [#2128](https://github.com/hyperdxio/hyperdx/pull/2128) feat: fast and full autocomplete, [#2127](https://github.com/hyperdxio/hyperdx/pull/2127) feat: better autocomplete
+
+## Improvements to alerting with SQL {#improvements-to-alerting-with-sql}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Building on the previous week's addition of alerts for Raw SQL line and bar charts, HyperDX now also supports alerts on Raw SQL number charts. The time filter parameter is no longer required when setting up an alert: a warning is shown if omitted, but queries without any time dimension are now fully valid. This makes it easy to alert on configuration values or system metrics that don't change over time, such as checking that a ClickHouse cluster count equals the expected value.
+
+Several new threshold types have also been added: not-equals, is-above, at-most, between, and outside. These give teams much more flexibility in expressing alert conditions beyond simple greater-than comparisons. Finally, alert history is now surfaced directly in the tile editor, so when a firing alert links to a specific dashboard tile, users can see the full history, understand what triggered it, and acknowledge or silence the alert without navigating away from the dashboard.
+
+**Related PRs:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implement alerting for Raw SQL-based dashboard tiles, [#2114](https://github.com/hyperdxio/hyperdx/pull/2114) feat: Support alerts on Raw SQL Number Charts, [#2122](https://github.com/hyperdxio/hyperdx/pull/2122) feat: Add additional alert threshold types, [#2130](https://github.com/hyperdxio/hyperdx/pull/2130) feat: Add between and not-between alert thresholds, [#2123](https://github.com/hyperdxio/hyperdx/pull/2123) feat: Add alert history + ack to alert editor
+
+## Errors during alert execution {#errors-during-alert-execution}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+When an alert fails to execute, HyperDX now surfaces that error directly in the UI rather than silently dropping it. Previously, users might notice gaps in alert history with no explanation: no error message and no way to debug what went wrong. Now, distinct error icons appear inline for different failure types including invalid queries, webhook delivery failures, and missing or misconfigured webhook settings.
+
+Clicking an error icon shows the specific details needed to diagnose and resolve the issue, so users can fix misconfigured alerts without digging through server logs or filing a support request. The goal is to make alert failures self-service: see the error, understand it, fix it.
+
+**Related PRs:** [#2132](https://github.com/hyperdxio/hyperdx/pull/2132) feat: Show alert execution errors in the UI, [#2136](https://github.com/hyperdxio/hyperdx/pull/2136) fix: Hide potentially-sensitive alert errors

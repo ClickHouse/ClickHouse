@@ -23,7 +23,7 @@ SYSTEM DISABLE FAILPOINT parallel_replicas_reading_response_timeout;
 
 SYSTEM ENABLE FAILPOINT parallel_replicas_reading_response_timeout;
 
-SET max_threads = 3, merge_tree_min_read_task_size = 1000;
+SET max_threads = 1, merge_tree_min_read_task_size = 10;
 
 SELECT * FROM t ORDER BY a FORMAT Null; -- { serverError SOCKET_TIMEOUT }
 

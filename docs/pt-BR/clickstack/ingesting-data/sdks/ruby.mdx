@@ -1,0 +1,92 @@
+---
+slug: /use-cases/observability/clickstack/sdks/ruby-on-rails
+description: 'SDK do Ruby on Rails para ClickStack - A Stack de Observabilidade do ClickHouse'
+title: 'Ruby on Rails'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'logging', 'integração', 'monitoramento de aplicações']
+---
+
+import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+<ClickStackIntegrates signals={['traces']} />
+
+*Para enviar logs para o ClickStack, envie-os por meio do [OpenTelemetry collector](/pt-BR/clickstack/ingesting-data/collector).*
+
+## Primeiros passos {#getting-started}
+
+### Instale os pacotes do OpenTelemetry {#install-otel-packages}
+
+Use o comando abaixo para instalar o pacote do OpenTelemetry.
+
+```shell
+bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
+```
+
+### Configurar OpenTelemetry + formatador do logger {#configure-otel-logger-formatter}
+
+Em seguida, você precisará inicializar a instrumentação de tracing do OpenTelemetry
+e configurar o formatador de mensagens de log do Rails logger para que os logs possam ser
+associados automaticamente aos traces. Sem o formatador personalizado, os logs não
+serão correlacionados automaticamente no ClickStack.
+
+Na pasta `config/initializers`, crie um arquivo chamado `hyperdx.rb` e adicione o
+seguinte a ele:
+
+```ruby
+# config/initializers/hyperdx.rb
+
+require 'opentelemetry-exporter-otlp'
+require 'opentelemetry/instrumentation/all'
+require 'opentelemetry/sdk'
+
+OpenTelemetry::SDK.configure do |c|
+  c.use_all() # habilita toda a instrumentação de rastreamento!
+end
+
+Rails.application.configure do
+  Rails.logger = Logger.new(STDOUT)
+  # Rails.logger.log_level = Logger::INFO # o padrão é DEBUG, mas você pode preferir INFO ou superior em produção
+  Rails.logger.formatter = proc do |severity, time, progname, msg|
+    span_id = OpenTelemetry::Trace.current_span.context.hex_span_id
+    trace_id = OpenTelemetry::Trace.current_span.context.hex_trace_id
+    if defined? OpenTelemetry::Trace.current_span.name
+      operation = OpenTelemetry::Trace.current_span.name
+    else
+      operation = 'undefined'
+    end
+
+    { "time" => time, "level" => severity, "message" => msg, "trace_id" => trace_id, "span_id" => span_id,
+      "operation" => operation }.to_json + "\n"
+  end
+
+  Rails.logger.info "Logger initialized !! 🐱"
+end
+```
+
+### Configure as variáveis de ambiente {#configure-environment-variables}
+
+Depois, você precisará configurar as seguintes variáveis de ambiente no shell para enviar telemetria ao ClickStack por meio do OpenTelemetry collector:
+
+<Tabs>
+  <Tab title="ClickStack gerenciado">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' \
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+    ```
+  </Tab>
+</Tabs>
+
+*A variável de ambiente `OTEL_SERVICE_NAME` é usada para identificar seu serviço
+no aplicativo HyperDX; ela pode ter qualquer nome que você quiser.*
+
+A variável de ambiente `OTEL_EXPORTER_OTLP_HEADERS` contém a chave de API disponível no aplicativo HyperDX em `Team Settings → API Keys`.
