@@ -47,11 +47,6 @@
 namespace DB
 {
 
-bool containsObjectType(const IDataType & type)
-{
-    return anyInTypeTree(type, [](const IDataType & node) { return isObject(node); });
-}
-
 namespace Setting
 {
     extern const SettingsBool allow_simdjson;
