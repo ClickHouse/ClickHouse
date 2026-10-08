@@ -180,6 +180,12 @@ timeout 10m clickhouse-client --query="SELECT 'Tables count:', count() FROM syst
     clickhouse stop --force
 )
 
+# `system.mutations` lists only the tables the server holds attached, but a restart attaches again what a `DETACH`
+# without `PERMANENTLY` took away, as the upgraded server will. Restart the previous release, so the kill below sees
+# those tables too and no query left running by the stress phase changes them behind it.
+stop_server 300 false || (echo "Failed to stop server" && exit 1)
+start_server || (echo "Failed to start server" && exit 1)
+
 # Kill the mutations that the stress phase left unfinished, before the server is upgraded.
 #
 # Several tests deliberately start a mutation that can never succeed - `toUInt32` of a non-numeric
