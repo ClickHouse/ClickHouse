@@ -109,6 +109,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Whether the current thread holds the parts lock of any table.
+bool partsLockHeldByCurrentThread();
+
+class PartsLockHoldCount
+{
+public:
+    PartsLockHoldCount();
+    PartsLockHoldCount(PartsLockHoldCount && other) noexcept : held(std::exchange(other.held, false)) {}
+    PartsLockHoldCount & operator=(PartsLockHoldCount && other) noexcept;
+    ~PartsLockHoldCount() { release(); }
+
+    void release() noexcept;
+
+private:
+    bool held;
+};
+
 struct DataPartsLock
 {
     explicit DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_);
@@ -122,6 +139,7 @@ struct DataPartsLock
 private:
     std::optional<Stopwatch> wait_watch;
     std::unique_lock<DB::SharedMutex> lock;
+    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
     const MergeTreeData * data;
 };
@@ -136,11 +154,12 @@ struct DataPartsSharedLock
     DataPartsSharedLock(DataPartsSharedLock &&) = default;
     DataPartsSharedLock & operator=(DataPartsSharedLock &&) = default;
 
-    void unlock() { lock.unlock(); }
+    void unlock();
 
 private:
     std::optional<Stopwatch> wait_watch;
     std::shared_lock<DB::SharedMutex> lock;
+    PartsLockHoldCount hold_count;
     std::optional<Stopwatch> lock_watch;
 };
 
@@ -776,6 +795,7 @@ public:
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, const std::function<bool()> & need_stop = {}) const;
 
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
+    DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartState & state, const String & partition_id) const;
     DataPartsVector getDataPartsVectorInPartitionForInternalUsage(const DataPartStates & affordable_states, const String & partition_id, const DataPartsAnyLock & acquired_lock) const;
 
     /// Returns the number of data mutations suitable for applying on the fly.
