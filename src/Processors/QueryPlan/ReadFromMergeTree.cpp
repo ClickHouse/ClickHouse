@@ -29,6 +29,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -71,6 +72,9 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/RuntimeFilterReadRangesRefiner.h>
+#include <Storages/MergeTree/SealGatedReadTransform.h>
+#include <Processors/Transforms/CopyTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -336,6 +340,7 @@ namespace Setting
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -347,6 +352,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
+    extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool defer_partition_pruning_after_final;
     extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
@@ -657,6 +663,17 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
         data.getStorageID().getFullTableName()};
 
+    /// Set total rows in progress only on initiator with local plan, otherwise rows will be counted multiple times.
+    /// The coordinator cannot report them in this case: it receives the initiator's announcement
+    /// before the progress callback is set by remote sources.
+    size_t total_rows = 0;
+    if (isParallelReplicasLocalPlanForInitiator())
+    {
+        total_rows = parts_with_range.getRowsCountAllParts();
+        if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
+            total_rows = query_info.trivial_limit;
+    }
+
     auto pool = std::make_shared<MergeTreeReadPoolParallelReplicas>(
         extension,
         std::move(parts_with_range),
@@ -702,6 +719,10 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+
+        if (i == 0 && total_rows)
+            source->addTotalRowsApprox(total_rows);
+
         pipes.emplace_back(std::move(source));
     }
 
@@ -757,6 +778,8 @@ Pipe ReadFromMergeTree::readFromPool(
     bool use_prefetched_read_pool = query_info.trivial_limit == 0 && !query_info.small_limit_above_array_join
         && (allow_prefetched_remote || allow_prefetched_local);
 
+    /// The gating edge guarantees the seal_gate_refiner receives its filter before the first
+    /// task cut. TODO: combine with the projection index refiner when both apply.
     if (use_prefetched_read_pool)
     {
         auto prefetched_pool = std::make_shared<MergeTreePrefetchedReadPool>(
@@ -775,7 +798,10 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        prefetched_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        if (seal_gate_refiner)
+            prefetched_pool->setReadRangesRefiner(seal_gate_refiner);
+        else
+            prefetched_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(prefetched_pool);
     }
     else
@@ -796,11 +822,61 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        read_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        if (seal_gate_refiner)
+            read_pool->setReadRangesRefiner(seal_gate_refiner);
+        else
+            read_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(read_pool);
     }
 
-    LOG_DEBUG(log, "Reading approx. {} rows with {} streams", total_rows, pool_settings.threads);
+    LOG_DEBUG(log, "Reading approx. {} rows with {} streams{}", total_rows, pool_settings.threads,
+        seal_gate_refiner ? " (gated by a runtime filter seal)" : "");
+
+    /// Seal-gated reading: the sources are replaced by transforms whose input is the seal,
+    /// so nothing is read until the build side of the JOIN completes its runtime filter.
+    /// One seal is copied to every stream; the copy input is registered on the pipe as
+    /// pending and is connected by the join pipeline wiring.
+    if (seal_gate_refiner)
+    {
+        auto seal_header = std::make_shared<const Block>(Block{});
+        auto copy_seal = std::make_shared<CopyTransform>(seal_header, pool_settings.threads);
+        auto processors = std::make_shared<Processors>();
+
+        auto seal_output_it = copy_seal->getOutputs().begin();
+        for (size_t i = 0; i < pool_settings.threads; ++i)
+        {
+            auto algorithm = std::make_unique<MergeTreeThreadSelectAlgorithm>(i);
+
+            auto processor = std::make_unique<MergeTreeSelectProcessor>(
+                pool,
+                std::move(algorithm),
+                query_info.row_level_filter,
+                query_info.prewhere_info,
+                index_read_tasks,
+                actions_settings,
+                reader_settings,
+                index_build_context,
+                lazy_materializing_rows,
+                &storage_snapshot->metadata->getColumns());
+
+            auto header = std::make_shared<const Block>(processor->getHeader());
+            auto transform = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
+
+            if (i == 0)
+                transform->addTotalRowsApprox(total_rows);
+
+            connect(*(seal_output_it++), transform->getSealInput());
+            processors->emplace_back(std::move(transform));
+        }
+
+        InputPort * pending_seal_input = &copy_seal->getInputs().front();
+        processors->emplace_back(std::move(copy_seal));
+
+        Pipe pipe(std::move(processors), pending_seal_input);
+        if (output_streams_limit && output_streams_limit < pipe.numOutputPorts())
+            pipe.resize(output_streams_limit);
+        return pipe;
+    }
 
     Pipes pipes;
     for (size_t i = 0; i < pool_settings.threads; ++i)
@@ -944,8 +1020,11 @@ Pipe ReadFromMergeTree::readInOrder(
             context,
             dataflow_cache_updater);
 
-        in_order_pool->setReadRangesRefiner(
-            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+        if (seal_gate_refiner)
+            in_order_pool->setReadRangesRefiner(seal_gate_refiner);
+        else
+            in_order_pool->setReadRangesRefiner(
+                createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
         pool = std::move(in_order_pool);
     }
 
@@ -1022,11 +1101,31 @@ Pipe ReadFromMergeTree::readInOrder(
                 processor->setVirtualRowConversions(virtual_row_conversion, pk_header, read_type == ReadType::InReverseOrder);
         }
 
-        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
-        if (set_total_rows_approx)
-            source->addTotalRowsApprox(total_rows);
+        Pipe pipe;
+        if (seal_gate_refiner)
+        {
+            /// Seal-gated reading: the source is replaced by a transform whose input is the
+            /// seal, so nothing is read until the build side of the JOIN completes its runtime
+            /// filter. Every part contributes its own pending seal input; the join pipeline
+            /// wiring fans one seal out to all of them.
+            auto header = std::make_shared<const Block>(processor->getHeader());
+            auto gated_source = std::make_shared<SealGatedReadTransform>(header, std::move(processor), seal_gate_refiner, data.getLogName());
+            if (set_total_rows_approx)
+                gated_source->addTotalRowsApprox(total_rows);
 
-        Pipe pipe(source);
+            InputPort * pending_seal_input = &gated_source->getSealInput();
+            auto gated_processors = std::make_shared<Processors>();
+            gated_processors->emplace_back(std::move(gated_source));
+            pipe = Pipe(std::move(gated_processors), pending_seal_input);
+        }
+        else
+        {
+            auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+            if (set_total_rows_approx)
+                source->addTotalRowsApprox(total_rows);
+
+            pipe = Pipe(std::move(source));
+        }
 
         if (use_virtual_row)
         {
@@ -3984,17 +4083,22 @@ bool ReadFromMergeTree::isParallelReplicasLocalPlanForFollower() const
         && context->canUseParallelReplicasOnFollower();
 }
 
+bool ReadFromMergeTree::canReadInReverseOrder() const
+{
+    /// Reading in reverse order flips which row of a group with equal keys FINAL selects. Only the
+    /// Replacing algorithm compensates for that (see `ReplacingSortedAlgorithm`).
+    return !query_info.isFinal()
+        || (data.merging_params.mode == MergeTreeData::MergingParams::Replacing
+            && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]);
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
     /// if direction is not set, use current one
     if (!direction)
         direction = getSortDirection();
 
-    /// Reading in reverse order flips which row of a group with equal keys FINAL selects. Only the
-    /// Replacing algorithm compensates for that (see `ReplacingSortedAlgorithm`).
-    if (direction != 1 && query_info.isFinal()
-        && (data.merging_params.mode != MergeTreeData::MergingParams::Replacing
-            || !context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]))
+    if (direction != 1 && !canReadInReverseOrder())
         return false;
 
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
@@ -4100,6 +4204,37 @@ void ReadFromMergeTree::replaceVectorColumnWithDistanceColumn(const String & vec
         throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "The `_distance` column is an internal virtual column of vector search and cannot be referenced directly in queries. "
             "Use the distance function (e.g. `L2Distance`, `cosineDistance`) in ORDER BY instead");
+
+    /// Row-policy DAGs retain required table columns as direct passthrough outputs. The vector-column
+    /// passthrough becomes invalid after replacing the physical column with `_distance`, while other
+    /// outputs consuming the vector column make the no-rescoring rewrite inapplicable and are rejected
+    /// by the caller. Remove this redundant output from both active and deferred row-policy DAGs.
+    const auto remove_vector_column_passthrough = [&](const FilterDAGInfoPtr & filter)
+    {
+        if (!filter)
+            return;
+
+        String output_to_remove;
+        for (const auto * output : filter->actions.getOutputs())
+        {
+            if (output->result_name == vector_column
+                || (output->type == ActionsDAG::ActionType::ALIAS && output->children.at(0)->result_name == vector_column))
+            {
+                output_to_remove = output->result_name;
+                break;
+            }
+        }
+
+        if (!output_to_remove.empty())
+        {
+            filter->actions.removeUnusedResult(output_to_remove);
+            filter->actions.removeUnusedActions();
+        }
+    };
+
+    remove_vector_column_passthrough(query_info.row_level_filter);
+    remove_vector_column_passthrough(deferred_row_level_filter);
+
     std::erase(all_column_names, vector_column);
     all_column_names.emplace_back("_distance");
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
@@ -4599,7 +4734,14 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->distributed_read_param_name = distributed_read_param_name;
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
-    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    if (deferred_row_level_filter)
+    {
+        auto deferred_row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+        deferred_row_level_filter_copy->actions = deferred_row_level_filter->actions.clone();
+        deferred_row_level_filter_copy->column_name = deferred_row_level_filter->column_name;
+        deferred_row_level_filter_copy->do_remove_column = deferred_row_level_filter->do_remove_column;
+        cloned_step->deferred_row_level_filter = std::move(deferred_row_level_filter_copy);
+    }
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     /// Carry over the TopK marker: without it the clone would use the unsalted query condition cache key.
     /// It is copied rather than set with `setTopKColumn`, which would fold the part-set salt into `condition_hash` again.
@@ -5225,6 +5367,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.query_condition_cache_top_k_salt = salt;
     }
 
+    /// Push down substring search conditions from PREWHERE into the column scan: the readers check
+    /// every value of the corresponding String columns and read non-matching values as empty strings.
+    /// This is allowed only when PREWHERE is guaranteed to filter out the non-matching rows (`need_filter`),
+    /// so that the replaced values can never appear in the query result.
+    /// At this point `query_info.prewhere_info` is final: query plan optimizations that update it have
+    /// already run, and the deferred-after-FINAL case above has been applied.
+    if (context->getSettingsRef()[Setting::apply_string_filters_during_scan]
+        && query_info.prewhere_info
+        && query_info.prewhere_info->need_filter)
+    {
+        reader_settings.string_value_filters = extractStringValueFilters(
+            query_info.prewhere_info->prewhere_actions,
+            query_info.prewhere_info->prewhere_column_name,
+            query_info.row_level_filter ? &query_info.row_level_filter->actions : nullptr);
+    }
+
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
     /// local plan for initiator to prevent coordinator initialization by other replicas
     /// (which may skip index analysis).
@@ -5251,10 +5409,44 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
 
+    /// Decide whether this read is gated on the build-side seal of a join (see
+    /// enableSealGatedReading). The plan-level mark may be invalidated by decisions taken
+    /// after it (parallel replicas enabled, reading split into layers for a sharded join):
+    /// then the read stays ungated and the join wiring falls back gracefully. The refiner is
+    /// installed on the read pools by readFromPool/readInOrder, and the seal is delivered to
+    /// it by the SealGatedReadTransforms they build.
+    if (seal_gated_reading
+        && !isParallelReadingFromReplicas()
+        && !query_info.isFinal()
+        && !query_info.isStream()
+        && result.split_parts.layers.empty())
+    {
+        seal_gate_refiner = std::make_shared<RuntimeFilterReadRangesRefiner>(
+            storage_snapshot->metadata, context, seal_gated_reading->pk_prefix_filters);
+    }
+
+    /// The runtime filters to apply during reading. The registration alone does not mean the
+    /// read-time analysis is on: the descriptors are also collected for seal-gated reading.
+    /// A read gated on a filter's seal already prunes by that filter at task-cut time,
+    /// granule-exact through the primary key, so its read-time index analysis would be pure
+    /// overhead: it is dropped here (filters of other joins are kept).
+    auto runtime_filters_for_data_read = context->getSettingsRef()[Setting::enable_join_runtime_filters_index_analysis]
+        ? join_runtime_filters_for_index_analysis
+        : std::vector<RuntimeFilterIndexAnalysisDescriptor>{};
+    if (seal_gate_refiner)
+        std::erase_if(
+            runtime_filters_for_data_read,
+            [&](const auto & descr)
+            {
+                return std::any_of(
+                    seal_gated_reading->pk_prefix_filters.begin(), seal_gated_reading->pk_prefix_filters.end(),
+                    [&](const auto & gated) { return gated.filter_id == descr.filter_id; });
+            });
+
     /// A projection read built by `optimizeUseNormalProjections` arrives with its analysis result already
     /// computed, so `selectRangesToRead` never ran for this step and no indexes were built. The join
     /// runtime filter pruning below needs the key condition templates, so build them here on demand.
-    if (!join_runtime_filters_for_index_analysis.empty() && !indexes.has_value())
+    if (!runtime_filters_for_data_read.empty() && !indexes.has_value())
         buildIndexes(
             indexes,
             query_info.filter_actions_dag.get(),
@@ -5283,6 +5475,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// `05243_join_runtime_filters_index_analysis_final_noop` pins it.
         && !query_info.isFinal()
         && runtime_filter_lookup
+        && !runtime_filters_for_data_read.empty()
         && !pending_mutations
         /// Not supported under parallel replicas: the descriptor is not carried to remote replica
         /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
@@ -5305,7 +5498,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         const auto & metadata = *storage_snapshot->metadata;
         const auto & pk_columns = metadata.getPrimaryKey().column_names;
         std::unordered_set<String> seen_index_names;
-        for (const auto & descr : join_runtime_filters_for_index_analysis)
+        for (const auto & descr : runtime_filters_for_data_read)
         {
             if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
             {
@@ -5331,10 +5524,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
-    if (runtime_filter_lookup)
+    if (runtime_filter_lookup && !runtime_filters_for_data_read.empty())
     {
         dynamic_predicate_builder =
-            [lookup = runtime_filter_lookup, descriptors = join_runtime_filters_for_index_analysis, ctx = context]
+            [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read, ctx = context]
             (ActionsDAG & dag) -> const ActionsDAG::Node *
             {
                 return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
@@ -5342,7 +5535,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
-            [lookup = runtime_filter_lookup, descriptors = join_runtime_filters_for_index_analysis, bloom_filter_in_cap]
+            [lookup = runtime_filter_lookup, descriptors = runtime_filters_for_data_read, bloom_filter_in_cap]
             (const IMergeTreeIndex & index) -> bool
             {
                 if (index.index.type != "bloom_filter")
@@ -6422,15 +6615,16 @@ bool ReadFromMergeTree::canRemoveUnusedColumns() const
     return true;
 }
 
-ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool /*remove_inputs*/)
+ReadFromMergeTree::RemoveUnusedColumnsResult
+ReadFromMergeTree::removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & /*inputs*/)
 {
     if (output_header == nullptr)
         return {};
 
-    /// Positions in the final RFMT output that must be preserved for the parent step or FINAL.
-    std::set<size_t> required_final_output_positions(required_output_positions.begin(), required_output_positions.end());
-    /// Positions in all_column_names that must still be read from storage.
-    std::set<size_t> required_storage_column_positions;
+    /// Positions in the output header that go away: the unneeded ones, except the ones FINAL merges by.
+    std::set<size_t> dropped_output_set(unneeded_output_positions.begin(), unneeded_output_positions.end());
+    /// Positions in all_column_names that FINAL needs to read whatever else goes away.
+    std::set<size_t> final_storage_column_positions;
     if (query_info.isFinal())
     {
         const auto required_for_final
@@ -6439,75 +6633,70 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
         for (size_t pos = 0; pos < output_header->columns(); ++pos)
         {
             if (required_for_final.contains(output_header->getByPosition(pos).name))
-                required_final_output_positions.insert(pos);
+                dropped_output_set.erase(pos);
         }
 
         /// Merging columns absent from the output header are added by initializePipeline and projected back off there.
         for (size_t pos = 0; pos < all_column_names.size(); ++pos)
         {
             if (required_for_final.contains(all_column_names[pos]) && output_header->has(all_column_names[pos]))
-                required_storage_column_positions.insert(pos);
+                final_storage_column_positions.insert(pos);
         }
     }
 
-    /// Sorted vector form of required_final_output_positions, used as the initial backward-pruning frontier.
-    std::vector<size_t> final_output_positions(
-        required_final_output_positions.begin(),
-        required_final_output_positions.end());
+    const std::vector<size_t> dropped_output_positions(dropped_output_set.begin(), dropped_output_set.end());
 
     Block storage_header = storage_snapshot->getSampleBlockForColumns(all_column_names);
     Block row_level_output_header = storage_header;
     if (query_info.row_level_filter)
         row_level_output_header = SourceStepWithFilter::applyPrewhereActions(std::move(row_level_output_header), query_info.row_level_filter, nullptr);
 
-    /// Positions in the row-policy output header, which is the input header for PREWHERE.
-    std::vector<size_t> required_row_level_output_positions;
-    /// Positions from the old final RFMT output that remain after pruning.
-    std::vector<size_t> kept_output_positions = final_output_positions;
+    /// Positions in the row-policy output header, which is the input header for PREWHERE, that nothing needs.
+    std::vector<size_t> unneeded_row_level_output_positions;
     bool removed_output_from_prewhere = false;
     if (query_info.prewhere_info)
     {
-        auto prewhere_pruning = pruneFilterDAGOutputsByPosition(
+        auto prewhere_pruning = FilterStep::pruneDAGOutputsByPosition(
             query_info.prewhere_info->prewhere_actions,
             query_info.prewhere_info->prewhere_column_name,
             query_info.prewhere_info->remove_prewhere_column,
             row_level_output_header,
-            final_output_positions,
-            true);
+            dropped_output_positions);
         removed_output_from_prewhere = prewhere_pruning.changed;
-        required_row_level_output_positions = std::move(prewhere_pruning.required_input_positions);
+        unneeded_row_level_output_positions = std::move(prewhere_pruning.unneeded_input_positions);
     }
     else
     {
-        required_row_level_output_positions = final_output_positions;
+        unneeded_row_level_output_positions = dropped_output_positions;
     }
 
     bool removed_output_from_row_level_filter = false;
-    /// Positions in the storage header required by row policy and PREWHERE filters.
-    std::vector<size_t> required_storage_positions_from_filters;
+    /// Positions in the storage header that neither the row policy nor PREWHERE filters need.
+    std::vector<size_t> unneeded_storage_positions;
     if (query_info.row_level_filter)
     {
-        auto row_level_pruning = pruneFilterDAGOutputsByPosition(
+        auto row_level_pruning = FilterStep::pruneDAGOutputsByPosition(
             query_info.row_level_filter->actions,
             query_info.row_level_filter->column_name,
             query_info.row_level_filter->do_remove_column,
             storage_header,
-            required_row_level_output_positions,
-            true);
+            unneeded_row_level_output_positions);
         removed_output_from_row_level_filter = row_level_pruning.changed;
-        required_storage_positions_from_filters = std::move(row_level_pruning.required_input_positions);
+        unneeded_storage_positions = std::move(row_level_pruning.unneeded_input_positions);
     }
     else
     {
-        required_storage_positions_from_filters = required_row_level_output_positions;
+        unneeded_storage_positions = std::move(unneeded_row_level_output_positions);
     }
 
-    required_storage_column_positions.insert(required_storage_positions_from_filters.begin(), required_storage_positions_from_filters.end());
+    std::set<size_t> dropped_storage_column_positions(unneeded_storage_positions.begin(), unneeded_storage_positions.end());
+    for (size_t pos : final_storage_column_positions)
+        dropped_storage_column_positions.erase(pos);
 
     Names new_column_names;
     for (size_t pos = 0; pos < all_column_names.size(); ++pos)
     {
-        if (required_storage_column_positions.contains(pos))
+        if (!dropped_storage_column_positions.contains(pos))
             new_column_names.push_back(all_column_names[pos]);
     }
 
@@ -6516,17 +6705,20 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
 
     all_column_names = std::move(new_column_names);
 
+    const size_t former_output_column_count = output_header->columns();
     output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
         storage_snapshot->getSampleBlockForColumns(all_column_names),
         query_info.row_level_filter,
         query_info.prewhere_info));
 
-    if (kept_output_positions.size() != output_header->columns())
+    if (former_output_column_count - dropped_output_positions.size() != output_header->columns())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Unexpected number of kept output positions after removing unused columns from ReadFromMergeTree: expected {}, got {}",
-            output_header->columns(),
-            kept_output_positions.size());
+            "Unexpected number of output columns after removing unused columns from ReadFromMergeTree: "
+            "{} columns, {} of them dropped, but {} left",
+            former_output_column_count,
+            dropped_output_positions.size(),
+            output_header->columns());
 
     /// Update analysis result if it exists
     if (analyzed_result_ptr)
@@ -6534,16 +6726,12 @@ ReadFromMergeTree::RemoveUnusedColumnsResult ReadFromMergeTree::removeUnusedColu
 
     required_source_columns = all_column_names;
 
-    return {true, {}, std::move(kept_output_positions)};
+    RemoveUnusedColumnsResult result;
+    result.step_changed = true;
+    result.dropped_output_positions = dropped_output_positions;
+    return result;
 }
 
-bool ReadFromMergeTree::canRemoveColumnsFromOutput() const
-{
-    if (output_header == nullptr)
-        return false;
-
-    return canRemoveUnusedColumns() && output_header->columns() > 0;
-}
 
 void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
 {

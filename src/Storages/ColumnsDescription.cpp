@@ -46,6 +46,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
 #include <Analyzer/AggregationUtils.h>
@@ -337,7 +338,7 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
 {
     for (auto & alias : aliases)
     {
-        ColumnDescription description(std::move(alias.name), std::move(alias.type), std::move(alias.comment));
+        ColumnDescription description(std::move(alias.name), std::move(alias.type));
         description.default_desc.kind = ColumnDefaultKind::Alias;
 
         const char * alias_expression_pos = alias.expression.data();
@@ -355,16 +356,16 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
 /// names are considered the same if they completely match or `name_without_dot` matches the part of the name to the point
 static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, const String & name_without_dot)
 {
-    String name_with_dot = name_without_dot + ".";
-
     /// First we need to check if we have column with name name_without_dot
     /// and if not - check if we have names that start with name_with_dot
-    for (auto it = columns.begin(); it != columns.end(); ++it)
+    const auto & columns_by_name = columns.get<1>();
+    if (auto it = columns_by_name.find(name_without_dot); it != columns_by_name.end())
     {
-        if (it->name == name_without_dot)
-            return std::make_pair(it, std::next(it));
+        auto sequenced_it = columns.project<0>(it);
+        return std::make_pair(sequenced_it, std::next(sequenced_it));
     }
 
+    String name_with_dot = name_without_dot + ".";
     auto begin = std::find_if(columns.begin(), columns.end(), [&](const auto & column){ return startsWith(column.name, name_with_dot); });
 
     if (begin == columns.end())
@@ -1059,7 +1060,7 @@ bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & colum
     for (const auto & stage : codec_func->arguments->children)
     {
         const auto * identifier = stage->as<ASTIdentifier>();
-        if (identifier && identifier->name() == DEFAULT_CODEC_NAME)
+        if (identifier && equalsCaseInsensitive(identifier->name(), DEFAULT_CODEC_NAME))
             return true;
     }
 
