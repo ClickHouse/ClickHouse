@@ -1,7 +1,7 @@
-query	1	0.33
-view	1	0.33
-viewIfPermitted	1	0.33
+query	1
+view	1
+viewIfPermitted	1
 explain	│  Filter column: toDecimal64(number, 2) = \'1.1\'
-query, disabled	0	0.3333333333333333
-view, disabled	0	0.3333333333333333
+query, disabled	0
+view, disabled	0
 explain, disabled	│  Filter column: toDecimal64(number, 2) = 1.1

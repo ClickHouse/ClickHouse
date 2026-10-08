@@ -8,12 +8,11 @@ namespace DB
 {
 
 /// Resolve a number literal used as a function argument, given the type of a sibling argument. The
-/// spelling of the literal decides its value, the sibling decides its type: next to a `Decimal` the
-/// literal is parsed from its text into a `Decimal` (a wide one for a comparison, the sibling's own
-/// type otherwise, widened only where the literal does not fit), next to a float it is a float, and
-/// an integer literal that fits an integer sibling takes that type. Otherwise the literal keeps its
-/// default type (`Float64`, or a wide integer for a value that does not fit `UInt64`/`Int64`). Null
-/// type when even that fails.
+/// spelling of the literal decides its value, the sibling decides its type: compared with a `Decimal`
+/// the literal is parsed from its text into a wide `Decimal`, in arithmetic with a `Decimal` or next to
+/// a float it is a float, and an integer literal that fits an integer sibling takes that type. Otherwise
+/// the literal keeps its default type (`Float64`, or a wide integer for a value that does not fit
+/// `UInt64`/`Int64`). Null type when even that fails.
 std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
     const String & text, const DataTypePtr & reference_type, bool is_comparison);
 

@@ -1,0 +1,9 @@
+primary key	Granules: 1/10
+skip index	Granules: 10/10
+skip index	Name: idx
+skip index	Granules: 2/10
+projection	20
+divide	Granules: 13/20
+intDiv	Granules: 2/20
+equals	Granules: 1/20
+exact comparison	1

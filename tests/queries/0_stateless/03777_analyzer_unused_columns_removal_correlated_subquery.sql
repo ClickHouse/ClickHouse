@@ -50,23 +50,6 @@ WHERE
             lineitem
         WHERE
             l_partkey = lp.p_partkey
-    )
-SETTINGS enable_context_typed_number_literals = 0;
-
--- With context typed literals `7.0` is cast to the `Decimal` type of `sum(l_extendedprice)`, so the result is a `Decimal(38, 2)`.
-EXPLAIN QUERY TREE
-SELECT
-    sum(l_extendedprice) / 7.0 AS avg_yearly
-FROM
-    (SELECT * FROM lineitem, part WHERE p_partkey = l_partkey) AS lp
-WHERE
-    l_quantity < (
-        SELECT
-            0.2 * avg(l_quantity)
-        FROM
-            lineitem
-        WHERE
-            l_partkey = lp.p_partkey
     );
 
 SELECT

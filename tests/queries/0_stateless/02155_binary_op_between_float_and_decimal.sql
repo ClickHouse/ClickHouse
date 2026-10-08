@@ -1,22 +1,14 @@
 SELECT 1.5::Decimal32(5) + 1.5;
 SELECT 1.5::Decimal32(5) - 1.5;
-SELECT 1.5::Decimal32(5) * 1.5 SETTINGS enable_context_typed_number_literals = 0;
-SELECT 1.5::Decimal32(5) / 1.5 SETTINGS enable_context_typed_number_literals = 0;
--- With context typed literals `1.5` is a `Decimal32(5)` next to a `Decimal32(5)` argument, so the result follows the `Decimal` rules and overflows.
-SELECT 1.5::Decimal32(5) * 1.5; -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT 1.5::Decimal32(5) / 1.5; -- { serverError DECIMAL_OVERFLOW }
+SELECT 1.5::Decimal32(5) * 1.5;
+SELECT 1.5::Decimal32(5) / 1.5;
 
 SELECT 1.5 + 1.5::Decimal32(5);
 SELECT 1.5 - 1.5::Decimal32(5);
-SELECT 1.5 * 1.5::Decimal32(5) SETTINGS enable_context_typed_number_literals = 0;
-SELECT 1.5 / 1.5::Decimal32(5) SETTINGS enable_context_typed_number_literals = 0;
--- With context typed literals `1.5` is a `Decimal32(5)` next to a `Decimal32(5)` argument, so the result follows the `Decimal` rules and overflows.
-SELECT 1.5 * 1.5::Decimal32(5); -- { serverError ARGUMENT_OUT_OF_BOUND }
-SELECT 1.5 / 1.5::Decimal32(5); -- { serverError DECIMAL_OVERFLOW }
+SELECT 1.5 * 1.5::Decimal32(5);
+SELECT 1.5 / 1.5::Decimal32(5);
 
-SELECT 1.0::Decimal32(5) / 0.0 SETTINGS enable_context_typed_number_literals = 0;
--- With context typed literals `0.0` is a `Decimal32(5)`, so this is a `Decimal` division by zero instead of `inf`.
-SELECT 1.0::Decimal32(5) / 0.0; -- { serverError DECIMAL_OVERFLOW }
+SELECT 1.0::Decimal32(5) / 0.0;
 
 SELECT least(1.5, 1.0::Decimal32(5));
 SELECT greatest(1.5, 1.0::Decimal32(5));

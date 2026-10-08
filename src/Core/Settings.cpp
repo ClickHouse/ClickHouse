@@ -9084,7 +9084,7 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
     DECLARE(Bool, enable_context_typed_number_literals, true, R"(
 Numeric literals are typed by the context they are used in instead of by their spelling.
 
-When enabled, a decimal integer literal that does not fit `Int64`/`UInt64` becomes a big integer (`UInt128`/`Int128`/`UInt256`/`Int256`), and a literal used next to a `Decimal` argument is parsed exactly from its text: comparisons use a wide `Decimal` and arithmetic casts the literal to the `Decimal` type of the argument. Literals also keep their original spelling when a query is formatted.
+When enabled, a decimal integer literal that does not fit `Int64`/`UInt64` becomes a big integer (`UInt128`/`Int128`/`UInt256`/`Int256`), and a literal compared with a `Decimal` argument is parsed exactly from its text into a wide `Decimal`. In arithmetic with a `Decimal` argument a literal stays a `Float64`. Literals also keep their original spelling when a query is formatted.
 
 When disabled, every literal that is not a plain `Int64`/`UInt64` is a `Float64`, as in previous versions.
 

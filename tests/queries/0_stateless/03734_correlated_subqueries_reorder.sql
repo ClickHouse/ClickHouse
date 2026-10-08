@@ -12,7 +12,6 @@ SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET correlated_subqueries_use_in_memory_buffer = 1;
 
 SET enable_parallel_replicas = 0;
-SET enable_context_typed_number_literals = 0; -- the plan and results below use `Float64` literals; the context typed result is checked at the end
 
 SET query_plan_optimize_join_order_algorithm = 'dpsize';
 SET query_plan_join_swap_table = 'auto';
@@ -147,12 +146,6 @@ SET query_plan_optimize_join_order_limit = 0;
 
 SELECT * FROM v_query1;
 SELECT * FROM v_query2;
-
--- With context typed literals `7.0` is cast to the `Decimal` type of `sum(l_extendedprice)`, so the division is a `Decimal`
--- division. The views keep the `Float64` column type they were created with.
-SET enable_context_typed_number_literals = 1;
-SELECT avg_yearly, toTypeName(avg_yearly) FROM v_query1;
-SELECT avg_yearly, toTypeName(avg_yearly) FROM v_query2;
 
 DROP VIEW IF EXISTS v_query1;
 DROP VIEW IF EXISTS v_query2;

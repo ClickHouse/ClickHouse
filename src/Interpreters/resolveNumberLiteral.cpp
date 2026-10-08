@@ -155,33 +155,22 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
         WhichDataType which_default(default_type);
         WhichDataType which_ref(ref);
 
-        if (isDecimal(*ref))
+        /// Only a comparison is retargeted to `Decimal`. Arithmetic keeps `Float64`, so a stored expression
+        /// (`DEFAULT price / 3.0`) and a key built by the old analyzer compute the same value as before.
+        if (isDecimal(*ref) && is_comparison)
         {
             /// Fold the exponent and drop insignificant trailing zeroes first, so different spellings
             /// of one value (`1.5e-3`, `0.0015`) resolve identically.
             UInt32 scale = 0;
             if (normalizeDecimalLiteral(text, decimal_text, scale))
             {
-                if (is_comparison)
-                {
-                    /// The literal keeps its own scale, so it is never rounded to the reference's. Its precision
-                    /// covers both sides' integer digits, as a comparison rescales them in the wider of the two
-                    /// types and throws on overflow (`Decimal32(0)` value 999999999 against `0.5`).
-                    const UInt32 ref_scale = getDecimalScale(*ref);
-                    const UInt64 integer_digits = std::max<UInt64>(getDecimalPrecision(*ref) - ref_scale, decimalDigits(decimal_text) - scale);
-                    const UInt64 precision = std::min<UInt64>(integer_digits + std::max(scale, ref_scale), DataTypeDecimal<Decimal256>::maxPrecision());
-                    target_type = createDecimal<DataTypeDecimal>(precision, scale);
-                }
-                else
-                {
-                    /// Otherwise the literal is cast to the sibling's type, exactly as an explicit constant of
-                    /// that type would be, and widened only where it does not fit: `1.5` next to a
-                    /// `Decimal32(5)` is `Decimal32(5)`, `1.123` next to a `Decimal32(2)` is `Decimal32(3)`.
-                    const UInt32 target_scale = std::max(scale, getDecimalScale(*ref));
-                    const UInt64 precision = std::max<UInt64>(decimalDigits(decimal_text) + (target_scale - scale), getDecimalPrecision(*ref));
-                    if (precision <= DataTypeDecimal<Decimal256>::maxPrecision())
-                        target_type = createDecimal<DataTypeDecimal>(precision, target_scale);
-                }
+                /// The literal keeps its own scale, so it is never rounded to the reference's. Its precision
+                /// covers both sides' integer digits, as a comparison rescales them in the wider of the two
+                /// types and throws on overflow (`Decimal32(0)` value 999999999 against `0.5`).
+                const UInt32 ref_scale = getDecimalScale(*ref);
+                const UInt64 integer_digits = std::max<UInt64>(getDecimalPrecision(*ref) - ref_scale, decimalDigits(decimal_text) - scale);
+                const UInt64 precision = std::min<UInt64>(integer_digits + std::max(scale, ref_scale), DataTypeDecimal<Decimal256>::maxPrecision());
+                target_type = createDecimal<DataTypeDecimal>(precision, scale);
             }
             else
             {
@@ -191,10 +180,11 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
                 target_type = std::make_shared<DataTypeFloat64>();
             }
         }
-        else if ((which_default.isInt() || which_default.isUInt()) && which_ref.isFloat())
+        else if ((which_default.isInt() || which_default.isUInt()) && (which_ref.isFloat() || isDecimal(*ref)))
         {
             /// The integer spelling says nothing about the type: next to a float the literal is a float,
-            /// so a value too large for UInt64 is read as one, rounding as a float literal does.
+            /// so a value too large for UInt64 is read as one, rounding as a float literal does. In
+            /// arithmetic with a `Decimal` it stays a `Float64`, as before.
             literal_value = NumberLiteral(text).toFloat64();
             target_type = std::make_shared<DataTypeFloat64>();
         }
