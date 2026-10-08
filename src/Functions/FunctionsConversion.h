@@ -48,6 +48,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
@@ -3408,6 +3409,41 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type);
 #endif
 
+/// Whether rendering a value of this type as text maps distinct values onto the same string:
+///
+/// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
+///   instants have the same local wall-clock representation;
+/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
+///   tables compare floating-point keys bitwise and keep distinct payloads apart;
+/// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
+///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
+///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
+/// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
+///
+/// An unknown type is assumed to collapse, so that an undecidable case is never claimed to be injective.
+inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    if (!type)
+        return true;
+
+    bool collapses = false;
+    auto check = [&](const IDataType & nested)
+    {
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
+            collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
+        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
+            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
+        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+            collapses = true;
+        else if (isUInt8(nested) && nested.getName() == "Bool")
+            collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
+    };
+
+    forEachInTypeTree(*type, check);
+    return collapses;
+}
+
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert final : public IFunction
 {
@@ -3448,9 +3484,21 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
-        return std::is_same_v<Name, NameToString> && arguments.size() <= 1;
+        if constexpr (std::is_same_v<Name, NameToString>)
+        {
+            /// Only the single-argument form is claimed. A caller that passes no arguments gets no
+            /// claim, because the answer depends on them, and the multi-argument forms are rendered
+            /// in the time zone given by the second argument - `toString(dt, 'Europe/Amsterdam')`
+            /// folds even for a fixed-offset `dt`, and `toString(x, NULL)` maps every row to `NULL`.
+            if (sample_columns.size() != 1)
+                return false;
+
+            return !renderingCollapsesDistinctValues(sample_columns.front().type, settings.format_settings);
+        }
+        else
+            return false;
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
