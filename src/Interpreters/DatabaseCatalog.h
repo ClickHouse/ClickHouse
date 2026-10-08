@@ -132,6 +132,11 @@ public:
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table, const IDatabase * expected_database);
 
+    /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
+    /// Always returns a guard, check `ownsTableLock` for the outcome.
+    DDLGuardPtr tryGetDDLGuard(
+        const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout);
+
     /// Guards the storage under its current name, following a concurrent RENAME. Waits without
     /// polling sleeps. Returns nullptr on timeout, when `is_alive()` turns false, or right away
     /// when an exclusive database DDL holds the database lock.
@@ -304,11 +309,6 @@ private:
 
     explicit DatabaseCatalog(ContextMutablePtr global_context_);
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const TSA_REQUIRES(databases_mutex);
-
-    /// Waits on the table lock at most `table_lock_timeout`, single attempt on the database lock.
-    /// Always returns a guard, check `ownsTableLock` for the outcome.
-    DDLGuardPtr tryGetDDLGuard(
-        const String & database, const String & table, const IDatabase * expected_database, std::chrono::milliseconds table_lock_timeout);
 
     void shutdownImpl(std::function<void()> shutdown_system_logs);
 

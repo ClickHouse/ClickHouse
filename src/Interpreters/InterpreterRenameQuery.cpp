@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_IS_TOO_LARGE;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -151,7 +152,9 @@ std::vector<ViewDefinitionsRenaming::View> ViewDefinitionsRenaming::scan(std::se
 
 void ViewDefinitionsRenaming::checkDetachedTables() const
 {
-    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
+    auto & catalog = DatabaseCatalog::instance();
+    const auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds());
+    for (const auto & [database_name, database] : catalog.getDatabases({.with_datalake_catalogs = false, .with_remote_databases = false}))
     {
         DatabaseDetachedTablesSnapshotIteratorPtr it;
         try
@@ -167,6 +170,20 @@ void ViewDefinitionsRenaming::checkDetachedTables() const
         }
         for (; it->isValid(); it->next())
         {
+            /// ATTACH rewrites the metadata of a detached table under its DDL guard.
+            DDLGuardPtr guard;
+            if (database_name != old_database_name && database_name != new_database_name)
+            {
+                guard = catalog.tryGetDDLGuard(database_name, it->table(), nullptr, timeout);
+                /// The database is being dropped, detached or renamed.
+                if (guard->databaseLockBusy())
+                    break;
+                if (!guard->ownsTableLock())
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Cannot acquire the DDL guard for {}.{}, lock_acquire_timeout is {} ms",
+                        backQuoteIfNeed(database_name), backQuoteIfNeed(it->table()), timeout.count());
+            }
+
             ASTPtr definition;
             if (dynamic_cast<const DatabaseOnDisk *>(database.get()))
             {
