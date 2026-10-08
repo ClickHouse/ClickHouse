@@ -404,21 +404,26 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
     task.refcount.store(initial_refcount);
 
     size_t actual_refcount = 0;
+    size_t bytes_read_partially = 0;
     for (size_t idx = start_idx; idx < end_idx; ++idx)
     {
         const RangeState & range = ranges[idx];
         RequestState * req = range.request;
         req->task = &task;
         req->task_offset = range.start - task.offset;
-        if (req->may_be_read_partially)
-            task.read_entirely = false;
 
         RequestState::State s = RequestState::State::HasRange;
         if (req->state.compare_exchange_strong(s, RequestState::State::HasTask))
+        {
             actual_refcount += 1;
+            if (req->may_be_read_partially)
+                bytes_read_partially += range.length();
+        }
         else
             chassert(s == RequestState::State::Cancelled);
     }
+    /// The task takes the read hint mode of most of its bytes.
+    task.read_entirely = bytes_read_partially * 2 <= total_length_of_covered_ranges;
 
     chassert(actual_refcount > 0);
     decreaseTaskRefcount(&task, initial_refcount - actual_refcount);
