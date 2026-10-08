@@ -8,6 +8,8 @@
 -- a key keeps at least one row with probability 1 - (2/3)^4 = 0.8 and the anti join keeps about a
 -- fifth of the preserved rows.
 SET allow_experimental_statistics = 1;
+-- `NOT EXISTS` is an anti join only through this conversion; the runner randomizes it.
+SET query_plan_convert_any_join_to_semi_or_anti_join = 1;
 -- The columns a step does not need are dropped below it, which narrows the rows the costs count;
 -- the runner randomizes the removal.
 SET query_plan_remove_unused_columns = 1;
