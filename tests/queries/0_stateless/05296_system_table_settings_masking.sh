@@ -11,7 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 collection="nc_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -n -q "
--- A secret is shown as [HIDDEN], as in SHOW CREATE TABLE; an unset one is not reported as hidden.
+-- A secret is shown as [HIDDEN], as in SHOW CREATE TABLE. An unstated kafka_sasl_password has no row: the engine takes
+-- it from the server configuration.
 CREATE TABLE kafka_secret (a Int) ENGINE = Kafka
 SETTINGS kafka_broker_list = 'localhost:9092', kafka_topic_list = 't', kafka_group_name = 'g', kafka_format = 'JSONEachRow',
     kafka_sasl_password = 'secret_password_05296';
@@ -21,10 +22,13 @@ SELECT table, name, value FROM system.table_settings
 WHERE database = currentDatabase() AND name IN ('kafka_broker_list', 'kafka_sasl_password')
 ORDER BY table, name;
 
--- S3Queue accepts its settings with an s3queue_ prefix, which the engine strips.
+-- S3Queue accepts its settings with an s3queue_ prefix, which the engine strips. An unset secret is not reported as
+-- hidden.
 CREATE TABLE queue (a String) ENGINE = S3Queue('http://localhost:11111/test/05296/*.csv', NOSIGN, 'CSV')
 SETTINGS s3queue_mode = 'unordered';
-SELECT name, value, changed FROM system.table_settings WHERE database = currentDatabase() AND table = 'queue' AND name = 'mode';
+SELECT name, value, changed FROM system.table_settings WHERE database = currentDatabase() AND table = 'queue'
+    AND name IN ('after_processing_move_secret_access_key', 'mode')
+ORDER BY name;
 
 -- A value a named collection supplies is hidden unless the server lets the reader see the collection's secrets, which
 -- it does not here; a literal override in the engine arguments and the SETTINGS clause are shown. A format setting

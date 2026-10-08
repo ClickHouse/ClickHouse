@@ -1,7 +1,7 @@
 kafka_no_secret	kafka_broker_list	localhost:9092
-kafka_no_secret	kafka_sasl_password	
 kafka_secret	kafka_broker_list	localhost:9092
 kafka_secret	kafka_sasl_password	[HIDDEN]
+after_processing_move_secret_access_key		0
 mode	unordered	1
 format_csv_delimiter	[HIDDEN]	1
 kafka_broker_list	[HIDDEN]	1
