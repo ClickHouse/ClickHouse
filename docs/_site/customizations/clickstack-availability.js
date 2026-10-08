@@ -4752,10 +4752,29 @@
 };
   // END PAGE MAP
 
+  function updateProductTabs(base, variants) {
+    var products = {
+      '/clickstack/observability': 'Fully managed',
+      '/clickstack/self-configured': 'Self Configured'
+    };
+    document.querySelectorAll('#navigation-items > ul > li > a').forEach(function (link) {
+      var root = link.dataset.chProductRoot;
+      if (!root) {
+        root = new URL(link.href, location.href).pathname.replace(/^\/docs(?=\/)/, '').replace(/\/+$/, '');
+        if (!products[root] || link.textContent.trim() !== products[root]) return;
+        link.dataset.chProductRoot = root;
+      }
+      var match = (variants || []).find(function (variant) { return variant[0] === products[root]; });
+      var target = base + (match ? match[1] : root);
+      if (link.getAttribute('href') !== target) link.setAttribute('href', target);
+    });
+  }
+
   function render() {
     var base = /^\/docs(?:\/|$)/.test(location.pathname) ? '/docs' : '';
     var path = location.pathname.slice(base.length).replace(/\/+$/, '');
     var variants = pages[path];
+    updateProductTabs(base, variants);
     var existing = document.getElementById('ch-product-availability');
     var title = document.getElementById('page-title');
     if (!variants || !title) {
@@ -4778,6 +4797,11 @@
     title.after(row);
   }
   function start() {
+    // Use the updated anchor destination instead of Mintlify's original landing-page route.
+    document.addEventListener('click', function (event) {
+      var link = event.target.closest && event.target.closest('a[data-ch-product-root]');
+      if (link) event.stopPropagation();
+    }, true);
     render();
     new MutationObserver(render).observe(document.body, { childList: true, subtree: true });
     window.addEventListener('popstate', render);
