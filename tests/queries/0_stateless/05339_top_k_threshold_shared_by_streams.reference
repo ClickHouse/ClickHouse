@@ -1,0 +1,42 @@
+collected threshold skips marks
+1
+boundary value
+99	100
+nan sorted first is kept
+5	100	94
+collected across streams skips marks
+1
+189	100
+ties
+0	80
+1	80
+2	40
+desc offset
+48
+48
+47
+47
+47
+two columns
+3900	0
+3950	0
+1	1
+51	1
+101	1
+nulls first
+\N
+\N
+0
+100	100
+nulls last
+49
+48
+\N
+49
+49
+collation
+a0
+a10
+a10
+B9
+B7
