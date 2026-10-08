@@ -3622,5 +3622,16 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
     return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part" || name == "min_level_for_wide_part";
 }
 
-IMPLEMENT_SETTINGS_ENUMERATION(MergeTreeSettings)
+/// Not `IMPLEMENT_SETTINGS_ENUMERATION`: as in `loadFromQuery`, a table that states `disk` has the default
+/// `storage_policy`, whatever the server-level instance sets.
+SettingDescriptions MergeTreeSettings::enumerateSettings(const SettingsChanges & changes) const
+{
+    if (changes.empty())
+        return enumerateSettingsFromImpl(*impl);
+    auto settings = *impl;
+    if (changes.tryGet("disk"))
+        settings.resetToDefault("storage_policy");
+    applyDeclaredChanges(settings, changes);
+    return enumerateSettingsFromImpl(settings);
+}
 }

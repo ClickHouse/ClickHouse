@@ -1260,6 +1260,7 @@ Not shown:
 - Tables of engines without a settings class of their own, such as `File`, `URL`, `Join` and the `Log` family, and tables without an engine definition of their own: views, dictionaries and tables created from a table function.
 - Tables in data lake catalogs. Tables in `MySQL` and `PostgreSQL` databases are left out when [`show_remote_databases_in_system_tables`](/reference/settings/session-settings/show#show_remote_databases_in_system_tables) is off, as in `system.tables`.
 - Settings a table takes from elsewhere unless its definition states them, which [`system.engine_settings`](/reference/system-tables/engine_settings) does not list either: the format settings, the connection pool settings of `PostgreSQL`, `mysql_datatypes_support_level` of `MySQL`, the credentials `NATS` and `RabbitMQ` take from the server configuration, the block size, poll and flush settings of `Kafka`, `FileLog`, `NATS` and `RabbitMQ`, the security and compression settings of `Kafka`, and `keeper_path` of `S3Queue` and `AzureQueue`. A table that states one shows it.
+- Settings that the deprecated `MergeTree` syntax gives as engine arguments, such as `index_granularity` in `MergeTree(date, key, 8192)`: their rows show the value the table would have without them.
 - Values that are not in the table's definition: values `S3Queue` and `AzureQueue` keep in Keeper (see [`system.s3_queue_settings`](/reference/system-tables/s3_queue_settings)). Macros are shown as written.
 
 .examples
