@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 -- no-fasttest: needs the Parquet format and IcebergLocal.
+-- Random settings limits: optimize_move_to_prewhere=(1, 1)
 
 -- A predicate evaluated while reading Parquet (PREWHERE, row policy) and the filters a data lake read applies
 -- after reading must use the query's short_circuit_function_evaluation: the guarded intDiv must not run for x = 0.
@@ -46,7 +47,9 @@ INSERT INTO t_05339_iceberg SELECT number % 3, toString(number) FROM numbers(30)
 ALTER TABLE t_05339_iceberg RENAME COLUMN x TO z;
 
 SELECT count(), sum(length(y)) FROM t_05339_iceberg WHERE z = 0 OR intDiv(10, z) > 1;
+SELECT count(), sum(length(y)) FROM t_05339_iceberg WHERE z = 0 OR intDiv(10, z) > 1 SETTINGS short_circuit_function_evaluation = 'disable'; -- { serverError ILLEGAL_DIVISION }
 CREATE ROW POLICY OR REPLACE p_05339_iceberg ON t_05339_iceberg USING if(z = 0, 0, intDiv(10, z) > 1) TO ALL;
 SELECT count(), sum(length(y)) FROM t_05339_iceberg;
+SELECT count(), sum(length(y)) FROM t_05339_iceberg SETTINGS short_circuit_function_evaluation = 'disable'; -- { serverError ILLEGAL_DIVISION }
 DROP ROW POLICY p_05339_iceberg ON t_05339_iceberg;
 DROP TABLE t_05339_iceberg;
