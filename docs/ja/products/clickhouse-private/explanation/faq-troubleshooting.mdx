@@ -1,0 +1,111 @@
+---
+noindex: true
+title: "よくある質問 / トラブルシューティング"
+sidebarTitle: "よくある質問"
+description: "このエラーが ClickHouse Operator のログに表示された場合、オペレーターが ClickHouse クラスターのリコンシリエーションを完了できないことを意味します。これは、オペレーターが"
+---
+
+<div id="zone-details-couldnt-be-found-for-any-pv">
+  ## どの PV でも zone の詳細が見つかりませんか？
+</div>
+
+このエラーが ClickHouse Operator のログに表示されている場合、PersistentVolume にトポロジー対応のノードアフィニティが自動的に設定されていることを前提としているため、ClickHouse クラスターのリコンシリエーションを完了できないことを意味します。具体的には、オペレーター は `topology.kubernetes.io/zone` ラベルに基づくノードアフィニティを参照します。通常、これはトポロジー対応のボリュームプロビジョナー (たとえば AWS EBS volume provisioner を使用している場合) によって処理されます。
+
+ただし、一部のクラウドプロバイダー (例: IBM) やオンプレミス環境では、これが自動的に設定されなかったり、標準以外のラベルが使われたりすることがあります。オペレーター が引き続き動作できるようにするには、たとえば次のようにストレージクラスへノードアフィニティを追加することを推奨します。
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme-sc
+allowVolumeExpansion: true
+parameters:
+  path: /nvme/disk
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - <your_cluster_name>-keeper
+          - <your_host_1>
+          - <your_host_2>
+          - <your_host_3>
+          - <your_host_4>
+          - <your_host_5>
+          - <your_host_6>
+      - key: directpv.min.io/zone
+        values:
+          - default
+```
+
+これにより、ストレージボリュームが適切なノードアフィニティで作成されるようになります。たとえば:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  ...
+spec:
+  accessModes:
+    - ReadWriteOnce
+  ...
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: directpv.min.io/zone
+              operator: In
+              values:
+                - default
+  ...
+```
+
+トポロジーを扱うために標準以外のラベルを使用している場合、オペレーター では `additionalZoneLabelRegexes` プロパティを利用できます。たとえば、オペレーター のインストールに Helm チャートを使用している場合は、`operator.additionalZoneLabelRegexes` の helm 値に `directpv.*zone` を設定することで、上記の PersistentVolume に一致させることができます。
+
+<div id="what-does-the-loadbalancertype-field-on-the-clickhousecluster-crd-do">
+  ## ClickHouseCluster CRD の `loadBalancerType` フィールドは何をするものですか？
+</div>
+
+`loadBalancerType` は、実際には ClickHouse クラスターの Service にロードバランサーの annotations を追加しません。現時点では、ClickHouse Operator は ClickHouse クラスター用のロードバランサーの作成をサポートしていません。このフィールドが意味を持つのは ClickHouse Cloud のみで、Cloud SQL Console のユーザー作成を支援するために使われます。
+
+<div id="do-i-have-to-use-a-nvme-attached-instance-what-purpose-does-the-nvme-disk-serve">
+  ## NVMe が接続されたインスタンスを使用する必要がありますか？NVMe ディスクは何のために使われますか？
+</div>
+
+NVMe ディスクは、ClickHouse Operator が ClickHouse server のポッドに cache ボリュームをマウントするために使用されます。この cache ボリュームは、S3 (または同等のオブジェクトストレージ) から取得したデータの cache として使用されます。ClickHouse Operator は、ClickHouse server の設定内のディスクを自動的に構成します。
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+SharedMergeTree を使用する場合、ClickHouse は実際にはデータをローカルに保存しない点に注意してください。そのため、ローカルストレージの役割は SharedMergeTree に対して実行されるクエリのパフォーマンス最適化に限られます。
+
+EC2 インスタンスを使用する場合は、AWS EBS などの別のストレージデバイスを使用することもできます。この場合、オンボーディングガイドのいくつかの手順が変わります。
+
+* ClickHouse server の Kubernetes ポッドがスケジュールされるインスタンスに、ディスクがアタッチされていることを確認する必要があります
+* ディスク構成の変更を反映するように、launch template を変更する必要があります。RAID ディスクの作成や、ディスクを ext4 または xfs でフォーマットすることは引き続き可能ですが、当然ながらデバイスの一覧表示には別のツール (例: lsblk) を使用する必要があります。
+* ディスクが launch template の例のように `/nvme/disk` にマウントされていない場合は、ClickHouseCluster Helm チャートの `hostPathBaseDirectory` を実際のマウントポイントに設定する必要があります。
+
+また、選択した構成によっては、クエリのパフォーマンスに影響が出る可能性がある点にも注意してください。
+
+<div id="can-i-deploy-multiple-clickhouseclusters-in-the-same-namespace">
+  ## 同じネームスペースに複数の ClickHouseClusters をデプロイできますか？
+</div>
+
+いいえ。オペレーターは、各ネームスペースに `ClickHouseCluster` が 1 つだけ存在することを前提としています。同じネームスペースに複数のインスタンスをデプロイすると、リコンシリエーションの競合が発生します。`onprem-clickhouse-cluster` Helm チャートでは、ネームスペース内の `ClickHouseCluster` リソースを 1 つに制限する `ResourceQuota` により、これがデフォルトで強制されます。複数のクラスターが必要な場合は、それぞれを別のネームスペースにデプロイしてください。
+
+<div id="i-use-s3-compatible-storage-but-region-information-isnt-required-or-causes-issues">
+  ## S3互換ストレージを使用していますが、リージョン情報は不要です (または問題が発生します)
+</div>
+
+オペレーターはデフォルトで、S3接続にリージョン情報が含まれていることを必須とします。これはクラウドオブジェクトストレージでは推奨される動作ですが、オンプレミスのオブジェクトストレージ (例: MinIO) を使用している場合は、リージョン情報が原因で問題が発生することがあります。
+
+オペレーターでは、`ClickHouseCluster` カスタムリソースの `spec.isOnPremiseInstance` を `true` に設定することで、クラスター単位でリージョン必須化を無効にできます。これを設定すると、S3接続でリージョン情報は任意になります -- リージョンが指定されていない場合、設定からリージョンフィールドは完全に削除されます。

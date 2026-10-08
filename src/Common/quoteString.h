@@ -22,12 +22,13 @@ namespace DB
 /// so an embedded `'` still terminates the literal.
 [[nodiscard]] String quoteStringPostgreSQL(std::string_view x);
 
+[[nodiscard]] inline String quoteStringSQLite(std::string_view x)
+{
+    return quoteStringSingleQuoteWithSingleQuote(x);
+}
+
 /// Double quote the string.
 String doubleQuoteString(std::string_view x);
-
-/// Quote an identifier for a query sent to a PostgreSQL server. Prefer this over `doubleQuoteString`,
-/// whose `\"` does not escape the quote there: the identifier ends and the rest is parsed as SQL.
-String doubleQuoteStringPostgreSQL(std::string_view x);
 
 String doubleQuoteStringSQLite(std::string_view x);
 
@@ -40,6 +41,4 @@ String backQuoteIfNeed(std::string_view x);
 /// Quote the identifier with backquotes, for use in MySQL queries.
 String backQuoteMySQL(std::string_view x);
 
-/// Quote the identifier with backquotes, for use in SQLite queries.
-String backQuoteSQLite(std::string_view x);
 }

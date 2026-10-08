@@ -5,7 +5,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/TypeLists.h>
 #include <base/range.h>
 
 
@@ -67,12 +66,14 @@ public:
         const auto * value_col = arguments.front().column.get();
 
         ColumnPtr res;
-        TypeListUtils::forEach(TypeListNativeInt{}, [&]<typename T>(TypeList<T>)
-        {
-            if (!res)
-                res = execute<T>(arguments, result_type, value_col, input_rows_count);
-        });
-        if (!res)
+        if (!((res = execute<UInt8>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt16>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt32>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt64>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int8>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int16>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int32>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int64>(arguments, result_type, value_col, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", value_col->getName(), getName());
 
         return res;

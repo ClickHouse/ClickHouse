@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Storages/IStorage.h>
-#include <Storages/StorageProxy.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/Context.h>
@@ -48,12 +47,10 @@ BlockIO InterpreterOptimizeQuery::execute()
     getContext()->checkAccess(getRequiredAccess());
 
     auto table_id = getContext()->resolveStorageID(ast);
-    /// Resolve before reading the metadata, so the checks below and `optimizeDryRun` see the real
-    /// structure rather than the columns-only one a lazily loaded table reports.
-    StoragePtr table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
-    auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, getContext());
+    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
     /// Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
     if (ast.manifest)
@@ -62,7 +59,7 @@ BlockIO InterpreterOptimizeQuery::execute()
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE MANIFEST is incompatible with FINAL, PARTITION, DEDUPLICATE, CLEANUP, and DRY RUN options");
 
 #if USE_AVRO
-        auto object_storage_table = castStorage<StorageObjectStorage>(table, DeferredTable::Skip);
+        auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(table.get());
         if (!object_storage_table)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 
@@ -115,7 +112,7 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     if (ast.dry_run)
     {
-        auto * merge_tree_data = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
+        auto * merge_tree_data = dynamic_cast<MergeTreeData *>(table.get());
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE DRY RUN is only supported for MergeTree family tables");
 
@@ -138,6 +135,9 @@ BlockIO InterpreterOptimizeQuery::execute()
         merge_tree_data->optimizeDryRun(part_names, metadata_snapshot, ast.deduplicate, column_names, ast.cleanup, getContext());
         return {};
     }
+
+    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
+        snapshot_data->parts = {};
 
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
     return {};

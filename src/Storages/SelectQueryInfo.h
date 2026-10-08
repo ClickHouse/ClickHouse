@@ -28,6 +28,9 @@ using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
+class ReadInOrderOptimizer;
+using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
+
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
@@ -132,7 +135,7 @@ struct SelectQueryInfo
 
     /// Storage table expression
     /// It's guaranteed to be present in JOIN TREE of `query_tree`
-    TableExpressionNodePtr table_expression;
+    QueryTreeNodePtr table_expression;
 
     /// Table expression modifiers for storage
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -178,8 +181,8 @@ struct SelectQueryInfo
     /// (See comment in ReadFromMergeTree::applyFilters.)
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
-    /// Set by `ReadFromMergeTree::requestReadingInOrder` / `ReadFromMerge::requestReadingInOrder`
-    /// when the query plan optimizer decides to read in the order of the sorting key.
+    ReadInOrderOptimizerPtr order_optimizer;
+    /// Can be modified while reading from storage
     InputOrderInfoPtr input_order_info;
 
     /// Prepared sets are used for indices by storage engine.
@@ -214,6 +217,9 @@ struct SelectQueryInfo
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
+
+    /// During read from MergeTree parts will be removed from snapshot after they are not needed
+    bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
     bool isFinal() const;
 
