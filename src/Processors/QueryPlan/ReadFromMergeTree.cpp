@@ -690,7 +690,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
         block_size,
         context);
 
-    pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+    pool->addReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
     /// Default pool ignores the announcement response. The latter is relevant only to InOrder
     /// reading where we split the table into multiple streams.
@@ -779,7 +779,8 @@ Pipe ReadFromMergeTree::readFromPool(
         && (allow_prefetched_remote || allow_prefetched_local);
 
     /// The gating edge guarantees the seal_gate_refiner receives its filter before the first
-    /// task cut. TODO: combine with the projection index refiner when both apply.
+    /// task cut. It goes first in the chain: its PK-index cut is cheap and usually the most
+    /// selective, so the index refiner builds bitmaps only for the surviving marks.
     if (use_prefetched_read_pool)
     {
         auto prefetched_pool = std::make_shared<MergeTreePrefetchedReadPool>(
@@ -798,10 +799,8 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        if (seal_gate_refiner)
-            prefetched_pool->setReadRangesRefiner(seal_gate_refiner);
-        else
-            prefetched_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        prefetched_pool->addReadRangesRefiner(seal_gate_refiner);
+        prefetched_pool->addReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(prefetched_pool);
     }
     else
@@ -822,10 +821,8 @@ Pipe ReadFromMergeTree::readFromPool(
             context,
             dataflow_cache_updater);
 
-        if (seal_gate_refiner)
-            read_pool->setReadRangesRefiner(seal_gate_refiner);
-        else
-            read_pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+        read_pool->addReadRangesRefiner(seal_gate_refiner);
+        read_pool->addReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
         pool = std::move(read_pool);
     }
 
@@ -979,7 +976,7 @@ Pipe ReadFromMergeTree::readInOrder(
             block_size,
             context);
 
-        in_order_pool->setReadRangesRefiner(
+        in_order_pool->addReadRangesRefiner(
             createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
 
         /// The response tells us exactly which parts this stream owns: phantom parts are skipped
@@ -1020,11 +1017,9 @@ Pipe ReadFromMergeTree::readInOrder(
             context,
             dataflow_cache_updater);
 
-        if (seal_gate_refiner)
-            in_order_pool->setReadRangesRefiner(seal_gate_refiner);
-        else
-            in_order_pool->setReadRangesRefiner(
-                createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
+        in_order_pool->addReadRangesRefiner(seal_gate_refiner);
+        in_order_pool->addReadRangesRefiner(
+            createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, context->getSettingsRef()));
         pool = std::move(in_order_pool);
     }
 

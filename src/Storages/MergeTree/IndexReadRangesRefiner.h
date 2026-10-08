@@ -29,6 +29,8 @@ public:
 
     MarkRanges refine(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const override;
 
+    void onMarksDropped(const MergeTreeReadTaskInfo & info, size_t dropped_marks) const override;
+
 private:
     const MergeTreeIndexBuildContextPtr index_build_context;
     const StorageMetadataPtr metadata_snapshot;

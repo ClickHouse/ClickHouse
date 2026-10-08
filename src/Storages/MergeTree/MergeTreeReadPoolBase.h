@@ -71,9 +71,15 @@ public:
     /// `ParallelReadingExtension` it constructed before passing into the pool.
     RangesInDataPartsDescription buildAnnouncementDescriptions() const;
 
-    /// Must be called before the pipeline starts to call getTask. Not every pool applies the
-    /// refiner: see refineReadRanges calls in getTask of the concrete pools.
-    void setReadRangesRefiner(MergeTreeReadRangesRefinerPtr refiner) { ranges_refiner = std::move(refiner); }
+    /// Appends a refiner to the chain; the chain is applied in installation order. A null
+    /// refiner is ignored (factories return null when their feature is off). Must be called
+    /// before the pipeline starts to call getTask. Not every pool applies the refiners: see
+    /// refineReadRanges calls in getTask of the concrete pools.
+    void addReadRangesRefiner(MergeTreeReadRangesRefinerPtr refiner)
+    {
+        if (refiner)
+            ranges_refiners.push_back(std::move(refiner));
+    }
 
 protected:
     /// Initialized in constructor
@@ -108,7 +114,7 @@ protected:
     /// Charge the staged estimate of this pool against the query-wide budget and disable cache
     /// writes for the query once the budget is exceeded. Runs once, from `createTask`, so that
     /// it happens before any task is handed out but after the caller has installed the read
-    /// ranges refiner (see `setReadRangesRefiner`): a pool that has one cannot be gated on the
+    /// ranges refiners (see `addReadRangesRefiner`): a pool that has any cannot be gated on the
     /// estimate at all, because the refiner decides how many of the selected marks are really
     /// read only when a task is cut.
     void commitColumnsCacheWriteEstimate() const;
@@ -144,8 +150,9 @@ protected:
 
     MergeTreeReadTask::Extras getExtras() const;
 
-    /// Applies the refiner (if any) to ranges cut from a part right before creating a read task.
-    /// May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling mutex.
+    /// Applies the refiner chain (if any) to ranges cut from a part right before creating a read
+    /// task. May block (see IMergeTreeReadRangesRefiner), do not call under the pool scheduling
+    /// mutex.
     MarkRanges refineReadRanges(const MergeTreeReadTaskInfo & info, MarkRanges ranges) const;
 
     /// The initial map without the ranges that the refiner has dropped so far. The initial map is `replica_map`
@@ -156,7 +163,7 @@ protected:
     /// from the index analysis, because the task info already holds the patch maps for it.
     std::vector<MarkRangesPtr> getActualPatchReadRequestMaps(const MergeTreeReadTaskInfo & info, const MarkRangesPtr & actual_map) const;
 
-    MergeTreeReadRangesRefinerPtr ranges_refiner;
+    std::vector<MergeTreeReadRangesRefinerPtr> ranges_refiners;
 
     /// Uncompressed bytes the selected mark ranges of this pool are estimated to read into the
     /// columns cache, and the budget they are compared against. Filled by
