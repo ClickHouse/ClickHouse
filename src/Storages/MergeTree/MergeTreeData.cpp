@@ -182,6 +182,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
+    extern const SettingsBool apply_deleted_mask;
     extern const SettingsBool apply_mutations_on_fly;
     extern const SettingsBool allow_experimental_vector_similarity_index;
     extern const SettingsBool fsync_metadata;
@@ -263,8 +264,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
-    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
-    extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
 }
 
@@ -7860,6 +7859,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     bool need_primary_key_max_column = false;
     const auto & primary_key_max_column_name = metadata_snapshot->minmax_count_projection->primary_key_max_column_name;
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
+    const bool apply_deleted_mask = query_context->getSettingsRef()[Setting::apply_deleted_mask];
 
     if (!primary_key_max_column_name.empty())
         need_primary_key_max_column = required_columns_set.contains(primary_key_max_column_name);
@@ -7972,6 +7972,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (need_primary_key_max_column && !part->index_granularity->hasFinalMark())
             return {};
 
+        /// The settings may have changed since the part was loaded or mutated.
+        /// Only use metadata counting when the visible row count is known for every selected part.
+        if (apply_deleted_mask && part->hasLightweightDelete())
+        {
+            if (!part->existing_rows_count.has_value())
+                return {};
+
+            /// Preserve empty-input semantics, including `empty_result_for_aggregation_by_empty_set`.
+            if (part->existing_rows_count.value() == 0)
+                continue;
+        }
+
         real_parts.push_back(part);
         filter_column_data.back() = 1;
     }
@@ -8053,7 +8065,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         for (const auto & part : real_parts)
         {
             auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
-            if ((*getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && (*getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts] && part->existing_rows_count.has_value())
+            if (apply_deleted_mask && part->hasLightweightDelete())
                 insert(column, part->existing_rows_count.value());
             else
                 insert(column, part->rows_count);

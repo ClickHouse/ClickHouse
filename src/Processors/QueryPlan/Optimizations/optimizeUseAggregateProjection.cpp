@@ -19,7 +19,6 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
@@ -31,11 +30,6 @@
 
 namespace DB
 {
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
-    extern const MergeTreeSettingsBool load_existing_rows_count_for_old_parts;
-}
 namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
@@ -370,12 +364,14 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
         if (projection.type == ProjectionDescription::Type::Aggregate)
             agg_projections.push_back(&projection);
 
-    // If the following MergeTree settings are enabled, lightweight delete masks can be ignored for minmax_projection.
-    bool can_ignore_lwd = ((*reading.getMergeTreeData().getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] &&
-                       (*reading.getMergeTreeData().getSettings())[MergeTreeSetting::load_existing_rows_count_for_old_parts]);
+    const bool has_lightweight_delete_parts = reading.getMergeTreeData().has_lightweight_delete_parts.load();
+    const bool is_simple_count
+        = keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get());
 
-    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection &&
-                                 (!reading.getMergeTreeData().has_lightweight_delete_parts.load() || can_ignore_lwd);
+    /// Lightweight deletes do not update extrema in part metadata. Only allow ungrouped `count`,
+    /// with exact row counts checked per part before using the projection.
+    bool can_use_minmax_projection = allow_implicit_projections && metadata->minmax_count_projection
+        && (!has_lightweight_delete_parts || is_simple_count);
 
     if (!can_use_minmax_projection && agg_projections.empty())
         return candidates;
@@ -419,15 +415,10 @@ AggregateProjectionCandidates getAggregateProjectionCandidates(
                 candidates.minmax_projection.emplace(std::move(minmax));
             }
         }
-        else
+        else if (!has_lightweight_delete_parts && is_simple_count)
         {
-            // Since lightweight delete still impact the following granule-based count optimization,
-            // skipping setting the only_count_column.
-            if (reading.getMergeTreeData().has_lightweight_delete_parts.load())
-                return candidates;
-            /// Trivial count optimization only applies after @can_use_minmax_projection.
-            if (keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get()))
-                candidates.only_count_column = aggregates[0].column_name;
+            /// Granule row counts do not account for lightweight deletes.
+            candidates.only_count_column = aggregates[0].column_name;
         }
     }
 
