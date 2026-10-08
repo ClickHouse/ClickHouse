@@ -329,7 +329,8 @@ std::optional<UInt64> StorageObjectStorageCluster::totalBytes(ContextPtr query_c
 void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     ASTPtr & query,
     const DB::StorageSnapshotPtr & storage_snapshot,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const String & target_cluster_name)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
@@ -380,16 +381,23 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         const String cluster_function_name = table_function->name + "Cluster";
         if (TableFunctionFactory::instance().isTableFunctionName(cluster_function_name))
         {
-            args.insert(args.begin(), make_intrusive<ASTLiteral>(getClusterName()));
+            args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
             table_function->name = cluster_function_name;
         }
     }
     else
     {
+        /// The function is already the `*Cluster` variant, so it carries a cluster name the user wrote.
+        /// Replace it with the cluster whose nodes will actually run the query - the two differ when the
+        /// destination drives the fan-out, and those nodes reject a name their own `remote_servers` does not
+        /// define even though they take their share of the work from the initiator rather than dispatching
+        /// by it.
         ASTPtr cluster_name_arg = args.front();
         args.erase(args.begin());
         configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-        args.insert(args.begin(), cluster_name_arg);
+        if (!target_cluster_name.empty())
+            cluster_name_arg = make_intrusive<ASTLiteral>(target_cluster_name);
+        args.insert(args.begin(), std::move(cluster_name_arg));
     }
     if (settings_temporary_storage)
     {

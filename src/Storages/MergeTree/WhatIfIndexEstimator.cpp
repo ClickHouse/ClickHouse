@@ -9,11 +9,13 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
@@ -25,6 +27,7 @@
 
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -48,16 +51,26 @@ namespace ErrorCodes
 namespace
 {
 
-void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTree *> & steps)
+void collectReadSteps(const QueryPlan::Node * node, std::vector<ReadFromMergeTree *> & steps, bool skip_sets)
 {
-    if (!node)
+    if (!node || (skip_sets && typeid_cast<const CreatingSetStep *>(node->step.get())))
         return;
 
     if (auto * read_step = dynamic_cast<ReadFromMergeTree *>(node->step.get()))
         steps.push_back(read_step);
 
     for (const auto & child : node->children)
-        collectReadSteps(child, steps);
+        collectReadSteps(child, steps, skip_sets);
+}
+
+/// a subquery that only builds a set for `IN` holds the read to estimate only when the query reads no other table
+std::vector<ReadFromMergeTree *> collectReadSteps(const QueryPlan::Node * root)
+{
+    std::vector<ReadFromMergeTree *> steps;
+    collectReadSteps(root, steps, /* skip_sets */ true);
+    if (steps.empty())
+        collectReadSteps(root, steps, /* skip_sets */ false);
+    return steps;
 }
 
 /// Resolve the source table from the query
@@ -324,6 +337,9 @@ WhatIfResult estimateHypotheticalIndexes(
     std::vector<String> forced_strings;
     stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
 
+    /// the plans of the statement cannot see hypothetical projections, so a forced projection must not fail them
+    local_context->setSkipForcedProjectionCheck();
+
     if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indexes].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indexes]);
 
@@ -339,19 +355,15 @@ WhatIfResult estimateHypotheticalIndexes(
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    /// plan as the query would, but a forced projection that is not used must not fail the statement
-    QueryPlanOptimizationSettings optimization_settings(plan_context);
-    optimization_settings.force_use_projection = false;
-    plan.optimize(optimization_settings);
+    plan.optimize(QueryPlanOptimizationSettings(plan_context));
 
-    std::vector<ReadFromMergeTree *> read_steps;
-    collectReadSteps(plan.getRootNode(), read_steps);
+    const auto read_steps = collectReadSteps(plan.getRootNode());
 
     if (read_steps.empty())
     {
         auto storage = tryResolveSingleTable(select_query, local_context);
         const auto & store = local_context->getHypotheticalObjectStore();
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get()))
+        if (const auto * mt = castStorage<MergeTreeData>(storage, DeferredTable::Load).get())
         {
             /// Empty table -> ReadNothing, report a zero baseline
             if (mt->getActivePartsCount() == 0)
@@ -551,7 +563,8 @@ WhatIfResult estimateHypotheticalIndexes(
 
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
+            evaluateProjection(
+                projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
