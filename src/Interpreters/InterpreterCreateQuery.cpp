@@ -929,6 +929,21 @@ void applyForceReverseOrder(ASTStorage * storage)
     }
 }
 
+/// Applies `force_primary_key_reverse_order` to the table engine and to the engines of hidden inner tables.
+void applyForceReverseOrder(ASTCreateQuery & create)
+{
+    applyForceReverseOrder(create.storage);
+
+    /// The engines of hidden inner tables, e.g. `CREATE MATERIALIZED VIEW ... ENGINE = ...`, are kept in
+    /// `create.targets` rather than in `create.storage`. The inner tables are created by internal queries,
+    /// which skip the rewrite, so it is applied here to the definitions they are created from.
+    if (create.targets)
+    {
+        for (auto * inner_engine : create.targets->getInnerEngines())
+            applyForceReverseOrder(inner_engine);
+    }
+}
+
 }
 
 namespace
@@ -1322,16 +1337,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (!internal && !create.is_clone_as && !is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE
         && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
     {
-        applyForceReverseOrder(create.storage);
-
-        /// The engines of hidden inner tables, e.g. `CREATE MATERIALIZED VIEW ... ENGINE = ...`, are kept in
-        /// `create.targets` rather than in `create.storage`. The inner tables are created by internal queries,
-        /// which skip the rewrite, so it is applied here to the definitions they are created from.
-        if (create.targets)
-        {
-            for (auto * inner_engine : create.targets->getInnerEngines())
-                applyForceReverseOrder(inner_engine);
-        }
+        applyForceReverseOrder(create);
     }
 
     return properties;
@@ -3881,6 +3887,13 @@ BlockIO InterpreterCreateQuery::execute()
 
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
             }
+
+            /// This branch ships the query text as written, and the DDL worker skips the rewrite of
+            /// `force_primary_key_reverse_order` for secondary queries, so apply it on the initiator here.
+            /// The same exclusions as in `getTablePropertiesAndNormalizeCreateQuery` apply.
+            if (!is_create_database && !internal && !create.attach && !create.is_clone_as && !is_restore_from_backup
+                && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+                applyForceReverseOrder(create);
 
             return executeQueryOnCluster(create);
         }
