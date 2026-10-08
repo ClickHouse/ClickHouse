@@ -162,3 +162,14 @@ nested FUNCTION positive full OFF/ON multiset	1
 quoted INPUT collision full OFF/ON multiset	1
 CAST same best_effort context full OFF/ON multiset	1
 CAST best_effort_us mismatch full OFF/ON multiset	1
+DIRECT_IN_NULLABLE_RHS_READBACK_BEGIN
+target	Nullable(String)	0
+\N	Nullable(String)	1
+DIRECT_IN_NULLABLE_RHS_READBACK_END
+Nullable(String)
+Nullable-LHS IN null-stripped Set: named index prunes 2/16	1
+Nullable-LHS GLOBAL IN null-stripped Set: named index prunes 2/16	1
+Nullable-LHS IN NULL-bearing Set: declines named index, reads 16/16	1
+Nullable-LHS GLOBAL IN NULL-bearing Set: declines named index, reads 16/16	1
+Nullable-LHS IN NULL-bearing Set full OFF/ON exact multiset	1
+Nullable-LHS GLOBAL IN NULL-bearing Set full OFF/ON exact multiset	1

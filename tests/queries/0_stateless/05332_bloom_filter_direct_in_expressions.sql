@@ -367,6 +367,99 @@ SELECT 'CAST best_effort_us mismatch full OFF/ON multiset', full_scan = indexed 
 SET max_rows_to_read = 16;
 SET cast_string_to_date_time_mode = 'best_effort';
 
+-- Exercises the direct scalar-index matcher with Nullable Set input. With
+-- transform_null_in=0, Set construction strips NULL and provides a same-shape
+-- pruning control. With transform_null_in=1, IN/GLOBAL IN become nullIn forms
+-- and preserve the NULL-bearing Set; the non-Nullable Bloom index must decline.
+DROP TABLE IF EXISTS t_bf_direct_in_nullable_rhs;
+CREATE TABLE t_bf_direct_in_nullable_rhs (value Nullable(String)) ENGINE = Memory;
+INSERT INTO t_bf_direct_in_nullable_rhs VALUES ('target'), (NULL);
+
+SELECT 'DIRECT_IN_NULLABLE_RHS_READBACK_BEGIN' FORMAT TSVRaw;
+SELECT value, toTypeName(value), isNull(value)
+FROM t_bf_direct_in_nullable_rhs ORDER BY isNull(value) FORMAT TSVRaw;
+SELECT 'DIRECT_IN_NULLABLE_RHS_READBACK_END' FORMAT TSVRaw;
+SELECT toTypeName(toNullable(lower(name)))
+FROM t_bf_direct_in_lower_name LIMIT 1 FORMAT TSVRaw;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_lower') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    name_row > 0 AS has_index,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Nullable-LHS IN null-stripped Set: named index prunes 2/16', has_index AND selected = 2 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_lower_name
+      WHERE toNullable(lower(name)) IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+      SETTINGS transform_null_in = 0, use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_lower') > 0, plan) AS name_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, name_row + 1)) AS granules_row,
+    name_row > 0 AS has_index,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Nullable-LHS GLOBAL IN null-stripped Set: named index prunes 2/16', has_index AND selected = 2 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_lower_name
+      WHERE toNullable(lower(name)) GLOBAL IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+      SETTINGS transform_null_in = 0, use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_lower') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Nullable-LHS IN NULL-bearing Set: declines named index, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_lower_name
+      WHERE toNullable(lower(name)) IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+      SETTINGS transform_null_in = 1, use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+WITH
+    groupArray(explain) AS plan,
+    arrayFirstIndex(x -> position(x, 'Name: idx_direct_in_lower') > 0, plan) AS name_row,
+    arrayFirstIndex(x -> position(x, 'PrimaryKey') > 0, plan) AS primary_key_row,
+    arrayFirst(x -> position(x, 'Granules:') > 0, arraySlice(plan, primary_key_row + 1)) AS granules_row,
+    toUInt64OrZero(extract(granules_row, 'Granules: ([0-9]+)/')) AS selected,
+    toUInt64OrZero(extract(granules_row, 'Granules: [0-9]+/([0-9]+)')) AS total
+SELECT 'Nullable-LHS GLOBAL IN NULL-bearing Set: declines named index, reads 16/16', name_row = 0 AND selected = 16 AND total = 16
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_bf_direct_in_lower_name
+      WHERE toNullable(lower(name)) GLOBAL IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+      SETTINGS transform_null_in = 1, use_skip_indexes = 1, max_rows_to_read = 16)
+SETTINGS max_rows_to_read = 128;
+
+SET max_rows_to_read = 40;
+WITH
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), lower(name)))) FROM t_bf_direct_in_lower_name
+     WHERE toNullable(lower(name)) IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+     SETTINGS transform_null_in = 1, use_skip_indexes = 0, max_rows_to_read = 40) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), lower(name)))) FROM t_bf_direct_in_lower_name
+     WHERE toNullable(lower(name)) IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+     SETTINGS transform_null_in = 1, use_skip_indexes = 1, max_rows_to_read = 40) AS indexed
+SELECT 'Nullable-LHS IN NULL-bearing Set full OFF/ON exact multiset',
+       full_scan = indexed AND full_scan = [(toUInt64(1), 'target'), (toUInt64(16), 'target')]
+FORMAT TSVRaw;
+
+WITH
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), lower(name)))) FROM t_bf_direct_in_lower_name
+     WHERE toNullable(lower(name)) GLOBAL IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+     SETTINGS transform_null_in = 1, use_skip_indexes = 0, max_rows_to_read = 40) AS full_scan,
+    (SELECT arraySort(groupArray(tuple(toUInt64(id), lower(name)))) FROM t_bf_direct_in_lower_name
+     WHERE toNullable(lower(name)) GLOBAL IN (SELECT value FROM t_bf_direct_in_nullable_rhs)
+     SETTINGS transform_null_in = 1, use_skip_indexes = 1, max_rows_to_read = 40) AS indexed
+SELECT 'Nullable-LHS GLOBAL IN NULL-bearing Set full OFF/ON exact multiset',
+       full_scan = indexed AND full_scan = [(toUInt64(1), 'target'), (toUInt64(16), 'target')]
+FORMAT TSVRaw;
+
+SET max_rows_to_read = 16;
+DROP TABLE IF EXISTS t_bf_direct_in_nullable_rhs;
+
 DROP TABLE IF EXISTS t_bf_direct_in_lower_name;
 DROP TABLE IF EXISTS t_bf_direct_in_cast_u8_string;
 DROP TABLE IF EXISTS t_bf_direct_in_year_utc;
