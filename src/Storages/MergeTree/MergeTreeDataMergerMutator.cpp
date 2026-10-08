@@ -574,9 +574,8 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
                 return false;
             };
 
-            /// The IO layer polls the thread's cancellation predicates, which resolve through a process-list
-            /// element a merge/mutate group does not have. A root merge is still un-attached here.
-            (*merge_entry)->thread_group->setCancellationPredicates(
+            /// Installed before the first attach: `MergeTask::prepare` replaces it only at its end, after its first reads.
+            (*merge_entry)->thread_group->setQueryCancellationPredicates(
                 is_cancelled,
                 [is_cancelled]
                 {
@@ -630,37 +629,17 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// A nested pipeline that is only stopped returns without an exception, so its caller cannot
     /// distinguish a cancelled build from a completed one.
     const String partition_id = future_part->part_info.getPartitionId();
-    auto is_cancelled = [&blocker = merges_blocker, merge_entry, partition_id]()
-    {
-        /// Latched, because a blocker released between two independent polls must not resurrect the read.
-        if ((*merge_entry)->is_cancelled.load(std::memory_order_relaxed))
-            return true;
-
-        if (blocker.isCancelledForPartition(partition_id))
-        {
-            (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
-            return true;
-        }
-
-        return false;
-    };
-
-    auto throw_if_cancelled = [is_cancelled]
-    {
-        if (is_cancelled())
-            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
-    };
-
     context->setInteractiveCancelCallback(
-        [throw_if_cancelled]
+        [&blocker = merges_blocker, merge_entry, partition_id]()
         {
-            throw_if_cancelled();
+            /// Persisted for the IO layer, which polls rarely and may miss a short-lived blocker.
+            if (blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled)
+            {
+                (*merge_entry)->is_cancelled.store(true, std::memory_order_relaxed);
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+            }
             return false;
         });
-
-    /// The IO layer does not observe the callback above; it polls the thread's cancellation predicates, which
-    /// resolve through a process-list element a merge/mutate group does not have.
-    (*merge_entry)->thread_group->setCancellationPredicates(is_cancelled, throw_if_cancelled);
 
     return std::make_shared<MutateTask>(
         future_part,
