@@ -11,12 +11,16 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Core/Settings.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/executeQuery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/BlockIO.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
@@ -255,7 +259,10 @@ public:
             resolveAggregateFunctionNodeByName(*min_function, "min");
 
             NameAndTypePair md_column{"md", min_function->getResultType()};
+            /// The aliases are needed since the subquery is executed from its SQL text.
+            min_function->setAlias("md");
             auto min_derived_query = std::make_shared<QueryNode>(Context::createCopy(context));
+            min_derived_query->setAlias("__ivf_nearest");
             min_derived_query->setIsSubquery(true);
             min_derived_query->getJoinTreeNode() = min_centroids_table_node;
             min_derived_query->getWhere() = make_leaf_filter(min_centroids_table_node);
@@ -284,7 +291,30 @@ public:
             subquery_node->getWhere() = and_function;
         }
 
-        /// Build: cid IN (subquery)
+        /// Find the nearest clusters now and filter by them as a constant: the centroids table is hidden and belongs to the
+        /// table, so like the inner table of a materialized view it is read without checking the grants of the user on it.
+        auto internal_context = Context::createCopy(context->getGlobalContext());
+        internal_context->applySettingsChanges(context->getSettingsRef().changes());
+        internal_context->makeQueryContext();
+        internal_context->setCurrentQueryId({});
+        subquery_node->setIsSubquery(false);
+        Array cluster_ids;
+        {
+            auto io = executeQuery(subquery_node->toAST()->formatWithSecretsOneLine(), internal_context, QueryFlags{.internal = true}).second;
+            PullingPipelineExecutor executor(io.pipeline);
+            Block block;
+            while (executor.pull(block))
+            {
+                const auto & column = block.getByPosition(0).column;
+                for (size_t row = 0; row < column->size(); ++row)
+                    cluster_ids.push_back(column->getUInt(row));
+            }
+            io.onFinish();
+        }
+        if (cluster_ids.empty())
+            return;
+
+        /// Build: cid IN [cluster ids]
         auto in_function_name = getInFunctionNameForPassCreatedNode("in", data_cid->type, context);
         if (!in_function_name)
             return;
@@ -292,8 +322,9 @@ public:
         auto data_cid_node = std::make_shared<ColumnNode>(*data_cid, data_table_expression);
         auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
         in_function_node->markAsOperator();
-        QueryTreeNodePtr subquery_as_node = subquery_node;
-        in_function_node->getArguments().getNodes() = {data_cid_node, subquery_as_node};
+        QueryTreeNodePtr cluster_ids_node = std::make_shared<ConstantNode>(
+            Field(std::move(cluster_ids)), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
+        in_function_node->getArguments().getNodes() = {data_cid_node, cluster_ids_node};
         resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, context);
 
         /// AND it into the existing WHERE (or set it if there is none).

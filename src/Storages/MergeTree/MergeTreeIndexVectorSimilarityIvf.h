@@ -117,8 +117,14 @@ StorageID getVectorSimilarityIvfCentroidsTableID(const StorageID & table_id, con
 StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id, const String & index_name);
 
 /// If the name refers to a table with an IVF index or to the centroids dictionary of an IVF index, returns the qualified name
-/// of the dictionary. The dictionary is found through the table UUID in its name, so it does not depend on the table name.
-std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const String & name, const ContextPtr & context);
+/// of the dictionary and the table. The dictionary is found through the table UUID in its name, so it does not depend on the
+/// table name. Access to the hidden objects is granted through access to the table.
+struct IvfCentroidsDictionary
+{
+    String dictionary_name;
+    StorageID table_id;
+};
+std::optional<IvfCentroidsDictionary> tryGetVectorSimilarityIvfCentroidsDictionary(const String & name, const ContextPtr & context);
 
 /// In a new table, replaces references to the table itself in assignCentroid(..., 'table') (e.g. in the DEFAULT expression of the
 /// cluster id column) by the name of its centroids dictionary, which stays valid after RENAME and EXCHANGE. Returns whether

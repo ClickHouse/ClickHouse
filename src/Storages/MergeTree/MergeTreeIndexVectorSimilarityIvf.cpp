@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
@@ -575,7 +576,7 @@ StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id
     return StorageID(table_id.getDatabaseName(), getInnerObjectName("ivf_centroids_dict", table_id, index_name));
 }
 
-std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const String & name, const ContextPtr & context)
+std::optional<IvfCentroidsDictionary> tryGetVectorSimilarityIvfCentroidsDictionary(const String & name, const ContextPtr & context)
 {
     auto qualified_name = QualifiedTableName::tryParseFromString(name);
     if (!qualified_name)
@@ -593,9 +594,9 @@ std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const Str
             || !tryParse(table_uuid, object_name.substr(object_name.size() - uuid_length)))
             return {};
         auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(table_uuid);
-        if (!database)
+        if (!database || !table)
             return {};
-        return database->getDatabaseName() + "." + object_name;
+        return IvfCentroidsDictionary{database->getDatabaseName() + "." + object_name, table->getStorageID()};
     }
 
     if (qualified_name->database.empty())
@@ -609,7 +610,8 @@ std::optional<String> tryGetVectorSimilarityIvfCentroidsDictionaryName(const Str
     const auto metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
     for (const auto & index : metadata->getSecondaryIndices())
         if (isVectorSimilarityIvfIndex(index))
-            return getVectorSimilarityIvfCentroidsDictionaryID(table->getStorageID(), index.name).getFullNameNotQuoted();
+            return IvfCentroidsDictionary{
+                getVectorSimilarityIvfCentroidsDictionaryID(table->getStorageID(), index.name).getFullNameNotQuoted(), table->getStorageID()};
     return {};
 }
 
@@ -630,6 +632,11 @@ void createVectorSimilarityIvfInnerObjects(
 
     const String centroids_engine = table_engine.starts_with("Shared") ? "SharedMergeTree" : "MergeTree";
 
+    /// Like the inner table of a materialized view, the hidden objects belong to the table: they are created without checking
+    /// the grants of the user on them, and are used through the grants on the table.
+    auto internal_context = Context::createCopy(context->getGlobalContext());
+    internal_context->applySettingsChanges(context->getSettingsRef().changes());
+
     for (const auto & index : metadata.secondary_indices)
     {
         if (!isVectorSimilarityIvfIndex(index))
@@ -643,6 +650,11 @@ void createVectorSimilarityIvfInnerObjects(
         const IvfIndexArguments arguments = parseVectorSimilarityIvfIndexArguments(index.arguments);
         const StorageID centroids_table_id = getVectorSimilarityIvfCentroidsTableID(table_id, index.name);
         const StorageID centroids_dictionary_id = getVectorSimilarityIvfCentroidsDictionaryID(table_id, index.name);
+
+        /// The training runs internally (see scheduleVectorSimilarityIvfTraining), so the user who creates the table must be
+        /// allowed to read the samples it uses.
+        const auto samples_table = resolveSamplesTable(arguments, table_id.getDatabaseName());
+        context->checkAccess(AccessType::SELECT, samples_table.database, samples_table.table, index.column_names[0]);
 
         /// The HNSW index speeds up the search over many centroids. Without USearch, the centroids are scanned.
 #if USE_USEARCH
@@ -660,7 +672,7 @@ void createVectorSimilarityIvfInnerObjects(
             "(level UInt8, cid UInt32, parent UInt32, vec Array(Float32), active Bool, radius Float32, "
             "generation UInt32, generation_size UInt32{}) "
             "ENGINE = {} PARTITION BY level ORDER BY (level, parent, cid) SETTINGS index_granularity = 256",
-            centroids_table_id.getFullTableName(), hnsw_index, centroids_engine), context);
+            centroids_table_id.getFullTableName(), hnsw_index, centroids_engine), internal_context);
 
         executeInternalQuery(fmt::format(
             "CREATE DICTIONARY {} "
@@ -668,7 +680,7 @@ void createVectorSimilarityIvfInnerObjects(
             "PRIMARY KEY level, cid "
             "SOURCE(CLICKHOUSE(DB {} TABLE {})) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0)",
             centroids_dictionary_id.getFullTableName(),
-            quoteString(centroids_table_id.getDatabaseName()), quoteString(centroids_table_id.getTableName())), context);
+            quoteString(centroids_table_id.getDatabaseName()), quoteString(centroids_table_id.getTableName())), internal_context);
     }
 }
 
@@ -773,16 +785,10 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
             arguments.dimensions, num_clusters);
         const String reload_query = fmt::format("SYSTEM RELOAD DICTIONARY {}", centroids_dictionary_id.getFullTableName());
 
-        /// The training runs after CREATE returns and outlives the session, so it gets a context of its own, with the user,
-        /// roles and settings of the query which created the table (like the flush of asynchronous inserts).
+        /// The training runs after CREATE returns and outlives the session, so it gets a context of its own, with the settings
+        /// of the query which created the table. It writes the hidden objects, which need no grants of the user (see
+        /// createVectorSimilarityIvfInnerObjects, which also checks that the user may read the samples).
         auto training_context = Context::createCopy(context->getGlobalContext());
-        if (auto user_id = context->getUserID())
-        {
-            training_context->setUser(*user_id);
-            training_context->setCurrentRoles(context->getCurrentRoles());
-            training_context->setCurrentUserName(context->getClientInfo().current_user);
-            training_context->setInitialUserName(context->getClientInfo().current_user);
-        }
         training_context->applySettingsChanges(context->getSettingsRef().changes());
         const String index_name = index.name;
         const String table_name = table_id.getNameForLogs();

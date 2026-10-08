@@ -886,7 +886,7 @@ The index arguments are:
 | `samples` | The sample table. An unqualified name refers to the database of the IVF table. |
 | `clustering` | The aggregate function which trains the centroids, with its parameters. The first parameter is always the number of clusters. |
 
-The index is declared on `(vec, cid)`, where `cid` is the cluster id column of type `UInt32`. It must be a column of the primary key.
+The index is declared on `(vec, cid)`, where `cid` is the cluster id column of type `UInt32`. It must be a column of the primary key, normally the first one; columns before it should have few distinct values (see [Limitations](#ivf-limitations)).
 The parameters of `hierarchicalKMeans` are `(k, branching, max_iter, sample_cap, seed, cosine_distance)`; use `cosine_distance = 1` together with `cosineDistance`.
 
 The clustering function returns either the `k` centroids as `Array(Array(Float32))`, or a tree of centroids as `Array(Tuple(vec Array(Float32), level UInt8, cid UInt32, parent UInt32[, radius Float32]))`.
@@ -903,7 +903,7 @@ Therefore, `CREATE TABLE` returns right away while the training continues on the
 After issuing `CREATE TABLE`, check at a later time whether training has completed.
 Until then, inserts into the table fail.
 
-Training runs as the user who created the table, with this user's roles, settings, and grants (it requires `SELECT` on the sample table).
+`CREATE TABLE` requires `SELECT` on the sample table. Training then runs internally with the settings of the user who created the table.
 It shows up in [system.query_log](/reference/system-tables/query_log) as an internal `INSERT` into the centroids table.
 The sample table is read when training starts, so do not drop or rename it until training completes; otherwise, training fails and the table must be recreated.
 
@@ -954,6 +954,7 @@ Until the centroids are trained, queries read all rows.
 
 Each IVF table owns a quantizer table, which holds the centroids, and a dictionary, named `_ivf_quantizer_<index>_<uuid>` and `_ivf_centroids_dict_<index>_<uuid>` after the index and the table UUID.
 They are dropped together with the table and cannot be dropped or renamed on their own.
+They need no grants: searching an IVF table requires `SELECT` on it, and `assignCentroid(vec, 'table')` requires `SELECT` or `INSERT` on it.
 
 #### Limitations {#ivf-limitations}
 

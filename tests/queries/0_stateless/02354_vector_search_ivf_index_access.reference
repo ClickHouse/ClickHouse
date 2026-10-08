@@ -1,0 +1,8 @@
+SELECT and INSERT on the table are enough
+3
+cid in 2-element set
+Without grants on the table
+ACCESS_DENIED
+CREATE TABLE requires SELECT on the samples table
+ACCESS_DENIED
+0

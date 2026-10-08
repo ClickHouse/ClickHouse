@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/castColumn.h>
@@ -45,6 +46,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
@@ -475,9 +477,22 @@ private:
     /// Read the named dictionary once (columns cid, vec), cache the matrix until the dictionary reloads.
     std::shared_ptr<const CentroidMatrix> getDictionaryMatrix(const String & dict_name) const
     {
-        /// The name of a table with an IVF index stands for the dictionary with the centroids of the index.
-        const auto ivf_dictionary_name = tryGetVectorSimilarityIvfCentroidsDictionaryName(dict_name, dict_helper.getContext());
-        auto dictionary = dict_helper.getDictionary(ivf_dictionary_name.value_or(dict_name));
+        /// The name of a table with an IVF index stands for the dictionary with the centroids of the index. That dictionary is
+        /// hidden and belongs to the table: it is used with the grants on the table (SELECT or INSERT) instead of dictGet.
+        const auto & context = dict_helper.getContext();
+        std::shared_ptr<const IDictionary> dictionary;
+        if (const auto ivf = tryGetVectorSimilarityIvfCentroidsDictionary(dict_name, context))
+        {
+            const auto & database = ivf->table_id.getDatabaseName();
+            const auto & table = ivf->table_id.getTableName();
+            const auto access = context->getAccess();
+            if (!access->isGranted(AccessType::SELECT, database, table) && !access->isGranted(AccessType::INSERT, database, table))
+                throw Exception(ErrorCodes::ACCESS_DENIED,
+                    "assignCentroid: using the centroids of table {} requires the SELECT or INSERT grant on it", ivf->table_id.getNameForLogs());
+            dictionary = context->getExternalDictionariesLoader().getDictionary(ivf->dictionary_name, context);
+        }
+        else
+            dictionary = dict_helper.getDictionary(dict_name);
 
         /// The lock is held across the read-and-build, not just the lookup.
         std::lock_guard lock(cache_mutex);
@@ -492,6 +507,11 @@ private:
         Names columns{"cid", "vec"};
         if (has_generations)
             columns.insert(columns.end(), {"generation", "generation_size"});
+        /// A tree of centroids (e.g. of an IVF index) also has upper levels; rows are assigned only to leaves (level 0).
+        const Names keys = structure.getKeysNames();
+        const bool has_levels = std::ranges::find(keys, "level") != keys.end() || structure.hasAttribute("level");
+        if (has_levels)
+            columns.push_back("level");
         MapWithMemoryTracking<UInt64, std::pair<UInt64, UInt64>> generations; /// generation -> (rows, expected rows)
 
         /// Full-read the dictionary (same mechanism the dictionary() table function uses).
@@ -525,8 +545,11 @@ private:
             const auto & vec_arr = assert_cast<const ColumnArray &>(*vec_col.column);
             const auto & vec_vals = assert_cast<const ColumnFloat32 &>(vec_arr.getData()).getData();
             const auto & vec_off = vec_arr.getOffsets();
+            const IColumn * level_col = has_levels ? block.getByName("level").column.get() : nullptr;
             for (size_t row = 0; row < cid_col->size(); ++row)
             {
+                if (level_col && level_col->getUInt(row) != 0)
+                    continue;
                 size_t start = row ? vec_off[row - 1] : 0;
                 size_t length = vec_off[row] - start;
                 centroids.emplace_back(cid_col->getUInt(row), VectorWithMemoryTracking<Float32>(&vec_vals[start], &vec_vals[start + length]));
