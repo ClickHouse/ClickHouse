@@ -68,6 +68,7 @@
 namespace DB::ErrorCodes
 {
     extern const int TOO_BIG_AST;
+    extern const int TOO_DEEP_AST;
 }
 
 namespace
@@ -84,6 +85,14 @@ constexpr size_t MAX_PARSER_DEPTH = 1000;
 constexpr size_t MAX_PARSER_BACKTRACKS = 1000000;
 /// What the server defaults `max_ast_elements` to; bounds `ch_format_json` deserialization.
 constexpr size_t MAX_AST_ELEMENTS = 50000;
+/// How deeply the `{`/`[` of an AST JSON document may nest. `Poco::JSON::Parser` recurses once per
+/// level, and each level takes little of the stack `checkStackSize` watches but much of the
+/// engine's own, which the check cannot see: in a Web Worker in Chrome, a document nested 4520
+/// levels deep ends in `RangeError: Maximum call stack size exceeded`. `createFromJSON` admits 8
+/// levels per AST level, 8000 here, so the bound is set in this module. The deepest document a
+/// query produces - on a server, at `MAX_PARSER_DEPTH` - is nested 1974 levels, so no real
+/// document is turned away.
+constexpr size_t MAX_AST_JSON_NESTING = 2000;
 
 /// `tryParseQuery` reports a syntax error by returning null and filling in the message, and
 /// nothing in `src/Parsers` catches. A few checks in the parser still report an invalid query by
@@ -187,6 +196,32 @@ extern "C" int formatBody(void * argument)
     return 1;
 }
 
+/// The deepest nesting of `{` and `[` in a JSON document, outside of strings.
+size_t jsonNestingDepth(const char * json, size_t size)
+{
+    size_t depth = 0;
+    size_t max_depth = 0;
+    bool in_string = false;
+    for (size_t i = 0; i < size; ++i)
+    {
+        const char c = json[i];
+        if (in_string)
+        {
+            if (c == '\\')
+                ++i;
+            else if (c == '"')
+                in_string = false;
+        }
+        else if (c == '"')
+            in_string = true;
+        else if (c == '{' || c == '[')
+            max_depth = std::max(max_depth, ++depth);
+        else if ((c == '}' || c == ']') && depth > 0)
+            --depth;
+    }
+    return max_depth;
+}
+
 /// Every AST JSON document this module reads passes through here, `serializeBody` included: it is
 /// what "the limits of `ch_format_json`" means, in one place, so that the producer can be held to
 /// them by running them rather than by restating them.
@@ -197,6 +232,8 @@ DB::ASTPtr readASTJSON(const char * json, size_t size)
     /// server with `max_query_size`.
     if (size > MAX_QUERY_SIZE)
         throw DB::Exception(DB::ErrorCodes::TOO_BIG_AST, "AST JSON is too big. Maximum: {}", MAX_QUERY_SIZE);
+    if (jsonNestingDepth(json, size) > MAX_AST_JSON_NESTING)
+        throw DB::Exception(DB::ErrorCodes::TOO_DEEP_AST, "AST JSON is nested too deeply. Maximum: {}", MAX_AST_JSON_NESTING);
 
     /// Deserialization throws for anything wrong with the document - malformed JSON, an unknown
     /// node type, a field of the wrong shape, a tree past the depth or element limits - and the

@@ -114,3 +114,29 @@ TEST(DistinctSpillLayout, SuppressionContainsOnlyRetainedKeys)
         }
     }
 }
+
+TEST(DistinctSpillLayout, ServiceColumnsMatchActualAllocation)
+{
+    const auto header = std::make_shared<const Block>(Block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "key")});
+    for (const auto representation : {DistinctKeyRepresentation::Columns, DistinctKeyRepresentation::Hash128})
+    {
+        for (const bool ordered : {false, true})
+        {
+            DistinctSpillLayout layout(header, {0}, representation, ordered);
+            for (const size_t rows : {0, 1, 256, 65536})
+            {
+                SCOPED_TRACE(::testing::Message() << "representation=" << static_cast<int>(representation)
+                    << ", ordered=" << ordered << ", rows=" << rows);
+                Chunk input(Columns{ColumnUInt64::create(rows, UInt64{0})}, rows);
+                auto prepared = layout.prepareInputChunk(std::move(input), 0);
+                size_t actual_bytes = 0;
+                /// Exclude the original key and the constant emitted flag; only dense service columns
+                /// scale with the input row count.
+                for (size_t pos = 1; pos + 1 < prepared.getNumColumns(); ++pos)
+                    actual_bytes += prepared.getColumns()[pos]->allocatedBytes();
+                EXPECT_EQ(DistinctSpillLayout::estimateServiceColumnsMemory(rows, representation, ordered), actual_bytes);
+            }
+        }
+    }
+}

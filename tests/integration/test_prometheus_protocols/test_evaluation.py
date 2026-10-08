@@ -178,6 +178,19 @@ def send_test_data():
         ]
     )
 
+    # Large values with a tiny spread for stddev_over_time / stdvar_over_time: the population variance is exactly 0.25.
+    send_data(
+        [
+            (
+                {"__name__": "large_magnitude"},
+                {
+                    100: 540000000,
+                    110: 540000001,
+                },
+            )
+        ]
+    )
+
     send_data(
         [
             (
@@ -259,6 +272,21 @@ def send_test_data():
         ]
     )
 
+    # A NaN among real samples, for `mad_over_time`: a NaN sample makes the result NaN.
+    send_data(
+        [
+            (
+                {"__name__": "nan_among_values"},
+                {
+                    110: 1,
+                    120: float("nan"),
+                    130: 3,
+                    140: 4,
+                },
+            )
+        ]
+    )
+
     send_data(
         [
             (
@@ -323,6 +351,44 @@ def send_test_data():
             (
                 {"__name__": "large_values", "id": "b"},
                 {120: 1e155},
+            ),
+        ]
+    )
+
+    # Groups with a NaN or an infinite sample for `stddev` and `stdvar`: such a group is NaN, even with one sample.
+    send_data(
+        [
+            (
+                {"__name__": "nan_group", "label": "a"},
+                {120: 1},
+            ),
+            (
+                {"__name__": "nan_group", "label": "b"},
+                {120: 2},
+            ),
+            (
+                {"__name__": "nan_group", "label": "c"},
+                {120: float("nan")},
+            ),
+            (
+                {"__name__": "inf_group", "label": "a"},
+                {120: 1},
+            ),
+            (
+                {"__name__": "inf_group", "label": "b"},
+                {120: 2},
+            ),
+            (
+                {"__name__": "inf_group", "label": "c"},
+                {120: float("inf")},
+            ),
+            (
+                {"__name__": "nan_single"},
+                {120: float("nan")},
+            ),
+            (
+                {"__name__": "inf_single"},
+                {120: float("inf")},
             ),
         ]
     )
@@ -1466,6 +1532,33 @@ def test_function_over_time():
         [["[]", "1970-01-01 00:03:30.000", "nan"]],
     )
 
+    # mad_over_time: the median absolute deviation `median(|x - median(x)|)`, on `resets` because it goes up and down.
+    # The windows hold one to five samples. At 140 the window holds {1,5,8,2}: median 3.5, deviations {2.5,1.5,1.5,4.5}
+    # -> 2. At 150 it holds {1,5,8,2,6}: median 5, deviations {4,0,3,3,1} -> 3. At 160 it holds {5,8,2,6}: median 5.5,
+    # deviations {0.5,2.5,3.5,0.5} -> 1.5. The metric name is dropped.
+    do_query_test(
+        "mad_over_time(resets[50s])[110s:10s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[110, "0"], [120, "2"], [130, "3"], [140, "2"], [150, "3"], [160, "1.5"], [170, "2"], [180, "2"], [190, "2"], [200, "3.5"], [210, "1"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:01:50.000',0),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:10.000',3),('1970-01-01 00:02:20.000',2),('1970-01-01 00:02:30.000',3),('1970-01-01 00:02:40.000',1.5),('1970-01-01 00:02:50.000',2),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:10.000',2),('1970-01-01 00:03:20.000',3.5),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # A NaN sample makes the result NaN, as in Prometheus since 3.14. The Prometheus image used by this test is older:
+    # it still sorts the NaN before the real values and gives 0 for the window {1,NaN,3} at 130 and 1 for {1,NaN,3,4}
+    # at 140. So only the window {1,NaN} at 120, where both versions give NaN, is compared with Prometheus here;
+    # the other windows are covered by 05241_timeseries_mad_to_grid.
+    do_query_test(
+        "mad_over_time(nan_among_values[45s])",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "nan"]],
+    )
+
     # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
     # two samples (165, 180 after the left-open cut, and 195) yield nothing. The regression
     # arithmetic carries float noise (12.000000000000002), hence the epsilon.
@@ -1477,6 +1570,91 @@ def test_function_over_time():
             [
                 "[]",
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+
+    # stddev_over_time / stdvar_over_time (population standard deviation/variance).
+    # `eps=1e-9` accounts for our Welford/Chan two-stacks/recompute merge order differing from Prometheus'
+    # own single-pass Welford algorithm in the last couple of float digits.
+    do_query_test(
+        "stddev_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.9428090415820634"], [150, "1.299038105676658"], [165, "0.5"], [180, "0"], [195, "0"], [210, "1.4142135623730951"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.9428090415820634),('1970-01-01 00:02:30.000',1.299038105676658),('1970-01-01 00:02:45.000',0.5),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1.4142135623730951)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # Prometheus itself rounds the value at the `150` grid point differently on amd64 (`1.6875000000000002`) and
+    # arm64 (`1.6875`), which the same `eps` covers.
+    do_query_test(
+        "stdvar_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.888888888888889"], [150, "1.6875000000000002"], [165, "0.25"], [180, "0"], [195, "0"], [210, "2"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.8888888888888888),('1970-01-01 00:02:30.000',1.6875),('1970-01-01 00:02:45.000',0.25),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # The staleness window (5s) is narrower than the step between samples (10s), so at most one sample falls in a
+    # window and the result must be exactly 0 wherever a sample lands.
+    do_query_test(
+        "stddev_over_time(test[5s])[120s:10s]",
+        230,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [130, "0"], [140, "0"], [190, "0"], [200, "0"], [210, "0"], [220, "0"], [230, "0"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:10.000',0),('1970-01-01 00:02:20.000',0),('1970-01-01 00:03:10.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:03:30.000',0),('1970-01-01 00:03:40.000',0),('1970-01-01 00:03:50.000',0)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "stdvar_over_time(test[5s])[120s:10s]",
+        230,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [130, "0"], [140, "0"], [190, "0"], [200, "0"], [210, "0"], [220, "0"], [230, "0"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:10.000',0),('1970-01-01 00:02:20.000',0),('1970-01-01 00:03:10.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:03:30.000',0),('1970-01-01 00:03:40.000',0),('1970-01-01 00:03:50.000',0)]",
+            ]
+        ],
+    )
+
+    # Large values with a tiny spread: the population variance/stddev of {540000000, 540000001} is exactly 0.25/0.5.
+    do_query_test(
+        "stddev_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.5)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "stdvar_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.25"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.25)]",
             ]
         ],
         eps=1e-9,
@@ -1593,6 +1771,216 @@ def test_empty_aggregation_setting_does_not_change_promql(query, expected):
         params={"empty_result_for_aggregation_by_empty_set": 1},
     )
     assert http_api_response_close_to(actual, expected)
+
+
+def test_function_timestamp():
+    # `test` has samples at 110, 120, 130, 140, ... At time 135 the sample selected by the instant selector
+    # (within the default 5m lookback) is the one at 130 - timestamp() must report *that* sample's own
+    # timestamp (130), not the query's evaluation time (135) and not the sample's value (3).
+
+    # Plain vector selector: returns the sample's own timestamp (130).
+    do_query_test(
+        "timestamp(test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "130"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 130]],
+    )
+
+    # Selector wrapped in an offset modifier: returns the selected sample's own timestamp (130).
+    do_query_test(
+        "timestamp(test offset 1m)",
+        195,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [195, "130"]}]}',
+        [["[]", "1970-01-01 00:03:15.000", 130]],
+    )
+
+    # Selector wrapped in an @ modifier: returns the selected sample's own timestamp (120).
+    do_query_test(
+        "timestamp(test @ 120)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "120"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 120]],
+    )
+
+    # Combined modifiers evaluate at @ minus offset (90), before `test` has samples.
+    do_query_test(
+        "timestamp(test @ 120 offset 30s)",
+        135,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # A stale marker hides the series from timestamp() as it does from the selector itself.
+    do_query_test(
+        "timestamp(stale_marker_metric)",
+        125,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [125, "120"]}]}',
+        [["[]", "1970-01-01 00:02:05.000", 120]],
+    )
+
+    do_query_test(
+        "timestamp(stale_marker_metric)",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # The stale series doesn't collide with the live one after timestamp() drops the metric name.
+    do_query_test(
+        'timestamp({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "140"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", 140]],
+    )
+
+    # Range query regression for offset-modified selector (/api/v1/query_range):
+    # Verifies applyOffset realigns/duplicates selector results across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test offset 1m)",
+        190,
+        210,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[190, "130"], [200, "140"], [210, "140"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:03:10.000',130),('1970-01-01 00:03:20.000',140),('1970-01-01 00:03:30.000',140)]",
+            ]
+        ],
+    )
+
+    # Range query regression for @-modified selector (/api/v1/query_range):
+    # Verifies fixed @ evaluation time realignment across multiple grid steps.
+    do_range_query_test(
+        "timestamp(test @ 120)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[135, "120"], [145, "120"], [155, "120"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:25.000',120),('1970-01-01 00:02:35.000',120)]",
+            ]
+        ],
+    )
+
+    # Range query regression for a combined @ and offset-modified selector (/api/v1/query_range):
+    # It evaluates at 90 and is empty for every output grid point.
+    do_range_query_test(
+        "timestamp(test @ 120 offset 30s)",
+        135,
+        155,
+        10,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # General instant vector expressions (binary math, unary operators, comparisons, nested timestamp() calls):
+    # In Prometheus 3.5.0, non-selector expressions are materialized at each query step evaluation timestamp T_eval,
+    # returning T_eval (135) for each present sample.
+    do_query_test(
+        "timestamp(test * 1)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(-test)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(timestamp(test))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "timestamp(test > bool 10)",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    # A comparison without `bool` filters out non-matching samples (at t=135 test is 3, so test > 10 drops the sample),
+    # producing an empty result.
+    do_query_test(
+        "timestamp(test > 10)",
+        135,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Scalar-backed instant vectors (e.g. vector(1)) retain INSTANT_VECTOR type contract when wrapped in timestamp(),
+    # allowing vector-only operators like abs() and scalar() to consume the result without type errors.
+    do_query_test(
+        "abs(timestamp(vector(1)))",
+        135,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [135, "135"]}]}',
+        [["[]", "1970-01-01 00:02:15.000", 135]],
+    )
+
+    do_query_test(
+        "scalar(timestamp(vector(1)))",
+        135,
+        '{"resultType": "scalar", "result": [135, "135"]}',
+        [["1970-01-01 00:02:15.000", 135]],
+    )
+
+    # Non-instant-vector arguments (bare scalar literals, range vectors) must be rejected up front with user-facing type errors.
+    do_query_test_expect_error(
+        "timestamp(1)",
+        135,
+        "expected type instant vector",
+        "Function 'timestamp' expects an argument of type",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(test[5m])",
+        135,
+        "expected type instant vector",
+        "Function 'timestamp' expects an argument of type",
+    )
+
+    # Genuinely nested offset/@ modifiers - an inner selector with its own modifier, wrapped in an outer
+    # timestamp() call that itself has a modifier - are not valid PromQL syntax: the offset/@ modifier may only
+    # attach directly to a selector or a subquery, never to a function call's result. Real Prometheus rejects
+    # these with a parse error rather than evaluating them, so ClickHouse must reject them the same way (as a
+    # CANNOT_PARSE_PROMQL_QUERY parse error, "mismatched input ... while parsing PromQL query" from the ANTLR
+    # grammar) instead of falling through to NOT_IMPLEMENTED. Combining both modifiers on a *single* selector
+    # (e.g. `test @ 120 offset 30s`) is the only supported form and is already covered above.
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test offset 1m) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) @ 195)",
+        195,
+        "@ modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input '@'",
+    )
+
+    do_query_test_expect_error(
+        "timestamp(timestamp(test @ 100) offset 30s)",
+        195,
+        "offset modifier must be preceded by an instant vector selector or range vector selector or a subquery",
+        "mismatched input 'offset'",
+    )
 
 
 def test_literals():
@@ -4791,6 +5179,39 @@ def test_aggregation_operators():
         '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
         [["[]", "1970-01-01 00:02:00.000", 0]],
     )
+
+    # A NaN or an infinite sample makes its group NaN. A group with one finite sample is 0.
+    for metric in ["nan_group", "inf_group"]:
+        for operator in ["stddev", "stdvar"]:
+            do_query_test(
+                f"{operator}({metric})",
+                120,
+                '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+                [["[]", "1970-01-01 00:02:00.000", "nan"]],
+            )
+
+            # A range query, so both sides sort the groups by labels.
+            do_range_query_test(
+                f"{operator} by (label) ({metric})",
+                120,
+                120,
+                10,
+                '{"resultType": "matrix", "result": [{"metric": {"label": "a"}, "values": [[120, "0"]]}, {"metric": {"label": "b"}, "values": [[120, "0"]]}, {"metric": {"label": "c"}, "values": [[120, "NaN"]]}]}',
+                [
+                    ["[('label','a')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','b')]", "[('1970-01-01 00:02:00.000',0)]"],
+                    ["[('label','c')]", "[('1970-01-01 00:02:00.000',nan)]"],
+                ],
+            )
+
+    for metric in ["nan_single", "inf_single"]:
+        for operator in ["stddev", "stdvar"]:
+            do_query_test(
+                f"{operator}({metric})",
+                120,
+                '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+                [["[]", "1970-01-01 00:02:00.000", "nan"]],
+            )
 
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
     # group replaces all values with 1.
