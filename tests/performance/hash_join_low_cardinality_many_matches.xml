@@ -1,0 +1,11 @@
+<!-- Hash join emitting a right-side `LowCardinality` column: the build side has one dictionary per block and
+     each key's rows are adjacent in its block, so the emit inserts short ranges from foreign dictionaries. -->
+<test>
+    <settings>
+        <max_threads>8</max_threads>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <query>SELECT count() FROM (SELECT number % 100 AS k FROM numbers(4000)) AS a INNER JOIN (SELECT intDiv(number, 4000) AS k, toLowCardinality(toString(number % 7)) AS lc FROM numbers(400000)) AS b ON a.k = b.k WHERE NOT ignore(b.lc) SETTINGS join_algorithm = 'hash'</query>
+    <query>SELECT count() FROM (SELECT number % 100 AS k FROM numbers(4000)) AS a INNER JOIN (SELECT intDiv(number, 4000) AS k, toLowCardinality(toString(number % 7)) AS lc FROM numbers(400000)) AS b ON a.k = b.k WHERE NOT ignore(b.lc) SETTINGS join_algorithm = 'parallel_hash'</query>
+</test>
