@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # no-fasttest: the AST fuzzer and distributed plan settings are EXPERIMENTAL-tier.
+# long: each sub-query of the oracle suite may take up to 10 s, so one heavy fuzzer mutation can exceed the flaky check's 180 s limit.
 # Random settings limits: optimize_trivial_count_query=(1, None)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,8 +14,8 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t SELECT number, 'hit' FROM numbers(900000);
 "
 
-# A query without aggregates reaches NoREC, whose sub-queries run through `executeScalar`.
-rounds=$(for _ in $(seq 1 16); do echo "SELECT count() FROM t WHERE val = 'hit'; SELECT id FROM t WHERE id >= 899500;"; done)
+# A query without aggregates reaches NoREC (`executeScalar`); a full-table `max(id)` gives DQP (`executeWithSettings`) a read past the cap.
+rounds=$(for _ in $(seq 1 16); do echo "SELECT count() FROM t WHERE val = 'hit'; SELECT id FROM t WHERE id >= 899500; SELECT max(id) FROM t;"; done)
 
 mismatches=$($CLICKHOUSE_CLIENT --ignore-error --query "
     SET send_logs_level = 'none';
