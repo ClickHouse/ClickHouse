@@ -2,7 +2,6 @@ import time
 
 import pytest
 
-from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -14,7 +13,6 @@ node = cluster.add_instance(
 )
 
 CONFIG_PATH = "/etc/clickhouse-server/config.d/config.xml"
-INTROSPECTION_PORT = 9010
 FAILPOINT = "database_replicated_startup_pause"
 STARTUP_JOB = "startup Replicated database re"
 # Every table load and startup job is a dependency of STARTUP_JOB, so those are already done while the
@@ -40,10 +38,6 @@ def pause_failpoint(enabled):
         f"<{FAILPOINT}>{str(not enabled).lower()}</{FAILPOINT}>",
         f"<{FAILPOINT}>{str(enabled).lower()}</{FAILPOINT}>",
     )
-
-
-def introspection_client():
-    return Client(node.ip_address, INTROSPECTION_PORT, command=cluster.client_bin_path)
 
 
 def assert_refused(error, maximum, waiting):
@@ -273,32 +267,22 @@ def test_waiting_queries_limit_covers_ddl_worker_job(started_cluster):
         pin_startup_of_replicated_database("/test/max_waiting_queries/ddl_worker")
         assert server_setting("max_waiting_queries") == "2"
 
-        for i in range(2):
-            handles.append(
-                node.get_query_request(
-                    f"CREATE TABLE re.w{i} (a Int) ENGINE = MergeTree ORDER BY a"
-                )
-            )
-        wait_for(waiters_on_startup_job, "2", "both queries to block on the startup job")
-
-        # A KILL waits for the ddl worker job in executeDDLQueryOnCluster, and is exempt, so it is
-        # admitted past the reached limit and counted. It is submitted before the refusal below, so
-        # that refusal reports a waiting count this query is already part of.
         handles.append(
-            node.get_query_request(
-                "KILL QUERY ON CLUSTER test_shard WHERE query_id = 'no-such-query-id'"
-                " SETTINGS distributed_ddl_output_mode = 'none'"
-            )
+            node.get_query_request("CREATE TABLE re.w0 (a Int) ENGINE = MergeTree ORDER BY a")
         )
-        wait_for(
-            waiting_queries_metric, "3", "the exempt kill to be admitted past the limit"
-        )
-        wait_for(
-            waiters_on_ddl_worker_job, "1", "the exempt kill to block on the ddl worker job"
-        )
+        wait_for(waiters_on_startup_job, "1", "the first query to block on the startup job")
+        assert waiting_queries_metric() == "1"
 
-        # A non-exempt query that waits for the same job is refused. Unenforced, it stays blocked on
-        # the pinned job, hence the explicit timeout.
+        # This waits for the ddl worker job in `Context::getDDLWorker`, and counts towards the same
+        # limit as a query waiting for the database.
+        handles.append(node.get_query_request("SELECT * FROM system.distributed_ddl_queue"))
+        wait_for(
+            waiters_on_ddl_worker_job, "1", "the second query to block on the ddl worker job"
+        )
+        wait_for(waiting_queries_metric, "2", "the second query to be counted as waiting")
+
+        # The limit is reached, so the next query on the same job is refused. Unenforced, it stays
+        # blocked on the pinned job, hence the explicit timeout.
         try:
             error = node.query_and_get_error(
                 "SELECT * FROM system.distributed_ddl_queue", timeout=60
@@ -307,26 +291,9 @@ def test_waiting_queries_limit_covers_ddl_worker_job(started_cluster):
             raise AssertionError(
                 "the query over max_waiting_queries was not refused, it is still waiting"
             ) from e
-        assert_refused(error, 2, 3)
+        assert_refused(error, 2, 2)
         assert waiters_on_ddl_worker_job() == "1"
-        assert waiting_queries_metric() == "3"
-
-        # An operator's diagnostic connection has to reach a server that is still loading.
-        handles.append(
-            introspection_client().get_query_request(
-                "SELECT * FROM system.distributed_ddl_queue"
-            )
-        )
-        wait_for(
-            waiting_queries_metric,
-            "4",
-            "the introspection-port query to be admitted past the limit",
-        )
-        wait_for(
-            waiters_on_ddl_worker_job,
-            "2",
-            "the introspection-port query to block on the ddl worker job",
-        )
+        assert waiting_queries_metric() == "2"
 
         # 0 means no limit, so the same query is now admitted and joins the same job's waiters.
         set_config(
@@ -339,9 +306,9 @@ def test_waiting_queries_limit_covers_ddl_worker_job(started_cluster):
             node.get_query_request("SELECT * FROM system.distributed_ddl_queue")
         )
         wait_for(
-            waiters_on_ddl_worker_job, "3", "the admitted query to block on the ddl worker job"
+            waiters_on_ddl_worker_job, "2", "the admitted query to block on the ddl worker job"
         )
-        wait_for(waiting_queries_metric, "5", "the admitted query to be counted as waiting")
+        wait_for(waiting_queries_metric, "3", "the admitted query to be counted as waiting")
 
         unpin_and_join(handles)
         wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")

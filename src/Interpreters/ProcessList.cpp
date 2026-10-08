@@ -133,7 +133,6 @@ ProcessList::EntryPtr ProcessList::insert(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
-    bool is_waiting_limit_exempt = (ast && ast->as<ASTKillQueryQuery>()) || client_info.is_from_introspection_port;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -381,7 +380,6 @@ ProcessList::EntryPtr ProcessList::insert(
             settings,
             watch_start_nanoseconds,
             is_internal);
-        query->is_waiting_limit_exempt = is_waiting_limit_exempt;
 
         auto process_it = processes.emplace(
             processes.end(),
@@ -1148,9 +1146,9 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
     return found->second;
 }
 
-void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
+void ProcessList::increaseWaitingQueryAmount()
 {
-    const UInt64 limit = status->isWaitingLimitExempt() ? 0 : max_waiting_queries_amount.load();
+    const UInt64 limit = max_waiting_queries_amount.load();
     UInt64 value = waiting_queries_amount.load();
     while (true)
     {
@@ -1167,7 +1165,7 @@ void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
     CurrentMetrics::add(CurrentMetrics::WaitingQuery);
 }
 
-void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr &)
+void ProcessList::decreaseWaitingQueryAmount()
 {
     UInt64 value = waiting_queries_amount.load();
     while (true)
@@ -1185,7 +1183,7 @@ void ProcessList::incrementWaiters(const QueryStatusPtr & status)
 {
     std::lock_guard lock(status->waiting_mutex);
     if (status->waiting_threads == 0)
-        increaseWaitingQueryAmount(status);
+        increaseWaitingQueryAmount();
     ++status->waiting_threads;
 }
 
@@ -1196,7 +1194,7 @@ void ProcessList::decrementWaiters(const QueryStatusPtr & status)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting thread amount: decrease to negative");
 
     if (--status->waiting_threads == 0)
-        decreaseWaitingQueryAmount(status);
+        decreaseWaitingQueryAmount();
 }
 
 /// Process list and the query to account for, or nullptr when the waiter is not a counted query:

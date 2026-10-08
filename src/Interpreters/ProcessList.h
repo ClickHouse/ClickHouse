@@ -216,9 +216,6 @@ protected:
     std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
 
     bool is_internal;
-
-    /// `KILL` and introspection-port queries are counted as waiting queries, but never refused by `max_waiting_queries`.
-    bool is_waiting_limit_exempt = false;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -308,11 +305,6 @@ public:
     bool isInternal() const
     {
         return is_internal;
-    }
-
-    bool isWaitingLimitExempt() const
-    {
-        return is_waiting_limit_exempt;
     }
 
     /// Manually release all acquired workload resources.
@@ -505,8 +497,8 @@ protected:
 
     /// WARNING: for non-internal queries only. The increase throws if `max_waiting_queries_amount`
     /// is reached, in which case the query does not become a waiter and must not be decreased.
-    void increaseWaitingQueryAmount(const QueryStatusPtr & status);
-    void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
+    void increaseWaitingQueryAmount();
+    void decreaseWaitingQueryAmount();
 
     /// An unset `expected_user_id` cancels whatever holds the key.
     CancellationCode sendCancelToQueryImpl(
