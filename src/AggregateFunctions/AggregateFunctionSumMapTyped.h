@@ -601,6 +601,11 @@ public:
         if (!version)
             version = getDefaultVersion();
 
+        /// The version comes from the AggregateFunction data type parameter, which is
+        /// user/data-controlled and not validated at type creation.
+        if (*version > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of -Map aggregate function serialization state", *version);
+
         const auto & data = this->data(place);
         const size_t num_columns = value_descs.size();
 
@@ -681,6 +686,11 @@ public:
     {
         if (!version)
             version = getDefaultVersion();
+
+        /// The version comes from the AggregateFunction data type parameter, which is
+        /// user/data-controlled and not validated at type creation.
+        if (*version > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of -Map aggregate function serialization state", *version);
 
         auto & data = this->data(place);
         const size_t num_columns = value_descs.size();
