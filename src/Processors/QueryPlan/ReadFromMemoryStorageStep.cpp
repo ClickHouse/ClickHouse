@@ -763,14 +763,22 @@ std::unique_ptr<LazilyReadFromMemoryStorage> ReadFromMemoryStorageStep::keepOnly
     if (!canUseLazyMaterialization())
         return {};
 
-    /// The in-source filters run in the main branch.
+    /// The in-source filters run in the main branch. A column they output as a computed node may shadow
+    /// the physical column of the same name, and the lazy branch would read the physical one instead,
+    /// so such columns also stay in the main branch.
     NameSet names_to_keep = required_names;
+    auto keep_columns_of_filter = [&](const ActionsDAG & dag)
+    {
+        for (const auto & column : dag.getRequiredColumns())
+            names_to_keep.insert(column.name);
+        for (const auto * output : dag.getOutputs())
+            if (output->type != ActionsDAG::ActionType::INPUT)
+                names_to_keep.insert(output->result_name);
+    };
     if (query_info.row_level_filter)
-        for (const auto & column : query_info.row_level_filter->actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
+        keep_columns_of_filter(query_info.row_level_filter->actions);
     if (query_info.prewhere_info)
-        for (const auto & column : query_info.prewhere_info->prewhere_actions.getRequiredColumns())
-            names_to_keep.insert(column.name);
+        keep_columns_of_filter(query_info.prewhere_info->prewhere_actions);
     if (top_k_filter)
         names_to_keep.insert(top_k_filter->column_name);
 
