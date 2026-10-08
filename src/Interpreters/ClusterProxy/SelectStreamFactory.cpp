@@ -11,6 +11,7 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -319,10 +320,21 @@ void SelectStreamFactory::createForShard(
     /// since it is reused later for getSampleBlock / plan building.
     auto query_tree_for_ast = query_tree->clone();
     removeGroupingFunctionSpecializations(query_tree_for_ast);
+    auto query_ast = queryNodeToDistributedSelectQuery(query_tree_for_ast);
+
+    /// `updateSettingsAndClientInfoForCluster` pinned `cluster_for_parallel_replicas` to this dispatch's cluster
+    /// in `context`. The query's own top-level `SETTINGS` clause is re-applied over the context it runs with,
+    /// by the local plan as well as by the shard, so a `SETTINGS cluster_for_parallel_replicas = ...` written
+    /// in the query would undo the pin. Drop it from the query: the pinned value travels with the context.
+    if (context->canUseTaskBasedParallelReplicas())
+    {
+        static constexpr std::string_view pinned_settings[] = {"cluster_for_parallel_replicas"};
+        removeSettingsFromQueryTopLevel(query_ast, pinned_settings);
+    }
 
     createForShardImpl(
         shard_info,
-        queryNodeToDistributedSelectQuery(query_tree_for_ast),
+        query_ast,
         query_tree,
         main_table,
         table_func_ptr,

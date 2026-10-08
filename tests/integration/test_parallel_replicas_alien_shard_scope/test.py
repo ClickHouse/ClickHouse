@@ -73,19 +73,25 @@ def start_cluster():
         pytest.param(PR_CLUSTER_SAME_SHARD_COUNT, id="same_shard_count"),
     ],
 )
-def test_shard_scope_of_another_cluster_is_ignored(start_cluster, pr_cluster):
+# The user's `cluster_for_parallel_replicas` may also come from the query's own `SETTINGS` clause, which is
+# carried in the query text sent to the shards and re-applied there over the pinned value unless it is dropped.
+@pytest.mark.parametrize("in_query_settings", [False, True], ids=["client", "query"])
+def test_shard_scope_of_another_cluster_is_ignored(
+    start_cluster, pr_cluster, in_query_settings
+):
     query_id = str(uuid.uuid4())
+    settings = {
+        "enable_parallel_replicas": 1,
+        "max_parallel_replicas": 3,
+        "prefer_localhost_replica": 1,
+    }
+    query = f"SELECT sum(key) FROM {TABLE}_d"
+    if in_query_settings:
+        query += f" SETTINGS cluster_for_parallel_replicas = '{pr_cluster}'"
+    else:
+        settings["cluster_for_parallel_replicas"] = pr_cluster
     assert (
-        SHARD2_NODE.query(
-            f"SELECT sum(key) FROM {TABLE}_d",
-            query_id=query_id,
-            settings={
-                "enable_parallel_replicas": 1,
-                "max_parallel_replicas": 3,
-                "cluster_for_parallel_replicas": pr_cluster,
-                "prefer_localhost_replica": 1,
-            },
-        )
+        SHARD2_NODE.query(query, query_id=query_id, settings=settings)
         == f"{SHARD1_SUM + SHARD2_SUM}\n"
     )
 
