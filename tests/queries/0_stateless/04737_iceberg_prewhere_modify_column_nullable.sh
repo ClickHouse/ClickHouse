@@ -11,11 +11,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# `optimize_move_to_prewhere=1` + `query_plan_optimize_prewhere=1` are pinned on every
-# discriminating statement: the failure only appears when the predicate is pushed into the
-# reader, the runner randomizes both, and with either one off the pre-fix result is already
-# correct, so the test would stop exercising the fix.
-PREWHERE_SETTINGS="--optimize_move_to_prewhere=1 --query_plan_optimize_prewhere=1"
+# `optimize_move_to_prewhere=1` is pinned on every discriminating statement: the failure only
+# appears when the predicate is pushed into the reader, the runner randomizes it, and with it off
+# the pre-fix result is already correct, so the test would stop exercising the fix.
+PREWHERE_SETTINGS="--optimize_move_to_prewhere=1"
 
 TABLE="t_null_${CLICKHOUSE_DATABASE}_${RANDOM}"
 TABLE_REN="t_ren_${CLICKHOUSE_DATABASE}_${RANDOM}"

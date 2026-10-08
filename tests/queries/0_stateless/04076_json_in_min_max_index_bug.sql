@@ -10,7 +10,6 @@ INSERT INTO t_json_minmax_idx VALUES (1, '{"a":"1"}'), (2, '{"a":"2"}'), (3, '{"
 
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 SELECT id FROM t_json_minmax_idx WHERE j > '{"a":"2"}'::JSON ORDER BY id;
 EXPLAIN indexes=1 SELECT id FROM t_json_minmax_idx WHERE j > '{"a":"2"}'::JSON ORDER BY id;

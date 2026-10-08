@@ -12,14 +12,19 @@ SRC_PATH="$( cd "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 # Below we rm -rf config.d and write into config.d, users.d and the client config directory; refuse if any of them
 # is the same directory as the source tree or one of its subdirectories, since that would destroy or pollute the tracked test configs.
 # Compare directory identity (device + inode) with -ef, so that bind mounts are detected as well as symlinks.
-for dest_dir in "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"; do
-    for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
-        if [ "$dest_dir" -ef "$src_dir" ]; then
-            echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
-            exit 1
-        fi
+function refuse_if_dest_aliases_source()
+{
+    for dest_dir in "$@"; do
+        for src_dir in "$SRC_PATH" "$SRC_PATH/config.d" "$SRC_PATH/users.d" "$SRC_PATH/top_level_domains"; do
+            if [ "$dest_dir" -ef "$src_dir" ]; then
+                echo "Refusing to install: destination directory $dest_dir is the same directory as source directory $src_dir. This script deletes and repopulates the destination configs, which would destroy or pollute the tracked test configs." >&2
+                exit 1
+            fi
+        done
     done
-done
+}
+
+refuse_if_dest_aliases_source "$DEST_SERVER_PATH" "$DEST_SERVER_PATH/config.d" "$DEST_SERVER_PATH/users.d" "$DEST_CLIENT_PATH"
 
 if [ $# -ge 2 ]; then
     shift 2
@@ -249,6 +254,9 @@ ln -sf $SRC_PATH/config.d/top_level_domains_lists.xml $DEST_SERVER_PATH/config.d
 ln -sf $SRC_PATH/config.d/top_level_domains_path.xml $DEST_SERVER_PATH/config.d/
 
 ln -sf $SRC_PATH/config.d/transactions_info_log.xml $DEST_SERVER_PATH/config.d/
+if [[ "$BUGFIX_VALIDATE_CHECK" -eq 0 && "$PREVIOUS_RELEASE_CONFIG" -eq 0 ]]; then
+    ln -sf $SRC_PATH/config.d/columns_cache.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/transactions.xml $DEST_SERVER_PATH/config.d/
 # `enable_silk_runtime` and the `silk` section first exist in 26.9, so an older server rejects
 # them as unknown config elements and refuses to start. Gate the drop-in on the installed
@@ -327,6 +335,7 @@ ln -sf $SRC_PATH/config.d/enable_wait_for_shutdown_replicated_tables.xml $DEST_S
 cp $SRC_PATH/config.d/storage_conf_backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/backups.xml $DEST_SERVER_PATH/config.d/
 cp $SRC_PATH/config.d/filesystem_caches_path.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/query_result_cache_on_disk.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/validate_tcp_client_information.xml $DEST_SERVER_PATH/config.d/
 # distributed_query.xml sets distributed_query.streaming_exchange_port, which the server rejects on
 # platforms without the streaming exchange (only Linux and macOS support it); install it there only.
@@ -345,6 +354,7 @@ ln -sf $SRC_PATH/config.d/rocksdb.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/process_query_plan_packet.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_03008.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/storage_conf_05212.xml $DEST_SERVER_PATH/config.d/
+ln -sf $SRC_PATH/config.d/storage_conf_05104.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/memory_access.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_enable_global_profiler.yaml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/jemalloc_flush_profile.yaml $DEST_SERVER_PATH/config.d/
@@ -645,6 +655,10 @@ if [[ "$USE_DATABASE_REPLICATED" == "1" ]]; then
     ch_server_2_path=$DEST_SERVER_PATH/../clickhouse-server2
     mkdir -p $ch_server_1_path
     mkdir -p $ch_server_2_path
+    # The configs are copied into and edited in these sibling directories; check them only now, when they exist,
+    # so that `..` is resolved the same way as by the commands below.
+    refuse_if_dest_aliases_source "$ch_server_1_path" "$ch_server_1_path/config.d" "$ch_server_1_path/users.d" \
+        "$ch_server_2_path" "$ch_server_2_path/config.d" "$ch_server_2_path/users.d"
 #    chown clickhouse $ch_server_1_path
 #    chown clickhouse $ch_server_2_path
 #    chgrp clickhouse $ch_server_1_path

@@ -18,7 +18,9 @@
           "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
           "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get"
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
         ]
       },
       {
@@ -32,6 +34,7 @@
       {
         "group": "ユーザー管理",
         "pages": [
+          "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
           "PATCH /v1/organizations/{organizationId}/members/{userId}",
@@ -55,18 +58,18 @@
       {
         "group": "UDF",
         "pages": [
-          "products/cloud/api-reference/udf/udf-attach",
-          "products/cloud/api-reference/udf/udf-attachment-get",
-          "products/cloud/api-reference/udf/udf-detach",
-          "products/cloud/api-reference/udf/udf-attachment-list",
-          "products/cloud/api-reference/udf/udf-create",
-          "products/cloud/api-reference/udf/udf-list",
-          "products/cloud/api-reference/udf/udf-delete",
-          "products/cloud/api-reference/udf/udf-get",
-          "products/cloud/api-reference/udf/udf-upload-session-create",
-          "products/cloud/api-reference/udf/udf-version-create",
-          "products/cloud/api-reference/udf/udf-version-list",
-          "products/cloud/api-reference/udf/udf-version-delete"
+          "POST /v1/organizations/{organizationId}/udfUploads/url",
+          "GET /v1/organizations/{organizationId}/udfs",
+          "POST /v1/organizations/{organizationId}/udfs",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "PUT /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "POST /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/versions/{version}"
         ]
       }
     ]
@@ -130,18 +133,18 @@
       {
         "group": "Query API endpoints",
         "pages": [
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
-          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}"
         ]
       },
       {
         "group": "Saved queries",
         "pages": [
-          "products/cloud/api-reference/saved-queries/saved-query-create",
           "products/cloud/api-reference/saved-queries/saved-query-list",
+          "products/cloud/api-reference/saved-queries/saved-query-create",
           "products/cloud/api-reference/saved-queries/saved-query-delete",
           "products/cloud/api-reference/saved-queries/saved-query-get",
           "products/cloud/api-reference/saved-queries/saved-query-update"
@@ -244,6 +247,7 @@
       "products/cloud/api-reference/postgres/postgres-instance-config-post",
       "products/cloud/api-reference/postgres/postgres-instance-config-patch",
       "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+      "products/cloud/api-reference/postgres/postgres-service-backup-get-list",
       "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
       "products/cloud/api-reference/postgres/slow-query-pattern-get",
       "products/cloud/api-reference/postgres/postgres-logs-get-list"

@@ -16,14 +16,14 @@ namespace
 struct CumeDistState
 {
     RowNumber start_row;
-    UInt64 current_partition_rows = 0;
+    Int64 current_partition_rows = 0;
 
     // The peer-group-end row number is identical for every row in a peer group, so we compute it
     // once (by scanning forward to the last peer) when entering a new peer group and reuse it for
     // the rest of the group. Without this the per-row scan is O(k^2) for a peer group of size k.
     // 0 for not cached is safe because the first row in a partition is always peer group 1.
-    UInt64 cached_peer_group_number = 0;
-    UInt64 cached_peer_group_end_row_number = 0;
+    Int64 cached_peer_group_number = 0;
+    Int64 cached_peer_group_end_row_number = 0;
 };
 
 struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistState>
@@ -63,7 +63,7 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
         if (WindowRowAccess::isPartitionFirstRow(transform))
         {
             state.current_partition_rows = 0;
-            state.start_row = transform->current_row;
+            state.start_row = transform->current.location;
             state.cached_peer_group_number = 0;
         }
 
@@ -75,18 +75,18 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             return;
         }
 
-        UInt64 remaining_rows = state.current_partition_rows;
+        Int64 remaining_rows = state.current_partition_rows;
         Float64 cume_dist_denominator = static_cast<Float64>(remaining_rows);
 
         while (remaining_rows > 0)
         {
-            auto block_rows_number = transform->blockRowsNumber(state.start_row);
+            auto block_rows_number = transform->blocks.blockAt(state.start_row.block).rows_count;
             auto available_block_rows = block_rows_number - state.start_row.row;
             if (available_block_rows <= remaining_rows)
             {
-                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & to_column = *transform->blocks.blockAt(state.start_row.block).result_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
-                for (size_t i = state.start_row.row; i < block_rows_number; ++i)
+                for (Int64 i = state.start_row.row; i < block_rows_number; ++i)
                     data[i] = data[i] / cume_dist_denominator;
 
                 state.start_row.block++;
@@ -95,9 +95,9 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
             }
             else
             {
-                auto & to_column = *transform->blockAt(state.start_row).output_columns[function_index];
+                auto & to_column = *transform->blocks.blockAt(state.start_row.block).result_columns[function_index];
                 auto & data = assert_cast<ColumnFloat64 &>(to_column).getData();
-                for (size_t i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
+                for (Int64 i = state.start_row.row, n = state.start_row.row + remaining_rows; i < n; ++i)
                 {
                     data[i] = data[i] / cume_dist_denominator;
                 }
@@ -119,26 +119,27 @@ struct WindowFunctionCumeDist final : public StatefulWindowFunction<CumeDistStat
         // The peer-group-end row number is the same for every row in a peer group. Recompute it (by
         // scanning forward to the last peer) only when we enter a new peer group; otherwise reuse the
         // cached value. This turns the per-peer-group cost from O(k^2) into O(k).
-        if (state.cached_peer_group_number != transform->peer_group_number)
+        if (state.cached_peer_group_number != transform->current.peer_group_index_in_partition + 1)
         {
-            UInt64 peer_group_end_row_number = transform->current_row_number;
-            RowNumber check_row = transform->current_row;
+            Int64 peer_group_end_row_number = transform->current.row_index_in_partition + 1;
+            RowNumber check_row = transform->current.location;
+            const RowNumber partition_end = transform->partition.bounds().end;
 
             // Advance through all rows that are peers with the current row
             while (true)
             {
-                RowNumber next = transform->nextRowNumber(check_row);
-                if (next >= transform->partition_end || !transform->arePeers(transform->current_row, next))
+                RowNumber next = transform->blocks.next(check_row);
+                if (next >= partition_end || !transform->arePeers(transform->current.location, next))
                     break;
                 check_row = next;
                 peer_group_end_row_number++;
             }
 
-            state.cached_peer_group_number = transform->peer_group_number;
+            state.cached_peer_group_number = transform->current.peer_group_index_in_partition + 1;
             state.cached_peer_group_end_row_number = peer_group_end_row_number;
         }
 
-        auto & to_column = *transform->blockAt(transform->current_row).output_columns[function_index];
+        auto & to_column = *transform->blocks.blockAt(transform->current.location.block).result_columns[function_index];
         assert_cast<ColumnFloat64 &>(to_column).getData().push_back(static_cast<Float64>(state.cached_peer_group_end_row_number));
     }
 };

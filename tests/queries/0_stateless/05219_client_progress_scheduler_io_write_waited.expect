@@ -1,0 +1,86 @@
+#!/usr/bin/expect -f
+# Tags: no-fasttest, no-parallel
+# no-fasttest: writes a MergeTree table stored on an S3 disk.
+# no-parallel: `CREATE WORKLOAD <name>` without a parent claims the single root workload
+# slot, and the resource attaches the IO scheduler to the shared `s3_no_cache` disk.
+
+# The write-side counterpart of 05213_client_progress_scheduler_io_waited: an INSERT whose
+# uploads are limited by `max_bytes_per_second` of its workload on a `WRITE DISK` resource
+# spends its time waiting for the scheduler (`SchedulerIOWriteWaitMicroseconds`), and this
+# time must be shown as `waited` next to `CPU` and color the progress bar yellow.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+
+log_user 0
+set timeout 60
+match_max 100000
+# The resource usage annotation is shown only when the progress bar is wider than twice the
+# annotation, so the terminal has to be wide enough for "(0.0 CPU, 1.0 waited)" to fit.
+set stty_init "rows 25 cols 240"
+
+# The root workload is a server-wide singleton: a test that dies on a timeout must not leave
+# it behind, or every later workload test fails with "The second root is not allowed".
+proc cleanup_and_fail {} {
+    global spawn_id
+    send "\3"
+    # The prompt may already be waiting in the buffer (the query may have ended long before
+    # the timeout), so the end of the DROP is awaited through a marker of its own, not through
+    # the prompt: otherwise the test exits, and the shell is killed, while the DROP still runs.
+    # The DROP is retried until it succeeds: it fails while the interrupted query has not
+    # unwound yet and still holds the workload.
+    set timeout 30
+    for {set attempt 0} {$attempt < 30} {incr attempt} {
+        send "\$CLICKHOUSE_CLIENT --query \"DROP TABLE IF EXISTS t_05219; DROP WORKLOAD IF EXISTS w_05219_slow; DROP WORKLOAD IF EXISTS w_05219_all; DROP RESOURCE IF EXISTS r_05219_io\"; echo cleaned-\$?\r"
+        expect {
+            -re {cleaned-0\r} { break }
+            -re {cleaned-[0-9]+\r} { after 1000 }
+            timeout { break }
+        }
+    }
+    exit 1
+}
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { cleanup_and_fail }
+}
+
+spawn bash --noprofile --norc -c "PS1='bash) ' bash --noprofile --norc"
+send "source $basedir/../shell_config.sh\r"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query \"CREATE OR REPLACE RESOURCE r_05219_io (WRITE DISK s3_no_cache); CREATE OR REPLACE WORKLOAD w_05219_all; CREATE OR REPLACE WORKLOAD w_05219_slow IN w_05219_all SETTINGS max_bytes_per_second = 50000 FOR r_05219_io; CREATE TABLE t_05219 (s String CODEC(NONE)) ENGINE = MergeTree ORDER BY () SETTINGS storage_policy = 's3_no_cache', min_bytes_for_wide_part = 0\" && echo created\r"
+expect "created"
+expect "bash) "
+
+# About 2 MB of incompressible data written to an S3 disk through a workload that is allowed
+# 50 KB/s on that disk, as twenty parts of 1000 rows each: every part is uploaded (and waits
+# for its share of the bandwidth) before the next block of rows is produced, so the progress
+# of the INSERT advances in small steps between the scheduler waits, and the bar has cells to
+# color while the query is stalled. The limit is far below the speed at which the query runs
+# on its own, even under the `ThreadFuzzer` environment of the flaky check (which slows the
+# INSERT to a few hundred KB/s): otherwise the scheduler hardly ever waits and the `waited`
+# figure stays at zero. The query is cancelled as soon as the annotation is seen.
+send "\$CLICKHOUSE_CLIENT --progress --workload w_05219_slow --max_threads 1 --max_insert_threads 1 --max_block_size 1000 --min_insert_block_size_rows 1000 --min_insert_block_size_bytes 0 --query 'INSERT INTO t_05219 SELECT randomPrintableASCII(100) FROM numbers(20000)' >/dev/null 2>&1\r"
+
+# The query is waiting for the IO scheduler most of the time: a non-zero `waited` figure is
+# shown next to `CPU` and the bar turns yellow.
+expect -re {\([0-9.]+ CPU, (0\.[1-9]|[1-9][0-9]*\.[0-9]) waited}
+expect -re {\x1b\[0;33m█}
+
+send "\3"
+expect "bash) "
+
+send "\$CLICKHOUSE_CLIENT --query \"DROP TABLE t_05219; DROP WORKLOAD w_05219_slow; DROP WORKLOAD w_05219_all; DROP RESOURCE r_05219_io\" && echo dropped\r"
+expect "dropped"
+expect "bash) "
+
+send "exit\r"
+expect eof

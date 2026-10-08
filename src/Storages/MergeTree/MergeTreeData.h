@@ -670,6 +670,7 @@ public:
         DataMutations,
         AlterMutations,
         MaskingPolicy,
+        UniqueKey,
     };
 
     ColumnDefaultnessStatsUnavailableReason getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const;
@@ -917,6 +918,17 @@ public:
         const MutableDataPartsVector & added_parts,
         const std::optional<MergeTreePartInfo> & drop_range) const;
 
+    /// For a table created with `CREATE TEMPORARY TABLE`, throws if adding 'added_parts' and removing the active parts
+    /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
+    /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
+    /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
+    /// `MOVE PARTITION TO TABLE` and `CREATE TEMPORARY TABLE ... CLONE AS`.
+    void throwIfTemporaryTableSizeLimitsExceededForReplacement(
+        const ContextPtr & query_context,
+        const DataPartsLock & parts_lock,
+        const MutableDataPartsVector & added_parts,
+        const std::optional<MergeTreePartInfo> & drop_range) const;
+
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
@@ -1103,6 +1115,12 @@ public:
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
     void dropAllData();
 
+    /// With the `table_disk` setting the table directory is the root of the disk, which `dropAllData` cannot remove
+    /// recursively, so the files that the engine keeps there (besides the parts and the directories it removes by
+    /// name) would survive the drop and get loaded by the next table created on the same disk. Called for each
+    /// writable disk after the parts are removed, so that a failed drop can still be retried or undone with them.
+    virtual void removeOwnFilesInDiskRootOnDrop(const DiskPtr & /*disk*/) {}
+
     /// This flag is for hardening and assertions.
     bool all_data_dropped = false;
 
@@ -1127,6 +1145,9 @@ public:
     /// the half of checkAlterIsPossible that depends only on metadata and settings, without the
     /// transient guards. lets a caller ask whether a command is eligible at all
     void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
+
+    /// Throws if a column TTL is set on a column that a key reads, directly or through a subcolumn.
+    static void checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata);
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -1460,11 +1481,18 @@ public:
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
 
     /// `metadata_snapshot` must come from the source part being covered
-    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
+    /// (via `getMetadataSnapshotForEmptyPart`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
     /// With `precommit_storage = false` the returned part's storage transaction is still open, so
     /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
+    /// Metadata for an empty part that covers or replaces `source_part`. For a patch part it is the
+    /// synthetic patch-part metadata stamped with the metadata version of `source_part`: the synthetic
+    /// metadata alone carries version 0, and an empty patch at version 0 would drag the version of every
+    /// patch merged with it down to 0, so a pending `RENAME COLUMN` would be applied to the merged patch
+    /// on read again.
+    static StorageMetadataPtr getMetadataSnapshotForEmptyPart(const IMergeTreeDataPart & source_part);
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
@@ -2215,12 +2243,17 @@ protected:
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
 
+    /// Protects `refresh_stats_task` itself: `startStatisticsCache` re-assigns the holder (on startup and
+    /// on `ALTER` of `refresh_statistics_interval`), which may race with `stopStatisticsCache` called from
+    /// a concurrent `shutdown`. Declared before the holder, so it outlives it.
+    std::mutex refresh_stats_task_mutex;
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
+    void stopStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
