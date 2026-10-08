@@ -6,6 +6,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -289,7 +290,7 @@ void SelectStreamFactory::createForShardImpl(
             return;
         }
 
-        const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
+        const auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(main_table_storage, DeferredTable::Load).get();
 
         if (!replicated_storage)
         {
