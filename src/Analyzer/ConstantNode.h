@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Core/Field.h>
 
 #include <Core/ConstantValue.h>
@@ -88,6 +90,16 @@ public:
         return source_expression;
     }
 
+    /// Links this constant to the scalar subqueries that were executed to produce its value.
+    /// A list rather than one id because constant folding collapses whole expressions:
+    /// `(SELECT a) + (SELECT b)` becomes a single constant made from two subqueries.
+    void addScalarSubqueryId(size_t id) { scalar_subquery_ids.push_back(id); }
+    void addScalarSubqueryIds(const std::vector<size_t> & ids)
+    {
+        scalar_subquery_ids.insert(scalar_subquery_ids.end(), ids.begin(), ids.end());
+    }
+    const std::vector<size_t> & getScalarSubqueryIds() const { return scalar_subquery_ids; }
+
     QueryTreeNodeType getNodeType() const override
     {
         return QueryTreeNodeType::CONSTANT;
@@ -153,6 +165,7 @@ private:
     QueryTreeNodePtr source_expression;
     bool is_deterministic = true;
     size_t mask_id = 0;
+    std::vector<size_t> scalar_subquery_ids;
 
     static constexpr size_t children_size = 0;
 

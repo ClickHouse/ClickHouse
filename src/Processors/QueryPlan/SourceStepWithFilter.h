@@ -88,6 +88,17 @@ public:
         return false;
     }
 
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        if (filter_actions_dag)
+            visitor(*filter_actions_dag);
+
+        /// Where filter pushdown puts the condition, so an `IN` over an indexed column ends up
+        /// here rather than in a `Filter` step of its own once the plan is optimized.
+        if (const auto & prewhere = getPrewhereInfo())
+            visitor(prewhere->prewhere_actions);
+    }
+
 private:
     /// Will be cleared after applyFilters() is called.
     ActionDAGNodes filter_nodes;

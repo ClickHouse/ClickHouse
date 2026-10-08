@@ -40,6 +40,9 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    /// The residual `ON` condition, which is where a subquery in the join condition ends up.
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override;
+
 private:
     void updateOutputHeader() override;
 

@@ -42,6 +42,12 @@ public:
     void setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column);
     bool hasElementFilter() const { return element_filter.has_value(); }
     const std::optional<ActionsDAG> & getElementFilter() const { return element_filter; }
+
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        if (element_filter)
+            visitor(*element_filter);
+    }
     const String & getElementFilterColumnName() const { return element_filter_column_name; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;

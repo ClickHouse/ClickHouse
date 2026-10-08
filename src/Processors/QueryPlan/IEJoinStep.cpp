@@ -203,6 +203,12 @@ void IEJoinStep::describeActions(FormatSettings & settings) const
         settings.out << settings.detail_prefix << "Swapped: true\n";
 }
 
+void IEJoinStep::forEachActionsDAG(const ActionsDAGVisitor & visitor) const
+{
+    if (residual)
+        visitor(residual->actions->getActionsDAG());
+}
+
 void IEJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Type", toString(kind));

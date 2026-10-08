@@ -29,6 +29,16 @@ public:
         return false;
     }
 
+    void forEachActionsDAG(const ActionsDAGVisitor & visitor) const override
+    {
+        for (const auto & actions : window_description.partition_by_actions)
+            if (actions)
+                visitor(*actions);
+        for (const auto & actions : window_description.order_by_actions)
+            if (actions)
+                visitor(*actions);
+    }
+
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     /// Window functions are always computed on the initiator (never on replicas), so a plan with a
