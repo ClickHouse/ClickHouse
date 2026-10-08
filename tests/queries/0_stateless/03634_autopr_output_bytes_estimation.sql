@@ -69,7 +69,7 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Check the output estimate against what the replicas actually send (ratio within 2.5x).
+-- Check the output estimate against what the replicas actually send (ratio within 3x).
 -- The expected values are `NetworkReceiveBytes` on the initiator, measured per query with
 -- `parallel_replicas_local_plan = 0`, `prefer_localhost_replica = 0` and compression forced on every
 -- replica of the cluster. Forcing it is what makes the measurement meaningful: every replica address of
@@ -83,18 +83,21 @@ SYSTEM FLUSH LOGS query_log;
 -- between 3421 and 260928 run to run. With it off the figures repeat within ~0.5%, except `query_12`,
 -- which carries ~15% from how the ranges split between the replicas.
 --
--- Every query is checked, but a pair also has to differ by more than 100 KB to count: below that the
+-- Every query is checked, but a pair also has to differ by more than 64 KB to count: below that the
 -- difference is protocol framing and per-replica fixed cost, which the estimate does not model and should
 -- not. That is what `query_1`, `query_20`, `query_21`, `query_22` and `query_23` live on - a single-row
 -- `COUNT(*)` result still costs about 17 KB on the wire against a 12-byte estimate. Unlike skipping those
 -- rows outright, this still catches an estimate that blows up on them, since that moves the difference
--- past 100 KB. (Suppressing the progress and profile-event packets with `send_profile_events = 0` and a
--- large `interactive_delay` only takes 1-6 KB off those transfers, and nothing off the large ones.)
+-- past the slack. (Suppressing the progress and profile-event packets with `send_profile_events = 0` and
+-- a large `interactive_delay` only takes 1-6 KB off those transfers, and nothing off the large ones.)
 --
--- The larger queries land within 1.05x to 1.80x of the transferred bytes: `query_28` 1.05x, `query_15`
--- 1.16x, `query_43` 1.18x, `query_12` 1.20x, `query_34` 1.69x and `query_10` 1.80x - the last two under
--- rather than over. Aggregate states are the residual: they are sampled from the hash table and so priced
--- in hash-table order, while the replicas send them in key order.
+-- Both bounds are set off the estimate's measured spread over 35 runs. The widest difference the slack
+-- has to absorb is 51922 bytes on `query_22`, hence 64 KB. The widest ratio outside the slack is 2.48x on
+-- `query_10`, whose estimate swings between 145883 and 204903 because `uniqExact` states are sampled from
+-- the hash table, hence 3x rather than 2.5x - at 2.5x that query alone would flake. The rest sit well
+-- inside: `query_28` 1.08x, `query_43` 1.18x, `query_34` 1.69x, `query_15` 1.82x and `query_12` 1.84x.
+-- Aggregate states are the residual: they are sampled from the hash table and so priced in hash-table
+-- order, while the replicas send them in key order.
 WITH
     [17258, 362202, 5372342, 1992487, 17111, 33142, 73083, 58884, 38520304, 130028333, 32692272/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
@@ -109,5 +112,5 @@ FROM
       ORDER BY event_time_microseconds
     )
 )
-WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 2.5
-  AND (greatest(res.2, res.3) - least(res.2, res.3)) > 100000;
+WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 3
+  AND (greatest(res.2, res.3) - least(res.2, res.3)) > 65536;
