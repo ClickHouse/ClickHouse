@@ -6263,9 +6263,8 @@ static bool narrowingIntegerCastKeepsValue(size_t size_of_to, bool to_is_unsigne
     return signed_value >= -bound && signed_value < bound;
 }
 
-/// True when the conversion is the identity on `key_range`, so its application can be skipped and
-/// the original `Field`s kept. Monotonicity is NOT sufficient - a narrowing cast is monotonic
-/// across any range inside one 2^bits block, yet shifts every value in a block above 0.
+/// True when the conversion is the identity on `key_range`, so its application can be skipped. Monotonicity is not
+/// enough: a narrowing cast is monotonic within one 2^bits block, yet shifts every value in a block above 0.
 static bool functionIsIntegerCastPreservingFieldRepresentation(
     const FunctionBasePtr & func, const DataTypePtr & from_type, const DataTypePtr & to_type, const Range & key_range)
 {
@@ -6304,18 +6303,14 @@ static bool functionIsIntegerCastPreservingFieldRepresentation(
     if (!same_family)
         return false;
 
-    /// `Bool` is a `UInt8` carrying a custom name: it reaches the width test below, but a cast into it
-    /// normalises every nonzero value to 1. `hasCustomName` first keeps `getName` off the common path.
+    /// `Bool` is a `UInt8` with a custom name, so it passes the width test, yet a cast into it maps every nonzero value to 1.
     if (to_type->hasCustomName() && isBool(to_type) && !isBool(from_type))
         return false;
 
-    /// A narrowing target is the only one whose value test can fail.
     const size_t size_of_to = to_type->getSizeOfValueInMemory();
     if (size_of_to >= from_type->getSizeOfValueInMemory())
         return true;
 
-    /// A narrowing one is the identity exactly on the values that already fit the target type, which is a
-    /// property of the endpoints rather than of the types. Both must fit: a truncating endpoint declines.
     const bool to_is_unsigned = is_unsigned_int(to_id);
     return narrowingIntegerCastKeepsValue(size_of_to, to_is_unsigned, key_range.left)
         && narrowingIntegerCastKeepsValue(size_of_to, to_is_unsigned, key_range.right);
@@ -6392,8 +6387,6 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
 
             auto result_type = func->getResultType();
 
-            /// Skip an application that cannot change the `Field`s: it would only rebuild them through a
-            /// freshly built one-row column and the full function execution machinery.
             bool skip_apply = functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type, key_range);
 
             if (!skip_apply)
