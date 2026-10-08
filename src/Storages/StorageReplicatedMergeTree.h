@@ -484,6 +484,11 @@ private:
     std::atomic<bool> shutdown_prepared_called {false};
     std::optional<ShutdownDeadline> shutdown_deadline;
 
+    /// Serializes concurrent calls to shutdown(). A repeated call (e.g. from the failure path of
+    /// startupImpl racing with the first, full shutdown) tears down whatever a concurrent startup()
+    /// re-armed, and some of the members it touches are not atomic.
+    std::mutex shutdown_mutex;
+
     /// We call flushAndPrepareForShutdown before acquiring DDLGuard, so we can shutdown a table that is being created right now
     mutable std::mutex flush_and_shutdown_mutex;
 

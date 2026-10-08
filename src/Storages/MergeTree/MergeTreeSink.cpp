@@ -439,13 +439,21 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
 
         auto block_holder = storage.fillNewPartName(part, lock);
 
+        /// Check the size limits of a temporary table under the same lock as the deduplication and the commit,
+        /// so that concurrent inserts cannot make the table exceed them. A block that is already in
+        /// the deduplication log is not committed as is: `addPart` reports the conflict, and the part is either
+        /// skipped or rewritten from the remaining rows, which is checked on the next try.
         std::vector<std::string> block_ids;
-        MergeTreeDeduplicationLog * deduplication_log = nullptr;
         if (!deduplication_hashes.empty())
-        {
-            deduplication_log = storage.getDeduplicationLog();
-            chassert(deduplication_log);
             block_ids = getDeduplicationBlockIds(deduplication_hashes);
+
+        auto * deduplication_log = storage.getDeduplicationLog();
+        if (block_ids.empty() || !deduplication_log || !deduplication_log->containsAny(block_ids))
+            storage.throwIfTemporaryTableSizeLimitsExceededForReplacement(context, lock, {part}, std::nullopt);
+
+        if (!block_ids.empty())
+        {
+            chassert(deduplication_log);
 
             /// Under `leader_election` the deduplication log lives on shared storage, and the
             /// `ADD` records must not become durable before the part publish is: `addPart`
@@ -494,7 +502,7 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// crash-recovery semantics of the non-replicated deduplication log (records buffered
         /// but lost on a crash), and losing at most the deduplication of one retry is strictly
         /// better than silently losing the data of a retried `INSERT`.
-        if (leader_election && deduplication_log)
+        if (leader_election && !block_ids.empty())
         {
             auto add_result = deduplication_log->addPart(block_ids, part->info);
             chassert(add_result.empty());

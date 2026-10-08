@@ -676,8 +676,7 @@ void StorageMergeTree::shutdown(bool)
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
+    stopStatisticsCache();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
@@ -4112,7 +4111,7 @@ static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector &
         new_part.part_info.level += 1;
         new_part.partition = old_part->partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
-        new_part.metadata_snapshot = old_part->getMetadataSnapshot();
+        new_part.metadata_snapshot = MergeTreeData::getMetadataSnapshotForEmptyPart(*old_part);
 
         if (old_part->info.isPatch())
             new_part.patch_part_index = old_part->getPatchPartIndex().cloneEmpty();
@@ -4597,6 +4596,15 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     /// The parts are published: the changes this command made to `detached/` are final.
     detached_rollback.commit();
 
+    /// The parts are committed one by one, so check the size limits of a temporary table for all of them
+    /// beforehand: an `ATTACH PARTITION` that does not fit is rejected as a whole instead of being half attached.
+    /// The parts are not checked again one by one, because that could leave the partition half attached if the table
+    /// grows concurrently. The check is not atomic with concurrent writes, so they may exceed the limits slightly.
+    {
+        auto lock = lockParts();
+        throwIfTemporaryTableSizeLimitsExceededForReplacement(local_context, lock, loaded_parts, std::nullopt);
+    }
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         results.push_back(PartitionCommandResultInfo{
@@ -4869,6 +4877,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// Check the limits for the operation as a whole instead.
             throwIfTableSizeLimitsExceededForReplacement(
                 data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
+            throwIfTemporaryTableSizeLimitsExceededForReplacement(
+                local_context, data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
 
             /// The new parts are committed before the replaced ones are removed, and that removal can be
             /// refused for a part whose creating transaction has not committed. Find that out now, while
@@ -5154,6 +5164,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             auto src_data_parts_lock = lockParts();
 
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+            dest_table_storage->throwIfTemporaryTableSizeLimitsExceededForReplacement(
+                local_context, dest_data_parts_lock, dst_parts, std::nullopt);
 
             /// The destination is committed before the source parts are covered by the empty parts, and
             /// that removal can be refused for a part whose creating transaction has not committed. Find

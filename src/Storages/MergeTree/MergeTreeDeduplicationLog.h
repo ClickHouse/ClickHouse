@@ -168,6 +168,9 @@ public:
     /// block ids of a failed `INSERT` behind for the next leader to deduplicate retries against.
     std::vector<AddPartResult> getDuplicates(const std::vector<std::string> & block_ids);
 
+    /// Whether at least one of the block ids is already present, so `addPart` would report a duplicate.
+    bool containsAny(const std::vector<std::string> & block_ids);
+
     /// Remove all covered parts from in memory table and add DROP records to the disk.
     /// Under `leader_election` this is also the reconciliation primitive: right after `load`,
     /// the new leader calls it with the range of every active *empty* covering part — such a
