@@ -266,10 +266,21 @@ SQLQueryPiece applyLabelManipulationFunction(
         case StoreMethod::VECTOR_GRID:
         {
             /// Step 1:
-            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, any(values) AS values
+            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group,
+            ///        anyForEach(values) AS new_values
             /// FROM <vector_grid>
             /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
+            /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(x -> x > 1, countForEach(values)), new_group) = 0
+            ///
+            /// Series which get the same tags are merged when their samples do not overlap on the grid.
+            /// Two values at the same grid position are duplicate series.
+            ///
+            /// A write of `__name__` removes the deferred-drop marker.
+            /// `label_replace` does that only when the regex matches. A miss returns the original group,
+            /// and that group keeps the marker so the metric name stays removed.
+            /// `label_join` always writes its destination, so a `__name__` destination always removes the marker.
+            /// A match that stores the same metric name still removes the marker. The tag function returns
+            /// the original group in that case, so a changed group id is not the signal.
             ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
@@ -285,11 +296,59 @@ SQLQueryPiece applyLabelManipulationFunction(
                 auto group_function = makeASTFunction(impl_info->ch_function_name);
                 group_function->arguments->children = std::move(group_function_args);
 
-                builder.select_list.push_back(std::move(group_function));
+                ASTPtr new_group = std::move(group_function);
+                if (dest_label == kMetricName)
+                {
+                    ASTPtr written_group = new_group->clone();
+                    ASTPtr without_marker = makeASTFunction(
+                        "timeSeriesRemoveTag",
+                        std::move(written_group),
+                        make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
+
+                    if (function_name == "label_replace")
+                    {
+                        /// The tag function anchors the regex to the whole source value.
+                        const String anchored_regex = "^(?:" + arguments[4].string_value + ")$";
+                        /// An empty source name is a missing label.
+                        /// `timeSeriesExtractTag` would return the drop marker stored under that name.
+                        ASTPtr source_value;
+                        if (arguments[3].string_value.empty())
+                        {
+                            source_value = make_intrusive<ASTLiteral>(String{});
+                        }
+                        else
+                        {
+                            source_value = makeASTFunction(
+                                "ifNull",
+                                makeASTFunction(
+                                    "timeSeriesExtractTag",
+                                    make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                                    make_intrusive<ASTLiteral>(arguments[3].string_value)),
+                                make_intrusive<ASTLiteral>(String{}));
+                        }
+
+                        ASTPtr regex_matched = makeASTFunction(
+                            "match",
+                            std::move(source_value),
+                            make_intrusive<ASTLiteral>(anchored_regex));
+
+                        new_group = makeASTFunction(
+                            "if",
+                            std::move(regex_matched),
+                            std::move(without_marker),
+                            make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    }
+                    else
+                    {
+                        new_group = std::move(without_marker);
+                    }
+                }
+
+                builder.select_list.push_back(std::move(new_group));
                 builder.select_list.back()->setAlias(ColumnNames::NewGroup);
 
-                builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-                builder.select_list.back()->setAlias(ColumnNames::Values);
+                builder.select_list.push_back(makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+                builder.select_list.back()->setAlias(ColumnNames::NewValues);
 
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
@@ -297,11 +356,19 @@ SQLQueryPiece applyLabelManipulationFunction(
 
                 builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
+                auto has_overlapping_values = makeASTFunction(
+                    "arrayExists",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                        makeASTFunction("greater", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
+                    makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+
                 builder.having = makeASTFunction(
                     "equals",
                     makeASTFunction(
                         "timeSeriesThrowDuplicateSeriesIf",
-                        makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
+                        std::move(has_overlapping_values),
                         make_intrusive<ASTIdentifier>(ColumnNames::NewGroup)),
                     make_intrusive<ASTLiteral>(0u));
 
@@ -309,7 +376,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             }
 
             /// Step 2:
-            /// SELECT new_group AS group, values
+            /// SELECT new_group AS group, new_values AS values
             /// FROM step1
             ASTPtr column_renaming_query;
             {
@@ -318,7 +385,8 @@ SQLQueryPiece applyLabelManipulationFunction(
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewValues));
+                builder.select_list.back()->setAlias(ColumnNames::Values);
 
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(label_replacing_query), SQLSubqueryType::TABLE});
@@ -329,6 +397,8 @@ SQLQueryPiece applyLabelManipulationFunction(
 
             res.select_query = std::move(column_renaming_query);
 
+            /// A rewrite may have written '__name__', so the name is not known to be absent.
+            /// A miss keeps the marker, and finalizeSQL still removes that name.
             if (dest_label == kMetricName)
                 res.metric_name_dropped = false;
 

@@ -73,14 +73,22 @@ void checkArgumentTypes(
 
 ASTPtr setValueLabel(ASTPtr group, const String & label_name)
 {
+    /// timeSeriesTagsToGroup rejects an empty tag name, so the marker of a dropped metric name
+    /// is removed before the round trip and copied back from the original group afterwards.
     auto tags_without_value_label = makeASTFunction(
-        "timeSeriesGroupToTags", makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(label_name)));
+        "timeSeriesGroupToTags",
+        makeASTFunction("timeSeriesRemoveTags", group->clone(), make_intrusive<ASTLiteral>(Array{label_name, kDroppedMetricNameMarker})));
 
-    return makeASTFunction(
+    auto new_group = makeASTFunction(
         "timeSeriesTagsToGroup",
         std::move(tags_without_value_label),
         make_intrusive<ASTLiteral>(label_name),
         make_intrusive<ASTIdentifier>(LABEL_VALUE));
+
+    if (label_name == kMetricName)
+        return new_group;
+
+    return makeASTFunction("timeSeriesCopyTag", std::move(new_group), std::move(group), make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
 }
 
 ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_node, ASTPtr group, const String & label_name, bool & metric_name_dropped)
@@ -89,6 +97,7 @@ ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_
     {
         std::vector<std::string_view> tags_to_remove{operator_node->labels.begin(), operator_node->labels.end()};
         tags_to_remove.push_back(kMetricName);
+        tags_to_remove.push_back(kDroppedMetricNameMarker);
         std::sort(tags_to_remove.begin(), tags_to_remove.end());
         tags_to_remove.erase(std::unique(tags_to_remove.begin(), tags_to_remove.end()), tags_to_remove.end());
 
@@ -106,6 +115,8 @@ ASTPtr transformGroup(const PrometheusQueryTree::AggregationOperator * operator_
 
     if (!std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
         metric_name_dropped = true;
+    else if (label_name != kMetricName)
+        tags_to_keep.push_back(kDroppedMetricNameMarker);
 
     return makeASTFunction(
         "timeSeriesRemoveAllTagsExcept", std::move(group), make_intrusive<ASTLiteral>(Array{tags_to_keep.begin(), tags_to_keep.end()}));

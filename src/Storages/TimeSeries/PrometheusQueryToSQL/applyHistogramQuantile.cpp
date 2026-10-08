@@ -110,8 +110,8 @@ SQLQueryPiece applyHistogramQuantile(
         /// same non-name labels (for example `{__name__=~"a_bucket|b_bucket"}` or
         /// `a_bucket or b_bucket`) keeps each histogram's quantile separate. We
         /// drop `__name__` afterwards through `dropMetricName`, which preserves
-        /// PromQL's "function output has no metric name" semantics while still
-        /// enforcing the no-duplicate-labelset rule via timeSeriesThrowDuplicateSeriesIf.
+        /// PromQL's "function output has no metric name" semantics; the
+        /// no-duplicate-labelset rule is enforced on the final result by finalizeSQL.
         auto new_group_expr = makeASTFunction(
             "timeSeriesRemoveTag",
             make_intrusive<ASTIdentifier>(ColumnNames::Group),
@@ -226,9 +226,8 @@ SQLQueryPiece applyHistogramQuantile(
     res.metric_name_dropped = false;
 
     /// Drop `__name__` from the result (matching PromQL: function outputs have no
-    /// metric name). `dropMetricName` also enforces uniqueness via
-    /// `timeSeriesThrowDuplicateSeriesIf`, which is the right behavior if removing
-    /// `__name__` would produce two output series with identical labels.
+    /// metric name). If removing `__name__` produces two output series with identical
+    /// labels, finalizeSQL throws via `timeSeriesThrowDuplicateSeriesIf`.
     return dropMetricName(std::move(res), context);
 }
 
