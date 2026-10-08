@@ -130,6 +130,14 @@ SELECT y FROM (SELECT [1] AS arr, 2 AS y) ARRAY JOIN arr INNER JOIN (SELECT 0 AS
 SELECT * FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr AS x;
 SELECT * FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr AS x CROSS JOIN (SELECT 0 AS x); -- { serverError ALIAS_REQUIRED }
 
+SELECT '-- A merged USING key belongs to the join result, so an alias would not make it qualifiable';
+SELECT k FROM (SELECT 1 AS k) INNER JOIN (SELECT 1 AS k) AS r USING (k), (SELECT 2 AS k) AS o; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT k FROM (SELECT 1 AS k) AS l INNER JOIN (SELECT 1 AS k) AS r USING (k), (SELECT 2 AS k) AS o; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT k FROM (SELECT 1 AS k) FULL JOIN (SELECT 1 AS k) USING (k), (SELECT 2 AS k) AS o; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT o.k FROM (SELECT 1 AS k) INNER JOIN (SELECT 1 AS k) AS r USING (k), (SELECT 2 AS k) AS o;
+SELECT * FROM (SELECT 1 AS k) INNER JOIN (SELECT 1 AS k) AS r USING (k), (SELECT 2 AS k) AS o;
+SELECT v FROM (SELECT 1 AS k, 2 AS v) INNER JOIN (SELECT 1 AS k) AS r USING (k), (SELECT 3 AS v) AS o; -- { serverError ALIAS_REQUIRED }
+
 SELECT '-- The restriction can be disabled entirely';
 SELECT brand FROM item, (SELECT s_brand AS brand FROM sales) ORDER BY brand SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM item, (SELECT toInt32(100) AS brand) ORDER BY item_id SETTINGS joined_subquery_requires_alias = 0 FORMAT TSVWithNames;

@@ -113,6 +113,8 @@ public:
       * union or table function that has neither an alias nor a name of its own (a CTE name, the name of a parameterized
       * view or of an inlined view), return that table expression.
       * Columns of such a table expression cannot be qualified with a name. Otherwise return nullptr.
+      * A key of a `JOIN ... USING` is owned by the join result and stays unqualifiable with any alias, so nullptr is
+      * returned for it too.
       */
     static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression, const IdentifierResolveScope & scope);
 

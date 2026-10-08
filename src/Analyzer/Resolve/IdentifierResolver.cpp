@@ -1224,10 +1224,72 @@ static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionTableExpression(const
     return table_expression;
 }
 
+/** Returns true if the column is a key of a `JOIN ... USING` in the join tree: one of the columns the `USING` key is
+  * merged from. Such a column is owned by the join result, which exposes the merged key under its bare name. Qualifying
+  * the table expression the column comes from does not make the merged key qualifiable, so an alias of that table
+  * expression would not resolve an ambiguity of the key either.
+  *
+  * Example: SELECT k FROM (SELECT 1 AS k) INNER JOIN (SELECT 1 AS k) AS r USING (k), (SELECT 2 AS k) AS o;
+  */
+static bool isJoinUsingKeyColumn(const IQueryTreeNode * join_tree_node, const ColumnNode & column_node)
+{
+    if (!join_tree_node)
+        return false;
+
+    if (const auto * join_node = join_tree_node->as<JoinNode>())
+    {
+        if (join_node->isUsingJoinExpression())
+        {
+            for (const auto & using_node : join_node->getJoinExpression()->as<const ListNode &>().getNodes())
+            {
+                const auto * using_column_node = using_node->as<ColumnNode>();
+                if (!using_column_node || using_column_node->getColumnName() != column_node.getColumnName())
+                    continue;
+
+                const auto & using_expression = using_column_node->getExpression();
+                if (!using_expression)
+                    continue;
+
+                for (const auto & argument : using_expression->as<const ListNode &>().getNodes())
+                {
+                    const auto * argument_column_node = argument->as<ColumnNode>();
+                    if (argument_column_node
+                        && argument_column_node->getColumnName() == column_node.getColumnName()
+                        && argument_column_node->getColumnSourceOrNull() == column_node.getColumnSourceOrNull())
+                        return true;
+                }
+            }
+        }
+
+        return isJoinUsingKeyColumn(join_node->getLeftTableExpressionNode().get(), column_node)
+            || isJoinUsingKeyColumn(join_node->getRightTableExpressionNode().get(), column_node);
+    }
+
+    if (const auto * cross_join_node = join_tree_node->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+            if (isJoinUsingKeyColumn(table_expression.get(), column_node))
+                return true;
+        return false;
+    }
+
+    if (const auto * array_join_node = join_tree_node->as<ArrayJoinNode>())
+        return isJoinUsingKeyColumn(array_join_node->getTableExpressionNode().get(), column_node);
+
+    return false;
+}
+
 QueryTreeNodePtr IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression, const IdentifierResolveScope & scope)
 {
     if (const auto * column_node = resolved_expression->as<ColumnNode>())
+    {
+        const auto * nearest_query_scope = scope.getNearestQueryScope();
+        const auto * nearest_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
+        if (nearest_query_node && isJoinUsingKeyColumn(nearest_query_node->getJoinTreeNode().get(), *column_node))
+            return nullptr;
+
         return getUnaliasedSubqueryOrTableFunctionTableExpression(column_node->getColumnSourceOrNull(), scope);
+    }
 
     /// Subcolumns and `Nested` columns are resolved into functions (`getSubcolumn`, `nested`) over the actual columns.
     if (const auto * function_node = resolved_expression->as<FunctionNode>())

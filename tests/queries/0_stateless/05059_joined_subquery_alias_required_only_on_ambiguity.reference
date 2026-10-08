@@ -72,6 +72,9 @@ a	b
 1
 2
 [1]	2
+-- A merged USING key belongs to the join result, so an alias would not make it qualifiable
+2
+1	2
 -- The restriction can be disabled entirely
 100
 100
