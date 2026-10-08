@@ -9,13 +9,11 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
-#include <Common/BitHelpers.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Common/transformEndianness.h>
 #include <Common/typeid_cast.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
@@ -45,17 +43,16 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeWriterStream.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/MergeTree/TextIndexTokensCodec.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <base/EnumReflection.h>
-#include <base/arithmeticOverflow.h>
 #include <base/range.h>
 #include <base/types.h>
 #include <base/PackedStringRef.h>
 #include <fmt/ranges.h>
 
-#include <bit>
 #include <limits>
 #include <numeric>
 
@@ -430,206 +427,6 @@ MergeTreeIndexSubstream getSubstream(const IMergeTreeIndex & index, MergeTreeInd
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Index with type 'text' has no substream of type {}", magic_enum::enum_name(type));
 
     return *it;
-}
-
-ColumnPtr deserializeTokensRaw(ReadBuffer & istr, size_t num_tokens)
-{
-    auto tokens_column = ColumnString::create();
-    tokens_column->reserve(num_tokens);
-
-    auto serialization_string = SerializationString::create();
-    serialization_string->deserializeBinaryBulk(*tokens_column, istr, num_tokens, 0.0);
-
-    return tokens_column;
-}
-
-ColumnPtr deserializeTokensFrontCoding(ReadBuffer & istr, size_t num_tokens)
-{
-    auto tokens_column = ColumnString::create();
-
-    if (num_tokens != 0)
-    {
-        tokens_column->reserve(num_tokens);
-        ColumnString::Chars & data = tokens_column->getChars();
-        ColumnString::Offsets & offsets = tokens_column->getOffsets();
-
-        /// Avoiding calling resize in a loop improves the performance.
-        /// The average length of words in English language is 4.7 characters, rounded up to the next power of 2.
-        data.resize(roundUpToPowerOfTwoOrZero(num_tokens * 8));
-
-        size_t offset = 0;
-
-        /// Read the first token
-        {
-            UInt64 first_token_size = 0;
-            readVarUInt(first_token_size, istr);
-            /// Prevent a corrupt or malicious .dct file from allocating huge amounts of memory
-            if (first_token_size > SerializationString::MAX_STRING_SIZE)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: first token size ({}) exceeds the maximum ({})", first_token_size, SerializationString::MAX_STRING_SIZE);
-            offset += first_token_size;
-            if (offset > data.size())
-                data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
-            istr.readStrict(reinterpret_cast<char *>(data.data()), first_token_size);
-            offsets.push_back(offset);
-        }
-
-        size_t previous_token_offset = 0;
-        for (size_t i = 1; i < num_tokens; ++i)
-        {
-            const UInt64 data_offset = offset;
-
-            UInt64 lcp = 0;
-            readVarUInt(lcp, istr);
-            UInt64 data_size = 0;
-            readVarUInt(data_size, istr);
-
-            /// Reject a corrupted or malicious `.dct`: an out-of-range `lcp` or an overflowing `lcp + data_size` would wrap `offset`, skip the resize, and cause an out-of-bounds write below.
-            const UInt64 previous_token_size = data_offset - previous_token_offset;
-            if (lcp > previous_token_size)
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted text index dictionary: front-coding longest common prefix ({}) exceeds the previous token size ({})",
-                    lcp, previous_token_size);
-
-            UInt64 token_size = 0;
-            UInt64 next_offset = 0;
-            if (common::addOverflow(lcp, data_size, token_size) || common::addOverflow<UInt64>(offset, token_size, next_offset))
-                throw Exception(
-                    ErrorCodes::CORRUPTED_DATA,
-                    "Corrupted text index dictionary: front-coding token size overflows (lcp = {}, data_size = {})",
-                    lcp, data_size);
-
-            if (token_size > SerializationString::MAX_STRING_SIZE)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: front-coding token size ({}) exceeds the maximum ({})", token_size, SerializationString::MAX_STRING_SIZE);
-
-            offset = next_offset;
-
-            if (offset > data.size())
-                data.resize_exact(roundUpToPowerOfTwoOrZero(std::max(offset, data.size() * 2)));
-
-            std::memcpy(&data[data_offset], &data[previous_token_offset], lcp);
-            istr.readStrict(reinterpret_cast<char *>(&data[data_offset + lcp]), data_size);
-
-            offsets.push_back(offset);
-            previous_token_offset = data_offset;
-        }
-
-        data.resize_exact(offset);
-    }
-
-    return tokens_column;
-}
-
-/// Token lengths never exceed `SerializationString::MAX_STRING_SIZE`, so they fit into 32 bits.
-constexpr UInt64 MAX_BIT_WIDTH_FRONT_CODING_V2 = 32;
-
-void writeBitPacked(std::span<const UInt32> values, UInt8 bit_width, WriteBuffer & ostr)
-{
-    size_t num_bits = values.size() * bit_width;
-    PODArray<UInt64> words;
-    words.resize_fill((num_bits + 63) / 64 + 1);
-
-    for (size_t i = 0; i < values.size(); ++i)
-        writeBitsPacked64(words.data(), i * bit_width, values[i]);
-
-    for (auto & word : words)
-        transformEndianness<std::endian::little>(word);
-
-    ostr.write(reinterpret_cast<const char *>(words.data()), (num_bits + 7) / 8);
-}
-
-void readBitPacked(ReadBuffer & istr, size_t num_values, UInt8 bit_width, PODArray<UInt32> & values)
-{
-    size_t num_bits = 0;
-    if (common::mulOverflow<size_t>(num_values, bit_width, num_bits))
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: too many tokens ({}) in a block", num_values);
-
-    PODArray<UInt64> words;
-    words.resize_fill((num_bits + 63) / 64 + 1);
-    istr.readStrict(reinterpret_cast<char *>(words.data()), (num_bits + 7) / 8);
-
-    for (auto & word : words)
-        transformEndianness<std::endian::little>(word);
-
-    values.resize(num_values);
-    for (size_t i = 0; i < num_values; ++i)
-        values[i] = static_cast<UInt32>(readBitsPacked64(words.data(), i * bit_width, bit_width));
-}
-
-UInt8 readBitWidth(ReadBuffer & istr)
-{
-    UInt64 bit_width = 0;
-    readVarUInt(bit_width, istr);
-    if (bit_width > MAX_BIT_WIDTH_FRONT_CODING_V2)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: bit width ({}) exceeds the maximum ({})", bit_width, MAX_BIT_WIDTH_FRONT_CODING_V2);
-    return static_cast<UInt8>(bit_width);
-}
-
-ColumnPtr deserializeTokensFrontCodingV2(ReadBuffer & istr, size_t num_tokens)
-{
-    auto tokens_column = ColumnString::create();
-    if (num_tokens == 0)
-        return tokens_column;
-
-    ColumnString::Chars & data = tokens_column->getChars();
-    ColumnString::Offsets & offsets = tokens_column->getOffsets();
-
-    UInt64 first_token_size = 0;
-    readVarUInt(first_token_size, istr);
-    if (first_token_size > SerializationString::MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: first token size ({}) exceeds the maximum ({})", first_token_size, SerializationString::MAX_STRING_SIZE);
-    data.resize(first_token_size);
-    istr.readStrict(reinterpret_cast<char *>(data.data()), first_token_size);
-
-    const UInt8 lcp_bit_width = readBitWidth(istr);
-    const UInt8 suffix_size_bit_width = readBitWidth(istr);
-
-    PODArray<UInt32> lcps;
-    PODArray<UInt32> suffix_sizes;
-    readBitPacked(istr, num_tokens - 1, lcp_bit_width, lcps);
-    readBitPacked(istr, num_tokens - 1, suffix_size_bit_width, suffix_sizes);
-
-    offsets.resize(num_tokens);
-    offsets[0] = first_token_size;
-    UInt64 total_suffix_size = 0;
-
-    for (size_t i = 1; i < num_tokens; ++i)
-    {
-        const UInt64 previous_token_size = offsets[i - 1] - offsets[i - 2];
-        const UInt64 lcp = lcps[i - 1];
-        const UInt64 token_size = lcp + suffix_sizes[i - 1];
-
-        if (lcp > previous_token_size)
-            throw Exception(
-                ErrorCodes::CORRUPTED_DATA,
-                "Corrupted text index dictionary: front-coding longest common prefix ({}) exceeds the previous token size ({})",
-                lcp, previous_token_size);
-
-        if (token_size > SerializationString::MAX_STRING_SIZE)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: front-coding token size ({}) exceeds the maximum ({})", token_size, SerializationString::MAX_STRING_SIZE);
-
-        if (common::addOverflow<UInt64>(offsets[i - 1], token_size, offsets[i]))
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted text index dictionary: front-coding total size overflows");
-
-        total_suffix_size += suffix_sizes[i - 1];
-    }
-
-    PODArray<char> suffixes(total_suffix_size);
-    istr.readStrict(suffixes.data(), total_suffix_size);
-
-    data.resize_exact(offsets.back());
-    const char * suffix = suffixes.data();
-
-    for (size_t i = 1; i < num_tokens; ++i)
-    {
-        const UInt64 lcp = lcps[i - 1];
-        const UInt64 suffix_size = suffix_sizes[i - 1];
-        std::memcpy(&data[offsets[i - 1]], &data[offsets[i - 2]], lcp);
-        std::memcpy(&data[offsets[i - 1] + lcp], suffix, suffix_size);
-        suffix += suffix_size;
-    }
-
-    return tokens_column;
 }
 
 using DictionaryBlockRanges = std::vector<std::pair<size_t, size_t>>;
@@ -1139,111 +936,6 @@ MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
 namespace
 {
 
-size_t computeCommonPrefixLength(const std::string_view lhs, const std::string_view rhs)
-{
-    size_t common_prefix_length = 0;
-    size_t max_length = std::min(lhs.size(), rhs.size());
-
-    while (common_prefix_length < max_length && lhs[common_prefix_length] == rhs[common_prefix_length])
-        ++common_prefix_length;
-
-    return common_prefix_length;
-}
-
-template <typename TokenGetter>
-void serializeTokensRaw(
-    const TokenGetter & token_getter,
-    WriteBuffer & ostr,
-    size_t block_begin,
-    size_t block_end)
-{
-    /// Write tokens the same as in SerializationString::serializeBinaryBulk
-    /// to be able to read them later with SerializationString::deserializeBinaryBulk.
-
-    for (size_t i = block_begin; i < block_end; ++i)
-    {
-        auto current_token = token_getter(i);
-        TextIndexSerialization::checkTokenSize(current_token.size());
-        writeVarUInt(current_token.size(), ostr);
-        ostr.write(current_token.data(), current_token.size());
-    }
-}
-
-/*
- * The front coding implementation is based on the idea from following papers.
- * 1. https://doi.org/10.1109/Innovate-Data.2017.9
- * 2. https://doi.org/10.1145/3448016.345279
- */
-template <typename TokenGetter>
-void serializeTokensFrontCoding(
-    const TokenGetter & token_getter,
-    WriteBuffer & ostr,
-    size_t block_begin,
-    size_t block_end)
-{
-    const auto & first_token = token_getter(block_begin);
-    TextIndexSerialization::checkTokenSize(first_token.size());
-    writeVarUInt(first_token.size(), ostr);
-    ostr.write(first_token.data(), first_token.size());
-
-    std::string_view previous_token = first_token;
-    for (size_t i = block_begin + 1; i < block_end; ++i)
-    {
-        auto current_token = token_getter(i);
-        TextIndexSerialization::checkTokenSize(current_token.size());
-        auto lcp = computeCommonPrefixLength(previous_token, current_token);
-        writeVarUInt(lcp, ostr);
-        writeVarUInt(current_token.size() - lcp, ostr);
-        ostr.write(current_token.data() + lcp, current_token.size() - lcp);
-        previous_token = current_token;
-    }
-}
-
-/// Same data as front coding, but the per-token lengths are stored as two bit-packed columns followed by all suffixes.
-template <typename TokenGetter>
-void serializeTokensFrontCodingV2(
-    const TokenGetter & token_getter,
-    WriteBuffer & ostr,
-    size_t block_begin,
-    size_t block_end)
-{
-    const auto & first_token = token_getter(block_begin);
-    TextIndexSerialization::checkTokenSize(first_token.size());
-    writeVarUInt(first_token.size(), ostr);
-    ostr.write(first_token.data(), first_token.size());
-
-    PODArray<UInt32> lcps;
-    PODArray<UInt32> suffix_sizes;
-    lcps.reserve(block_end - block_begin - 1);
-    suffix_sizes.reserve(block_end - block_begin - 1);
-
-    std::string_view previous_token = first_token;
-    for (size_t i = block_begin + 1; i < block_end; ++i)
-    {
-        auto current_token = token_getter(i);
-        TextIndexSerialization::checkTokenSize(current_token.size());
-        auto lcp = computeCommonPrefixLength(previous_token, current_token);
-        lcps.push_back(static_cast<UInt32>(lcp));
-        suffix_sizes.push_back(static_cast<UInt32>(current_token.size() - lcp));
-        previous_token = current_token;
-    }
-
-    const auto lcp_bit_width = static_cast<UInt8>(std::bit_width(lcps.empty() ? 0 : *std::ranges::max_element(lcps)));
-    const auto suffix_size_bit_width = static_cast<UInt8>(std::bit_width(suffix_sizes.empty() ? 0 : *std::ranges::max_element(suffix_sizes)));
-
-    writeVarUInt(lcp_bit_width, ostr);
-    writeVarUInt(suffix_size_bit_width, ostr);
-    writeBitPacked(lcps, lcp_bit_width, ostr);
-    writeBitPacked(suffix_sizes, suffix_size_bit_width, ostr);
-
-    for (size_t i = block_begin + 1; i < block_end; ++i)
-    {
-        auto current_token = token_getter(i);
-        size_t lcp = lcps[i - block_begin - 1];
-        ostr.write(current_token.data() + lcp, current_token.size() - lcp);
-    }
-}
-
 template <typename TokenGetter>
 void serializeTokensImpl(
     const TokenGetter & token_getter,
@@ -1259,13 +951,13 @@ void serializeTokensImpl(
     switch (format)
     {
         case TextIndexSerialization::TokensFormat::RawStrings:
-            serializeTokensRaw(token_getter, ostr, block_begin, block_end);
+            TextIndexTokensCodec::serializeRaw(token_getter, ostr, block_begin, block_end);
             break;
         case TextIndexSerialization::TokensFormat::FrontCodedStrings:
-            serializeTokensFrontCoding(token_getter, ostr, block_begin, block_end);
+            TextIndexTokensCodec::serializeFrontCodingV1(token_getter, ostr, block_begin, block_end);
             break;
         case TextIndexSerialization::TokensFormat::FrontCodedStringsV2:
-            serializeTokensFrontCodingV2(token_getter, ostr, block_begin, block_end);
+            TextIndexTokensCodec::serializeFrontCodingV2(token_getter, ostr, block_begin, block_end);
             break;
     }
 }
@@ -1512,7 +1204,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeader(ReadBuffer & istr)
     size_t num_sparse_index_tokens = 0;
     readVarUInt(num_sparse_index_tokens, istr);
 
-    auto tokens = deserializeTokensRaw(istr, num_sparse_index_tokens);
+    auto tokens = TextIndexTokensCodec::deserializeRaw(istr, num_sparse_index_tokens);
     auto offsets = ColumnUInt64::create();
 
     auto serialization_number = SerializationNumber<UInt64>::create();
@@ -1659,11 +1351,11 @@ std::pair<ColumnPtr, UInt64> TextIndexSerialization::deserializeTokens(ReadBuffe
     switch (tokens_format)
     {
         case static_cast<UInt64>(TokensFormat::RawStrings):
-            return {deserializeTokensRaw(istr, num_tokens), tokens_format};
+            return {TextIndexTokensCodec::deserializeRaw(istr, num_tokens), tokens_format};
         case static_cast<UInt64>(TokensFormat::FrontCodedStrings):
-            return {deserializeTokensFrontCoding(istr, num_tokens), tokens_format};
+            return {TextIndexTokensCodec::deserializeFrontCodingV1(istr, num_tokens), tokens_format};
         case static_cast<UInt64>(TokensFormat::FrontCodedStringsV2):
-            return {deserializeTokensFrontCodingV2(istr, num_tokens), tokens_format};
+            return {TextIndexTokensCodec::deserializeFrontCodingV2(istr, num_tokens), tokens_format};
         default:
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown tokens serialization format ({}) in dictionary block", tokens_format);
     }
