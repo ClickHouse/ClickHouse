@@ -73,10 +73,9 @@ int compareRangeOffset(
         return 1;
 }
 
-/// The same for a calendar INTERVAL: the offset counts months for a Date or Date32 key and days for a DateTime key.
+/// The same for a calendar INTERVAL, whose offset counts months of a Date or Date32 key.
 /// The frame search moves the bounds only forward, so the shifted key must not decrease as the key grows.
-/// addMonths keeps this, as it saturates the day of month. addDays on a DateTime breaks it only inside a DST gap
-/// or overlap hour, where the bound may lag by up to that hour; this matches subtractDays and is accepted.
+/// addMonths keeps this, as it saturates the day of month.
 template <typename T>
 int compareCalendarRangeOffset(
     const IColumn * lhs_column, size_t lhs_row,
@@ -90,16 +89,14 @@ int compareCalendarRangeOffset(
     const T rhs_value = assert_cast<const ColumnVector<T> &>(*rhs_column).getData()[rhs_row];
     const Int64 delta = static_cast<Int64>(offset.safeGet<UInt64>()) * (offset_is_preceding ? -1 : 1);
 
-    /// Int64, because a shifted DateTime may leave the UInt32 range.
+    /// Int64, because a shifted Date may leave the range of the key type.
     Int64 shifted_rhs = 0;
     if constexpr (std::is_same_v<T, UInt16>)
         shifted_rhs = time_zone->addMonths(DayNum(rhs_value), delta);
-    else if constexpr (std::is_same_v<T, Int32>)
-        shifted_rhs = time_zone->addMonths(ExtendedDayNum(rhs_value), delta);
     else
     {
-        static_assert(std::is_same_v<T, UInt32>);
-        shifted_rhs = time_zone->addDays(rhs_value, delta);
+        static_assert(std::is_same_v<T, Int32>);
+        shifted_rhs = time_zone->addMonths(ExtendedDayNum(rhs_value), delta);
     }
 
     const Int64 lhs = lhs_value;
@@ -161,7 +158,7 @@ RangeOffsetComparator chooseRangeOffsetComparatorForValueType(const IColumn & co
     }
 }
 
-/// The same for a calendar INTERVAL offset, whose key was already checked to be a Date, Date32 or DateTime.
+/// The same for a calendar INTERVAL offset, whose key was already checked to be a Date or Date32.
 template <bool nullable>
 RangeOffsetComparator chooseCalendarRangeOffsetComparatorForValueType(const IColumn & column)
 {
@@ -169,7 +166,6 @@ RangeOffsetComparator chooseCalendarRangeOffsetComparatorForValueType(const ICol
     {
         case TypeIndex::UInt16: return maybeNullable<nullable, compareCalendarRangeOffset<UInt16>>();
         case TypeIndex::Int32: return maybeNullable<nullable, compareCalendarRangeOffset<Int32>>();
-        case TypeIndex::UInt32: return maybeNullable<nullable, compareCalendarRangeOffset<UInt32>>();
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Calendar interval offset is not supported for ORDER BY column {}", column.getName());
     }
@@ -246,9 +242,12 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
 }
 
 /// Converts an INTERVAL offset into the units of the ORDER BY key: days for Date/Date32, seconds for DateTime.
-/// Kinds without a fixed length set `is_calendar` and are converted to months (MONTH/QUARTER/YEAR, Date keys only)
-/// or to days (DAY/WEEK on a DateTime key in a time zone with a variable UTC offset), see compareCalendarRangeOffset.
-/// In a fixed-offset time zone a day is always 86400 seconds and the plain arithmetic comparator is used.
+/// MONTH/QUARTER/YEAR have no fixed length: they set `is_calendar` and are converted to months, for Date keys only,
+/// see compareCalendarRangeOffset.
+/// DAY/WEEK on a DateTime key are converted to seconds, which is exact only in a fixed-offset time zone. Elsewhere
+/// `ts - INTERVAL 1 DAY` is 23 or 25 hours across a DST switch, and it is not monotone in `ts` around the switch:
+/// in Europe/Berlin, 2024-10-27 02:30 CEST minus a day is 2024-10-26 02:30, but the later 2024-10-27 02:00 CET
+/// minus a day is 2024-10-26 02:00. The frame search moves the bounds only forward, so such offsets are rejected.
 Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataTypePtr & key_type, const DateLUTImpl & time_zone, bool & is_calendar)
 {
     WhichDataType which(key_type);
@@ -278,13 +277,16 @@ Field convertIntervalOffset(const Field & offset, IntervalKind kind, const DataT
             break;
         case IntervalKind::Kind::Day:
         case IntervalKind::Kind::Week:
-            if (which.isDateTime() && time_zone.hasFixedOffset())
+            if (!which.isDateTime())
+                units_per_interval = kind.getKind() == IntervalKind::Kind::Day ? 1 : 7;
+            else if (time_zone.hasFixedOffset())
                 units_per_interval = kind.toAvgSeconds();
             else
-            {
-                is_calendar = which.isDateTime();
-                units_per_interval = kind.getKind() == IntervalKind::Kind::Day ? 1 : 7;
-            }
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Interval window frame offset INTERVAL {} {} is not supported for a DateTime ORDER BY column in time zone '{}', "
+                    "where a day is not always 24 hours. Use an offset in hours, a Date key, or a DateTime key in a fixed-offset "
+                    "time zone such as UTC",
+                    count, kind.toKeyword(), time_zone.getTimeZone());
             break;
         default:
             if (!which.isDateTime())
@@ -328,7 +330,8 @@ RangeOffsets prepareRangeOffsets(const Block & header, const WindowFrame & frame
     const RangeOffsetComparator arithmetic_comparator = chooseRangeOffsetComparator(*key.column, /*is_calendar=*/false);
 
     const DataTypePtr key_type = removeNullable(key.type);
-    /// Calendar arithmetic uses the time zone of the DateTime column.
+    /// The time zone of a DateTime key decides whether a day is always 24 hours. Month arithmetic on a Date key
+    /// does not depend on the time zone.
     const DateLUTImpl & time_zone = WhichDataType(key_type).isDateTime()
         ? assert_cast<const DataTypeDateTime &>(*key_type).getTimeZone()
         : DateLUT::instance();

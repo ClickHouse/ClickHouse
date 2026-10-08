@@ -110,31 +110,30 @@ SELECT sum(val) OVER (ORDER BY val ROWS BETWEEN val PRECEDING AND CURRENT ROW) F
 
 DROP TABLE test_window_interval_offset;
 
--- On a DateTime key, INTERVAL 1 DAY means the same wall-clock time on the previous day, like `ts - INTERVAL 1 DAY`.
--- Across a DST switch that is 23 or 25 hours, not 24. In Berlin 2024-03-31 has 23 hours and 2024-10-27 has 25.
--- From 2024-03-31 12:00, one day back is 2024-03-30 12:00 but 24 hours back is 11:00, so the 11:30 row is only in the 24 HOUR frame.
--- From 2024-10-27 12:00, one day back is 2024-10-26 12:00 but 24 hours back is 13:00, so the 12:30 row is only in the DAY frame.
+-- On a DateTime key in a time zone with DST, `ts - INTERVAL 1 DAY` is not monotone in `ts` around the switch, and the
+-- frame bounds only move forward, so INTERVAL DAY and WEEK are rejected there. The rows are in the repeated hour of
+-- 2024-10-27 in Berlin: 02:30 CEST (00:30 UTC) is followed by 02:00 CET (01:00 UTC). A day before them is 2024-10-26
+-- 02:30 and 02:00, in the opposite order. INTERVAL HOUR frames are exact seconds and stay correct.
 
 DROP TABLE IF EXISTS test_window_interval_offset_dst;
 CREATE TABLE test_window_interval_offset_dst (ts DateTime('Europe/Berlin'), val UInt32) ENGINE = MergeTree ORDER BY ts;
 INSERT INTO test_window_interval_offset_dst VALUES
-    (toDateTime('2024-03-24 12:00:00', 'Europe/Berlin'), 1),
-    (toDateTime('2024-03-30 11:30:00', 'Europe/Berlin'), 2),
-    (toDateTime('2024-03-30 12:00:00', 'Europe/Berlin'), 3),
-    (toDateTime('2024-03-31 12:00:00', 'Europe/Berlin'), 4),
-    (toDateTime('2024-10-26 12:30:00', 'Europe/Berlin'), 5),
-    (toDateTime('2024-10-27 12:00:00', 'Europe/Berlin'), 6);
+    (toDateTime('2024-10-26 00:00:00', 'UTC'), 1),
+    (toDateTime('2024-10-26 00:30:00', 'UTC'), 2),
+    (toDateTime('2024-10-27 00:30:00', 'UTC'), 3),
+    (toDateTime('2024-10-27 01:00:00', 'UTC'), 4);
 
-SELECT 'DST: DateTime key, calendar DAY and WEEK frames next to a fixed 24 HOUR frame';
-SELECT ts, val,
-    sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS day_preceding,
+SELECT 'DST: INTERVAL DAY and WEEK are rejected for a DateTime key in a time zone with DST';
+SELECT sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) FROM test_window_interval_offset_dst; -- { serverError BAD_ARGUMENTS }
+SELECT sum(val) OVER (ORDER BY ts RANGE BETWEEN CURRENT ROW AND INTERVAL 1 WEEK FOLLOWING) FROM test_window_interval_offset_dst; -- { serverError BAD_ARGUMENTS }
+SELECT sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW)
+FROM (SELECT if(val = 2, NULL, ts) AS ts, val FROM test_window_interval_offset_dst); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'DST: INTERVAL HOUR frames in the repeated hour';
+SELECT ts, toTimezone(ts, 'UTC') AS ts_utc, val,
     sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 24 HOUR PRECEDING AND CURRENT ROW) AS h24_preceding,
-    sum(val) OVER (ORDER BY ts RANGE BETWEEN CURRENT ROW AND INTERVAL 1 DAY FOLLOWING) AS day_following,
-    sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 WEEK PRECEDING AND CURRENT ROW) AS week_preceding
+    sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 HOUR PRECEDING AND CURRENT ROW) AS h1_preceding,
+    sum(val) OVER (ORDER BY ts RANGE BETWEEN CURRENT ROW AND INTERVAL 24 HOUR FOLLOWING) AS h24_following
 FROM test_window_interval_offset_dst;
-
-SELECT 'DST: Nullable DateTime key, INTERVAL DAY';
-SELECT ts, val, sum(val) OVER (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW) AS day_preceding
-FROM (SELECT if(val = 2, NULL, ts) AS ts, val FROM test_window_interval_offset_dst WHERE val <= 4);
 
 DROP TABLE test_window_interval_offset_dst;
