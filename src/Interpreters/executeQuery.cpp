@@ -3087,6 +3087,26 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// so name the whole hook here; the nested guards the internal statements set restore this one on exit.
     auto component_guard = Coordination::setCurrentComponent("reattachTablesUsedInQuery");
 
+    /// The internal `DETACH`/`ATTACH` pair inherits the outer query's process list element, so it allocates
+    /// through the outer query's memory tracker, where `memory_tracker_fault_probability` of the outer query
+    /// is in effect (the internal context resets the settings, but not the tracker). An injected fault after
+    /// the `DETACH` has removed the table makes the recovery `ATTACH` likely to fail the same way, which leaves
+    /// the table detached and fails every later query with `UNKNOWN_TABLE`. The faults are meant for the
+    /// statement under test, not for this hook, so suspend them for its duration.
+    std::optional<scope_guard> restore_fault_probability;
+    if (auto thread_group = CurrentThread::getGroup())
+    {
+        double fault_probability = thread_group->memory_tracker.getFaultProbability();
+        if (fault_probability > 0.0)
+        {
+            thread_group->memory_tracker.setFaultProbability(0.0);
+            restore_fault_probability.emplace([thread_group, fault_probability]
+            {
+                thread_group->memory_tracker.setFaultProbability(fault_probability);
+            });
+        }
+    }
+
     CollectTablesData data(context);
     /// The aliases of the outermost scope — the one a statement that is not a `SELECT` carries its
     /// expressions in (`ALTER TABLE t DELETE WHERE ...`, ...). For a `SELECT` this collects nothing, because

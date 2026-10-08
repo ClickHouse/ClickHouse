@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings, no-random-detach
+# no-random-detach: a random `DETACH`/`ATTACH` of `test` reads its part from the `s3_cache_02944_lru` cache disk
+# and changes the filesystem cache contents the test checks exactly
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
