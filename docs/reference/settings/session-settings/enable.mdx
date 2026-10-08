@@ -456,6 +456,19 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control whether query results are read from the query cache on disk."}]}]}/>
+
+If turned on (and [query_cache_on_disk_cache_name](/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are retrieved from the [query cache](/concepts/features/performance/caches/query-cache) on disk. If reads are enabled for both the in-memory and the on-disk query cache, the lookup is attempted first from memory and only on a miss from disk.
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -645,6 +658,19 @@ Whether to write to the columns cache when `use_columns_cache` is enabled. Accep
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 If turned on, results of `SELECT` queries are stored in the [query cache](/concepts/features/performance/caches/query-cache).
+
+Possible values:
+
+- 0 - Disabled
+- 1 - Enabled
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control whether query results are written to the query cache on disk."}]}]}/>
+
+If turned on (and [query_cache_on_disk_cache_name](/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) is set), results of `SELECT` queries are stored in the [query cache](/concepts/features/performance/caches/query-cache) on disk.
 
 Possible values:
 
