@@ -251,7 +251,9 @@ public:
 class AssumeRoleRequest : public Aws::AmazonSerializableWebServiceRequest
 {
 public:
-    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_);
+    /// `policy_` is an optional IAM session policy (JSON) that narrows the permissions of the assumed role.
+    /// TODO: `DurationSeconds` is not sent, so STS uses its default session duration.
+    AssumeRoleRequest(std::string role_arn_, std::string role_session_name_, std::string external_id_, std::string policy_);
 
     Aws::Http::HeaderValueCollection GetHeaders() const override;
 
@@ -265,7 +267,9 @@ private:
     std::string role_arn;
     std::string role_session_name;
     std::string external_id;
+    std::string policy;
 };
+
 class AssumeRoleResult
 {
 public:
@@ -294,6 +298,12 @@ using AssumeRoleOutcome = Aws::Utils::Outcome<AssumeRoleResult, Aws::S3::S3Error
 class AWSAssumeRoleClient : public Aws::Client::AWSXMLClient
 {
 public:
+    /// Builds a client with bounded retries and timeouts for the credential request.
+    static std::shared_ptr<AWSAssumeRoleClient> create(
+        const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
+        const DB::S3::PocoHTTPClientConfiguration & client_configuration,
+        const std::string & sts_endpoint_override = "");
+
     AWSAssumeRoleClient(
         const std::shared_ptr<Aws::Auth::AWSCredentialsProvider> & credentials_provider,
         const Aws::Client::ClientConfiguration & client_configuration,
