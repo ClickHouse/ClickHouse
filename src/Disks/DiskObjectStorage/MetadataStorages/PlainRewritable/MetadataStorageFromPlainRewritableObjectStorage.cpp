@@ -259,6 +259,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     std::unordered_map<std::string, PlainRewritableLayout::PendingReplace> pending_replaces;
     /// The backups of pending replacements that can be neither restored nor reclaimed: they are not loaded and not deleted.
     std::unordered_set<std::string> kept_backups;
+    /// The blob keys of the markers of blob removals by their names, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    /// Nothing on the disk has the names of these markers, so they hide nothing.
+    std::unordered_map<std::string, std::string> blob_removals;
     for (auto iterator = object_storage->iterate(layout->constructTombstoneDirectoryKey(), 0, /*with_tags=*/ false, std::nullopt); iterator->isValid(); iterator->next())
     {
         const auto marker = iterator->current();
@@ -314,6 +317,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 /// The backup of a pending replacement is not loaded either, like one of a committed removal.
                 pending_replaces.emplace(removed_name.value(), std::move(parsed.pending_replace));
                 tombstones.emplace(std::move(removed_name.value()), std::nullopt);
+                break;
+            case PlainRewritableLayout::TombstoneMarker::Kind::BlobRemoval:
+                blob_removals.emplace(std::move(removed_name.value()), std::move(parsed.blob_key));
                 break;
             case PlainRewritableLayout::TombstoneMarker::Kind::Malformed:
                 LOG_WARNING(log, "The marker '{}' of an unfinished operation is malformed: '{}'", marker->getPath(), content);
@@ -819,15 +825,20 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
         }
     }
 
+    /// The blobs linked from the live directories, including the implicit ones and the root (listed just above).
+    const bool reclaim_removed_blobs = remove_orphaned_objects && !blob_removals.empty();
+    std::unordered_set<std::string> referenced_blob_keys;
+    if (!orphaned_directories.empty() || reclaim_removed_blobs)
+    {
+        for (const auto & [local_path, info] : remote_layout)
+            for (const auto & [file_name, file_info] : info.files)
+                referenced_blob_keys.insert(getBlobKey(info, file_name, file_info));
+    }
+
     /// A blob of an orphaned directory may still be linked from a file outside of it (the removal kept such blobs),
     /// and an orphaned directory in the implicit form lists such a blob as its own file, so these blobs are not deleted.
     if (!orphaned_directories.empty())
     {
-        std::unordered_set<std::string> referenced_blob_keys;
-        for (const auto & [local_path, info] : remote_layout)
-            for (const auto & [file_name, file_info] : info.files)
-                referenced_blob_keys.insert(getBlobKey(info, file_name, file_info));
-
         for (const auto & orphaned_directory : orphaned_directories)
         {
             LOG_TRACE(log, "The directory '{}' with the key '{}' was not removed completely, its {} files will be removed",
@@ -875,7 +886,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     local_paths_by_remote_directory = std::move(new_local_paths);
     previous_refresh.restart();
 
-    if (remove_orphaned_objects && (!tombstones.empty() || !malformed_markers.empty()))
+    if (remove_orphaned_objects && (!tombstones.empty() || !malformed_markers.empty() || !blob_removals.empty()))
     {
         /// A directory object without a logical path may be a directory of a pending removal whose `prefix.path` was
         /// being rewritten when the process died (`LocalObjectStorage` writes to the final key directly). It cannot be
@@ -897,6 +908,27 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                 continue;
             marker_objects.emplace_back(layout->constructTombstoneMarkerKey(removed_name));
         }
+
+        /// A blob that no live directory links is unreachable: the operation that dropped its last link was committed.
+        /// A linked one is kept: the process died before the operation rewrote `prefix.path`, or the operation was undone.
+        /// An unreadable directory object may be the one that links the blob, so then nothing is decided.
+        size_t removed_blobs = 0;
+        if (reclaim_removed_blobs && !keep_pending_markers)
+        {
+            for (const auto & [marker_name, blob_key] : blob_removals)
+            {
+                if (!referenced_blob_keys.contains(blob_key))
+                {
+                    LOG_TRACE(log, "The blob '{}' was unlinked but not removed, removing it", blob_key);
+                    orphaned_data_objects.emplace_back(layout->constructBlobObjectKey(blob_key));
+                    ++removed_blobs;
+                }
+                marker_objects.emplace_back(layout->constructTombstoneMarkerKey(marker_name));
+            }
+        }
+
+        if (removed_blobs)
+            LOG_INFO(log, "Removing {} blobs that were unlinked but not removed, most likely because the process died in the middle of it", removed_blobs);
 
         if (pending_removals)
             LOG_INFO(

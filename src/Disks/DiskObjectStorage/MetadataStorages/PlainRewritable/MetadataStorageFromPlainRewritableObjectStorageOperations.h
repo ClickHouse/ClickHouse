@@ -166,6 +166,9 @@ private:
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
     std::optional<StoredObject> replaced_blob;
+    std::string replaced_blob_key;
+    /// The marker of the removal of `replaced_blob`, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    std::string blob_removal_marker_name;
 
 public:
     /// Records a file in the filesystem and changes nothing in object storage, so it has nothing to reverse.
@@ -209,6 +212,8 @@ private:
     std::optional<DirectoryRemoteInfo> previous_directory_info;
     bool prefix_path_written = false;
     std::optional<StoredObject> blob_to_remove;
+    /// The marker of the removal of `blob_to_remove`, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    std::string blob_removal_marker_name;
 
 public:
     MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation(
@@ -324,6 +329,8 @@ private:
     bool prefix_path_written_from{false};
     bool prefix_path_written_to{false};
     std::optional<StoredObject> replaced_blob;
+    /// The marker of the removal of `replaced_blob`, see `PlainRewritableLayout::BLOB_REMOVAL_TOMBSTONE_PREFIX`.
+    std::string blob_removal_marker_name;
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
