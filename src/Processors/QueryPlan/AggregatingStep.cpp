@@ -468,7 +468,7 @@ bool AggregatingStep::tryBuildRadixUniqExact(
         return std::make_shared<RadixUniqExactRouteTransform>(header, result_header, state, stream++, key_position);
     });
 
-    const size_t num_builders = std::min(max_threads, state->numPartitions());
+    const size_t num_builders = std::min(max_threads, state->numBuckets());
     pipeline.transform([&](OutputPortRawPtrs ports)
     {
         auto barrier = std::make_shared<RadixUniqExactBarrierTransform>(result_header, ports.size(), num_builders);

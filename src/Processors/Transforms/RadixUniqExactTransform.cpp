@@ -34,34 +34,34 @@ namespace ErrorCodes
 namespace
 {
 
-/// The partition of a key is selected by the top bits of `intHash64`, the finalizer of MurmurHash3:
+/// The bucket of a key is selected by the top bits of `intHash64`, the finalizer of MurmurHash3:
 /// - Every bit of the key affects every bit of the hash, so the keys that differ only in their low bits, such as
-///   sequential identifiers or timestamps, are spread evenly over the partitions. The top bits of the key itself, or of
-///   a weak hash, would send them all to a few partitions, and the build of these partitions would not be balanced.
+///   sequential identifiers or timestamps, are spread evenly over the buckets. The top bits of the key itself, or of
+///   a weak hash, would send them all to a few buckets, and the build of these buckets would not be balanced.
 /// - `intHashCRC32` is not good enough for it: it has only 32 bits, and they are not well mixed (see its comment).
 /// - It is cheap (two multiplications) and computed only once per routed key.
-ALWAYS_INLINE inline UInt64 partitionHash(UInt64 x)
+ALWAYS_INLINE inline UInt64 bucketHash(UInt64 x)
 {
     return intHash64(x);
 }
 
-ALWAYS_INLINE inline UInt64 partitionHash(UInt32 x)
+ALWAYS_INLINE inline UInt64 bucketHash(UInt32 x)
 {
     return intHash64(x);
 }
 
 /// The 128-bit keys are uniformly distributed (see `mixKey`), so their low half is used as the hash, and the high half
 /// is used for the slot.
-ALWAYS_INLINE inline UInt64 partitionHash(UInt128 x)
+ALWAYS_INLINE inline UInt64 bucketHash(UInt128 x)
 {
     return static_cast<UInt64>(x);
 }
 
 /// The slot of a key in a set is selected by the top bits of a different hash:
-/// - The keys of a partition share the top bits of `partitionHash`, so a hash that is independent of it is needed to
+/// - The keys of a bucket share the top bits of `bucketHash`, so a hash that is independent of it is needed to
 ///   spread them over the whole set.
 /// - It is computed for every insertion into a set (the local set, the deduplication of the buffered keys, the build
-///   of a partition), so it must be as cheap as possible. It is Fibonacci hashing (Knuth, TAOCP vol. 3, 6.4): the
+///   of a bucket), so it must be as cheap as possible. It is Fibonacci hashing (Knuth, TAOCP vol. 3, 6.4): the
 ///   multiplication by 2^64 divided by the golden ratio, a single instruction. Its top bits depend on all the bits of
 ///   the key, and it spreads a range of consecutive keys over the set almost without collisions, whatever the size
 ///   of the set.
@@ -87,8 +87,8 @@ ALWAYS_INLINE inline UInt64 slotHash(UInt128 x)
 ALWAYS_INLINE inline UInt128 mixKey(UInt128 x)
 {
     UInt64 low = static_cast<UInt64>(x);
-    UInt64 high = static_cast<UInt64>(x >> 64) ^ partitionHash(low);
-    low ^= partitionHash(high);
+    UInt64 high = static_cast<UInt64>(x >> 64) ^ bucketHash(low);
+    low ^= bucketHash(high);
     return (UInt128(high) << 64) | low;
 }
 
@@ -218,36 +218,38 @@ private:
 constexpr size_t MAX_LOCAL_SET_BYTES = 1024 * 1024;
 
 /// A stream deduplicates its buffered keys once it has buffered this many keys for the first time.
-constexpr size_t INITIAL_COMPACTION_BUDGET = 64 * 1024;
+constexpr size_t INITIAL_DEDUPLICATION_BUDGET = 64 * 1024;
 
-/// The number of buffered keys of a stream, and the number of chains, that are deduplicated first to estimate whether
+/// The number of buffered keys of a stream, and the number of buffers, that are deduplicated first to estimate whether
 /// the deduplication of all of them is worth it.
-constexpr size_t COMPACTION_SAMPLE_KEYS = 4096;
-constexpr size_t COMPACTION_SAMPLE_CHAINS = 8;
+constexpr size_t DEDUPLICATION_SAMPLE_KEYS = 4096;
+constexpr size_t DEDUPLICATION_SAMPLE_BUFFERS = 8;
 
-/// After a deduplication, the budget is this many times the number of keys that remain buffered. Each deduplication
-/// inserts all the buffered keys again, so a large factor makes the repeated keys cheaper, at the cost of memory.
-constexpr size_t COMPACTION_BUDGET_FACTOR = 8;
+/// After a deduplication leaves N keys in the buffers of a stream, the next one starts when the buffers hold N times this
+/// factor. For example, if 10000 distinct keys are left, the next deduplication comes at 80000 buffered keys, after 70000
+/// more keys are routed. Each deduplication inserts all the buffered keys again, so a large factor deduplicates the
+/// repeated keys less often, at the cost of memory.
+constexpr size_t DEDUPLICATION_BUDGET_FACTOR = 8;
 
 /// The first deduplication after the switch to the routing comes sooner, because it decides whether the stream goes
 /// back to its local set, and the keys routed until then are wasted work if it does.
-constexpr size_t FIRST_COMPACTION_BUDGET_FACTOR = 4;
+constexpr size_t FIRST_DEDUPLICATION_BUDGET_FACTOR = 4;
 
 /// A stream whose keys are mostly repeated goes back to inserting them into its local set only if the set would not
 /// be larger than this. Larger sets do not fit into the CPU caches, and the inserts into them are slower than routing
 /// and deduplicating the keys in cache-resident sets, even if every key is deduplicated several times.
 constexpr size_t MAX_UNBOUNDED_SET_BYTES = 4 * 1024 * 1024;
 
-/// The number of partitions per stream. Many partitions keep the partition sets cache-resident even when there are
+/// The number of buckets per stream. Many buckets keep the bucket sets cache-resident even when there are
 /// many distinct keys, and they balance the build between the threads.
-constexpr size_t PARTITIONS_PER_STREAM = 16;
+constexpr size_t BUCKETS_PER_STREAM = 16;
 
-/// At least 256 partitions, and at most 4096, because every stream keeps a chain per partition.
-constexpr size_t MIN_PARTITION_BITS = 8;
-constexpr size_t MAX_PARTITION_BITS = 12;
+/// At least 256 buckets, and at most 4096, because every stream keeps a buffer per bucket.
+constexpr size_t MIN_BUCKET_BITS = 8;
+constexpr size_t MAX_BUCKET_BITS = 12;
 
-/// The blocks of a chain of buffered keys grow from `MIN_BLOCK_SIZE` to `MIN_BLOCK_SIZE << MAX_BLOCK_CLASS` keys,
-/// so that the chains of the partitions with few keys stay small.
+/// The blocks of a buffer of buffered keys grow from `MIN_BLOCK_SIZE` to `MIN_BLOCK_SIZE << MAX_BLOCK_CLASS` keys,
+/// so that the buffers of the buckets with few keys stay small.
 constexpr size_t MIN_BLOCK_SIZE = 16;
 constexpr size_t MAX_BLOCK_CLASS = 6;
 
@@ -265,9 +267,9 @@ class RadixUniqExactState final : public IRadixUniqExactState
 {
 public:
     RadixUniqExactState(
-        size_t num_streams_, size_t partition_bits_, const StatsCollectingParams & stats_collecting_params_, std::optional<RadixUniqExactEntry> hint_)
-        : partition_bits(partition_bits_)
-        , num_partitions(1ULL << partition_bits_)
+        size_t num_streams_, size_t bucket_bits_, const StatsCollectingParams & stats_collecting_params_, std::optional<RadixUniqExactEntry> hint_)
+        : bucket_bits(bucket_bits_)
+        , num_buckets(1ULL << bucket_bits_)
         , streams(num_streams_)
         , stats_collecting_params(stats_collecting_params_)
         , hint(hint_)
@@ -395,73 +397,90 @@ public:
     void finishStream(size_t stream_index) override
     {
         auto & stream = streams[stream_index];
-        /// The local set holds distinct keys, so no chain needs a deduplication while it is moved.
-        if (stream.mode != Mode::Radix)
+        stream.ended_in_set = stream.mode != Mode::Routing;
+        /// The local set holds distinct keys, so no buffer needs a deduplication while it is moved.
+        if (stream.mode != Mode::Routing)
         {
             stream.estimated_distinct = stream.local_set.size();
-            switchToRadixMode(stream);
+            switchToRouting(stream);
         }
         else
         {
-            stream.estimated_distinct = static_cast<size_t>(static_cast<double>(stream.num_buffered) * stream.remaining_ratio);
+            /// Estimated from a sample of buffers (see the statistics in `RadixUniqExactTransform.h`).
+            size_t sampled_keys = 0;
+            size_t sampled_distinct = 0;
+            size_t num_sampled = 0;
+            for (; num_sampled < num_buckets && (sampled_keys < DEDUPLICATION_SAMPLE_KEYS || num_sampled < DEDUPLICATION_SAMPLE_BUFFERS);
+                 ++num_sampled)
+            {
+                auto & buffer = stream.local_buffers[num_sampled];
+                sampled_keys += buffer.size;
+                stream.num_buffered -= buffer.size;
+                deduplicateBuffer(stream, buffer);
+                stream.num_buffered += buffer.size;
+                sampled_distinct += buffer.size;
+            }
+            stream.estimated_distinct = sampled_distinct * num_buckets / num_sampled;
         }
 
-        /// The build reads only the chains, so the set must not hold memory while the partition sets are built.
+        /// The build reads only the buffers, so the set must not hold memory while the bucket sets are built.
         stream.local_set = {};
     }
 
-    size_t buildPartition(size_t partition) override
+    size_t buildBucket(size_t bucket) override
     {
         size_t total = 0;
         for (const auto & stream : streams)
         {
-            if (stream.mode != Mode::Radix)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "A partition is built before all the streams are routed");
-            total += stream.chains[partition].size;
+            if (stream.mode != Mode::Routing)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A bucket is built before all the streams are routed");
+            total += stream.local_buffers[bucket].size;
         }
 
-        /// Counted before the early return of an empty partition, the statistics need every partition to be built.
-        num_built_partitions.fetch_add(1, std::memory_order_relaxed);
+        /// Counted before the early return of an empty bucket, the statistics need every bucket to be built.
+        num_built_buckets.fetch_add(1, std::memory_order_relaxed);
         if (total == 0)
             return 0;
 
         /// The load factor is at most 0.5, the actual number of distinct keys can only be lower. With the statistics, the
-        /// set is allocated for the expected number of distinct keys of a partition, with a margin for the variation
-        /// between the partitions, and it grows if there are more of them.
+        /// set is allocated for the expected number of distinct keys of a bucket, with a margin for the variation
+        /// between the buckets, and it grows if there are more of them.
         size_t expected = total;
         if (hint)
         {
-            const size_t partition_distinct = hint->num_distinct / num_partitions;
-            expected = std::min(total, partition_distinct + partition_distinct / 16 + MIN_BLOCK_SIZE);
+            const size_t bucket_distinct = hint->num_distinct / num_buckets;
+            expected = std::min(total, bucket_distinct + bucket_distinct / 16 + MIN_BLOCK_SIZE);
         }
 
-        FlatSet<Key> set;
-        set.reset(std::bit_ceil(expected * 2));
+        FlatSet<Key> bucket_set;
+        bucket_set.reset(std::bit_ceil(expected * 2));
 
         for (const auto & stream : streams)
         {
-            for (const Block * block = stream.chains[partition].head; block; block = block->next)
+            for (const Block * block = stream.local_buffers[bucket].head; block; block = block->next)
             {
-                while ((set.numCellsInUse() + block->size) * 2 > set.capacity())
-                    growLocalSet(set);
-                set.insertMany(block->keys(), block->size);
+                while ((bucket_set.numCellsInUse() + block->size) * 2 > bucket_set.capacity())
+                    growLocalSet(bucket_set);
+                bucket_set.insertMany(block->keys(), block->size);
             }
         }
 
-        return set.size();
+        return bucket_set.size();
     }
 
     void recordStatistics(size_t num_distinct) override
     {
-        if (!stats_collecting_params.isCollectionAndUseEnabled() || num_built_partitions.load(std::memory_order_relaxed) != num_partitions)
+        if (!stats_collecting_params.isCollectionAndUseEnabled() || num_built_buckets.load(std::memory_order_relaxed) != num_buckets)
             return;
 
         std::vector<size_t> stream_distinct;
         std::vector<size_t> stream_keys;
+        size_t num_ended_in_set = 0;
         for (const auto & stream : streams)
         {
             stream_distinct.push_back(stream.estimated_distinct);
             stream_keys.push_back(stream.num_routed);
+            num_ended_in_set += stream.ended_in_set;
         }
 
         auto median = [](std::vector<size_t> & values)
@@ -476,11 +495,12 @@ public:
                 .num_distinct = num_distinct,
                 .stream_distinct = median(stream_distinct),
                 .stream_keys = median(stream_keys),
-                .num_streams = streams.size()},
+                .num_streams = streams.size(),
+                .streams_ended_in_set = num_ended_in_set * 2 > streams.size()},
             stats_collecting_params);
     }
 
-    size_t numPartitions() const override { return num_partitions; }
+    size_t numBuckets() const override { return num_buckets; }
 
 private:
     static constexpr size_t INITIAL_LOCAL_SET_CAPACITY = 256;
@@ -491,9 +511,9 @@ private:
     enum class Mode : uint8_t
     {
         /// The keys are inserted into the local set, until it outgrows the cache.
-        LocalSet,
-        /// The keys are buffered in the chains of the partitions.
-        Radix,
+        BoundedSet,
+        /// The keys are buffered in the buffers of the buckets.
+        Routing,
         /// The keys are inserted into the local set, which grows without a limit.
         UnboundedSet,
     };
@@ -514,82 +534,82 @@ private:
     /// The keys follow the header, aligned.
     static_assert(sizeof(Block) % alignof(Key) == 0);
 
-    struct Chain
+    struct Buffer
     {
         /// The most recent block, the only one that may be not full.
         Block * head = nullptr;
         size_t size = 0;
-        /// The number of the oldest keys of the chain that are known to be distinct: those that were left by its last
+        /// The number of the oldest keys of the buffer that are known to be distinct: those that were left by its last
         /// deduplication, or moved from the local set.
         size_t num_distinct = 0;
     };
 
     struct Stream
     {
-        /// Before the switch to the radix mode, the keys are inserted into this set. After the switch, it is reused
-        /// as the scratch set for the deduplication of chains.
+        /// Before the switch to the routing, the keys are inserted into this set. After the switch, it is reused
+        /// as the scratch set for the deduplication of buffers.
         FlatSet<Key> local_set;
-        Mode mode = Mode::LocalSet;
+        Mode mode = Mode::BoundedSet;
 
-        std::vector<Chain> chains;
+        std::vector<Buffer> local_buffers;
         std::unique_ptr<Arena> arena = std::make_unique<Arena>();
         std::array<Block *, MAX_BLOCK_CLASS + 1> free_blocks{};
 
-        /// The total number of keys in the chains, and the number at which they are deduplicated.
+        /// The total number of keys in the buffers, and the number at which they are deduplicated next (see
+        /// `DEDUPLICATION_BUDGET_FACTOR`).
         size_t num_buffered = 0;
-        size_t compaction_budget = INITIAL_COMPACTION_BUDGET;
-        /// The chain where the next sample for the deduplication starts.
-        size_t next_sample_chain = 0;
+        size_t deduplication_budget = INITIAL_DEDUPLICATION_BUDGET;
+        /// The buffer where the next sample for the deduplication starts.
+        size_t next_sample_buffer = 0;
         /// Whether the empty string is routed already, so that it is not routed again: it is often the most frequent
         /// value of a `String` column, and it is not consecutive to itself when it alternates with other values.
         bool routed_empty_string = false;
-        /// The ratio of the keys that remained after the last deduplication in its sample.
-        double remaining_ratio = 1;
 
         /// For the statistics: the number of keys passed to `insertBatch`, and the estimate of the number of distinct
         /// keys of the stream when it is finished.
         size_t num_routed = 0;
         size_t estimated_distinct = 0;
+        /// For the statistics: whether the stream inserted its keys into a local set when it was finished.
+        bool ended_in_set = false;
     };
 
-    /// The statistics of a previous run of the query tell the number of distinct keys of a stream, so the stream
-    /// starts in the mode that suits it: in a local set allocated for all its keys if it fits into the CPU caches, and
-    /// in the radix mode otherwise, without deduplications if its keys are mostly distinct.
+    /// Starts the stream in the mode and with the budget that the statistics of a previous run tell (see the statistics in
+    /// `RadixUniqExactTransform.h`).
     void startFromHint(Stream & stream)
     {
         const size_t stream_distinct = hint->stream_distinct;
-        if (stream_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
+        if (hint->streams_ended_in_set || stream_distinct * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
         {
             stream.mode = Mode::UnboundedSet;
             stream.local_set.reset(std::bit_ceil(std::max<size_t>(stream_distinct * 2, INITIAL_LOCAL_SET_CAPACITY)));
             return;
         }
 
-        switchToRadixMode(stream);
-        if (hint->stream_keys * 3 <= stream_distinct * 4)
-            stream.compaction_budget = std::numeric_limits<size_t>::max() / 2;
+        switchToRouting(stream);
+        if (hint->stream_keys <= stream_distinct * DEDUPLICATION_BUDGET_FACTOR * 2)
+            stream.deduplication_budget = std::numeric_limits<size_t>::max() / 2;
         else
-            stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream_distinct * COMPACTION_BUDGET_FACTOR);
+            stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, stream_distinct * DEDUPLICATION_BUDGET_FACTOR);
     }
 
     ALWAYS_INLINE void insert(Stream & stream, Key key)
     {
-        if (stream.mode != Mode::Radix)
+        if (stream.mode != Mode::Routing)
         {
             auto & set = stream.local_set;
             if (set.insert(key) && set.numCellsInUse() * 2 > set.capacity())
             {
-                if (stream.mode == Mode::LocalSet && set.capacity() * 2 * sizeof(Key) > MAX_LOCAL_SET_BYTES)
-                    switchToRadixMode(stream);
+                if (stream.mode == Mode::BoundedSet && set.capacity() * 2 * sizeof(Key) > MAX_LOCAL_SET_BYTES)
+                    switchToRouting(stream);
                 else
                     growLocalSet(set);
             }
             return;
         }
 
-        push(stream, stream.chains[partitionHash(key) >> (64 - partition_bits)], key);
-        if (++stream.num_buffered > stream.compaction_budget) [[unlikely]]
-            compactStream(stream);
+        push(stream, stream.local_buffers[bucketHash(key) >> (64 - bucket_bits)], key);
+        if (++stream.num_buffered > stream.deduplication_budget) [[unlikely]]
+            deduplicateStream(stream);
     }
 
     /// Inserts the keys into the local set or routes them, as `insert` does for each of them. The checks of `insert`
@@ -600,10 +620,10 @@ private:
         size_t i = 0;
         while (i < num_keys)
         {
-            if (stream.mode == Mode::Radix)
+            if (stream.mode == Mode::Routing)
             {
                 /// The keys within the budget are pushed without checking it, the next one starts a deduplication.
-                const size_t num_pushed = std::min(stream.compaction_budget - stream.num_buffered, num_keys - i);
+                const size_t num_pushed = std::min(stream.deduplication_budget - stream.num_buffered, num_keys - i);
                 pushMany(stream, keys + i, num_pushed);
                 i += num_pushed;
             }
@@ -625,10 +645,10 @@ private:
 
     void pushMany(Stream & stream, const Key * keys, size_t num_keys)
     {
-        Chain * chains = stream.chains.data();
-        const size_t shift = 64 - partition_bits;
+        Buffer * buffers = stream.local_buffers.data();
+        const size_t shift = 64 - bucket_bits;
         for (size_t i = 0; i < num_keys; ++i)
-            push(stream, chains[partitionHash(keys[i]) >> shift], keys[i]);
+            push(stream, buffers[bucketHash(keys[i]) >> shift], keys[i]);
         stream.num_buffered += num_keys;
     }
 
@@ -640,29 +660,29 @@ private:
         set = std::move(grown);
     }
 
-    void switchToRadixMode(Stream & stream)
+    void switchToRouting(Stream & stream)
     {
-        stream.chains.resize(num_partitions);
-        stream.mode = Mode::Radix;
-        stream.local_set.forEach([&](Key key) { push(stream, stream.chains[partitionHash(key) >> (64 - partition_bits)], key); });
-        for (auto & chain : stream.chains)
-            chain.num_distinct = chain.size;
+        stream.local_buffers.resize(num_buckets);
+        stream.mode = Mode::Routing;
+        stream.local_set.forEach([&](Key key) { push(stream, stream.local_buffers[bucketHash(key) >> (64 - bucket_bits)], key); });
+        for (auto & buffer : stream.local_buffers)
+            buffer.num_distinct = buffer.size;
         stream.num_buffered = stream.local_set.size();
-        stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream.num_buffered * FIRST_COMPACTION_BUDGET_FACTOR);
+        stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, stream.num_buffered * FIRST_DEDUPLICATION_BUDGET_FACTOR);
     }
 
-    ALWAYS_INLINE static void push(Stream & stream, Chain & chain, Key key)
+    ALWAYS_INLINE static void push(Stream & stream, Buffer & buffer, Key key)
     {
-        if (!chain.head || chain.head->size == chain.head->capacity()) [[unlikely]]
-            addBlock(stream, chain);
+        if (!buffer.head || buffer.head->size == buffer.head->capacity()) [[unlikely]]
+            addBlock(stream, buffer);
 
-        chain.head->keys()[chain.head->size++] = key;
-        ++chain.size;
+        buffer.head->keys()[buffer.head->size++] = key;
+        ++buffer.size;
     }
 
-    static void addBlock(Stream & stream, Chain & chain)
+    static void addBlock(Stream & stream, Buffer & buffer)
     {
-        const UInt32 size_class = chain.head ? std::min<UInt32>(chain.head->size_class + 1, MAX_BLOCK_CLASS) : 0;
+        const UInt32 size_class = buffer.head ? std::min<UInt32>(buffer.head->size_class + 1, MAX_BLOCK_CLASS) : 0;
 
         Block * block = stream.free_blocks[size_class];
         if (block)
@@ -676,34 +696,34 @@ private:
             block->size_class = size_class;
         }
 
-        block->next = chain.head;
+        block->next = buffer.head;
         block->size = 0;
-        chain.head = block;
+        buffer.head = block;
     }
 
-    /// Deduplicates the buffered keys of the stream once they exceed the budget. The keys of a sample of chains are
-    /// deduplicated first. The partitions are selected by the hash, so the sample is representative: if it has few
-    /// duplicates, the other chains are left as is. Either way, the budget grows geometrically, so every buffered key
+    /// Deduplicates the buffered keys of the stream once they exceed the budget. The keys of a sample of buffers are
+    /// deduplicated first. The buckets are selected by the hash, so the sample is representative: if it has few
+    /// duplicates, the other buffers are left as is. Either way, the budget grows geometrically, so every buffered key
     /// takes part in a bounded number of deduplications on average, and the buffered keys stay within a small factor
     /// of the distinct keys of the stream.
-    void compactStream(Stream & stream)
+    void deduplicateStream(Stream & stream)
     {
-        /// The decisions are made by the medians over the sampled chains, not by the totals: a key that is repeated
-        /// much more often than the others (such as an empty string) is in a single chain, and must not make the
+        /// The decisions are made by the medians over the sampled buffers, not by the totals: a key that is repeated
+        /// much more often than the others (such as an empty string) is in a single buffer, and must not make the
         /// stream look like all its keys are repeated.
         std::vector<double> remaining_ratios;
         std::vector<double> new_distinct_ratios;
         size_t sampled_keys = 0;
-        size_t num_compacted = 0;
-        for (; num_compacted < num_partitions && (sampled_keys < COMPACTION_SAMPLE_KEYS || num_compacted < COMPACTION_SAMPLE_CHAINS);
-             ++num_compacted)
+        size_t num_deduplicated = 0;
+        for (; num_deduplicated < num_buckets && (sampled_keys < DEDUPLICATION_SAMPLE_KEYS || num_deduplicated < DEDUPLICATION_SAMPLE_BUFFERS);
+             ++num_deduplicated)
         {
-            auto & chain = stream.chains[stream.next_sample_chain];
-            stream.next_sample_chain = (stream.next_sample_chain + 1) % num_partitions;
-            const size_t before = chain.size;
-            const size_t known_distinct = chain.num_distinct;
-            compact(stream, chain);
-            const size_t after = chain.size;
+            auto & buffer = stream.local_buffers[stream.next_sample_buffer];
+            stream.next_sample_buffer = (stream.next_sample_buffer + 1) % num_buckets;
+            const size_t before = buffer.size;
+            const size_t known_distinct = buffer.num_distinct;
+            deduplicateBuffer(stream, buffer);
+            const size_t after = buffer.size;
 
             sampled_keys += before;
             stream.num_buffered -= before - after;
@@ -711,7 +731,7 @@ private:
                 remaining_ratios.push_back(static_cast<double>(after) / static_cast<double>(before));
             /// Whether the keys are mostly repeated is decided by the keys that were routed since the last
             /// deduplication: once every key of the stream has been seen, the ratio of all the buffered keys to the
-            /// distinct ones is `COMPACTION_BUDGET_FACTOR` after every deduplication, whatever the number of repeats.
+            /// distinct ones is `DEDUPLICATION_BUDGET_FACTOR` after every deduplication, whatever the number of repeats.
             if (before != known_distinct)
                 new_distinct_ratios.push_back(
                     static_cast<double>(after - known_distinct) / static_cast<double>(before - known_distinct));
@@ -726,67 +746,66 @@ private:
             return *middle;
         };
         const double remaining_ratio = median(remaining_ratios, 1);
-        stream.remaining_ratio = remaining_ratio;
         const double new_distinct_ratio = median(new_distinct_ratios, 1);
 
         const size_t estimated_size = static_cast<size_t>(static_cast<double>(stream.num_buffered) * remaining_ratio) + 1;
         if (new_distinct_ratio <= 0.25 && estimated_size * 2 * sizeof(Key) <= MAX_UNBOUNDED_SET_BYTES)
         {
-            switchToUnboundedSetMode(stream, estimated_size);
+            switchToUnboundedSet(stream, estimated_size);
             return;
         }
 
         if (remaining_ratio > 0.75)
         {
-            stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream.num_buffered * COMPACTION_BUDGET_FACTOR);
+            stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, stream.num_buffered * DEDUPLICATION_BUDGET_FACTOR);
             return;
         }
 
-        for (; num_compacted < num_partitions; ++num_compacted)
+        for (; num_deduplicated < num_buckets; ++num_deduplicated)
         {
-            auto & chain = stream.chains[stream.next_sample_chain];
-            stream.next_sample_chain = (stream.next_sample_chain + 1) % num_partitions;
-            stream.num_buffered -= chain.size;
-            compact(stream, chain);
-            stream.num_buffered += chain.size;
+            auto & buffer = stream.local_buffers[stream.next_sample_buffer];
+            stream.next_sample_buffer = (stream.next_sample_buffer + 1) % num_buckets;
+            stream.num_buffered -= buffer.size;
+            deduplicateBuffer(stream, buffer);
+            stream.num_buffered += buffer.size;
         }
-        stream.compaction_budget = std::max(INITIAL_COMPACTION_BUDGET, stream.num_buffered * COMPACTION_BUDGET_FACTOR);
+        stream.deduplication_budget = std::max(INITIAL_DEDUPLICATION_BUDGET, stream.num_buffered * DEDUPLICATION_BUDGET_FACTOR);
     }
 
     /// Most of the keys of the stream are repeated, and their set is small, so they are better deduplicated right
     /// away, as the ordinary aggregation does: moves the buffered keys into the local set, which grows without a limit
-    /// since then. The keys are moved to the chains when the stream finishes.
-    void switchToUnboundedSetMode(Stream & stream, size_t estimated_size)
+    /// since then. The keys are moved to the buffers when the stream finishes.
+    void switchToUnboundedSet(Stream & stream, size_t estimated_size)
     {
         auto & set = stream.local_set;
         set.reset(std::bit_ceil(std::max<size_t>(estimated_size * 2, INITIAL_LOCAL_SET_CAPACITY)));
         stream.mode = Mode::UnboundedSet;
 
-        for (const auto & chain : stream.chains)
-            for (const Block * block = chain.head; block; block = block->next)
+        for (const auto & buffer : stream.local_buffers)
+            for (const Block * block = buffer.head; block; block = block->next)
                 for (size_t i = 0; i < block->size; ++i)
                     insert(stream, block->keys()[i]);
 
-        stream.chains.clear();
+        stream.local_buffers.clear();
         stream.free_blocks = {};
         stream.arena = std::make_unique<Arena>();
         stream.num_buffered = 0;
     }
 
-    /// Deduplicates the keys of the chain.
-    static void compact(Stream & stream, Chain & chain)
+    /// Deduplicates the keys of the buffer.
+    static void deduplicateBuffer(Stream & stream, Buffer & buffer)
     {
-        if (chain.size == 0)
+        if (buffer.size == 0)
             return;
 
         auto & set = stream.local_set;
-        set.reset(std::bit_ceil(chain.size * 2));
+        set.reset(std::bit_ceil(buffer.size * 2));
 
-        for (const Block * block = chain.head; block; block = block->next)
+        for (const Block * block = buffer.head; block; block = block->next)
             set.insertMany(block->keys(), block->size);
 
         /// Return all the blocks to the free lists and push the distinct keys back, reusing the same blocks.
-        for (Block * block = chain.head; block;)
+        for (Block * block = buffer.head; block;)
         {
             Block * next = block->next;
             block->next = stream.free_blocks[block->size_class];
@@ -794,19 +813,19 @@ private:
             block = next;
         }
 
-        chain.head = nullptr;
-        chain.size = 0;
-        set.forEach([&](Key key) { push(stream, chain, key); });
-        chain.num_distinct = chain.size;
+        buffer.head = nullptr;
+        buffer.size = 0;
+        set.forEach([&](Key key) { push(stream, buffer, key); });
+        buffer.num_distinct = buffer.size;
     }
 
-    const size_t partition_bits;
-    const size_t num_partitions;
+    const size_t bucket_bits;
+    const size_t num_buckets;
     std::vector<Stream> streams;
 
     const StatsCollectingParams stats_collecting_params;
     const std::optional<RadixUniqExactEntry> hint;
-    std::atomic<size_t> num_built_partitions{0};
+    std::atomic<size_t> num_built_buckets{0};
 };
 
 /// The keys of up to 8 bytes are the values themselves, zero-extended to `UInt32` or `UInt64`. They are compared by
@@ -899,13 +918,13 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
     }
 }
 
-/// With the statistics, there are enough partitions for each partition set to fit into half of the L2 cache.
-size_t partitionBits(size_t num_streams, size_t key_size, const std::optional<RadixUniqExactEntry> & hint)
+/// With the statistics, there are enough buckets for each bucket set to fit into half of the L2 cache.
+size_t bucketBits(size_t num_streams, size_t key_size, const std::optional<RadixUniqExactEntry> & hint)
 {
-    size_t num_partitions = num_streams * PARTITIONS_PER_STREAM;
+    size_t num_buckets = num_streams * BUCKETS_PER_STREAM;
     if (hint)
-        num_partitions = std::max(num_partitions, hint->num_distinct * 2 * key_size / std::max<size_t>(getL2CacheSize() / 2, 1));
-    return std::clamp<size_t>(std::bit_width(num_partitions - 1), MIN_PARTITION_BITS, MAX_PARTITION_BITS);
+        num_buckets = std::max(num_buckets, hint->num_distinct * 2 * key_size / std::max<size_t>(getL2CacheSize() / 2, 1));
+    return std::clamp<size_t>(std::bit_width(num_buckets - 1), MIN_BUCKET_BITS, MAX_BUCKET_BITS);
 }
 
 template <typename Key>
@@ -921,7 +940,7 @@ RadixUniqExactStatePtr createState(size_t num_streams, const StatsCollectingPara
     }
 
     return std::make_shared<RadixUniqExactState<Key>>(
-        num_streams, partitionBits(num_streams, sizeof(Key), hint), stats_collecting_params, hint);
+        num_streams, bucketBits(num_streams, sizeof(Key), hint), stats_collecting_params, hint);
 }
 
 }
@@ -1107,12 +1126,12 @@ void RadixUniqExactBuildTransform::work()
     built = true;
 
     UInt64 count = 0;
-    for (size_t partition = state->claimPartition(); partition < state->numPartitions(); partition = state->claimPartition())
+    for (size_t bucket = state->claimBucket(); bucket < state->numBuckets(); bucket = state->claimBucket())
     {
         /// A partial count must not reach the result.
         if (isCancelled())
             return;
-        count += state->buildPartition(partition);
+        count += state->buildBucket(bucket);
     }
 
     auto column = ColumnUInt64::create();
