@@ -13,6 +13,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Logger.h>
 #include <Common/quoteString.h>
@@ -103,15 +104,29 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
 
 bool DatabaseHDFS::isTableExist(const String & name, ContextPtr context_) const
 {
-    std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
-        return true;
+    /// A name exists when it forms a URL this database may use, which needs no HDFS request. The cache
+    /// must not answer it: that reports which names other callers resolved, past any filter tightening.
+    if (source.empty() && !name.starts_with("hdfs://"))
+        return false;
 
-    return checkUrl(name, context_, false);
+    return checkUrl(getTablePath(name), context_, false);
 }
 
 StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) const
 {
+    auto url = getTablePath(name);
+    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
+
+    auto table_function = TableFunctionFactory::instance().get(args, context_);
+    if (!table_function)
+        return nullptr;
+
+    /// The cache is keyed on the name alone, so what authorizes a resolution is checked above it. The
+    /// grant is the table function's to check: a filtered grant matches the URI it reports, not the path.
+    table_function->checkSourceAccess(context_, /* is_insert_query */ false);
+
+    checkUrl(url, context_, true);
+
     /// Check if the table exists in the loaded tables map.
     {
         std::lock_guard lock(mutex);
@@ -119,16 +134,6 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
         if (it != loaded_tables.end())
             return it->second;
     }
-
-    auto url = getTablePath(name);
-
-    checkUrl(url, context_, true);
-
-    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
-
-    auto table_function = TableFunctionFactory::instance().get(args, context_);
-    if (!table_function)
-        return nullptr;
 
     /// TableFunctionHDFS throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(args, context_, name);
@@ -263,9 +268,10 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
           * what turns a stored host into a disallowed one. Every statement a user writes, `CREATE` and
           * `ATTACH` alike, is still checked up front, and the allowlist holds for every use of the
           * database regardless: `DatabaseHDFS::checkUrl` runs it for each table, which is where
-          * `DatabaseS3` enforces it too.
+          * `DatabaseS3` enforces it too. The loader flag, not `internal`, is the discriminator: wrappers
+          * such as `PARALLEL WITH` and `RESTORE DATABASE` run user-controlled statements as internal ones.
           */
-        if (!args.internal && !source_url.empty())
+        if (!args.is_metadata_replay && !source_url.empty())
             args.context->getGlobalContext()->getRemoteHostFilter().checkURL(Poco::URI(source_url));
 
         return std::make_shared<DatabaseHDFS>(args.database_name, source_url, args.context);

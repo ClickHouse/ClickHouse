@@ -7,6 +7,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/BlockIO.h>
+#include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 
 #include <string_view>
 #include <unordered_map>
@@ -25,7 +26,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
 /// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the three inner target tables (Tags, Samples, Metrics).
+/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -71,11 +72,11 @@ private:
     };
 
     void initTagsAndSamplesPipelines();
-    void initMetricsPipeline();
+    void initMetricFamiliesPipeline();
     std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
 
     void consumeTagsAndSamples(const Block & block);
-    void consumeMetrics(const Block & block);
+    void consumeMetricFamilies(const Block & block);
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
     ColumnPtr calculateId(const Block & tags_block) const;
@@ -85,7 +86,7 @@ private:
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
-    bool insert_metrics = false;
+    bool insert_metric_families = false;
     bool async_insert = false;
 
     /// Source header for the tags pipeline WITHOUT the `id` column.
@@ -104,7 +105,15 @@ private:
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
     std::unique_ptr<TargetPipeline> recent_samples_pipeline;
-    std::unique_ptr<TargetPipeline> metrics_pipeline;
+    std::unique_ptr<TargetPipeline> metric_families_pipeline;
+
+    /// Skip the rows already written to the "tags" and "metric families" tables, null if the corresponding cache is disabled.
+    TimeSeriesDeduplicationCachePtr tags_deduplication_cache;
+    TimeSeriesDeduplicationCachePtr metric_families_deduplication_cache;
+
+    /// Rows of the "tags" and "metric families" tables which this insert is going to write, they are marked as written when the insert is finished.
+    TimeSeriesDeduplicationCache::PendingRows pending_tags;
+    TimeSeriesDeduplicationCache::PendingRows pending_metric_families;
 };
 
 }

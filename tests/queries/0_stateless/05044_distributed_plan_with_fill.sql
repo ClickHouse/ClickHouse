@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- `ORDER BY ... WITH FILL` can be executed under `make_distributed_plan = 1`: `FillingStep` is serialized
 -- for remote execution, and the sort description carries the `FROM`/`TO`/`STEP`/`STALENESS` bounds. Before
 -- that, `canExecuteRemotely` rejected the plan because `FillingStep` was not serializable, and the query

@@ -19,6 +19,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -296,6 +297,12 @@ struct BinaryOperation
         /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
         /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
         /// don't define the member are treated as opting in to vectorization.
+        ///
+        /// This is a workaround for the LLVM cost model, which was fixed upstream
+        /// on 2026-09-11. On clang 24+ the vectorized integer division becomes
+        /// faster than the scalar loop (`intDivOrZero` on `Int8` is 8.6x faster
+        /// on trunk), so the opt-out becomes harmful and should be removed once
+        /// the minimum supported compiler is clang 24.
         static constexpr bool disable_vectorization = []
         {
             if constexpr (requires { Op::no_vectorize; })
@@ -1271,7 +1278,16 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
-    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    /// A column of aggregate states made by hand must carry the state version of its declared type
+    /// (e.g. `AggregateFunction(1, uniq, UInt64)`): the version affects how the states are serialized
+    /// on a later round trip through an arena (`groupArray`, sorting) - a fresh column would use the
+    /// function's default version instead and the result would not match its type.
+    static std::optional<size_t> getAggregateStateVersion(const DataTypePtr & result_type)
+    {
+        return assert_cast<const DataTypeAggregateFunction &>(*result_type).getVersionIfExplicit();
+    }
+
+    ColumnPtr executeAggregateMultiply(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         ColumnsWithTypeAndName new_arguments = arguments;
         if (WhichDataType(new_arguments[1].type).isAggregateFunction())
@@ -1290,10 +1306,10 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 
         size_t size = agg_state_is_const ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function);
+        auto column_to = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
         column_to->reserve(size);
 
-        auto column_from = ColumnAggregateFunction::create(function);
+        auto column_from = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
         column_from->reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -1340,7 +1356,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             }
             else
             {
-                auto column_temp = ColumnAggregateFunction::create(function);
+                auto column_temp = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
                 column_temp->reserve(size);
                 for (size_t i = 0; i < size; ++i)
                     column_temp->insertFrom(vec_from[i]);
@@ -1359,7 +1375,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
     }
 
     /// Merge two aggregation states together.
-    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+    ColumnPtr executeAggregateAddition(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
         const IColumn & lhs_column = *arguments[0].column;
         const IColumn & rhs_column = *arguments[1].column;
@@ -1376,7 +1392,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
 
         size_t size = (lhs_is_const && rhs_is_const) ? 1 : input_rows_count;
 
-        auto column_to = ColumnAggregateFunction::create(function);
+        auto column_to = ColumnAggregateFunction::create(function, getAggregateStateVersion(result_type));
         column_to->reserve(size);
 
         for (size_t i = 0; i < size; ++i)
@@ -2037,7 +2053,8 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             ? array_element_function->executeImpl(new_arguments, result_array_type, rows_count)
             : executeImpl(new_arguments, result_array_type, rows_count);
 
-        return ColumnArray::create(res, typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
+        /// The element-wise result can be a constant (for example a NULL), the data of an array cannot.
+        return ColumnArray::create(res->convertToFullColumnIfConst(), typeid_cast<const ColumnArray *>(arguments[0].column.get())->getOffsetsPtr());
     }
 
     ColumnPtr executeArrayWithNumericImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
@@ -2329,9 +2346,12 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
+        /// Look through `LowCardinality` the same way `division_by_nullable` does in the resolver, so that
+        /// `canThrow` (which falls back to this method) agrees with the execution path.
         return ((IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo) && !arguments[1].is_const)
             || (IsOperation<Op>::div_floating
-                && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type)));
+                && (isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[0].type))
+                    || isDecimalOrNullableDecimal(recursiveRemoveLowCardinality(arguments[1].type))));
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -3134,9 +3154,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             /// keys, so it is pruned via the plain wider-of-the-two-original-types rule below,
             /// unconditionally on width.
             /// A `UInt256` operand cannot be widened to a signed type that holds its full range (no
-            /// 512-bit integer type exists), so `modulo`/`moduloOrNull` are not pruned for it: the
-            /// direct kernel needs no such cast and stays exact for every width.
+            /// 512-bit integer type exists), so a mixed-sign `modulo`/`moduloOrNull` pair with it is not
+            /// pruned: the direct kernel needs no such cast and stays exact for every width.
             constexpr bool modulo_unsigned_operand_too_wide_to_prune = (is_modulo || IsOperation<Op>::modulo_or_null)
+                && (is_signed_v<T0> || is_signed_v<T1>)
                 && ((is_unsigned_v<T0> && sizeof(T0) == 32) || (is_unsigned_v<T1> && sizeof(T1) == 32));
             constexpr bool op_is_prunable_modulo = (is_modulo || IsOperation<Op>::modulo_or_null || IsOperation<Op>::modulo_legacy)
                 && is_integer<T0> && is_integer<T1>
@@ -3275,6 +3296,12 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     /// on that single type reproduces. This is deliberately not the `ModuloImpl`
                     /// (non-legacy) rule below: legacy must keep the historical, sometimes
                     /// unsigned-computed behaviour byte for byte.
+                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
+                }
+                else if constexpr (is_unsigned_v<T0> && is_unsigned_v<T1>)
+                {
+                    /// For two unsigned operands `ModuloImpl` takes the plain remainder in the wider type.
                     using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
                     return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
                 }
@@ -3720,7 +3747,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                         auto * lval = nativeCast(b, arguments[0], result_type);
                         auto * rval = nativeCast(b, arguments[1], result_type);
-                        result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                        result = OpSpec::compile(b, lval, rval, is_signed_v<typename ResultDataType::FieldType>);
                         return true;
                     }
                 }
@@ -3733,36 +3760,6 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
     bool canBeExecutedOnDefaultArguments() const override { return valid_on_default_arguments; }
 };
-
-
-/// Whether `plus`/`minus` is injective in its varying argument, given the other one fixed.
-/// Only integer arithmetic is recognized: the result type is widened, and integer wrap-around is a
-/// bijection. Every other operand class contains cases that map distinct arguments to one result -
-/// an `Interval` collapses end-of-month days and DST transitions, rounding or rescaling collapses a
-/// float or `Decimal`, a narrower date constant collapses many days into one, a NULL constant maps
-/// everything to NULL - and by type they are indistinguishable from the safe cases beside them.
-inline bool plusMinusWithConstantsIsInjective(
-    const ColumnWithTypeAndName & left, const ColumnWithTypeAndName & right, const DataTypePtr & return_type)
-{
-    /// Two varying operands are not injective (`x + y` maps many pairs to one sum), and with both
-    /// fixed there is no varying argument to be injective in.
-    const bool left_is_const = left.column && isColumnConst(*left.column);
-    const bool right_is_const = right.column && isColumnConst(*right.column);
-    if (left_is_const == right_is_const)
-        return false;
-
-    auto is_integer_type = [](const DataTypePtr & type)
-    { return type && isInteger(*removeNullable(recursiveRemoveLowCardinality(type))); };
-
-    if (!is_integer_type(left.type) || !is_integer_type(right.type) || !is_integer_type(return_type))
-        return false;
-
-    /// A NULL among the varying argument's values maps to NULL one-to-one, so only the fixed operand
-    /// matters. Its `ColumnConst` nests a column of size 1, so the value is readable even when the
-    /// constant itself was materialized with size 0, as query-plan constants are.
-    const ColumnWithTypeAndName & constant = left_is_const ? left : right;
-    return !constant.column->onlyNull();
-}
 
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
@@ -3810,16 +3807,6 @@ public:
             return Base::executeImpl(columns_with_constant, result_type, input_rows_count);
         }
         return Base::executeImpl(arguments, result_type, input_rows_count);
-    }
-
-    /// Answered from the operands captured at build time: they are this function's own arguments,
-    /// whatever a caller passes as `sample_columns`.
-    bool isInjective(const ColumnsWithTypeAndName &) const override
-    {
-        if constexpr (!IsOperation<Op>::plus && !IsOperation<Op>::minus)
-            return false;
-        else
-            return plusMinusWithConstantsIsInjective(left, right, return_type);
     }
 
     bool hasInformationAboutMonotonicity() const override
@@ -4380,10 +4367,18 @@ public:
         {
             /// Check the case when operation is divide, intDiv or modulo and denominator is Nullable(Something).
             /// For divide operation we should check only Nullable(Decimal), because only this case can throw division by zero error.
-            division_by_nullable = !arguments[0].type->onlyNull() && !arguments[1].type->onlyNull() && arguments[1].type->isNullable()
+            ///
+            /// A `LowCardinality` wrapper hides the nullability from `isNullable`, so strip it: with a
+            /// `LowCardinality(Nullable(...))` denominator the NULL-masking variant was not selected and
+            /// the NULL rows divided by the nested default `0`, throwing `Division by zero` on data
+            /// where the plain `Nullable(...)` denominator returns NULL.
+            const auto left_type = recursiveRemoveLowCardinality(arguments[0].type);
+            const auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
+
+            division_by_nullable = !left_type->onlyNull() && !right_type->onlyNull() && right_type->isNullable()
                 && (IsOperation<Op>::int_div || IsOperation<Op>::modulo || IsOperation<Op>::positive_modulo
                     || (IsOperation<Op>::div_floating
-                        && (isDecimalOrNullableDecimal(arguments[0].type) || isDecimalOrNullableDecimal(arguments[1].type))));
+                        && (isDecimalOrNullableDecimal(left_type) || isDecimalOrNullableDecimal(right_type))));
         }
 
         auto make_adaptor = [&](auto function)
@@ -4404,13 +4399,6 @@ public:
         }
 
         return make_adaptor(FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments>::create(context, arguments[0].type, arguments[1].type, division_by_nullable));
-    }
-
-    /// Injectivity depends on the operand values, so only the built function can answer. Callers that
-    /// supply no arguments cannot be answered at all, and `build` would throw on that arity.
-    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
-    {
-        return sample_columns.size() == 2 && build(sample_columns)->isInjective(sample_columns);
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

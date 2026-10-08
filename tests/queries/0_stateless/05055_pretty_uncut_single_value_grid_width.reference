@@ -1,0 +1,29 @@
+A scalar single value
+   ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+   ┃ a                              ┃
+   ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │
+   └────────────────────────────────┘
+   ┌─a──────────────────────────────┐
+1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │
+   └────────────────────────────────┘
+    a                             
+
+1.  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx 
+A lone named Tuple displayed as subcolumns
+   ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+   ┃ t                                  ┃
+   ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━┫
+   ┃ a                              ┃ b ┃
+   ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━┩
+1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │ 1 │
+   └────────────────────────────────┴───┘
+   ┌─t──────────────────────────────────┐
+   ├─a──────────────────────────────┬─b─┤
+1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │ 1 │
+   └────────────────────────────────┴───┘
+Zero means no limit at all
+   ┌─a──────────────────────────────┬─b─┐
+1. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │ 1 │
+2. │ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx │ 1 │
+   └────────────────────────────────┴───┘

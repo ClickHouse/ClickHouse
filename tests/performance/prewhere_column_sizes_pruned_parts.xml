@@ -1,0 +1,14 @@
+<test>
+    <settings>
+        <max_partitions_per_insert_block>1024</max_partitions_per_insert_block>
+        <use_statistics>0</use_statistics>
+    </settings>
+    <create_query>
+        CREATE TABLE prewhere_sizes_pruned (p UInt64, k UInt64, j JSON(a UInt64, b String))
+        ENGINE = MergeTree PARTITION BY p ORDER BY k
+    </create_query>
+    <fill_query>INSERT INTO prewhere_sizes_pruned SELECT number % 1000, number, concat('{{"a":', toString(number % 11), ',"b":"', toString(number % 7), '"}}') FROM numbers(100000)</fill_query>
+    <query>SELECT count() FROM prewhere_sizes_pruned WHERE p = 999 AND j.a &gt; 5 AND j.b = '3'</query>
+    <query>SELECT count() FROM prewhere_sizes_pruned WHERE j.a &gt; 5 AND j.b = '3'</query>
+    <drop_query>DROP TABLE prewhere_sizes_pruned</drop_query>
+</test>

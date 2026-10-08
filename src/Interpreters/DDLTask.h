@@ -120,6 +120,9 @@ struct DDLTaskBase
     bool is_circular_replicated = false;
     bool execute_on_single_replica = false;
 
+    /// Set when the initial query runs as the submitting user, see `QueryFlags::run_as_submitting_user`.
+    ContextPtr submitting_user_context;
+
     Coordination::Requests ops;
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -290,6 +293,10 @@ public:
     ///      is called with std::uncaught_exceptions() == 0.)
     ~ZooKeeperMetadataTransaction() = default;
 };
+
+/// Whether the query re-executes a DDL that its initiator already validated and committed: an entry of a `Replicated`
+/// database queue, or a Shared Catalog replay (marked in the client info, not in a metadata transaction).
+bool isSecondaryDDLReplay(const ContextPtr & context);
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);
 

@@ -163,7 +163,7 @@ std::vector<String> TabSeparatedFormatReader::readRowImpl()
 }
 
 bool TabSeparatedFormatReader::readField(IColumn & column, const DataTypePtr & type,
-    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/)
+    const SerializationPtr & serialization, bool is_last_file_column, const String & /*column_name*/, size_t /*column_index*/)
 {
     const bool at_delimiter = !is_last_file_column && !buf->eof() && *buf->position() == '\t';
     const bool at_last_column_line_end = is_last_file_column && (buf->eof() || *buf->position() == '\n' || (format_settings.tsv.crlf_end_of_line_input && *buf->position() == '\r'));
@@ -426,6 +426,18 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
             registerWithNamesAndTypes("Raw", register_func);
     }
 
+    /// `TSV` and `TSVRaw` (and `Raw`) are interchangeable spellings of `TabSeparated` and
+    /// `TabSeparatedRaw`, and the `tsv` extension below is registered only for the canonical
+    /// spellings.
+    factory.registerFormatAlias("TSV", "TabSeparated");
+    factory.registerFormatAlias("TSVRaw", "TabSeparatedRaw");
+    factory.registerFormatAlias("Raw", "TabSeparatedRaw");
+
+    /// `TabSeparated` and `TSV` are registered as independent formats, and the `tsv` extension
+    /// infers as `TSV`. Files of the raw flavour of the format carry the `tsv` extension too.
+    factory.registerFileExtension("tsv", "TabSeparated", /*used_for_format_inference=*/ false);
+    factory.registerFileExtension("tsv", "TabSeparatedRaw", /*used_for_format_inference=*/ false);
+
     factory.setDocumentation("Raw", Documentation{
         .description = "An alias for the `TabSeparatedRaw` format. See the `TabSeparatedRaw` entry for the full documentation.",
         .related = {"TabSeparatedRaw"}});
@@ -497,7 +509,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 
 ## Data formatting {#tabseparated-data-formatting}
 
-Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
+Integer numbers are written in decimal form. Numbers can contain an extra "+" character at the beginning (ignored when parsing, and not recorded when formatting), and leading zeros are ignored when parsing (`007` is read as `7`). Non-negative numbers can't contain the negative sign. When reading, it is allowed to parse an empty string as a zero, or (for signed types) a string consisting of just a minus sign as a zero. Numbers that do not fit into the corresponding data type may be parsed as a different number, without an error message.
 
 Floating-point numbers are written in decimal form. The dot is used as the decimal separator. Exponential entries are supported, as are 'inf', '+inf', '-inf', and 'nan'. An entry of floating-point numbers may begin or end with a decimal point.
 During formatting, accuracy may be lost on floating-point numbers.
