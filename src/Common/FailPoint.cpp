@@ -125,6 +125,7 @@ static struct InitFiu
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
     PAUSEABLE(remote_fs_gather_pause_in_read) \
+    PAUSEABLE(plain_object_storage_pause_on_file_copy) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -243,6 +244,10 @@ static struct InitFiu
     REGULAR(zero_copy_lock_zk_fail_after_op) \
     REGULAR(plain_object_storage_write_fail_on_directory_create) \
     REGULAR(plain_object_storage_write_fail_on_directory_move) \
+    PAUSEABLE(plain_object_storage_pause_before_unlink_file_finalize) \
+    PAUSEABLE(plain_object_storage_pause_before_remove_recursive_finalize) \
+    PAUSEABLE(plain_object_storage_pause_before_remove_recursive_metadata) \
+    REGULAR(plain_object_storage_fail_on_finalize) \
     ONCE(plain_object_storage_fail_after_copy_on_file_move) \
     REGULAR(zero_copy_unlock_zk_fail_before_op) \
     REGULAR(zero_copy_unlock_zk_fail_after_op) \
@@ -432,6 +437,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_drop_cancelled_chunk) \
     PAUSEABLE_ONCE(storage_url_pause_before_empty_file_probe) \
     PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes) \
     PAUSEABLE_ONCE(storage_url_pause_before_read_buffer_creation) \
@@ -455,7 +462,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
-    REGULAR(marks_loader_hold_task_until_canceled)
+    REGULAR(marks_loader_hold_task_until_canceled) \
+    REGULAR(whatif_projection_scan_cut_short)
 
 namespace FailPoints
 {
