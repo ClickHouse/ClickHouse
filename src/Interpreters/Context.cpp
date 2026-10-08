@@ -4369,14 +4369,14 @@ void Context::makeQueryContext()
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
-    workload_exempt = false; // A background merge runs under the merge workload, never exempt
+    workload_exempt = false; // The source may be an exempt DDL context (OPTIMIZE ... DRY RUN); a merge always uses the merge workload
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
-    workload_exempt = false; // A background mutation runs under the mutation workload, never exempt
+    workload_exempt = false; // Likewise, a mutation always uses the mutation workload, even if copied from an exempt DDL context
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 
