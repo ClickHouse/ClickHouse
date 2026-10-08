@@ -1174,6 +1174,24 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// query-consistency path must use the effective reader context because it describes the rows read.
         auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
 
+        /// `system.tables.modification_hash` requires only `SELECT` on the materialized view itself, but the
+        /// hash covers the whole target table, which for `SQL SECURITY DEFINER` / `NONE` is checked against
+        /// the effective reader's grants below. The target can have columns the view does not expose, so a
+        /// caller without access to them would observe their churn through the hash. Inside the
+        /// introspection scope, require the caller's own `SELECT` on every column of the target as well.
+        if (isModificationHashIntrospection()
+            && storage_snapshot->metadata->sql_security_type
+            && *storage_snapshot->metadata->sql_security_type != SQLSecurityType::INVOKER)
+        {
+            auto target_table = tryGetTargetTable();
+            if (!target_table)
+                return {};
+            const auto target_id = target_table->getStorageID();
+            const auto target_metadata = target_table->getInMemoryMetadataPtr(query_context, false);
+            if (!canComputeModificationHash(query_context, target_id.database_name, target_id.table_name, target_metadata->getColumns()))
+                return {};
+        }
+
         /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
         /// target table and folds its identity (including the UUID, so a re-created target is distinguished).
         auto target_hash = computeTableModificationHashForConsistency(getTargetTableId(), effective_context);
