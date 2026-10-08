@@ -659,6 +659,7 @@ void registerStorageMySQL(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::MYSQL,
         .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
         .enumerate_engine_settings_fn = enumerateCompiledDefaults<MySQLSettings>,
+        .is_inherited_setting_fn = MySQLSettings::isLoadedFromQueryContext,
     },
     Documentation{
         .description = R"DOCS_MD(

@@ -1423,6 +1423,11 @@ void registerStorageNATS(StorageFactory & factory)
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaults<NATSSettings>,
+            /// A table that states no authentication takes these from the `nats` section of the server configuration.
+            .is_inherited_setting_fn = [](std::string_view name)
+            {
+                return name == "nats_username" || name == "nats_password" || name == "nats_token" || name == "nats_credential_file";
+            },
         },
         Documentation{
             .description = R"DOCS_MD(

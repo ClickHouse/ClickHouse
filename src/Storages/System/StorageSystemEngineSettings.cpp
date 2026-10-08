@@ -53,6 +53,10 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
 
         for (const auto & setting : creator.features.enumerate_engine_settings_fn(context))
         {
+            /// A setting a table takes from elsewhere unless its definition states it has no value of its own here.
+            if (StorageFactory::isInheritedSetting(creator.features, setting.name))
+                continue;
+
             Array disallowed_values;
             for (const auto & value : setting.disallowed_values)
                 disallowed_values.emplace_back(value);

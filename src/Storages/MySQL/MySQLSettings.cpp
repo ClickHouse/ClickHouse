@@ -115,6 +115,11 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
     }
 }
 
+bool MySQLSettings::isLoadedFromQueryContext(std::string_view name)
+{
+    return name == "mysql_datatypes_support_level";
+}
+
 VectorWithMemoryTracking<std::string_view> MySQLSettings::getAllRegisteredNames() const
 {
     VectorWithMemoryTracking<std::string_view> all_settings;

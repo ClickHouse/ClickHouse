@@ -32,3 +32,13 @@ SELECT count() FROM
     (SELECT name FROM system.engine_settings WHERE engine_name = 'DeltaLakeLocal'
      EXCEPT SELECT name FROM system.engine_settings WHERE engine_name = 'DeltaLake')
 );
+
+-- Verify settings a table takes from elsewhere unless its definition states them are not listed: format settings,
+-- PostgreSQL's pool settings, MySQL's mysql_datatypes_support_level, NATS and RabbitMQ credentials
+SELECT count() FROM system.engine_settings
+WHERE name LIKE 'format\_%' OR name LIKE 'input\_format\_%' OR name LIKE 'output\_format\_%'
+    OR name IN ('postgresql_connection_pool_size', 'mysql_datatypes_support_level', 'nats_username', 'nats_password',
+                'nats_token', 'nats_credential_file', 'rabbitmq_username', 'rabbitmq_password');
+
+-- Verify an engine keeps its own settings: Set lists only these, without the format settings its class includes
+SELECT name FROM system.engine_settings WHERE engine_name = 'Set' ORDER BY name;

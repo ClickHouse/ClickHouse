@@ -1178,10 +1178,16 @@ Contains a list of all ReplicatedMergeTree engine specific settings, their curre
 .description
 Contains the engine-specific settings of table engines, one row per engine and setting, with their values, default values and descriptions. `File`, `URL`, `Join` and the `Log` family (`Log`, `StripeLog`, `TinyLog`) also accept a `SETTINGS` clause, but have no settings class of their own, so they are not listed yet.
 
-`value` is what a new table of the engine starts from, before the `SETTINGS` clause of its definition is applied:
+`value` is what a new table of the engine starts from on this server, before its definition (the `SETTINGS` clause, a named collection) is applied, whoever reads this table:
 - For most engines, the compiled-in default.
 - For the `MergeTree` family, the same rows as [`system.merge_tree_settings`](/reference/system-tables/merge_tree_settings), and for the replicated family, the same rows as [`system.replicated_merge_tree_settings`](/reference/system-tables/replicated_merge_tree_settings): the `merge_tree` and `replicated_merge_tree` sections of the server configuration and the `compatibility` setting of the default profile are applied.
 - For `Distributed`, `Remote` and `RemoteSecure`, the `distributed` section of the server configuration is applied, and the `background_insert_*` settings are filled from the `distributed_background_insert_*` settings of the server, as a new table fills them.
+
+`changed` is 1 for a setting that the server configuration sets, or, for the `MergeTree` family, that the `compatibility` setting changes.
+
+A setting that a table takes from elsewhere unless its definition states it has no such value, so it is not listed: the format settings, which every engine accepting them takes from the query or server settings (`Set` does not use them); the connection pool settings of `PostgreSQL` and `mysql_datatypes_support_level` of `MySQL`, which a new table takes from the session creating it; and the credentials of `NATS` and `RabbitMQ`, taken from the server configuration. `S3`, `AzureBlobStorage`, `HDFS`, `COSN`, `OSS`, `GCS` and `PostgreSQL` have only such settings, so they are not listed either.
+
+Two values are not what a new table uses in every configuration: `ExecutablePool` lowers `max_command_execution_time` to the server's `max_execution_time` when that is set and smaller, and `RabbitMQ` uses the `vhost` of the `rabbitmq` section of the server configuration, when set, instead of `rabbitmq_vhost`.
 
 .columns_notes
 `min`, `max`, `disallowed_values` and `readonly` come from the [constraints](/concepts/features/configuration/settings/constraints-on-settings) of the current user, as in `system.merge_tree_settings`. Only the settings of the `MergeTree` family can be constrained, and some of them are always read-only, so for the other engines these columns are `NULL`, empty or `0`.

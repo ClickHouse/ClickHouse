@@ -1607,6 +1607,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
             .enumerate_engine_settings_fn = enumerateCompiledDefaults<RabbitMQSettings>,
+            /// A table that leaves these empty takes them from the `rabbitmq` section of the server configuration.
+            .is_inherited_setting_fn = [](std::string_view name) { return name == "rabbitmq_username" || name == "rabbitmq_password"; },
         },
         Documentation{
             .description = R"DOCS_MD(
