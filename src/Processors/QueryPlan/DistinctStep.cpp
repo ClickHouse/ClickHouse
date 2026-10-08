@@ -218,6 +218,8 @@ bool DistinctStep::tryScatterStreams(QueryPipelineBuilder & pipeline) const
     static constexpr size_t max_partitions = 16;
     static constexpr size_t max_scatter_streams = 16;
 
+    /// A single stream is not scattered: its `DISTINCT` keeps the input row order, which unordered queries
+    /// rely on in practice, and small single-stream inputs, the common case, would pay for the extra transforms.
     const size_t num_partitions = std::min(pipeline.getNumThreads(), max_partitions);
     if (pipeline.getNumStreams() <= 1 || num_partitions <= 1)
         return false;
