@@ -81,6 +81,19 @@ std::vector<ReadFromMergeTree *> collectReadSteps(const QueryPlan::Node * root)
     return steps;
 }
 
+/// optimizes `plan` with the `IN` sets that earlier plans of the statement built, then keeps the sets that it builds
+void optimizeSharingSets(QueryPlan & plan, const ContextPtr & context, const BuiltSetsByHashPtr & built_sets)
+{
+    reuseBuiltSets(plan, built_sets);
+    std::vector<std::pair<FutureSet::Hash, SetAndKeyPtr>> sets;
+    forEachSubquerySet(&plan, [&](FutureSetFromSubquery & set) { sets.emplace_back(set.getHash(), set.getSetAndKey()); return true; });
+    plan.optimize(QueryPlanOptimizationSettings(context));
+    for (const auto & [hash, set_and_key] : sets)
+        /// index analysis can use only a set with explicit elements
+        if (set_and_key && set_and_key->set && set_and_key->set->isCreated() && set_and_key->set->hasExplicitSetElements())
+            built_sets->sets.emplace(hash, set_and_key);
+}
+
 /// Resolve the source table from the query
 StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & context)
 {
@@ -366,7 +379,9 @@ WhatIfResult estimateHypotheticalObjects(
         plan = std::move(interpreter).extractQueryPlan();
     }
 
-    plan.optimize(QueryPlanOptimizationSettings(plan_context));
+    /// each plan of the statement runs an `IN` subquery only if no earlier plan built its set
+    const auto built_sets = std::make_shared<BuiltSetsByHash>();
+    optimizeSharingSets(plan, plan_context, built_sets);
 
     const auto read_steps = collectReadSteps(plan.getRootNode());
 
@@ -581,7 +596,7 @@ WhatIfResult estimateHypotheticalObjects(
         for (auto * weigh_read : collectReadSteps(weigh_plan.getRootNode()))
             if (weigh_read->getMergeTreeData().getStorageID() == data.getStorageID())
                 weigh_read->setHypotheticalProjection(hypothetical);
-        weigh_plan.optimize(QueryPlanOptimizationSettings(weigh_context));
+        optimizeSharingSets(weigh_plan, weigh_context, built_sets);
     };
 
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
