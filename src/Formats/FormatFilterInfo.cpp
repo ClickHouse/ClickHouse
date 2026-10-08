@@ -5,6 +5,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/SipHash.h>
 #include <boost/functional/hash.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -27,6 +28,33 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool input_format_parquet_filter_push_down;
+    extern const SettingsBool input_format_parquet_bloom_filter_push_down;
+    extern const SettingsUInt64 input_format_parquet_dictionary_filter_push_down;
+    extern const SettingsBool input_format_parquet_page_filter_push_down;
+    extern const SettingsBool input_format_parquet_spatial_filter_push_down;
+    extern const SettingsBool input_format_orc_filter_push_down;
+}
+
+namespace
+{
+
+/// The entries for files are written from the row groups the reader pruned, not from evaluating the
+/// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
+/// still has rows the query returns when it is not pruned, so a read with another set of enabled
+/// pruning methods must not consult the entries of this one.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
+{
+    SipHash hash;
+    hash.update(settings[Setting::input_format_parquet_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_bloom_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_dictionary_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_page_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_spatial_filter_push_down].value);
+    hash.update(settings[Setting::input_format_orc_filter_push_down].value);
+    return hash.get64();
+}
+
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -87,8 +115,10 @@ FormatFilterInfo::FormatFilterInfo(
         const auto & outputs = filter_actions_dag->getOutputs();
         if (prewhere_covered && outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
         {
+            const auto & settings = context_->getSettingsRef();
             condition_hash = queryConditionCacheHash(
-                filter_actions_dag->getHash(), queryConditionCacheSettingsSalt(context_->getSettingsRef()));
+                filter_actions_dag->getHash(),
+                queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
         }
     }
 }

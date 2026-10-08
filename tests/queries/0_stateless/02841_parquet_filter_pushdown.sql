@@ -6,11 +6,6 @@ set output_format_parquet_row_group_size = 100;
 -- add its own (orthogonal) row group pruning on top.
 set input_format_parquet_dictionary_filter_push_down = 0;
 
--- The query condition cache would remember row groups pruned by an `indexHint` and skip them in a
--- later query with the same condition, even with `input_format_parquet_filter_push_down = 0`. It is
--- used only once the file has settled for a few seconds, so the results would depend on timing.
-set use_query_condition_cache = 0;
-
 set input_format_null_as_default = 1;
 set engine_file_truncate_on_insert = 1;
 set optimize_or_like_chain = 0;
