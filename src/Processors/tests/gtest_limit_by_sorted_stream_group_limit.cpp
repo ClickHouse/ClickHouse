@@ -20,7 +20,7 @@ using namespace DB;
 /// from an outer `LIMIT` above a `LIMIT BY` whose keys are a sort prefix. A group counts as complete
 /// only once a strictly different key follows it, so a group split across chunks is counted once and
 /// its trailing rows are never cut off mid-group. Chunk sizes reachable from a server make one chunk
-/// hold far more groups than the hint, so the stopping chunk is the first one either way; these arms
+/// hold far more groups than `max_groups`, so the stopping chunk is the first one either way; these arms
 /// drive the transform chunk by chunk, where the completion predicate is observable.
 
 namespace
@@ -55,10 +55,10 @@ Chunk makeChunk(const std::vector<UInt64> & keys)
     return Chunk(Columns{std::move(key_column), std::move(value_column)}, keys.size());
 }
 
-/// source(chunks) -> LimitBySortedStreamTransform(group_length, groups_limit_hint) -> pull.
+/// source(chunks) -> LimitBySortedStreamTransform(group_length, max_groups) -> pull.
 /// Returns the rows the transform emitted. `stopReading()` is observable only through this count:
 /// the executor closes the transform's input, so later chunks never reach it.
-size_t countOutputRows(const std::vector<std::vector<UInt64>> & chunk_keys, UInt64 group_length, UInt64 groups_limit_hint)
+size_t countOutputRows(const std::vector<std::vector<UInt64>> & chunk_keys, UInt64 group_length, UInt64 max_groups)
 {
     auto header = makeHeader();
 
@@ -73,7 +73,7 @@ size_t countOutputRows(const std::vector<std::vector<UInt64>> & chunk_keys, UInt
         /*group_offset_=*/0,
         makeSortDescription(),
         /*always_read_till_end_=*/false,
-        groups_limit_hint);
+        max_groups);
 
     connect(source->getPort(), transform->getInputPort());
     auto * output_port = &transform->getOutputPort();
@@ -110,46 +110,46 @@ std::vector<std::vector<UInt64>> makeWholeGroupChunks(size_t chunk_count, size_t
 
 }
 
-TEST(LimitBySortedStreamTransform, GroupsLimitHintZeroReadsEverything)
+TEST(LimitBySortedStreamTransform, MaxGroupsZeroReadsEverything)
 {
     /// The three untouched construction sites keep the default 0, which must read to the end.
     const auto chunks = makeWholeGroupChunks(/*chunk_count=*/10, /*groups_per_chunk=*/1, /*rows_per_group=*/4);
-    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*groups_limit_hint=*/0), 10u);
+    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*max_groups=*/0), 10u);
 }
 
-TEST(LimitBySortedStreamTransform, GroupsLimitHintStopsAfterTheHintthGroup)
+TEST(LimitBySortedStreamTransform, MaxGroupsStopsAfterTheLastCountedGroup)
 {
     /// One group per chunk, so a group is completed only when the next chunk starts a different key.
-    /// The hint of 4 is reached while processing the 5th chunk, whose own group is still emitted, so
+    /// `max_groups` of 4 is reached while processing the 5th chunk, whose own group is still emitted, so
     /// 5 of the 10 groups come out. Counting a group when its first row is seen instead reaches 4 in
     /// the 3rd chunk and emits 3.
     const auto chunks = makeWholeGroupChunks(/*chunk_count=*/10, /*groups_per_chunk=*/1, /*rows_per_group=*/4);
-    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*groups_limit_hint=*/4), 5u);
+    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*max_groups=*/4), 5u);
 }
 
-TEST(LimitBySortedStreamTransform, SeveralGroupsPerChunkStopOnTheChunkThatReachesTheHint)
+TEST(LimitBySortedStreamTransform, SeveralGroupsPerChunkStopOnTheChunkThatReachesMaxGroups)
 {
     /// Three groups per chunk: the first chunk completes two of them (its last group is only known
     /// to be complete once the next chunk shows a different key), the second reaches five and stops.
     /// Both chunks are emitted whole, so no group inside them is cut short.
     const auto chunks = makeWholeGroupChunks(/*chunk_count=*/4, /*groups_per_chunk=*/3, /*rows_per_group=*/2);
-    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*groups_limit_hint=*/4), 6u);
+    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*max_groups=*/4), 6u);
 }
 
 TEST(LimitBySortedStreamTransform, GroupSplitAcrossChunksIsCountedOnce)
 {
     /// Key 0 spans all four chunks and key 1 only starts in the last one. A per-chunk count would
-    /// reach a hint of 2 during chunk 2 and stop before key 1 is ever seen; counting completions
+    /// reach `max_groups` of 2 during chunk 2 and stop before key 1 is ever seen; counting completions
     /// keeps reading, so both groups are emitted.
     const std::vector<std::vector<UInt64>> chunks{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 1, 1}};
-    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*groups_limit_hint=*/2), 2u);
+    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/1, /*max_groups=*/2), 2u);
 }
 
-TEST(LimitBySortedStreamTransform, TrailingRowsOfTheHintthGroupSurvive)
+TEST(LimitBySortedStreamTransform, TrailingRowsOfTheLastCountedGroupSurvive)
 {
-    /// Group 1 straddles the first two chunks. The hint is reached inside the second chunk, and that
+    /// Group 1 straddles the first two chunks. `max_groups` is reached inside the second chunk, and that
     /// chunk is still processed whole, so group 1's second row is emitted rather than cut off:
     /// two rows for group 0, two for group 1, two for group 2.
     const std::vector<std::vector<UInt64>> chunks{{0, 0, 1}, {1, 2, 2}, {3, 3, 4}};
-    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/2, /*groups_limit_hint=*/2), 6u);
+    EXPECT_EQ(countOutputRows(chunks, /*group_length=*/2, /*max_groups=*/2), 6u);
 }

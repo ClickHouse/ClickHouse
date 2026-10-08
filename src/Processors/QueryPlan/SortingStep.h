@@ -180,7 +180,7 @@ public:
     void updateLimitByHint(
         Names limit_by_columns_,
         UInt64 limit_by_group_length_,
-        UInt64 limit_by_groups_hint_,
+        UInt64 limit_by_max_groups_,
         bool limit_by_always_read_till_end_);
 
     std::vector<size_t> getStepGroups() const override;
@@ -251,8 +251,7 @@ private:
     /// See `pushLimitByIntoSort`. Empty means no hint.
     Names limit_by_columns;
     UInt64 limit_by_group_length = 0;
-    /// Groups an outer `LIMIT` above the `LIMIT BY` can consume. 0 means no bound.
-    UInt64 limit_by_groups_hint = 0;
+    UInt64 limit_by_max_groups = 0;
     bool limit_by_always_read_till_end = false;
 
     Processors scatter_stage;

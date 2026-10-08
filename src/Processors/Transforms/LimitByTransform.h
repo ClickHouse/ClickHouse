@@ -120,7 +120,7 @@ public:
         UInt64 group_offset_,
         const SortDescription & sorted_columns_descr,
         bool always_read_till_end_ = false,
-        UInt64 groups_limit_hint_ = 0);
+        UInt64 max_groups_ = 0);
 
     String getName() const override { return "LimitBySortedStreamTransform"; }
 
@@ -138,6 +138,8 @@ private:
 
     void processRun(UInt64 run_start_row, UInt64 run_row_count);
 
+    void finishGroup();
+
     /// Positions of the non-constant grouping key columns in the chunk header, in physical sort order so
     /// that every column probed by `getEqualRangeEndAssumeSorted` is contiguous within the range.
     std::vector<size_t> grouping_key_positions;
@@ -147,8 +149,8 @@ private:
     const UInt64 group_limit_end;
     const bool always_read_till_end;
 
-    /// Stop reading once this many groups have been fully emitted. 0 disables the stop.
-    const UInt64 groups_limit_hint;
+    /// Stop reading once this many groups are complete. 0 disables the stop.
+    const UInt64 max_groups;
 
     MutableColumns previous_chunk_last_grouping_key_columns;
 
