@@ -33,6 +33,11 @@ write_file() {
 write_file "${DATA_FILE}" 1
 write_file "${DATA_FILE_NO_BLOOM}" 0
 
+# Backdate the files so their version tokens have settled before the measurements: the footer cache
+# keys a local file by whether its token has settled, so a file that settles between the two
+# measurements below would have its footer re-read by the second one only.
+touch -d '2020-01-01 00:00:00' "${CLICKHOUSE_USER_FILES}/${DATA_FILE}" "${CLICKHOUSE_USER_FILES}/${DATA_FILE_NO_BLOOM}"
+
 # Disable the min/max and page filters so pruning happens only via the dictionary or the bloom filter,
 # and keep a generous dictionary-page eligibility limit so the dictionary filter is always applicable.
 CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --optimize_move_to_prewhere=0 --use_cache_for_count_from_files=0"
