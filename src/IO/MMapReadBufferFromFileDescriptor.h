@@ -43,6 +43,10 @@ public:
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const override;
     bool supportsReadAt() override { return true; }
 
+    /// Returns one region pointing into the mapping, with an empty handle: it is valid while this buffer is alive.
+    VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
+    bool supportsReadAtRetainCells() const override { return true; }
+
     /// mmap has no producer behind `nextImpl` -- `working_buffer` already points at the entire
     /// mapped region. After `set(dest, size)` the buffer cannot refill into `dest`, so callers
     /// must use `read(dest, n)` instead, which memcpys from the mapped region into the caller's

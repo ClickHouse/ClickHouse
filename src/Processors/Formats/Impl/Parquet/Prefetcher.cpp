@@ -22,6 +22,7 @@ namespace ProfileEvents
     extern const Event ParquetPrefetcherReadRandomRead;
     extern const Event ParquetPrefetcherReadSeekAndRead;
     extern const Event ParquetPrefetcherReadEntireFile;
+    extern const Event ParquetPrefetcherReadZeroCopy;
 }
 
 namespace DB::Parquet
@@ -503,12 +504,20 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     auto final_state = Task::State::Done;
     try
     {
-        /// When the reader supports zero-copy cached reads, get retained cache cells
-        /// instead of allocating a buffer and copying data into it.
-        if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)
+        /// When the reader supports zero-copy reads (page cache cells or a memory-mapped file),
+        /// reference its data instead of allocating a buffer and copying data into it.
+        /// Decoders read up to PADDING_FOR_SIMD bytes on both sides of a range, as `task->buf` allows,
+        /// so a range closer than that to either end of the file is copied.
+        if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0
+            && task->offset >= PADDING_FOR_SIMD && task->offset + task->length + PADDING_FOR_SIMD <= file_size)
         {
             auto cached_regions = reader->readBigAtRetainCells(task->length, task->offset);
-            chassert(!cached_regions.empty());
+            size_t bytes_read = 0;
+            for (const auto & region : cached_regions)
+                bytes_read += region.size;
+            if (bytes_read != task->length)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof: offset {}, length {}, bytes read {}, expected file size {}",
+                    task->offset, task->length, bytes_read, file_size);
 
             if (cached_regions.size() == 1)
             {
@@ -520,6 +529,7 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
                     .size = cr.size,
                     .file_offset = cr.file_offset,
                 };
+                ProfileEvents::increment(ProfileEvents::ParquetPrefetcherReadZeroCopy);
             }
             else
             {
@@ -535,7 +545,6 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
                         memcpy(task->buf.data() + copied, region.data, region.size);
                         copied += region.size;
                     }
-                    chassert(copied == task->length);
                 }
             }
 
