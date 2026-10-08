@@ -110,7 +110,7 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         auto & buffer = buffers[current_input_idx];
         auto chunk = std::move(buffer.chunks.front());
         buffer.chunks.pop_front();
-        buffer.bytes -= std::min(buffer.bytes, chunk.allocatedBytes());
+        buffer.bytes -= std::min<size_t>(buffer.bytes, chunk.allocatedBytes());
         output.push(std::move(chunk));
         return Status::PortFull;
     }
