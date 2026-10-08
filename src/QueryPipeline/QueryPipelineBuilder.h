@@ -26,6 +26,8 @@ struct SizeLimits;
 struct ExpressionActionsSettings;
 
 class IJoin;
+class FillingRightJoinSideTransform;
+using FillingRightJoinSideTransformRawPtrs = std::vector<FillingRightJoinSideTransform *>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 using JoinPtr = std::shared_ptr<IJoin>;
 class TableJoin;
 
@@ -78,6 +80,25 @@ public:
     /// Transform pipeline in general way.
     void transform(const Transformer & transformer, bool check_ports = true);
 
+    /// Connect all pending seal inputs of the gated reads in the probe pipeline (see
+    /// SealGatedReadTransform) to the build completion seal of the given filling transforms
+    /// (exactly one of them emits; many ports are collapsed with a resize, many gates are fed
+    /// through one copy). The seal carries the completed runtime filter with the given key as
+    /// an optional payload. Called for joins marked as gating their probe side; unmarked
+    /// joins carry the pending inputs upward. No-op without pending seal inputs.
+    static void wireSealGatedReading(
+        QueryPipelineBuilder & probe,
+        QueryPipelineBuilder & build,
+        const FillingRightJoinSideTransformRawPtrs & filling_transforms,
+        const String & runtime_filter_key,
+        Processors * collected_processors);
+
+    /// Feed the pending seal inputs from null sources: the gated reads then proceed without
+    /// the runtime filter (fail-open). Used when the gates cannot or must not be wired, e.g.
+    /// for a gated read which ended up on the build side of a join (wiring it would deadlock)
+    /// or in a pipeline which does not support gating.
+    static void terminatePendingSealInputs(QueryPipelineBuilder & builder, Processors * collected_processors);
+
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
@@ -91,6 +112,9 @@ public:
 
     /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
     void dropTotalsAndExtremes();
+    /// Forget about current extremes, keeping totals. Needed before a join, whose inputs' extremes
+    /// say nothing about the join result; they are recalculated above the join if they are wanted.
+    void dropExtremes();
 
     void addMergingAggregatedMemoryEfficientTransform(
         AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
@@ -139,6 +163,7 @@ public:
         size_t max_streams,
         IQueryPlanStep * join_step,
         bool keep_left_read_in_order,
+        const std::optional<String> & seal_gate = std::nullopt,
         Processors * collected_processors = nullptr);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesByShards(
@@ -244,6 +269,8 @@ public:
     bool getReadStreamCountWasReduced() const { return read_stream_count_was_reduced; }
 
     void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
+    /// Read access to what this pipeline keeps alive, e.g. to tell whether it reads a given table.
+    const QueryPlanResourceHolder & getResources() const { return resources; }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 

@@ -32,15 +32,19 @@ public:
     )
         : Exception(makeExceptionMessage(code, uri, http_status_, reason, body))
         , http_status(http_status_)
+        , response_body(body)
     {}
 
     HTTPException * clone() const override { return new HTTPException(*this); }
     void rethrow() const override { throw *this; } /// NOLINT(bugprone-exception-copy-constructor-throws,cert-err60-cpp)
 
     Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
+    /// Kept apart from the message so a caller can read the structured error a server put in it.
+    const std::string & getResponseBody() const { return response_body; }
 
 private:
     Poco::Net::HTTPResponse::HTTPStatus http_status{};
+    std::string response_body;
 
     static Exception makeExceptionMessage(
         int code,

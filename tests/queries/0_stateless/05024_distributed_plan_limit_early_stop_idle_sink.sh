@@ -50,13 +50,19 @@ SOURCE_ACTIONS="'NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes
 # Streams between the `LIMIT` and the sleeping scan, as `EXPLAIN PLAN distributed = 1` lays them
 # out: the shuffle that carries the scan into the first join, the shuffle between the two
 # differently-keyed joins (the idle one this test exists for), each 3 source buckets x 3
-# destination buckets, and the gather directly below the `LIMIT`, 3 join buckets x 1. The two
-# dimension-table shuffles and everything downstream of the `LIMIT` are excluded: they run out of
-# data instead of being stopped.
+# destination buckets, and the gather directly below the `LIMIT`, 3 join buckets x 1. Everything
+# downstream of the `LIMIT` is excluded: it runs out of data instead of being stopped.
 EXPECTED_STREAMS="arraySort(arrayConcat(
     arrayMap(i -> 'exchange_0__' || toString(intDiv(i, 3)) || '_' || toString(i % 3), range(9)),
     arrayMap(i -> 'exchange_2__' || toString(intDiv(i, 3)) || '_' || toString(i % 3), range(9)),
     arrayMap(i -> 'exchange_4__' || toString(i) || '_0', range(3))))"
+
+# The two dimension-table shuffles into the joins (3 x 3 each) are allowed but not required: they
+# usually run out of data first, but when the `LIMIT` fires while a join bucket is still reading
+# one, the stop reaches it too.
+OPTIONAL_STREAMS="arrayConcat(
+    arrayMap(i -> 'exchange_1__' || toString(intDiv(i, 3)) || '_' || toString(i % 3), range(9)),
+    arrayMap(i -> 'exchange_3__' || toString(intDiv(i, 3)) || '_' || toString(i % 3), range(9)))"
 
 $CLICKHOUSE_CLIENT --query "
 CREATE TABLE t_dp_idle_sink (x UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1000;
@@ -107,6 +113,7 @@ else
     $CLICKHOUSE_CLIENT --query "
     WITH
         $EXPECTED_STREAMS AS expected,
+        $OPTIONAL_STREAMS AS optional,
         (
             SELECT arraySort(groupArray(stream)) FROM
             (
@@ -121,11 +128,12 @@ else
                 HAVING countIf(message_format_string IN ($SINK_ACTIONS)) > 0
                    AND countIf(message_format_string IN ($SOURCE_ACTIONS)) > 0
             )
-        ) AS matched
-    SELECT 'idle exchanges: ' || if(matched = expected,
+        ) AS matched,
+        arrayFilter(s -> NOT has(matched, s), expected) AS missing,
+        arrayFilter(s -> NOT has(expected, s) AND NOT has(optional, s), matched) AS unexpected
+    SELECT 'idle exchanges: ' || if(empty(missing) AND empty(unexpected),
         'stop propagated on every expected exchange stream',
-        'MISMATCH missing=' || toString(arrayFilter(s -> NOT has(matched, s), expected)) ||
-        ' unexpected=' || toString(arrayFilter(s -> NOT has(expected, s), matched)))
+        'MISMATCH missing=' || toString(missing) || ' unexpected=' || toString(unexpected))
     SETTINGS max_rows_to_read = 0"
 fi
 

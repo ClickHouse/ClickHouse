@@ -345,6 +345,12 @@ void readStringUntilNewlineInto(Vector & s, ReadBuffer & buf)
     readStringUntilCharsInto<'\n'>(s, buf);
 }
 
+template <typename Vector>
+void readStringUntilWhitespaceDelimiterInto(Vector & s, ReadBuffer & buf)
+{
+    readStringUntilCharsInto<' ', '\t', '\n', '\f', '\v', '\r'>(s, buf);
+}
+
 template void readStringUntilNewlineInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringUntilNewlineInto<String>(String & s, ReadBuffer & buf);
 
@@ -359,6 +365,12 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringUntilWhitespaceInto(s, buf);
+}
+
+void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf)
+{
+    s.clear();
+    readStringUntilWhitespaceDelimiterInto(s, buf);
 }
 
 void skipStringUntilWhitespace(ReadBuffer & buf)
@@ -783,8 +795,7 @@ void readEscapedStringIntoImpl(Vector & s, ReadBuffer & buf)
                 }
             }
         }
-
-        if constexpr (support_crlf)
+        else if constexpr (support_crlf)
         {
             if (*buf.position() == '\r')
             {
