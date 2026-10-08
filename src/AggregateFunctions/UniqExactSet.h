@@ -439,7 +439,7 @@ private:
     struct ScatteredSet
     {
         PODArray<value_type> keys;
-        std::array<UInt32, TwoLevelSet::NUM_BUCKETS + 1> offsets{};
+        std::array<size_t, TwoLevelSet::NUM_BUCKETS + 1> offsets{};
     };
 
     static void scatterByBucket(const SingleLevelSet & src, const TwoLevelSet & dst, ScatteredSet & res)
@@ -449,7 +449,7 @@ private:
 
         PODArray<value_type> keys(size);
         PODArray<UInt8> buckets(size);
-        std::array<UInt32, NUM_BUCKETS> counts{};
+        std::array<size_t, NUM_BUCKETS> counts{};
 
         size_t i = 0;
         for (auto it = src.begin(); it != src.end(); ++it, ++i)
@@ -465,7 +465,7 @@ private:
         for (size_t b = 0; b < NUM_BUCKETS; ++b)
             res.offsets[b + 1] = res.offsets[b] + counts[b];
 
-        std::array<UInt32, NUM_BUCKETS> positions{};
+        std::array<size_t, NUM_BUCKETS> positions{};
         std::copy_n(res.offsets.begin(), NUM_BUCKETS, positions.begin());
 
         res.keys.resize(size);
