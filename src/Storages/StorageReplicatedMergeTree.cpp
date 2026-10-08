@@ -9587,7 +9587,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
         /// Patch parts cannot be copied to another table. Partitions with unapplied patches are rejected by `replacePartitionFromImpl`.
         partitions = src_data.getAllPartitionIds();
-        std::erase_if(partitions, isPatchPartitionId);
+        boost::container::erase_if(partitions, isPatchPartitionId);
     }
     else
     {
