@@ -2914,11 +2914,27 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
         if (!merge_entry && !current_mutations_by_version.empty())
         {
-            PreformattedMessage out_reason;
-            mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
+            /// The background admission gate covers mutations as well, as it does for a replicated table
+            /// (`StorageReplicatedMergeTree::mergeSelectingTask` selects neither above it): otherwise a mutation
+            /// backlog keeps starting new mutations exactly when the memory reserved by running merges has
+            /// saturated `merges_mutations_memory_usage_soft_limit`.
+            if (!canEnqueueBackgroundTask())
+            {
+                LOG_TRACE(LogFrequencyLimiter(log.load(), 300),
+                    "Didn't start mutation: current background tasks memory usage ({}) or the memory reserved by scheduled "
+                    "background tasks ({}) is more than the limit ({})",
+                    formatReadableSizeWithBinarySuffix(background_memory_tracker.get()),
+                    formatReadableSizeWithBinarySuffix(getReservedMergeMemory()),
+                    formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()));
+            }
+            else
+            {
+                PreformattedMessage out_reason;
+                mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
 
-            if (!mutate_entry)
-                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start mutation: {}", out_reason.text);
+                if (!mutate_entry)
+                    LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start mutation: {}", out_reason.text);
+            }
         }
 
         has_mutations = !current_mutations_by_version.empty();
