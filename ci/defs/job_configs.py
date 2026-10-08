@@ -126,6 +126,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./packages",
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
+        # `Build (amd_windows)` builds and runs the Windows self-tests.
+        "./utils/windows-selftest",
     ],
     with_git_submodules=True,
 )
