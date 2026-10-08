@@ -583,7 +583,10 @@ private:
                 uint64_t current_from_index = it->second->from_log_index;
                 uint64_t current_to_index = it->second->to_log_index;
 
-                if (current_to_index - current_from_index + 1 >= log_file_settings.rotate_interval)
+                /// A compressed changelog (carried over from `old_log_storage_disk`) is never merged: its recorded
+                /// positions are offsets into the decompressed stream, so the relink would point into the wrong
+                /// bytes of the merged object, and the raw concatenation could not be decoded on restart.
+                if (it->second->is_compressed || current_to_index - current_from_index + 1 >= log_file_settings.rotate_interval)
                 {
                     last_merged_index = current_to_index;
                     continue;
@@ -596,7 +599,8 @@ private:
                 {
                     auto next_changelog = it->second;
 
-                    if (next_changelog->from_log_index == current_to_index + 1 && !is_open_for_write(next_changelog))
+                    if (next_changelog->from_log_index == current_to_index + 1 && !is_open_for_write(next_changelog)
+                        && !next_changelog->is_compressed)
                     {
                         to_merge.push_back(next_changelog);
                         current_to_index = next_changelog->to_log_index;
