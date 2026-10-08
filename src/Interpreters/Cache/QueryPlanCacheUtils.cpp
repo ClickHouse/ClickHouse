@@ -966,7 +966,9 @@ void checkAccessForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, const Co
         /// into a constant - neither has a plan leaf whose precise columns could be recorded):
         /// the baked plan may read any column, so a column-level recheck is not enough. Require
         /// table-level SELECT, which is at least as strict as the per-column access a miss checks;
-        /// a hit cannot recover the exact columns to recheck them precisely.
+        /// a hit cannot recover the exact columns to recheck them precisely. The caller re-plans
+        /// instead of hitting when this would fail (`hasTableLevelAccessForColumnsUnknownDependencies`),
+        /// so that a hit is never stricter than a miss; this check stays as a safety net.
         if (dep.columns_unknown)
         {
             context->checkAccess(AccessType::SELECT, dep.database, dep.table);
@@ -1007,6 +1009,20 @@ void checkAccessForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, const Co
                 backQuoteIfNeed(dep.database),
                 backQuoteIfNeed(dep.table));
     }
+}
+
+bool hasTableLevelAccessForColumnsUnknownDependencies(
+    const std::vector<QueryPlanCacheDependency> & dependencies, const ContextPtr & context)
+{
+    auto access = context->getAccess();
+    for (const auto & dep : dependencies)
+    {
+        if (!dep.columns_unknown || isAllowedSystemTable(dep.database, dep.table))
+            continue;
+        if (!access->isGranted(AccessType::SELECT, dep.database, dep.table))
+            return false;
+    }
+    return true;
 }
 
 void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, const ContextPtr & context)

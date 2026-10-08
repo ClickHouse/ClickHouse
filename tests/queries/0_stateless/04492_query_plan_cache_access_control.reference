@@ -7,13 +7,16 @@
 2
 -- hit after revoking SELECT(b) must be denied:
 ACCESS_DENIED
--- 2. scalar subquery: a hit requires table-level SELECT
--- miss (allowed):
+-- 2. scalar subquery: only table-level SELECT lets the plan be cached
+-- first run (allowed):
 1	300
 2	300
--- hit with only column grants must be denied (table-level SELECT required):
+-- second run with only column grants is allowed as well (not cached):
+1	300
+2	300
+-- revoking the column read by the scalar subquery denies the query:
 ACCESS_DENIED
--- after granting table-level SELECT the hit is allowed:
+-- after granting table-level SELECT the query is allowed:
 1	300
 2	300
 -- 3. revoked access evicts the denied entry and releases its quota

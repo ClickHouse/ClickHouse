@@ -1326,7 +1326,12 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         try
         {
             QueryPlan::ExpectedStorageIdentities validated_identities;
-            if (validateQueryPlanCacheEntry(*cached_entry, context, validated_identities))
+            /// A dependency with unknown columns (an expanded view, a scalar-subquery table) can only
+            /// be rechecked at the table level, which is stricter than the precise per-column check
+            /// of a miss. Without table-level SELECT the hit cannot decide, so re-plan instead: the
+            /// normal planning performs the precise check and throws if access is really denied.
+            if (validateQueryPlanCacheEntry(*cached_entry, context, validated_identities)
+                && hasTableLevelAccessForColumnsUnknownDependencies(cached_entry->dependencies, context))
             {
                 /// Revalidate access rights: permissions may have been revoked after the plan
                 /// was cached. Throws ACCESS_DENIED, which propagates to the user without
@@ -1500,6 +1505,16 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
                 "Not caching plan: table {}.{} was replaced or altered while the plan was being built", dep.database, dep.table);
             return nullptr;
         }
+    }
+
+    /// A hit rechecks dependencies with unknown columns at the table level, which is stricter than
+    /// the per-column check of this miss. Do not cache a plan that this session could not hit:
+    /// the normal interpreter performs the precise check instead.
+    if (!hasTableLevelAccessForColumnsUnknownDependencies(*dependencies, context))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: no table-level SELECT on an expanded view or a scalar-subquery table");
+        return nullptr;
     }
 
     QueryPlanCacheEntry entry;

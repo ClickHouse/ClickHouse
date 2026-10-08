@@ -8,7 +8,7 @@
 #   2. A table reached only through a scalar subquery is folded into a constant during analysis and
 #      has no plan leaf, so its exact columns are unknown and a hit must require table-level SELECT
 #      (a column-level "any column" recheck could pass while the baked plan still reads a revoked
-#      column).
+#      column). A session holding only column grants re-plans instead, so a hit is never stricter.
 #   3. A denied hit is evicted. Otherwise its per-user quota charge can prevent a later permitted
 #      query from entering the cache after `SELECT` is revoked.
 # The plan cache is a single, server-wide cache inspected via SYSTEM DROP QUERY PLAN CACHE, and the
@@ -57,16 +57,19 @@ $CLICKHOUSE_CLIENT --query "REVOKE SELECT(b) ON ${CLICKHOUSE_DATABASE}.t_self FR
 echo "-- hit after revoking SELECT(b) must be denied:"
 run_user "$SELF_QUERY" | grep -Fo "ACCESS_DENIED" | uniq
 
-echo "-- 2. scalar subquery: a hit requires table-level SELECT"
-# Only column-level grants: the miss succeeds (analysis checks columns), but a hit re-checks the
-# folded scalar-subquery table at the table level, which column grants do not satisfy.
+echo "-- 2. scalar subquery: only table-level SELECT lets the plan be cached"
+# Only column-level grants: the query succeeds (analysis checks columns), but it is neither stored
+# nor hit, because a hit can only re-check the folded scalar-subquery table at the table level.
 $CLICKHOUSE_CLIENT --query "GRANT SELECT(a, b) ON ${CLICKHOUSE_DATABASE}.t_scalar TO $user"
 SCALAR_QUERY="SELECT a, (SELECT sum(b) FROM ${CLICKHOUSE_DATABASE}.t_scalar) AS s FROM ${CLICKHOUSE_DATABASE}.t_scalar ORDER BY a"
-echo "-- miss (allowed):"
+echo "-- first run (allowed):"
 run_user "$SCALAR_QUERY"
-echo "-- hit with only column grants must be denied (table-level SELECT required):"
+echo "-- second run with only column grants is allowed as well (not cached):"
+run_user "$SCALAR_QUERY"
+echo "-- revoking the column read by the scalar subquery denies the query:"
+$CLICKHOUSE_CLIENT --query "REVOKE SELECT(b) ON ${CLICKHOUSE_DATABASE}.t_scalar FROM $user"
 run_user "$SCALAR_QUERY" | grep -Fo "ACCESS_DENIED" | uniq
-echo "-- after granting table-level SELECT the hit is allowed:"
+echo "-- after granting table-level SELECT the query is allowed:"
 $CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_scalar TO $user"
 run_user "$SCALAR_QUERY"
 

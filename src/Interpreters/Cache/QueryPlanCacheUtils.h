@@ -76,6 +76,15 @@ bool validateQueryPlanCacheEntry(
 /// to the user, it does not fall back to normal planning).
 void checkAccessForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, const ContextPtr & context);
 
+/// True if the session holds table-level SELECT on every dependency whose exact columns are unknown
+/// (an expanded view or a table folded from a scalar subquery). `checkAccessForQueryPlanCacheHit`
+/// requires table-level SELECT for such dependencies, while a miss checks only the precise selected
+/// columns. Without it a user holding only column-level grants would pass the miss and then get
+/// `ACCESS_DENIED` on the hit, so such a session neither stores a plan nor hits a stored one (it
+/// re-plans, and the planner performs the precise check).
+bool hasTableLevelAccessForColumnsUnknownDependencies(
+    const std::vector<QueryPlanCacheDependency> & dependencies, const ContextPtr & context);
+
 /// Records the dependencies of a cached plan in the query context so that
 /// `system.query_log.{query_databases,query_tables,query_columns,views}` stay populated
 /// on cache hits (the planner that normally records them is skipped).
