@@ -248,25 +248,27 @@ FROM (
 -- Both settings that consult the sharding key are pinned on each side rather than left to the test
 -- runner's randomisation: with optimize_distributed_group_by_sharding_key = 0 this shape never
 -- reaches the shortcut, and the assertion would then hold on an unguarded build too.
+-- optimize_injective_functions_in_group_by = 1 rewrites GROUP BY negate(r.k) to GROUP BY r.k, so
+-- this arm pins it to 0 to keep the wrapped key.
 SELECT 'GROUP BY negate(r.k) over an expression-sharded self join (#111274), optimize=1 equals optimize=0';
 SELECT groupArray((nk, c)) = (
         SELECT groupArray((nk, c)) FROM (
             SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
-            GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0, optimize_skip_unused_shards = 1))
+            GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0, optimize_skip_unused_shards = 1, optimize_injective_functions_in_group_by = 0))
 FROM (
     SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
-    GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1, optimize_skip_unused_shards = 1);
+    GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1, optimize_skip_unused_shards = 1, optimize_injective_functions_in_group_by = 0);
 
 -- The same shape through the other setting that consults the sharding key, which is the one the
--- report toggles.
+-- report toggles, with the report's default unwrapped key.
 SELECT 'GROUP BY negate(r.k) over an expression-sharded self join (#111274), skip_unused_shards=1 equals =0';
 SELECT groupArray((nk, c)) = (
         SELECT groupArray((nk, c)) FROM (
             SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
-            GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_skip_unused_shards = 0, optimize_distributed_group_by_sharding_key = 1))
+            GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_skip_unused_shards = 0, optimize_distributed_group_by_sharding_key = 1, optimize_injective_functions_in_group_by = 1))
 FROM (
     SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
-    GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1);
+    GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1, optimize_injective_functions_in_group_by = 1);
 
 DROP TABLE bug_dl;
 DROP TABLE bug_dr;

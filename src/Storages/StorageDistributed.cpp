@@ -519,12 +519,12 @@ bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const Q
     if (const auto * join_node = node->as<JoinNode>())
     {
         const auto kind = join_node->getKind();
-        /// SEMI JOIN keeps only rows that have a match, so it never emits default-padded rows on the
+        /// `SEMI JOIN` keeps only rows that have a match, so it never emits default-padded rows on the
         /// kept side and does not break the shard-local invariant. Every other strictness that keeps
-        /// unmatched rows (including ANTI, which keeps the non-matching rows of the kept side and thus
+        /// unmatched rows (including `ANTI`, which keeps the non-matching rows of the kept side and thus
         /// defaults the other side's columns) is treated as padding per the join kind.
         const bool pads = join_node->getStrictness() != JoinStrictness::Semi;
-        /// RIGHT/FULL join pads the left side; LEFT/FULL join pads the right side.
+        /// A `RIGHT`/`FULL` join pads the left side; a `LEFT`/`FULL` join pads the right side.
         const bool left_padded = padded_by_ancestor || (pads && isRightOrFull(kind));
         const bool right_padded = padded_by_ancestor || (pads && isLeftOrFull(kind));
         return isTableExpressionOnOuterJoinNullSide(join_node->getLeftTableExpressionNode(), target, left_padded)
@@ -535,7 +535,7 @@ bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const Q
         return isTableExpressionOnOuterJoinNullSide(array_join_node->getTableExpressionNode(), target, padded_by_ancestor);
 
     /// A cross/comma join never pads its own operands, but it does not shield them from padding by an
-    /// enclosing outer join: `t CROSS JOIN u RIGHT JOIN v` builds JoinNode(RIGHT){CrossJoinNode[t, u], v},
+    /// enclosing outer join: `t CROSS JOIN u RIGHT JOIN v` builds `JoinNode(RIGHT){CrossJoinNode[t, u], v}`,
     /// so `t` and `u` are on the padded left side.
     if (const auto * cross_join_node = node->as<CrossJoinNode>())
     {
