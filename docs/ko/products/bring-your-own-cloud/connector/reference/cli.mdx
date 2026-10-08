@@ -1,99 +1,99 @@
 ---
 title: 'CLI 참고'
 sidebarTitle: 'CLI'
-description: 'clicklink clctl 명령어 참고: init, preflight, 지원 세션, gateway trust, 감사, 액세스 프로비저닝, 관리형 서비스, 플랫폼 승인'
+description: 'clicklink clctl 명령어 참고: init, preflight, 지원 세션, gateway 신뢰, 감사, 액세스 프로비저닝'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
 
-import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+커넥터는 `clicklink`라는 단일 바이너리로 제공되며, 실행할 명령어는 `clicklink clctl` 아래에 있습니다. 이 페이지에서는 설치 및 일상적인 운영에 사용하는 명령어를 다룹니다. 각 명령어에 `--help`를 지정하면 전체 도움말을 확인할 수 있습니다. `troubleshoot` 및 `preflight` 하위 트리의 플래그는 `CLCTL_*` 환경 변수(각 플래그의 도움말 출력에 이름이 표시됨) 또는 `~/.clicklink/clctl.yaml`로도 지정할 수 있습니다.
 
-<PrivatePreviewBadge />
+<div id="init">
+  ## clicklink clctl init
+</div>
 
-커넥터는 `clicklink`라는 단일 바이너리로 제공되며, 실행할 명령어는 `clicklink clctl` 아래에 있습니다. 이 페이지에서는 설치 및 일상적인 운영에 사용하는 명령어를 다룹니다. 각 명령어에 `--help`를 지정하면 전체 도움말을 확인할 수 있습니다.
+등록 토큰, 저장된 등록 번들 또는 대역 외에서 서명된 인증서를 사용하여 커넥터를 초기 설정합니다. 한 번의 호출로 구성을 준비하고, ClickHouse 액세스를 프로비저닝하며, mTLS 클라이언트 인증서를 가져오고, 배포(Helm 차트 또는 systemd unit)한 후 상태를 확인합니다. 다시 실행해도 안전합니다. 구성과 클러스터 UUID는 유지되며, 자격 증명은 원자적으로 덮어쓰고, `--force`를 전달하지 않는 한 기존 클라이언트 키를 재사용합니다. 전체 흐름은 [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
 
-`troubleshoot`, `scraper`, `preflight`, `executor`, `instances create`, `platform` 하위 트리의 플래그와 전역 `--endpoint` 및 `--cluster`는 `CLCTL_*` 환경 변수(각 플래그의 도움말 출력에 이름이 표시됨) 또는 `~/.clicklink/clctl.yaml`로도 지정할 수 있습니다. 전역 `-v`는 명령어가 수행하는 관리자 API 요청을 기록하며, `-vv`는 요청 본문까지 함께 기록합니다.
+<div id="init-entry-points">
+  ### 진입점
+</div>
 
-`instances` 및 `commands` 명령어와 `executor teardown`은 실행기의 로컬 API를 읽습니다. 두 개의 전역 플래그로 이를 선택합니다: `--endpoint <url>`(기본값 `http://127.0.0.1:9999`, 환경 변수 `CLCTL_ENDPOINT`)와 `--cluster <name>`(환경 변수 `CLCTL_CLUSTER`)이며, 후자는 명령어가 필요로 할 때 관리형 클러스터를 지정합니다. Kubernetes에서는 먼저 실행기 배포에 `kubectl port-forward`를 여십시오. [관리형 서비스](/ko/products/bring-your-own-cloud/connector/managed-services#status)를 참조하세요.
+3개의 진입점 중 정확히 하나를 지정해야 하며, 동시에 사용할 수 없습니다.
 
-## clicklink clctl init {#init}
+| 플래그                    | 설명                                                                                                                                                                                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--enroll <url>`       | 표준 흐름입니다. 조직의 커넥터 endpoint(`https://<subdomain>.<커넥터 domain>`)를 받아 일회용 등록 토큰을 사용합니다. 토큰은 터미널에서는 에코 없이 프롬프트로 입력받고, 그 외 환경에서는 stdin의 첫 번째 줄에서 읽습니다. 생성된 번들을 `handoff.yaml`(mode 0600)에 기록한 뒤 `--handoff handoff.yaml`으로 계속 진행합니다. 토큰은 명령줄, 디스크 또는 logs에 기록되지 않습니다. |
+| `--handoff <path>`     | 저장된 등록 번들을 사용하여 Bootstrap합니다. `handoff.yaml`이 있으면 재실행 및 recovery 시 이 옵션을 사용합니다.                                                                                                                                                                                              |
+| `--signed-cert <path>` | air-gapped 흐름의 단계 2입니다. 별도 경로로 서명된 클라이언트 인증서를 설치하고 단계별 설치를 완료합니다. 필요에 따라 `--chain <path>`를 사용하여 CA 체인도 함께 대체할 수 있습니다.                                                                                                                                                 |
 
-등록 토큰, 저장된 등록 번들 또는 대역 외에서 서명된 인증서를 사용하여 커넥터를 초기 설정합니다. 한 번의 호출로 구성을 준비하고, ClickHouse 액세스를 프로비저닝하며, mTLS 클라이언트 인증서를 가져오고, 배포(Helm 차트 또는 systemd unit)한 후 상태를 확인합니다. `--managed`를 사용하면 감지된 EKS 클러스터에 대해 실행기를 활성화하고 실행기의 클러스터 전체 액세스 권한을 부여합니다. 다시 실행해도 안전합니다. `init`은 구성과 클러스터 UUID를 유지하며, 자격 증명은 원자적으로 덮어쓰고, `--force`를 전달하지 않는 한 기존 클라이언트 키를 재사용합니다. 전체 흐름은 [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding)을, 실행기의 역할은 [managed services](/ko/products/bring-your-own-cloud/connector/managed-services)를 참조하십시오.
+<div id="init-common-flags">
+  ### 공통 플래그
+</div>
 
-### 진입점 {#init-entry-points}
+| 플래그                         | 설명                                                                                                                                                       |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--target <shape>`          | 배포 형태: `systemd`(기본값, 현재 사용 중인 VM 부트스트랩) 또는 `helm`(kubeconfig가 있는 워크스테이션에서 `clicklink-connector` 차트 스테이징)입니다.                                            |
+| `--instance <spec>`         | 쉼표로 구분된 `key=value` 쌍으로 지정하는 ClickHouse 인스턴스(`name`, `host`, `port`, `secure`, `database`, `namespace`, `cluster`)입니다. 반복 지정할 수 있으며, 대화형 인스턴스 입력을 건너뜁니다. |
+| `--operators <emails>`      | 지원 세션을 열 수 있는 운영자 이메일을 쉼표로 구분하여 지정합니다. 세션 게이트웨이를 활성화하고 입력을 건너뜁니다.                                                                                        |
+| `--no-gateway`              | 세션 게이트웨이를 비활성화합니다(OIDC로 관리되는 세션 없음). 입력을 건너뜁니다. VM에서는 호스트의 root 사용자가 로컬 세션 파일을 통해 계속 세션을 관리할 수 있습니다.                                                     |
+| `--force`                   | 기존 구성 또는 오버레이를 덮어쓰고 클라이언트 키를 다시 생성합니다. 또한 아직 만료되지 않은 자체 서명 인증서를 대체하는 데 동의합니다. `--force`를 사용해도 클러스터 UUID는 유지됩니다.                                          |
+| `--skip-provision`          | 스테이징만 수행합니다. 역할별 ClickHouse 액세스 프로비저닝을 건너뛰며(`systemd` 대상에서는 유닛 활성화 및 검증도 건너뜀), `clicklink clctl {scraper,troubleshoot} access provision`을 별도로 실행하십시오.    |
+| `--ch-user-suffix <suffix>` | 프로비저닝된 ClickHouse 사용자 이름에 추가할 선택적 접미사입니다(`pcm_scraper`는 `pcm_scraper_<suffix>`가 됨). 이를 통해 두 번째 커넥터 배포가 첫 번째 배포의 사용자와 충돌하지 않고 인스턴스를 공유할 수 있습니다.           |
+| `--ch-admin-password-stdin` | SQL 프로비저닝에 필요한 경우 stdin에서 ClickHouse 관리자 비밀번호를 읽습니다. 터미널에서 실행하는 경우에는 대신 입력을 요청합니다.                                                                       |
 
-진입점은 정확히 하나만 지정해야 합니다.
-
-| 플래그                    | 설명                                                                                                                                                                                                                                                              |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--enroll <url>`       | 표준 흐름입니다. 커넥터 엔드포인트(`https://<subdomain>.<connector-domain>`)를 받아 일회용 등록 토큰을 사용합니다. 토큰은 터미널에서는 에코 없이 프롬프트로 입력받고, 그 외 환경에서는 stdin의 첫 번째 줄에서 읽습니다. 생성된 번들을 `handoff.yaml`(mode 0600)에 기록한 뒤 `--handoff handoff.yaml`으로 계속 진행합니다. 토큰은 명령줄, 디스크 또는 logs에 기록되지 않습니다. |
-| `--handoff <path>`     | 저장된 등록 번들을 사용하여 Bootstrap합니다. `handoff.yaml`이 있으면 재실행 및 recovery 시 이 옵션을 사용합니다.                                                                                                                                                                                 |
-| `--signed-cert <path>` | air-gapped 흐름의 단계 2입니다. 별도 경로로 서명된 클라이언트 인증서를 설치하고 단계별 설치를 완료합니다. 필요에 따라 `--chain <path>`를 사용하여 CA 체인도 함께 대체할 수 있습니다.                                                                                                                                           |
-
-### 공통 플래그 {#init-common-flags}
-
-| 플래그                         | 설명                                                                                                                                                                                                                                             |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--target <shape>`          | 배포 형태: `systemd`(기본값, 현재 사용 중인 VM을 부트스트랩) 또는 `helm`(kubeconfig가 있는 워크스테이션에서 `clicklink-connector` 차트를 스테이징).                                                                                                                                   |
-| `--instance <spec>`         | 직접 운영하는 ClickHouse 인스턴스로, 쉼표로 구분된 `key=value` 쌍(`name`, `host`, `port`, `secure`, `database`, `namespace`, `cluster`)으로 지정하며 반복 사용할 수 있습니다. 대화형 인스턴스 프롬프트를 건너뜁니다. Kubernetes의 관리형 모드에서는 거부되며, 이 경우 `--no-managed`로 설치한 별도의 배포가 해당 인스턴스를 관찰합니다. |
-| `--env <label>`             | 전송되는 모든 메트릭에 `scraper.labels.env`로 삽입되는 환경 레이블(기본값 `production`). 스테이징 환경에 설치할 때는 `staging`을 전달하십시오.                                                                                                                                           |
-| `--operators <emails>`      | 지원 세션을 열 수 있는 운영자 이메일을 쉼표로 구분하여 지정합니다. 세션 게이트웨이를 활성화하고 프롬프트를 건너뜁니다.                                                                                                                                                                            |
-| `--no-gateway`              | 세션 게이트웨이를 비활성화합니다(OIDC 관리 세션 없음). 프롬프트를 건너뜁니다. VM에서는 호스트의 root가 로컬 세션 파일을 통해 계속 세션을 관리할 수 있습니다.                                                                                                                                                |
-| `--managed`                 | 관리형 모드를 활성화합니다. 실행기를 구동하여 ClickHouse Cloud가 이 클러스터 내 ClickHouse 서비스의 수명 주기를 관리하도록 합니다. 프롬프트를 건너뜁니다. Amazon EKS 클러스터가 필요합니다.                                                                                                                    |
-| `--no-managed`              | 관리형 모드(실행기)를 비활성화된 상태로 둡니다. 프롬프트를 건너뜁니다.                                                                                                                                                                                                       |
-| `--force`                   | 기존 구성 또는 오버레이를 덮어쓰고 클라이언트 키를 다시 생성합니다. 또한 만료되지 않은 자동 서명 인증서를 대체하는 데 동의하는 의미이기도 합니다. 클러스터 UUID는 `--force`를 사용하더라도 그대로 유지됩니다.                                                                                                                    |
-| `--skip-provision`          | 스테이징만 수행합니다. 역할별 ClickHouse 액세스 프로비저닝(및 systemd 대상에서는 유닛 활성화와 검증)을 건너뜁니다. `clicklink clctl {scraper,troubleshoot} access provision`을 별도로 실행하십시오. `--target helm`은 실행기의 권한 부여만은 그대로 적용하지만, VM에서는 이마저도 건너뜁니다.                                    |
-| `--ch-user-suffix <suffix>` | 프로비저닝되는 ClickHouse 사용자 이름에 붙일 선택적 접미사입니다(`pcm_scraper`는 `pcm_scraper_<suffix>`가 됨). 이를 통해 두 번째 커넥터 배포가 첫 번째 배포의 사용자와 충돌하지 않고 인스턴스를 공유할 수 있습니다.                                                                                                 |
-| `--ch-admin-password-stdin` | SQL 프로비저닝에 ClickHouse 관리자 비밀번호가 필요할 때 stdin에서 읽어 들입니다. 터미널에서 실행할 때는 대신 프롬프트가 표시됩니다.                                                                                                                                                            |
-
-### 서명 플래그(1단계에만 해당) {#init-signing-flags}
+<div id="init-signing-flags">
+  ### 서명 플래그(1단계에만 해당)
+</div>
 
 | 플래그                     | 설명                                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------------------ |
 | `--no-auto-sign`        | 1단계에서만 사용: air-gapped 또는 대역 외 서명 흐름을 위해 등록 endpoint를 통한 자동 CSR 서명을 건너뜁니다.                  |
 | `--sign-endpoint <url>` | 등록 서명 endpoint를 재정의합니다(기본값: 번들 endpoint에 `enroll` DNS 레이블을 삽입해 파생됨). HTTPS URL이어야 합니다. |
 
-### Kubernetes 전용 플래그 {#init-kubernetes-flags}
+<div id="init-kubernetes-flags">
+  ### Kubernetes 전용 플래그
+</div>
 
 `--target helm`에서만 유효합니다.
 
-| 플래그                         | 설명                                                                                                                                                                                                          |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--target-namespace <ns>`   | 차트가 설치되고 해당 시크릿이 생성되는 네임스페이스입니다(기본값: `clicklink`, 터미널에서 입력 요청).                                                                                                                                             |
-| `--instance-namespace <ns>` | 대상 ClickHouse 인스턴스의 네임스페이스입니다. 네이티브 Service 감지 및 인스턴스 관련 입력 요청의 초기값을 설정합니다. `--managed`와 함께 사용하면 거부됩니다. 관리형 설치는 기존 인스턴스를 등록하지 않습니다.                                                                         |
-| `--storage-class <name>`    | 문제 해결 도구 및 실행기 상태 볼륨에 사용할 StorageClass입니다(기본값: 클러스터의 기본 StorageClass, 클러스터에 기본 StorageClass가 없으면 입력 요청 또는 필수).                                                                                              |
-| `--values <path>`           | 준비된 values 오버레이의 경로입니다(기본값: `clicklink-values.yaml`).                                                                                                                                                       |
-| `--chart <ref>`             | 배포할 차트입니다. `--chart-repo`에서 해석되는 이름이나, 미러링 설치용 직접 `oci://` 참조, URL 또는 로컬 참조를 지정합니다(기본값: `clicklink-connector`).                                                                                             |
-| `--chart-repo <url>`        | 차트 이름을 해석할 Helm 리포지토리입니다(기본값: `https://releases.clicklink.clickhouse.com/charts`). 직접 지정한 `--chart` 참조에서는 무시됩니다.                                                                                            |
-| `--chart-version <ver>`     | 배포할 차트 버전입니다(기본값: 이 바이너리의 릴리스 버전).                                                                                                                                                                          |
-| `--ch-pod <ref>`            | 파드 내 프로비저닝 단계에 사용할 ClickHouse 파드입니다. 이름 또는 `k=v` 레이블 셀렉터로 지정합니다(기본값: 각 인스턴스의 Service를 지원하는 Running 파드).                                                                                                     |
-| `--api-private-ca`          | 커넥터 엔드포인트가 등록 번들의 CA에서 발급한 인증서를 제공하는 경우 사용합니다. 마운트된 CA 체인을 가리키도록 `api.tls.caFile`을 준비하며, 이 CA 체인은 시스템 루트에 추가됩니다.                                                                                            |
-| `--egress-cidrs <cidrs>`    | 차트의 기본 거부 NetworkPolicy에 사용할 커넥터 엔드포인트의 CIDR 목록을 쉼표로 구분해 지정합니다. 이 값들을 `networkPolicy.allowEgressCIDRs`로 설정한 상태로 정책을 활성화하여 준비합니다(관리형 모드에서 터미널을 사용할 경우 입력 요청). 지정하지 않으면 정책은 비활성 상태로 준비되며, 나중에 직접 활성화할 수 있습니다. |
+| 플래그                         | 설명                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `--target-namespace <ns>`   | 차트가 설치되고 해당 시크릿이 생성되는 네임스페이스입니다(기본값: `clicklink`, 터미널에서 입력 요청).                                                  |
+| `--instance-namespace <ns>` | 대상 ClickHouse 인스턴스의 네임스페이스입니다. 네이티브 Service 감지 및 인스턴스 관련 입력 요청의 초기값을 설정합니다.                                      |
+| `--storage-class <name>`    | 문제 해결 도구 상태 볼륨에 사용할 StorageClass입니다(기본값: 클러스터의 기본 StorageClass, 클러스터에 기본 StorageClass가 없으면 입력 요청 또는 필수).         |
+| `--values <path>`           | 준비된 values 오버레이의 경로입니다(기본값: `clicklink-values.yaml`).                                                            |
+| `--chart <ref>`             | 배포할 차트입니다. `--chart-repo`에서 해석되는 이름이나, 미러링 설치용 직접 `oci://` 참조, URL 또는 로컬 참조를 지정합니다(기본값: `clicklink-connector`).  |
+| `--chart-repo <url>`        | 차트 이름을 해석할 Helm 리포지토리입니다(기본값: `https://releases.clicklink.clickhouse.com/charts`). 직접 지정한 `--chart` 참조에서는 무시됩니다. |
+| `--chart-version <ver>`     | 배포할 차트 버전입니다(기본값: 이 바이너리의 릴리스 버전).                                                                               |
+| `--ch-pod <ref>`            | 파드 내 프로비저닝 단계에 사용할 ClickHouse 파드입니다. 이름 또는 `k=v` 레이블 셀렉터로 지정합니다(기본값: 각 인스턴스의 Service를 지원하는 Running 파드).          |
+| `--api-private-ca`          | API endpoint가 등록 번들의 CA에서 발급한 인증서를 제공하는 경우 사용합니다. 시스템 루트 대신 마운트된 CA 체인을 가리키도록 `api.tls.caFile`을 준비합니다.           |
 
-### VM 전용 플래그 {#init-vm-flags}
+<div id="init-vm-flags">
+  ### VM 전용 플래그
+</div>
 
 `--target systemd`와 함께 사용할 때만 유효합니다.
 
-| 플래그                     | 설명                                                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `--server <url>`        | 액세스 번들이 가리키는 Kubernetes API 서버 URL입니다(기본값: 이 host의 kubeconfig, 없으면 입력하라는 메시지가 표시됨).                        |
-| `--ca-data <base64>`    | `--server`용 Base64 인코딩 `certificate-authority-data`입니다(기본값: 이 host의 kubeconfig, 없으면 입력하라는 메시지가 표시됨).           |
-| `--cluster-name <name>` | 관리형 모드가 제어하는 EKS cluster의 이름입니다(기본값: 이 host의 kubeconfig에 있는 단일 EKS cluster, terminal에서는 입력하라는 메시지가 표시됨). |
-| `--no-instance`         | 비어 있는 instance registry로 시작하며 instance 관련 프롬프트를 건너뜁니다.                                                         |
+| 플래그                  | 설명                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| `--server <url>`     | 액세스 번들이 가리키는 Kubernetes API server URL입니다(기본값: 이 host의 kubeconfig, 없으면 입력하라는 메시지가 표시됨).              |
+| `--ca-data <base64>` | `--server`용 Base64 인코딩 `certificate-authority-data`입니다(기본값: 이 host의 kubeconfig, 없으면 입력하라는 메시지가 표시됨). |
 
-### 플래그 충돌 {#init-flag-conflicts}
+<div id="init-flag-conflicts">
+  ### 플래그 충돌
+</div>
 
 * `--handoff`, `--enroll`, `--signed-cert`는 상호 배타적이며, 정확히 하나를 지정해야 합니다.
-* Kubernetes 전용 플래그는 `--target helm`을 지정한 경우에만 사용할 수 있습니다. `--target helm`에서는 `--server`, `--ca-data`, `--cluster-name`, `--no-instance`가 거부됩니다(Helm 흐름은 워크스테이션의 kubeconfig를 읽고 클러스터 내 instance를 감지합니다).
-* `--no-instance`와 `--instance`는 상호 배타적입니다.
-* `--managed`와 `--no-managed`는 상호 배타적이며, `--cluster-name`은 `--no-managed`와 함께 사용하면 거부됩니다. `--target helm`에서는 `--instance`와 `--instance-namespace`를 `--managed`와 함께 사용하면 거부됩니다.
-* `--no-auto-sign`과 `--sign-endpoint`는 서로 함께 사용할 수 없으며, 둘 다(`--api-private-ca`, `--managed`, `--no-managed`, `--cluster-name` 포함) `--signed-cert`와 함께 사용하면 거부됩니다.
+* Kubernetes 전용 플래그는 `--target helm`을 지정한 경우에만 사용할 수 있습니다. `--target helm`에서는 `--server`와 `--ca-data`가 거부됩니다(Helm 흐름은 워크스테이션의 kubeconfig를 읽습니다).
+* `--no-auto-sign`과 `--sign-endpoint`는 서로 함께 사용할 수 없으며, 둘 다(`--api-private-ca` 포함) `--signed-cert`와 함께 사용하면 거부됩니다.
 * `--operators`와 `--no-gateway`는 서로 함께 사용할 수 없습니다.
 * `--skip-provision`을 지정하면 `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data`, `--ch-admin-password-stdin`이 거부됩니다(프로비저닝이 수행되지 않음).
 
-## clicklink clctl preflight {#preflight}
+<div id="preflight">
+  ## clicklink clctl preflight
+</div>
 
-구성, 파일, 네트워크, clickhouse, systemd, 액세스, 디스크, 민감 정보 마스킹 범주별로 그룹화된 커넥터 검사 모음을 실행합니다. 각 검사는 통과, 경고, 실패 또는 건너뜀 상태를 보고합니다. 종료 코드 0은 모든 검사가 통과했음을 의미하며(경고는 non-blocking), 종료 코드 2는 하나 이상이 실패했음을 의미합니다.
+구성, 파일, 네트워크, clickhouse, systemd, 액세스, 디스크, 민감 정보 마스킹 범주별로 그룹화된 커넥터 검사 모음을 실행합니다. 각 검사는 통과, 경고, 실패 또는 건너뜀 상태를 보고합니다. 종료 코드 0은 모든 검사가 통과했음을 의미하며(경고는 non-blocking), 종료 코드 2는 하나 이상의 검사가 실패했음을 의미합니다.
 
 이 명령은 기본적으로 로컬에서 실행됩니다. `--k8s-namespace`를 지정하면 `kubectl exec`를 통해 커넥터 파드의 바이너리를 실행하고, 보고서는 로컬에서 렌더링합니다(systemd 검사는 파드에서 항상 건너뜁니다). [원격 채널 플래그](#channel-flags)를 사용하면 원격 VM에 설치된 바이너리를 대신 실행합니다.
 
@@ -110,29 +110,35 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 `--k8s-*` 플래그와 원격 채널 플래그는 함께 사용할 수 없습니다. 대상 하나만 선택하십시오.
 
-## clicklink clctl troubleshoot session {#troubleshoot-session}
+<div id="troubleshoot-session">
+  ## clicklink clctl troubleshoot session
+</div>
 
-지원 세션을 활성화, 비활성화하고 상태를 확인합니다. 지원 세션은 Troubleshooter가 명령어를 수락하는 시간 제한 창입니다. 활성화된 세션이 없으면 WebSocket이 연결되어 있더라도 데몬은 모든 명령어를 거부합니다. [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
+지원 세션을 활성화, 비활성화하고 상태를 확인합니다. 지원 세션은 문제 해결 도구가 명령어를 수락하는 시간 제한 창입니다. 활성화된 세션이 없으면 WebSocket이 연결되어 있더라도 데몬은 모든 명령어를 거부합니다. [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
 
-명령어는 다음 두 가지 모드 중 하나로 실행됩니다.
+명령어는 다음 두 가지 모드 중 하나로 작동합니다.
 
-* **로컬 파일**(기본값): Troubleshooter가 실행되는 호스트에서 세션 상태 파일을 읽고 씁니다(기본값: `/var/lib/clicklink/session.json`).
-* **게이트웨이**: `--gateway-url`을 사용하면 워크스테이션에서 OIDC ID 토큰을 획득한 후 Troubleshooter의 세션 게이트웨이를 호출합니다.
+* **로컬 파일**(기본값): 문제 해결 도구가 실행되는 호스트에서 세션 상태 파일을 읽고 씁니다(기본값: `/var/lib/clicklink/session.json`).
+* **게이트웨이**: `--gateway-url`을 사용하면 워크스테이션에서 OIDC ID 토큰을 획득한 후 문제 해결 도구의 세션 게이트웨이를 호출합니다.
 
-### 공통 플래그 {#session-shared-flags}
+<div id="init-common-flags">
+  ### 공통 플래그
+</div>
 
-| 플래그                        | 설명                                                                                                                                                |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--session-file <path>`    | 세션 상태 파일의 경로입니다(기본값: `/var/lib/clicklink/session.json`).                                                                                          |
-| `--config <path>`          | 커넥터 구성 파일입니다. `troubleshooter` 섹션에서 세션 파일 경로를 가져옵니다.                                                                                              |
-| `--gateway-url <url>`      | 세션 게이트웨이의 기준 URL입니다. 설정하면 명령이 OIDC bearer 토큰을 가져와 로컬 상태 파일 대신 게이트웨이를 호출합니다. `--session-file` 및 `--config`와 함께 사용할 수 없습니다.                         |
-| `--gateway-audience <aud>` | OIDC 토큰이 바인딩되는 audience 클레임입니다(기본값: 게이트웨이의 기본값과 일치하는 `clicklink-clctl`). 게이트웨이 audience를 재구성한 경우에만 설정하십시오.                                        |
-| `--gateway-issuer <url>`   | 게이트웨이가 검증하는 OIDC issuer입니다. 비어 있으면 Google 경로를 선택합니다. Google 이외의 IdP(Identity Provider)를 대상으로 device-code 흐름을 실행하려면 `--oidc-client-id`와 함께 설정하십시오. |
-| `--oidc-client-id <id>`    | device grant가 활성화된 `--gateway-issuer`에 등록된 device-code 흐름용 공개 OIDC 클라이언트 ID입니다.                                                                   |
+| 플래그                        | 설명                                                                                                                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--session-file <path>`    | 세션 상태 파일의 경로입니다(기본값: `/var/lib/clicklink/session.json`).                                                                                                   |
+| `--config <path>`          | 커넥터 구성 파일입니다. `troubleshooter` 섹션에서 세션 파일 경로를 가져옵니다.                                                                                                       |
+| `--gateway-url <url>`      | 세션 게이트웨이의 기준 URL입니다. 설정하면 명령이 OIDC bearer 토큰을 가져와 로컬 상태 파일 대신 게이트웨이를 호출합니다. `--session-file` 및 `--config`와 함께 사용할 수 없습니다.                           |
+| `--gateway-audience <aud>` | OIDC 토큰이 바인딩되는 audience 클레임입니다(기본값: 게이트웨이의 기본값과 일치하는 `clicklink-clctl`). 게이트웨이 audience를 재구성한 경우에만 설정하십시오.                                          |
+| `--gateway-issuer <url>`   | 게이트웨이가 검증하는 OIDC issuer입니다. 비어 있으면 Google 경로를 선택합니다. Google 이외의 IdP(Identity Provider)를 대상으로 device-code 흐름을 실행하려면 `--oidc-client-id`와 함께 설정하십시오.        |
+| `--oidc-client-id <id>`    | device grant가 활성화된 `--gateway-issuer`에 등록된 device-code 흐름용 공개 OIDC 클라이언트 ID입니다.                                                                            |
 | `--token-file <path>`      | 미리 발급된 OIDC ID 토큰이 포함된 파일입니다. 이 토큰을 bearer로 사용하며 다른 토큰 provider를 우회합니다.                                                                           |
-| `--gateway-ca <path>`      | 게이트웨이 인증서를 검증하는 CA 번들입니다(BYO 인증서). 설정하지 않으면 명령이 `gateway trust`로 고정한 인증서를 사용합니다. 고정 정보가 없는 self-signed 게이트웨이는 연결을 거부하도록 실패합니다.                    |
+| `--gateway-ca <path>`      | 게이트웨이 인증서를 검증하는 CA 번들입니다(BYO 인증서). 설정하지 않으면 `gateway trust`로 고정한 인증서를 사용합니다. 고정 정보가 없는 self-signed 게이트웨이는 연결을 거부하도록 실패합니다. |
 
-### 세션 활성화 {#session-enable}
+<div id="session-enable">
+  ### 세션 활성화
+</div>
 
 | 플래그                | 설명                                                                                                 |
 | ------------------ | -------------------------------------------------------------------------------------------------- |
@@ -142,11 +148,15 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 이미 활성 상태인 세션이 있으면 활성화할 수 없습니다. 먼저 비활성화하거나 만료될 때까지 기다리십시오.
 
-### session 비활성화 {#session-disable}
+<div id="session-disable">
+  ### session 비활성화
+</div>
 
 session을 즉시 비활성화합니다. 활성 session이 없으면 아무 작업도 수행하지 않습니다.
 
-### 세션 상태 {#session-status}
+<div id="session-status">
+  ### 세션 상태
+</div>
 
 세션의 활성 여부, 활성화한 사용자 및 만료 시점을 표시합니다. `--output`(`-o`)으로 `table`(기본값) 또는 `json`을 선택합니다.
 
@@ -160,17 +170,19 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-## clicklink clctl troubleshoot gateway trust {#gateway-trust}
+<div id="gateway-trust">
+  ## clicklink clctl troubleshoot gateway trust
+</div>
 
 VM에서 세션 게이트웨이는 self-signed TLS 인증서를 제공합니다. 이 명령어는 인증서의 SHA-256 fingerprint를 `~/.clicklink/clctl.yaml`에 기록하여 `session` 명령어가 이를 검증할 수 있도록 합니다. 고정된 fingerprint가 더 이상 일치하지 않으면 연결이 안전하게 실패합니다. 신뢰는 다음 두 가지 방법 중 하나로 대역 외에서 설정됩니다.
 
-* [원격 채널 flags](#channel-flags)를 사용하면 명령어가 이미 인증된 channel을 통해 VM에서 인증서를 읽어 고정합니다.
-* channel을 사용하지 않는 경우, 커넥터가 인증서를 생성할 때 log에 기록한 SHA-256 값을 `--gateway-fingerprint`로 전달합니다. 명령어는 가져온 인증서가 일치하는 경우에만 고정합니다. flag를 생략하면 아무것도 고정하지 않고 제시된 fingerprint를 출력합니다.
+* [remote channel flags](#channel-flags)를 사용하면 이미 인증된 channel을 통해 VM에서 인증서를 직접 읽어 고정합니다.
+* channel을 사용하지 않는 경우, 커넥터가 인증서를 생성할 때 log에 기록한 SHA-256 값을 `--gateway-fingerprint`로 전달합니다. 가져온 인증서는 일치하는 경우에만 고정됩니다. flag를 생략하면 아무것도 고정하지 않고 제시된 fingerprint를 출력합니다.
 
-| Flag                             | 설명                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------------- |
-| `--gateway-url <url>`            | 신뢰할 게이트웨이 기준 URL(필수)입니다. 예: `https://<vm-host>:8443`. 반드시 `https://`여야 합니다.           |
-| `--gateway-fingerprint <sha256>` | 커넥터 log에 기록된 예상 SHA-256 fingerprint이며, 고정 전에 검증합니다. 콜론과 영문 대소문자는 무시됩니다.               |
+| Flag                             | 설명                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `--gateway-url <url>`            | 신뢰할 게이트웨이 기준 URL(필수)입니다. 예: `https://<vm-host>:8443`.                                         |
+| `--gateway-fingerprint <sha256>` | 커넥터 log에 기록된 예상 SHA-256 fingerprint이며, 고정 전에 검증합니다. 콜론과 영문 대소문자는 무시됩니다.                   |
 | `--remote-cert-file <path>`      | channel을 통해 읽는 VM의 게이트웨이 인증서 경로입니다(기본값: `/var/lib/clicklink/gateway/tls/server.crt`). |
 
 ```bash
@@ -181,9 +193,11 @@ clicklink clctl troubleshoot gateway trust \
 
 Kubernetes에서는 pinning을 사용하지 않습니다. CA에서 발급한 인증서를 사용하는 인그레스를 통해 게이트웨이를 노출하거나 포트 포워딩을 사용하십시오.
 
-## clicklink clctl troubleshoot audit tail {#audit-tail}
+<div id="audit-tail">
+  ## clicklink clctl troubleshoot audit tail
+</div>
 
-Troubleshooter 감사 로그의 마지막 항목을 출력합니다. 각 줄에 하나의 JSON 객체가 포함되는 형식이며, 데몬이 허용하거나 차단한 명령마다 항목이 하나씩 기록됩니다. 로그를 읽기 전용으로 엽니다.
+문제 해결사 감사 로그의 마지막 항목을 출력합니다. 각 줄에 하나의 JSON 객체가 포함되는 형식이며, 데몬이 허용하거나 차단한 명령마다 항목이 하나씩 기록됩니다. 이 명령은 로그를 읽기 전용으로 열며 수정하지 않습니다.
 
 | 플래그                 | 설명                                                              |
 | ------------------- | --------------------------------------------------------------- |
@@ -197,7 +211,9 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-## 액세스 프로비저닝 {#access-provision}
+<div id="access-provision">
+  ## 액세스 프로비저닝
+</div>
 
 `clicklink clctl scraper access provision` 및 `clicklink clctl troubleshoot access provision`은 구성 요소별 인스턴스 액세스 번들, 즉 읽기 전용 ClickHouse 사용자와 해당 권한 부여, 그리고 구성 요소가 사용하는 Kubernetes ServiceAccount, RBAC, 토큰을 생성합니다. `--force`를 사용하면 이를 교체합니다. `init`는 설치 과정에서 이를 인라인으로 실행하며, 독립 실행형 명령어는 재실행 및 자격 증명 교체에 사용합니다.
 
@@ -209,11 +225,10 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
 | `--config <path>`                                                    | 인스턴스 정보를 읽을 커넥터 구성 파일입니다.                                                                                                                          |
 | `--target <shape>`                                                   | `systemd`(기본값: 원격 채널을 통해 번들을 VM으로 전송하거나 `--provider local`을 사용해 로컬에서 생성) 또는 `helm`(차트용 Kubernetes 시크릿으로 번들 푸시)입니다.                                 |
 | `--target-namespace <ns>`                                            | 번들 시크릿이 생성될 네임스페이스입니다(`--target helm` 사용 시 필수).                                                                                                    |
-| `--instance-namespace <ns>`                                          | 대상 ClickHouse 인스턴스의 네임스페이스입니다. 이 플래그를 사용하면 `--instance`에 대한 registry 항목이 필요하지 않습니다.                                                                |
+| `--instance-namespace <ns>`                                          | (`--target helm`) 대상 ClickHouse 인스턴스의 네임스페이스입니다.                                                                                                   |
 | `--force`                                                            | 기존 번들을 덮어씁니다. 재실행 및 자격 증명 교체에 사용합니다.                                                                                                               |
 | `--secret-name <name>`                                               | 번들 시크릿 이름을 재정의합니다(기본값 `clicklink-connector-<component>-access-<instance>`).                                                                        |
-| `--output-dir <path>`                                                | (`--target helm` 또는 `--provider local`) 번들이 생성될 루트 디렉터리입니다(기본값: `helm`의 경우 작업 디렉터리의 `./<component>/`, `local`의 경우 구성 요소의 액세스 디렉터리).                |
-| `--audit-log <path>`                                                 | 프로비저닝 audit log입니다. NDJSON 형식으로 추가 기록됩니다(기본값은 번들 출력 디렉터리 옆의 `clctl-audit.log`이며, `none`으로 설정하면 비활성화됩니다).                                           |
+| `--output-dir <path>`                                                | (`--target helm` 또는 `--provider local`) 번들이 생성될 루트 디렉터리입니다.                                                                                        |
 | `--ch-admin-user <name>`                                             | 권한 부여를 적용할 ClickHouse 관리자 사용자입니다(기본값 `default`).                                                                                                   |
 | `--ch-admin-password-stdin`                                          | stdin에서 ClickHouse 관리자 비밀번호를 읽습니다.                                                                                                                 |
 | `--ch-user-suffix <suffix>`                                          | 프로비저닝된 ClickHouse 사용자 이름에 추가할 선택적 접미사입니다.                                                                                                          |
@@ -224,7 +239,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
 | `--skip-restart`                                                     | 프로비저닝 후 구성 요소를 재시작하지 않습니다.                                                                                                                         |
 | `--dry-run`                                                          | 실행 계획을 출력하고 종료합니다. Kubernetes, 원격 시스템 또는 ClickHouse에 쓰기 작업을 수행하지 않습니다.                                                                             |
 
-인스턴스에 대한 구성 요소 하나의 자격 증명을 교체합니다:
+구성 요소 하나의 인스턴스 자격 증명을 교체합니다:
 
 ```bash
 clicklink clctl scraper access provision --target helm \
@@ -235,183 +250,15 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-## clicklink clctl executor access {#executor-access}
+<div id="channel-flags">
+  ## 원격 채널 플래그
+</div>
 
-`init --managed`는 사용자의 자격 증명으로 실행기의 클러스터 전체 권한 부여를 적용합니다. 적용에 실패하면 `init`이 클러스터 관리자 권한을 가진 kubeconfig에서 실행해야 할 명령어를 출력합니다. VM에서는 `access apply`만 실행하면 되며(bundle이 이미 준비되어 있음), Kubernetes에서는 `access grant`를 실행한 뒤 `access apply`를 실행합니다. [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)을 참조하십시오.
+`preflight`, `gateway trust`, `access provision`은 VM 대상에 연결하는 방식을 선택하는 공통 플래그 세트를 지원합니다.
 
-### executor access grant {#executor-access-grant}
-
-실행기의 클러스터 전역 액세스 번들을 `<output-dir>/_cluster/` 아래에 렌더링합니다. ServiceAccount 1개, 클러스터 역할과 ClusterRoleBinding, 그리고 해당 ServiceAccount를 실행기의 네임스페이스 접두사 하위 네임스페이스로 제한하는 ValidatingAdmissionPolicy가 포함됩니다. 적용하기 전에 렌더링된 RBAC를 검토하십시오.
-
-| 플래그                                    | 설명                                                                                  |
-| -------------------------------------- | ----------------------------------------------------------------------------------- |
-| `--cluster`                            | 클러스터 전역 번들을 렌더링합니다(이 용도에서는 필수이며, 지정하지 않으면 `--instance`에 대한 서비스별 번들을 렌더링합니다).        |
-| `--config <path>`                      | 커넥터 설정 파일(환경 변수 `CLCTL_EXECUTOR_CONFIG`).                                           |
-| `--sa-namespace <ns>`                  | 실행기 ServiceAccount의 홈 네임스페이스(기본값 `clicklink-system`, Kubernetes 설치 시에는 커넥터 네임스페이스). |
-| `--context <name>`                     | 관리형 클러스터의 kubeconfig context이며, `prepare`와 동일합니다.                                   |
-| `--server <url>`, `--ca-data <base64>` | kubeconfig에 포함할 Kubernetes API server URL 및 CA(기본값: kube context의 값).               |
-| `--output-dir <path>`                  | 출력 루트(기본값 `/etc/clicklink/access/executor`, 환경 변수 `CLCTL_EXECUTOR_OUTPUT_DIR`).     |
-| `--force`                              | 기존 번들을 덮어씁니다.                                                                       |
-| `--dry-run`                            | 파일을 쓰지 않고 계획만 출력합니다.                                                                |
-
-### executor access apply {#executor-access-apply}
-
-렌더링된 클러스터 전역 `grant` bundle을 적용합니다. 여기에는 ServiceAccount의 홈 네임스페이스, ServiceAccount, 클러스터 역할 및 ClusterRoleBinding, admission 정책이 포함되며, 이어서 ServiceAccount 토큰을 발급해 bundle에 포함시킵니다. 서비스는 등록하지 않습니다.
-
-| 플래그                      | 설명                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| `--cluster`              | `<output-dir>/_cluster/`의 클러스터 전역 bundle을 적용합니다(이 용도에서는 필수).                        |
-| `--config <path>`        | 커넥터 설정 파일(환경 변수 `CLCTL_EXECUTOR_CONFIG`).                                       |
-| `--context <name>`       | `prepare`와 동일하게, 관리 대상 클러스터의 kubeconfig context.                                |
-| `--output-dir <path>`    | 출력 루트(기본값 `/etc/clicklink/access/executor`; 환경 변수 `CLCTL_EXECUTOR_OUTPUT_DIR`). |
-| `--token-duration <dur>` | ServiceAccount 토큰 유효 기간(기본값 `2160h`, 90일).                                      |
-| `--dry-run`              | 실제로 실행하지 않고 적용될 내용만 출력합니다.                                                      |
-
-```bash
-clicklink clctl executor access grant --cluster --sa-namespace <connector-namespace> --server <kubernetes-api-server-url> --output-dir <dir>
-clicklink clctl executor access apply --cluster --output-dir <dir>
-```
-
-## clicklink clctl executor prepare {#executor-prepare}
-
-managed 서비스 생성에 필요한 사용자 측의 모든 준비 작업을, 첫 번째 실패 지점에서 중단되는 멱등한 단일 실행으로 수행합니다. 서비스 이름을 선택하거나 검사하고, 데이터 및 백업 버킷과 IAM role을 생성합니다(또는 직접 제공한 role을 검증). VM에서는 서비스 네임스페이스에 대한 실행기의 액세스 bundle도 렌더링하고 적용합니다. Kubernetes에서는 실행기가 자신의 파드 ServiceAccount로 실행되기 때문에 bundle 단계를 건너뜁니다. 그런 다음 `default` USER의 password를 발급하고(한 번만 표시됨) [`instances create`](#instances-create)에 사용할 생성 본문을 기록합니다. [managed services](/ko/products/bring-your-own-cloud/connector/managed-services#create-a-service)를 참조하십시오.
-
-VM에서는 커넥터 호스트에서 실행됩니다. Kubernetes 설치 환경이라면 AWS 자격 증명와 managed 클러스터용 kube context를 갖춘 workstation에서 실행됩니다. 해당 workstation에는 커넥터 구성 사본(`--config`), 실행기의 로컬 API로 연결되는 포트 포워딩, 그리고 쓰기 가능한 `--output-dir`도 필요합니다.
-
-| 플래그                                              | 설명                                                                                                                                                            |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config <path>`                                | 커넥터 설정 파일(필수, 환경 변수 `CLCTL_EXECUTOR_CONFIG`). 액세스 bundle은 이 파일을 기반으로 렌더링되며, kube context는 파일의 `executor.cluster`와 일치해야 합니다.                                       |
-| `--instance <name>`                              | 서비스 이름(환경 변수 `CLCTL_EXECUTOR_INSTANCE`). 기본값: 자동 생성된 이름이며, `<output-dir>/_prepare/<eks-cluster-name>.name`에 기록되어 다음 실행에서 이어서 사용됩니다.                       |
-| `--new-name`                                     | 이전 실행에서 기록된 이름을 무시하고 새 이름을 선택합니다.                                                                                                                             |
-| `--context <name>`                               | managed 클러스터의 kubeconfig context: 이름 또는 패턴(일치 항목이 하나면 해당 항목을 사용하고, 여러 개면 프롬프트가 표시됨), 환경 변수 `CLCTL_CONTEXT`. 기본값: context가 하나뿐이면 그것을 사용하고, 그렇지 않으면 선택기가 표시됩니다. |
-| `--server <url>`, `--ca-data <base64>`           | 실행기 kubeconfig에 포함할 Kubernetes API server URL 및 CA(기본값: kube context의 값).                                                                                     |
-| `--data-bucket <name>`, `--backup-bucket <name>` | 검증하거나 생성할 버킷(기본값 `<cluster>-clickhouse-data-<rand>` 및 `<cluster>-clickhouse-backup-<rand>`).                                                                  |
-| `--role-name <name>`                             | IAM role 이름(기본값 `CH-S3-<instance>-<region>-00-Role`).                                                                                                         |
-| `--role-arn <arn>`                               | 직접 보유한 IAM role 사용: 신뢰 관계와 S3 권한 부여를 검증하며, IAM을 생성하거나 수정하지 않습니다.                                                                                              |
-| `--restore-from <name>`                          | 이 서비스가 백업을 복원해 올 대상 서비스이며, IAM role에는 해당 서비스의 백업 버킷에 대한 읽기 액세스도 부여됩니다.                                                                            |
-| `--region <region>`                              | AWS 리전(기본값: kube context가 가리키는 클러스터의 리전).                                                                                                                     |
-| `--token-duration <dur>`                         | ServiceAccount 토큰 유효 기간(기본값 `2160h`, 90일).                                                                                                                    |
-| `--force`                                        | 기존 액세스 bundle을 재사용하지 않고 전체를 다시 생성합니다.                                                                                                                             |
-| `--output-dir <path>`                            | 출력 루트(기본값 `/etc/clicklink/access/executor`, 환경 변수 `CLCTL_EXECUTOR_OUTPUT_DIR`).                                                                               |
-| `--output <fmt>`                                 | `text`(기본값) 또는 `json`. 어느 쪽에도 password는 포함되지 않습니다.                                                                                                            |
-| `--dry-run`                                      | 모든 단계를 dry-run 모드로 실행합니다. 아무것도 생성되거나 기록되지 않습니다.                                                                                                               |
-
-## clicklink clctl executor teardown {#executor-teardown}
-
-ClickHouse Cloud에서 삭제한 서비스에 대해 `prepare`가 생성한 항목을 제거합니다. 여기에는 IAM role, 기록된 이름, 해당 서비스에 대한 실행기의 레코드가 포함되며, VM에서는 서비스의 클러스터 역할과 ClusterRoleBinding, 로컬 액세스 bundle, registry entry도 함께 제거됩니다. 실행기가 실행 중이어야 하고 서비스는 `terminated`(또는 `stale`) 상태여야 하며, 서비스 네임스페이스에 ClickHouse 클러스터가 아직 남아 있으면 실행이 거부됩니다. `prepare`가 생성한 버킷과 그 안의 데이터 및 백업은 삭제를 명시적으로 요청하지 않는 한 유지되며, 유지된 버킷에는 `clicklink:retained-from=<name>` 태그가 다시 지정됩니다. 이 명령은 어떤 것을 삭제하기 전에 모든 항목을 먼저 읽습니다. [서비스 삭제](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오.
-
-| 플래그                                              | 설명                                                                                                                            |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `--instance <name>`                              | 서비스 이름(환경 변수 `CLCTL_EXECUTOR_INSTANCE`).                                                                                      |
-| `--config <path>`                                | 커넥터 설정 파일(환경 변수 `CLCTL_EXECUTOR_CONFIG`). 생략하면 커넥터 호스트의 `/etc/clicklink/config.yaml`에서 읽습니다. `delete_instance_data` 값을 제공합니다. |
-| `--context <name>`                               | `prepare`와 마찬가지로 관리형 클러스터의 kubeconfig context.                                                                                |
-| `--delete-data`                                  | `delete_instance_data`가 꺼져 있어도 서비스의 데이터를 삭제합니다. `--yes`가 필요합니다.                                                               |
-| `--delete-backups`                               | 백업 버킷과 그 안의 백업을 삭제합니다(기본값은 유지). `--yes`가 필요합니다.                                                                               |
-| `--yes`                                          | `--delete-data`와 `--delete-backups`를 확인합니다. 이 플래그가 없으면 레코드 단계 이후 실행이 중단되고, 비우게 될 버킷의 이름만 표시합니다.                               |
-| `--data-bucket <name>`, `--backup-bucket <name>` | 실행기 레코드에 기록된 버킷을 재정의합니다(기본값: 서비스의 role에 바인딩되었거나 해당 서비스용으로 태그된 버킷).                                                       |
-| `--role-name <name>`                             | IAM role 이름(기본값 `CH-S3-<instance>-<region>-00-Role`).                                                                         |
-| `--region <region>`                              | AWS 리전(기본값: 클러스터의 리전).                                                                                                        |
-| `--namespace-prefix <prefix>`                    | 서비스 네임스페이스 접두사(기본값 `ns-`). 로드된 구성과 일치해야 합니다.                                                                                  |
-| `--output-dir <path>`                            | 출력 루트(기본값 `/etc/clicklink/access/executor`).                                                                                  |
-| `--output <fmt>`                                 | `text`(기본값) 또는 `json`.                                                                                                        |
-| `--dry-run`                                      | 제거될 항목을 출력하고 아무것도 삭제하지 않은 채 종료합니다.                                                                                            |
-
-## clicklink clctl instances {#instances}
-
-### instances create {#instances-create}
-
-준비된 create를 커넥터 자체의 자격 증명을 사용해 엔드포인트를 통해 ClickHouse Cloud로 제출합니다. 생성 기능은 환경별로 활성화됩니다. [서비스 생성](/ko/products/bring-your-own-cloud/connector/managed-services#create-a-service)을 참조하십시오. ClickHouse Cloud가 할당한 표시 이름, state, 그리고 서비스 name을 사용하는 `watch:` 힌트를 출력합니다. create body는 `prepare`가 작성한 파일에서 가져오거나, `--deployed-name`, `--data-bucket`, `--backup-bucket`, `--irsa-role-arn` 네 가지 flag를 함께 지정해 구성합니다. 동일한 입력으로 다시 시도하면 최초의 create가 반환됩니다.
-
-| 플래그                                                                                                 | 설명                                                                                                                                                                                            |
-| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--from-prepare <path>`                                                                             | `executor prepare`가 작성한 create body(`<output-dir>/_prepare/<instance>.create.json`)이며, `default` USER 비밀번호의 해시가 포함되어 있습니다. `--deployed-name` 및 `--default-user-password-file`과 함께 사용할 수 없습니다. |
-| `--deployed-name <name>`, `--data-bucket <name>`, `--backup-bucket <name>`, `--irsa-role-arn <arn>` | 준비된 입력값을 flag 형태로 지정합니다. 반드시 함께 지정해야 합니다.                                                                                                                                                     |
-| `--default-user-password-file <path>`                                                               | flag 방식으로 지정할 때 사용하는, `default` USER의 비밀번호를 담은 파일(첫 번째 줄)입니다. 지정하지 않으면 명령어가 비밀번호를 생성해 한 번만 표시하며, 이후 다시 시도할 때는 이 파일을 통해 해당 비밀번호를 전달해야 합니다. 그렇지 않으면 서비스는 최초 비밀번호를 유지한 채 새로운 비밀번호가 표시됩니다.        |
-| `--config <path>`                                                                                   | 커넥터 설정 파일입니다(환경 변수 `CLCTL_EXECUTOR_CONFIG`, 파일이 존재하는 경우 기본값 `/etc/clicklink/config.yaml`). 엔드포인트, 해당 자격 증명, 환경 아이덴티티를 제공합니다.                                                                  |
-| `--connector-namespace <ns>`                                                                        | Kubernetes 전용으로, 이 호스트에 커넥터 구성 또는 자격 증명 파일이 없는 경우 이를 제공하는 ConfigMap과 시크릿이 위치한 커넥터 네임스페이스입니다(기본값 `clicklink`). 모든 클러스터 읽기 작업은 안내 메시지로 표시됩니다.                                                   |
-| `--connector-configmap <name>`                                                                      | 해당 네임스페이스에서 실행기의 `config.yaml`을 담고 있는 ConfigMap입니다(기본값 `clicklink-connector-executor`).                                                                                                       |
-| `--hmac-secret-name <name>`, `--mtls-secret-name <name>`                                            | 파일이 없는 경우 API 자격 증명과 클라이언트 인증서를 담고 있는 시크릿입니다(기본값 `clicklink-hmac` 및 `clicklink-mtls`). 인증서 쌍은 메모리에 보관됩니다.                                                                                     |
-| `--context <name>`                                                                                  | 해당 읽기 작업에 사용할 Kube Context입니다(환경 변수 `CLCTL_CONTEXT`). `executor` 명령어와 마찬가지로 패턴 또는 대화형 선택기를 사용할 수 있습니다.                                                                                        |
-| `--idempotency-key <key>`                                                                           | 다시 시도할 때 최초의 create를 반환받기 위해 재사용하는 key입니다(기본값: 환경과 서비스 name에서 파생).                                                                                                                            |
-| `--wait`                                                                                            | 서비스가 `running` 상태가 될 때까지 실행기의 로컬 API를 폴링합니다. 해당 이름에 대한 create가 실패한 경우, 또는 서비스가 `terminating`, `terminated`, `stale` 상태로 전환되면 즉시 실패 처리합니다.                                                     |
-| `--wait-timeout <dur>`                                                                              | `--wait`가 실패로 처리되기 전까지 폴링하는 시간입니다(기본값 `30m`).                                                                                                                                                 |
-
-### instances list {#instances-list}
-
-실행기가 알고 있는 모든 서비스를 JSON 형식으로 출력합니다. `--cluster <name>`을 지정하면 관리형 클러스터 기준으로 필터링합니다.
-
-### instances get {#instances-get}
-
-서비스 하나를 생성 당시 지정된 저장소 정보와 함께 JSON으로 출력합니다. `--name <name>`은 필수이며 클러스터 지정도 필수입니다. `--cluster`를 전달하거나, `CLCTL_CLUSTER`를 설정하거나, `~/.clicklink/clctl.yaml`에 지정하십시오.
-
-아래 세 가지 하위 명령어는 ClickHouse Cloud를 거치지 않고 실행기의 로컬 API로 명령어를 직접 전송합니다. 계정 담당 팀의 요청이 있을 때만 실행하십시오. 각 명령어에는 `--name <name>`과 클러스터 지정(`--cluster`, `CLCTL_CLUSTER`, 또는 `~/.clicklink/clctl.yaml`)이 필요하며, 실행하면 해당 명령어가 JSON으로 출력됩니다. 출력된 `id`를 [`commands get`](#commands-get)에 전달하면 진행 상황을 추적할 수 있습니다. 실패한 명령어의 경우 `result`에 오류 내용이 담깁니다.
-
-### instances scale {#instances-scale}
-
-`ScalingOverride`를 사용해 특정 서비스의 서버 레플리카 수를 설정합니다. `--server-replicas <n>`는 필수이며 0보다 커야 합니다. 실행기는 재정의를 적용하는 동안 해당 명령을 running으로 보고하고, 레플리카가 준비되면 completed로 보고합니다.
-
-### instances patch {#instances-patch}
-
-서비스 하나를 그 자리에서 변경합니다. 사용할 수 있는 패치는 `--create-nlb` 하나뿐이며, 이 옵션 없이 실행하면 명령이 `nothing to patch`를 반환하며 실행을 거부합니다. 이 옵션은 내부 NLB를 Kubernetes `Service`로 프로비저닝하여 클러스터 외부의 스크레이퍼가 서버에 접근할 수 있도록 하며, AWS에서만 지원됩니다. 실행기는 다음 동기화 시점에 로드 밸런서로부터 스크레이퍼의 호스트를 백필합니다.
-
-### instances delete {#instances-delete}
-
-클러스터에서 서비스 하나를 제거합니다. 서비스를 중지한 뒤 오퍼레이터가 순서대로 종료(shutdown)를 완료할 때까지 대기합니다. 이후 워크로드를 제거하고, `ns-<name>` 네임스페이스와 scraper가 생성한 아티팩트를 삭제한 다음, 네임스페이스가 완전히 사라질 때까지 기다렸다가 서비스를 `terminated`로 표시합니다. 서비스의 버킷과 IAM role은 그대로 남으며, [`executor teardown`](#executor-teardown)이 사용자의 자격 증명으로 이를 제거합니다. 이미 완료된 삭제를 다시 실행해도 아무 작업도 수행되지 않습니다. 일반적으로는 ClickHouse Cloud에서 서비스를 삭제하며, 자세한 내용은 [서비스 삭제](/ko/products/bring-your-own-cloud/connector/managed-services#delete-a-service)를 참조하십시오.
-
-## clicklink clctl 명령어 {#commands}
-
-### commands list {#commands-list}
-
-실행기가 기록한 명령어를 JSON 형식으로, 최신 항목부터 출력합니다. 실패한 명령어의 `result`에는 해당 오류가 담기며, 승인 대기 중인 플랫폼 동기화라면 실행해야 할 정확한 `platform approve` 명령어가 여기에 표시됩니다.
-
-| 플래그                 | 설명                                                    |
-| ------------------- | ----------------------------------------------------- |
-| `--status <status>` | 필터: `pending`, `running`, `completed`, `failed`.      |
-| `--action <action>` | 액션으로 필터링합니다. 예: `create_instance` 또는 `sync_platform`. |
-| `--cluster <name>`  | 관리형 클러스터로 필터링합니다.                                     |
-
-### commands get {#commands-get}
-
-`clicklink clctl commands get <id>`는 명령어 하나를 해당 stage 및 결과와 함께 출력합니다.
-
-## clicklink clctl platform approve {#platform-approve}
-
-사용자 본인의 클러스터 자격 증명으로 플랫폼 변경 하나를 승인합니다. 실행기가 스테이징한 bundle을 읽어 해시를 계산한 후, 그 안의 모든 차트를 실행기와 완전히 동일한 방식으로 렌더링합니다. 선택한 kube context로 권한 부분을 적용하고, 필요한 경우 실행기의 `pcm-platform` 아이덴티티를 생성한 뒤 해당 토큰을 발급합니다. 커넥터 엔드포인트로는 어떠한 요청도 보내지 않습니다. 권한 부분은 네임스페이스, CustomResourceDefinitions, ServiceAccounts, 클러스터 역할 및 바인딩, 역할 및 바인딩, 웹훅 및 admission 구성, PriorityClasses, StorageClass입니다. 실행기는 그다음 워크로드 부분만, 그것도 해당 토큰이 유효한 동안에만 적용합니다. [플랫폼 업데이트](/ko/products/bring-your-own-cloud/connector/platform-updates)를 참조하십시오.
-
-ClickHouse의 레지스트리에 직접 액세스하려면 커넥터 EC2 VM에서 승인을 실행하십시오. CLI는 kubeconfig 자격 증명과 무관하게 해당 인스턴스 프로필을 사용하여 읽기 전용 풀 역할을 수임합니다. 다른 ECR 차트 레지스트리는 주변 환경의 AWS 자격 증명을 사용합니다. [레지스트리 자격 증명](/ko/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)을 참조하십시오.
-
-| 플래그                       | 설명                                                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `--config <path>`         | 커넥터 설정 파일(환경 변수 `CLCTL_EXECUTOR_CONFIG`). 네임스페이스 접두사를 제공하며, 워크스테이션에서는 커넥터 구성의 사본입니다.                                                 |
-| `--context <name>`        | cluster-admin 권한을 가진 관리형 클러스터의 Kubeconfig context로, 이름 또는 패턴으로 지정합니다(환경 변수 `CLCTL_CONTEXT`). 기본값: 유일한 context, 없으면 선택기.              |
-| `--ttl <dur>`             | 플랫폼 토큰 유효 기간(기본값 `2h`). 실행기는 이를 갱신하지 않습니다.                                                                                           |
-| `--output-dir <path>`     | 액세스 루트: 스테이징된 bundle을 여기에서 읽고, 토큰은 이 아래 `_platform`에 기록됩니다(기본값 `/etc/clicklink/access/executor`, 환경 변수 `CLCTL_EXECUTOR_OUTPUT_DIR`). |
-| `--secret-namespace <ns>` | Kubernetes 설치: 실행기의 로컬 API에서 스테이징된 bundle을 읽고, 토큰 bundle을 `<output-dir>/_platform` 대신 이 네임스페이스(커넥터 네임스페이스)에 시크릿으로 전달합니다.             |
-| `--secret-name <name>`    | `--secret-namespace`에 사용할 시크릿 이름(기본값 `clicklink-platform-bundle`). 차트의 `executor.platformBundleSecret`와 일치해야 합니다.                    |
-| `--endpoint <url>`        | Kubernetes 설치: `kubectl port-forward`를 통해 접근하는 실행기의 로컬 API(기본값 `http://127.0.0.1:9999`, 환경 변수 `CLCTL_ENDPOINT`).                     |
-| `--bundle <path>`         | 재정의: 별도 경로로 전달받은 렌더링된 플랫폼 매니페스트로, 스테이징된 bundle 대신 읽습니다. 일반적으로 생략합니다.                                                                 |
-| `--dry-run`               | 적용이나 발급 없이 권한 부분을 렌더링하여 나열합니다.                                                                                                       |
-
-## clicklink clctl platform reset {#platform-reset}
-
-service가 없는 테스트 클러스터용: 플랫폼 release를 의존성 역순으로 제거하고 실행기의 플랫폼 토큰 bundle을 삭제하여 최초 설치를 다시 수행해볼 수 있도록 합니다. 변경을 시작하기 전에 이 커넥터가 소유한 네임스페이스의 ClickHouse 클러스터 목록을 조회하고, 하나라도 존재하면 작업을 거부합니다. CustomResourceDefinition, RBAC, StorageClass는 그대로 유지됩니다. 다음 플랫폼 동기화 전에 `platform approve`를 다시 실행하십시오.
-
-| 플래그                                              | 설명                                                                                         |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `--bundle <path>`                                 | 렌더링된 플랫폼 매니페스트의 경로(필수, 빈 클러스터 check 이후에 읽음).                                               |
-| `--config <path>`                                 | 커넥터 설정 파일(환경 변수 `CLCTL_EXECUTOR_CONFIG`).                                                  |
-| `--context <name>`                                | cluster-admin 권한을 가진 관리형 클러스터의 kubeconfig Context.                                         |
-| `--output-dir <path>`                             | `_platform` bundle을 제거할 액세스 루트(기본값 `/etc/clicklink/access/executor`).                      |
-| `--secret-namespace <ns>`, `--secret-name <name>` | Kubernetes 설치 환경: 대신 커넥터 네임스페이스의 플랫폼 bundle 시크릿을 제거합니다(기본 이름 `clicklink-platform-bundle`). |
-| `--dry-run`                                       | service 존재 여부를 확인하고, 클러스터를 변경하지 않고 reset 계획만 출력합니다.                                        |
-
-## 원격 채널 플래그 {#channel-flags}
-
-`preflight`, `gateway trust`, `access provision`은 VM 대상에 연결하는 방식을 선택하는 공통 플래그 세트를 공유합니다.
-
-| 플래그                                                                                         | 설명                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--provider <name>`                                                                         | 실행 채널입니다. 원격 VM에는 `ssh`, `aws`(SSM), `gcp`(IAP)를 사용하며, 대상 VM에서 직접 실행하는 경우에는 `local`을 사용합니다. 설정하지 않으면 공급자별 플래그를 기반으로 추론되며, 아무것도 설정하지 않으면 기본값은 `aws`입니다. `local`은 자동으로 추론되지 않으므로 VM에서 직접 실행할 때는 항상 `--provider local`을 전달해야 합니다. |
-| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH 연결 정보(`--provider ssh`)입니다. 사용자, 포트, 키의 기본값은 SSH 구성에서 가져옵니다.                                                                                                                                                               |
-| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | SSM용 EC2 인스턴스, 리전(기본값 `us-east-1`), 공유 구성 프로필입니다(`--provider aws`).                                                                                                                                                            |
-| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | IAP 터널링용 프로젝트, 영역, 인스턴스입니다(`--provider gcp`).                                                                                                                                                                                  |
+| 플래그                                                                                         | 설명                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--provider <name>`                                                                         | 실행 채널입니다. 원격 VM에는 `ssh`, `aws`(SSM), `gcp`(IAP)를 사용하며, 대상 VM에서 직접 실행하는 경우에는 `local`을 사용합니다. 명시적으로 설정하지 않으면 공급자별 플래그를 기반으로 추론되지만, `local`은 자동으로 추론되지 않습니다. |
+| `--ssh-host <host>`, `--ssh-user <user>`, `--ssh-port <port>`, `--ssh-identity-file <path>` | SSH 연결 정보(`--provider ssh`)입니다. 사용자, 포트, 키의 기본값은 SSH 구성에서 가져옵니다.                                                                                          |
+| `--instance-id <id>`, `--region <region>`, `--profile <name>`                               | SSM용 EC2 인스턴스, 리전, 공유 구성 프로필입니다(`--provider aws`).                                                                                                        |
+| `--project <id>`, `--zone <zone>`, `--instance-name <name>`                                 | IAP 터널링용 프로젝트, 영역, 인스턴스입니다(`--provider gcp`).                                                                                                             |

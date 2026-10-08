@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
@@ -26,6 +27,10 @@ struct IsStorageTouched
 };
 
 ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
+
+/// Returns whether the analyzer should be used for mutations.
+/// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
+bool shouldUseAnalyzerForMutations(const ContextPtr & context);
 
 /// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
 size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
@@ -55,14 +60,6 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 /// explicit its text was, and every consumer that feeds it to the analyzer (`buildQueryTree`) must call this
 /// first; otherwise the analyzer rejects the set operation with "UNION mode UNION_DEFAULT must be normalized".
 void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
-
-/// Reject mutation expressions whose `IN` operand is a `Set` with an applicable row policy.
-/// This must run with the submitting context before the mutation is handed to a background context.
-void checkNoRowPolicyForSetOperands(
-    const ASTPtr & mutation_ast,
-    const String & default_database,
-    const ContextPtr & context,
-    bool throw_if_unresolved = false);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -125,8 +122,8 @@ public:
 
     /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
     /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
-    /// without constructing a full `MutationsInterpreter`, which requires the predicate to be
-    /// analyzable.
+    /// without constructing a full `MutationsInterpreter` (which would require the predicate
+    /// to be analyzable — see `validate_mutation_query`).
     static void validateNonDeterministicMutationsForStorage(
         const StoragePtr & storage,
         const MutationCommands & commands,
@@ -241,6 +238,7 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
+    bool use_analyzer = false;
 
     LoggerPtr logger;
 
@@ -256,7 +254,7 @@ private:
     /// Each stage has output_columns that contain columns that are changed at the end of that stage
     /// plus columns needed for the next mutations.
     ///
-    /// First stage is special: it can contain only filters and is executed as a plain read
+    /// First stage is special: it can contain only filters and is executed using InterpreterSelectQuery
     /// to take advantage of table indexes (if there are any). It's necessary because all mutations have
     /// `WHERE clause` part.
 
@@ -274,12 +272,19 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
+        /// --- Old analyzer path (populated when analyzer is not enabled) ---
+        std::unique_ptr<ExpressionAnalyzer> analyzer;
+
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
+        ExpressionActionsChain expressions_chain;
+
+        /// --- Analyzer path (populated when analyzer is enabled) ---
         std::unique_ptr<ActionsChain> new_actions_chain;
         PreparedSetsPtr new_prepared_sets;
 
+        /// --- Common ---
         Names filter_column_names;
 
         bool affects_all_columns = false;
