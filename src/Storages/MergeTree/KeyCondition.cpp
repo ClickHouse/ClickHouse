@@ -2844,7 +2844,7 @@ static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & ty
                 /// matches both zeros too. Checking the parsed value is not enough: `'1e-50'` is not a zero as a
                 /// `Float64`, but it is as a `Float32` or a `BFloat16`. So any string that parses as a number is
                 /// treated as a possible zero. A string that does not parse as a number cannot equal a float zero.
-                Float64 value;
+                Float64 value = 0;
                 return tryParse(value, field.safeGet<String>());
             }
             case Field::Types::UUID:
