@@ -1007,7 +1007,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         pending_replace = PlainRewritableLayout::PendingReplace{
             .directory_remote_path = directory_info_to.remote_path,
             .file_name = pathToGenericString(normalized_path_to.filename()),
-            .size = fs_tree->getFileRemoteInfo(path_to).value().bytes_size,
+            .size = fs_tree->getFileRemoteInfo(pathToGenericString(path_to)).value().bytes_size,
         };
         writePendingReplaceTombstoneMarker(*object_storage, *layout, tmp_name_to, *pending_replace);
         object_storage->copyObject(
