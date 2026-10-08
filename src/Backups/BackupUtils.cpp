@@ -8,8 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
@@ -21,11 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsString storage_policy;
 }
 }
 
@@ -219,22 +213,17 @@ bool isCreatedOnBackupMetadataOnlyStoragePolicy(const ASTCreateQuery & create_qu
 {
     auto is_on_backup_metadata_only_policy = [&](const ASTStorage * storage)
     {
-        /// Only the `MergeTree` family keeps its data on a storage policy.
-        if (!storage || !storage->engine || !storage->engine->name.ends_with("MergeTree"))
+        if (!storage || !storage->engine)
             return false;
 
-        const SettingsChanges * settings = storage->settings ? &storage->settings->changes : nullptr;
-        String policy_name;
-        if (const auto * explicit_policy = settings ? settings->tryGet("storage_policy") : nullptr)
-            policy_name = explicit_policy->safeGet<String>();
-        else if (settings && settings->tryGet("disk"))
-            return false; /// The policy of a single disk is created for the table and is never marked.
-        else if (storage->engine->name.starts_with("Replicated"))
-            policy_name = context->getReplicatedMergeTreeSettings()[MergeTreeSetting::storage_policy];
-        else
-            policy_name = context->getMergeTreeSettings()[MergeTreeSetting::storage_policy];
+        /// An unknown engine is reported by `CREATE`.
+        const auto & storages = StorageFactory::instance().getAllStorages();
+        auto it = storages.find(storage->engine->name);
+        if (it == storages.end() || !it->second.features.get_storage_policy_fn)
+            return false;
 
-        return context->getStoragePolicy(policy_name)->isBackupMetadataOnly();
+        auto policy = it->second.features.get_storage_policy_fn(*storage, context);
+        return policy && policy->isBackupMetadataOnly();
     };
 
     if (is_on_backup_metadata_only_policy(create_query.storage))
