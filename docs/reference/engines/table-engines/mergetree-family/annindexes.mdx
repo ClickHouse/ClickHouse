@@ -905,6 +905,7 @@ Until then, inserts into the table fail.
 
 Training runs as the user who created the table, with this user's roles, settings, and grants (it requires `SELECT` on the sample table).
 It shows up in [system.query_log](/reference/system-tables/query_log) as an internal `INSERT` into the centroids table.
+The sample table is read when training starts, so do not drop or rename it until training completes; otherwise, training fails and the table must be recreated.
 
 #### Inserting data {#ivf-inserting}
 

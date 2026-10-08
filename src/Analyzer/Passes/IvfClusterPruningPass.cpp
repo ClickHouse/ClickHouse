@@ -43,23 +43,40 @@ namespace ErrorCodes
 namespace
 {
 
-/// True if node's subtree references a column whose source is table_node (i.e. the expression is
-/// correlated with the outer data table and therefore not safe to reuse inside the injected subquery).
-bool dependsOnTable(const QueryTreeNodePtr & node, const ITableExpressionNode * table_expression)
+/// True if the subtree of node references a column of the table expression (with column_name, only that column).
+bool referencesTable(const QueryTreeNodePtr & node, const ITableExpressionNode * table_expression, const String * column_name = nullptr)
 {
     if (const auto * column_node = node->as<ColumnNode>())
     {
-        if (column_node->getColumnSourceOrNull().get() == table_expression)
+        if (column_node->getColumnSourceOrNull().get() == table_expression && (!column_name || column_node->getColumnName() == *column_name))
             return true;
     }
 
     for (const auto & child : node->getChildren())
     {
-        if (child && dependsOnTable(child, table_expression))
+        if (child && referencesTable(child, table_expression, column_name))
             return true;
     }
 
     return false;
+}
+
+/// True if every function in the subtree of node returns the same result within a query (unlike rand, for example).
+bool isDeterministicInScopeOfQuery(const QueryTreeNodePtr & node)
+{
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (!function_node->isOrdinaryFunction() || !function_node->getFunctionOrThrow()->isDeterministicInScopeOfQuery())
+            return false;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (child && !isDeterministicInScopeOfQuery(child))
+            return false;
+    }
+
+    return true;
 }
 
 std::optional<NameAndTypePair> findColumn(const NamesAndTypesList & columns, const String & name)
@@ -140,14 +157,22 @@ public:
         if (dist_arguments.size() != 2)
             return;
 
-        /// arg0 = the data table's vector column; arg1 = the query vector (must be uncorrelated).
+        /// arg0 = the data table's vector column; arg1 = the query vector. The query vector is copied into the centroids
+        /// subquery, so it must not depend on the table, and must be deterministic: otherwise the clusters would be chosen for
+        /// another vector than the one of the ORDER BY.
         const auto * vec_column = dist_arguments[0]->as<ColumnNode>();
         if (!vec_column || vec_column->getColumnName() != vec_column_name)
             return;
 
         auto data_table_expression = query_node->getJoinTreeNodeTyped();
         QueryTreeNodePtr query_vector = dist_arguments[1];
-        if (dependsOnTable(query_vector, data_table_expression.get()))
+        if (referencesTable(query_vector, data_table_expression.get()) || !isDeterministicInScopeOfQuery(query_vector))
+            return;
+
+        /// A filter on the cluster id column already chooses the clusters; intersecting it with the nearest clusters could
+        /// remove the rows it asks for.
+        if ((query_node->hasWhere() && referencesTable(query_node->getWhere(), data_table_expression.get(), &cid_column_name))
+            || (query_node->hasPrewhere() && referencesTable(query_node->getPrewhere(), data_table_expression.get(), &cid_column_name)))
             return;
 
         /// Resolve the data table's cid column (for the outer IN predicate).
