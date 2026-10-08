@@ -3,45 +3,58 @@ del	DATA	2	2000
 del	POSITION_DELETE	1	500
 p	DATA	2	10000
 t	DATA	4	10000
---- T1: v = 3, 10000 / 5 values
+--- T1: v = 3, every file overlaps
+Expect ~2000: v is 0..4, so its counted NDV is 5, and equality keeps 10000 / 5 rows.
 Join: t[no_stats~2000] ⋈ dim[1]
 rows: 2000
 --- T1: v = 3, without column statistics
+Expect ~?: a filter that prunes no file gives no estimate, as MergeTree without column statistics.
 Join: t[no_stats~?] ⋈ dim[1]
 rows: 2000
 --- T1: v IN (1, 2)
+Expect ~4000: 2 of the 5 values of v, so 10000 * 2 / 5.
 Join: t[no_stats~4000] ⋈ dim[2]
 rows: 4000
 --- T1: n IS NULL
+Expect ~9000: the NULL counts of the manifests, 9000 of the 10000 rows.
 Join: t[no_stats~9000] ⋈ dim[5]
 rows: 9000
 --- T1: k BETWEEN 1000 AND 8999, every file overlaps
+Expect ~7999: interpolated between min 0 and max 9999, so about 8000 of the 10000 rows.
 Join: t[no_stats~7999] ⋈ dim[5]
 rows: 8000
---- T1: s = 'rare', strings have no bounds in the statistics and no counted NDV, so 1%
+--- T1: s = 'rare'
+Expect ~100: a string has no counted NDV, so equality takes the default 1% of 10000 (true 200).
 Join: t[no_stats~100] ⋈ dim[5]
 rows: 200
 --- T2: k < 1000, 1 of 4 files remains
+Expect ~999: the remaining file holds k 0..2499 in 2500 rows, interpolated to 2500 * 1000 / 2500.
 Join: t[no_stats~999] ⋈ dim[5]
 rows: 1000
---- T2: d = '2024-01-05', 1 of 4 files remains, 25 days in it
+--- T2: d = '2024-01-05', 1 of 4 files remains
+Expect ~100: the remaining file holds 25 days in 2500 rows, so 2500 / 25.
 Join: t[no_stats~100] ⋈ dim[5]
 rows: 100
---- T3: r = 'us', the partition of 3000 rows
+--- T3: r = 'us', the eu partition is pruned
+Expect ~3000: the us partition holds 3000 rows and one partition value, so 3000 / 1.
 Join: t[no_stats~3000] ⋈ dim[5]
 rows: 3000
---- T4: v = 1 with 500 of 2000 rows deleted, 2000 / 5 * 1500 / 2000
+--- T4: v = 1, 500 of 2000 rows deleted
+Expect ~300: 2000 / 5 = 400 rows before the deletes, scaled by the live share 1500 / 2000.
 Join: t[no_stats~300] ⋈ dim[1]
 rows: 300
---- T5: plan, column statistics off: the filtered reads are unknown, so are the joins above them
+--- T5: plan, column statistics off
+Expect g and c unknown (~?): their filters prune no file, so the joins above them are unknown too.
 Join: o[10000] ⋈ c[no_stats~?] ⋈ l[30000] ⋈ g[no_stats~?]
 Join: o[10000] ⋈ c[no_stats~?] ⋈ l[30000]
 Join: o[10000] ⋈ c[no_stats~?]
 --- T5: plan, column statistics on
+Expect g ~1 (5 rows / 5 ids) and c ~200 (1000 rows / 5 values of cg), joined first.
 Join: l[30000] ⋈ (o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1]))
 Join: o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1])
 Join: c[no_stats~200] ⋈ g[no_stats~1]
 --- T5: result, then rows put into hash tables, column statistics off and on
+Expect 6000 rows; off builds c (200), l (30000) and g (1) = 30201; on builds g (1), c x g (200) and o x c x g (2000) = 2201.
 6000
 6000
 off	30201
