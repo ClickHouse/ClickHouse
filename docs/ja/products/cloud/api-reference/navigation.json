@@ -24,9 +24,9 @@
         ]
       },
       {
-        "group": "Notifications",
+        "group": "通知",
         "pages": [
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "ja/products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
       {

@@ -463,6 +463,29 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 الصفوف التي تدمجها عملية دمج في الخلفية معًا تتشارك القيم نفسها. وعندما يُنشأ جدول الوسوم الداخلي أو يُحدَّد محركه inline كما هو موضح أعلاه، يضبط `TimeSeries` القيمة `allow_dimensions_outside_sorting_key = 1` عليه تلقائيًا؛
 أما بالنسبة إلى جدول الوسوم التجميعي [الخارجي](#external-target-tables) الذي يُنشأ يدويًا، فيجب عليك تعيين هذا الإعداد بنفسك.
 
+## الاحتفاظ بالبيانات {#retention}
+
+افتراضيًا، لا يحتوي [جدول العينات](#samples-table) على `TTL`، ولذلك تُحفَظ العينات بشكل دائم.
+لحذف العينات القديمة، عرِّف `TTL` ضمن محرك جدول العينات الداخلي:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+عند تفعيل `ttl_only_drop_parts` يُحذف جزء البيانات بأكمله عندما تنتهي صلاحية جميع عيناته، بدلًا من إعادة كتابته.
+ويؤدي التقسيم حسب اليوم بتوقيت UTC إلى فصل عينات كل يوم في أجزاء بيانات مستقلة، فتُحذف بيانات كل يوم بمجرد انتهاء صلاحية أحدث عينة فيه.
+أما الإعداد [recent&#95;samples&#95;partition&#95;by](#settings) فيُبقي على التقسيمات الافتراضية لجدول العينات الحديثة، ومدة كل منها خمس ساعات، لكنه يحسبها هو الآخر بتوقيت UTC.
+فمفتاح التقسيم الذي يعتمد على المنطقة الزمنية للخادم قد يجعل الاستعلام يتخطى أجزاء بيانات تحتوي على عينات مطابقة إذا تغيّرت تلك المنطقة الزمنية.
+
+يحتفظ جدول [العينات الحديثة](#recent-samples-table) بقيمة `TTL` خاصة به يحددها الإعداد [recent&#95;samples&#95;ttl&#95;seconds](#settings).
+لذا احرص على أن تكون قيمة `TTL` لجدول العينات أطول منها، وإلا فقد يُعيد الاستعلام الذي يقع نطاقه الزمني ضمن نافذة العينات الحديثة
+عيناتٍ سبق حذفها من جدول العينات.
+
+لا يحتوي جدول [الوسوم](#tags-table) افتراضيًا على `TTL`، إذ تبقى السلسلة الزمنية فيه حتى بعد حذف جميع عيناتها.
+
 ## الجداول الهدف الخارجية {#external-target-tables}
 
 يمكن إعداد جدول `TimeSeries` لاستخدام جدول أُنشئ يدويًا:

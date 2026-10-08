@@ -1161,6 +1161,10 @@ Azure 磁盘写入请求被限流的数量。
 
 由 LocalObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储删除的目录数量。
 
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+&#39;plain&#95;rewritable&#39; 元数据存储在加载期间删除的对象数量。这些对象是上一个服务器进程已提交但未完成的删除操作所遗留的 (例如，该进程在执行 DROP TABLE 时被终止) 。
+
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
 由 &#39;plain&#95;rewritable&#39; 元数据存储为 S3ObjectStorage 创建的目录数。
@@ -4395,15 +4399,31 @@ CPU 时钟，一种高分辨率的按 CPU 计时器
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-找到的查询缓存条目的总存续时间 (以秒为单位) 。无论命中还是未命中，都会设置该值。
+找到的查询缓存条目的总存续时间 (以秒为单位) 。仅在命中时更新，查询缓存的内存后端和磁盘后端均适用。
 
 ### QueryCacheHits {#querycachehits}
 
-查询结果在查询缓存中命中的次数 (从而避免了查询计算) 。仅对设置了 `use_query_cache = 1` 的 SELECT 查询更新。
+查询结果在查询缓存中命中的次数 (从而避免了查询计算) 。将查询缓存视为一个整体进行计数：先在内存中未命中、随后在磁盘查询缓存中命中，计为一次命中。仅对设置了 `use_query_cache = 1` 的 SELECT 查询更新。
 
 ### QueryCacheMisses {#querycachemisses}
 
-查询结果在查询缓存中未命中的次数 (因此需要重新计算查询) 。仅针对使用 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
+查询结果在查询缓存中未命中的次数 (因此需要重新计算查询) 。该计数针对整个查询缓存：仅当查询在内存后端和磁盘后端中均未找到时，才计为一次未命中。仅针对使用 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+查询结果在磁盘查询缓存 (参见设置 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name) 中命中的次数，即 QueryCacheHits 中磁盘后端部分的细分统计。仅对设置了 `use_query_cache = 1` 的 SELECT 查询更新。
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+查询结果在磁盘查询缓存 (参见设置 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name) 中未命中的次数，即 QueryCacheMisses 中磁盘后端部分的细分统计。仅针对使用 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+从磁盘查询缓存中读取的已序列化 (压缩) 数据的字节数。
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+写入磁盘查询缓存的序列化 (压缩后) 字节数。
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -5920,6 +5940,18 @@ MergeTree 表中共享数据分区片段锁的获取次数
 ### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
 
 将块序列化并压缩为流式 exchange 数据包所花费的时间。
+
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+扫描过程中，因应用了从 PREWHERE 子串搜索条件中提取的过滤器而未复制到列中的不匹配String 值的字节数。
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+扫描过程中，依据从 PREWHERE 中的子串搜索条件提取出的过滤器所检查的String 值数量。
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+在扫描过程中，被从 PREWHERE 子串搜索条件中提取出的过滤器替换为空字符串的不匹配 String 值的数量。
 
 ### 对已排序列求和耗时 (毫秒) {#summingsortedmilliseconds}
 

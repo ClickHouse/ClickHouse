@@ -195,9 +195,13 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 조건 캐시에서 엔트리를 찾지 못한 횟수입니다(따라서 마크 읽기를 건너뛸 수 없습니다). SETTING use&#95;query&#95;condition&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
 * `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 암호화 헤더 캐시에서 암호화 헤더 바이트를 찾아 원본에서 헤더를 읽지 않아도 되었던 횟수입니다.
 * `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 암호화 헤더 캐시에서 암호화 헤더 바이트를 찾지 못해 소스에서 읽은 횟수입니다.
-* `ProfileEvent_QueryCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾은 횟수입니다(따라서 쿼리 계산을 피할 수 있습니다). SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
-* `ProfileEvent_QueryCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾지 못한 횟수입니다(따라서 쿼리 계산이 필요합니다). SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
-* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ko/reference/data-types/int-uint)) — 찾은 쿼리 캐시 엔트리의 경과 시간을 초 단위로 합산한 값입니다. 이 값은 적중과 실패 모두에 대해 설정됩니다.
+* `ProfileEvent_QueryCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾은 횟수입니다(따라서 쿼리 계산을 피할 수 있습니다). 쿼리 캐시 전체를 기준으로 집계하므로, 메모리에서 미스가 발생한 후 디스크 기반 쿼리 캐시에서 적중하면 1회 적중으로 집계됩니다. SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 쿼리 결과를 찾지 못한 횟수입니다(따라서 쿼리 계산이 필요합니다). 쿼리 캐시 전체를 기준으로 집계하므로, 인메모리 백엔드와 디스크 기반 백엔드 어디에서도 찾지 못한 경우에만 미스로 집계됩니다. SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryCacheOnDiskHits` ([UInt64](/ko/reference/data-types/int-uint)) — 디스크 기반 쿼리 캐시에서 쿼리 결과를 찾은 횟수로(setting query&#95;cache&#95;on&#95;disk&#95;cache&#95;name 참조), QueryCacheHits 중 디스크 기반 백엔드에 해당하는 내역입니다. SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryCacheOnDiskMisses` ([UInt64](/ko/reference/data-types/int-uint)) — 디스크 기반 쿼리 캐시에서 쿼리 결과를 찾지 못한 횟수로(setting query&#95;cache&#95;on&#95;disk&#95;cache&#95;name 참조), QueryCacheMisses 중 디스크 기반 백엔드에 해당하는 내역입니다. SETTING use&#95;query&#95;cache = 1이 설정된 SELECT 쿼리에 대해서만 갱신됩니다.
+* `ProfileEvent_QueryCacheOnDiskReadBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 디스크 기반 쿼리 캐시에서 읽은 직렬화된(압축된) 바이트 수입니다.
+* `ProfileEvent_QueryCacheOnDiskWrittenBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 디스크 기반 쿼리 캐시에 기록한 직렬화된(압축된) 바이트 수입니다.
+* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ko/reference/data-types/int-uint)) — 찾은 쿼리 캐시 엔트리의 경과 시간을 초 단위로 합산한 값입니다. 쿼리 캐시의 인메모리 백엔드와 디스크 기반 백엔드 모두에서 적중한 경우에만 갱신됩니다.
 * `ProfileEvent_QueryCacheReadRows` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 읽은 행 수입니다.
 * `ProfileEvent_QueryCacheReadBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에서 읽은 (압축되지 않은) 바이트 수입니다.
 * `ProfileEvent_QueryCacheWrittenRows` ([UInt64](/ko/reference/data-types/int-uint)) — 쿼리 캐시에 저장된 행 수입니다.
@@ -500,6 +504,9 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_SelectedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 모든 테이블에서 SELECT한 바이트 수(비압축, 메모리에 저장된 컬럼 기준).
 * `ProfileEvent_RowsReadByMainReader` ([UInt64](/ko/reference/data-types/int-uint)) — 메인 리더가 MergeTree 테이블에서 읽은 행 수(PREWHERE 단계 이후).
 * `ProfileEvent_RowsReadByPrewhereReaders` ([UInt64](/ko/reference/data-types/int-uint)) — prewhere 리더가 MergeTree 테이블에서 읽은 전체 행 수.
+* `ProfileEvent_StringValueFilterValuesChecked` ([UInt64](/ko/reference/data-types/int-uint)) — 스캔 중 PREWHERE의 부분 문자열 검색 조건에서 추출한 필터와 대조해 검사한 문자열 값 수입니다.
+* `ProfileEvent_StringValueFilterValuesReplaced` ([UInt64](/ko/reference/data-types/int-uint)) — 스캔 중 PREWHERE의 부분 문자열 검색 조건에서 추출한 필터에 의해 빈 문자열로 대체된, 일치하지 않는 문자열 값 수입니다.
+* `ProfileEvent_StringValueFilterBytesSkipped` ([UInt64](/ko/reference/data-types/int-uint)) — 스캔 중 PREWHERE의 부분 문자열 검색 조건에서 추출한 필터로 인해 컬럼에 복사되지 않은, 일치하지 않는 문자열 값의 바이트 수입니다.
 * `ProfileEvent_LoadedDataParts` ([UInt64](/ko/reference/data-types/int-uint)) — 초기화 중 MergeTree 테이블이 로드한 데이터 파트 수.
 * `ProfileEvent_LoadedDataPartsMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 초기화 중 MergeTree 테이블이 데이터 파트를 로드하는 데 사용한 마이크로초 수.
 * `ProfileEvent_FilteringMarksWithPrimaryKeyProcessedMarks` ([UInt64](/ko/reference/data-types/int-uint)) — PK 분석 중 처리된 전체 마크 수.
@@ -809,6 +816,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/ko/reference/data-types/int-uint)) — S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 생성한 디렉터리 수.
 * `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/ko/reference/data-types/int-uint)) — S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소에서 제거한 디렉터리 수.
 * `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/ko/reference/data-types/int-uint)) — 레거시 레이아웃을 사용하는 &#39;plain&#95;rewritable&#39; 디스크 수.
+* `ProfileEvent_DiskPlainRewritableOrphanedObjectsRemoved` ([UInt64](/ko/reference/data-types/int-uint)) — 이전 서버 프로세스가 커밋했지만 완료하지 못한 삭제 작업(예: DROP TABLE 도중 프로세스가 종료된 경우)으로 인해 남아 있던 객체 중, &#39;plain&#95;rewritable&#39; 메타데이터 저장소가 로드 과정에서 삭제한 객체 수입니다.
 * `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/ko/reference/data-types/int-uint)) — 객체 스토리지에서 거부되어 실패한 &#39;plain&#95;rewritable&#39; 메타데이터 트랜잭션을 되돌리는 단계를 재시도한 횟수입니다.
 * `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/ko/reference/data-types/int-uint)) — 커밋에 실패하여 롤백된 메타데이터 트랜잭션 수입니다.
 * `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/ko/reference/data-types/int-uint)) — 완료되지 못한 메타데이터 트랜잭션 롤백 수입니다. 따라서 메타데이터에는 실패로 보고된 트랜잭션의 일부가 남아 있습니다.
@@ -934,7 +942,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_MergeTreePrefetchedReadPoolInit` ([UInt64](/ko/reference/data-types/int-uint)) — MergeTreePrefetchedReadPool에서 작업을 준비하는 데 소요된 시간
 * `ProfileEvent_WaitPrefetchTaskMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 프리페치된 리더를 기다리는 데 소요된 시간
 * `ProfileEvent_ThreadpoolReaderTaskMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 읽기에서 데이터를 가져오는 데 소요된 시간
-* `ProfileEvent_ThreadpoolReaderPrepareMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 준비에 소요된 시간(예: reader `seek()` 메서드 호출)
+* `ProfileEvent_ThreadpoolReaderPrepareMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 준비에 소요된 시간(예: reader seek() 메서드 호출)
 * `ProfileEvent_ThreadpoolReaderReadBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 읽기에서 스레드 풀 작업이 읽은 바이트 수
 * `ProfileEvent_ThreadpoolReaderSubmit` ([UInt64](/ko/reference/data-types/int-uint)) — 비동기 읽기에서 스레드 풀 작업이 읽은 바이트 수
 * `ProfileEvent_ThreadpoolReaderSubmitReadSynchronously` ([UInt64](/ko/reference/data-types/int-uint)) — 스레드 풀에 작업을 예약하지 않고 대신 동기적으로 읽은 횟수

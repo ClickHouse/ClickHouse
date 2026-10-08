@@ -454,6 +454,29 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 エンジンがインラインで指定される場合、`TimeSeries` は自動的にそのテーブルに `allow_dimensions_outside_sorting_key = 1` を設定します。
 手動で作成した[外部](#external-target-tables)の集約 tags テーブルでは、自分でこれを設定する必要があります。
 
+## 保持期間 {#retention}
+
+デフォルトでは、[samples](#samples-table) テーブルには `TTL` が設定されていないため、サンプルは無期限に保持されます。
+古いサンプルを削除するには、内部の samples テーブルのエンジンに `TTL` を宣言します。
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+`ttl_only_drop_parts` を使用すると、パーツ内のすべてのサンプルの有効期限が切れた時点で、そのパーツは書き換えられることなく丸ごと削除されます。
+UTC の日単位でパーティション化すると、日ごとのサンプルが別々のパーツに格納されるため、各日のデータはその日の最新のサンプルの有効期限が切れた時点で削除されます。
+[recent&#95;samples&#95;partition&#95;by](#settings) 設定では、recent samples テーブルのデフォルトである 5 時間単位のパーティションはそのままに、その計算も UTC で行われます。
+パーティションキーがサーバーのタイムゾーンに依存していると、タイムゾーンの変更後に、条件に一致するサンプルを含むパーツをクエリがスキップしてしまう可能性があります。
+
+[recent samples](#recent-samples-table) テーブルには、[recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定で指定される独自の `TTL` があります。
+samples テーブルの `TTL` はこれより長く設定してください。そうしないと、時間範囲が recent samples のウィンドウ内に収まるクエリが、
+samples テーブルから既に削除されたサンプルを返す可能性があります。
+
+デフォルトでは、[tags](#tags-table) テーブルには `TTL` が設定されていません。そのため、時系列のサンプルがすべて削除された後も、その時系列はこのテーブルに残ります。
+
 ## 外部ターゲットテーブル {#external-target-tables}
 
 `TimeSeries` テーブルでは、手動で作成したテーブルを使用することもできます:

@@ -1911,6 +1911,41 @@ SELECT hex(reinterpret([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8), 'St
 └──────────────────────────┘
 ```
 
+## reinterpretAsBFloat16 {#reinterpretAsBFloat16}
+
+Introduit dans : v26.8.0
+
+Réinterprète la valeur d’entrée comme une valeur de type BFloat16.
+Contrairement à [`CAST`](#CAST), la fonction ne cherche pas à préserver la valeur d’origine : si le type cible ne peut pas représenter le type d’entrée, le résultat est indéfini.
+
+**Syntaxe**
+
+```sql
+reinterpretAsBFloat16(x)
+```
+
+**Arguments**
+
+* `x` — Valeur à réinterpréter en BFloat16. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`UUID`](/fr/reference/data-types/uuid) ou [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
+
+**Valeur renvoyée**
+
+Renvoie la valeur `x` réinterprétée. [`BFloat16`](/fr/reference/data-types/float)
+
+**Exemples**
+
+**Exemple d&#39;utilisation**
+
+```sql title=Query
+SELECT reinterpretAsBFloat16(reverse(unhex('3F80'))) AS x
+```
+
+```response title=Response
+┌─x─┐
+│ 1 │
+└───┘
+```
+
 ## reinterpretAsDate {#reinterpretAsDate}
 
 Introduit dans : v1.1.0

@@ -819,7 +819,7 @@ A função &#39;geoToH3&#39; aceita (lon, lat) quando definida como &#39;lon&#95
 Define por quantos milissegundos um cliente do Keeper aguarda para adquirir o mutex do `Context` correspondente antes de falhar.
 
 O valor é obtido do `Context` que realiza a aquisição. Uma substituição por consulta só se aplica quando a operação usa o contexto da consulta, como leituras de `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` e o acesso ao Keeper auxiliar no contexto da consulta.
-Operações que usam um contexto global ou em segundo plano, incluindo a coordenação de `BACKUP` e `RESTORE` e a atividade de bancos de dados `Replicated`, usam o valor desse contexto.
+Operações que usam um contexto global ou em segundo plano, incluindo a coordenação de `BACKUP` e `RESTORE` e a atividade de bancos de dados `Replicated`, usam o valor desse contexto e recebem o estouro do tempo limite como um erro do Keeper (`ZOPERATIONTIMEOUT`), que tratam da mesma forma que os demais erros do Keeper.
 `SYSTEM RELOAD CONFIG` e `SYSTEM RELOAD ASYNCHRONOUS METRICS` não são abrangidos, pois usam caminhos de recarregamento serializados de forma independente.
 
 Valores possíveis:

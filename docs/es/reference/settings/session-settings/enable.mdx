@@ -459,6 +459,19 @@ Valores posibles:
 * 0 - Deshabilitado
 * 1 - Habilitado
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración para controlar si los resultados de las consultas se leen de la caché de consultas en disco."}]}]} />
+
+Si está activada (y se ha establecido [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/es/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)), los resultados de las consultas `SELECT` se obtienen de la [caché de consultas](/es/concepts/features/performance/caches/query-cache) en disco. Si las lecturas están habilitadas tanto para la caché de consultas en memoria como para la de disco, la búsqueda se realiza primero en memoria y solo se recurre al disco en caso de fallo.
+
+Valores posibles:
+
+* 0 - Deshabilitado
+* 1 - Habilitado
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -649,6 +662,19 @@ Indica si se debe escribir en la caché de columnas cuando `use_columns_cache` e
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Si está habilitado, los resultados de las consultas `SELECT` se almacenan en la [caché de consultas](/es/concepts/features/performance/caches/query-cache).
+
+Valores posibles:
+
+* 0 - Deshabilitado
+* 1 - Habilitado
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nueva configuración que controla si los resultados de las consultas se escriben en la caché de consultas en disco."}]}]} />
+
+Si está habilitada (y se ha configurado [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/es/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)), los resultados de las consultas `SELECT` se almacenan en la [caché de consultas](/es/concepts/features/performance/caches/query-cache) en disco.
 
 Valores posibles:
 

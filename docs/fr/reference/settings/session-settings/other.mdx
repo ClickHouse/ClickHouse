@@ -819,7 +819,7 @@ La fonction `geoToH3` accepte (lon, lat) si le paramètre est réglé sur `lon_l
 Définit la durée, en millisecondes, pendant laquelle un client Keeper attend d&#39;acquérir le mutex `Context` correspondant avant d&#39;échouer.
 
 La valeur est issue du `Context` qui effectue l&#39;acquisition. Une surcharge au niveau de la requête ne s&#39;applique que lorsque l&#39;opération utilise le contexte de la requête, par exemple pour les lectures depuis `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER` et l&#39;accès aux Keeper auxiliaires dans le contexte de la requête.
-Les opérations qui utilisent un contexte global ou d&#39;arrière-plan, notamment la coordination de `BACKUP` et `RESTORE` ainsi que l&#39;activité des bases de données `Replicated`, utilisent plutôt la valeur de ce contexte.
+Les opérations qui utilisent un contexte global ou d&#39;arrière-plan, notamment la coordination de `BACKUP` et `RESTORE` ainsi que l&#39;activité des bases de données `Replicated`, utilisent plutôt la valeur de ce contexte et reçoivent le dépassement du délai sous la forme d&#39;une erreur Keeper (`ZOPERATIONTIMEOUT`), qu&#39;elles traitent comme les autres erreurs Keeper.
 `SYSTEM RELOAD CONFIG` et `SYSTEM RELOAD ASYNCHRONOUS METRICS` ne sont pas concernées, car elles s&#39;appuient sur des chemins de rechargement sérialisés indépendamment.
 
 Valeurs possibles :

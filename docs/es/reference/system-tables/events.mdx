@@ -1162,6 +1162,10 @@ Número de directorios creados por el almacenamiento de metadatos &#39;plain&#95
 
 Número de directorios eliminados por el almacenamiento de metadatos &#39;plain&#95;rewritable&#39; de LocalObjectStorage.
 
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+Número de objetos eliminados por el almacenamiento de metadata &#39;plain&#95;rewritable&#39; durante la carga, por haber quedado de eliminaciones que un proceso de servidor anterior había hecho committed pero no había llegado a completar (por ejemplo, porque se terminó de forma forzada durante DROP TABLE).
+
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
 Número de directorios creados por el almacenamiento de metadatos &#39;plain&#95;rewritable&#39; para S3ObjectStorage.
@@ -4396,15 +4400,31 @@ Tiempo total que una consulta permaneció en espera para cumplir con la limitaci
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-La suma de la antigüedad de las entradas encontradas en la caché de consultas, en segundos. El valor se establece tanto para aciertos como para fallos.
+La suma de la antigüedad de las entradas encontradas en la caché de consultas, en segundos. Solo se actualiza en caso de acierto, tanto en el backend en memoria como en el backend en disco de la caché de consultas.
 
 ### QueryCacheHits {#querycachehits}
 
-Número de veces que se ha encontrado el resultado de una consulta en la caché de consultas (y se ha evitado calcular la consulta). Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
+Número de veces que se ha encontrado el resultado de una consulta en la caché de consultas (y se ha evitado calcular la consulta). Contabiliza la caché de consultas en su conjunto: un fallo en memoria seguido de un acierto en la caché de consultas en disco cuenta como un único acierto. Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
 
 ### QueryCacheMisses {#querycachemisses}
 
-Número de veces que no se encontró el resultado de una consulta en la caché de consultas (y fue necesario calcular la consulta). Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
+Número de veces que no se encontró el resultado de una consulta en la caché de consultas (y fue necesario calcular la consulta). Tiene en cuenta la caché de consultas en su conjunto: una consulta solo se considera un fallo si no se encontró ni en el backend en memoria ni en el backend en disco. Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+Número de veces que se ha encontrado el resultado de una consulta en la caché de consultas en disco (véase el ajuste query&#95;cache&#95;on&#95;disk&#95;cache&#95;name), es decir, la parte de QueryCacheHits correspondiente al backend en disco. Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+Número de veces que no se encontró el resultado de una consulta en la caché de consultas en disco (véase el ajuste query&#95;cache&#95;on&#95;disk&#95;cache&#95;name); corresponde al desglose del backend en disco de QueryCacheMisses. Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+Número de bytes serializados (comprimidos) leídos de la caché de consultas en disco.
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+Número de bytes serializados (comprimidos) escritos en la caché de consultas en disco.
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -5921,6 +5941,18 @@ Bytes de los bloques Native en los paquetes de streaming exchange antes de la co
 ### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
 
 Tiempo empleado en serializar y comprimir fragmentos en paquetes de streaming exchange.
+
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+Número de bytes de valores String no coincidentes que no se copiaron a una columna durante un escaneo debido a un filtro derivado de una condición de búsqueda de subcadena en PREWHERE.
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+Número de valores String comprobados durante un escaneo con un filtro extraído de una condición de búsqueda de subcadenas en PREWHERE.
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+Número de valores String no coincidentes que se reemplazaron por cadenas vacías durante un escaneo con un filtro extraído de una condición de búsqueda de subcadena en PREWHERE.
 
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 

@@ -449,6 +449,19 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 * 0 - 禁用
 * 1 - 启用
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于控制是否从磁盘查询缓存中读取查询结果。"}]}]} />
+
+启用此设置 (且已配置 [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/zh/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)) 后，`SELECT` 查询的结果将从磁盘上的[查询缓存](/zh/concepts/features/performance/caches/query-cache)中获取。如果内存查询缓存和磁盘查询缓存均已启用读取，则会先在内存中查找，仅在未命中时才查找磁盘。
+
+可选值：
+
+* 0 - 禁用
+* 1 - 启用
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -640,6 +653,19 @@ WHERE (_part, _part_offset) IN (
 启用后，`SELECT` 查询的结果会存储在[查询缓存](/zh/concepts/features/performance/caches/query-cache)中。
 
 可能的值：
+
+* 0 - 禁用
+* 1 - 启用
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "新增设置，用于控制是否将查询结果写入磁盘上的查询缓存。"}]}]} />
+
+启用此设置后 (前提是已设置 [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/zh/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)) ，`SELECT` 查询的结果将存储到磁盘上的[查询缓存](/zh/concepts/features/performance/caches/query-cache)中。
+
+可选值：
 
 * 0 - 禁用
 * 1 - 启用

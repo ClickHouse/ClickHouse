@@ -465,6 +465,29 @@ linhas que uma mesclagem em segundo plano combina compartilham os mesmos valores
 motor é especificado inline, como acima, `TimeSeries` define `allow_dimensions_outside_sorting_key = 1` nela automaticamente;
 para uma tabela [externa](#external-target-tables) de tags com agregação criada manualmente, você deve definir isso por conta própria.
 
+## Retenção {#retention}
+
+Por padrão, a tabela [samples](#samples-table) não tem `TTL`, então as amostras são mantidas indefinidamente.
+Para excluir amostras antigas, declare um `TTL` no motor da tabela samples interna:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+Com `ttl_only_drop_parts`, uma parte é descartada por inteiro quando todas as suas amostras expiram, em vez de ser reescrita.
+Particionar por dia em UTC mantém as amostras de dias diferentes em partes diferentes, de modo que cada dia é descartado assim que sua amostra mais recente expira.
+A configuração [recent&#95;samples&#95;partition&#95;by](#settings) mantém as partições padrão de 5 horas da tabela de amostras recentes, mas também as calcula em UTC.
+Uma chave de partição que depende do fuso horário do servidor pode fazer com que uma consulta ignore partes com amostras correspondentes caso esse fuso horário seja alterado.
+
+A tabela de [amostras recentes](#recent-samples-table) tem seu próprio `TTL`, definido pela configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings).
+Mantenha o `TTL` da tabela samples maior do que esse valor; caso contrário, uma consulta cujo intervalo de tempo caiba na janela de amostras recentes
+poderá retornar amostras que já foram excluídas da tabela samples.
+
+Por padrão, a tabela de [tags](#tags-table) não tem `TTL`: uma série temporal permanece nela mesmo depois que todas as suas amostras são excluídas.
+
 ## Tabelas de destino externas {#external-target-tables}
 
 É possível fazer com que uma tabela `TimeSeries` use uma tabela criada manualmente:

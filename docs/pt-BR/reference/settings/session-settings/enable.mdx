@@ -458,6 +458,19 @@ Valores possíveis:
 * 0 - Desabilitado
 * 1 - Habilitado
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração que controla se os resultados de consultas são lidos do cache de consultas em disco."}]}]} />
+
+Quando habilitada (e [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/pt-BR/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) estiver definida), os resultados de consultas `SELECT` são obtidos do [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache) em disco. Se as leituras estiverem habilitadas tanto para o cache de consultas em memória quanto para o cache de consultas em disco, a consulta é feita primeiro na memória e, somente em caso de cache miss, no disco.
+
+Valores possíveis:
+
+* 0 - Desabilitado
+* 1 - Habilitado
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -653,6 +666,19 @@ Valores possíveis:
 
 * 0 - Desabilitado
 * 1 - Ativado
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Nova configuração que controla se os resultados de consultas são gravados no cache de consultas em disco."}]}]} />
+
+Quando habilitada (e [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/pt-BR/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) estiver definida), os resultados de consultas `SELECT` são armazenados no [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache) em disco.
+
+Valores possíveis:
+
+* 0 - Desabilitado
+* 1 - Habilitado
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

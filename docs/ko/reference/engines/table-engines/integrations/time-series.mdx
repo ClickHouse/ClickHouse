@@ -455,6 +455,29 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 행이 동일한 값을 공유하기 때문입니다. 위와 같이 내부 tags 테이블이 생성되거나 해당 엔진이 인라인으로 지정되면 `TimeSeries`는 여기에
 `allow_dimensions_outside_sorting_key = 1`을 자동으로 설정합니다. 수동으로 생성한 [외부](#external-target-tables) 집계 tags 테이블은 직접 설정해야 합니다.
 
+## 보존 기간 {#retention}
+
+기본적으로 [Samples table](#samples-table)에는 `TTL`이 설정되어 있지 않으므로 샘플이 영구적으로 보관됩니다.
+오래된 샘플을 삭제하려면 내부 Samples table의 엔진에 `TTL`을 선언하십시오.
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+`ttl_only_drop_parts`를 사용하면 파트의 모든 샘플이 만료되었을 때 파트를 재작성하지 않고 파트 전체를 삭제합니다.
+UTC 기준 일 단위로 파티셔닝하면 날짜가 다른 샘플은 서로 다른 파트에 저장되므로, 각 날짜의 파트는 그날의 가장 최근 샘플이 만료되는 시점에 삭제됩니다.
+[recent&#95;samples&#95;partition&#95;by](#settings) 설정은 최근 샘플 테이블의 기본 5시간 단위 파티션을 그대로 유지하면서, 파티션 계산만 UTC 기준으로 수행합니다.
+파티션 키(partition key)가 서버 시간대에 따라 달라지면, 시간대가 변경된 후 쿼리가 일치하는 샘플이 있는 파트를 건너뛸 수 있습니다.
+
+[최근 샘플](#recent-samples-table) 테이블에는 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 설정으로 지정되는 별도의 `TTL`이 적용됩니다.
+Samples table의 `TTL`은 이보다 길게 설정하십시오. 그렇지 않으면 시간 범위가 최근 샘플 윈도우에 포함되는 쿼리가
+Samples table에서 이미 삭제된 샘플을 반환할 수 있습니다.
+
+기본적으로 [Tags](#tags-table) 테이블에는 `TTL`이 없으므로, 시계열(time series)의 모든 샘플이 삭제된 후에도 해당 시계열은 Tags 테이블에 남아 있습니다.
+
 ## 외부 대상 테이블 {#external-target-tables}
 
 수동으로 생성한 테이블을 `TimeSeries` 테이블에서 사용하게 할 수 있습니다:

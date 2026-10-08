@@ -24,9 +24,9 @@
         ]
       },
       {
-        "group": "Notifications",
+        "group": "알림",
         "pages": [
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "ko/products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
       {

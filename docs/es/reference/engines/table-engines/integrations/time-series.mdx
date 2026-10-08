@@ -465,6 +465,29 @@ filas que un merge en segundo plano colapsa comparten los mismos valores. Cuando
 motor se especifica en línea como arriba, `TimeSeries` establece automáticamente `allow_dimensions_outside_sorting_key = 1` en ella;
 para una tabla de etiquetas de agregación [externa](#external-target-tables) creada manualmente, debe configurarlo usted mismo.
 
+## Retención {#retention}
+
+De forma predeterminada, la table [samples](#samples-table) no tiene `TTL`, por lo que las samples se conservan indefinidamente.
+Para eliminar las samples antiguas, declare un `TTL` en el motor de la table interna de samples:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+Con `ttl_only_drop_parts`, una parte se elimina por completo cuando todas sus samples han expirado, en lugar de reescribirse.
+Al particionar por día UTC, las samples de días distintos quedan en partes diferentes, de modo que cada día se elimina en cuanto expira su sample más reciente.
+La configuración [recent&#95;samples&#95;partition&#95;by](#settings) conserva las particiones predeterminadas de 5 horas de la table de samples recientes, pero también las calcula en UTC.
+Si la clave de partición depende de la zona horaria del servidor, una consulta puede omitir partes con samples coincidentes después de que cambie esa zona horaria.
+
+La table de [samples recientes](#recent-samples-table) tiene su propio `TTL`, definido mediante la configuración [recent&#95;samples&#95;ttl&#95;seconds](#settings).
+Mantenga el `TTL` de la table de samples por encima de ese valor; de lo contrario, una consulta cuyo rango de tiempo quepa en la ventana de samples recientes
+puede devolver samples que ya se han eliminado de la table de samples.
+
+De forma predeterminada, la table de [etiquetas](#tags-table) no tiene `TTL`: una serie temporal permanece en ella aunque se hayan eliminado todas sus samples.
+
 ## Tablas de destino externas {#external-target-tables}
 
 Es posible hacer que una tabla `TimeSeries` utilice una tabla creada manualmente:

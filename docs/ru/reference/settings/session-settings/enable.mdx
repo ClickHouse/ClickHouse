@@ -458,6 +458,19 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 * 0 - Отключено
 * 1 - Включено
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, определяющая, считываются ли результаты запросов из кэша запросов на диске."}]}]} />
+
+Если настройка включена (и задан параметр [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ru/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)), результаты `SELECT`-запросов извлекаются из [кэша запросов](/ru/concepts/features/performance/caches/query-cache) на диске. Если чтение включено и для кэша запросов в памяти, и для кэша запросов на диске, поиск сначала выполняется в памяти, и только при промахе — на диске.
+
+Возможные значения:
+
+* 0 — отключено
+* 1 — включено
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -654,6 +667,19 @@ WHERE (_part, _part_offset) IN (
 
 * 0 - Отключено
 * 1 - Включено
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "Новая настройка, управляющая записью результатов запросов в кэш запросов на диске."}]}]} />
+
+Если настройка включена (и задан параметр [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ru/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)), результаты `SELECT`-запросов сохраняются в [кэше запросов](/ru/concepts/features/performance/caches/query-cache) на диске.
+
+Возможные значения:
+
+* 0 — отключено
+* 1 — включено
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

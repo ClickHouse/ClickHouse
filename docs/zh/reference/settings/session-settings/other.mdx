@@ -797,7 +797,7 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 定义 Keeper 客户端获取对应 `Context` 互斥锁时的最长等待时间 (毫秒) ，超时则判定失败。
 
 该值取自执行获取操作的 `Context`。仅当操作使用查询上下文时，查询级别的覆盖值才会生效，例如从 `system.zookeeper` 读取数据、`zookeeperSessionUptime`、`SYSTEM RECONNECT ZOOKEEPER`，以及基于查询上下文的辅助 Keeper 访问。
-使用全局上下文或后台上下文的操作 (包括 `BACKUP` 和 `RESTORE` 的协调以及 `Replicated` 数据库的相关活动) 则使用该上下文中的值。
+使用全局上下文或后台上下文的操作 (包括 `BACKUP` 和 `RESTORE` 的协调以及 `Replicated` 数据库的相关活动) 则使用该上下文中的值；发生超时时，这些操作会收到一个 Keeper 错误 (`ZOPERATIONTIMEOUT`) ，并按与其他 Keeper 错误相同的方式进行处理。
 `SYSTEM RELOAD CONFIG` 和 `SYSTEM RELOAD ASYNCHRONOUS METRICS` 不受此设置影响，因为它们使用各自独立序列化的重新加载路径。
 
 可选值：

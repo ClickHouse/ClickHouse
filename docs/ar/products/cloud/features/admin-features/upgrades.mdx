@@ -26,7 +26,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 يتيح لك إعداد `compatibility` استخدام القيم الافتراضية للإعدادات من الإصدارات السابقة. وعند ترقية خدمتك إلى إصدار جديد، لا يتغير الإصدار المحدد لإعداد `compatibility`. وهذا يعني أن القيم الافتراضية للإعدادات التي كانت موجودة عند إنشاء خدمتك لأول مرة لن تتغير (إلا إذا كنت قد تجاوزت هذه القيم الافتراضية مسبقًا، ففي هذه الحالة ستستمر بعد الترقية).
 
-لا يمكنك إدارة إعداد `compatibility` الافتراضي على مستوى الخدمة لخدمتك. يجب عليك [التواصل مع الدعم](https://clickhouse.com/support/program) إذا كنت ترغب في تغيير الإصدار المحدد لإعداد `compatibility` الافتراضي لخدمتك. ومع ذلك، يمكنك تجاوز إعداد `compatibility` على مستوى المستخدم أو الدور أو profile أو query أو الجلسة باستخدام آليات إعدادات ClickHouse القياسية، مثل `SET compatibility = '22.3'` في جلسة أو `SETTINGS compatibility = '22.3'` في query.
+في ClickHouse Cloud، لا يمكنك إدارة إعداد `compatibility` الافتراضي على مستوى الخدمة لخدمتك بشكل مباشر، إذ يجب عليك [التواصل مع ClickHouse Support](https://clickhouse.com/support/program) إذا كنت ترغب في تغيير الإصدار المحدد لإعداد `compatibility` الافتراضي لخدمتك. ومع ذلك، يمكنك تجاوز إعداد `compatibility` على مستوى المستخدم أو الدور أو profile أو الاستعلام أو الجلسة باستخدام آليات إعدادات ClickHouse القياسية، مثل `SET compatibility = '26.8'` في جلسة أو `SETTINGS [other settings,] compatibility = '26.8'` في استعلام.
 
 <div id="maintenance-mode">
   ## وضع الصيانة {#maintenance-mode}

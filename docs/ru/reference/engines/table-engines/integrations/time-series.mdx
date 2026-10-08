@@ -466,6 +466,29 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 движок задаётся непосредственно, как показано выше, `TimeSeries` автоматически устанавливает для неё `allow_dimensions_outside_sorting_key = 1`;
 для созданной вручную агрегирующей [внешней](#external-target-tables) таблицы tags вы должны установить этот параметр самостоятельно.
 
+## Срок хранения {#retention}
+
+По умолчанию у таблицы [samples](#samples-table) не задан `TTL`, поэтому образцы хранятся бессрочно.
+Чтобы удалять устаревшие образцы, задайте `TTL` в движке внутренней таблицы samples:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+При использовании `ttl_only_drop_parts` часть не перезаписывается, а удаляется целиком, когда срок хранения истёк у всех её образцов.
+При партиционировании по дню в UTC образцы разных дней хранятся в разных частях, поэтому данные каждого дня удаляются, как только истекает срок хранения самого нового образца за этот день.
+Настройка [recent&#95;samples&#95;partition&#95;by](#settings) сохраняет стандартные 5-часовые партиции таблицы recent samples, но тоже вычисляет их в UTC.
+Если ключ партиционирования зависит от часового пояса сервера, то после смены часового пояса запрос может пропускать части, содержащие подходящие образцы.
+
+У таблицы [recent samples](#recent-samples-table) есть собственный `TTL`, который задаётся настройкой [recent&#95;samples&#95;ttl&#95;seconds](#settings).
+`TTL` таблицы samples должен быть больше этого значения, иначе запрос, временной диапазон которого укладывается в окно recent samples,
+может вернуть образцы, уже удалённые из таблицы samples.
+
+По умолчанию у таблицы [tags](#tags-table) нет `TTL`: временной ряд остаётся в ней даже после удаления всех его образцов.
+
 ## Внешние целевые таблицы {#external-target-tables}
 
 Таблицу `TimeSeries` можно настроить так, чтобы она использовала таблицу, созданную вручную:

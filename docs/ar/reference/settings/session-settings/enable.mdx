@@ -458,6 +458,19 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 * 0 - معطّل
 * 1 - مفعّل
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد للتحكم في ما إذا كانت نتائج الاستعلامات تُقرأ من ذاكرة التخزين المؤقت للاستعلامات على القرص."}]}]} />
+
+عند تفعيل هذا الإعداد (مع ضبط [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ar/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name))، تُسترجع نتائج استعلامات `SELECT` من [ذاكرة التخزين المؤقت للاستعلامات](/ar/concepts/features/performance/caches/query-cache) المخزنة على القرص. وإذا كانت القراءة مفعّلة لكلٍّ من ذاكرة التخزين المؤقت للاستعلامات في الذاكرة وتلك المخزنة على القرص، فإن البحث يجري أولًا في الذاكرة، ولا ينتقل إلى القرص إلا إذا لم يُعثر على النتيجة فيها.
+
+القيم الممكنة:
+
+* 0 - معطّل
+* 1 - مفعّل
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -648,6 +661,19 @@ ClickHouse. يظل استعلام `SET` محللًا بصيغة SQL عادية،
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 إذا كان هذا الإعداد مفعّلًا، فسيتم تخزين نتائج استعلامات `SELECT` في [ذاكرة التخزين المؤقت للاستعلامات](/ar/concepts/features/performance/caches/query-cache).
+
+القيم الممكنة:
+
+* 0 - معطّل
+* 1 - مفعّل
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "إعداد جديد يتحكم في كتابة نتائج الاستعلامات إلى ذاكرة التخزين المؤقت للاستعلامات على القرص."}]}]} />
+
+عند تفعيل هذا الإعداد (مع ضبط [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ar/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name))، تُخزَّن نتائج استعلامات `SELECT` في [ذاكرة التخزين المؤقت للاستعلامات](/ar/concepts/features/performance/caches/query-cache) على القرص.
 
 القيم الممكنة:
 

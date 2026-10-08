@@ -1162,6 +1162,10 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Количество каталогов, удалённых хранилищем метаданных &#39;plain&#95;rewritable&#39; в LocalObjectStorage.
 
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+Количество объектов, удалённых хранилищем метаданных &#39;plain&#95;rewritable&#39; во время загрузки, поскольку они остались от операций удаления, которые предыдущий процесс сервера закоммитил, но не довёл до конца (например, если процесс был принудительно завершён во время DROP TABLE).
+
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
 Количество каталогов, созданных хранилищем метаданных `plain_rewritable` для S3ObjectStorage.
@@ -4396,15 +4400,31 @@ Distributed Cache server event. Время ожидания мьютекса б�
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-Суммарный возраст найденных записей кэша запросов в секундах. Значение задаётся как для попаданий, так и для промахов.
+Суммарный возраст найденных записей кэша запросов в секундах. Обновляется только при попаданиях — как для backend-соединения кэша запросов в памяти, так и для backend-соединения на диске.
 
 ### QueryCacheHits {#querycachehits}
 
-Количество случаев, когда результат запроса находился в кэше запросов (и выполнять сам запрос не требовалось). Обновляется только для запросов SELECT с SETTING use&#95;query&#95;cache = 1.
+Количество случаев, когда результат запроса находился в кэше запросов (и выполнять сам запрос не требовалось). Учитывает кэш запросов в целом: промах в памяти с последующим попаданием в кэш запросов на диске считается одним попаданием. Обновляется только для запросов SELECT с SETTING use&#95;query&#95;cache = 1.
 
 ### QueryCacheMisses {#querycachemisses}
 
-Количество случаев, когда результат запроса не был найден в кэше запросов (и потребовалось вычислить запрос). Обновляется только для запросов SELECT с SETTING use&#95;query&#95;cache = 1.
+Количество случаев, когда результат запроса не был найден в кэше запросов (и потребовалось вычислить запрос). Учитывается кэш запросов в целом: промахом считается только запрос, результат которого не найден ни в backend-соединении в памяти, ни в backend-соединении на диске. Обновляется только для запросов SELECT с SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+Количество случаев, когда результат запроса находился в кэше запросов на диске (см. настройку query&#95;cache&#95;on&#95;disk&#95;cache&#95;name); это составляющая QueryCacheHits, приходящаяся на дисковое backend-соединение. Обновляется только для запросов SELECT с SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+Количество случаев, когда результат запроса не был найден в кэше запросов на диске (см. настройку query&#95;cache&#95;on&#95;disk&#95;cache&#95;name); это доля QueryCacheMisses, приходящаяся на дисковое backend-соединение. Обновляется только для запросов SELECT с SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+Количество сериализованных (сжатых) байт, прочитанных из кэша запросов на диске.
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+Количество сериализованных (сжатых) байт, записанных в дисковый кэш запросов.
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -5921,6 +5941,18 @@ Distributed Cache server event. Время ожидания мьютекса б�
 ### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
 
 Время, затраченное на сериализацию и сжатие фрагментов в пакеты потокового обмена.
+
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+Количество байт несовпадающих строковых значений, которые не были скопированы в столбец при сканировании из-за фильтра, извлечённого из условия поиска подстроки в PREWHERE.
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+Количество строковых значений, проверенных при сканировании по фильтру, построенному на основе условия поиска подстроки в PREWHERE.
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+Количество несовпадающих строковых значений, заменённых пустыми строками при сканировании с использованием фильтра, извлечённого из условия поиска подстроки в PREWHERE.
 
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 

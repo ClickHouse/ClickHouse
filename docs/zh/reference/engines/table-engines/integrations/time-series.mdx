@@ -459,6 +459,29 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 `TimeSeries` 会自动为其设置 `allow_dimensions_outside_sorting_key = 1`；
 对于手动创建的[外部](#external-target-tables)聚合 标签 表，则必须自行设置。
 
+## 数据保留 {#retention}
+
+默认情况下，[样本](#samples-table)表未设置 `TTL`，因此样本会永久保留。
+如需删除旧样本，请在内部样本表的引擎中声明 `TTL`：
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS recent_samples_partition_by = 'toStartOfInterval(toDateTime(timestamp, ''UTC''), toIntervalHour(5))'
+SAMPLES INNER ENGINE = MergeTree PARTITION BY toDate(timestamp, 'UTC') ORDER BY (id, timestamp)
+    TTL toDateTime(timestamp, 'UTC') + INTERVAL 30 DAY SETTINGS ttl_only_drop_parts = 1
+```
+
+启用 `ttl_only_drop_parts` 后，当一个 part 中的所有样本均已过期时，该 part 会被整体删除，而不会被重写。
+按 UTC 日期分区可使不同日期的样本存放在不同的 parts 中，这样每一天的数据都会在其最新样本过期后被一次性删除。
+[recent&#95;samples&#95;partition&#95;by](#settings) 设置沿用了最近样本表默认的 5 小时分区，但同样按 UTC 计算这些分区。
+如果分区键依赖于服务器时区，那么在该时区变更后，查询可能会跳过包含匹配样本的 parts。
+
+[最近样本](#recent-samples-table)表有自己独立的 `TTL`，由 [recent&#95;samples&#95;ttl&#95;seconds](#settings) 设置指定。
+请确保样本表的 `TTL` 长于该值，否则对于时间范围落在最近样本窗口内的查询，
+可能会返回已从样本表中删除的样本。
+
+默认情况下，[标签](#tags-table)表没有 `TTL`：即使某个时间序列的所有样本都已被删除，该时间序列仍会保留在标签表中。
+
 ## 外部目标端表 {#external-target-tables}
 
 可以让 `TimeSeries` 表使用手动创建的目标表：

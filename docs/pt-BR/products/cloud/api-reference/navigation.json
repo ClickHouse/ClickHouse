@@ -24,9 +24,9 @@
         ]
       },
       {
-        "group": "Notifications",
+        "group": "Notificações",
         "pages": [
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "pt-BR/products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
       {
@@ -52,7 +52,7 @@
         ]
       },
       {
-        "group": "Gerenciamento de funções",
+        "group": "Gerenciamento de Funções",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",

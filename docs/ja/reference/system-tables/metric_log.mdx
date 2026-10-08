@@ -189,9 +189,13 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ条件 cache 内でエントリが見つからなかった回数 (その場合、mark の読み取りはスキップできません) 。SETTING use&#95;query&#95;condition&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
 * `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — 暗号化ヘッダーのバイト列が暗号化ヘッダーキャッシュで見つかったため、ソースからヘッダーを読み取らずに済んだ回数。
 * `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — 暗号化ヘッダーのバイト列が暗号化ヘッダーキャッシュで見つからず、ソースから読み取られた回数。
-* `ProfileEvent_QueryCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つかった回数 (その場合、クエリの計算は回避されます) 。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
-* `ProfileEvent_QueryCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つからなかった回数 (その場合、クエリの計算が必要になります) 。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
-* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ja/reference/data-types/int-uint)) — 見つかったクエリ cache エントリの経過時間の合計 (秒) 。この値はヒット時とミス時の両方で設定されます。
+* `ProfileEvent_QueryCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つかった回数 (その場合、クエリの計算は回避されます) 。クエリ cache 全体を単位としてカウントされます。メモリ内でミスし、続いてディスク上のクエリ cache でヒットした場合は 1 回のヒットとなります。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache 内でクエリ結果が見つからなかった回数 (その場合、クエリの計算が必要になります) 。クエリ cache 全体を単位としてカウントされます。インメモリとディスク上のいずれのバックエンドでも見つからなかった場合にのみミスとなります。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryCacheOnDiskHits` ([UInt64](/ja/reference/data-types/int-uint)) — ディスク上のクエリ cache (設定 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name を参照) でクエリ結果が見つかった回数。QueryCacheHits のうち、ディスク上のバックエンドの内訳です。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryCacheOnDiskMisses` ([UInt64](/ja/reference/data-types/int-uint)) — ディスク上のクエリ cache (設定 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name を参照) でクエリ結果が見つからなかった回数。QueryCacheMisses のうち、ディスク上のバックエンドの内訳です。SETTING use&#95;query&#95;cache = 1 を指定した SELECT クエリでのみ更新されます。
+* `ProfileEvent_QueryCacheOnDiskReadBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ディスク上のクエリ cache から読み取られたシリアル化 (圧縮) 済みのバイト数。
+* `ProfileEvent_QueryCacheOnDiskWrittenBytes` ([UInt64](/ja/reference/data-types/int-uint)) — ディスク上のクエリ cache に書き込まれたシリアル化 (圧縮) 済みのバイト数。
+* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/ja/reference/data-types/int-uint)) — 見つかったクエリ cache エントリの経過時間の合計 (秒) 。クエリ cache のインメモリとディスク上の両バックエンドにおけるヒット時にのみ更新されます。
 * `ProfileEvent_QueryCacheReadRows` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache から読み取られた行数。
 * `ProfileEvent_QueryCacheReadBytes` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache から読み取られた (非圧縮の) バイト数。
 * `ProfileEvent_QueryCacheWrittenRows` ([UInt64](/ja/reference/data-types/int-uint)) — クエリ cache に保存された行数。
@@ -494,6 +498,9 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_SelectedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — すべてのテーブルから SELECT されたバイト数 (非圧縮。カラムがメモリ内に格納されている状態でのサイズ) 。
 * `ProfileEvent_RowsReadByMainReader` ([UInt64](/ja/reference/data-types/int-uint)) — メインリーダーによって MergeTree テーブルから読み取られた行数 (PREWHERE ステップ後) 。
 * `ProfileEvent_RowsReadByPrewhereReaders` ([UInt64](/ja/reference/data-types/int-uint)) — prewhere リーダーによって MergeTree テーブルから読み取られた行数 (合計) 。
+* `ProfileEvent_StringValueFilterValuesChecked` ([UInt64](/ja/reference/data-types/int-uint)) — PREWHERE の部分文字列検索条件から抽出されたフィルタに対して、スキャン中にチェックされた文字列値の数。
+* `ProfileEvent_StringValueFilterValuesReplaced` ([UInt64](/ja/reference/data-types/int-uint)) — PREWHERE の部分文字列検索条件から抽出されたフィルタにより、スキャン中に空文字列に置き換えられた、一致しない文字列値の数。
+* `ProfileEvent_StringValueFilterBytesSkipped` ([UInt64](/ja/reference/data-types/int-uint)) — PREWHERE の部分文字列検索条件から抽出されたフィルタにより、スキャン中にカラムへコピーされなかった、一致しない文字列値のバイト数。
 * `ProfileEvent_LoadedDataParts` ([UInt64](/ja/reference/data-types/int-uint)) — 初期化中に MergeTree テーブルによって読み込まれたデータパーツ数。
 * `ProfileEvent_LoadedDataPartsMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — 初期化中のデータパーツの読み込みに MergeTree テーブルが費やした時間 (マイクロ秒) 。
 * `ProfileEvent_FilteringMarksWithPrimaryKeyProcessedMarks` ([UInt64](/ja/reference/data-types/int-uint)) — PK 解析中に処理されたマークの合計数。
@@ -803,6 +810,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/ja/reference/data-types/int-uint)) — S3ObjectStorage 用の &#39;plain&#95;rewritable&#39; メタデータストレージで作成されたディレクトリ数。
 * `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/ja/reference/data-types/int-uint)) — S3ObjectStorage 用の &#39;plain&#95;rewritable&#39; メタデータストレージで削除されたディレクトリ数。
 * `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/ja/reference/data-types/int-uint)) — レガシーレイアウトの &#39;plain&#95;rewritable&#39; ディスク数。
+* `ProfileEvent_DiskPlainRewritableOrphanedObjectsRemoved` ([UInt64](/ja/reference/data-types/int-uint)) — 以前のサーバープロセスがコミットしたものの完了しなかった削除 (例: DROP TABLE 中にプロセスが強制終了された場合) によって残されていたため、&#39;plain&#95;rewritable&#39; メタデータストレージが読み込み中に削除したオブジェクト数。
 * `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/ja/reference/data-types/int-uint)) — 失敗した &#39;plain&#95;rewritable&#39; メタデータトランザクションの取り消しステップが、オブジェクトストレージに拒否されたため再試行された回数。
 * `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/ja/reference/data-types/int-uint)) — コミットに失敗してロールバックされたメタデータトランザクション数。
 * `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/ja/reference/data-types/int-uint)) — 完了しなかったメタデータトランザクションのロールバック数。このため、失敗と報告されたトランザクションの一部がメタデータに残ります。

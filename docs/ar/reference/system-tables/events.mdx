@@ -1162,6 +1162,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 عدد الأدلة التي تُزال بواسطة مخزن البيانات الوصفية &#39;plain&#95;rewritable&#39; الخاص بـ LocalObjectStorage.
 
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+عدد الكائنات التي حذفها مخزن البيانات الوصفية &#39;plain&#95;rewritable&#39; أثناء التحميل، لأنها بقيت من عمليات إزالة ثبّتتها عملية خادم سابقة ولم تُكملها (على سبيل المثال، إذا أُنهيت العملية قسرًا أثناء تنفيذ DROP TABLE).
+
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
 عدد الدلائل التي أنشأتها وحدة تخزين البيانات الوصفية &#39;plain&#95;rewritable&#39; لـ S3ObjectStorage.
@@ -4396,15 +4400,31 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-مجموع أعمار مُدخلات ذاكرة التخزين المؤقت للاستعلامات التي عُثر عليها، بالثواني. تُضبط هذه القيمة لكلٍّ من حالات النجاح والإخفاق.
+مجموع أعمار مُدخلات ذاكرة التخزين المؤقت للاستعلامات التي عُثر عليها، بالثواني. لا تُحدَّث هذه القيمة إلا عند الإصابة (hits)، وذلك في كلٍّ من الواجهة الخلفية المخزّنة في الذاكرة والواجهة الخلفية المخزّنة على القرص لذاكرة التخزين المؤقت للاستعلامات.
 
 ### QueryCacheHits {#querycachehits}
 
-عدد المرات التي تم فيها العثور على نتيجة استعلام في ذاكرة التخزين المؤقت للاستعلامات، وبالتالي جرى تجنّب تنفيذ الاستعلام. لا يُحدَّث هذا المؤشر إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
+عدد المرات التي تم فيها العثور على نتيجة استعلام في ذاكرة التخزين المؤقت للاستعلامات، وبالتالي جرى تجنّب تنفيذ الاستعلام. تُحتسب ذاكرة التخزين المؤقت للاستعلامات ككل: فالإخفاق في ذاكرة التخزين المؤقت داخل الذاكرة متبوعًا بإصابة في ذاكرة التخزين المؤقت للاستعلامات على القرص يُعدّ إصابة واحدة. لا يُحدَّث هذا المؤشر إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
 
 ### QueryCacheMisses {#querycachemisses}
 
-عدد المرات التي لم يُعثر فيها على نتيجة الاستعلام في ذاكرة التخزين المؤقت للاستعلامات (مما استلزم تنفيذ الاستعلام). لا يُحدَّث هذا إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
+عدد المرات التي لم يُعثر فيها على نتيجة الاستعلام في ذاكرة التخزين المؤقت للاستعلامات (مما استلزم تنفيذ الاستعلام). يُحتسب ذلك على مستوى ذاكرة التخزين المؤقت للاستعلامات ككل: لا يُعدّ الاستعلام إخفاقًا إلا إذا لم يُعثر عليه في الواجهة الخلفية المقيمة في الذاكرة ولا في الواجهة الخلفية المخزّنة على القرص. لا يُحدَّث هذا إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+عدد المرات التي تم فيها العثور على نتيجة استعلام في ذاكرة التخزين المؤقت للاستعلامات على القرص (راجع الإعداد query&#95;cache&#95;on&#95;disk&#95;cache&#95;name)، ويمثّل هذا المؤشر الجزء الخاص بالواجهة الخلفية المخزّنة على القرص من QueryCacheHits. لا يُحدَّث هذا المؤشر إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+عدد المرات التي لم يُعثر فيها على نتيجة الاستعلام في ذاكرة التخزين المؤقت للاستعلامات على القرص (راجع الإعداد query&#95;cache&#95;on&#95;disk&#95;cache&#95;name)، ويمثّل حصة الواجهة الخلفية على القرص من QueryCacheMisses. لا يُحدَّث هذا إلا لاستعلامات SELECT التي تستخدم SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+عدد البايتات المُسلسَلة (المضغوطة) التي تمت قراءتها من ذاكرة التخزين المؤقت للاستعلامات على القرص.
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+عدد البايتات المُسلسَلة (المضغوطة) التي كُتبت في ذاكرة التخزين المؤقت للاستعلامات على القرص.
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -5921,6 +5941,18 @@ Distributed Cache client event. إجمالي عدد حزم SlowDown الوارد
 ### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
 
 الوقت المستغرق في تسلسل المقاطع وضغطها ضمن حِزم تبادل الدفق.
+
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+عدد بايتات قيم string غير المطابقة التي لم تُنسخ إلى column أثناء الفحص، وذلك بسبب عامل تصفية مُستخرَج من شرط بحث عن سلسلة فرعية في PREWHERE.
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+عدد قيم string التي جرى التحقق منها أثناء الفحص باستخدام عامل تصفية مستخرَج من شرط البحث عن سلسلة فرعية في PREWHERE.
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+عدد قيم string غير المطابقة التي استُبدلت بسلاسل فارغة أثناء الفحص بواسطة عامل تصفية مستخرَج من شرط بحث عن سلسلة فرعية في PREWHERE.
 
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 

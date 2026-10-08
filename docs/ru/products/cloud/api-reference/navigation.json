@@ -24,9 +24,9 @@
         ]
       },
       {
-        "group": "Notifications",
+        "group": "Уведомления",
         "pages": [
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "ru/products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
       {

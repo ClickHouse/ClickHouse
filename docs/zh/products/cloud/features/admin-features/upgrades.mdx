@@ -26,7 +26,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 `compatibility` 设置允许你使用旧版本中各项设置的默认值。当你的 服务 升级到新版本时，`compatibility` 设置中指定的版本不会改变。这意味着，在你首次创建 服务 时已存在的设置，其默认值不会发生变化 (除非你已经覆盖了这些默认值，在这种情况下，它们会在升级后继续保留) 。
 
-你无法管理 服务 的 服务 级默认 `compatibility` 设置。如果你想更改 服务 默认 `compatibility` 设置所使用的版本，则必须[联系支持团队](https://clickhouse.com/support/program)。不过，你可以使用标准的 ClickHouse 设置机制，在 user、role、profile、query 或 session 级别覆盖 `compatibility` 设置，例如在 session 中使用 `SET compatibility = '22.3'`，或在 query 中使用 `SETTINGS compatibility = '22.3'`。
+在 ClickHouse Cloud 中，你无法直接管理 服务 的 服务 级默认 `compatibility` 设置——如果你想更改 服务 默认 `compatibility` 设置所使用的版本，则必须[联系 ClickHouse 支持团队](https://clickhouse.com/support/program)。不过，你可以使用标准的 ClickHouse 设置机制，在 user、role、profile、query 或 session 级别覆盖 `compatibility` 设置，例如在 session 中使用 `SET compatibility = '26.8'`，或在 query 中使用 `SETTINGS [other settings,] compatibility = '26.8'`。
 
 <div id="maintenance-mode">
   ## 维护模式 {#maintenance-mode}

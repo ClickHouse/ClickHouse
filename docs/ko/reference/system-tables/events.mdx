@@ -1161,6 +1161,10 @@ LocalObjectStorage용으로 &#39;plain&#95;rewritable&#39; 메타데이터 저�
 
 LocalObjectStorage에서 &#39;plain&#95;rewritable&#39; 메타데이터 저장소가 제거한 디렉터리 수입니다.
 
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+&#39;plain&#95;rewritable&#39; 메타데이터 저장소가 로딩 중에 삭제한 객체 수입니다. 이 객체들은 이전 서버 프로세스가 커밋했으나 완료하지 못한 삭제 작업 때문에 남아 있던 객체입니다(예: DROP TABLE 실행 중 프로세스가 강제 종료된 경우).
+
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
 S3ObjectStorage용 &#39;plain&#95;rewritable&#39; 메타데이터 저장소가 생성한 디렉터리 수입니다.
@@ -4395,15 +4399,31 @@ Join 모드로 패치 파트를 적용할 때 해시 테이블에 추가된 행�
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-적중한 쿼리 캐시 엔트리의 경과 시간 합계(초)입니다. 이 값은 hits와 misses 모두에 대해 설정됩니다.
+적중한 쿼리 캐시 엔트리의 경과 시간 합계(초)입니다. 쿼리 캐시의 인메모리 백엔드와 온디스크 백엔드 모두에서 캐시 적중(hit) 시에만 갱신됩니다.
 
 ### QueryCacheHits {#querycachehits}
 
-쿼리 캐시에서 쿼리 결과를 찾아 쿼리 계산을 생략한 횟수입니다. `SETTING use_query_cache = 1`을 사용하는 SELECT 쿼리에 대해서만 업데이트됩니다.
+쿼리 캐시에서 쿼리 결과를 찾아 쿼리 계산을 생략한 횟수입니다. 쿼리 캐시 전체를 하나로 보고 집계하므로, 메모리에서 미스가 발생한 뒤 디스크 기반 쿼리 캐시에서 히트가 발생하면 히트 1회로 계산됩니다. `SETTING use_query_cache = 1`을 사용하는 SELECT 쿼리에 대해서만 업데이트됩니다.
 
 ### QueryCacheMisses {#querycachemisses}
 
-쿼리 결과를 쿼리 캐시에서 찾지 못해 쿼리를 계산해야 했던 횟수입니다. SETTING use&#95;query&#95;cache = 1이 적용된 SELECT 쿼리에 대해서만 업데이트됩니다.
+쿼리 결과를 쿼리 캐시에서 찾지 못해 쿼리를 계산해야 했던 횟수입니다. 쿼리 캐시 전체를 기준으로 집계하므로, 인메모리 백엔드와 온디스크 백엔드 어디에서도 찾지 못한 경우에만 미스로 간주됩니다. SETTING use&#95;query&#95;cache = 1이 적용된 SELECT 쿼리에 대해서만 업데이트됩니다.
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+디스크 기반 쿼리 캐시(`query_cache_on_disk_cache_name` 설정 참조)에서 쿼리 결과를 찾은 횟수로, QueryCacheHits 중 온디스크 백엔드에 해당하는 세부 항목입니다. `SETTING use_query_cache = 1`을 사용하는 SELECT 쿼리에 대해서만 업데이트됩니다.
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+쿼리 결과를 디스크 기반 쿼리 캐시(설정 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name 참조)에서 찾지 못한 횟수로, QueryCacheMisses 중 온디스크 백엔드에 해당하는 세부 수치입니다. SETTING use&#95;query&#95;cache = 1이 적용된 SELECT 쿼리에 대해서만 업데이트됩니다.
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+디스크 기반 쿼리 캐시에서 읽은 직렬화된(압축된) 데이터의 바이트 수입니다.
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+디스크 기반 쿼리 캐시에 기록된 직렬화된(압축된) 데이터의 바이트 수입니다.
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -5920,6 +5940,18 @@ streaming exchange 소스가 스트림을 끝까지 읽기 전에(예를 들어 
 ### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
 
 청크를 직렬화 및 압축하여 스트리밍 exchange 패킷으로 만드는 데 소요된 시간입니다.
+
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+PREWHERE의 부분 문자열 검색 조건에서 추출한 필터로 인해, 스캔 중 컬럼에 복사되지 않은 불일치 문자열 값의 바이트 수입니다.
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+PREWHERE의 부분 문자열 검색 조건에서 추출한 필터를 기준으로 스캔하는 동안 검사한 문자열 값의 개수입니다.
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+PREWHERE의 부분 문자열 검색 조건에서 추출한 필터로 스캔하는 동안, 일치하지 않아 빈 문자열로 대체된 문자열 값의 수입니다.
 
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 

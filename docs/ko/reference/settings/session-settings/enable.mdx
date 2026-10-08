@@ -453,6 +453,19 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 * 0 - 비활성화
 * 1 - 활성화
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "디스크 기반 쿼리 캐시에서 쿼리 결과를 읽을지 여부를 제어하는 새로운 설정입니다."}]}]} />
+
+이 설정을 활성화하고 [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ko/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)도 설정되어 있으면, `SELECT` 쿼리 결과를 디스크 기반 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)에서 가져옵니다. 인메모리 쿼리 캐시와 디스크 기반 쿼리 캐시 모두 읽기가 활성화되어 있으면 먼저 메모리에서 조회하고, 캐시 미스가 발생한 경우에만 디스크에서 조회합니다.
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -648,6 +661,19 @@ Possible values:
 
 * 0 - 비활성화됨
 * 1 - 활성화됨
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "쿼리 결과를 디스크 기반 쿼리 캐시에 기록할지 여부를 제어하는 새로운 설정입니다."}]}]} />
+
+이 설정이 활성화되어 있고 [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ko/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name)이 지정된 경우, `SELECT` 쿼리의 결과가 디스크 기반 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache)에 저장됩니다.
+
+가능한 값:
+
+* 0 - 비활성화
+* 1 - 활성화
 
 ## enable_zxc_codec {#enable_zxc_codec}
 

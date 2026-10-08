@@ -1161,6 +1161,10 @@ LocalObjectStorage 用に &#39;plain&#95;rewritable&#39; メタデータスト�
 
 LocalObjectStorage で &#39;plain&#95;rewritable&#39; メタデータストレージによって削除されたディレクトリ数。
 
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+&#39;plain&#95;rewritable&#39; メタデータストレージがロード時に削除したオブジェクトの数です。これらは、以前のサーバープロセスがコミットしたものの完了できなかった削除処理によって残されたオブジェクトです (たとえば、DROP TABLE の実行中にプロセスが強制終了された場合など) 。
+
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
 S3ObjectStorage 用に &#39;plain&#95;rewritable&#39; メタデータストレージによって作成されたディレクトリの数。
@@ -4395,15 +4399,31 @@ Data TLB の参照
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-見つかった クエリキャッシュ エントリの経過時間の合計値です (単位: Seconds) 。この値は、ヒット時とミス時の両方で設定されます。
+見つかった クエリキャッシュ エントリの経過時間の合計値です (単位: Seconds) 。この値はヒット時にのみ更新され、クエリキャッシュのインメモリバックエンドとオンディスクバックエンドの両方が対象です。
 
 ### QueryCacheHits {#querycachehits}
 
-クエリ結果がクエリキャッシュで見つかり、クエリの実行が回避された回数です。SETTING use&#95;query&#95;cache = 1 が指定された SELECT クエリでのみ更新されます。
+クエリ結果がクエリキャッシュで見つかり、クエリの実行が回避された回数です。クエリキャッシュ全体を単位として計上され、メモリ上でミスした後にディスク上のクエリキャッシュでヒットした場合も 1 回のヒットとして数えられます。SETTING use&#95;query&#95;cache = 1 が指定された SELECT クエリでのみ更新されます。
 
 ### QueryCacheMisses {#querycachemisses}
 
-クエリ結果が クエリキャッシュ に見つからず、クエリの計算が必要になった回数。SETTING use&#95;query&#95;cache = 1 を使用する SELECT クエリでのみ更新されます。
+クエリ結果が クエリキャッシュ に見つからず、クエリの計算が必要になった回数。クエリキャッシュ全体を対象としてカウントされ、インメモリとオンディスクのどちらのバックエンドにも見つからなかった場合にのみミスとして扱われます。SETTING use&#95;query&#95;cache = 1 を使用する SELECT クエリでのみ更新されます。
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+クエリ結果がディスク上のクエリキャッシュ (設定 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name を参照) で見つかった回数で、QueryCacheHits のうちディスク上のバックエンドによる分の内訳です。SETTING use&#95;query&#95;cache = 1 が指定された SELECT クエリでのみ更新されます。
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+クエリ結果がディスク上のクエリキャッシュ (設定 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name を参照) に見つからなかった回数。QueryCacheMisses のうち、ディスク上のバックエンドに関する内訳です。SETTING use&#95;query&#95;cache = 1 を使用する SELECT クエリでのみ更新されます。
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+ディスク上のクエリキャッシュから読み取られた、シリアル化済み (圧縮済み) データのバイト数。
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+ディスク上のクエリキャッシュに書き込まれた、シリアル化済み (圧縮済み) データのバイト数。
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -5920,6 +5940,18 @@ socket への送信を待つ パケット の queue が満杯であったため�
 ### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
 
 chunk をシリアライズおよび圧縮してstreaming exchange パケットに変換するのに費やされた時間。
+
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+PREWHERE の部分文字列検索条件から抽出されたフィルタにより、スキャン中にカラムへコピーされずにスキップされた、条件に一致しない文字列値のバイト数。
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+PREWHERE 内の部分文字列検索条件から抽出されたフィルタを用いて、スキャン中に照合された文字列値の数。
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+PREWHERE 内の部分文字列検索条件から抽出されたフィルタによるスキャン中に、一致しなかったために空文字列に置き換えられた文字列値の数。
 
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 

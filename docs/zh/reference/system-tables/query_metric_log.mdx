@@ -196,9 +196,13 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询条件缓存中未找到条目的次数 (因此无法跳过读取标记) 。仅对带有 SETTING use&#95;query&#95;condition&#95;cache = 1 的 SELECT 查询更新。
 * `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在加密头缓存中找到加密头字节、因而跳过从源读取加密头的次数。
 * `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 加密请求头字节未在加密请求头缓存中找到、因而需从源读取的次数。
-* `ProfileEvent_QueryCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中找到查询结果的次数 (因此避免了查询计算) 。仅对带有 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
-* `ProfileEvent_QueryCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中未找到查询结果的次数 (因此需要进行查询计算) 。仅对带有 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
-* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中找到的缓存条目的年龄总和 (单位为秒) 。命中和未命中时都会设置该值。
+* `ProfileEvent_QueryCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中找到查询结果的次数 (因此避免了查询计算) 。按查询缓存整体统计：内存中未命中、随后在磁盘查询缓存中命中，计为一次命中。仅对带有 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
+* `ProfileEvent_QueryCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中未找到查询结果的次数 (因此需要进行查询计算) 。按查询缓存整体统计：仅当内存后端和磁盘后端中均未找到该查询时，才计为未命中。仅对带有 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
+* `ProfileEvent_QueryCacheOnDiskHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在磁盘查询缓存中找到查询结果的次数 (参见设置 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name) ，即 QueryCacheHits 中来自磁盘后端的部分。仅对带有 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
+* `ProfileEvent_QueryCacheOnDiskMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在磁盘查询缓存中未找到查询结果的次数 (参见设置 query&#95;cache&#95;on&#95;disk&#95;cache&#95;name) ，即 QueryCacheMisses 中来自磁盘后端的部分。仅对带有 SETTING use&#95;query&#95;cache = 1 的 SELECT 查询更新。
+* `ProfileEvent_QueryCacheOnDiskReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从磁盘查询缓存读取的序列化 (压缩) 字节数。
+* `ProfileEvent_QueryCacheOnDiskWrittenBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 写入磁盘查询缓存的序列化 (压缩) 字节数。
+* `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在查询缓存中找到的缓存条目的年龄总和 (单位为秒) 。仅在命中时更新，涵盖查询缓存的内存后端和磁盘后端。
 * `ProfileEvent_QueryCacheReadRows` ([UInt64](/zh/reference/data-types/int-uint)) — 从查询缓存中读取的行数。
 * `ProfileEvent_QueryCacheReadBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从 query cache 读取的 (未压缩) 字节总数。
 * `ProfileEvent_QueryCacheWrittenRows` ([UInt64](/zh/reference/data-types/int-uint)) — 写入 query cache 的行数。
@@ -501,6 +505,9 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_SelectedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 从所有表中 SELECT 的字节数 (未压缩；按列在内存中的存储形式计算) 。
 * `ProfileEvent_RowsReadByMainReader` ([UInt64](/zh/reference/data-types/int-uint)) — 主读取器从 MergeTree 表中读取的行数 (在 PREWHERE 步骤之后) 。
 * `ProfileEvent_RowsReadByPrewhereReaders` ([UInt64](/zh/reference/data-types/int-uint)) — PREWHERE 读取器从 MergeTree 表中读取的行数 (总计) 。
+* `ProfileEvent_StringValueFilterValuesChecked` ([UInt64](/zh/reference/data-types/int-uint)) — 扫描期间，依据从 PREWHERE 子串搜索条件中提取的过滤器检查的字符串值数量。
+* `ProfileEvent_StringValueFilterValuesReplaced` ([UInt64](/zh/reference/data-types/int-uint)) — 扫描期间，从 PREWHERE 子串搜索条件中提取的过滤器将不匹配字符串值替换为空字符串的数量。
+* `ProfileEvent_StringValueFilterBytesSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 扫描期间，因从 PREWHERE 子串搜索条件中提取的过滤器而未复制到列中的不匹配字符串值的字节数。
 * `ProfileEvent_LoadedDataParts` ([UInt64](/zh/reference/data-types/int-uint)) — MergeTree 表在初始化期间加载的数据分区片段数量。
 * `ProfileEvent_LoadedDataPartsMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — MergeTree 表在初始化期间加载数据分区片段所耗费的微秒数。
 * `ProfileEvent_FilteringMarksWithPrimaryKeyProcessedMarks` ([UInt64](/zh/reference/data-types/int-uint)) — 主键分析期间处理的标记总数。
@@ -810,6 +817,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_DiskPlainRewritableS3DirectoryCreated` ([UInt64](/zh/reference/data-types/int-uint)) — 由 S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储创建的目录数量。
 * `ProfileEvent_DiskPlainRewritableS3DirectoryRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — 由 S3ObjectStorage 的 &#39;plain&#95;rewritable&#39; 元数据存储删除的目录数量。
 * `ProfileEvent_DiskPlainRewritableLegacyLayoutDiskCount` ([UInt64](/zh/reference/data-types/int-uint)) — 使用旧版布局的 &#39;plain&#95;rewritable&#39; disk 数量。
+* `ProfileEvent_DiskPlainRewritableOrphanedObjectsRemoved` ([UInt64](/zh/reference/data-types/int-uint)) — &#39;plain&#95;rewritable&#39; 元数据存储在加载时删除的对象数量；这些对象遗留自先前服务器进程已提交但尚未完成的删除操作 (例如该进程在执行 DROP TABLE 期间被终止) 。
 * `ProfileEvent_DiskPlainRewritableUndoStageRetries` ([UInt64](/zh/reference/data-types/int-uint)) — 由于对象存储拒绝操作，回滚失败的 &#39;plain&#95;rewritable&#39; 元数据事务时必须重复执行某个步骤的次数。
 * `ProfileEvent_MetadataTransactionRollbacks` ([UInt64](/zh/reference/data-types/int-uint)) — 提交失败并已回滚的元数据事务数量。
 * `ProfileEvent_MetadataTransactionRollbacksFailed` ([UInt64](/zh/reference/data-types/int-uint)) — 未能完整执行的元数据事务回滚数量，因此元数据保留了被报告为失败的事务的一部分。

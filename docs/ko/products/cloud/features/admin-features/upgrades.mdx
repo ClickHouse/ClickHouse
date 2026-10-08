@@ -26,7 +26,7 @@ ClickHouse Cloud를 사용하면 패치와 업그레이드를 따로 걱정할 �
 
 `compatibility` 설정을 사용하면 이전 버전의 설정 기본값을 사용할 수 있습니다. 서비스가 새 버전으로 업그레이드되어도 `compatibility` 설정에 지정된 버전은 변경되지 않습니다. 즉, 서비스를 처음 생성했을 때 존재했던 설정의 기본값은 바뀌지 않습니다(이미 해당 기본값을 재정의한 경우에는 그 값이 업그레이드 후에도 유지됩니다).
 
-서비스 수준의 기본 `compatibility` 설정은 직접 관리할 수 없습니다. 서비스의 기본 `compatibility` 설정에 지정된 버전을 변경하려면 [지원팀에 문의하십시오](https://clickhouse.com/support/program). 하지만 세션에서 `SET compatibility = '22.3'`를 사용하거나 쿼리에서 `SETTINGS compatibility = '22.3'`를 사용하는 등 표준 ClickHouse 설정 메커니즘을 통해 사용자, 역할, 프로필, 쿼리 또는 세션 수준에서 `compatibility` 설정을 재정의할 수 있습니다.
+ClickHouse Cloud에서는 서비스 수준의 기본 `compatibility` 설정을 직접 관리할 수 없습니다. 서비스의 기본 `compatibility` 설정에 지정된 버전을 변경하려면 [ClickHouse 지원팀에 문의하십시오](https://clickhouse.com/support/program). 하지만 세션에서 `SET compatibility = '26.8'`를 사용하거나 쿼리에서 `SETTINGS [other settings,] compatibility = '26.8'`를 사용하는 등 표준 ClickHouse 설정 메커니즘을 통해 사용자, 역할, 프로필, 쿼리 또는 세션 수준에서 `compatibility` 설정을 재정의할 수 있습니다.
 
 <div id="maintenance-mode">
   ## 유지 관리 모드 {#maintenance-mode}

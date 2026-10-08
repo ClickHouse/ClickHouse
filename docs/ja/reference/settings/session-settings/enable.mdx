@@ -450,6 +450,19 @@ true の場合、テーブルから取得したシリアライゼーションの
 * 0 - 無効
 * 1 - 有効
 
+## enable_reads_from_query_cache_on_disk {#enable_reads_from_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "ディスク上のクエリキャッシュからクエリ結果を読み取るかどうかを制御する新しい設定。"}]}]} />
+
+有効にすると (かつ [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ja/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) が設定されている場合) 、`SELECT` クエリの結果をディスク上の[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)から取得します。インメモリとディスク上の両方のクエリキャッシュで読み取りが有効な場合、ルックアップはまずメモリに対して行われ、キャッシュミスした場合にのみディスクから読み取られます。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
 ## enable_s3_requests_logging {#enable_s3_requests_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -635,6 +648,19 @@ MergeTree ファミリーのエンジンで `UNIQUE KEY` 句を使用したテ�
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 有効にすると、`SELECT` クエリの結果が[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)に保存されます。
+
+設定可能な値:
+
+* 0 - 無効
+* 1 - 有効
+
+## enable_writes_to_query_cache_on_disk {#enable_writes_to_query_cache_on_disk}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "クエリ結果をディスク上のクエリキャッシュに書き込むかどうかを制御する新しい設定です。"}]}]} />
+
+この設定を有効にし、かつ [query&#95;cache&#95;on&#95;disk&#95;cache&#95;name](/ja/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name) が設定されている場合、`SELECT` クエリの結果はディスク上の[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)に保存されます。
 
 設定可能な値:
 

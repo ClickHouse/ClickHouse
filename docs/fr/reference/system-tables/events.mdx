@@ -1162,6 +1162,10 @@ Nombre de répertoires créés par le stockage de métadonnées « plain&#95;rew
 
 Nombre de répertoires supprimés par le stockage de métadonnées « plain&#95;rewritable » pour LocalObjectStorage.
 
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+Nombre d&#39;objets supprimés par le stockage de métadonnées &#39;plain&#95;rewritable&#39; lors du chargement, car ils avaient été laissés par des suppressions validées mais non terminées par un processus serveur précédent (par exemple, s&#39;il a été arrêté de force pendant un DROP TABLE).
+
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
 Nombre de répertoires créés par le stockage de métadonnées « plain&#95;rewritable » pour S3ObjectStorage.
@@ -4396,15 +4400,31 @@ Temps total pendant lequel une requête a été mise en attente pour respecter l
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-La somme, en secondes, de l’ancienneté des entrées trouvées dans le cache de requêtes. La valeur est renseignée aussi bien pour les succès que pour les échecs.
+La somme, en secondes, de l’ancienneté des entrées trouvées dans le cache de requêtes. Mise à jour uniquement en cas de succès, aussi bien pour le backend en mémoire que pour le backend sur disque du cache de requêtes.
 
 ### QueryCacheHits {#querycachehits}
 
-Nombre de fois où le résultat d’une requête a été trouvé dans le cache de requêtes (ce qui a évité de recalculer la requête). Mis à jour uniquement pour les requêtes SELECT avec SETTING use&#95;query&#95;cache = 1.
+Nombre de fois où le résultat d’une requête a été trouvé dans le cache de requêtes (ce qui a évité de recalculer la requête). Le cache de requêtes est comptabilisé dans son ensemble : un défaut en mémoire suivi d’un succès dans le cache de requêtes sur disque compte pour un seul succès. Mis à jour uniquement pour les requêtes SELECT avec SETTING use&#95;query&#95;cache = 1.
 
 ### QueryCacheMisses {#querycachemisses}
 
-Nombre de fois où le résultat d’une requête n’a pas été trouvé dans le cache de requêtes, ce qui a nécessité l’exécution de la requête. Uniquement mis à jour pour les requêtes SELECT avec SETTING use&#95;query&#95;cache = 1.
+Nombre de fois où le résultat d’une requête n’a pas été trouvé dans le cache de requêtes, ce qui a nécessité l’exécution de la requête. Prend en compte le cache de requêtes dans son ensemble : une requête n’est comptabilisée comme un échec que si elle n’a été trouvée ni dans le backend en mémoire, ni dans le backend sur disque. Uniquement mis à jour pour les requêtes SELECT avec SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+Nombre de fois où le résultat d’une requête a été trouvé dans le cache de requêtes sur disque (voir le paramètre query&#95;cache&#95;on&#95;disk&#95;cache&#95;name). Il s’agit de la part de QueryCacheHits correspondant au backend sur disque. Mis à jour uniquement pour les requêtes SELECT avec SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+Nombre de fois où le résultat d’une requête n’a pas été trouvé dans le cache de requêtes sur disque (voir le paramètre query&#95;cache&#95;on&#95;disk&#95;cache&#95;name), c’est-à-dire la part de QueryCacheMisses imputable au backend sur disque. Uniquement mis à jour pour les requêtes SELECT avec SETTING use&#95;query&#95;cache = 1.
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+Nombre d&#39;octets sérialisés (compressés) lus depuis le cache de requêtes sur disque.
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+Nombre d&#39;octets sérialisés (compressés) écrits dans le cache de requêtes sur disque.
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -5921,6 +5941,18 @@ Octets des blocs Native contenus dans les paquets d&#39;exchange en streaming av
 ### StreamingExchangeSerializeMicroseconds {#streamingexchangeserializemicroseconds}
 
 Temps passé à sérialiser et compresser les fragments en paquets d&#39;exchange en streaming.
+
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+Nombre d&#39;octets de valeurs string non correspondantes qui n&#39;ont pas été copiés dans une colonne lors d&#39;un parcours, en raison d&#39;un filter extrait d&#39;une condition de recherche de sous-chaîne dans PREWHERE.
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+Nombre de valeurs de type string vérifiées lors d&#39;un parcours à l&#39;aide d&#39;un filter extrait d&#39;une condition de recherche de sous-chaîne dans PREWHERE.
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+Nombre de valeurs de type string non correspondantes remplacées par des chaînes de caractères vides lors d&#39;un parcours, par un filter extrait d&#39;une condition de recherche de sous-chaîne dans PREWHERE.
 
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 

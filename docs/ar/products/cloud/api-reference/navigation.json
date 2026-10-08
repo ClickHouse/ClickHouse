@@ -24,9 +24,9 @@
         ]
       },
       {
-        "group": "Notifications",
+        "group": "الإشعارات",
         "pages": [
-          "products/cloud/api-reference/notifications/notification-types-get-list"
+          "ar/products/cloud/api-reference/notifications/notification-types-get-list"
         ]
       },
       {
