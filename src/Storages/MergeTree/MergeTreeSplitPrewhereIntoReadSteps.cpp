@@ -46,8 +46,7 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
 }
 
 /// A key subcolumn of a Map (`map.key_k0`) reads the keys and values of the whole Map, so it is identified
-/// with the Map that owns it. Any other column or subcolumn is identified by its own substreams, so a condition
-/// on a cheap subcolumn gets its own step and filters before the rest of the column is read.
+/// with the Map that owns it. Any other column or subcolumn is identified by its own substreams.
 StorageColumnPart resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
 {
     if (columns)
