@@ -64,8 +64,8 @@ public:
     /// Adds a data file with a non-negative `record_count`.
     void addFile(const ProcessedManifestFileEntry & entry, const IcebergPathFromMetadata & path_to_manifest_file);
 
-    /// Sets the merged statistics and the numbers of distinct values of `estimate`, whose `rows` is the sum of
-    /// `record_count` over the added files; nothing is set when `rows` is unknown or 0.
+    /// Sets the merged statistics, the numbers of distinct values and the column sizes of `estimate`, whose `rows` is the
+    /// sum of `record_count` over the added files; nothing is set when `rows` is unknown or 0.
     void finalize(DataLakeReadEstimate & estimate);
 
 private:

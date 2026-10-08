@@ -280,6 +280,9 @@ void ManifestColumnStatistics::finalize(DataLakeReadEstimate & estimate)
     const auto merged = estimate.column_statistics->estimateRelationProfile();
     for (size_t i = 0; i < targets.size(); ++i)
     {
+        if (distinct_values_inputs[i].sizes_known)
+            estimate.column_compressed_bytes.emplace(targets[i].name, distinct_values_inputs[i].sizes);
+
         const auto it = merged.column_stats.find(targets[i].name);
         if (it == merged.column_stats.end())
             continue;
