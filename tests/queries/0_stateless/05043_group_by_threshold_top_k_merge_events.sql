@@ -59,6 +59,8 @@ SELECT k, sum(u) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIM
 -- The `If` and `Null` combinators forward the subadditive bound of the nested function.
 SELECT k, countIf(u >= 2) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_f_count_if' FORMAT Null;
+SELECT k, sumIf(u, u >= 2) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
+    SETTINGS log_comment = '05043_ttkm_f_sum_if' FORMAT Null;
 SELECT k, uniqExact(nullIf(u, 0)) AS c FROM threshold_top_k_events GROUP BY k ORDER BY c DESC LIMIT 10
     SETTINGS log_comment = '05043_ttkm_g_uniq_exact_null' FORMAT Null;
 

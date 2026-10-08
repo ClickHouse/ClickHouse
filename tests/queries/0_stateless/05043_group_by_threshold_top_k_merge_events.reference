@@ -4,6 +4,7 @@ c_uniq_exact	1	1	1	0
 d_max	1	1	1	0
 e_sum	1	1	1	0
 f_count_if	1	1	1	0
+f_sum_if	1	1	1	0
 g_uniq_exact_null	1	1	1	0
 h_uniq_estimate	0	0	0	0
 i_float	0	0	0	0
