@@ -540,12 +540,23 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     }
     const bool has_aggregate_states = !state_leaves.empty();
 
+    /// Aggregate-state leaves can have a different number of values than the outer block has rows:
+    /// arrays and maps contain a value per nested element, while a variant alternative can be empty.
+    /// Count the values that the Native serialization writes, not outer rows.
+    size_t block_state_values = 0;
+    for (const auto & [aggregate_column, owner, repetitions, skip_rows] : state_leaves)
+    {
+        static_cast<void>(owner);
+        block_state_values += (aggregate_column->size() - skip_rows) * repetitions;
+    }
+
     /// Until the first sampled block with aggregate-state values lands there is no per-value figure to extrapolate from, so blocks
-    /// racing with the first sampled one serialize their states too and count as extra samples.
-    const bool serialize_states
-        = has_aggregate_states && (sample_block || statistics.serialized_state_values.load(std::memory_order_relaxed) == 0);
+    /// racing with the first sampled one serialize their states too and count as extra samples. Only blocks that
+    /// do carry state values take that path: a `Variant`/`Dynamic` output whose blocks hold only plain alternatives
+    /// contributes no state bytes, and forcing every such block through it would sample the whole output.
+    const bool serialize_states = has_aggregate_states
+        && (sample_block || (block_state_values > 0 && statistics.serialized_state_values.load(std::memory_order_relaxed) == 0));
     size_t serialized_state_bytes = 0;
-    size_t serialized_state_values = 0;
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;
     /// Only output columns get here, and they model what a replica sends to the initiator rather than
@@ -563,7 +574,6 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
         for (const auto & [aggregate_column, owner, repetitions, skip_rows] : state_leaves)
         {
             static_cast<void>(owner);
-            serialized_state_values += (aggregate_column->size() - skip_rows) * repetitions;
             /// One periodic sample yields both the uncompressed figure and the compression sample, so
             /// the `bytes / (sample_bytes / compressed_bytes)` estimate is derived from a single
             /// population of states even when state size or compressibility changes with key order
@@ -616,21 +626,14 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
     if (serialize_states)
     {
         statistics.serialized_state_bytes += serialized_state_bytes;
-        statistics.serialized_state_values += serialized_state_values;
+        statistics.serialized_state_values += block_state_values;
         if (!full_bytes)
             block_bytes += serialized_state_bytes;
     }
-    else if (has_aggregate_states && !full_bytes)
+    else if (block_state_values > 0 && !full_bytes)
     {
-        /// Aggregate-state leaves can have a different number of values than the outer block has rows:
-        /// arrays and maps contain a value per nested element, while a variant alternative can be empty.
-        /// Extrapolate from the values that the Native serialization writes, not outer rows.
-        size_t block_state_values = 0;
-        for (const auto & [aggregate_column, owner, repetitions, skip_rows] : state_leaves)
-        {
-            static_cast<void>(owner);
-            block_state_values += (aggregate_column->size() - skip_rows) * repetitions;
-        }
+        /// Extrapolate from the per-value figure of the serialized samples. A block with state values gets
+        /// here only after a sample has committed some, so `serialized_state_values` is not zero.
         block_bytes += static_cast<size_t>(
             static_cast<double>(statistics.serialized_state_bytes) * static_cast<double>(block_state_values)
             / static_cast<double>(statistics.serialized_state_values.load(std::memory_order_relaxed)));
