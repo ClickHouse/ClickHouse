@@ -5,15 +5,20 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -43,6 +48,7 @@
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <array>
+#include <cstring>
 #include <typeinfo>
 #include <unordered_set>
 
@@ -226,6 +232,12 @@ struct ExpressionMatchBudget
     }
 };
 
+enum class ExpressionMatchMode : UInt8
+{
+    DirectIN,
+    ArrayJoinWrapper,
+};
+
 const ActionsDAG::Node * getNodeWithoutAliases(const RPNBuilderTreeNode & tree_node, ExpressionMatchBudget & budget)
 {
     const ActionsDAG::Node * node = tree_node.getDAGNode();
@@ -292,6 +304,10 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
         if (!left_type || !right_type || left_type->getCustomName() || right_type->getCustomName())
             return false;
 
+        /// Function-typed arguments carry lambda captures outside the ordinary child structure.
+        if (typeid_cast<const DataTypeFunction *>(left_type.get()) || typeid_cast<const DataTypeFunction *>(right_type.get()))
+            return false;
+
         if (left_type.get() == right_type.get())
         {
             /// Pointer identity includes parameters such as a timezone or enum map. Walk exact shared
@@ -327,6 +343,64 @@ bool sameType(const DataTypePtr & left, const DataTypePtr & right, ExpressionMat
         {
             const auto * right_fixed_string = typeid_cast<const DataTypeFixedString *>(right_type.get());
             if (!right_fixed_string || left_fixed_string->getN() != right_fixed_string->getN())
+                return false;
+            continue;
+        }
+
+        if (const auto * left_datetime = typeid_cast<const DataTypeDateTime *>(left_type.get()))
+        {
+            const auto * right_datetime = typeid_cast<const DataTypeDateTime *>(right_type.get());
+            if (!right_datetime
+                || left_datetime->hasExplicitTimeZone() != right_datetime->hasExplicitTimeZone())
+                return false;
+
+            const auto & left_time_zone = left_datetime->getTimeZone().getTimeZone();
+            const auto & right_time_zone = right_datetime->getTimeZone().getTimeZone();
+            if (!budget.consume(left_time_zone.size()) || !budget.consume(right_time_zone.size())
+                || left_time_zone != right_time_zone)
+                return false;
+            continue;
+        }
+
+        if (const auto * left_uint8 = typeid_cast<const DataTypeUInt8 *>(left_type.get()))
+        {
+            const auto * right_uint8 = typeid_cast<const DataTypeUInt8 *>(right_type.get());
+            if (!right_uint8 || left_uint8->canUnsignedBeSigned() != right_uint8->canUnsignedBeSigned())
+                return false;
+            continue;
+        }
+        if (const auto * left_uint16 = typeid_cast<const DataTypeUInt16 *>(left_type.get()))
+        {
+            const auto * right_uint16 = typeid_cast<const DataTypeUInt16 *>(right_type.get());
+            if (!right_uint16 || left_uint16->canUnsignedBeSigned() != right_uint16->canUnsignedBeSigned())
+                return false;
+            continue;
+        }
+        if (const auto * left_uint32 = typeid_cast<const DataTypeUInt32 *>(left_type.get()))
+        {
+            const auto * right_uint32 = typeid_cast<const DataTypeUInt32 *>(right_type.get());
+            if (!right_uint32 || left_uint32->canUnsignedBeSigned() != right_uint32->canUnsignedBeSigned())
+                return false;
+            continue;
+        }
+        if (const auto * left_uint64 = typeid_cast<const DataTypeUInt64 *>(left_type.get()))
+        {
+            const auto * right_uint64 = typeid_cast<const DataTypeUInt64 *>(right_type.get());
+            if (!right_uint64 || left_uint64->canUnsignedBeSigned() != right_uint64->canUnsignedBeSigned())
+                return false;
+            continue;
+        }
+        if (const auto * left_uint128 = typeid_cast<const DataTypeUInt128 *>(left_type.get()))
+        {
+            const auto * right_uint128 = typeid_cast<const DataTypeUInt128 *>(right_type.get());
+            if (!right_uint128 || left_uint128->canUnsignedBeSigned() != right_uint128->canUnsignedBeSigned())
+                return false;
+            continue;
+        }
+        if (const auto * left_uint256 = typeid_cast<const DataTypeUInt256 *>(left_type.get()))
+        {
+            const auto * right_uint256 = typeid_cast<const DataTypeUInt256 *>(right_type.get());
+            if (!right_uint256 || left_uint256->canUnsignedBeSigned() != right_uint256->canUnsignedBeSigned())
                 return false;
             continue;
         }
@@ -374,9 +448,74 @@ bool compareColumnStringStorage(
         && std::equal(left_chars.begin(), left_chars.end(), right_chars.begin(), right_chars.end());
 }
 
+template <typename T>
+bool compareSupportedNumericConstant(
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type,
+    const IColumn & left_data,
+    const IColumn & right_data,
+    ExpressionMatchBudget & budget)
+{
+    const auto * left_number_type = typeid_cast<const DataTypeNumber<T> *>(left_type.get());
+    const auto * right_number_type = typeid_cast<const DataTypeNumber<T> *>(right_type.get());
+    const auto * left_vector = typeid_cast<const ColumnVector<T> *>(&left_data);
+    const auto * right_vector = typeid_cast<const ColumnVector<T> *>(&right_data);
+    if (!left_number_type || !right_number_type
+        || left_number_type->canUnsignedBeSigned() != right_number_type->canUnsignedBeSigned()
+        || !left_vector || !right_vector || left_vector->size() != 1 || right_vector->size() != 1
+        || !budget.consume(2 * sizeof(T)))
+        return false;
+
+    return std::memcmp(&left_vector->getElement(0), &right_vector->getElement(0), sizeof(T)) == 0;
+}
+
+bool compareSupportedNumericConstant(
+    const DataTypePtr & left_type,
+    const DataTypePtr & right_type,
+    const IColumn & left_data,
+    const IColumn & right_data,
+    ExpressionMatchBudget & budget)
+{
+    const IDataType * left_raw_type = left_type.get();
+    const IDataType * right_raw_type = right_type.get();
+    if (!left_raw_type || !right_raw_type || typeid(*left_raw_type) != typeid(*right_raw_type))
+        return false;
+
+    if (typeid_cast<const DataTypeUInt8 *>(left_type.get()))
+        return compareSupportedNumericConstant<UInt8>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeUInt16 *>(left_type.get()))
+        return compareSupportedNumericConstant<UInt16>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeUInt32 *>(left_type.get()))
+        return compareSupportedNumericConstant<UInt32>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeUInt64 *>(left_type.get()))
+        return compareSupportedNumericConstant<UInt64>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeUInt128 *>(left_type.get()))
+        return compareSupportedNumericConstant<UInt128>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeUInt256 *>(left_type.get()))
+        return compareSupportedNumericConstant<UInt256>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeInt8 *>(left_type.get()))
+        return compareSupportedNumericConstant<Int8>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeInt16 *>(left_type.get()))
+        return compareSupportedNumericConstant<Int16>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeInt32 *>(left_type.get()))
+        return compareSupportedNumericConstant<Int32>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeInt64 *>(left_type.get()))
+        return compareSupportedNumericConstant<Int64>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeInt128 *>(left_type.get()))
+        return compareSupportedNumericConstant<Int128>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeInt256 *>(left_type.get()))
+        return compareSupportedNumericConstant<Int256>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeFloat32 *>(left_type.get()))
+        return compareSupportedNumericConstant<Float32>(left_type, right_type, left_data, right_data, budget);
+    if (typeid_cast<const DataTypeFloat64 *>(left_type.get()))
+        return compareSupportedNumericConstant<Float64>(left_type, right_type, left_data, right_data, budget);
+    return false;
+}
+
 bool compareSupportedConstant(
     const ActionsDAG::Node & left,
     const ActionsDAG::Node & right,
+    ExpressionMatchMode mode,
     ExpressionMatchBudget & budget)
 {
     if (!left.column || !right.column || left.is_runtime_filter_id || right.is_runtime_filter_id
@@ -392,8 +531,10 @@ bool compareSupportedConstant(
     /// ActionsDAG stores ColumnConst values at size 0; compare the single underlying value instead.
     const IColumn & left_data = left_constant->getDataColumn();
     const IColumn & right_data = right_constant->getDataColumn();
-    if (left_data.isDummy() || right_data.isDummy() || left_data.size() != 1 || right_data.size() != 1)
-        return false;
+
+    if (mode == ExpressionMatchMode::DirectIN
+        && compareSupportedNumericConstant(left.result_type, right.result_type, left_data, right_data, budget))
+        return true;
 
     if (isStringType(left.result_type) && isStringType(right.result_type))
     {
@@ -502,6 +643,59 @@ bool isSupportedArrayFunctionPair(
     return true;
 }
 
+bool isSupportedDirectFunctionPair(
+    const ActionsDAG::Node & left, const ActionsDAG::Node & right, ExpressionMatchBudget & budget)
+{
+    if (!left.function_base || !right.function_base || left.is_function_compiled || right.is_function_compiled)
+        return false;
+
+    const FunctionCreator * left_handle = left.function_base->getFactoryHandle();
+    if (!left_handle || right.function_base->getFactoryHandle() != left_handle)
+        return false;
+
+    const String left_name = left.function_base->getName();
+    const String right_name = right.function_base->getName();
+    if (left_name.size() != right_name.size() || !budget.consume(left_name.size()) || !budget.consume(right_name.size())
+        || left_name != right_name)
+        return false;
+
+    if (left.function_base->isStateful() || right.function_base->isStateful()
+        || !left.function_base->isDeterministic() || !right.function_base->isDeterministic()
+        || !left.function_base->isDeterministicInScopeOfQuery() || !right.function_base->isDeterministicInScopeOfQuery()
+        || left.function_base->hasObservableSideEffects() || right.function_base->hasObservableSideEffects())
+        return false;
+
+    const auto & left_argument_types = left.function_base->getArgumentTypes();
+    const auto & right_argument_types = right.function_base->getArgumentTypes();
+    if (left_argument_types.size() != right_argument_types.size()
+        || left_argument_types.size() != left.children.size() || right_argument_types.size() != right.children.size()
+        || !budget.consume(left_argument_types.size()) || !budget.consume(right_argument_types.size()))
+        return false;
+
+    if (!sameType(left.function_base->getResultType(), right.function_base->getResultType(), budget)
+        || !sameType(left.function_base->getResultType(), left.result_type, budget)
+        || !sameType(right.function_base->getResultType(), right.result_type, budget))
+        return false;
+
+    for (size_t i = 0; i < left_argument_types.size(); ++i)
+    {
+        const auto * left_child = left.children[i];
+        const auto * right_child = right.children[i];
+        if (!left_child || !right_child
+            || !sameType(left_argument_types[i], right_argument_types[i], budget)
+            || !sameType(left_argument_types[i], left_child->result_type, budget)
+            || !sameType(right_argument_types[i], right_child->result_type, budget))
+            return false;
+    }
+
+    /// IFunctionBase::updateHash is the semantic-context hook for captured value-affecting state.
+    SipHash left_hash;
+    SipHash right_hash;
+    left.function_base->updateHash(left_hash);
+    right.function_base->updateHash(right_hash);
+    return left_hash.get128() == right_hash.get128();
+}
+
 const ActionsDAG::Node * normalizeExpressionNode(const ActionsDAG::Node * node, ExpressionMatchBudget & budget)
 {
     while (node && node->type == ActionsDAG::ActionType::ALIAS)
@@ -514,7 +708,10 @@ const ActionsDAG::Node * normalizeExpressionNode(const ActionsDAG::Node * node, 
 }
 
 bool structurallyMatchesIndexedExpression(
-    const ActionsDAG::Node * query_node, const ActionsDAG::Node * index_node, ExpressionMatchBudget & budget)
+    const ActionsDAG::Node * query_node,
+    const ActionsDAG::Node * index_node,
+    ExpressionMatchMode mode,
+    ExpressionMatchBudget & budget)
 {
     std::vector<ExpressionNodePair> pending;
     std::unordered_set<ExpressionNodePair, ExpressionNodePairHash> visited;
@@ -548,11 +745,15 @@ bool structurallyMatchesIndexedExpression(
                     return false;
                 break;
             case ActionsDAG::ActionType::COLUMN:
-                if (left->children.size() || right->children.size() || !compareSupportedConstant(*left, *right, budget))
+                if (left->children.size() || right->children.size()
+                    || !compareSupportedConstant(*left, *right, mode, budget))
                     return false;
                 break;
             case ActionsDAG::ActionType::FUNCTION:
-                if (!isSupportedArrayFunctionPair(*left, *right, budget) || left->children.size() != right->children.size())
+                if (left->children.size() != right->children.size()
+                    || (mode == ExpressionMatchMode::DirectIN
+                        ? !isSupportedDirectFunctionPair(*left, *right, budget)
+                        : !isSupportedArrayFunctionPair(*left, *right, budget)))
                     return false;
                 for (size_t i = 0; i < left->children.size(); ++i)
                 {
@@ -578,6 +779,7 @@ bool matchesIndexedOutput(
     const ActionsDAG & indexed_expression_dag,
     const Block & header,
     const String & column_name,
+    ExpressionMatchMode mode,
     ExpressionMatchBudget & budget)
 {
     if (!query_node || !budget.consume(column_name.size()) || !header.has(column_name))
@@ -589,7 +791,7 @@ bool matchesIndexedOutput(
         || !sameType(outputs[position]->result_type, header.getByPosition(position).type, budget))
         return false;
 
-    return structurallyMatchesIndexedExpression(query_node, outputs[position], budget);
+    return structurallyMatchesIndexedExpression(query_node, outputs[position], mode, budget);
 }
 
 bool getDirectArrayJoinIndexColumn(
@@ -611,7 +813,7 @@ bool getDirectArrayJoinIndexColumn(
 
     const DataTypePtr & index_type = header.getByPosition(header.getPositionByName(column_name)).type;
     return typeid_cast<const DataTypeArray *>(index_type.get())
-        && matchesIndexedOutput(node, indexed_expression_dag, header, column_name, budget);
+        && matchesIndexedOutput(node, indexed_expression_dag, header, column_name, ExpressionMatchMode::ArrayJoinWrapper, budget);
 }
 
 bool isIdentityDynamicArrayCast(
@@ -1231,7 +1433,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     ExpressionMatchBudget expression_match_budget;
 
     if (header.has(key_node_column_name)
-        && matchesIndexedOutput(key_node.getDAGNode(), indexed_expression_dag, header, key_node_column_name, expression_match_budget))
+        && matchesIndexedOutput(
+            key_node.getDAGNode(), indexed_expression_dag, header, key_node_column_name,
+            ExpressionMatchMode::DirectIN, expression_match_budget))
     {
         size_t row_size = column->size();
         size_t position = header.getPositionByName(key_node_column_name);
