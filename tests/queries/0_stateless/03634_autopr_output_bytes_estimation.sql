@@ -14,8 +14,15 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- beyond the tolerance below.
 SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
 
--- Override randomized max_threads to avoid timeout on slow builds (ASan)
-SET max_threads=0;
+-- Pin the thread count, both to override the randomized value (which can be low enough to time the test
+-- out on a slow build) and because it decides the shape of the blocks the estimate is sampled from. The
+-- ratio is measured per output block, as the wire compresses it, so the blocks' size is what the codec
+-- gets to work with: a single-stream aggregation hands over a few large blocks and the same `String` key
+-- column measures 3.30x, while many streams hand over the bucket Top-K conversion's bounded samples, a
+-- few dozen rows, and measure 1.46x. Left to `max_threads = 0` the estimate therefore followed whatever
+-- thread count the machine gave - `query_12` ranged over 2924508..6655105 and `query_10` over
+-- 145883..204903 across 35 runs. Pinned, each repeats within 3%.
+SET max_threads=16;
 
 -- Override randomized max_block_size so the output-bytes estimate stays deterministic.
 -- `RuntimeDataflowStatisticsOutputBytes` is accumulated per block (the output columns are
@@ -69,7 +76,7 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Check the output estimate against what the replicas actually send (ratio within 3x).
+-- Check the output estimate against what the replicas actually send (ratio within 2.5x).
 -- The expected values are `NetworkReceiveBytes` on the initiator, measured per query with
 -- `parallel_replicas_local_plan = 0`, `prefer_localhost_replica = 0` and compression forced on every
 -- replica of the cluster. Forcing it is what makes the measurement meaningful: every replica address of
@@ -96,11 +103,12 @@ SYSTEM FLUSH LOGS query_log;
 -- past the slack. (Suppressing the progress and profile-event packets with `send_profile_events = 0` and
 -- a large `interactive_delay` only takes 1-6 KB off those transfers, and nothing off the large ones.)
 --
--- Both bounds are set off the estimate's measured spread over 35 runs. The widest difference the slack
--- has to absorb is 51922 bytes on `query_22`, hence 64 KB. The widest ratio outside the slack is 2.48x on
--- `query_10`, whose estimate swings between 145883 and 204903 because `uniqExact` states are sampled from
--- the hash table, hence 3x rather than 2.5x - at 2.5x that query alone would flake. The rest sit well
--- inside: `query_28` 1.08x, `query_43` 1.18x, `query_34` 1.69x, `query_15` 1.82x and `query_12` 1.84x.
+-- Both bounds are set off the estimate's measured spread with the thread count pinned. The widest
+-- difference the slack has to absorb is 49676 bytes on `query_23`, hence 64 KB. Outside the slack the
+-- widest ratio is 1.80x on `query_10`, whose `uniqExact` states are sampled from the hash table, hence
+-- 2.5x. The rest sit well inside: `query_28` 1.07x, `query_15` 1.16x, `query_43` 1.18x, `query_12` 1.20x
+-- and `query_34` 1.62x, each repeating within 3%.
+--
 -- Aggregate states are the residual: they are sampled from the hash table and so priced in hash-table
 -- order, while the replicas send them in key order.
 WITH
@@ -117,5 +125,5 @@ FROM
       ORDER BY event_time_microseconds
     )
 )
-WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 3
+WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 2.5
   AND (greatest(res.2, res.3) - least(res.2, res.3)) > 65536;
