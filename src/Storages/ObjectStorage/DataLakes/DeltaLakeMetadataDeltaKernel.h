@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/DeltaLakeTableStateSnapshot.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <map>
 #include <optional>
 
 namespace DeltaLake
@@ -122,6 +123,21 @@ private:
     mutable TableSnapshotCache snapshots TSA_GUARDED_BY(snapshots_mutex);
     mutable std::mutex snapshots_mutex;
     mutable std::optional<SnapshotVersion> latest_snapshot_version;
+    /// Single-flight for "latest" resolution: concurrent callers with the same effective client
+    /// options share one `TableSnapshot` (and therefore its in-flight kernel build) until its
+    /// version is published. The objects are keyed by the options, because a build is filled
+    /// with the options of the query which starts it: with a single slot, a query with other
+    /// options would evict the object another query is still loading, and the next query with
+    /// the evicted options would start a duplicate load instead of joining that one.
+    struct LatestSnapshotInFlight
+    {
+        DeltaLake::TableSnapshotPtr snapshot;
+        /// Callers currently resolving the version through `snapshot`. The entry is removed when
+        /// the version is resolved or when the last of them is gone, so the map never outgrows
+        /// the set of options being resolved right now.
+        size_t users = 0;
+    };
+    mutable std::map<DeltaLake::KernelClientOptions, LatestSnapshotInFlight> latest_snapshots_in_flight TSA_GUARDED_BY(snapshots_mutex);
 
     void logMetadataFiles(ContextPtr context) const;
 
@@ -140,6 +156,17 @@ private:
         std::optional<SnapshotVersion> version = std::nullopt) const;
 
     std::string latestSnapshotVersionToStr() const TSA_REQUIRES(snapshots_mutex);
+
+    struct LatestSnapshot
+    {
+        DeltaLake::TableSnapshotPtr snapshot;
+        SnapshotVersion version;
+        bool created;
+    };
+    /// Resolves the latest snapshot outside `snapshots_mutex` (the kernel build may block on
+    /// object storage and must stay killable), shared between concurrent callers with the same
+    /// client options, and publishes `latest_snapshot_version` monotonically.
+    LatestSnapshot resolveLatestSnapshot() const;
 };
 
 }
