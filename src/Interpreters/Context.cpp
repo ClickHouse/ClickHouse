@@ -83,6 +83,7 @@
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
@@ -1521,6 +1522,7 @@ ContextData::ContextData(const ContextData &o) :
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
+    skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
@@ -3933,8 +3935,14 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
 
 void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
 {
+    if (names.empty())
+        return;
+    /// Under `compatibility` a reset lands on the value of that version, so perform it on a copy to learn the value.
+    auto after_reset = Context::createCopy(shared_from_this());
+    after_reset->resetSettingsToDefaultValue(names);
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(
+        *settings, after_reset->getSettingsRef(), names, source);
 }
 
 void Context::checkSettingsConstraintsForSettingsReset(
@@ -3989,6 +3997,8 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
 
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
+    if (names.empty())
+        return;
     std::lock_guard lock(mutex);
     for (const String & name : names)
     {
@@ -3998,6 +4008,16 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
         for (const auto & equivalent_name : settingEquivalentNames(name))
             settings->setDefaultValue(equivalent_name);
     }
+    /// A setting nothing assigned holds what the active `compatibility` gives it.
+    if ((*settings)[Setting::compatibility].value.empty())
+        settings->resetSettingsChangedByCompatibility();
+    else
+    {
+        settings->set(COMPATIBILITY_SETTING_NAME, (*settings)[Setting::compatibility].value);
+        restrictSettingsChangedByCompatibilityWithLock(lock);
+    }
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -5864,6 +5884,10 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear(tag);
+
+    /// The entries of the query result cache on disk live in the filesystem cache selected by setting
+    /// `query_cache_on_disk_cache_name` of this query (or of the user's settings profile).
+    QueryResultCacheOnDisk::clear(getSettingsRef(), tag);
 }
 
 void Context::clearCaches() const
@@ -6495,19 +6519,29 @@ void recordZooKeeperConnectionLoss()
 std::unique_lock<std::timed_mutex> acquireZooKeeperLock(
     const Context & context, std::timed_mutex & mutex, const char * lock_name)
 {
+    const bool has_query_context = context.hasQueryContext();
     auto lock_acquire_timeout = context.getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
-    if (context.hasQueryContext())
+    if (has_query_context)
         lock_acquire_timeout = context.getQueryContext()->getSettingsRef()[Setting::get_zookeeper_lock_acquire_timeout_ms];
 
     std::unique_lock lock(mutex, std::defer_lock);
     if (lock_acquire_timeout.totalMilliseconds() == 0)
         lock.lock();
     else if (!lock.try_lock_for(std::chrono::milliseconds(lock_acquire_timeout.totalMilliseconds())))
+    {
+        /// Without a query context, report a Keeper error, handled like a lost connection; a query fails fast instead.
+        if (!has_query_context)
+            throw Coordination::Exception(
+                Coordination::Error::ZOPERATIONTIMEOUT,
+                "Timeout exceeded while acquiring {} ({} ms)",
+                lock_name,
+                lock_acquire_timeout.totalMilliseconds());
         throw Exception(
             ErrorCodes::TIMEOUT_EXCEEDED,
             "Timeout exceeded while acquiring {} ({} ms)",
             lock_name,
             lock_acquire_timeout.totalMilliseconds());
+    }
 
     return lock;
 }
