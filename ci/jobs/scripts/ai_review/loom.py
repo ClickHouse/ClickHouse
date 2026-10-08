@@ -197,12 +197,17 @@ def _log_call(op, status, ms):
         pass
 
 
+# Seconds before the one retry of a 503.
+_RETRY_503_S = 2
+
+
 def call(config, op, body, namespace=None):
     """POST /v1/<op>. Returns the answer (a dict), or None on any failure;
     never raises. A 404 (name not found) returns the answer with `_not_found`
     set, because "this symbol does not exist on master" is itself useful, and
     any other 4xx carries Loom's validation message in `_error`, so callers
     that show answers to the agent can say what was wrong with the request.
+    A 503 is retried once.
     `namespace` overrides the code namespace (the memory ops use the memory
     namespace)."""
     if not config.available():
@@ -213,42 +218,49 @@ def call(config, op, body, namespace=None):
         _log_call(op, "refused_cross_boundary", 0)
         return None
     payload = {**body, "org": ORG, "namespace": namespace, "consumer": CONSUMER, "agent": CONSUMER}
-    started = time.time()
-    try:
-        request = urllib.request.Request(
-            f"{config.base_url}/v1/{op}",
-            data=json.dumps(payload).encode(),
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {config.token}",
-                "Content-Type": "application/json",
-                "X-Request-Id": uuid.uuid4().hex,
-            },
-        )
-        with urllib.request.urlopen(request, timeout=_TIMEOUTS.get(op, _DEFAULT_TIMEOUT)) as response:
-            data = json.loads(response.read().decode() or "{}")
-        _log_call(op, "ok", int((time.time() - started) * 1000))
-        return data if isinstance(data, dict) else None
-    except urllib.error.HTTPError as e:
-        ms = int((time.time() - started) * 1000)
-        _log_call(op, "not_found" if e.code == 404 else f"http{e.code}", ms)
-        if e.code >= 500:
-            return None
+    # A 503 is Loom answering that a backend is briefly unavailable (a read-replica
+    # whose main Loom does not answer, ClickHouse reconnecting): retry it once.
+    for attempt in range(2):
+        started = time.time()
         try:
-            data = json.loads(e.read().decode() or "{}")
-        except Exception:  # noqa: BLE001
-            data = {}
-        if not isinstance(data, dict):
-            data = {}
-        if e.code == 404:
-            data["_not_found"] = True
-            return data
-        detail = data.get("detail")
-        return {"_error": (detail.get("message") or json.dumps(detail)[:800]) if isinstance(detail, dict) else str(detail or e)[:800],
-                **({"errors": detail.get("errors")} if isinstance(detail, dict) and detail.get("errors") else {})}
-    except Exception as e:  # noqa: BLE001 - timeouts, DNS, TLS, bad JSON: all mean "no answer"
-        _log_call(op, f"error:{type(e).__name__}", int((time.time() - started) * 1000))
-        return None
+            request = urllib.request.Request(
+                f"{config.base_url}/v1/{op}",
+                data=json.dumps(payload).encode(),
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {config.token}",
+                    "Content-Type": "application/json",
+                    "X-Request-Id": uuid.uuid4().hex,
+                },
+            )
+            with urllib.request.urlopen(request, timeout=_TIMEOUTS.get(op, _DEFAULT_TIMEOUT)) as response:
+                data = json.loads(response.read().decode() or "{}")
+            _log_call(op, "ok", int((time.time() - started) * 1000))
+            return data if isinstance(data, dict) else None
+        except urllib.error.HTTPError as e:
+            ms = int((time.time() - started) * 1000)
+            _log_call(op, "not_found" if e.code == 404 else f"http{e.code}", ms)
+            if e.code == 503 and attempt == 0:
+                time.sleep(_RETRY_503_S)
+                continue
+            if e.code >= 500:
+                return None
+            try:
+                data = json.loads(e.read().decode() or "{}")
+            except Exception:  # noqa: BLE001
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            if e.code == 404:
+                data["_not_found"] = True
+                return data
+            detail = data.get("detail")
+            return {"_error": (detail.get("message") or json.dumps(detail)[:800]) if isinstance(detail, dict) else str(detail or e)[:800],
+                    **({"errors": detail.get("errors")} if isinstance(detail, dict) and detail.get("errors") else {})}
+        except Exception as e:  # noqa: BLE001 - timeouts, DNS, TLS, bad JSON: all mean "no answer"
+            _log_call(op, f"error:{type(e).__name__}", int((time.time() - started) * 1000))
+            return None
+    return None
 
 
 def _answer(config, op, body, namespace=None):
