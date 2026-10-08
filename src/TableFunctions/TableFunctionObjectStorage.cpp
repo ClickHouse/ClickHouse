@@ -1318,7 +1318,7 @@ Paths may use globbing. Files must match the whole path pattern, not only the su
 - `*` — Represents arbitrarily many characters except `/` but including the empty string.
 - `**` — Represents all files inside a folder recursively.
 - `?` — Represents an arbitrary single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol.
+- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`. The strings can contain the `/` symbol. Each string can itself contain the `*` and `?` wildcards, so `{csv,csv.*}` matches both `.csv` and `.csv.gz`.
 - `{N..M}` — Represents any number `>= N` and `<= M`.
 
 Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) and [file](/reference/functions/table-functions/file) table functions.
@@ -1876,7 +1876,7 @@ ALTER TABLE iceberg_table DROP PARTITION 2;
 ALTER TABLE iceberg_table DROP PARTITION (2, 5);
 ```
 
-For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum`. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
+For a partition defined with a transform, you can supply either the already-transformed partition-key value as a literal, or the same transform expression applied to a raw source value. The supported transforms are `identity`, `icebergBucket`, `icebergTruncate`, `icebergYear`, `icebergMonth`, `icebergDay`, and `icebergHour`; the `PARTITION BY` aliases `toYearNumSinceEpoch`, `toMonthNumSinceEpoch`, `toRelativeDayNum`, and `toRelativeHourNum` are accepted and evaluated as these transforms. For a single-column partition the transform-expression form must be wrapped in `tuple(...)`:
 
 ```sql
 ALTER TABLE iceberg_table DROP PARTITION 0;

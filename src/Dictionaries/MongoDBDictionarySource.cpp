@@ -9,6 +9,7 @@
 
 #include <Columns/IColumn.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 #include <Processors/Sources/MongoDBSource.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
@@ -288,7 +289,9 @@ BlockIO MongoDBDictionarySource::loadKeys(const Columns & key_columns, const Vec
 
 std::string MongoDBDictionarySource::toString() const
 {
-    return fmt::format("MongoDB: {}", configuration->uri->to_string());
+    std::string uri = configuration->uri->to_string();
+    maskMongoDBConnectionString(uri);
+    return fmt::format("MongoDB: {}", uri);
 }
 #endif
 

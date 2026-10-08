@@ -359,12 +359,6 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
             for (auto & with_node : current_query_tree->getWith().getNodes())
             {
                 auto * with_union_node = with_node->as<UnionNode>();
-                auto * with_query_node = with_node->as<QueryNode>();
-
-                const bool materialized_cte = (with_query_node && with_query_node->isMaterialized()) || (with_union_node && with_union_node->isMaterialized());
-                if (materialized_cte)
-                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MATERIALIZED CTE is not supported in recursive WITH");
-
                 if (!with_union_node)
                     continue;
 
@@ -1092,6 +1086,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
             JoinStrictness result_join_strictness = table_join.strictness;
             JoinKind result_join_kind = table_join.kind;
 
+            /// `LATERAL JOIN` supports only `ALL` semantics, so an unspecified strictness must not
+            /// depend on `join_default_strictness` or `any_join_distinct_right_table_keys`.
+            if (table_join.lateral && result_join_strictness == JoinStrictness::Unspecified
+                && result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma)
+                result_join_strictness = JoinStrictness::All;
+
             if (result_join_strictness == JoinStrictness::Unspecified && (result_join_kind != JoinKind::Cross && result_join_kind != JoinKind::Comma))
             {
                 if (join_default_strictness == JoinStrictness::Any)
@@ -1158,6 +1158,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                     result_join_kind,
                     table_join.using_expression_list != nullptr);
                 join_node->as<JoinNode &>().setNatural(table_join.is_natural);
+                join_node->as<JoinNode &>().setLateral(table_join.lateral);
             }
 
             join_node->setOriginalAST(table_element.table_join);
