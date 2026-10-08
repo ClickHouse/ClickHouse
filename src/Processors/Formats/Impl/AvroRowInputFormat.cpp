@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
@@ -678,9 +679,44 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                         continue;
                     }
                     const auto variant = AvroSchemaReader::avroNodeToDataType(avro_node);
-                    nested_deserializers.emplace_back(createDeserializeFn(avro_node, variant));
 
-                    auto corresponding_discriminator = variant_type.tryGetVariantDiscriminator(variant->getName());
+                    /// The type of a branch is inferred without the `UUID2` paths of the file, so an Avro `uuid` is
+                    /// always `UUID`, and a destination alternative that has `UUID2` in its place is compatible too.
+                    /// Prefer an alternative that is not taken by a previous branch, so that the branches of
+                    /// `Variant(Tuple(x UUID), Tuple(x UUID2))`, which have the same inferred type, go to different
+                    /// alternatives in the order the writer emitted them, and an exact match over a `UUID2` one.
+                    std::optional<ColumnVariant::Discriminator> exact_discriminator;
+                    std::vector<ColumnVariant::Discriminator> compatible_discriminators;
+                    for (ColumnVariant::Discriminator d = 0; d < nested_types.size(); ++d)
+                    {
+                        if (variant->equals(*nested_types[d]))
+                        {
+                            exact_discriminator = d;
+                            continue;
+                        }
+                        auto replaced = replaceNestedTypesInPair(variant, nested_types[d], [](const DataTypePtr & left, const DataTypePtr & right) -> DataTypePtr
+                        {
+                            if (left->equals(*right))
+                                return left;
+                            if (isUUID(left) && isUUID2(right))
+                                return right;
+                            return nullptr;
+                        });
+                        if (replaced && replaced->equals(*nested_types[d]))
+                            compatible_discriminators.push_back(d);
+                    }
+
+                    std::optional<ColumnVariant::Discriminator> corresponding_discriminator;
+                    if (exact_discriminator && !used_discriminators.contains(*exact_discriminator))
+                        corresponding_discriminator = exact_discriminator;
+                    for (auto d : compatible_discriminators)
+                        if (!corresponding_discriminator && !used_discriminators.contains(d))
+                            corresponding_discriminator = d;
+                    if (!corresponding_discriminator)
+                        corresponding_discriminator = exact_discriminator;
+                    if (!corresponding_discriminator && !compatible_discriminators.empty())
+                        corresponding_discriminator = compatible_discriminators.front();
+
                     if (!corresponding_discriminator)
                         throw Exception(
                             ErrorCodes::ILLEGAL_COLUMN,
@@ -689,6 +725,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                             variant_type.getName(),
                             variant->getName());
 
+                    nested_deserializers.emplace_back(createDeserializeFn(avro_node, nested_types[*corresponding_discriminator]));
                     used_discriminators.insert(corresponding_discriminator.value());
                     union_index_to_global_discriminator.insert_or_assign(i, std::move(corresponding_discriminator.value()));
                 }
@@ -1480,7 +1517,8 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(
     const std::unordered_set<String> & uuid2_paths,
     const String & path)
 {
-    /// Recurse into a nested node at the same path (unions) or at a child path (array elements, map values, record fields).
+    /// Recurse into a nested node at the same path (`Nullable` unions) or at a child path (array elements, map values,
+    /// record fields, `Variant` alternatives).
     auto infer = [&](const avro::NodePtr & nested_node, const String & nested_path)
     {
         return avroNodeToDataTypeImpl(nested_node, seen_names, allow_nullable_tuple_type, uuid2_paths, nested_path);
@@ -1589,13 +1627,18 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(
             DataTypes nested_types;
             nested_types.reserve(avro_union_size);
 
+            size_t non_null_size = 0;
+            for (int i = 0; i != avro_union_size; ++i)
+                if (node->leafAt(i)->type() != avro::Type::AVRO_NULL)
+                    ++non_null_size;
+
             for (int i = 0; i != avro_union_size; ++i)
             {
                 // We skip the null union type in Variant, since it is encoded using the null discriminator (implicitly all Variants can "contain null").
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(infer(avro_node, path));
+                nested_types.push_back(infer(avro_node, getAvroVariantAlternativePath(path, non_null_size, i)));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }

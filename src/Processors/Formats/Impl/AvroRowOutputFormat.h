@@ -16,6 +16,8 @@
 #include <Schema.hh>
 #include <ValidSchema.hh>
 
+#include <string>
+
 namespace DB
 {
 class Block;
@@ -23,6 +25,17 @@ class WriteBuffer;
 
 /// The key of the Avro file metadata entry with the JSON array of the dotted paths of the `UUID2` values.
 inline constexpr auto AVRO_UUID2_PATHS_METADATA_KEY = "ClickHouse:uuid2_paths";
+
+/// The path of the alternative `index` of a `Variant` with `size` alternatives at `path`, as recorded under
+/// `AVRO_UUID2_PATHS_METADATA_KEY`. The writer appends the null branch after the alternatives, so `index` is also
+/// the index of the branch in the Avro union. A `Variant` with a single alternative is written as a union with null,
+/// which is read back as `Nullable` of the alternative, so it keeps the path.
+inline std::string getAvroVariantAlternativePath(const std::string & path, size_t size, size_t index)
+{
+    if (size == 1)
+        return path;
+    return path + ".variant" + std::to_string(index);
+}
 
 class AvroSerializerTraits;
 class ConfluentSchemaRegistry;

@@ -422,9 +422,12 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             std::vector<SerializeFn> nested_serializers;
             nested_serializers.reserve(nested_types.size());
 
-            for (const auto & nested_type : nested_types)
+            for (size_t i = 0; i < nested_types.size(); ++i)
             {
-                const auto [schema, serialize] = createSchemaWithSerializeFn(nested_type, type_name_increment, column_name, column_path);
+                /// Each alternative gets its own path (see `getAvroVariantAlternativePath`), so that the `UUID2`
+                /// discriminator tells `Variant(Tuple(x UUID), Tuple(x UUID2))` alternatives apart.
+                const auto [schema, serialize] = createSchemaWithSerializeFn(
+                    nested_types[i], type_name_increment, column_name, getAvroVariantAlternativePath(column_path, nested_types.size(), i));
                 union_schema.addType(schema);
                 nested_serializers.push_back(serialize);
             }
