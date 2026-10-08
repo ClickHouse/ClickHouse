@@ -32,6 +32,7 @@ mixed parts: aggregation, distinct, functions
 2010
 mixed parts: join and insert select
 5
+2000	1010	a_0	b_9
 4000	2010
 mixed parts: merged into a single part
 4000	2010	a_0	b_9

@@ -101,6 +101,13 @@ SELECT count() FROM (SELECT DISTINCT lc FROM t_auto_lc_mixed);
 
 SELECT 'mixed parts: join and insert select';
 SELECT count() FROM t_auto_lc_mixed AS l INNER JOIN t_auto_lc_mixed AS r ON l.lc = r.lc WHERE l.id < 5;
+-- A right-side payload column from both parts: the stored right blocks are merged by `insertFrom`
+-- when the right table is reranged by key.
+SELECT count(), uniqExact(r.lc), min(r.lc), max(r.lc)
+FROM (SELECT number AS k FROM numbers(2)) AS l
+INNER JOIN (SELECT id % 4 AS k, lc FROM t_auto_lc_mixed) AS r ON l.k = r.k
+SETTINGS join_algorithm = 'hash', allow_join_right_table_sorting = 1, query_plan_join_swap_table = 'false',
+    max_threads = 1, max_block_size = 1000;
 
 DROP TABLE IF EXISTS t_auto_lc_mixed_copy;
 CREATE TABLE t_auto_lc_mixed_copy (id UInt64, lc String) ENGINE = MergeTree ORDER BY id;
