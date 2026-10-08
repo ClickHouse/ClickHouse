@@ -584,8 +584,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
     /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
     /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
-    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+    const bool is_ddl_replay = isSecondaryDDLReplay(args.getLocalContext());
 
     /// Extract zookeeper path and replica name from engine arguments.
     TableZnodeInfo zookeeper_info;
@@ -710,20 +709,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
     const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
 
-    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
-    /// they are told apart by the client info instead (the same marker `AlterCommands` and
-    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
-        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
     /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
     {
         for (const auto & column : columns)
         {
@@ -1188,7 +1177,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
     DataTypes data_types = metadata.partition_key.data_types;
@@ -1240,7 +1229,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
           * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
           * is the way out of that state.
           */
-        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition
             && (*storage_settings)[MergeTreeSetting::table_readonly])
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
 

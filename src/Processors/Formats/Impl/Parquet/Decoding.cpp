@@ -1757,7 +1757,7 @@ void memcpyIntoColumn(const char * data, size_t num_values, size_t value_size, I
     memcpy(to.data(), data, to.size());
 }
 
-template <typename From, typename To>
+template <typename From, typename To, bool to_bool = false>
 static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_t num_values)
 {
     To * to = reinterpret_cast<To *>(to_bytes);
@@ -1766,7 +1766,10 @@ static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_
         /// (Can't reinterpret_cast<const From *>(from_bytes) because pointer may be unaligned).
         From x;
         memcpy(&x, from_bytes + i * sizeof(From), sizeof(From));
-        to[i] = static_cast<To>(x);
+        if constexpr (to_bool)
+            to[i] = static_cast<To>(x != 0);
+        else
+            to[i] = static_cast<To>(x);
     }
 }
 
@@ -1801,7 +1804,9 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
         chassert(to.size() == num_values * output_size.value());
         /// Signedness doesn't matter here, we just need to copy the first 1 or 2 bytes of each
         /// group of 4 bytes.
-        if (*output_size == 1)
+        if (*output_size == 1 && output_bool)
+            convertIntColumnImpl<UInt32, UInt8, /*to_bool=*/ true>(data.data(), to.data(), num_values);
+        else if (*output_size == 1)
             convertIntColumnImpl<UInt32, UInt8>(data.data(), to.data(), num_values);
         else if (*output_size == 2)
             convertIntColumnImpl<UInt32, UInt16>(data.data(), to.data(), num_values);
@@ -1881,8 +1886,8 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
         return std::nullopt;
     if (!input_signed && field_signed && val > UInt64(INT64_MAX))
         return std::nullopt;
-    if (field_bool && val > 1)
-        return std::nullopt;
+    if (output_bool && val > 1)
+        val = 1;
 
     if (field_ipv4)
     {
