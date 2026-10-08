@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/split.hpp>
 
@@ -263,8 +264,52 @@ void fillPhysicalReadBytes(ExpressionStatistics & statistics, Float64 physical_s
     statistics.physical_read_bytes = physical_rows * statistics.estimated_bytes_per_row;
 }
 
+/// Statistics of a read from object storage, or of a filter over one, from the data lake metadata of the read.
+static std::optional<ExpressionStatistics> estimateObjectStorageReadStatistics(QueryPlan::Node & node, const ReadFromObjectStorageStep & read_step)
+{
+    const auto estimate = read_step.getOrCreateDataLakeReadEstimate();
+    /// TODO AI made this decision: without an estimate the read keeps the default statistics, as before.
+    if (!estimate || !estimate->rows)
+        return std::nullopt;
+
+    const UInt64 rows = *estimate->rows;
+    auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
+
+    ExpressionStatistics stats;
+    /// A filter that the estimate cannot account for keeps at most the live rows of the remaining files, as the selected
+    /// rows bound a MergeTree read.
+    stats.estimated_row_count = relation_stats.estimated_rows
+        ? Float64(*relation_stats.estimated_rows)
+        : Float64(rows - std::min(estimate->deleted_rows, rows));
+    stats.column_statistics = std::move(relation_stats.column_stats);
+
+    /// `column_sizes` are compressed, so they only bound the width from below.
+    const auto & header = *read_step.getOutputHeader();
+    for (const auto & column : header)
+    {
+        Float64 width = estimateColumnWidthFromType(*column.type);
+        if (auto it = estimate->column_compressed_bytes.find(column.name); it != estimate->column_compressed_bytes.end() && rows > 0)
+            width = std::max(width, Float64(it->second) / Float64(rows));
+        auto & column_stats = stats.column_statistics[column.name];
+        if (column_stats.avg_bytes == 0)
+            column_stats.avg_bytes = width;
+    }
+    stats.estimated_bytes_per_row = estimateRowWidth(header, stats.column_statistics);
+    /// Pruning drops only files that cannot match, so the remaining files bound the read.
+    stats.max_row_count = std::max(stats.estimated_row_count, Float64(rows));
+    /// Deleted rows are read too.
+    fillPhysicalReadBytes(stats, Float64(rows));
+    return stats;
+}
+
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
 {
+    if (const auto * object_storage_read = typeid_cast<const ReadFromObjectStorageStep *>(node.step.get()))
+        return estimateObjectStorageReadStatistics(node, *object_storage_read);
+    if (typeid_cast<FilterStep *>(node.step.get()) && node.children.size() == 1)
+        if (const auto * object_storage_read = typeid_cast<const ReadFromObjectStorageStep *>(node.children[0]->step.get()))
+            return estimateObjectStorageReadStatistics(node, *object_storage_read);
+
     std::optional<ExpressionStatistics> stats;
 
     auto * read_step = typeid_cast<ReadFromMergeTree *>(node.step.get());
