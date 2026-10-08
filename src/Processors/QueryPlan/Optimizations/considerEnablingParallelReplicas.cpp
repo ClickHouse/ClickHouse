@@ -1,7 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 
 #include <Core/Joins.h>
-#include <Compression/ICompressionCodec.h>
+#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
@@ -820,14 +820,14 @@ void considerEnablingParallelReplicas(
     /// The recorded output bytes are compressed with the wire codec (`network_compression_method` and its
     /// level), so statistics collected under one codec do not describe the transfer under another. Key the
     /// cache by the codec as well, so that a change of the codec recollects the statistics instead of reusing them.
-    size_t stats_cache_key = single_replica_plan_node_hash;
-    if (optimization_settings.network_compression_codec)
-    {
-        SipHash hash;
-        hash.update(single_replica_plan_node_hash);
-        hash.update(optimization_settings.network_compression_codec->getHash());
-        stats_cache_key = hash.get64();
-    }
+    /// Resolved only here, once there is a read to collect the statistics for: an unrelated query must not
+    /// start rejecting a value of the setting it never uses.
+    const auto network_compression_codec = chooseNetworkCompressionCodec(
+        optimization_settings.network_compression_method, optimization_settings.network_zstd_compression_level);
+    SipHash stats_cache_key_hash;
+    stats_cache_key_hash.update(single_replica_plan_node_hash);
+    stats_cache_key_hash.update(network_compression_codec->getHash());
+    const size_t stats_cache_key = stats_cache_key_hash.get64();
 
     const auto & stats_cache = getRuntimeDataflowStatisticsCache();
     if (const auto stats = stats_cache.getStats(stats_cache_key))
@@ -973,7 +973,7 @@ void considerEnablingParallelReplicas(
     )
     {
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(
-            stats_cache_key, rows_to_read, optimization_settings.network_compression_codec);
+            stats_cache_key, rows_to_read, network_compression_codec);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         /// Share the updater with the lazy half of the same read so its bytes land in the same

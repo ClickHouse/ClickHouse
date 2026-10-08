@@ -1,4 +1,3 @@
-#include <Compression/chooseNetworkCompressionCodec.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
 #include <Core/ServerSettings.h>
@@ -123,6 +122,8 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsString distributed_plan_force_exchange_kind;
     extern const SettingsString force_optimize_projection_name;
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -398,10 +399,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_threads = from[Setting::max_threads];
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
-    /// Only resolved when the runtime dataflow statistics can be collected at all: the setting is
-    /// validated here, and a query that never considers parallel replicas must not start failing for it.
-    if (automatic_parallel_replicas_mode != 0)
-        network_compression_codec = chooseNetworkCompressionCodec(&from);
+    network_compression_method = from[Setting::network_compression_method].toString();
+    network_zstd_compression_level = from[Setting::network_zstd_compression_level];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
 
     // It doesn't have to be equal to this setting, it just appears to be a better value than hardcoded 2Mi
