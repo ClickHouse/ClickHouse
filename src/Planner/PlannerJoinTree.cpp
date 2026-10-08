@@ -2662,9 +2662,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 reading_node = reading_steps.front();
                         }
 
-                        /// Answering the row estimate below runs index analysis, which builds any
-                        /// `IN` set whose left argument maps to key columns and so executes its
-                        /// subquery; `input()` is a one-shot client stream, and cannot be read twice.
+                        /// This filter was planned by `collectFiltersForAnalysis` with its own `PreparedSets`, so a key-column
+                        /// `IN` set built by index analysis for the estimate is not the one the query builds later, and its
+                        /// subquery would run twice; `input()` is a one-shot client stream and cannot be read twice.
                         const auto * estimate_reading_step
                             = reading_node ? typeid_cast<const ReadFromMergeTree *>(reading_node->step.get()) : nullptr;
                         const ActionsDAG * estimate_filter
@@ -2676,8 +2676,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         // Note: reading_steps can have several steps in case of reading from view with UNION
                         // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
                         // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
-                        if (reading_node && reading_steps.size() == 1 && !estimate_needs_unbuilt_set
-                            && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+                        const bool apply_min_rows_per_replica = reading_node && reading_steps.size() == 1
+                            && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0;
+                        if (apply_min_rows_per_replica && estimate_needs_unbuilt_set)
+                        {
+                            LOG_DEBUG(
+                                getLogger("Planner"),
+                                "Skipping parallel_replicas_min_number_of_rows_per_replica, the filter has a set that is not built yet");
+                        }
+                        else if (apply_min_rows_per_replica)
                         {
                             const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
                             auto result_ptr
