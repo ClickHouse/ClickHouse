@@ -171,3 +171,19 @@ SELECT n FROM (WITH t AS MATERIALIZED (SELECT [1] AS `n.x`, * FROM (SELECT [2] A
 -- its siblings, so the generated internal name never reaches the header and the header is the same
 -- one the query had before the duplicate was disambiguated.
 DESCRIBE (SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT 2 AS x, materialize(9) AS q)) AS s JOIN (SELECT 1 AS q) AS t ON 1 JOIN (SELECT 1 AS z) AS u ON 1) SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+
+-- NATURAL JOIN keys are the names a user sees: the generated internal name of a disambiguated
+-- duplicate (`q_1`) is never a key, on either side, through a UNION or a materialized CTE.
+SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l NATURAL JOIN (SELECT materialize(3) AS q_1) AS rr;
+SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l CROSS JOIN (SELECT materialize(3) AS q_1) AS rr;
+DESCRIBE (SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l NATURAL JOIN (SELECT materialize(3) AS q_1) AS rr);
+SELECT * FROM (SELECT materialize(3) AS q_1) AS l NATURAL JOIN (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS rr;
+SELECT * FROM ((SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) UNION ALL (SELECT 5, 6)) AS l NATURAL JOIN (SELECT materialize(3) AS q_1) AS rr ORDER BY ALL;
+WITH t AS MATERIALIZED (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q))
+SELECT * FROM t NATURAL JOIN (SELECT materialize(3) AS q_1) AS rr UNION ALL SELECT * FROM t NATURAL JOIN (SELECT materialize(3) AS q_1) AS rr
+SETTINGS enable_materialized_cte = 1;
+-- A common display name is a key exactly like in an explicit USING, and so is a genuine `q_1` of another joined table.
+SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l NATURAL JOIN (SELECT materialize(1) AS q) AS rr;
+SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT materialize(1) AS q) AS rr USING (q);
+SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT arrayJoin([4, 5]) AS q_1) AS x ON 1 NATURAL JOIN (SELECT materialize(4) AS q_1) AS rr ORDER BY ALL;
+SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT arrayJoin([4, 5]) AS q_1) AS x ON 1 JOIN (SELECT materialize(4) AS q_1) AS rr USING (q_1) ORDER BY ALL;

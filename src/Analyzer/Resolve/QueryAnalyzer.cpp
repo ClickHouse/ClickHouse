@@ -1966,6 +1966,54 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
 /// Resolve query tree nodes functions implementation
 
+/// Maps each generated internal name of a disambiguated subquery/union/materialized-CTE column to its
+/// display name; empty when nothing was renamed. Read by matchers, column qualification, NATURAL JOIN
+/// keys and `hidden_column_names`. Owns its strings: `computeProjectionColumns()` returns a temporary.
+static std::unordered_map<String, String> buildSubqueryInternalToDisplayNameMap(const IQueryTreeNode & table_expression_node)
+{
+    std::unordered_map<String, String> internal_name_to_display_name;
+    auto collect = [&](const NamesAndTypes & internal_columns, const Names & display_names)
+    {
+        for (size_t i = 0; i < internal_columns.size() && i < display_names.size(); ++i)
+            if (internal_columns[i].name != display_names[i])
+                internal_name_to_display_name.emplace(internal_columns[i].name, display_names[i]);
+    };
+
+    if (const auto * subquery_node = table_expression_node.as<QueryNode>())
+    {
+        const auto & display_names = subquery_node->getProjectionColumnDisplayNames();
+        if (!display_names.empty())
+            collect(subquery_node->getProjectionColumns(), display_names);
+    }
+    else if (const auto * union_subquery_node = table_expression_node.as<UnionNode>())
+    {
+        const auto & display_names = union_subquery_node->getProjectionColumnDisplayNames();
+        if (!display_names.empty())
+            collect(union_subquery_node->computeProjectionColumns(), display_names);
+    }
+    else if (const auto * table_node = table_expression_node.as<TableNode>(); table_node && table_node->isMaterializedCTE())
+    {
+        /// A reused MATERIALIZED CTE is a TableNode whose temporary storage columns were built from
+        /// the (disambiguated) internal projection names of the resolved subquery. The display-name
+        /// sidecar lives on that subquery node, so recover the mapping from it.
+        const auto & subquery = table_node->getMaterializedCTESubquery();
+        if (const auto * cte_query_node = subquery->as<QueryNode>())
+        {
+            const auto & display_names = cte_query_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect(cte_query_node->getProjectionColumns(), display_names);
+        }
+        else if (const auto * cte_union_node = subquery->as<UnionNode>())
+        {
+            const auto & display_names = cte_union_node->getProjectionColumnDisplayNames();
+            if (!display_names.empty())
+                collect(cte_union_node->computeProjectionColumns(), display_names);
+        }
+    }
+
+    return internal_name_to_display_name;
+}
+
 /** Qualify column nodes with projection names.
   *
   * Example: SELECT * FROM test_table AS t1, test_table AS t2;
@@ -2127,58 +2175,6 @@ GetColumnsOptions QueryAnalyzer::buildGetColumnsOptions(QueryTreeNodePtr & match
     return GetColumnsOptions(static_cast<GetColumnsOptions::Kind>(get_columns_options_kind)).withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
 }
 
-/// Map each generated unique internal name of a disambiguated subquery/union/materialized-CTE
-/// table expression back to its original (user-visible) display name. Empty when nothing was
-/// disambiguated. Single source of truth shared by the matcher (which evaluates name-sensitive
-/// matchers and restores the header against the display name) and by `initializeTableExpressionData`
-/// (which records the keys as `hidden_column_names`, the generated names a direct identifier must
-/// not bind to). The map owns its keys/values: `UnionNode::computeProjectionColumns()` and a
-/// materialized-CTE subquery yield temporaries, so storing string_view keys into them would dangle.
-static std::unordered_map<String, String> buildSubqueryInternalToDisplayNameMap(const QueryTreeNodePtr & table_expression_node)
-{
-    std::unordered_map<String, String> internal_name_to_display_name;
-    auto collect = [&](const NamesAndTypes & internal_columns, const Names & display_names)
-    {
-        for (size_t i = 0; i < internal_columns.size() && i < display_names.size(); ++i)
-            if (internal_columns[i].name != display_names[i])
-                internal_name_to_display_name.emplace(internal_columns[i].name, display_names[i]);
-    };
-
-    if (const auto * subquery_node = table_expression_node->as<QueryNode>())
-    {
-        const auto & display_names = subquery_node->getProjectionColumnDisplayNames();
-        if (!display_names.empty())
-            collect(subquery_node->getProjectionColumns(), display_names);
-    }
-    else if (const auto * union_subquery_node = table_expression_node->as<UnionNode>())
-    {
-        const auto & display_names = union_subquery_node->getProjectionColumnDisplayNames();
-        if (!display_names.empty())
-            collect(union_subquery_node->computeProjectionColumns(), display_names);
-    }
-    else if (const auto * table_node = table_expression_node->as<TableNode>(); table_node && table_node->isMaterializedCTE())
-    {
-        /// A reused MATERIALIZED CTE is a TableNode whose temporary storage columns were built from
-        /// the (disambiguated) internal projection names of the resolved subquery. The display-name
-        /// sidecar lives on that subquery node, so recover the mapping from it.
-        const auto & subquery = table_node->getMaterializedCTESubquery();
-        if (const auto * cte_query_node = subquery->as<QueryNode>())
-        {
-            const auto & display_names = cte_query_node->getProjectionColumnDisplayNames();
-            if (!display_names.empty())
-                collect(cte_query_node->getProjectionColumns(), display_names);
-        }
-        else if (const auto * cte_union_node = subquery->as<UnionNode>())
-        {
-            const auto & display_names = cte_union_node->getProjectionColumnDisplayNames();
-            if (!display_names.empty())
-                collect(cte_union_node->computeProjectionColumns(), display_names);
-        }
-    }
-
-    return internal_name_to_display_name;
-}
-
 QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithNames(const QueryTreeNodePtr & matcher_node,
     const TableExpressionNodePtr & table_expression_node,
     const NamesAndTypes & matched_columns,
@@ -2200,7 +2196,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     /// display names, so it must be evaluated on the display name (in the loop below). The internal
     /// (unique) name stays on the column node so the planner resolves each duplicate to a distinct
     /// column identifier, and the user-visible header is restored afterwards.
-    std::unordered_map<String, String> internal_name_to_display_name = buildSubqueryInternalToDisplayNameMap(table_expression_node);
+    std::unordered_map<String, String> internal_name_to_display_name = buildSubqueryInternalToDisplayNameMap(*table_expression_node);
 
     auto display_name_of = [&](const std::string & internal_name) -> String
     {
@@ -5334,7 +5330,7 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     /// direct identifier lookup (`tryResolveIdentifierFromStorage`) and typo correction can refuse
     /// them: they exist in the column-node map only so the planner addresses each duplicate
     /// distinctly, but they are not user-addressable (the user sees the original display names).
-    for (const auto & [internal_name, display_name] : buildSubqueryInternalToDisplayNameMap(table_expression_node))
+    for (const auto & [internal_name, display_name] : buildSubqueryInternalToDisplayNameMap(*table_expression_node))
         table_expression_data.hidden_column_names.insert(internal_name);
 
     auto [data_it, inserted] = scope.table_expression_node_to_data.emplace(table_expression_node, std::move(table_expression_data));
@@ -6186,8 +6182,8 @@ static void appendColumnNamesInSchemaOrder(
             result_columns.push_back(column.name);
 }
 
-/// Get ordered column names from a table expression, preserving left-to-right order.
-/// Returns false if the table expression type is not supported.
+/// Get ordered column names from a table expression, preserving left-to-right order, without generated
+/// internal names. Returns false if the table expression type is not supported.
 static bool getOrderedColumnsFromTableExpression(
     const QueryTreeNodePtr & root_table_expression, Names & result_columns, GetColumnsOptions::Kind kind)
 {
@@ -6198,6 +6194,7 @@ static bool getOrderedColumnsFromTableExpression(
     {
         const auto * table_expression = nodes_to_process.back();
         nodes_to_process.pop_back();
+        const size_t leaf_columns_begin = result_columns.size();
 
         switch (table_expression->getNodeType())
         {
@@ -6253,6 +6250,12 @@ static bool getOrderedColumnsFromTableExpression(
                 return false;
             }
         }
+
+        /// NATURAL JOIN matches the names a user sees: a generated internal name of a disambiguated
+        /// duplicate is not user-addressable, so it is not a key candidate.
+        if (auto generated = buildSubqueryInternalToDisplayNameMap(*table_expression); !generated.empty())
+            result_columns.erase(std::remove_if(result_columns.begin() + leaf_columns_begin, result_columns.end(),
+                [&](const String & name) { return generated.contains(name); }), result_columns.end());
     }
     return true;
 }
@@ -6300,7 +6303,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         /// Synthesize a USING expression from the intersection of left and right column names.
         Names left_cols;
-        NameSet right_cols;
+        Names right_cols_ordered;
 
         /// A join key must be readable, so `EPHEMERAL` columns are not `NATURAL JOIN` keys.
         if (!getOrderedColumnsFromTableExpression(
@@ -6309,11 +6312,12 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 "NATURAL JOIN: cannot determine columns of left table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
 
-        if (!getColumnsFromTableExpression(
-                join_node_typed.getRightTableExpressionNode(), right_cols, GetColumnsOptions::AllPhysicalAndAliases))
+        if (!getOrderedColumnsFromTableExpression(
+                join_node_typed.getRightTableExpressionNode(), right_cols_ordered, GetColumnsOptions::AllPhysicalAndAliases))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "NATURAL JOIN: cannot determine columns of right table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
+        NameSet right_cols(right_cols_ordered.begin(), right_cols_ordered.end());
 
         QueryTreeNodes using_nodes;
         NameSet seen;
