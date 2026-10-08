@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from dataclasses import asdict
@@ -11,17 +12,24 @@ import time
 sys.path.append("./")
 
 from ci.jobs.scripts.coverage_selection import (
+    attach_bracket_owners,
+    build_bracket_owners_query,
+    build_bracket_spans_query,
     build_candidate_query,
     build_selector_smoke_seed_query,
     canonical_coverage_path,
+    load_snapshots,
+    find_brackets,
     parse_rows,
     protect_selection,
     rank_candidates,
     snapshot_predicate,
-    snapshot_query,
     validate_snapshots,
 )
-from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
+from ci.jobs.scripts.test_selection_config import (
+    INTEGRATION_SELECTION_CONFIG,
+    SELECTION_CONFIG,
+)
 
 from ci.praktika.cidb import CIDB
 from ci.praktika.info import Info
@@ -77,6 +85,7 @@ class Targeting:
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
             self.job_type = self.INTEGRATION_JOB_TYPE
+            self.config = INTEGRATION_SELECTION_CONFIG
         else:
             self.job_type = None
 
@@ -92,6 +101,23 @@ class Targeting:
                 passwd=conn.get("password"),
             )
         return self._cidb
+
+    # The test selection code: a change here runs `test_selection_smoke` first.
+    SELECTION_SOURCES = (
+        "ci/jobs/scripts/find_tests.py",
+        "ci/jobs/scripts/coverage_selection.py",
+        "ci/jobs/scripts/test_selection_config.py",
+        "ci/jobs/scripts/test_selection_manifest.py",
+        "ci/jobs/scripts/test_selection_smoke.py",
+        "ci/praktika/cidb.py",
+    )
+
+    def selection_code_changed(self):
+        # Unknown changed files count as changed: the smoke is cheap and offline.
+        changed_files = self.info.get_changed_files()
+        return changed_files is None or any(
+            path in self.SELECTION_SOURCES for path in changed_files
+        )
 
     # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
     _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
@@ -345,6 +371,29 @@ class Targeting:
         if not changed_files:
             return result
 
+        # Tests removed by the change, with no source file left under that name.
+        # Their supporting files (`.reference`, the `.python` helper of a `.sh`
+        # test, ...) go with them and are not fixtures of a surviving test.
+        # A deleted `.py` helper is a fixture, so a removed test is recognized by
+        # its removed reference as well.
+        removed_files = {
+            os.path.basename(fpath)
+            for fpath in changed_files
+            if Path(fpath).parent == Path("tests/queries/0_stateless")
+            and not Path(fpath).exists()
+        }
+        removed_tests = set()
+        for fname in removed_files:
+            for ext in self._TEST_FILE_EXTENSIONS:
+                if not fname.endswith(ext):
+                    continue
+                name = fname[: -len(ext)]
+                if (
+                    f"{name}.reference" in removed_files
+                    or f"{name}.reference.j2" in removed_files
+                ) and not self.functional_test_source_file(name):
+                    removed_tests.add(name)
+
         for fpath in changed_files:
             if not fpath.startswith("tests/queries/0_stateless/"):
                 if fpath.startswith("tests/queries/"):
@@ -363,9 +412,24 @@ class Targeting:
                     test_base_name
                 ):
                     print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{test_base_name}.")
                     continue
+
+                # A file of a removed test has no owner to rerun. Mapping it as a
+                # fixture would fall back to every test sharing its number prefix.
+                if not Path(fpath).exists():
+                    candidate = os.path.basename(fpath)
+                    while "." in candidate:
+                        candidate = candidate.rsplit(".", 1)[0]
+                        if candidate in removed_tests:
+                            break
+                    if candidate in removed_tests:
+                        print(
+                            f"File '{fpath}' belongs to the removed test '{candidate}' — skipping"
+                        )
+                        continue
 
             # Either a data fixture nested in a subdirectory
             # (`data_parquet/02716_data.parquet`) or a root-level orphan data file
@@ -382,7 +446,8 @@ class Targeting:
                     print(
                         f"Detected changed data file '{fpath}' owned by test '{base_name}'"
                     )
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{base_name}.")
             else:
                 print(
@@ -456,8 +521,6 @@ class Targeting:
             for ext in self._TEST_FILE_EXTENSIONS
         )
 
-    _stored_path = staticmethod(canonical_coverage_path)
-
     # Shared-registry files: purely declarative files whose changes are virtually always
     # additive (`extern const Event …`, new setting entries, new error codes).  Every
     # test emits profile events / reads settings, so coverage for any changed line in
@@ -477,8 +540,6 @@ class Targeting:
             "src/Common/ErrorCodes.h",
             "src/Common/SettingsChanges.cpp",
             "src/Core/Settings.cpp",
-            "src/Core/SettingsChangesHistory.cpp",
-            "src/Core/SettingsChangesHistory.h",
         }
     )
 
@@ -537,8 +598,12 @@ class Targeting:
                 )
                 - timedelta(hours=self.config.coverage_settle_hours)
             ).strftime("%Y-%m-%d %H:%M:%S")
-            snapshots = parse_rows(
-                self._ci_db().query(snapshot_query(cutoff, self.config), log_level="")
+            snapshots = load_snapshots(
+                lambda query, timeout: self._ci_db().query(
+                    query, log_level="", timeout=timeout
+                ),
+                cutoff,
+                self.config,
             )
             self.selection_diagnostics.update(
                 {
@@ -645,145 +710,41 @@ class Targeting:
             hunk_ranges or {},
             self.coverage_snapshots(),
             self.config,
+            brackets=self.get_brackets(coverage_lines, hunk_ranges or {}),
         )
 
-    @staticmethod
-    def _extract_domain_keywords(filename: str) -> list:
-        """
-        Extract domain-specific CamelCase words from a source filename.
-        These words are diagnostic features for semantic scoring experiments.
-        They never admit candidates or replace precise coverage results.
-
-        Returns a list of significant words (length > 4, not architectural).
-        An empty list indicates a generic source filename.
-        """
-        import re as _re
-        import os as _os
-
-        base = _os.path.splitext(_os.path.basename(filename))[0]
-        # Split CamelCase and all-caps acronyms:
-        #   "CHColumnToArrowColumn" → ['CH', 'Column', 'To', 'Arrow', 'Column']
-        #   "LDAPClient"            → ['LDAP', 'Client']
-        #   "PostgreSQLDictionary"  → ['Postgre', 'SQL', 'Dictionary']
-        # Pattern: acronym-run-before-TitleCase | TitleCase-word | lowercase-word
-        # The trailing [A-Z] alternative captures single uppercase chars that
-        # the other patterns miss (e.g. the "K" in "TopK" or "N" in "MergeN").
-        words = _re.findall(
-            r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z0-9]+|[A-Z]{2,}|[a-z][a-z0-9]+|[A-Z]", base
-        )
-        # Merge a lone trailing uppercase letter into the previous word so that
-        # compound names like "TopK" or "MergeN" are kept whole instead of losing
-        # the suffix.
-        merged: list = []
-        for w in words:
-            if len(w) == 1 and w.isupper() and merged:
-                merged[-1] = merged[-1] + w
-            else:
-                merged.append(w)
-        words = merged
-        # Architectural / ubiquitous words that appear in most files in a directory.
-        # Keeping this list generous avoids keywords that are too common to be useful.
-        COMMON = {
-            # Generic C++ / ClickHouse infrastructure words
-            "block",
-            "input",
-            "output",
-            "format",
-            "column",
-            "stream",
-            "storage",
-            "table",
-            "query",
-            "parser",
-            "writer",
-            "reader",
-            "buffer",
-            "default",
-            "base",
-            "impl",
-            "merge",
-            "tree",
-            "row",
-            "file",
-            "data",
-            "info",
-            "type",
-            "list",
-            "map",
-            "with",
-            "from",
-            "into",
-            # MergeTree-specific architectural words (appear in almost every MergeTree file)
-            "condition",
-            "granularity",
-            "selector",
-            "partition",
-            "replica",
-            "transaction",
-            "virtual",
-            "local",
-            "remote",
-            "range",
-            "level",
-            # ClickHouse architectural nouns that appear in many places but are not
-            # specific enough to pin to a test domain.
-            "handler",
-            "manager",
-            "source",
-            "access",
-            "control",
-            "service",
-            "server",
-            "client",
-            "external",
-            "internal",
-            "settings",
-            "setting",
-            "config",
-            "context",
-            "result",
-            "state",
-            "status",
-            "entry",
-            "record",
-            "update",
-            "create",
+    def get_brackets(self, coverage_lines, hunk_ranges):
+        """The hunks that overlap no coverage region, with the tests that own the
+        regions on both sides of them; see `SelectionConfig.bracket_gap_lines`."""
+        if not self.config.bracket_gap_lines:
+            return []
+        files = {path for path, _ in coverage_lines}
+        hunks = {
+            canonical_coverage_path(path): ranges
+            for path, ranges in hunk_ranges.items()
+            if canonical_coverage_path(path) in files
         }
-        # Allow 3-char all-uppercase acronyms (CSV, ORC, URL, JWT, KQL, etc.) in addition
-        # to words ≥ 4 chars.  Generic acronyms like "API", "SQL", "DDL", "DML" are added
-        # to COMMON below so they don't generate false matches.
-        COMMON_ACRONYMS = {
-            "api",
-            "sql",
-            "ddl",
-            "dml",
-            "ids",
-            "uid",
-            "abi",
-            "cpu",
-            "gpu",
-            "ram",
-            "tcp",
-            "udp",
-            "tls",
-            "ssl",
-            "rpc",
-            "ttl",
-            "log",
-            "tag",
-            "row",
-            "set",
-        }
-        specific = [
-            w
-            for w in words
-            if w.lower() not in COMMON
-            and (
-                (len(w) >= 4)
-                or (len(w) == 3 and w.isupper() and w.lower() not in COMMON_ACRONYMS)
+        if not hunks:
+            return []
+        snapshots = self.coverage_snapshots()
+        spans = parse_rows(
+            self._ci_db().query(
+                build_bracket_spans_query(hunks, snapshots, self.config), log_level=""
             )
+        )
+        brackets = find_brackets(hunks, spans, self.config)
+        if brackets:
+            owners = parse_rows(
+                self._ci_db().query(
+                    build_bracket_owners_query(brackets, snapshots, self.config),
+                    log_level="",
+                )
+            )
+            attach_bracket_owners(brackets, owners)
+        self.selection_diagnostics["brackets"] = [
+            {**bracket, "owners": len(bracket["owners"])} for bracket in brackets
         ]
-        return specific
+        return brackets
 
     def get_changed_or_new_tests_with_info(self, strict=False):
         tests = sorted(self.get_changed_tests(strict=strict))
@@ -953,44 +914,50 @@ class Targeting:
                 break
         return name + "."
 
+    @classmethod
+    def selection_pattern(cls, test):
+        """Render a selected stateless test as a `clickhouse-test` positional selector.
+
+        Those arguments are regexes, and `TestSuite.get_selected_tests` searches them
+        against the suite file name *including* its extension, so a selector that stops
+        short of the whole file name also selects every test whose name extends this one
+        (`01655_plan_optimizations` picks up `01655_plan_optimizations_merge_filters`).
+        Spell the file name out: anchored, escaped, one known extension.
+        """
+        name = re.escape(cls.selection_test_name(test).rstrip("."))
+        extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
+        return f"^{name}(?:{extensions})$"
+
+    @staticmethod
+    def selection_args(tests):
+        """Render selectors as the argument list of a `clickhouse-test` command line.
+
+        `run_tests` executes that command line through bash, whose quote removal would
+        otherwise consume the regex syntax before `clickhouse-test` parses it.
+        """
+        return " ".join(shlex.quote(test) for test in tests) if tests else ""
+
     def get_most_relevant_tests(self):
         changed_lines = self.get_changed_lines_from_diff()
         hunk_ranges = self._parse_diff_hunk_ranges(self.get_diff_text())
         candidates = self.get_tests_by_changed_lines(changed_lines, hunk_ranges)
         self._coverage_candidates = []
         missing = []
-        keywords = {
-            word.lower()
-            for path in {path for path, _ in changed_lines}
-            for word in self._extract_domain_keywords(path)
-        }
         for candidate in candidates:
-            candidate["semantic_keyword_matches"] = sorted(
-                word for word in keywords if word in candidate["test"].lower()
-            )
-            if self.functional_test_source_file(
-                self.selection_test_name(candidate["test"])
-            ):
+            if self.job_type == self.INTEGRATION_JOB_TYPE:
+                # Integration coverage is recorded per module, e.g. `test_storage_s3/test.py`.
+                exists = (Path("tests/integration") / candidate["test"]).is_file()
+            else:
+                exists = self.functional_test_source_file(
+                    self.selection_test_name(candidate["test"])
+                )
+            if exists:
                 self._coverage_candidates.append(candidate)
             else:
                 missing.append(
                     {**candidate, "admission_reason": "test_missing_in_checkout"}
                 )
         self.selection_diagnostics["missing_tests"] = missing
-        # All experiments consume the same response; entry count has no effect
-        # on the executed list until pre-PR replay validates its direction.
-        if changed_lines and getattr(self, "_coverage_regions", []):
-            self.selection_diagnostics["shadow"] = {
-                mode: rank_candidates(
-                    self._coverage_regions,
-                    changed_lines,
-                    hunk_ranges,
-                    self.coverage_snapshots(),
-                    self.config,
-                    entry_mode=mode,
-                )
-                for mode in ("legacy-tier", "relative-low", "relative-high")
-            }
         tests = [c["test"] for c in self._coverage_candidates]
         return tests, Result(
             name="tests found by coverage",
@@ -999,8 +966,7 @@ class Targeting:
         )
 
     def get_all_relevant_tests_with_info(self, include_changed_tests=True):
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            self.get_diff_text()
+        self.get_diff_text()
         results = []
         changed = []
         if include_changed_tests and self.job_type == self.STATELESS_JOB_TYPE:
@@ -1008,11 +974,9 @@ class Targeting:
             results.append(result)
         failed, result = self.get_previously_failed_tests_with_info(strict=True)
         results.append(result)
-        candidates = []
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            _, result = self.get_most_relevant_tests()
-            candidates = self._coverage_candidates
-            results.append(result)
+        _, result = self.get_most_relevant_tests()
+        candidates = self._coverage_candidates
+        results.append(result)
         normalize = (
             self.selection_test_name
             if self.job_type == self.STATELESS_JOB_TYPE

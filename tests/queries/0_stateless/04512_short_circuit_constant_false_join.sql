@@ -130,4 +130,5 @@ SELECT 'Distributed plan is not broken by the short-circuit';
 SELECT count() FROM dist a INNER JOIN dist b ON a.k = b.k AND 1 = 2
     SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
              enable_parallel_replicas = 0,
-             max_rows_to_group_by = 0;
+             max_rows_to_group_by = 0,
+             distributed_plan_fallback_to_local_execution = 0;
