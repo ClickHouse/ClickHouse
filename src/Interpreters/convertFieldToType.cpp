@@ -21,6 +21,8 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/FieldToDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
 #include <Core/AccurateComparison.h>
@@ -301,6 +303,11 @@ Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool 
 
 /// Only `to_type` is unwrapped by `convertFieldToType`, so the source type hint can still be wrapped
 /// into `Nullable` or `LowCardinality`, which do not change the `Field` representation of the value.
+bool typeContainsUUID2(const IDataType & type)
+{
+    return anyInTypeTree(type, [](const IDataType & t) { return WhichDataType(t).isUUID2(); });
+}
+
 const IDataType * removeNullableAndLowCardinalityFromHint(const IDataType * from_type_hint)
 {
     const IDataType * unwrapped_hint = from_type_hint;
@@ -1088,6 +1095,30 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (src.isNull())
             return src;
 
+        /// `UUID` and `UUID2` share the `Field` representation (`Field::Types::UUID`), so `ColumnVariant::tryInsert`
+        /// stores such a value (possibly nested into an array, a tuple or a map) into the first alternative that accepts
+        /// it, regardless of the source type. Convert the value for exactly that alternative, so that its layout matches
+        /// the alternative. If the source type is itself another alternative of the `Variant`, the value cannot reach
+        /// it through a `Field`, so throw instead of silently changing its type.
+        if (from_type_hint && (typeContainsUUID2(type) || typeContainsUUID2(*from_type_hint)))
+        {
+            const auto hint_discriminator = type_variant->tryGetVariantDiscriminator(from_type_hint->getName());
+            const auto & variants = type_variant->getVariants();
+            for (size_t i = 0; i < variants.size(); ++i)
+            {
+                auto variant_column = variants[i]->createColumn();
+                if (!variant_column->tryInsert(src))
+                    continue;
+
+                if (hint_discriminator && *hint_discriminator != i)
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Cannot convert a constant of type {} to {}: it would be stored as {}, because {} and {} share the value representation",
+                        from_type_hint->getName(), type.getName(), variants[i]->getName(), variants[i]->getName(), from_type_hint->getName());
+
+                return convertFieldToType(src, *variants[i], from_type_hint, format_settings, strict, convert_inexact_floats);
+            }
+        }
+
         /// If we have type hint and Variant contains such type, no need to convert field.
         if (from_type_hint && type_variant->tryGetVariantDiscriminator(from_type_hint->getName()))
             return src;
@@ -1138,7 +1169,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (isDynamic(type))
     {
-        /// We can insert any field to Dynamic column.
+        /// We can insert any field to Dynamic column. But `ColumnDynamic` infers the type of a new variant from the
+        /// `Field` itself, and a `Field::Types::UUID` is inferred as `UUID`, while `UUID2` keeps the value in another
+        /// layout. So convert a value that came from `UUID2` to the inferred type, keeping the value.
+        if (from_type_hint && !src.isNull() && typeContainsUUID2(*from_type_hint))
+        {
+            auto inferred_type = applyVisitor(FieldToDataType<LeastSupertypeOnError::Dynamic>(), src);
+            return convertFieldToType(src, *inferred_type, from_type_hint, format_settings, strict, convert_inexact_floats);
+        }
         return src;
     }
     else if (isObject(type))
