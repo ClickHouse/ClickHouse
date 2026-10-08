@@ -174,6 +174,22 @@ SELECT count() FROM t_bf_map_null_set WHERE m['k'] IN t_bf_map_null_set_source;
 
 DROP TABLE t_bf_map_null_set_source;
 DROP TABLE t_bf_map_null_set;
+
+SELECT 'absent map key with a Variant or Dynamic FixedString constant';
+-- The active `FixedString` alternative of an erased constant is not visible in its `Field`, so the
+-- missing-key guard must decline instead of comparing the default against a rebuilt `String`.
+DROP TABLE IF EXISTS t_bf_map_absent_erased;
+CREATE TABLE t_bf_map_absent_erased (m Map(String, String), INDEX bf mapKeys(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_bf_map_absent_erased VALUES (map('k', 'a')), (map('other', 'b')), (map());
+OPTIMIZE TABLE t_bf_map_absent_erased FINAL;
+
+SELECT count() FROM t_bf_map_absent_erased WHERE m['absent'] = CAST(toFixedString('', 1) AS Dynamic);
+SELECT count() FROM t_bf_map_absent_erased WHERE m['absent'] = CAST(toFixedString('', 1) AS Dynamic) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_absent_erased WHERE m['absent'] = CAST(toFixedString('', 1) AS Variant(FixedString(1), UInt8));
+SELECT count() FROM t_bf_map_absent_erased WHERE m['absent'] = CAST(toFixedString('', 1) AS Variant(FixedString(1), UInt8)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_bf_map_absent_erased;
 DROP TABLE t_bf_map_uint8_set_source;
 DROP TABLE t_bf_set;
 DROP TABLE t_bf_map;

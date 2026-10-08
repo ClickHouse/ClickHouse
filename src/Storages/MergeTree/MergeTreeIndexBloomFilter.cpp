@@ -732,6 +732,14 @@ static Field coerceConstantForBloomFilterHash(
 static bool missingMapKeyMayCompareEqual(
     const DataTypePtr & map_value_type, const DataTypePtr & value_type, const Field & value_field, const ContextPtr & context)
 {
+    /// A `Variant` or `Dynamic` constant carries the nested padded value under its declared type, so
+    /// an active `FixedString` alternative would be rebuilt below as a `String` one, and `equals`
+    /// would answer for the wrong type (`''` equals `toFixedString('', 1)` but not `'\0'`).
+    /// Like `coerceConstantForBloomFilterHash`, assume the worst for a string constant there.
+    const WhichDataType which_constant(removeLowCardinalityAndNullable(value_type));
+    if ((which_constant.isVariant() || which_constant.isDynamic()) && value_field.getType() == Field::Types::String)
+        return true;
+
     ColumnsWithTypeAndName arguments
     {
         {map_value_type->createColumnConstWithDefaultValue(1), map_value_type, "default"},
