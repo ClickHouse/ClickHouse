@@ -50,7 +50,7 @@ GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls 
 SELECT t.c, count() OVER (ORDER BY * REPLACE (-c AS c), * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 1;
 SELECT '-- function argument matcher followed by a window matcher';
-SELECT t.c, any(* REPLACE (100 - c AS c)) OVER (PARTITION BY * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+SELECT t.c, max(* REPLACE (100 - c AS c)) OVER (PARTITION BY * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 0;
-SELECT t.c, any(* REPLACE (100 - c AS c)) OVER (PARTITION BY * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
+SELECT t.c, max(* REPLACE (100 - c AS c)) OVER (PARTITION BY * REPLACE (intDiv(c, 2) AS c)) FROM (SELECT number AS c FROM numbers(4)) AS t
 GROUP BY t.c WITH ROLLUP ORDER BY t.c NULLS LAST, 2 SETTINGS group_by_use_nulls = 1;
