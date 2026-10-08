@@ -1,3 +1,4 @@
+#include <map>
 #include <utility>
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
@@ -562,7 +563,7 @@ public:
         return scope_node;
     }
 
-    bool containsNode(const std::string & node_name)
+    bool containsNode(const std::string & node_name) const
     {
         return node_name_to_node.contains(node_name);
     }
@@ -770,7 +771,7 @@ private:
     bool isLambdaArgumentName(const String & name) const;
 
     /// The name under which a column shadowed by a lambda argument is passed through lambda scopes.
-    String getShadowedColumnName(const QueryTreeNodePtr & node, std::string_view source_kind, const String & column_node_name) const;
+    String getShadowedColumnName(const QueryTreeNodePtr & node, std::string_view source_kind, const String & column_node_name);
 
     NodeNameAndNodeMinLevel visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name = {});
 
@@ -788,6 +789,8 @@ private:
 
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
+    /// Names derived by `getShadowedColumnName` for columns without a column identifier, by column source and name.
+    std::map<std::pair<const IQueryTreeNode *, std::string>, std::string> derived_shadowed_column_names;
     CorrelatedSubtrees correlated_subtrees;
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
@@ -984,7 +987,7 @@ bool PlannerActionsVisitorImpl::isLambdaArgumentName(const String & name) const
 }
 
 String PlannerActionsVisitorImpl::getShadowedColumnName(
-    const QueryTreeNodePtr & node, std::string_view source_kind, const String & column_node_name) const
+    const QueryTreeNodePtr & node, std::string_view source_kind, const String & column_node_name)
 {
     /// The name must not coincide with a lambda argument, or it would be taken for that argument, and must not
     /// coincide with the name of another column, or the two columns would share one node.
@@ -997,13 +1000,28 @@ String PlannerActionsVisitorImpl::getShadowedColumnName(
 
     /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
     /// so it has no column identifier. Derive a name that is neither a column identifier of the query
-    /// (a table expression may have any alias, e.g. `__CORRELATED`) nor a lambda argument.
+    /// (a table expression may have any alias, e.g. `__CORRELATED`), nor a lambda argument, nor the name
+    /// of a node already registered in any scope of the stack (an action may have any name, e.g. by a quoted alias).
+    /// The derived name is remembered, because after the first reference to the column it is registered itself.
+    auto & derived_name = derived_shadowed_column_names[{node->as<ColumnNode &>().getColumnSourceOrNull().get(), column_node_name}];
+    if (!derived_name.empty() && !isLambdaArgumentName(derived_name))
+        return derived_name;
+
     const auto & global_planner_context = planner_context->getGlobalPlannerContext();
+    auto is_name_taken = [&](const String & candidate)
+    {
+        if (global_planner_context->hasColumnIdentifier(candidate) || isLambdaArgumentName(candidate))
+            return true;
+
+        return std::any_of(actions_stack.begin(), actions_stack.end(), [&](const auto & scope) { return scope.containsNode(candidate); });
+    };
+
     String base_name = fmt::format("__{}.{}", source_kind, column_node_name);
     String name = base_name;
-    for (size_t i = 1; global_planner_context->hasColumnIdentifier(name) || isLambdaArgumentName(name); ++i)
+    for (size_t i = 1; is_name_taken(name); ++i)
         name = fmt::format("{}_{}", base_name, i);
 
+    derived_name = name;
     return name;
 }
 
