@@ -24,3 +24,5 @@ Condition: (hex(k) notIn 2-element set)
 Parts: 1 | Granules: 1
 Condition: (toString(k) notIn 1-element set)
 Parts: 1/2
+1
+1

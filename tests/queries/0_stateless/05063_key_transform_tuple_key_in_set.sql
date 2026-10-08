@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_id;
 DROP TABLE IF EXISTS t_hex;
 DROP TABLE IF EXISTS t_inj;
+DROP TABLE IF EXISTS t_time;
 
 -- 1. The set element is a String that itself parses as a tuple, so the bad cast used to succeed
 -- with an unrelated value and prune the matching granule: silent row loss, no error.
@@ -148,6 +149,15 @@ SELECT extract(explain, '(?:Condition|Parts): .*') FROM (
     EXPLAIN indexes = 1 SELECT * FROM t_inj WHERE k NOT IN (tuple(toInt64(1), 'a'))
 ) WHERE explain ILIKE '%Condition:%' OR explain ILIKE '%Parts:%';
 
+-- 15. `toString` of a `Time` beyond `999:59:59` saturates, so the two rows below render alike and the
+-- atom must stay relaxed: an exact one answers `0` for `NOT IN`, and `2` for `IN` when counted from the index.
+CREATE TABLE t_time (k Tuple(Time, UInt8)) ENGINE = MergeTree ORDER BY toString(k);
+SYSTEM STOP MERGES t_time;
+INSERT INTO t_time SELECT tuple(t, 1) FROM format(RowBinary, 't Time', unhex('80EE3600'));
+INSERT INTO t_time SELECT tuple(t, 1) FROM format(RowBinary, 't Time', unhex('81EE3600'));
+SELECT count() FROM t_time WHERE k IN (SELECT t, toUInt8(1) FROM format(RowBinary, 't Time', unhex('80EE3600')));
+SELECT count() FROM t_time WHERE k NOT IN (SELECT t, toUInt8(1) FROM format(RowBinary, 't Time', unhex('80EE3600')));
+
 DROP TABLE t_str;
 DROP TABLE t_float;
 DROP TABLE t_null;
@@ -159,3 +169,4 @@ DROP TABLE t_set;
 DROP TABLE t_id;
 DROP TABLE t_hex;
 DROP TABLE t_inj;
+DROP TABLE t_time;
