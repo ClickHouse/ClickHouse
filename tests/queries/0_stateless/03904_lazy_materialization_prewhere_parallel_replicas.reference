@@ -1,0 +1,24 @@
+-- { echoOn }
+-- The failing query from the stress test: aliases with expressions + WHERE that becomes PREWHERE
+SELECT a + 1 AS a, b AS b, c + 1 AS c, d + 1 AS d FROM t_lazy_mat_prewhere_parallel WHERE d > 1 ORDER BY c LIMIT 3;
+2	1	2	2
+3	0	3	3
+5	0	5	2
+-- Simpler variants
+SELECT * FROM t_lazy_mat_prewhere_parallel WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+SELECT a, b, c, d FROM t_lazy_mat_prewhere_parallel WHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2
+-- Explicit PREWHERE
+SELECT a + 1 AS a, b AS b, c + 1 AS c, d + 1 AS d FROM t_lazy_mat_prewhere_parallel PREWHERE d > 1 ORDER BY c LIMIT 3;
+2	1	2	2
+3	0	3	3
+5	0	5	2
+SELECT * FROM t_lazy_mat_prewhere_parallel PREWHERE d > 1 ORDER BY c LIMIT 3;
+2	0	2	2
+5	1	5	2
+8	0	8	2

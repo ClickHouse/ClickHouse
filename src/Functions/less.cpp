@@ -8,6 +8,8 @@ namespace DB
 
 using FunctionLess = FunctionComparison<LessOp, NameLess>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+
+/// Instantiated in equals.cpp.
 extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(Less)
@@ -32,7 +34,7 @@ REGISTER_FUNCTION(Less)
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Comparison;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionLess>(documentation);
 }
 
@@ -60,5 +62,27 @@ ColumnPtr FunctionComparison<LessOp, NameLess>::executeTupleImpl(
         func_builder_equals,
         x, y, tuple_size, input_rows_count);
 }
+
+template <>
+ColumnPtr FunctionComparison<LessOp, NameLess>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
+    FunctionOverloadResolverPtr order_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
+
+    return executeArrayLexicographicLessGreaterImpl(
+        equals_resolver,
+        order_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
+}
+
+/// Explicit instantiation definition, see the comment in equals.cpp. Must come after the member specializations above.
+template class FunctionComparison<LessOp, NameLess>;
 
 }

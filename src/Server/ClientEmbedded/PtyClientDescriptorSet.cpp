@@ -1,9 +1,11 @@
-#if defined(OS_LINUX)
-
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
+#include <Common/logger_useful.h>
 
 #include <base/openpty.h>
+#include <sys/ioctl.h>
+#include <termios.h>
 #include <unistd.h>
 
 namespace DB
@@ -16,12 +18,30 @@ namespace ErrorCodes
 
 void PtyClientDescriptorSet::FileDescriptorWrapper::close()
 {
-    if (fd != -1)
-    {
-        if (::close(fd) != 0 && errno != EINTR)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Unexpected error while closing file descriptor");
-    }
+    if (fd == -1)
+        return;
+    /// Capture and clear the descriptor before calling `::close`. After `::close` returns
+    /// (success or failure), the kernel-side state of this descriptor is gone and the
+    /// number can be reused by another `open` call in this process. Keeping `fd` set
+    /// after a failed close would invite a double-close from the destructor that hits an
+    /// unrelated descriptor opened in the meantime.
+    int to_close = fd;
     fd = -1;
+    if (::close(to_close) != 0 && errno != EINTR)
+        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Unexpected error while closing file descriptor");
+}
+
+
+PtyClientDescriptorSet::FileDescriptorWrapper::~FileDescriptorWrapper()
+{
+    try
+    {
+        close();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 
@@ -29,13 +49,13 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
     : term_name(term_name_)
 {
     winsize winsize{};
-    winsize.ws_col = width;
-    winsize.ws_row = height;
-    winsize.ws_xpixel = width_pixels;
-    winsize.ws_ypixel = height_pixels;
+    winsize.ws_col = static_cast<uint16_t>(width);
+    winsize.ws_row = static_cast<uint16_t>(height);
+    winsize.ws_xpixel = static_cast<uint16_t>(width_pixels);
+    winsize.ws_ypixel = static_cast<uint16_t>(height_pixels);
     int pty_master_raw = -1;
     int pty_slave_raw = -1;
-    if (openpty(&pty_master_raw, &pty_slave_raw, nullptr, nullptr, &winsize) != 0)
+    if (openPty(pty_master_raw, pty_slave_raw, winsize) != 0)
     {
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot open pty");
     }
@@ -45,7 +65,7 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
     fd_sink.open(pty_slave.get(), boost::iostreams::never_close_handle);
 
     // disable signals from tty
-    struct termios tios;
+    struct termios tios{};
     if (tcgetattr(pty_slave.get(), &tios) == -1)
     {
         throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot get termios from tty via tcgetattr");
@@ -64,10 +84,10 @@ PtyClientDescriptorSet::PtyClientDescriptorSet(const String & term_name_, int wi
 void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_pixels, int height_pixels) const
 {
     winsize winsize{};
-    winsize.ws_col = width;
-    winsize.ws_row = height;
-    winsize.ws_xpixel = width_pixels;
-    winsize.ws_ypixel = height_pixels;
+    winsize.ws_col = static_cast<uint16_t>(width);
+    winsize.ws_row = static_cast<uint16_t>(height);
+    winsize.ws_xpixel = static_cast<uint16_t>(width_pixels);
+    winsize.ws_ypixel = static_cast<uint16_t>(height_pixels);
 
     if (ioctl(pty_master.get(), TIOCSWINSZ, &winsize) == -1)
     {
@@ -79,5 +99,3 @@ void PtyClientDescriptorSet::changeWindowSize(int width, int height, int width_p
 PtyClientDescriptorSet::~PtyClientDescriptorSet() = default;
 
 }
-
-#endif

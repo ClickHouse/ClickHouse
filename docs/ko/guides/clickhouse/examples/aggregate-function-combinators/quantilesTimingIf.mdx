@@ -1,0 +1,90 @@
+---
+slug: '/examples/aggregate-function-combinators/quantilesTimingIf'
+title: 'quantilesTimingIf'
+description: 'quantilesTimingIf 조합자 사용 예시'
+keywords: ['quantilesTiming', 'if', '조합자', '예시', 'quantilesTimingIf']
+sidebarTitle: 'quantilesTimingIf'
+doc_type: '참고'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`If`](/ko/reference/functions/aggregate-functions/combinators#-if) 조합자는 [`quantilesTiming`](/ko/reference/functions/aggregate-functions/quantileTiming)
+함수에 적용할 수 있으며, `quantilesTimingIf` 집계 조합자 함수를 사용해 조건이 true인
+행의 타이밍 값에 대한 분위수를 계산합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+이 예시에서는 각 엔드포인트의 API 응답 시간을 저장하는 테이블을 만들고,
+성공한 요청의 응답 시간 분위수를 계산하기 위해 `quantilesTimingIf`를 사용합니다.
+
+```sql title="Query"
+CREATE TABLE api_responses(
+    endpoint String,
+    response_time_ms UInt32,
+    is_successful UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO api_responses VALUES
+    ('orders', 82, 1),
+    ('orders', 94, 1),
+    ('orders', 98, 1),
+    ('orders', 87, 1),
+    ('orders', 103, 1),
+    ('orders', 92, 1),
+    ('orders', 89, 1),
+    ('orders', 105, 1),
+    ('products', 45, 1),
+    ('products', 52, 1),
+    ('products', 48, 1),
+    ('products', 51, 1),
+    ('products', 49, 1),
+    ('products', 53, 1),
+    ('products', 47, 1),
+    ('products', 50, 1),
+    ('users', 120, 0),
+    ('users', 125, 0),
+    ('users', 118, 0),
+    ('users', 122, 0),
+    ('users', 121, 0),
+    ('users', 119, 0),
+    ('users', 123, 0),
+    ('users', 124, 0);
+
+SELECT
+    endpoint,
+    quantilesTimingIf(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1.0)(response_time_ms, is_successful = 1) as response_time_quantiles
+FROM api_responses
+GROUP BY endpoint;
+```
+
+`quantilesTimingIf` 함수는 성공한 요청(is&#95;successful = 1)에 대해서만 분위수를 계산합니다.
+반환되는 배열에는 다음 분위수가 순서대로 포함됩니다.
+
+* 0 (최솟값)
+* 0.25 (제1사분위수)
+* 0.5 (중앙값)
+* 0.75 (제3사분위수)
+* 0.95 (95백분위수)
+* 0.99 (99백분위수)
+* 1.0 (최댓값)
+
+```response title="Response"
+   ┌─endpoint─┬─response_time_quantiles─────────────────────────────────────────────┐
+1. │ orders   │ [82, 87, 92, 98, 103, 104, 105]                                     │
+2. │ products │ [45, 47, 49, 51, 52, 52, 53]                                        │
+3. │ users    │ [nan, nan, nan, nan, nan, nan, nan]                                 │
+   └──────────┴─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`quantilesTiming`](/ko/reference/functions/aggregate-functions/quantileTiming)
+* [`If 조합자`](/ko/reference/functions/aggregate-functions/combinators#-if)

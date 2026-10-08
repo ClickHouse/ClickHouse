@@ -37,11 +37,12 @@ void TypoCorrection::collectCompoundExpressionValidIdentifiers(
 /// Get valid identifiers for typo correction from table expression
 void TypoCorrection::collectTableExpressionValidIdentifiers(
     const Identifier & unresolved_identifier,
-    const QueryTreeNodePtr & table_expression,
+    const ITableExpressionNode & table_expression,
     const AnalysisTableExpressionData & table_expression_data,
     std::unordered_set<Identifier> & valid_identifiers_result)
 {
-    for (const auto & [column_name, column_node] : table_expression_data.column_name_to_column_node)
+    /// Typo correction is on the error path: build the full map so we can iterate `ColumnNode`s.
+    for (const auto & [column_name, column_node] : table_expression_data.getColumnNodeMap())
     {
         Identifier column_identifier(column_name);
         if (unresolved_identifier.getPartsSize() == column_identifier.getPartsSize())
@@ -52,9 +53,9 @@ void TypoCorrection::collectTableExpressionValidIdentifiers(
             column_identifier,
             valid_identifiers_result);
 
-        if (table_expression->hasAlias())
+        if (table_expression.hasAlias())
         {
-            Identifier column_identifier_with_alias({table_expression->getAlias()});
+            Identifier column_identifier_with_alias({table_expression.getAlias()});
             for (const auto & column_identifier_part : column_identifier)
                 column_identifier_with_alias.push_back(column_identifier_part);
 
@@ -115,7 +116,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
     {
         for (const auto & [name, expression] : scope.aliases.alias_name_to_expression_node)
         {
-            assert(expression);
+            chassert(expression);
             auto expression_identifier = Identifier(name);
             valid_identifiers_result.insert(expression_identifier);
         }
@@ -137,7 +138,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
         for (const auto & [table_expression, table_expression_data] : scope.table_expression_node_to_data)
         {
             collectTableExpressionValidIdentifiers(unresolved_identifier,
-                table_expression,
+                *table_expression,
                 table_expression_data,
                 valid_identifiers_result);
         }
@@ -160,7 +161,7 @@ void TypoCorrection::collectScopeValidIdentifiers(
 
     for (const auto & [argument_name, expression] : scope.expression_argument_name_to_node)
     {
-        assert(expression);
+        chassert(expression);
         auto expression_node_type = expression->getNodeType();
 
         if (allow_expression_identifiers && isExpressionNodeType(expression_node_type))
@@ -212,9 +213,9 @@ void TypoCorrection::collectScopeWithParentScopesValidIdentifiers(
     }
 }
 
-std::vector<String> TypoCorrection::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
+VectorWithMemoryTracking<String> TypoCorrection::collectIdentifierTypoHints(const Identifier & unresolved_identifier, const std::unordered_set<Identifier> & valid_identifiers)
 {
-    std::vector<String> prompting_strings;
+    VectorWithMemoryTracking<String> prompting_strings;
     prompting_strings.reserve(valid_identifiers.size());
 
     for (const auto & valid_identifier : valid_identifiers)

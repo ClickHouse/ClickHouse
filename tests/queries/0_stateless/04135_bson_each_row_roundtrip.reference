@@ -1,0 +1,45 @@
+--- BSON -> Typed schema ---
+Row 1:
+──────
+u8:  1
+i8:  2
+u16: 3
+i16: -4
+u32: 5
+i32: -6
+u64: 7
+i64: -8
+f32: 9.5
+f64: 10.5
+b:   true
+s:   hi
+arr: [1,2]
+tup: (1,'a')
+m:   {'k':'v'}
+dt:  2023-01-02 03:04:05
+d:   2023-01-02
+u:   00000000-0000-0000-0000-000000000001
+--- coerce Int32 -> Int64 (in range) ---
+200
+--- coerce Int32(=200) -> Int8 (silent wrap to -56) ---
+-56
+--- error: coerce Int32 -> Float64 (not allowed) ---
+Code: 44
+--- Nullable round-trip ---
+\N	1
+--- multiple rows ---
+0	0
+1	1
+2	2
+3	3
+4	4
+--- schema inference ---
+a	Nullable(Int32)					
+arr	Array(Nullable(Int32))					
+b	Nullable(Bool)					
+f	Nullable(Float64)					
+s	Nullable(String)					
+--- document -> Tuple ---
+(1,'hi')
+--- error: BSON string -> column of Int32 ---
+Code: 44

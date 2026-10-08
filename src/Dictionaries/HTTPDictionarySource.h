@@ -31,6 +31,10 @@ public:
         const std::string update_field;
         const UInt64 update_lag;
         const HTTPHeaderEntries header_entries;
+        /// Whether the dictionary was created via DDL (`CREATE DICTIONARY`). For such dictionaries the
+        /// source URL is untrusted, so every HTTP request (including redirect hops) must be validated
+        /// against `remote_url_allow_hosts`.
+        const bool created_from_ddl = false;
     };
 
     HTTPDictionarySource(
@@ -43,13 +47,13 @@ public:
     HTTPDictionarySource(const HTTPDictionarySource & other);
     HTTPDictionarySource & operator=(const HTTPDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override;
+    BlockIO loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     bool isModified() const override;
 

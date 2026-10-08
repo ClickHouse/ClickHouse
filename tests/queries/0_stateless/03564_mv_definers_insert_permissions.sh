@@ -49,4 +49,5 @@ EOF
 ${CLICKHOUSE_CLIENT} --query "GRANT INSERT ON $db.destination TO $user1";
 ${CLICKHOUSE_CLIENT} --user $user2 --query "INSERT INTO $db.mv VALUES (10)";
 
+${CLICKHOUSE_CLIENT} --query "DROP TABLE $db.mv";
 ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS $user1, $user2";

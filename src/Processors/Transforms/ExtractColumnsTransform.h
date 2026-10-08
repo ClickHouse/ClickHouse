@@ -9,7 +9,7 @@ class ExtractColumnsTransform final : public ISimpleTransform
 {
 public:
     ExtractColumnsTransform(
-        const Block & header_,
+        SharedHeader header_,
         const NamesAndTypesList & requested_columns_);
 
     String getName() const override { return "ExtractColumnsTransform"; }

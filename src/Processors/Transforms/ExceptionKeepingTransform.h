@@ -56,8 +56,11 @@ protected:
     virtual void onFinish() {}
     virtual void onException(std::exception_ptr /* exception */) { }
 
+    virtual bool canGenerate() { return true; }
+    virtual GenerateResult getRemaining() { return {};}
+
 public:
-    ExceptionKeepingTransform(const Block & in_header, const Block & out_header, bool ignore_on_start_and_finish_ = true);
+    ExceptionKeepingTransform(SharedHeader in_header, SharedHeader out_header, bool ignore_on_start_and_finish_ = true);
 
     Status prepare() override;
     void work() override;

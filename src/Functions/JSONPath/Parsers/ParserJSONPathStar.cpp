@@ -23,7 +23,7 @@ bool ParserJSONPathStar::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     ++pos;
 
-    node = std::make_shared<ASTJSONPathStar>();
+    node = make_intrusive<ASTJSONPathStar>();
 
     return true;
 }

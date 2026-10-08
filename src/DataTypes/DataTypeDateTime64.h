@@ -20,7 +20,7 @@ public:
     static constexpr auto family_name = "DateTime64";
     static constexpr auto type_id = TypeIndex::DateTime64;
 
-    explicit DataTypeDateTime64(UInt32 scale_, const std::string & time_zone_name = "");
+    explicit DataTypeDateTime64(UInt32 scale_, std::string_view time_zone_name = "");
 
     // reuse timezone from other DateTime/DateTime64
     DataTypeDateTime64(UInt32 scale_, const TimezoneMixin & time_zone_info);
@@ -38,10 +38,9 @@ public:
     bool isSummable() const override { return false; }
 
 protected:
-    SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
 };
 
 std::string getDateTimeTimezone(const IDataType & data_type);
 
 }
-

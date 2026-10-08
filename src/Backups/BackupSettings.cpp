@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Backups/BackupInfo.h>
 #include <Backups/BackupSettings.h>
 #include <Core/SettingsFields.h>
@@ -6,6 +8,8 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -16,6 +20,14 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
     extern const int WRONG_BACKUP_SETTINGS;
 }
+
+#if CLICKHOUSE_CLOUD
+#define LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
+    M(UInt64, resumable_backup_batch_size) \
+    M(UInt64, resumable_backup_batch_size_bytes)
+#else
+#define LIST_OF_CLOUD_BACKUP_SETTINGS(M)
+#endif
 
 /// List of backup settings except base_backup_name and cluster_host_ids.
 #define LIST_OF_BACKUP_SETTINGS(M) \
@@ -40,23 +52,59 @@ namespace ErrorCodes
     M(Bool, allow_backup_broken_projections) \
     M(Bool, write_access_entities_dependents) \
     M(Bool, allow_checksums_from_remote_paths) \
+    M(BackupDataFileNameGeneratorType, data_file_name_generator) \
+    M(Bool, backup_data_from_refreshable_materialized_view_targets) \
+    LIST_OF_CLOUD_BACKUP_SETTINGS(M) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid) \
     /// M(Int64, compression_level)
 
+namespace
+{
+    /// `s3_storage_class_name` is an alias of the `s3_storage_class` field, so a reset of either drops a
+    /// change written as the other.
+    std::string_view canonicalBackupSettingName(std::string_view name)
+    {
+        if (name == "s3_storage_class_name")
+            return "s3_storage_class";
+        return name;
+    }
+
+    /// The backup-specific names. The last two are fields kept out of the macro; unlisted, they would be
+    /// reset on the query context.
+    constexpr std::string_view BACKUP_SPECIFIC_SETTING_NAMES[] = {
+#define BACKUP_SETTING_NAME(TYPE, NAME) #NAME,
+        LIST_OF_BACKUP_SETTINGS(BACKUP_SETTING_NAME)
+#undef BACKUP_SETTING_NAME
+        "compression_level",
+        "data_file_name_prefix_length",
+    };
+
+    SettingsWithDefaultsResolved resolveBackupSettings(const ASTBackupQuery & query)
+    {
+        return resolveDefaultedSettings(query, BACKUP_SPECIFIC_SETTING_NAMES, canonicalBackupSettingName);
+    }
+}
+
 BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
 {
     BackupSettings res;
 
-    if (query.settings)
     {
-        const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
+        const auto & settings = resolveBackupSettings(query).changes;
         for (const auto & setting : settings)
         {
             if (setting.name == "compression_level")
                 res.compression_level = static_cast<int>(SettingFieldInt64{setting.value}.value);
+            else if (setting.name == "data_file_name_prefix_length")
+                res.data_file_name_prefix_length = setting.value.safeGet<UInt64>();
+            /// `s3_storage_class_name` is an alias for `s3_storage_class`: the disk configuration uses the
+            /// former (the canonical request setting name) while the BACKUP command uses the latter. Accept
+            /// both spellings in both places so they are interchangeable. See issue #68551.
+            else if (setting.name == "s3_storage_class_name")
+                res.s3_storage_class = SettingFieldString{setting.value}.value;
             else
 #define GET_BACKUP_SETTINGS_FROM_QUERY(TYPE, NAME) \
             if (setting.name == #NAME) \
@@ -78,23 +126,44 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
     if (query.cluster_host_ids)
         res.cluster_host_ids = Util::clusterHostIDsFromAST(*query.cluster_host_ids);
 
+#if CLICKHOUSE_CLOUD
+    if (res.resumable_backup_batch_size == 0)
+        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size` must be greater than 0");
+    if (res.resumable_backup_batch_size_bytes == 0)
+        throw Exception(ErrorCodes::WRONG_BACKUP_SETTINGS, "Setting `resumable_backup_batch_size_bytes` must be greater than 0");
+#endif
+
     return res;
 }
 
 bool BackupSettings::isAsync(const ASTBackupQuery & query)
 {
+    /// Runs before `fromBackupQuery` and must agree with it: a reset wins, else the last change, converted
+    /// as the field converts it.
     if (query.settings)
     {
-        const auto * field = query.settings->as<const ASTSetQuery &>().changes.tryGet("async");
-        if (field)
-            return field->safeGet<bool>();
+        const auto & settings = query.settings->as<const ASTSetQuery &>();
+        if (std::ranges::find(settings.default_settings, "async") == settings.default_settings.end())
+        {
+            auto it = std::find_if(
+                settings.changes.rbegin(),
+                settings.changes.rend(),
+                [](const SettingChange & change) { return change.name == "async"; });
+            if (it != settings.changes.rend())
+                return SettingFieldBool{it->value}.value;
+        }
     }
     return false; /// `async` is false by default.
 }
 
+CoreSettingsFromQuery BackupSettings::extractCoreSettingsFromQuery(const ASTBackupQuery & query)
+{
+    return extractCoreSettings(query, BACKUP_SPECIFIC_SETTING_NAMES, canonicalBackupSettingName);
+}
+
 void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 {
-    auto query_settings = std::make_shared<ASTSetQuery>();
+    auto query_settings = make_intrusive<ASTSetQuery>();
     query_settings->is_standalone = false;
 
     /// Copy the fields of the BackupSettings to the query.
@@ -106,8 +175,20 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
 
     LIST_OF_BACKUP_SETTINGS(COPY_BACKUP_SETTINGS_TO_QUERY)
 
+    /// Only the `checksum` generator uses it, and not sending it otherwise keeps hosts that do not know this setting working.
+    if (data_file_name_generator == BackupDataFileNameGeneratorType::Checksum && data_file_name_prefix_length)
+        query_settings->changes.emplace_back("data_file_name_prefix_length", Field(static_cast<UInt64>(*data_file_name_prefix_length)));
+
     /// Copy the core settings to the query too.
     query_settings->changes.insert(query_settings->changes.end(), core_settings.begin(), core_settings.end());
+
+    /// Other hosts re-parse this clause as text, and older parsers reject `name = DEFAULT` after a comma, so no reset is sent.
+    ///
+    /// Nor is a core reset sent as its default: that marks it changed on the receiver, where e.g. `BackupWriterS3` then overrides `<s3>`.
+    /// The DDL settings packet already omits it, so only its overrides are dropped.
+    ///
+    /// A backup-specific reset is not sent: the rebuild carries resolved state, and resolving it again would lose `backup_uuid`.
+    eraseOverridesOfResetSettings(query_settings->changes, extractCoreSettingsFromQuery(query).default_names);
 
     if (query_settings->changes.empty())
         query_settings = nullptr;
@@ -123,9 +204,71 @@ void BackupSettings::copySettingsToQuery(ASTBackupQuery & query) const
     query.cluster_host_ids = !cluster_host_ids.empty() ? Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
 }
 
+std::map<String, String> BackupSettings::getSerializedSettings() const
+{
+    std::map<String, String> res;
+
+    /// Serialize via the setting field's own `toString` (the canonical representation, consistent with
+    /// `system.query_log.Settings` and `engine_settings`) rather than going through `FieldVisitorToString`.
+#define SERIALIZE_BACKUP_SETTING(TYPE, NAME) \
+    res[#NAME] = SettingField##TYPE{NAME}.toString();
+
+    LIST_OF_BACKUP_SETTINGS(SERIALIZE_BACKUP_SETTING)
+#undef SERIALIZE_BACKUP_SETTING
+
+    /// Settings handled specially in `fromBackupQuery` and not part of `LIST_OF_BACKUP_SETTINGS`.
+    res["compression_level"] = std::to_string(compression_level);
+    if (data_file_name_prefix_length)
+        res["data_file_name_prefix_length"] = std::to_string(*data_file_name_prefix_length);
+
+    /// Never expose the password; drop purely internal fields that are not user-facing settings
+    /// (`id` has its own column, the rest are internal plumbing for BACKUP ON CLUSTER).
+    for (const auto * key : {"password", "id", "internal", "host_id", "backup_uuid"})
+        res.erase(key);
+
+    return res;
+}
+
 std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & ast)
 {
     std::vector<Strings> res;
+
+    auto extract_replicas = [](const Array & replicas) -> Strings
+    {
+        Strings result(replicas.size());
+        for (size_t j = 0; j != replicas.size(); ++j)
+        {
+            if (replicas[j].getType() != Field::Types::String)
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
+                    "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
+            result[j] = replicas[j].safeGet<String>();
+        }
+        return result;
+    };
+
+    /// The parser may produce either ASTLiteral(Array{Array{...}, ...}) when
+    /// all elements are plain literals, or ASTFunction("array", [ASTLiteral(Array), ...])
+    /// when the slow path was taken. Handle both representations.
+    if (const auto * literal = typeid_cast<const ASTLiteral *>(&ast))
+    {
+        if (literal->value.getType() != Field::Types::Array)
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
+                "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
+
+        const auto & shards = literal->value.safeGet<Array>();
+        res.resize(shards.size());
+        for (size_t i = 0; i != shards.size(); ++i)
+        {
+            if (shards[i].getType() != Field::Types::Array)
+                throw Exception(
+                    ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
+                    "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
+            res[i] = extract_replicas(shards[i].safeGet<Array>());
+        }
+        return res;
+    }
 
     const auto * array_of_shards = typeid_cast<const ASTFunction *>(&ast);
     if (!array_of_shards || (array_of_shards->name != "array"))
@@ -145,17 +288,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                     "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-            const auto & replicas = array_of_replicas->value.safeGet<Array>();
-            res[i].resize(replicas.size());
-            for (size_t j = 0; j != replicas.size(); ++j)
-            {
-                const auto & replica = replicas[j];
-                if (replica.getType() != Field::Types::String)
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
-                        "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-                res[i][j] = replica.safeGet<String>();
-            }
+            res[i] = extract_replicas(array_of_replicas->value.safeGet<Array>());
         }
     }
 
@@ -167,12 +300,12 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
     if (cluster_host_ids.empty())
         return nullptr;
 
-    auto res = std::make_shared<ASTFunction>();
-    res->name = "array";
-    auto res_replicas = std::make_shared<ASTExpressionList>();
-    res->arguments = res_replicas;
-    res->children.push_back(res_replicas);
-    res_replicas->children.resize(cluster_host_ids.size());
+    /// Build as ASTLiteral(Array{Array{String, ...}, ...}) so that FieldVisitorToString
+    /// always formats it with [...] syntax, which is compatible with all ClickHouse versions.
+    /// Using ASTFunction("array") with operator syntax would trigger the all-literals formatting
+    /// path and produce array(...) syntax that older versions cannot parse.
+    Array shards_array;
+    shards_array.resize(cluster_host_ids.size());
 
     for (size_t i = 0; i != cluster_host_ids.size(); ++i)
     {
@@ -183,10 +316,10 @@ ASTPtr BackupSettings::Util::clusterHostIDsToAST(const std::vector<Strings> & cl
         for (size_t j = 0; j != shard.size(); ++j)
             res_shard[j] = Field{shard[j]};
 
-        res_replicas->children[i] = std::make_shared<ASTLiteral>(Field{std::move(res_shard)});
+        shards_array[i] = Field{std::move(res_shard)};
     }
 
-    return res;
+    return make_intrusive<ASTLiteral>(Field{std::move(shards_array)});
 }
 
 std::pair<size_t, size_t> BackupSettings::Util::findShardNumAndReplicaNum(const std::vector<Strings> & cluster_host_ids, const String & host_id)

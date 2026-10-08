@@ -19,3 +19,5 @@ Description: vector_similarity GRANULARITY 100000000
 Description: vector_similarity GRANULARITY 100000000
 Description: vector_similarity GRANULARITY 100000000
 Description: vector_similarity GRANULARITY 100000000
+Check that non-const reference vectors also work
+Description: vector_similarity GRANULARITY 100000000

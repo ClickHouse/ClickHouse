@@ -1,0 +1,99 @@
+name: DistrolessAutoRebuild
+
+# Auto-trigger BackfillDistroless when a base-pin change lands on master.
+# Closes the manual "click Run workflow" step that previously followed every
+# libssl3t64-style digest bump — without this, a freshly-merged base PR only
+# affects future official releases, leaving the historical X.Y fleet on the
+# old base until someone remembers to backfill.
+#
+# How it picks the versions: queries Docker Hub for every published
+# `X.Y-distroless` floating tag on `clickhouse/clickhouse-server`, reads each
+# one's `com.clickhouse.build.version` label, and feeds the recovered
+# `X.Y.Z.N` list to `BackfillDistroless`. That keeps the tracked set in lockstep
+# with whatever the previous BackfillDistroless run published, no manifest file
+# to maintain.
+
+"on":
+  push:
+    branches: [master]
+    paths:
+      - 'docker/server/Dockerfile.distroless'
+      - 'docker/keeper/Dockerfile.distroless'
+
+concurrency:
+  group: distroless-auto-rebuild
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  TriggerBackfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discover currently-tracked X.Y.Z.N patches
+        id: versions
+        env:
+          IMAGE: clickhouse/clickhouse-server
+        run: |
+          set -euo pipefail
+
+          # Page through Docker Hub tags, keep only X.Y-distroless floats.
+          XY_TAGS=$(mktemp)
+          : > "$XY_TAGS"
+          PAGE=1
+          while :; do
+            URL="https://hub.docker.com/v2/repositories/${IMAGE}/tags/?page_size=100&page=${PAGE}&name=-distroless"
+            JSON=$(curl -sf "$URL") || break
+            echo "$JSON" | jq -r '.results[].name' \
+              | grep -E '^[0-9]+\.[0-9]+-distroless$' >> "$XY_TAGS" || true
+            NEXT=$(echo "$JSON" | jq -r '.next // empty')
+            [ -z "$NEXT" ] && break
+            PAGE=$((PAGE + 1))
+          done
+
+          XY_LIST=$(sort -ru "$XY_TAGS")
+          echo "X.Y-distroless floating tags discovered on Docker Hub:"
+          echo "$XY_LIST"
+
+          # Resolve each X.Y float to its X.Y.Z.N patch via the canonical
+          # `com.clickhouse.build.version` label (with the historical
+          # `com.clickhoghuse.build.version` typo fallback that some old
+          # backfills wrote — same fallback BackfillDistroless itself accepts).
+          VERSIONS=""
+          for XY_TAG in $XY_LIST; do
+            LABEL=$(docker buildx imagetools inspect "${IMAGE}:${XY_TAG}" --format '{{json .}}' 2>/dev/null \
+              | jq -r '
+                  (.image // {}) as $img |
+                  (if ($img | has("config")) then $img.config.Labels
+                   else ($img | to_entries[0]?.value.config.Labels) end) as $lbl |
+                  ($lbl["com.clickhouse.build.version"] //
+                   $lbl["com.clickhoghuse.build.version"] // "")') || LABEL=""
+            VERSION="${LABEL%-distroless}"
+            if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              VERSIONS="$VERSIONS $VERSION"
+            else
+              echo "WARN: ${IMAGE}:${XY_TAG} has no valid X.Y.Z.N label (got '$LABEL'), skipping"
+            fi
+          done
+
+          VERSIONS=$(echo "$VERSIONS" | xargs)
+          if [ -z "$VERSIONS" ]; then
+            echo "ERROR: no tracked patches discovered — refusing to dispatch with empty list"
+            exit 1
+          fi
+          echo "Discovered tracked versions: $VERSIONS"
+          echo "versions=$VERSIONS" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch BackfillDistroless
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSIONS: ${{ steps.versions.outputs.versions }}
+        run: |
+          set -euo pipefail
+          gh workflow run backfill_distroless.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref master \
+            --field versions="${VERSIONS}" \
+            --field dry-run=false
+          echo "Dispatched BackfillDistroless with versions=${VERSIONS}"

@@ -29,7 +29,7 @@ function wait_query_by_id_started()
 
                 select count() from system.query_log
                 where
-                    event_date >= yesterday() and
+                    event_date >= yesterday() AND event_time >= now() - 600 and
                     current_database = '$CLICKHOUSE_DATABASE' and
                     type = 'QueryFinish' and
                     query_id = '$query_id'

@@ -1,0 +1,5 @@
+--- CRLF in query_id via URL parameter ---
+injectLocation: evil.com
+no injected headers
+--- Normal query_id ---
+normal_test_id_04055

@@ -1,12 +1,39 @@
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Poco/String.h>
 #include <Common/SipHash.h>
 #include <Common/maskURIPassword.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTJSONHelpers.h>
+#include <Parsers/ASTJSONReadHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
+namespace
+{
+    /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
+    /// the TLS credentials that are given as the contents of a certificate or a key file (a path is
+    /// not accepted from a `CREATE DICTIONARY` query in the first place), and the custom HTTP headers
+    /// of the `HTTP` source, whose values often carry API tokens. The headers are hidden as a whole,
+    /// names included: the query is logged before the dictionary source validates its structure,
+    /// so a malformed definition must not leak either.
+    bool isSecretKey(const String & key)
+    {
+        return key == "password"
+            || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem"
+            || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
+            || key == "headers" || key == "header";
+    }
+}
 
 String ASTPair::getID(char) const
 {
@@ -16,36 +43,89 @@ String ASTPair::getID(char) const
 
 ASTPtr ASTPair::clone() const
 {
-    auto res = std::make_shared<ASTPair>(*this);
+    auto res = make_intrusive<ASTPair>(*this);
     res->children.clear();
     res->set(res->second, second->clone());
     return res;
 }
 
 
+void ASTPair::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "Pair");
+    w.writeString("first", first);
+    w.writeBool("second_with_brackets", second_with_brackets);
+    w.writeChild("second", second);
+}
+
+void ASTPair::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    /// The SQL parser lower-cases the key (see `ParserKeyValuePair`), and the checks for secret keys in
+    /// `formatImpl` and `hasSecretParts` rely on it, so canonicalize it the same way here.
+    first = Poco::toLower(r.getString("first"));
+    if (first.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'first' in ASTPair during AST JSON deserialization");
+
+    second_with_brackets = r.getBool("second_with_brackets");
+
+    auto child = r.readChild("second");
+    if (!child)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'second' in ASTPair during AST JSON deserialization");
+
+    /// `ParserKeyValuePair` puts the value in brackets exactly when it is a list of pairs.
+    const auto * list = child->as<ASTExpressionList>();
+    if (second_with_brackets != (list != nullptr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'second_with_brackets' of ASTPair must be set exactly when 'second' is a list during AST JSON deserialization");
+    if (list)
+        for (const auto & element : list->children)
+            if (!element || !element->as<ASTPair>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'second' of ASTPair must contain only key-value pairs during AST JSON deserialization");
+    set(second, child);
+}
+
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
+    ostr << Poco::toUpper(first) << " ";
 
     if (second_with_brackets)
-        ostr << (settings.hilite ? hilite_keyword : "") << "(";
+        ostr << "(";
 
-    if (!settings.show_secrets && (first == "password"))
+    if (!settings.show_secrets && isSecretKey(first))
     {
-        /// Hide password in the definition of a dictionary:
+        /// Hide the password and the TLS credentials in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
-    else if (!settings.show_secrets && (first == "uri"))
+    else if (!settings.show_secrets && (first == "uri" || first == "options"))
     {
-        // Hide password from URI in the defention of a dictionary
-        WriteBufferFromOwnString temp_buf;
-        FormatSettings tmp_settings(settings.one_line);
-        FormatState tmp_state;
-        second->format(temp_buf, tmp_settings, tmp_state, frame);
-
-        maskURIPassword(&temp_buf.str());
-        ostr << temp_buf.str();
+        /// A MongoDB connection string or option list.
+        const auto * literal = second->as<ASTLiteral>();
+        const auto * identifier = second->as<ASTIdentifier>();
+        if (literal && literal->value.getType() == Field::Types::String)
+        {
+            String value = literal->value.safeGet<String>();
+            if (maskMongoDBConnectionString(value))
+                make_intrusive<ASTLiteral>(Field(value))->format(ostr, settings, state, frame);
+            else
+                second->format(ostr, settings, state, frame);
+        }
+        else if (identifier)
+        {
+            String value = identifier->name();
+            if (maskMongoDBConnectionString(value))
+                make_intrusive<ASTIdentifier>(value)->format(ostr, settings, state, frame);
+            else
+                second->format(ostr, settings, state, frame);
+        }
+        else
+        {
+            /// An expression is evaluated only after the query is logged.
+            ostr << "'[HIDDEN]'";
+        }
     }
     else
     {
@@ -53,15 +133,13 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
     }
 
     if (second_with_brackets)
-        ostr << (settings.hilite ? hilite_keyword : "") << ")";
-
-    ostr << (settings.hilite ? hilite_none : "");
+        ostr << ")";
 }
 
 
 bool ASTPair::hasSecretParts() const
 {
-    return first == "password";
+    return isSecretKey(first) || first == "uri" || first == "options" || second->hasSecretParts();
 }
 
 
@@ -82,7 +160,7 @@ String ASTFunctionWithKeyValueArguments::getID(char delim) const
 
 ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 {
-    auto res = std::make_shared<ASTFunctionWithKeyValueArguments>(*this);
+    auto res = make_intrusive<ASTFunctionWithKeyValueArguments>(*this);
     res->children.clear();
 
     if (elements)
@@ -95,12 +173,43 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 }
 
 
+void ASTFunctionWithKeyValueArguments::writeJSON(WriteBuffer & out) const
+{
+    JSONObjectWriter w(out, "FunctionWithKeyValueArguments");
+    w.writeString("name", name);
+    w.writeBool("has_brackets", has_brackets);
+    w.writeChild("elements", elements);
+}
+
+void ASTFunctionWithKeyValueArguments::readJSON(const Poco::JSON::Object & json)
+{
+    JSONObjectReader r(json);
+
+    name = r.getString("name");
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing or empty 'name' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+
+    has_brackets = r.getBool("has_brackets");
+
+    /// `elements` is parser-produced as an `ASTExpressionList` of `ASTPair`;
+    /// `buildConfigurationFromFunctionWithKeyValueArguments` does `elements->as<const ASTExpressionList>()`
+    /// and dereferences each child as an `ASTPair`. Validate both layers so malformed dictionary
+    /// `clickhouse_json` fails with `BAD_ARGUMENTS` instead of inside dictionary-configuration building.
+    elements = r.readChildOfType<ASTExpressionList>("elements");
+    if (!elements)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'elements' in ASTFunctionWithKeyValueArguments during AST JSON deserialization");
+    for (const auto & element : elements->children)
+        if (!element || !element->as<ASTPair>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'elements' of ASTFunctionWithKeyValueArguments must contain only key-value pairs during AST JSON deserialization");
+    children.push_back(elements);
+}
+
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
+    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
     elements->format(ostr, settings, state, frame);
     ostr << (has_brackets ? ")" : "");
-    ostr << (settings.hilite ? hilite_none : "");
 }
 
 

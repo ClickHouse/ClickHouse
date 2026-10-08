@@ -2,7 +2,7 @@ SELECT number FROM numbers(10) WHERE number > 15 and test_function(number, numbe
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT ProfileEvents['ExecuteShellCommand'] FROM system.query_log WHERE
+SELECT ProfileEvents['ExecuteShellCommand'] FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
     current_database = currentDatabase()
     AND type = 'QueryFinish'
     AND query == 'SELECT number FROM numbers(10) WHERE number > 15 and test_function(number, number) == 4;'

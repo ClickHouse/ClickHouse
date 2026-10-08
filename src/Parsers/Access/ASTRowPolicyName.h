@@ -18,7 +18,7 @@ public:
     String toString() const { return full_name.toString(); }
 
     String getID(char) const override { return "RowPolicyName"; }
-    ASTPtr clone() const override { return std::make_shared<ASTRowPolicyName>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTRowPolicyName>(*this); }
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyName>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database);
@@ -42,7 +42,7 @@ public:
     Strings toStrings() const;
 
     String getID(char) const override { return "RowPolicyNames"; }
-    ASTPtr clone() const override { return std::make_shared<ASTRowPolicyNames>(*this); }
+    ASTPtr clone() const override { return make_intrusive<ASTRowPolicyNames>(*this); }
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTRowPolicyNames>(clone()); }
 
     void replaceEmptyDatabase(const String & current_database);

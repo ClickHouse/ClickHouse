@@ -1,8 +1,8 @@
--- Tags: no-fasttest, no-ordinary-database
-
+-- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
+-- no-parallel-replicas: If parallel replicas are on, the optimization (no rescoring) may not work.
 -- Test for setting 'vector_search_with_rescoring'
+SET explain_query_plan_default = 'legacy';
 
-SET allow_experimental_vector_similarity_index = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
 
@@ -20,7 +20,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
--- Expect column '_distance' in EXPLAIN. Column 'vec' is not expected for ReadFromMergeTree.
+SELECT '-- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -29,7 +29,8 @@ SELECT trimLeft(explain) AS explain FROM (
     ORDER BY L2Distance(vec, reference_vec)
     LIMIT 3
     SETTINGS vector_search_with_rescoring = 0)
-WHERE (explain LIKE '%_distance%' OR explain LIKE '%vec%Array%') AND explain NOT LIKE '%L2Distance%';
+WHERE (explain LIKE '%_distance%' OR explain LIKE '%vec%Array%') AND explain NOT LIKE '%L2Distance%'
+LIMIT 1;
 
 WITH [0.0, 2.0] AS reference_vec
 SELECT id
@@ -38,7 +39,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 1;
 
--- Don't expect column '_distance' in EXPLAIN.
+SELECT '-- Dont expect column "_distance" in EXPLAIN.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -49,9 +50,71 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS vector_search_with_rescoring = 1)
 WHERE (explain LIKE '%_distance%');
 
-SELECT 'Test "SELECT id, vec" without and with rescoring';
--- SELECTing id disables the optimization
+SELECT '-- Test that rescoring evaluates the distance only for candidate rows.';
 
+WITH [0.0, 2.0] AS reference_vec
+SELECT id, throwIf(id = 4, 'Expected rescoring to skip non-candidate rows')
+FROM tab
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 1;
+
+SELECT '-- Test that rescoring preserves candidates from multiple vector index granules.';
+
+DROP TABLE IF EXISTS tab_multi_granule;
+
+CREATE TABLE tab_multi_granule(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 2) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab_multi_granule VALUES (0, [10.0, 0.0]), (1, [11.0, 0.0]), (2, [0.0, 0.0]), (3, [0.1, 0.0]), (4, [0.2, 0.0]), (5, [0.3, 0.0]), (6, [12.0, 0.0]), (7, [13.0, 0.0]);
+
+WITH [0.0, 0.0] AS reference_vec
+SELECT id
+FROM tab_multi_granule
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 4
+SETTINGS vector_search_with_rescoring = 0;
+
+WITH [0.0, 0.0] AS reference_vec
+SELECT id
+FROM tab_multi_granule
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 4
+SETTINGS vector_search_with_rescoring = 1;
+
+DROP TABLE tab_multi_granule;
+
+SELECT '-- Test that FINAL keeps rows added by exact-mode skip-index recovery.';
+
+DROP TABLE IF EXISTS tab_final;
+
+CREATE TABLE tab_final
+(
+    id UInt64,
+    ver UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2) GRANULARITY 100000000
+)
+ENGINE = ReplacingMergeTree(ver)
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab_final VALUES (1, 1, [0.0, 0.0]), (10, 1, [500.0, 0.0]), (11, 1, [600.0, 0.0]);
+INSERT INTO tab_final VALUES (1, 2, [100.0, 0.0]), (2, 1, [0.1, 0.0]), (3, 1, [700.0, 0.0]);
+
+WITH [0.0, 0.0] AS reference_vec
+SELECT id, ver, vec
+FROM tab_final FINAL
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 1
+SETTINGS vector_search_with_rescoring = 1,
+         use_skip_indexes = 1,
+         use_skip_indexes_if_final = 1,
+         use_skip_indexes_if_final_exact_mode = 1;
+
+DROP TABLE tab_final;
+
+SELECT 'Test "SELECT id, vec" without and with rescoring';
+
+-- SELECTing vec explicitly disables the optimization
 WITH [0.0, 2.0] AS reference_vec
 SELECT id, vec
 FROM tab
@@ -59,7 +122,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
--- Don't expect column '_distance' in EXPLAIN.
+SELECT '-- Dont expect column "_distance" in EXPLAIN.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -77,7 +140,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 1;
 
--- Don't expect column '_distance' in EXPLAIN.
+SELECT '-- Dont expect column "_distance" in EXPLAIN.';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN header = 1
     WITH [0.0, 2.0] AS reference_vec
@@ -88,7 +151,8 @@ SELECT trimLeft(explain) AS explain FROM (
     SETTINGS vector_search_with_rescoring = 1)
 WHERE (explain LIKE '%_distance%');
 
--- Test vector search optimization and presence of other predicates
+SELECT 'Test optimization in the presence of other predicates';
+
 -- Output will be 0,1,2
 WITH [1.0, 0.0] AS reference_vec
 SELECT id
@@ -98,7 +162,7 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
--- No rows will be output because 3 nearest neighbours have id 0,1,2
+-- Since filter will select partial ranges from part, brute-force search will select 4,5,6
 WITH [1.0, 0.0] AS reference_vec
 SELECT id, attr1
 FROM tab
@@ -107,17 +171,30 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 0;
 
--- Increase the multiplier so that we get neighbours for above query
--- Output will be 4,5,6
-WITH [1.0, 0.0] AS reference_vec
-SELECT id, attr1
-FROM tab
-WHERE id > 3
-ORDER BY L2Distance(vec, reference_vec)
-LIMIT 3
-SETTINGS vector_search_with_rescoring = 0, vector_search_postfilter_multiplier=10;
+SELECT 'Test for filter that selects full part, optimization will take effect';
 
--- Predicate on non-PK attribute
+SELECT '-- Expect column "_distance" in EXPLAIN. Column "vec" is not expected for ReadFromMergeTree.';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN header = 1
+    WITH [0.0, 2.0] AS reference_vec
+    SELECT id
+    FROM tab
+    WHERE id >= 0
+    ORDER BY L2Distance(vec, reference_vec)
+    LIMIT 5
+    SETTINGS vector_search_with_rescoring = 0)
+WHERE (explain LIKE '%_distance%' OR explain LIKE '%vec%Array%') AND explain NOT LIKE '%L2Distance%';
+
+-- Output will be 5,6,7,8,9
+WITH [0.0, 2.0] AS reference_vec
+SELECT id
+FROM tab
+WHERE id >= 0
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 5
+SETTINGS vector_search_with_rescoring = 0;
+
+SELECT 'Predicate on non-PK attribute';
 -- Output will be 0,1,2,3,4
 WITH [1.0, 0.0] AS reference_vec
 SELECT id, attr1

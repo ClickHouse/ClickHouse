@@ -1,0 +1,18 @@
+Time + DateTime supertype
+DateTime64(0)
+Time + DateTime64 supertype
+DateTime64(3)
+DateTime64(6)
+Time + DateTime64 tz preservation
+DateTime64(3, \'America/New_York\')
+Date + Time incompatible
+Time64 higher scale + DateTime64 tz
+DateTime64(6, \'Europe/Berlin\')
+Three-way supertype
+Array(DateTime64(6))
+Time64 to DateTime64 CAST
+1970-01-01 14:45:40.123000
+1970-01-01 14:45:40.123
+Value correctness after promotion
+1970-01-01 14:45:40
+1970-01-01 14:45:40.000

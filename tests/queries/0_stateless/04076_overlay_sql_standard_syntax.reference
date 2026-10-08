@@ -1,0 +1,21 @@
+Basic OVERLAY with FOR
+Hello SQL
+abXYef
+OVERLAY without FOR
+abXYef
+Spark_SQL
+OVERLAY with empty replacement
+Hello
+Equivalence: SQL standard vs functional
+1
+1
+overlayUTF8 with SQL standard syntax
+Spark_SQL和CH
+Spark ANSI SQL和CH
+Case insensitivity
+abXYef
+Functional syntax still works
+abXYef
+abXYef
+Expressions as arguments
+Hello SQL

@@ -1,0 +1,30 @@
+parts before dry run
+all_0_0_0	2
+all_1_1_0	2
+all_2_2_0	3
+data before dry run
+1	a
+1	c
+2	b
+4	d
+5	e
+6	f
+6	f
+parts after dry run
+all_0_0_0	2
+all_1_1_0	2
+all_2_2_0	3
+data after dry run
+1	a
+1	c
+2	b
+4	d
+5	e
+6	f
+6	f
+profile events
+OPTIMIZE TABLE t_dry_run DRY RUN PARTS \'all_0_0_0\', \'all_1_1_0\', \'all_2_2_0\';	Optimize	1	7	3	7
+OPTIMIZE TABLE t_dry_run DRY RUN PARTS \'all_0_0_0\', \'all_1_1_0\', \'all_2_2_0\' DEDUPLICATE;	Optimize	1	7	3	6
+OPTIMIZE TABLE t_dry_run DRY RUN PARTS \'all_0_0_0\', \'all_1_1_0\', \'all_2_2_0\' DEDUPLICATE BY key;	Optimize	1	7	3	5
+part log should not cotain merge in dry run
+0

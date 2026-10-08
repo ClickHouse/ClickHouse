@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -14,6 +14,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -41,7 +42,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT name FROM system.databases";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << " WHERE name "
@@ -65,7 +66,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT DISTINCT cluster FROM system.clusters";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << " WHERE cluster "
@@ -109,7 +110,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         if (query.changed)
             rewritten_query << " WHERE changed = 1";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << (query.changed ? " AND name " : " WHERE name ")
@@ -140,7 +141,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
             FROM system.merges
             )";
 
-        if (!query.like.empty())
+        if (query.has_like)
         {
             rewritten_query
                 << " WHERE table "
@@ -191,7 +192,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     else
         rewritten_query << "database = " << DB::quote << database;
 
-    if (!query.like.empty())
+    if (query.has_like)
         rewritten_query
             << " AND name "
             << (query.not_like ? "NOT " : "")
@@ -224,13 +225,29 @@ BlockIO InterpreterShowTablesQuery::execute()
             res_columns[0]->insert(name);
         BlockIO res;
         size_t num_rows = res_columns[0]->size();
-        auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
+        auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
         res.pipeline = QueryPipeline(std::move(source));
 
         return res;
     }
-
-    return executeQuery(getRewrittenQuery(), getContext(), QueryFlags{ .internal = true }).second;
+    auto rewritten_query = getRewrittenQuery();
+    String database = getContext()->resolveDatabase(query.getFrom());
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    {
+        /// Explicit `SHOW TABLES` should include tables from the requested data lake catalog.
+        /// `system.databases` already shows all databases unconditionally, so no override is needed for `SHOW DATABASES`.
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+    }
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
+    {
+        /// Explicit `SHOW TABLES` should include tables from the requested remote database.
+        /// `system.databases` already shows all databases unconditionally, so no override is needed for `SHOW DATABASES`.
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
+    }
+    return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
 
 /// (*) Sorting is strictly speaking not necessary but 1. it is convenient for users, 2. SQL currently does not allow to
@@ -238,6 +255,7 @@ BlockIO InterpreterShowTablesQuery::execute()
 ///     SQL tests can take advantage of this.
 
 
+void registerInterpreterShowTablesQuery(InterpreterFactory & factory);
 void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

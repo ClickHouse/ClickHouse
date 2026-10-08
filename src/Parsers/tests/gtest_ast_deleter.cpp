@@ -61,10 +61,10 @@ TEST(ASTDeleter, SimpleChain)
     size_t chain_length = 10;
 
     {
-        DB::ASTPtr ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
+        DB::ASTPtr ast = make_intrusive<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
         for (size_t i = 0; i < chain_length; ++i)
-            ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
+            ast = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
     }
 }
 
@@ -75,10 +75,10 @@ TEST(ASTDeleter, SimpleChainLong)
     size_t chain_length = 100000;
 
     {
-        DB::ASTPtr ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
+        DB::ASTPtr ast = make_intrusive<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
         for (size_t i = 0; i < chain_length; ++i)
-            ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
+            ast = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
     }
 }
 
@@ -90,11 +90,11 @@ TEST(ASTDeleter, ChainWithExtraMember)
     size_t chain_length = 100;
 
     {
-        DB::ASTPtr ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
+        DB::ASTPtr ast = make_intrusive<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
         for (size_t i = 0; i < chain_length; ++i)
         {
-            ast = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
+            ast = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast)}, depth, max_depth);
             if (i > member_depth)
             {
                 DB::ASTPtr member = ast;
@@ -113,13 +113,13 @@ TEST(ASTDeleter, DoubleChain)
     size_t chain_length = 10;
 
     {
-        DB::ASTPtr ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
-        DB::ASTPtr ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
+        DB::ASTPtr ast1 = make_intrusive<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
+        DB::ASTPtr ast2 = make_intrusive<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
         for (size_t i = 0; i < chain_length; ++i)
         {
-            ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast1)}, depth, max_depth);
-            ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast2)}, depth, max_depth);
+            ast1 = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast1)}, depth, max_depth);
+            ast2 = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast2)}, depth, max_depth);
             ast1->as<ASTWithDecrementer>()->members.push_back(ast2->children.front());
             ast2->as<ASTWithDecrementer>()->members.push_back(ast1->children.front());
         }
@@ -133,13 +133,13 @@ TEST(ASTDeleter, DoubleChainLong)
     size_t chain_length = 100000;
 
     {
-        DB::ASTPtr ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
-        DB::ASTPtr ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
+        DB::ASTPtr ast1 = make_intrusive<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
+        DB::ASTPtr ast2 = make_intrusive<ASTWithDecrementer>(DB::ASTs{}, depth, max_depth);
 
         for (size_t i = 0; i < chain_length; ++i)
         {
-            ast1 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast1)}, depth, max_depth);
-            ast2 = std::make_shared<ASTWithDecrementer>(DB::ASTs{std::move(ast2)}, depth, max_depth);
+            ast1 = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast1)}, depth, max_depth);
+            ast2 = make_intrusive<ASTWithDecrementer>(DB::ASTs{std::move(ast2)}, depth, max_depth);
             ast1->as<ASTWithDecrementer>()->members.push_back(ast2->children.front());
             ast2->as<ASTWithDecrementer>()->members.push_back(ast1->children.front());
         }

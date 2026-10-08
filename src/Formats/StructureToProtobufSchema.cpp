@@ -200,15 +200,31 @@ String prepareAndGetProtobufTypeName(WriteBuffer & buf, const DataTypePtr & data
 
 }
 
-void StructureToProtobufSchema::writeSchema(WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_)
+void StructureToProtobufSchema::writeSchema(
+    WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_, bool with_envelope)
 {
     auto names_and_types = collectNested(names_and_types_, false, "Protobuf");
     writeProtobufHeader(buf);
-    startMessage(buf, getSchemaMessageName(message_name), 0);
-    size_t field_index = 1;
-    for (const auto & [column_name, data_type] : names_and_types)
-        writeProtobufField(buf, data_type, column_name, field_index, 1);
-    endNested(buf, 0);
-}
 
+    if (with_envelope)
+    {
+        startMessage(buf, "Envelope", 0);
+        startMessage(buf, message_name, 1);
+        size_t field_index = 1;
+        for (const auto & [column_name, data_type] : names_and_types)
+            writeProtobufField(buf, data_type, column_name, field_index, 2);
+        endNested(buf, 1);
+        writeIndent(buf, 1);
+        writeString(fmt::format("repeated {} messages = 1;\n", message_name), buf);
+        endNested(buf, 0);
+    }
+    else
+    {
+        startMessage(buf, getSchemaMessageName(message_name), 0);
+        size_t field_index = 1;
+        for (const auto & [column_name, data_type] : names_and_types)
+            writeProtobufField(buf, data_type, column_name, field_index, 1);
+        endNested(buf, 0);
+    }
+}
 }

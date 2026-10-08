@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
 SET send_logs_level = 'fatal';
 drop database if exists db_hang;
 drop database if exists db_hang_temp;

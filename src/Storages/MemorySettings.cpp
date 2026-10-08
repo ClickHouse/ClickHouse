@@ -22,22 +22,8 @@ namespace ErrorCodes
     DECLARE(UInt64, min_bytes_to_keep, 0, "Minimum block size (in bytes) to retain in Memory table buffer.", 0) \
     DECLARE(UInt64, max_bytes_to_keep, 0, "Maximum block size (in bytes) to retain in Memory table buffer.", 0) \
 
-DECLARE_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS)
-IMPLEMENT_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS)
-
-
-struct MemorySettingsImpl : public BaseSettings<MemorySettingsTraits>
-{
-};
-
-#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) MemorySettings##TYPE NAME = &MemorySettingsImpl ::NAME;
-
-namespace MemorySetting
-{
-MEMORY_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
-}
-
-#undef INITIALIZE_SETTING_EXTERN
+DECLARE_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS, MEMORY_SETTINGS_SUPPORTED_TYPES)
+IMPLEMENT_SETTINGS_TRAITS(MemorySettingsTraits, MEMORY_SETTINGS, MemorySettings, MemorySetting)
 
 MemorySettings::MemorySettings() : impl(std::make_unique<MemorySettingsImpl>())
 {
@@ -47,17 +33,11 @@ MemorySettings::MemorySettings(const MemorySettings & settings) : impl(std::make
 {
 }
 
-MemorySettings::MemorySettings(MemorySettings && settings) noexcept : impl(std::make_unique<MemorySettingsImpl>(std::move(*settings.impl)))
-{
-}
+MemorySettings::MemorySettings(MemorySettings && settings) noexcept = default;
 
 MemorySettings::~MemorySettings() = default;
 
-MemorySettings & MemorySettings::operator=(MemorySettings && settings) noexcept
-{
-    *impl = std::move(*settings.impl);
-    return *this;
-}
+MemorySettings & MemorySettings::operator=(MemorySettings && settings) noexcept = default;
 
 MEMORY_SETTINGS_SUPPORTED_TYPES(MemorySettings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
 
@@ -80,7 +60,7 @@ void MemorySettings::loadFromQuery(ASTStorage & storage_def)
 
 ASTPtr MemorySettings::getSettingsChangesQuery()
 {
-    auto settings_ast = std::make_shared<ASTSetQuery>();
+    auto settings_ast = make_intrusive<ASTSetQuery>();
     settings_ast->is_standalone = false;
     for (const auto & change : impl->changes())
         settings_ast->changes.push_back(change);
@@ -90,20 +70,20 @@ ASTPtr MemorySettings::getSettingsChangesQuery()
 
 void MemorySettings::sanityCheck() const
 {
-    if (impl->min_bytes_to_keep > impl->max_bytes_to_keep)
+    if ((*impl)[MemorySetting::min_bytes_to_keep] > (*impl)[MemorySetting::max_bytes_to_keep])
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_bytes_to_keep` cannot be higher than the `max_bytes_to_keep`. `min_bytes_to_keep`: {}, `max_bytes_to_keep`: {}",
-            impl->min_bytes_to_keep.value,
-            impl->max_bytes_to_keep.value);
+            (*impl)[MemorySetting::min_bytes_to_keep].value,
+            (*impl)[MemorySetting::max_bytes_to_keep].value);
 
 
-    if (impl->min_rows_to_keep > impl->max_rows_to_keep)
+    if ((*impl)[MemorySetting::min_rows_to_keep] > (*impl)[MemorySetting::max_rows_to_keep])
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_rows_to_keep` cannot be higher than the `max_rows_to_keep`. `min_rows_to_keep`: {}, `max_rows_to_keep`: {}",
-            impl->min_rows_to_keep.value,
-            impl->max_rows_to_keep.value);
+            (*impl)[MemorySetting::min_rows_to_keep].value,
+            (*impl)[MemorySetting::max_rows_to_keep].value);
 }
 
 void MemorySettings::applyChanges(const DB::SettingsChanges & changes)

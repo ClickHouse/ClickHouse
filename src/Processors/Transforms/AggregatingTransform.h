@@ -1,4 +1,6 @@
 #pragma once
+#include <mutex>
+#include <optional>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Aggregator.h>
@@ -6,18 +8,10 @@
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric DestroyAggregatesThreads;
-    extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
-}
 
 namespace DB
 {
@@ -28,10 +22,14 @@ public:
     bool is_overflows = false;
     Int32 bucket_num = -1;
     UInt64 chunk_num = 0; // chunk number in order of generation, used during memory bound merging to restore chunks order
+    std::vector<Int32> out_of_order_buckets; // out of order buckets for two level aggregation
 };
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+
+class RuntimeDataflowStatisticsCacheUpdater;
+using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
 struct AggregatingTransformParams
 {
@@ -45,81 +43,93 @@ struct AggregatingTransformParams
     AggregatorListPtr aggregator_list_ptr;
     Aggregator & aggregator;
     bool final;
+    Block header;
 
-    AggregatingTransformParams(const Block & header, const Aggregator::Params & params_, bool final_)
+    AggregatingTransformParams(SharedHeader header_, const Aggregator::Params & params_, bool final_)
         : params(params_)
         , aggregator_list_ptr(std::make_shared<AggregatorList>())
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), *header_, params))
         , final(final_)
+        , header(*header_)
     {
     }
 
     AggregatingTransformParams(
-        const Block & header, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
+        const Block & header_, const Aggregator::Params & params_, const AggregatorListPtr & aggregator_list_ptr_, bool final_)
         : params(params_)
         , aggregator_list_ptr(aggregator_list_ptr_)
-        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header, params))
+        , aggregator(*aggregator_list_ptr->emplace(aggregator_list_ptr->end(), header_, params))
         , final(final_)
+        , header(header_)
     {
     }
 
-    Block getHeader() const { return aggregator.getHeader(final); }
+    Block getHeader() const { return params.getHeader(header, final); }
 
-    Block getCustomHeader(bool final_) const { return aggregator.getHeader(final_); }
+    Block getCustomHeader(bool final_) const { return params.getHeader(header, final_); }
 };
 
 struct ManyAggregatedData
 {
+    /// Shared state of the kept-keys cutoff (`Aggregator::Params::shared_kept_keys_for_overflow_any`).
+    ///
+    /// The streams aggregate completely normally until the first stream exceeds
+    /// `max_rows_to_group_by` (`checkLimits` sets its `no_more_keys` in `ANY` mode). That stream
+    /// publishes a `seed` block of exactly `max_rows_to_group_by` of its keys with empty aggregate
+    /// states and sets `frozen`. Every stream then rebuilds its `AggregatedDataVariants` to exactly
+    /// the kept key set — before consuming its next chunk, or at merge preparation for the streams
+    /// that had already finished — keeping the states it accumulated for the kept keys and dropping
+    /// the rest, and continues on the regular `no_more_keys` path against the rebuilt table.
+    ///
+    /// The merged values of the kept keys are exact: every row consumed before the stream applied
+    /// the cutoff was aggregated normally, and every later row of a kept key finds the key in the
+    /// rebuilt table. Rows of the dropped keys are irrelevant — the keys are absent from every
+    /// rebuilt table, so they never reach the merged result (an unspecified subset of the groups
+    /// is a valid result for the LIMIT-without-ORDER-BY queries this serves).
+    struct SharedKeptKeys
+    {
+        std::mutex mutex;
+        std::atomic<bool> frozen{false};
+        /// Kept keys + empty aggregate states in the mergeable block layout.
+        /// Written once under `mutex`; immutable after `frozen` is set (readers synchronize
+        /// with an acquire load of `frozen`). Shared with every rebuilt
+        /// `AggregatedDataVariants::kept_keys_seed`, which the `Aggregator` re-seeds from after
+        /// an external-aggregation spill.
+        ConstBlockPtr seed;
+        /// Per-variant: the variant was rebuilt to the kept key set. Written only by the variant's
+        /// owning stream during consumption; read by the last finishing stream in `initGenerate`,
+        /// synchronized via `num_finished`.
+        std::vector<char> applied;
+    };
+
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
+    std::shared_ptr<SharedKeptKeys> shared_kept_keys;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
+    /// The number of producers that have to reach the finish barrier in
+    /// `AggregatingTransform::initGenerate`, fixed at construction time.
+    /// `variants.size()` cannot be used instead: the last finisher appends the adaptive
+    /// aggregation's early-drain routing table to `variants`, and reading the size of a vector
+    /// that is concurrently grown is a data race.
+    const size_t num_producers;
+
+    /// Set when the adaptive aggregation is enabled for this aggregation (see
+    /// `AdaptiveAggregationSession`); shared by all the participating transforms.
+    AdaptiveAggregationSessionPtr adaptive_session;
+
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), num_producers(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
     }
 
-    ~ManyAggregatedData()
+    void enableSharedKeptKeys()
     {
-        try
-        {
-            if (variants.size() <= 1)
-                return;
-
-            // Aggregation states destruction may be very time-consuming.
-            // In the case of a query with LIMIT, most states won't be destroyed during conversion to blocks.
-            // Without the following code, they would be destroyed in the destructor of AggregatedDataVariants in the current thread (i.e. sequentially).
-            const auto pool = std::make_unique<ThreadPool>(
-                CurrentMetrics::DestroyAggregatesThreads,
-                CurrentMetrics::DestroyAggregatesThreadsActive,
-                CurrentMetrics::DestroyAggregatesThreadsScheduled,
-                variants.size());
-
-            for (auto && variant : variants)
-            {
-                if (variant->size() < 100'000) // some seemingly reasonable constant
-                    continue;
-
-                // It doesn't make sense to spawn a thread if the variant is not going to actually destroy anything.
-                if (variant->aggregator)
-                {
-                    pool->scheduleOrThrowOnError(
-                        [my_variant = std::move(variant), thread_group = CurrentThread::getGroup()]() mutable
-                        {
-                            ThreadGroupSwitcher switcher(thread_group, "AggregDestruct");
-
-                            my_variant.reset();
-                        });
-                }
-            }
-
-            pool->wait();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+        shared_kept_keys = std::make_shared<SharedKeptKeys>();
+        shared_kept_keys->applied.resize(variants.size(), 0);
     }
+
+    ~ManyAggregatedData();
 };
 
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
@@ -143,30 +153,49 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(Block header, AggregatingTransformParamsPtr params_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_ = 1);
 
     /// For Parallel aggregating.
     AggregatingTransform(
-        Block header,
+        SharedHeader header,
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataPtr many_data,
         size_t current_variant,
         size_t max_threads,
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
-        bool skip_merging_ = false);
+        bool skip_merging_ = false,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
+        size_t output_streams_ = 1);
+
     ~AggregatingTransform() override;
+
+    const Aggregator & getAggregator() const { return params->aggregator; }
 
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
+    void onCancel() noexcept override;
 
 protected:
     void consume(Chunk chunk);
 
 private:
+    size_t getGeneratingStepGroup() const;
+
+    /// Rebuilds `variants` to the shared kept key set (see ManyAggregatedData::SharedKeptKeys).
+    /// With `may_freeze` (this stream has just exceeded `max_rows_to_group_by`), publishes the
+    /// kept key set first unless another stream has already frozen it.
+    void applySharedKeptKeysCutoff(bool may_freeze);
+
+    /// On the branches that do not share one kept key set (`skip_merging`, a single stream, the
+    /// sharded aggregation) every stream caps itself, so its table already holds nothing but its
+    /// own kept keys. Capture them as the stream's seed so that external aggregation stays
+    /// available under the cutoff (see `Aggregator::spillAllowedUnderKeptKeysCutoff`).
+    void capturePerStreamKeptKeysSeed();
+
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
@@ -185,10 +214,18 @@ private:
 
     ManyAggregatedDataPtr many_data;
     AggregatedDataVariants & variants;
+    /// Index of `variants` in `many_data->variants` (for `SharedKeptKeys::applied`).
+    size_t variant_index = 0;
+
+    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
+    /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
+    /// included header (see `AdaptiveAggregationImpl.h`).
+    std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;
     size_t max_threads = 1;
     size_t temporary_data_merge_threads = 1;
     bool should_produce_results_in_order_of_bucket_number = true;
-    bool skip_merging = false; /// If we aggregate partitioned data merging is not needed.
+    /// If we aggregate partitioned data merging is not needed.
+    bool skip_merging = false;
 
     /// TODO: calculate time only for aggregation.
     Stopwatch watch;
@@ -208,6 +245,11 @@ private:
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
     std::list<TemporaryBlockStreamHolder> tmp_files;
+
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
+    /// How many streams `AggregatingStep` spreads this transform's output over; 1 when it doesn't.
+    size_t output_streams = 1;
 
     void initGenerate();
 };

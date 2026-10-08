@@ -1,0 +1,142 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-05
+title: 'Demo days - 2026-06-05'
+sidebarTitle: '2026-06-05'
+description: 'فعالية Demo days الخاصة بـ ClickStack بتاريخ 2026-06-05'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="split-trace-view-and-extended-trace-view">
+  ## العرض المقسّم للتتبّع والعرض الموسّع للتتبّع
+</div>
+
+*عرض توضيحي من [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/L4sduqf3CR8" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تتضمن لوحة التتبّع الآن وضع العرض المقسّم: فعند النقر على الـ spans في المخطط الزمني، يتم تحديث لوحة التفاصيل في موضعها على اليمين بدلًا من فتحها أسفل الـ span المحدد كما كان يحدث سابقًا. يتيح ذلك إبقاء المخطط الزمني كاملًا مرئيًا أثناء التعمق في الـ spans الفردية.
+
+يمكنك أيضًا التوسيع إلى عرض تتبّع موسّع للحصول على مخطط زمني بعرض كامل مع دعم التمرير والتكبير/التصغير. ويمكن فتح كلتا اللوحتين وإغلاقهما بشكل مستقل، مما يسهّل التبديل بين نظرة عامة عالية المستوى وفحص الـ span بالتفصيل من دون فقدان موضعك.
+
+**طلبات السحب ذات الصلة:** [#2402](https://github.com/hyperdxio/hyperdx/pull/2402) feat: trace panel inline split detail
+
+<div id="source-level-required-filters">
+  ## المرشحات المطلوبة على مستوى المصدر
+</div>
+
+*عرض توضيحي بواسطة [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/RcAl8Sl5GFM" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يمكن للمصادر الآن تعريف مرشحات مطلوبة تظهر تلقائيًا في أي لوحة معلومات تستخدمها. وبدلًا من إضافة المرشح نفسه يدويًا إلى كل لوحة معلومات تستخدم مصدرًا معيّنًا، يكتشف ClickStack هذا الشرط وينقل المرشح إلى مستوى لوحة المعلومات — مع تطبيقه فقط على البطاقات التي تستخدم ذلك المصدر فعليًا.
+
+ويمكن للبطاقات الفردية تجاوز القيمة المحددة على مستوى لوحة المعلومات إذا احتاجت إلى قيم مرشحات مختلفة، كما تنتقل المرشحات المطلوبة إلى معاينة محرر المخططات، بحيث يمكنك التحقق من الاستعلامات من دون إزالتها. كذلك تتكامل مرشحات المصدر المطلوبة مع ماكرو مرشحات SQL للمخططات المستندة إلى SQL، وعند إعداد روابط بين لوحات المعلومات، يدرجها ClickStack تلقائيًا كخيارات محتملة لمعلمات الرابط.
+
+<div id="fit-y-axis-to-data">
+  ## ملاءمة المحور Y مع البيانات
+</div>
+
+*عرض توضيحي من [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cNiGHy1OqhU" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+توفّر المخططات الخطية إعداد عرض جديدًا باسم &quot;ملاءمة المحور Y مع البيانات&quot;. افتراضيًا، يكون المحور Y مرتكزًا عند الصفر، مما يضغط النطاق المرئي عندما تكون القيم كبيرة لكنها لا تتغير إلا بشكل طفيف — وهذا يجعل الاتجاهات غير واضحة من النظرة الأولى.
+
+عند تمكين هذا الخيار، يُحتسب نطاق المحور Y ديناميكيًا استنادًا إلى نطاق البيانات الفعلي، بحيث تصبح التقلبات في السلاسل ذات القيم المرتفعة مرئية من دون الحاجة إلى ضبط حدود المحور يدويًا.
+
+**طلبات السحب ذات الصلة:** [#2417](https://github.com/hyperdxio/hyperdx/pull/2417) feat(charts): إضافة إعداد العرض &#39;ملاءمة المحور Y مع البيانات&#39; للمخططات الخطية
+
+<div id="anomaly-alerts">
+  ## تنبيهات الشذوذ
+</div>
+
+*عرض توضيحي من [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/aAgN3ZlQz8M" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+استعرض Himanshu كيف نعمل على التنبيه القائم على الشذوذ باستخدام اكتشاف Z-score. وبدلًا من استخدام عتبة ثابتة، يمكنك تحديد عدد الانحرافات المعيارية عن المتوسط المتوقع التي ينبغي عندها إطلاق تنبيه. وتتحكم نافذة الموسمية (بالساعة أو يوميًا) في كيفية احتساب خط الأساس، كما يبرز محرر التنبيهات النوافذ التي كان سيُطلق فيها التنبيه حتى تتمكن من ضبط الحساسية قبل الحفظ.
+
+يعالج هذا مشكلة شائعة في تنبيهات العتبة: فكثيرًا ما لا يعرف المستخدمون القيمة الرقمية التي ينبغي ضبطها. كما أن مشاهدة نوافذ التنبيه المحتملة وهي تتحدث لحظيًا أثناء تعديل قيمة Z-score تجعل من العملي العثور على عتبة تلتقط الارتفاعات الحقيقية من دون توليد قدر مفرط من الضوضاء. ويمكن أيضًا تقييد التنبيهات بحيث لا تُطلق إلا عندما تتجاوز القيم النطاق المتوقع (وليس عند انخفاضها دونه)، كما يتيح لك إعداد التكرار اشتراط استمرار الشرط عبر عدة نقاط بيانات متتالية قبل الإطلاق. وما يزال هذا العمل قيد التطوير، إذ يُحتسب خط الأساس حاليًا باعتباره متوسطًا متحركًا، ومن المخطط دعم المتوسط المتحرك الأسي.
+
+<div id="clearer-configuration-for-api-and-ai-agents">
+  ## إعداد أوضح لواجهة برمجة تطبيقات ووكلاء الذكاء الاصطناعي
+</div>
+
+*عرض توضيحي من [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/gpQA-Vso1XI" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تتضمن إعدادات ClickStack الآن علامة تبويب مخصّصة لواجهة برمجة تطبيقات والوكلاء، تجمع مفاتيح واجهة برمجة تطبيقات وإعداد اتصال MCP في مكان واحد. وتلغي أزرار النقرة الواحدة لكل من Claude وCursor وOpenCode الحاجة إلى إنشاء أوامر الاتصال يدويًا — فعلى سبيل المثال، يفتح زر Cursor نافذة طرفية مع أمر التثبيت الصحيح مُعبّأً مسبقًا. ويحصل مستخدمو OpenCode على مقتطف prompt نظامي قابل للنسخ للصقه مباشرةً. كما يوفّر خيار إعداد JSON عام دعمًا لعملاء MCP الآخرين.
+
+**طلبات السحب ذات الصلة:** [#2407](https://github.com/hyperdxio/hyperdx/pull/2407) feat(team-settings): صِل مساعد الذكاء الاصطناعي لديك
+
+<div id="color-selection-for-number-charts">
+  ## اختيار الألوان لمخططات الأرقام
+</div>
+
+*عرض توضيحي من إعداد [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qsZ-I6FEsNw" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تدعم بطاقات الأرقام الآن كلاً من منتقي ألوان ثابت وقواعد ألوان شرطية. كما تم تحديث لوحة ألوان المخطط بأسماء ألوان مفهومة وواضحة — مثل &quot;blue&quot; و&quot;gray&quot; بدلاً من &quot;color-1&quot; و&quot;color-10&quot; — ما يجعل اختيار اللون المناسب أسهل بكثير.
+
+يتيح لك التلوين الشرطي تحديد قواعد عتبات مرتبة، مثل اللون الأخضر عندما تكون القيمة دون القيمة المستهدفة، والكهرماني ضمن نطاق التحذير، والأحمر عند تجاوز العتبة الحرجة. وهذا يجعل بطاقات الأرقام مفيدة فعلاً كمؤشرات حالة في لوحات المعلومات، وخاصةً للمقاييس مثل معدلات الخطأ أو زمن الاستجابة P99، حيث تحتاج إلى إشارة بصرية فورية من دون الحاجة إلى قراءة الرقم.
+
+**طلبات السحب ذات الصلة:** [#2386](https://github.com/hyperdxio/hyperdx/pull/2386) قواعد الألوان الشرطية لبطاقة الأرقام (عتبات مرتبة)، [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): منتقي ألوان ثابت لبطاقة الأرقام
+
+<div id="schema-migrations">
+  ## ترحيلات المخطط
+</div>
+
+*عرض توضيحي من [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/qVV8vQqctfM" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يتضمن ClickStack الآن علامة تبويب لترحيلات المخطط ضمن الإعدادات (Enterprise) لإجراء تغييرات DDL مضبوطة ومرقّمة بالإصدارات على مخططات بياناتك. تكتب ترحيلاً، وتمنحه رقم إصدار، ثم تتولى مهمة تعمل في الخلفية التقاطه وتنفيذه باستخدام منطق إعادة المحاولة وبترتيب صارم — فإذا فشل أحد الترحيلات، فلن تُنفَّذ الترحيلات اللاحقة التابعة له حتى تتم معالجته أو حذفه.
+
+ويُمكّن هذا النموذج المعتمد على الإصدارات أيضًا ClickHouse من دفع تحسينات مُدارة للمخطط إلى فرق ClickStack Cloud من دون الحاجة إلى تنفيذ أوامر ALTER TABLE يدويًا. ويمكن للفرق مراجعة الترحيلات المعلّقة ورفع الحظر عنها بالوتيرة التي تناسبها. تغطي المرحلة الأولى التغييرات الإضافية؛ ومن المخطط إجراء تعديلات على المفتاح الأساسي في المرحلة الثانية.
+
+<div id="out-of-the-box-browser-rum-dashboards">
+  ## لوحات معلومات Browser RUM المعدّة مسبقًا
+</div>
+
+*عرض توضيحي من [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Kmq9qwTnObw" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يوفّر ClickStack الآن لوحة معلومات Browser RUM معدّة مسبقًا تغطي كامل مجموعة مقاييس أداء الويب. تتضمن لوحة المعلومات نظرة عامة على الأداء تشمل مشاهدات الصفحة ووقت التحميل عند P90، بالإضافة إلى مؤشرات الويب الأساسية — LCP وINP وCLS — مع عتبات متدرجة، بحيث يمكنك أن ترى فورًا ما إذا كان كل مقياس بحالة جيدة أو يحتاج إلى تحسين أو ضعيفًا.
+
+وتغطي أقسام إضافية مشاهدات الصفحة بمرور الوقت، والمهام الطويلة، وتوزيع الأجهزة، وأبطأ الصفحات، والجلسات الأكثر احتواءً على أخطاء، ومعدلات أخطاء JavaScript، وإخفاقات واجهة برمجة التطبيقات. وتتيح لك إجراءات الصفوف المخصّصة النقر على أي صف في الجدول للتعمق وصولًا إلى بيانات الجلسة أو بيانات التتبّع ذات الصلة. كما تتيح لك عوامل التصفية أعلى الصفحة تصفية البيانات حسب الخدمة والبيئة وإصدار الخدمة والصفحة. ويجري العمل على تصفية البلدان بانتظار تحسينات Browser SDK لإرسال البيانات الجغرافية.
+
+**طلبات السحب ذات الصلة:** [#2413](https://github.com/hyperdxio/hyperdx/pull/2413) feat: add Browser RUM dashboard template
+
+<div id="dependent-dashboard-filters">
+  ## عوامل تصفية لوحة المعلومات المعتمدة على بعضها
+</div>
+
+*عرض توضيحي من [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/nTnBmZ-MvFg" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يمكن الآن جعل عوامل تصفية لوحة المعلومات تعتمد على بعضها، بحيث يؤدي اختيار قيمة في أحد عوامل التصفية تلقائيًا إلى حصر الخيارات المتاحة في عوامل التصفية اللاحقة. وتُعد لوحة معلومات Kubernetes أول من يستخدم هذه الميزة: إذ يؤدي اختيار كبسولة الآن إلى تضييق القوائم المنسدلة الخاصة بالنشر والعقدة بحيث تعرض فقط القيم المرتبطة بتلك الكبسولة، بدلًا من إظهار جميع الخيارات على مستوى العنقود بأكمله.
+
+وهذا يعني أنك لن تُعرَض عليك أبدًا مجموعة من عوامل التصفية تُرجع بيانات فارغة. هذه الميزة متاحة اليوم في قالب لوحة معلومات Kubernetes.

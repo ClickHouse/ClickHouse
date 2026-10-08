@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'ClickHouse MCP server'
+title: 'The ClickHouse MCP server'
+description: 'How the ClickHouse MCP server provides the open-standard access layer for the agentic data stack'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'MCP', 'Model Context Protocol', 'ClickHouse MCP server']
+---
+
+The ClickHouse MCP server is the **open-standard access layer** of the [Agentic Data Stack](/products/agentic-data-stack/overview): it exposes ClickHouse to the chat front-end over the Model Context Protocol, so the agent can explore your data and run read-only queries against it.
+
+In the stack, the open-source server runs alongside ClickHouse and is preconfigured in LibreChat. It exposes three tools to the agent:
+
+- **List databases** — enumerate the databases in the connected ClickHouse instance.
+- **List tables** — inspect the tables and their schemas within a database.
+- **Run SELECT queries** — execute read-only queries and return the results.
+
+To run it as part of the stack, see the [Docker setup guide](/products/agentic-data-stack/docker-setup). To use the ClickHouse MCP server with other clients and agent frameworks, or to read its source and configuration:
+
+- [MCP integration catalog](/guides/use-cases/ai-ml/MCP): clients and agent-library guides.
+- [MCP repository](https://github.com/ClickHouse/mcp-clickhouse): source and configuration.
+
+<Info>
+**Prefer a managed MCP server?** ClickHouse Cloud offers a fully managed [Remote MCP server](/products/cloud/features/ai-ml/remote-mcp) — zero install, OAuth authentication, and a richer tool set that adds management operations (services, billing, ClickPipes, backups) on top of the read-only tools above. See its [comparison with the open-source server](/products/cloud/features/ai-ml/remote-mcp#remote-vs-oss).
+</Info>

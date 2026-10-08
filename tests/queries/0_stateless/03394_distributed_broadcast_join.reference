@@ -1,0 +1,57 @@
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (default.big)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.small)
+20000
+------------
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        ScatterExchange (any)
+          Expression (Before GROUP BY)
+            GatherExchange
+              JoinLogical
+                ScatterExchange (any scatter)
+                  Expression (Change column names to column identifiers)
+                    GatherExchange
+                      ReadFromMergeTree (default.big)
+                BroadcastExchange
+                  Expression (Change column names to column identifiers)
+                    ReadFromMergeTree (default.small)
+------------
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ScatterExchange (by hash([__table1.sid]))
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.small)
+            ShuffleExchange (by hash([modulo(plus(__table2.bid, 1_UInt8), 5000_UInt16)]))
+              Expression (Calculate right join keys)
+                Expression (Change column names to column identifiers)
+                  ReadFromMergeTree (default.big)
+20000
+------------
+Expression ((Project names + Projection))
+  MergingAggregated (merge)
+    GatherExchange
+      Aggregating (partial)
+        Expression (Before GROUP BY)
+          JoinLogical
+            ShuffleExchange (any scatter)
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.big)
+            BroadcastExchange
+              Expression (Change column names to column identifiers)
+                ReadFromMergeTree (default.small)
+20000

@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-VirtualRowTransform::VirtualRowTransform(const Block & header_, const Block & pk_block_, ExpressionActionsPtr virtual_row_conversions_)
+VirtualRowTransform::VirtualRowTransform(SharedHeader header_, const Block & pk_block_, ExpressionActionsPtr virtual_row_conversions_)
     : IProcessor({header_}, {header_})
     , input(inputs.front()), output(outputs.front())
     , pk_block(pk_block_)

@@ -1,3 +1,8 @@
 <clickhouse>
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+    </asynchronous_metric_log>
+
     <asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s>
 </clickhouse>

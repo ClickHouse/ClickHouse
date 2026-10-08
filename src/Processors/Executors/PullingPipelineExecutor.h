@@ -1,6 +1,8 @@
 #pragma once
-#include <memory>
+
+#include <Core/Block_fwd.h>
 #include <atomic>
+#include <memory>
 
 namespace DB
 {
@@ -8,11 +10,11 @@ namespace DB
 class Block;
 class Chunk;
 class QueryPipeline;
-class PipelineExecutor;
 class PullingOutputFormat;
 struct ProfileInfo;
 
-using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
+class IExecutor;
+using ExecutorPtr = std::shared_ptr<IExecutor>;
 
 /// Pulling executor for QueryPipeline. Always execute pipeline in single thread.
 /// Typical usage is:
@@ -28,6 +30,7 @@ public:
 
     /// Get structure of returned block or chunk.
     const Block & getHeader() const;
+    const SharedHeader & getSharedHeader() const;
 
     /// Methods return false if query is finished.
     /// You can use any pull method.
@@ -52,7 +55,7 @@ private:
     std::atomic_bool has_data_flag = false;
     QueryPipeline & pipeline;
     std::shared_ptr<PullingOutputFormat> pulling_format;
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
 };
 
 }

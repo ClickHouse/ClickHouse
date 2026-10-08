@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <DataTypes/IDataType.h>
 

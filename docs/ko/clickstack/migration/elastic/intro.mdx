@@ -1,0 +1,31 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/intro
+title: 'Elastic에서 ClickStack으로 마이그레이션'
+sidebarTitle: '개요'
+description: 'Elastic에서 ClickHouse 관측성 스택으로 마이그레이션하기 위한 개요'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+<div id="migrating-to-clickstack-from-elastic">
+  ## Elastic에서 ClickStack으로 마이그레이션하기
+</div>
+
+이 가이드는 Elastic Stack에서 마이그레이션하는 사용자를 위한 것으로, 특히 Elastic Agent로 수집해 Elasticsearch에 저장한 로그, 트레이스, 메트릭을 Kibana로 모니터링하는 사용자를 대상으로 합니다. ClickStack의 대응되는 개념과 데이터 타입을 설명하고, Kibana의 Lucene 기반 쿼리를 HyperDX 구문으로 변환하는 방법을 안내하며, 원활한 전환을 위해 데이터와 에이전트를 모두 마이그레이션하는 지침을 제공합니다.
+
+마이그레이션을 시작하기 전에 ClickStack과 Elastic Stack 사이의 장단점을 이해하는 것이 중요합니다.
+
+다음에 해당하면 ClickStack으로 이전하는 것을 고려해야 합니다:
+
+* 대량의 관측성 데이터를 수집하고 있고, 비효율적인 압축과 낮은 리소스 활용률 때문에 Elastic 비용이 지나치게 높다고 느끼는 경우입니다. ClickStack은 원시 데이터에서 최소 10배의 압축률을 제공하여 스토리지와 컴퓨트 비용을 크게 줄일 수 있습니다.
+* 규모가 커질수록 검색 성능이 저하되거나 수집 병목이 발생하는 경우입니다.
+* SQL을 사용해 관측성 신호를 비즈니스 데이터와 연관시키고, 관측성과 분석 워크플로를 통합하려는 경우입니다.
+* OpenTelemetry를 도입하고 있으며 벤더 종속을 피하려는 경우입니다.
+* ClickHouse Cloud의 스토리지와 컴퓨트 분리 아키텍처를 활용해 사실상 무제한으로 확장하고, 유휴 시간에는 수집용 컴퓨트와 객체 스토리지에 대해서만 비용을 지불하려는 경우입니다.
+
+하지만 다음에 해당하면 ClickStack이 적합하지 않을 수 있습니다:
+
+* 관측성 데이터를 주로 보안 사용 사례에 활용하며 SIEM 중심 제품이 필요한 경우입니다.
+* 범용 profiling이 워크플로의 핵심 요소인 경우입니다.
+* 비즈니스 인텔리전스(BI) 대시보드 플랫폼이 필요한 경우입니다. ClickStack은 의도적으로 SRE와 개발자를 위한 방향성이 반영된 시각적 워크플로를 제공하며, 비즈니스 인텔리전스(BI) 도구로 설계되지 않았습니다. 이에 상응하는 기능이 필요하다면 [Grafana with the ClickHouse plugin](/ko/integrations/connectors/data-visualization/grafana/index) 또는 [Superset](/ko/integrations/connectors/data-visualization/superset-and-clickhouse) 사용을 권장합니다.

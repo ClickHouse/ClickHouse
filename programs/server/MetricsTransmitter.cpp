@@ -51,8 +51,7 @@ MetricsTransmitter::~MetricsTransmitter()
 
 void MetricsTransmitter::run()
 {
-    const std::string thread_name = "MetrTx" + std::to_string(interval_seconds);
-    setThreadName(thread_name.c_str());
+    setThreadName(ThreadName::METRICS_TRANSMITTER);
 
     const auto get_next_time = [](size_t seconds)
     {
@@ -89,7 +88,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
-            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+            const auto counter = ProfileEvents::global_counters[i];
             const auto counter_increment = counter - prev_counters[i];
             prev_counters[i] = counter;
 
@@ -102,7 +101,7 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
-            const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+            const auto counter = ProfileEvents::global_counters[i];
             std::string key{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
             key_vals.emplace_back(profile_events_cumulative_path_prefix + key, counter);
         }
@@ -123,7 +122,14 @@ void MetricsTransmitter::transmit(std::vector<ProfileEvents::Count> & prev_count
     {
         for (const auto & name_value : async_metrics_values)
         {
-            key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second.value);
+            if (name_value.second.isMap())
+            {
+                /// A key-value metric is sent as one path component deeper: `<prefix>.<metric>.<key>`.
+                for (const auto & [key, value] : name_value.second.key_values)
+                    key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first + "." + key, value);
+            }
+            else
+                key_vals.emplace_back(asynchronous_metrics_path_prefix + name_value.first, name_value.second.value);
         }
     }
 

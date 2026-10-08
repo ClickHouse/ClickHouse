@@ -39,7 +39,7 @@ public:
 
     void unlock();
     bool tryLock();
-    bool isLocked() const;
+    bool isLocked(bool check_node = false) const;
     const std::string & getLockPath() const;
 
 private:
@@ -49,7 +49,7 @@ private:
     std::string lock_message;
     bool throw_if_lost{true};
     LoggerPtr log;
-    bool locked = false;
+    bool was_locked = false;
 
 };
 

@@ -1,4 +1,4 @@
-set (CLICKHOUSE_KEEPER_CLIENT_SOURCES KeeperClient.cpp Parser.cpp Commands.cpp)
+set (CLICKHOUSE_KEEPER_CLIENT_SOURCES KeeperClient.cpp)
 
 set (CLICKHOUSE_KEEPER_CLIENT_LINK
     PRIVATE

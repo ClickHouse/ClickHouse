@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+message Envelope {
+    message Message {
+        int32 c0 = 1;
+        int32 c1 = 2;
+    }
+    repeated Message message = 1;
+}
+
+message Message {
+    int32 c0 = 1;
+    int32 c1 = 2;
+}

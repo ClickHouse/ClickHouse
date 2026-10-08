@@ -32,7 +32,9 @@ done
 
 function alter_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         REPLICA=$(($RANDOM % 5 + 1))
         TYPE=$($CLICKHOUSE_CLIENT --query "SELECT type FROM system.columns WHERE table='concurrent_kill_$REPLICA' and database='${CLICKHOUSE_DATABASE}' and name='value'")
         if [ "$TYPE" == "String" ]; then
@@ -45,23 +47,22 @@ function alter_thread
 
 function kill_mutation_thread
 {
-    while true; do
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
+    do
         # find any mutation and kill it
         mutation_id=$($CLICKHOUSE_CLIENT --query "SELECT mutation_id FROM system.mutations WHERE is_done = 0 and table like 'concurrent_kill_%' and database='${CLICKHOUSE_DATABASE}' LIMIT 1")
         if [ ! -z "$mutation_id" ]; then
-            $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id' and table like 'concurrent_kill_%' and database='${CLICKHOUSE_DATABASE}'" 1> /dev/null
+            $CLICKHOUSE_CLIENT --query "KILL MUTATION WHERE mutation_id='$mutation_id' and table like 'concurrent_kill_%' and database='${CLICKHOUSE_DATABASE}' SETTINGS kill_throw_if_noop = false" 1> /dev/null
             sleep 1
         fi
     done
 }
 
-export -f alter_thread;
-export -f kill_mutation_thread;
-
 TIMEOUT=30
 
-timeout $TIMEOUT bash -c alter_thread 2> /dev/null &
-timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
+alter_thread 2> /dev/null &
+kill_mutation_thread 2> /dev/null &
 
 wait
 

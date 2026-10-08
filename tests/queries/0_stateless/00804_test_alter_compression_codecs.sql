@@ -1,3 +1,6 @@
+-- Tags: no-msan
+-- (because the INSERT with 300k rows sometimes takes >5 minutes in msan build, I didn't investigate why)
+
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS alter_compression_codec;

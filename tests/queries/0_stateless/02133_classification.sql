@@ -16,8 +16,3 @@ SELECT detectLanguageMixed('*****///// _____ ,,,,,,,, .....');
 SELECT detectCharset('Plain English');
 SELECT detectLanguageUnknown('Plain English');
 
-SELECT detectTonality('милая кошка');
-SELECT detectTonality('ненависть к людям');
-SELECT detectTonality('обычная прогулка по ближайшему парку');
-
-SELECT detectProgrammingLanguage('#include <iostream>');

@@ -1,5 +1,6 @@
 #include <Common/createHardLink.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <cerrno>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -22,8 +23,8 @@ void createHardLink(const String & source_path, const String & destination_path)
         {
             auto link_errno = errno;
 
-            struct stat source_descr;
-            struct stat destination_descr;
+            struct stat source_descr{};
+            struct stat destination_descr{};
 
             if (0 != lstat(source_path.c_str(), &source_descr))
                 ErrnoException::throwFromPath(ErrorCodes::CANNOT_STAT, source_path, "Cannot stat {}", source_path);

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Common/Scheduler/ResourceLink.h>
+#include <Common/Scheduler/WorkloadSettings.h>
+#include <Common/Priority.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -18,11 +20,20 @@ using SchedulerNodePtr = std::shared_ptr<ISchedulerNode>;
 struct ClassifierSettings
 {
     bool throw_on_unknown_workload = false;
+
+    /// Per-query scheduling parameters the classifier builds its `ResourceSchedulingContext` from
+    /// (defaults describe a query that set nothing).
+    Float64 weight = 1.0;
+    Float64 weight_lowering_factor = 1.0;
+    Float64 weight_lowering_age_seconds = 0.0;
+    Float64 weight_lowering_cpu_seconds = 0.0;
+    Float64 weight_lowering_io_bytes = 0.0;
+    Priority priority;
 };
 
 /*
  * Instance of derived class holds everything required for resource consumption,
- * including resources currently registered at `SchedulerRoot`. This is required to avoid
+ * including resources currently registered at the scheduler. This is required to avoid
  * problems during configuration update. Do not hold instances longer than required.
  * Should be created on query start and destructed when query is done.
  */
@@ -37,6 +48,8 @@ public:
     /// Returns ResourceLink that should be used to access resource.
     /// Returned link is valid until classifier destruction.
     virtual ResourceLink get(const String & resource_name) = 0;
+    /// Returns settings that should be used to limit workload on given resource.
+    virtual WorkloadSettings getWorkloadSettings(const String & resource_name) const = 0;
 };
 
 using ClassifierPtr = std::shared_ptr<IClassifier>;
@@ -50,9 +63,6 @@ class IResourceManager : private boost::noncopyable
 {
 public:
     virtual ~IResourceManager() = default;
-
-    /// Initialize or reconfigure manager.
-    virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) = 0;
 
     /// Returns true iff given resource is controlled through this manager.
     virtual bool hasResource(const String & resource_name) const = 0;

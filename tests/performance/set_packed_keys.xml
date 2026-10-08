@@ -1,0 +1,15 @@
+<test>
+    <!--
+        A set over a composite fixed key that fits in 4 or 8 bytes now uses the packed keys32 / keys64
+        methods instead of collapsing to keys128. The per-key slot becomes 4 or 8 bytes instead of 16,
+        which shrinks the hash set (better cache behaviour) and uses cheaper hashing/comparison, so both
+        building the set and probing it get faster. The set has ~1M distinct keys and is probed by 50M
+        rows via `(a, b) IN (subset)`.
+    -->
+
+    <!-- keys32: two UInt16 columns (4 bytes). -->
+    <query>SELECT count() FROM numbers_mt(50000000) WHERE (toUInt16(number), toUInt16(intHash32(number))) IN (SELECT toUInt16(number), toUInt16(intHash32(number)) FROM numbers(1000000))</query>
+
+    <!-- keys64: two UInt32 columns (8 bytes). -->
+    <query>SELECT count() FROM numbers_mt(50000000) WHERE (toUInt32(number), toUInt32(intHash64(number))) IN (SELECT toUInt32(number), toUInt32(intHash64(number)) FROM numbers(1000000))</query>
+</test>

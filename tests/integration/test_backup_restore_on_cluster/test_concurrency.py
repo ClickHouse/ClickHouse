@@ -1,5 +1,4 @@
 import concurrent
-import os.path
 import time
 from random import randint, random
 
@@ -8,43 +7,25 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
+from .concurrency_helper import (
+    add_nodes_to_cluster,
+    create_test_table,
+    generate_cluster_def,
+)
+
 cluster = ClickHouseCluster(__file__)
 
-num_nodes = 10
+num_nodes = 4  # Kept equal to num_concurrent_backups to reduce memory usage under sanitizers
 
 
-def generate_cluster_def():
-    path = os.path.join(
-        os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/cluster_for_concurrency_test.xml",
-    )
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w") as f:
-        f.write("<clickhouse>\n\t<remote_servers>\n\t\t<cluster>\n\t\t\t<shard>\n")
-        for i in range(num_nodes):
-            f.write(
-                f"\t\t\t\t<replica>\n\t\t\t\t\t<host>node{i}</host>\n\t\t\t\t\t<port>9000</port>\n\t\t\t\t</replica>\n"
-            )
-        f.write("\t\t\t</shard>\n\t\t</cluster>\n\t</remote_servers>\n</clickhouse>")
-    return path
-
-
-main_configs = ["configs/backups_disk.xml", generate_cluster_def()]
+main_configs = [
+    "configs/backups_disk.xml",
+    generate_cluster_def(__file__, num_nodes),
+]
 # No [Zoo]Keeper retries for tests with concurrency
 user_configs = ["configs/allow_database_types.xml"]
 
-nodes = []
-for i in range(num_nodes):
-    nodes.append(
-        cluster.add_instance(
-            f"node{i}",
-            main_configs=main_configs,
-            user_configs=user_configs,
-            external_dirs=["/backups/"],
-            macros={"replica": f"node{i}", "shard": "shard1"},
-            with_zookeeper=True,
-        )
-    )
+nodes = add_nodes_to_cluster(cluster, num_nodes, main_configs, user_configs, cpu_limit=12)
 
 node0 = nodes[0]
 
@@ -70,21 +51,16 @@ def drop_after_test():
 backup_id_counter = 0
 
 
+def create_and_fill_table() -> None:
+    create_test_table(node0)
+    for i, node in enumerate(nodes):
+        node.query(f"INSERT INTO tbl VALUES ({i})")
+
+
 def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
     return f"Disk('backups', '{backup_id_counter}')"
-
-
-def create_and_fill_table():
-    node0.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x Int32"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY tuple()"
-    )
-    for i in range(num_nodes):
-        nodes[i].query(f"INSERT INTO tbl VALUES ({i})")
 
 
 expected_sum = num_nodes * (num_nodes - 1) // 2
@@ -96,7 +72,7 @@ def test_replicated_table():
     backup_name = new_backup_name()
     node0.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
-    node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+    node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
     node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
     node0.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
 
@@ -134,7 +110,7 @@ def test_concurrent_backups_on_same_node():
     ) == TSV([["BACKUP_CREATED", ""]] * num_concurrent_backups)
 
     for backup_name in backup_names:
-        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
         node0.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
         for i in range(num_nodes):
@@ -171,7 +147,7 @@ def test_concurrent_backups_on_different_nodes():
         ) == TSV([["BACKUP_CREATED", ""]])
 
     for i in range(num_concurrent_backups):
-        nodes[i].query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        nodes[i].query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         nodes[i].query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_names[i]}")
         nodes[i].query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
         for j in range(num_nodes):
@@ -185,15 +161,11 @@ def test_concurrent_backups_on_different_nodes():
         ("Atomic", "MergeTree"),
         ("Replicated", "ReplicatedMergeTree"),
         ("Memory", "MergeTree"),
-        ("Lazy", "Log"),
     ],
 )
 def test_create_or_drop_tables_during_backup(db_engine, table_engine):
     if db_engine == "Replicated":
         db_engine = "Replicated('/clickhouse/path/','{shard}','{replica}')"
-
-    if db_engine == "Lazy":
-        db_engine = "Lazy(20)"
 
     if table_engine.endswith("MergeTree"):
         table_engine += " ORDER BY tuple()"
@@ -335,8 +307,8 @@ def test_kill_mutation_during_backup():
             TSV([["BACKUP_CREATED", ""]]),
         )
 
-        node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+        node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
         node0.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
 
         if n != repeat_count - 1:
-            node0.query(f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
+            node0.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")

@@ -16,8 +16,8 @@ void ASTRowPolicyName::formatImpl(WriteBuffer & ostr, const FormatSettings & set
     const String & database = full_name.database;
     const String & table_name = full_name.table_name;
     const String & short_name = full_name.short_name;
-    ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                  << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
+    ostr << backQuoteIfNeed(short_name) << " ON "
+                  << (database.empty() ? String{} : backQuoteIfNeed(database) + ".")
                   << backQuoteIfNeed(table_name);
 
     formatOnCluster(ostr, settings);
@@ -66,8 +66,8 @@ void ASTRowPolicyNames::formatImpl(WriteBuffer & ostr, const FormatSettings & se
     if (same_short_name)
     {
         const String & short_name = full_names[0].short_name;
-        ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                      << (settings.hilite ? hilite_none : "");
+        ostr << backQuoteIfNeed(short_name) << " ON "
+                     ;
 
         bool need_comma = false;
         for (const auto & full_name : full_names)
@@ -94,7 +94,7 @@ void ASTRowPolicyNames::formatImpl(WriteBuffer & ostr, const FormatSettings & se
 
         const String & database = full_names[0].database;
         const String & table_name = full_names[0].table_name;
-        ostr << (settings.hilite ? hilite_keyword : "") << " ON " << (settings.hilite ? hilite_none : "");
+        ostr << " ON ";
         if (!database.empty())
             ostr << backQuoteIfNeed(database) + ".";
         ostr << tableOrAsterisk(table_name);
@@ -109,8 +109,8 @@ void ASTRowPolicyNames::formatImpl(WriteBuffer & ostr, const FormatSettings & se
             const String & short_name = full_name.short_name;
             const String & database = full_name.database;
             const String & table_name = full_name.table_name;
-            ostr << backQuoteIfNeed(short_name) << (settings.hilite ? hilite_keyword : "") << " ON "
-                          << (settings.hilite ? hilite_none : "");
+            ostr << backQuoteIfNeed(short_name) << " ON "
+                         ;
             if (!database.empty())
                 ostr << backQuoteIfNeed(database) + ".";
             ostr << tableOrAsterisk(table_name);

@@ -1,0 +1,5 @@
+LowCardinality RGB: identical
+Const RGB: identical
+LowCardinality(Nullable) grayscale: identical
+TOO_MANY_ROWS
+underfull image: ok

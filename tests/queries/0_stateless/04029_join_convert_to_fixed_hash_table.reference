@@ -1,0 +1,134 @@
+-- trigger check Int32
+1
+-- trigger check Int64
+1
+-- trigger check negative
+1
+-- ALL INNER Int32
+0	l0	r0
+2	l2	r2
+4	l4	r4
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL INNER Int32 - AUTO JOIN
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL INNER Int32 - GRACE HASH JOIN
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL INNER Int64
+0	l0	r0
+2	l2	r2
+4	l4	r4
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL INNER negative
+-2	l-2	r-2
+0	l0	r0
+2	l2	r2
+-2	l-2	r-2
+0	l0	r0
+2	l2	r2
+-- ALL LEFT Int32
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-- ALL RIGHT Int32
+0	l0	r0
+2	l2	r2
+4	l4	r4
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ALL FULL Int32
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-- ANY INNER Int32
+0	l0	r0
+2	l2	r2
+4	l4	r4
+0	l0	r0
+2	l2	r2
+4	l4	r4
+-- ANY LEFT Int32
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-5	l-5	
+-4	l-4	
+-3	l-3	
+-2	l-2	
+-1	l-1	
+0	l0	r0
+1	l1	
+2	l2	r2
+3	l3	
+4	l4	r4
+-- SEMI LEFT Int32
+0	l0
+2	l2
+4	l4
+0	l0
+2	l2
+4	l4
+-- ANTI LEFT Int32
+-5	l-5
+-4	l-4
+-3	l-3
+-2	l-2
+-1	l-1
+1	l1
+3	l3
+-5	l-5
+-4	l-4
+-3	l-3
+-2	l-2
+-1	l-1
+1	l1
+3	l3

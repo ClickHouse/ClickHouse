@@ -1,0 +1,122 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-10
+title: 'Demo days ClickStack - 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: 'Demo days ClickStack du 2026-07-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="text-index-fix-for-map-column-disjunction-filters">
+  ## Correctif de l’index de texte pour les filtres de disjonction sur une colonne Map
+</div>
+
+*Démo par [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron est tombé sur ce cas en aidant à déboguer un signalement indiquant que des requêtes sur un attribut d’une colonne Map étaient anormalement lentes. La personne avait déjà contourné le problème elle-même en ajoutant une colonne matérialisée et un bloom filter, ce qui n’aurait pas dû être nécessaire compte tenu des optimisations déjà en place pour les attributs de Map.
+
+Il s’est avéré que le filtrage sur plusieurs valeurs possibles pour un attribut de Map utilisait la fonction `hasAny` — autrement dit, un test de disjonction sur un tableau. Par exemple, pour faire correspondre des attributs de log, comme un ID utilisateur, à une liste de valeurs. Cela ne déclenchait pas l’index de texte sur les versions de ClickHouse antérieures à 26.5. Le correctif réécrit cette disjonction sous la forme d’un ensemble de tests d’égalité combinés avec OR et entourés de parenthèses, ce qui active correctement l’index. Aaron a confirmé via `EXPLAIN` que la requête réécrite utilise désormais bien le skip index, comme prévu.
+
+La plupart des utilisateurs sont déjà sur la version 26.5 ou ultérieure, mais pour ceux qui n’y sont pas encore, cela permet de garder ces requêtes rapides en attendant.
+
+**PR associées :** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: rework getAllKeyValues and add filters populated from text indices
+
+<div id="profiling-data-in-clickcannon">
+  ## Données de profilage dans ClickCannon
+</div>
+
+*Démo par [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Nous avons [récemment publié un article de blog sur ClickCannon](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse), un outil de génération de données synthétiques et de benchmarking pour ClickHouse. Spencer y a maintenant ajouté un signal de profilage, en plus de la prise en charge existante des logs, métriques et traces. Vous pouvez générer des données de profilage avec une profondeur de pile configurable, soit en les simulant à la volée, soit en les lisant depuis le disque, et les ingérer de la même manière que les autres signaux : il suffit de faire pointer ClickCannon vers une table de profils pour qu’il commence à générer des lignes.
+
+Les payloads de profils se sont révélés nettement plus volumineux que ceux des autres signaux. L’ajustement du nombre de clés ajoutées par échantillon et la vérification du throughput en fonction de la taille de l’instance restent donc en cours. Le fait de pouvoir générer ces données à grande échelle permet à l’équipe de commencer à optimiser le schéma et d’établir un point de référence, ce qui s’inscrit dans l’effort plus large de prise en charge des données de profilage et de leur visualisation dans l’ensemble de ClickStack. Spencer a également effectué un premier essai de rendu des frames de profil dans la visionneuse de logs de ClickStack.
+
+<div id="bar-charts">
+  ## Graphiques en barres
+</div>
+
+*Démo par [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les graphiques en barres sont arrivés, inspirés par une PR ouverte il y a plusieurs mois puis devenue obsolète lors d’un rebase. Ils sont désormais pris en charge partout où des graphiques apparaissent dans ClickStack : tableaux de bord, générateur de tableaux de bord MCP, et plus encore. Comme les graphiques en barres couvrent désormais les mêmes usages que les graphiques en courbes pour les comparaisons à un instant donné, les graphiques en courbes ont été renommés en séries temporelles afin de clarifier la distinction.
+
+Les graphiques en barres prennent en charge une limite de séries, afin que vous puissiez contrôler le nombre de barres affichées lorsque vous avez un Group By à forte cardinalité, ainsi qu’un ORDER BY personnalisé, pour trier selon la métrique la plus pertinente plutôt que selon l’ordre par défaut.
+
+**PR associées :** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: Add categorical bar chart display type, [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: Allow custom order by on categorical (pie/bar) charts
+
+<div id="community-contributions">
+  ## Contributions de la communauté
+</div>
+
+*Démo par [@vinzee](https://github.com/vinzee) et [@zoov-xavier](https://github.com/zoov-xavier)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Quelques belles contributions de la communauté ont été apportées cette semaine lors de la revue des PR. De [@vinzee](https://github.com/vinzee) : un bouton de référence de la syntaxe à côté du toggle Lucene/SQL dans la barre de recherche, qui fournit aux utilisateurs des exemples rapides, directement dans l’application, de la syntaxe de requête et des options disponibles, sans quitter la page.
+
+De [@zoov-xavier](https://github.com/zoov-xavier) : les pastilles de filtre acceptent désormais des valeurs saisies manuellement. Auparavant, vous ne pouviez choisir que dans une liste déroulante de valeurs issues de l’échantillon, ce qui empêchait de filtrer sur une valeur qui n’y avait pas encore été chargée. Désormais, il suffit de saisir la valeur souhaitée et d’appuyer sur Entrée.
+
+**PR associées :** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) Ajouter une référence de syntaxe de requête au champ de recherche, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search) : autoriser les valeurs en texte libre lors de la modification d’une pastille de filtre
+
+<div id="alert-annotations-on-charts">
+  ## Annotations d’alertes sur les graphiques
+</div>
+
+*Démo par [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Cela fait suite à une demande client visant à afficher des annotations sur les graphiques lorsque des alertes se déclenchent. Une nouvelle option d’affichage des annotations d’alerte, désactivée par défaut, indique directement sur le graphique le moment exact où une alerte s’est déclenchée et celui où elle a été résolue. Si une alerte était déjà en cours en dehors de l’intervalle de temps actuellement visible, un marqueur apparaît sur le bord gauche du graphique pour signaler qu’elle était déjà active avant le début de la fenêtre, et les annotations se mettent à jour en temps réel à mesure que les alertes se déclenchent et se résolvent.
+
+Tom a conçu cela avec un modèle d’annotation réutilisable, ce qui devrait faciliter l’ajout ultérieur de nouveaux types d’annotations, comme les releases ou les événements Kubernetes, sur la même base.
+
+**PR associées :** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): annotations de déclenchement/récupération d’alertes sur les graphiques des tuiles, [#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): amélioration de la visibilité des annotations d’alerte sur les graphiques des tuiles
+
+<div id="event-patterns-tile-polish-and-line-series-actions">
+  ## Event patterns, peaufinage des tuiles et actions sur les séries de lignes
+</div>
+
+*Démo par [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Event patterns est désormais un type de tuile de tableau de bord officiel à part entière. Vous pouvez créer une tuile de patterns et lui passer une clause `WHERE` ou une expression de pattern, par exemple en filtrant sur le nom du service ou le texte de gravité, afin de faire ressortir d’un coup d’œil les patterns récurrents.
+
+Brandon a également amélioré le retour à la ligne du texte pour les visualisations sur les petites tuiles, de sorte que les titres longs s’affichent désormais sur plusieurs lignes avec des points de suspension au lieu d’être tronqués de manière maladroite, ainsi qu’une présentation plus soignée des boutons d’action des tuiles : sur les petites tuiles, ils se replient dans un menu contextuel à l’aide d’une requête de conteneur CSS, puis réapparaissent directement sur la tuile une fois celle-ci agrandie. Un correctif a aussi été apporté à un cas où la fermeture des paramètres d’affichage d’une tuile sans enregistrer pouvait silencieusement annuler vos modifications ; un avertissement s’affiche désormais correctement avant leur perte.
+
+Enfin, en réponse aux retours des utilisateurs, vous pouvez désormais cliquer sur une série de lignes pour copier sa valeur ou vous concentrer uniquement sur cette ligne, en plus de l’action de recherche existante. Brandon a aussi bien avancé sur une mise à niveau vers Recharts v3, qui vise à corriger la troncature des info-bulles dans les tableaux comportant beaucoup de groupes.
+
+**PR associées :** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) feat: add event patterns as a first-class dashboard tile type, [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) fix(charts): use multi-line ellipsis for dashboard tile titles, [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) fix: track display/heatmap settings as dirty for unsaved changes modal, [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) feat(charts): per-series drill-down actions, new-tab drill-in, and search-synced focus
+
+<div id="dashboard-and-service-map-styling">
+  ## Style des tableaux de bord et de la cartographie des services
+</div>
+
+*Démo par [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Une série d’améliorations de style axées sur l’ergonomie, modestes prises séparément, mais qui, ensemble, rendent l’expérience nettement plus propre. Dans les tableaux de bord, les tuiles modifiables présentaient des couleurs d’en-tête incohérentes en mode clair — certaines grises, d’autres blanches — ; c’est désormais harmonisé, avec une ligne de séparation nette sous l’en-tête. Les actions de tuile visibles uniquement au survol ont également été repositionnées pour éviter qu’elles ne chevauchent les titres sur les petites cartes adaptatives, et les graphiques permettent maintenant de réinitialiser le zoom.
+
+La cartographie des services a bénéficié d’un traitement similaire : les contrôles s’adaptent désormais au mode de couleur, en restant clairs en mode clair et sombres en mode sombre au lieu d’être toujours noirs par défaut, les légendes indiquent plus clairement la latence, le taux d’erreur et le débit, et vous pouvez cliquer sur un service pour le mettre en évidence, puis cliquer de nouveau pour annuler la sélection et revenir à la vue complète.
+
+**PR associées :** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) Amélioration du style des tuiles de tableau de bord et de la disposition des en-têtes, [#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map) : bascule de couleur des métriques et amélioration du popover

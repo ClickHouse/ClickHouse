@@ -7,10 +7,10 @@ namespace DB
 {
 /// Streams checks that flow of blocks is sorted in the sort_description order
 /// Othrewise throws exception in readImpl function.
-class CheckSortedTransform : public ISimpleTransform
+class CheckSortedTransform final : public ISimpleTransform
 {
 public:
-    CheckSortedTransform(const Block & header, const SortDescription & sort_description);
+    CheckSortedTransform(SharedHeader header, const SortDescription & sort_description);
 
     String getName() const override { return "CheckSortedTransform"; }
     void setDescription(const String & str) { description = str; }

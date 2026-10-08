@@ -1,5 +1,6 @@
 SET allow_experimental_dynamic_type=1;
 SET allow_suspicious_types_in_order_by=1;
+SET output_format_pretty_named_tuples_as_json = 0;
 
 CREATE TABLE t (d Dynamic) ENGINE = Memory;
 

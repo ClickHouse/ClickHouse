@@ -1,7 +1,9 @@
 #pragma once
 
-#include <vector>
+#include <Common/Logger.h>
 #include <Processors/ISimpleTransform.h>
+
+#include <vector>
 
 namespace DB
 {
@@ -15,10 +17,10 @@ using SetWithStatePtr = std::shared_ptr<SetWithState>;
  * Data is not changed and returned as is.
  * Can be executed in parallel, but blocks on operations with set.
  */
-class CreatingSetsOnTheFlyTransform : public ISimpleTransform
+class CreatingSetsOnTheFlyTransform final : public ISimpleTransform
 {
 public:
-    CreatingSetsOnTheFlyTransform(const Block & header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
+    CreatingSetsOnTheFlyTransform(SharedHeader header_, const Names & column_names_, size_t num_streams_, SetWithStatePtr set_);
 
     String getName() const override { return "CreatingSetsOnTheFlyTransform"; }
 
@@ -42,10 +44,10 @@ private:
  * Filter the input chunk by the set.
  * When set building is not completed, just return the source data.
  */
-class FilterBySetOnTheFlyTransform : public ISimpleTransform
+class FilterBySetOnTheFlyTransform final : public ISimpleTransform
 {
 public:
-    FilterBySetOnTheFlyTransform(const Block & header_, const Names & column_names_, SetWithStatePtr set_);
+    FilterBySetOnTheFlyTransform(SharedHeader header_, const Names & column_names_, SetWithStatePtr set_);
 
     String getName() const override { return "FilterBySetOnTheFlyTransform"; }
 

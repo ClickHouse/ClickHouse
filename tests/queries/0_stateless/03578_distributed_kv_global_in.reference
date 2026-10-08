@@ -1,0 +1,34 @@
+-- RocksDB: set
+0	val-0
+0	val-0
+1	val-1
+1	val-1
+2	val-2
+2	val-2
+-- RocksDB: subquery
+0	val-0
+0	val-0
+1	val-1
+1	val-1
+2	val-2
+2	val-2
+-- Rows read:
+6
+15
+-- KeeperMap: set
+0	val-0
+0	val-0
+1	val-1
+1	val-1
+2	val-2
+2	val-2
+-- KeeperMap: subquery
+0	val-0
+0	val-0
+1	val-1
+1	val-1
+2	val-2
+2	val-2
+-- Rows read:
+6
+15

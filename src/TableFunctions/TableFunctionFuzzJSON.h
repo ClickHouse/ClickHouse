@@ -16,6 +16,7 @@ class TableFunctionFuzzJSON : public ITableFunction
 public:
     static constexpr auto name = "fuzzJSON";
     std::string getName() const override { return name; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -29,7 +30,7 @@ private:
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
 
-    const char * getStorageTypeName() const override { return "FuzzJSON"; }
+    const char * getStorageEngineName() const override { return "FuzzJSON"; }
 
     String source;
     std::optional<UInt64> random_seed;

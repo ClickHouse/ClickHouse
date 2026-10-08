@@ -3,7 +3,7 @@
 next=0
 for arg in "$@"; do
     if [[ $next -eq 0 ]]; then
-        if [[ $arg == "-o" ]]; then
+        if [[ $arg == "-o" ]] || [[ $arg == "qc" ]]; then
             next=1
             continue
         fi

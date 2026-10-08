@@ -15,6 +15,9 @@ INSERT INTO constCondOptimization (n) SELECT number FROM system.numbers LIMIT 10
 -- The queries should use index.
 SET max_rows_to_read = 2;
 
+-- Prevent remote replicas from skipping index analysis in Parallel Replicas. Otherwise, they may return full ranges and trigger max_rows_to_read validation failures.
+SET parallel_replicas_index_analysis_only_on_coordinator = 0;
+
 SELECT count() FROM constCondOptimization WHERE if(0, 1, n = 1000);
 SELECT count() FROM constCondOptimization WHERE if(0, 1, n = 1000) AND 1 = 1;
 

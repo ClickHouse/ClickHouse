@@ -1,0 +1,78 @@
+---
+slug: /cloud/get-started/cloud/use-cases/data_lake_and_warehouse
+title: 'Data warehousing'
+description: 'Build modern data warehouse architectures by combining the flexibility of data lakes with ClickHouse Cloud''s performance'
+keywords: ['data warehouse', 'data lake', 'lakehouse', 'Iceberg', 'Delta Lake', 'Hudi', 'Parquet', 'open table formats', 'hybrid architecture', 'use cases']
+sidebarTitle: 'Data warehousing'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+The modern data warehouse no longer tightly couples storage and compute. Instead, distinct but interconnected layers for storage, governance, and query processing give you the flexibility to choose the right tools for your workflows.
+
+By adding open table formats and a high-performance query engine like ClickHouse to cloud object storage, you get database-grade capabilities — ACID transactions, schema enforcement, and fast analytical queries — without sacrificing the openness of your data lake. This combination brings performance together with interoperable, cost-effective storage to support your traditional analytics and modern AI/ML workloads.
+
+## What this architecture provides {#benefits}
+By combining open object storage and table formats with ClickHouse as your query engine, you get:
+
+| Benefit | Description |
+|---------|-------------|
+| **Consistent table updates** | Atomic commits to table state mean concurrent writes don't produce corrupt or partial data. This solves one of the biggest problems with raw data lakes. |
+| **Schema management** | Enforced validation and tracked schema evolution prevent the "data swamp" problem where data becomes unusable due to schema inconsistencies. |
+| **Query performance** | Indexing, statistics, and data layout optimizations like data skipping and clustering let SQL queries run at speeds comparable to a dedicated data warehouse. Combined with ClickHouse's columnar engine, this holds true even on data stored in object storage. |
+| **Governance** | Catalogs and table formats provide fine-grained access control and auditing at row and column levels, addressing the limited security controls in basic data lakes. |
+| **Separation of storage and compute** | Storage and compute scale independently on commodity object storage, which is significantly cheaper than proprietary warehouse storage. While separation is standard in modern cloud warehouses, open formats let you choose *which* compute engine scales with your data. |
+
+## How ClickHouse powers your data warehouse {#architecture}
+Data flows from streaming platforms and existing warehouses through object storage into ClickHouse, where it's transformed, optimized, and served to your BI/AI tools.
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouse data warehousing architecture"/>
+  </div>
+  <ExclusiveGroup name="dw-arch">
+    <AccordionGroup>
+      <Accordion title="Data ingestion" defaultOpen>
+        For bulk data loads, you typically use an object store like S3 or GCS as an intermediary. ClickHouse's [Parquet](/guides/clickhouse/data-formats/parquet) reading performance lets you load data at hundreds of millions of rows per second using the [S3 table engine](/reference/engines/table-engines/integrations/s3). For real-time streaming, [ClickPipes](/integrations/clickpipes/home) connects directly to platforms like Kafka and Confluent.
+
+        You can also migrate from existing data warehouses like Snowflake, BigQuery, and Databricks by exporting to object storage and loading into ClickHouse via [table engines](/reference/engines/table-engines).
+      </Accordion>
+      <Accordion title="Querying">
+        You can query data directly from object stores like S3 and GCS, or from data lakes with open table formats like [Iceberg](/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/reference/engines/table-engines/integrations/deltalake), and [Hudi](/reference/engines/table-engines/integrations/hudi) — directly or through data catalogs like [AWS Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog), [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog), and [Iceberg REST](/guides/use-cases/data-warehousing/rest-catalog).
+
+        ClickHouse Cloud offers the [query cache](/concepts/features/performance/caches/query-cache), [sparse indexes](/concepts/features/performance/skip-indexes/skipping-indexes), and [projections](/concepts/features/projections/projections) out of the box, plus 70+ file formats and SQL functions for dates, arrays, JSON, geo, and approximate aggregations at scale.
+      </Accordion>
+      <Accordion title="Data transformations">
+        [Materialized views](/concepts/features/materialized-views) in ClickHouse automate transformations — triggered when new data is inserted into source tables, so you can extract, aggregate, and modify data as it arrives without building bespoke pipelines.
+
+        For more complex modeling, ClickHouse's [dbt integration](/integrations/connectors/data-ingestion/etl-tools/dbt) lets you define transformations as version-controlled SQL models.
+      </Accordion>
+      <Accordion title="Integrations">
+        ClickHouse has native connectors for BI tools like [Tableau](/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) and [Looker](/integrations/connectors/data-visualization/looker-and-clickhouse). Tools without a native connector can connect through the [MySQL wire protocol](/concepts/features/interfaces/mysql). The [MCP server](/guides/use-cases/ai-ml/MCP) connects ClickHouse to LLMs for conversational analytics, and flexible [RBAC](/concepts/features/security/access-rights) controls let you expose read-only tables securely.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>
+
+## Hybrid architecture: The best of both worlds {#hybrid-architecture-the-best-of-both-worlds}
+Beyond querying your data lake, you can ingest performance-critical data into ClickHouse's native [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) storage for use cases that demand ultra-low latency — real-time dashboards, operational analytics, or interactive applications.
+
+This gives you a tiered data strategy. Hot, frequently accessed data lives in ClickHouse's optimized storage for sub-second query responses, while the complete data history stays in the lake and remains queryable. You can also use ClickHouse materialized views to continuously transform and aggregate lake data into optimized tables, bridging the two tiers automatically.
+
+You choose where data lives based on performance requirements, not technical limitations.
+
+<Tip>
+**ClickHouse Academy**
+
+Take the free [Data Warehousing with ClickHouse](https://clickhouse.com/learn/data-warehousing) course to learn more.
+</Tip>

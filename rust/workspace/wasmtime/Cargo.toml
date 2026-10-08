@@ -1,0 +1,12 @@
+[package]
+name = "_ch_rust_wasmtime"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+# Dummy package to build wasmtime within the ClickHouse workspace and re-export its symbols.
+# Wasmtime provides C/C++ header files located, so we put it to contrib, and we use it from there.
+[dependencies]
+wasmtime-c-api = { path = "../../../contrib/wasmtime/crates/c-api" , package = "wasmtime-c-api-impl" , default-features = false , features = ["addr2line", "coredump", "cranelift", "gc", "gc-null", "debug-builtins", "demangle", "wat"] }

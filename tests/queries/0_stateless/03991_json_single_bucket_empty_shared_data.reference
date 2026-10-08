@@ -1,0 +1,26 @@
+-- Wide part, empty shared data: single bucket expected
+Wide
+1
+-- Wide part, non-empty shared data: multiple buckets expected
+Wide
+4
+-- Compact part, empty shared data: still uses configured buckets
+Compact
+4
+-- After merge, empty shared data: single bucket
+1
+-- Correctness: read data from single-bucket part
+0	0	val_0
+1	1	val_1
+2	2	val_2
+3	3	val_3
+4	4	val_4
+-- Correctness: read data after merge
+0	0	val_0
+1	1	val_1
+2	2	val_2
+3	3	val_3
+4	4	val_4
+-- After merge, non-empty shared data: multiple buckets
+4
+100

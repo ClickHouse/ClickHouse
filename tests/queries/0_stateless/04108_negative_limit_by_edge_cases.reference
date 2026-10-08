@@ -1,0 +1,463 @@
+-- { echo }
+
+SET max_block_size = 3;
+-- DESC, ties at group boundary (SortedStream)
+SELECT number, number % 3 AS g FROM numbers(10) ORDER BY g DESC, number DESC LIMIT -4 BY g;
+8	2
+5	2
+2	2
+7	1
+4	1
+1	1
+9	0
+6	0
+3	0
+0	0
+-- DESC, ties at group boundary
+SELECT number, number % 3 AS g FROM numbers(10) ORDER BY number DESC LIMIT -4 BY g;
+9	0
+8	2
+7	1
+6	0
+5	2
+4	1
+3	0
+2	2
+1	1
+0	0
+-- DESC, one-per-pair (SortedStream)
+SELECT intDiv(number, 2) AS g, number FROM numbers(10) ORDER BY g DESC, number DESC LIMIT -1 BY g;
+4	8
+3	6
+2	4
+1	2
+0	0
+-- DESC, one-per-pair
+SELECT intDiv(number, 2) AS g, number FROM numbers(10) ORDER BY number DESC LIMIT -1 BY g;
+4	8
+3	6
+2	4
+1	2
+0	0
+-- Group boundary inside chunk (SortedStream)
+SELECT intDiv(number, 3) AS g FROM numbers(12) ORDER BY g LIMIT -2 BY g;
+0
+0
+1
+1
+2
+2
+3
+3
+-- Group boundary inside chunk
+SELECT intDiv(number, 3) AS g FROM numbers(12) ORDER BY number LIMIT -2 BY g;
+0
+0
+1
+1
+2
+2
+3
+3
+-- Offset crossing chunk boundary (SortedStream)
+SELECT intDiv(number, 3) AS g, number FROM numbers(12) ORDER BY g, number LIMIT -2 OFFSET -1 BY g;
+0	0
+0	1
+1	3
+1	4
+2	6
+2	7
+3	9
+3	10
+-- Offset crossing chunk boundary
+SELECT intDiv(number, 3) AS g, number FROM numbers(12) ORDER BY number LIMIT -2 OFFSET -1 BY g;
+0	0
+0	1
+1	3
+1	4
+2	6
+2	7
+3	9
+3	10
+-- Boundary at chunk start (SortedStream)
+SELECT intDiv(number, 3) AS g FROM numbers(9) ORDER BY g LIMIT -3 BY g;
+0
+0
+0
+1
+1
+1
+2
+2
+2
+-- Boundary at chunk start
+SELECT intDiv(number, 3) AS g FROM numbers(9) ORDER BY number LIMIT -3 BY g;
+0
+0
+0
+1
+1
+1
+2
+2
+2
+SET max_block_size = 1;
+-- Single-element chunks, LIMIT -2 BY g (SortedStream)
+SELECT intDiv(number, 3) AS g, number FROM numbers(9) ORDER BY g, number LIMIT -2 BY g;
+0	1
+0	2
+1	4
+1	5
+2	7
+2	8
+-- Single-element chunks, LIMIT -2 BY g
+SELECT intDiv(number, 3) AS g, number FROM numbers(9) ORDER BY number LIMIT -2 BY g;
+0	1
+0	2
+1	4
+1	5
+2	7
+2	8
+-- Single-element chunks, LIMIT -2 OFFSET -1 BY g (SortedStream)
+SELECT intDiv(number, 3) AS g, number FROM numbers(9) ORDER BY g, number LIMIT -2 OFFSET -1 BY g;
+0	0
+0	1
+1	3
+1	4
+2	6
+2	7
+-- Single-element chunks, LIMIT -2 OFFSET -1 BY g
+SELECT intDiv(number, 3) AS g, number FROM numbers(9) ORDER BY number LIMIT -2 OFFSET -1 BY g;
+0	0
+0	1
+1	3
+1	4
+2	6
+2	7
+SET max_block_size = 65536;
+-- All rows equal, LIMIT -5 BY g (SortedStream)
+SELECT 0 AS g FROM numbers(100) ORDER BY g LIMIT -5 BY g;
+0
+0
+0
+0
+0
+-- All rows equal, LIMIT -5 BY g (no ORDER BY since every column is constant)
+SELECT 0 AS g FROM numbers(100) LIMIT -5 BY g;
+0
+0
+0
+0
+0
+SET max_block_size = 2;
+-- Limit=0, non-zero offset, under small blocks (SortedStream)
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -0 OFFSET -3 BY g;
+-- Limit=0, non-zero offset, under small blocks
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -0 OFFSET -3 BY g;
+SET max_block_size = 65536;
+-- Multiple ORDER BY columns (not LIMIT BY key) (SortedStream)
+SELECT intDiv(number, 3) AS g, number % 2 AS tag, number FROM numbers(12) ORDER BY g, tag, number LIMIT -2 BY g;
+0	0	2
+0	1	1
+1	1	3
+1	1	5
+2	0	8
+2	1	7
+3	1	9
+3	1	11
+-- Multiple ORDER BY columns (not LIMIT BY key)
+SELECT intDiv(number, 3) AS g, number % 2 AS tag, number FROM numbers(12) ORDER BY number LIMIT -2 BY g;
+0	1	1
+0	0	2
+1	0	4
+1	1	5
+2	1	7
+2	0	8
+3	0	10
+3	1	11
+-- Single row (SortedStream)
+SELECT number, 0 AS g FROM numbers(1) ORDER BY g, number LIMIT -1 BY g;
+0	0
+-- Single row
+SELECT number, 0 AS g FROM numbers(1) ORDER BY number LIMIT -1 BY g;
+0	0
+-- Empty result (SortedStream)
+SELECT number, 0 AS g FROM numbers(0) ORDER BY g, number LIMIT -1 BY g;
+-- Empty result
+SELECT number, 0 AS g FROM numbers(0) ORDER BY number LIMIT -1 BY g;
+-- Limit exceeds total (SortedStream)
+SELECT number, 0 AS g FROM numbers(5) ORDER BY g, number LIMIT -100 BY g;
+0	0
+1	0
+2	0
+3	0
+4	0
+-- Limit exceeds total
+SELECT number, 0 AS g FROM numbers(5) ORDER BY number LIMIT -100 BY g;
+0	0
+1	0
+2	0
+3	0
+4	0
+-- Aggregate on top: LIMIT -2 BY g (SortedStream)
+SELECT sum(x) FROM (SELECT number AS x, intDiv(number, 3) AS g FROM numbers(9) ORDER BY g, x LIMIT -2 BY g);
+27
+-- Aggregate on top: LIMIT -2 BY g
+SELECT sum(x) FROM (SELECT number AS x, intDiv(number, 3) AS g FROM numbers(9) ORDER BY x LIMIT -2 BY g);
+27
+-- Aggregate on top, decomposed path: LIMIT -2 OFFSET 1 BY g (SortedStream)
+SELECT sum(x) FROM (SELECT number AS x, intDiv(number, 3) AS g FROM numbers(9) ORDER BY g, x LIMIT -2 OFFSET 1 BY g);
+27
+-- Aggregate on top, decomposed path: LIMIT -2 OFFSET 1 BY g
+SELECT sum(x) FROM (SELECT number AS x, intDiv(number, 3) AS g FROM numbers(9) ORDER BY x LIMIT -2 OFFSET 1 BY g);
+27
+-- Aggregate on top, decomposed path: LIMIT 2 OFFSET -1 BY g (SortedStream)
+SELECT sum(x) FROM (SELECT number AS x, intDiv(number, 3) AS g FROM numbers(9) ORDER BY g, x LIMIT 2 OFFSET -1 BY g);
+21
+-- Aggregate on top, decomposed path: LIMIT 2 OFFSET -1 BY g
+SELECT sum(x) FROM (SELECT number AS x, intDiv(number, 3) AS g FROM numbers(9) ORDER BY x LIMIT 2 OFFSET -1 BY g);
+21
+-- DISTINCT + negative LIMIT BY (SortedStream)
+SELECT DISTINCT number % 3 AS g, number FROM numbers(15) ORDER BY g, number LIMIT -2 BY g;
+0	9
+0	12
+1	10
+1	13
+2	11
+2	14
+-- DISTINCT + negative LIMIT BY
+SELECT DISTINCT number % 3 AS g, number FROM numbers(15) ORDER BY number LIMIT -2 BY g;
+0	9
+1	10
+2	11
+0	12
+1	13
+2	14
+-- Constant grouping key
+SELECT 'const' AS c, number FROM numbers(10) ORDER BY number LIMIT -2 BY c;
+const	8
+const	9
+-- String grouping key
+SELECT toString(number % 3) AS s, number FROM numbers(15) ORDER BY number LIMIT -2 BY s;
+0	9
+1	10
+2	11
+0	12
+1	13
+2	14
+-- Composite numeric key
+SELECT number, number % 3 AS g, number % 2 AS h FROM numbers(15) ORDER BY number LIMIT -1 BY g, h;
+9	0	1
+10	1	0
+11	2	1
+12	0	0
+13	1	1
+14	2	0
+-- NaN grouping key, single chunk
+SELECT k, number FROM (SELECT if(number < 3, toFloat64('nan'), toFloat64(1.0)) AS k, number FROM numbers(6))
+ORDER BY k, number LIMIT -1 BY k;
+1	5
+nan	2
+-- NaN grouping key across chunk boundary
+SET max_block_size = 3;
+SELECT k, number FROM (SELECT if(number < 3, toFloat64('nan'), toFloat64(1.0)) AS k, number FROM numbers(6))
+ORDER BY k, number LIMIT -1 BY k;
+1	5
+nan	2
+-- LIMIT -N BY ALL (expands to all SELECT columns as grouping keys)
+SELECT number % 3 AS g, number % 2 AS h FROM numbers(10) ORDER BY number LIMIT -1 BY ALL SETTINGS enable_analyzer = 1;
+1	0
+2	1
+0	0
+1	1
+2	0
+0	1
+SET max_block_size = 1;
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -2 BY g;
+9	0
+12	0
+10	1
+13	1
+11	2
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -2 BY g;
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -3 OFFSET -1 BY g;
+3	0
+6	0
+9	0
+4	1
+7	1
+10	1
+5	2
+8	2
+11	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -3 OFFSET -1 BY g;
+3	0
+4	1
+5	2
+6	0
+7	1
+8	2
+9	0
+10	1
+11	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -2 OFFSET 2 BY g;
+9	0
+12	0
+10	1
+13	1
+11	2
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -2 OFFSET 2 BY g;
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT 2 OFFSET -2 BY g;
+0	0
+3	0
+1	1
+4	1
+2	2
+5	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT 2 OFFSET -2 BY g;
+0	0
+1	1
+2	2
+3	0
+4	1
+5	2
+SET max_block_size = 2;
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -2 BY g;
+9	0
+12	0
+10	1
+13	1
+11	2
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -2 BY g;
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -3 OFFSET -1 BY g;
+3	0
+6	0
+9	0
+4	1
+7	1
+10	1
+5	2
+8	2
+11	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -3 OFFSET -1 BY g;
+3	0
+4	1
+5	2
+6	0
+7	1
+8	2
+9	0
+10	1
+11	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -2 OFFSET 2 BY g;
+9	0
+12	0
+10	1
+13	1
+11	2
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -2 OFFSET 2 BY g;
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT 2 OFFSET -2 BY g;
+0	0
+3	0
+1	1
+4	1
+2	2
+5	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT 2 OFFSET -2 BY g;
+0	0
+1	1
+2	2
+3	0
+4	1
+5	2
+SET max_block_size = 3;
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -2 BY g;
+9	0
+12	0
+10	1
+13	1
+11	2
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -2 BY g;
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -3 OFFSET -1 BY g;
+3	0
+6	0
+9	0
+4	1
+7	1
+10	1
+5	2
+8	2
+11	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -3 OFFSET -1 BY g;
+3	0
+4	1
+5	2
+6	0
+7	1
+8	2
+9	0
+10	1
+11	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT -2 OFFSET 2 BY g;
+9	0
+12	0
+10	1
+13	1
+11	2
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT -2 OFFSET 2 BY g;
+9	0
+10	1
+11	2
+12	0
+13	1
+14	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY g, number LIMIT 2 OFFSET -2 BY g;
+0	0
+3	0
+1	1
+4	1
+2	2
+5	2
+SELECT number, number % 3 AS g FROM numbers(15) ORDER BY number LIMIT 2 OFFSET -2 BY g;
+0	0
+1	1
+2	2
+3	0
+4	1
+5	2

@@ -6,6 +6,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 
 
+int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv)
 {
     try
@@ -23,7 +24,7 @@ int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv)
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
 
-        if (options.count("help"))
+        if (options.contains("help"))
         {
             std::cout << "Dump paths of all nodes in ZooKeeper." << std::endl;
             std::cout << "Usage: " << argv[0] << " [options]" << std::endl;
@@ -31,7 +32,7 @@ int mainEntryClickHouseZooKeeperDumpTree(int argc, char ** argv)
             return 1;
         }
 
-        bool dump_ctime = options.count("ctime");
+        bool dump_ctime = options.contains("ctime");
 
         zkutil::ZooKeeperPtr zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(options.at("address").as<std::string>());
 

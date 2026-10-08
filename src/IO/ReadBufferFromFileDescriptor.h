@@ -51,6 +51,8 @@ public:
     {
     }
 
+    bool poll(size_t timeout_microseconds) override;
+
     int getFD() const
     {
         return fd;
@@ -72,6 +74,11 @@ public:
     std::optional<size_t> tryGetFileSize() override;
 
     bool checkIfActuallySeekable() override;
+
+    /// O_DIRECT requires the user buffer to be sector-aligned, so an aligned descriptor cannot
+    /// accept an arbitrary external buffer - callers must read into its own aligned internal
+    /// buffer instead.
+    bool supportsExternalBufferMode() const override { return required_alignment == 0; }
 
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> &) const override;
     bool supportsReadAt() override { return use_pread; }

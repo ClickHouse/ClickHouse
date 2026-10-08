@@ -1,0 +1,10 @@
+-- [table-scoped INSERT grant] CREATE ... AS SELECT into the granted table must succeed:
+succeeded
+-- [table-scoped INSERT grant] and the table is populated:
+1
+2
+3
+-- [no INSERT grant] CREATE ... AS SELECT into a table the user cannot INSERT into must be denied:
+ACCESS_DENIED
+-- [no INSERT grant] and the denied query must not leave an orphan table:
+0

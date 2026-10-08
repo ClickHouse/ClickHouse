@@ -1,8 +1,4 @@
 <test>
-    <settings>
-        <allow_experimental_json_type>1</allow_experimental_json_type>
-    </settings>
-
     <!-- Looks like the only way to use json in test's queries is to put them to substitution.
          Otherwise jsons are interpreted as substitutions themselves -->
 

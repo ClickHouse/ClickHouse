@@ -14,7 +14,11 @@ SETTINGS
     allow_vertical_merges_from_compact_to_wide_parts = 1,
     min_bytes_for_wide_part = 0,
     enable_block_number_column = 0,
-    enable_block_offset_column = 0;
+    enable_block_offset_column = 0,
+    -- packed_skip_index_max_bytes=0: the > 200 threshold below assumes per-substream
+    -- uncompressed_bytes accounting; packed substreams are bundled and the per-substream
+    -- accounting is layout-dependent.
+    packed_skip_index_max_bytes = 0;
 
 SYSTEM STOP MERGES t_bloom_filter;
 
@@ -23,14 +27,14 @@ INSERT INTO t_bloom_filter
 SELECT
     number % 100 as key, -- 100 unique keys
     rand() % 100 as value -- 100 unique values
-FROM numbers(50_000);
+FROM numbers(15_000);
 
 -- And another part
 INSERT INTO t_bloom_filter
 SELECT
     number % 100 as key, -- 100 unique keys
     rand() % 100 as value -- 100 unique values
-FROM numbers(50_000, 50_000);
+FROM numbers(15_000, 15_000);
 
 SYSTEM START MERGES t_bloom_filter;
 

@@ -1,0 +1,4 @@
+mutation_2.txt	(UPDATE num = num + 1 WHERE 1)	['all_1_1_0']	['all_1_1_0']	0
+mutation_2.txt	(UPDATE num = num + 1 WHERE 1)	[]	[]	1
+mutation_3.txt	(UPDATE num = num + 2 WHERE 1)	['all_1_1_0_2']	['all_1_1_0_2']	0
+mutation_4.txt	(UPDATE num = num + 3 WHERE 1)	['all_1_1_0_2']	['all_1_1_0_2']	0

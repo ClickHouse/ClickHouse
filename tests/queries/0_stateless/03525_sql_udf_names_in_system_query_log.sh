@@ -42,7 +42,7 @@ check_sql_udf_functions() {
     $CLICKHOUSE_CLIENT -q "
         SYSTEM FLUSH LOGS query_log;
         SELECT arraySort(used_sql_user_defined_functions) FROM system.query_log
-        WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND query_id = '${query_id}'"
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND query_id = '${query_id}'"
 
     for func in ${funcs}; do
         $CLICKHOUSE_CLIENT -q "DROP FUNCTION IF EXISTS ${func}"

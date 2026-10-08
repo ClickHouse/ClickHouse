@@ -1,0 +1,54 @@
+#pragma once
+#include <memory>
+#include <Interpreters/Context_fwd.h>
+#include <Processors/ISimpleTransform.h>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+
+namespace DB
+{
+
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
+
+/// Implements building a Bloom Filter from all values of the specified column. When building is finished the filter is saved into
+/// per-query filter map under the specified name. This allows to find the filter by name and use it in Expressions with the help of
+/// a special function 'filterContains'
+class BuildRuntimeFilterTransform final : public ISimpleTransform
+{
+public:
+    BuildRuntimeFilterTransform(
+        SharedHeader header_,
+        String filter_column_name_,
+        const DataTypePtr & filter_column_type_,
+        String filter_name_,
+        String filter_key_,
+        size_t filters_to_merge_,
+        const RuntimeFilterBuildOptions & build_options_,
+        const RuntimeFilterConfig & runtime_filter_config_,
+        ContextPtr query_context_);
+
+    String getName() const override { return "BuildRuntimeFilterTransform"; }
+
+    Status prepare() override;
+
+    void transform(Chunk & chunk) override;
+
+private:
+    const String filter_column_name;
+    const size_t filter_column_position = -1;
+    const DataTypePtr filter_column_original_type;
+    const DataTypePtr filter_column_target_type;
+    const String filter_name;
+    /// Random per-plan-build key the built filter is registered under (matches `__applyFilter`).
+    const String filter_key;
+
+    FunctionBasePtr cast_to_target_type;
+
+    UniqueRuntimeFilterPtr built_filter;
+    ContextPtr query_context;
+
+    void finish();
+};
+
+}

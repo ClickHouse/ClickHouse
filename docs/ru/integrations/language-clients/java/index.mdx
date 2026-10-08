@@ -1,0 +1,204 @@
+---
+title: 'Обзор Java-клиентов'
+keywords: ['clickhouse', 'java', 'jdbc', 'client', 'integrate', 'r2dbc']
+description: 'Способы подключения к ClickHouse из Java'
+slug: /integrations/java
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+* [Client 0.8+](/ru/integrations/language-clients/java/client)
+* [JDBC 0.8+](/ru/integrations/language-clients/java/jdbc)
+* [R2DBC Driver](/ru/integrations/language-clients/java/r2dbc)
+
+<div id="clickhouse-client">
+  ## Клиент ClickHouse
+</div>
+
+Java-клиент — это библиотека с собственным API, который скрывает детали сетевого взаимодействия с сервером ClickHouse. В настоящее время поддерживается только HTTP-интерфейс. Библиотека предоставляет средства для работы с различными форматами ClickHouse и другие связанные функции.
+
+Java-клиент был создан еще в 2015 году. Со временем его кодовую базу стало очень сложно поддерживать, API получился запутанным, а возможности дальнейшей оптимизации оказались ограничены. Поэтому в 2024 году мы переработали его в новый компонент `client-v2`. У него понятный API, более легковесная кодовая база, заметно улучшенная производительность и более качественная поддержка форматов ClickHouse (главным образом RowBinary и Native). В ближайшем будущем JDBC будет использовать этот клиент.
+
+<div id="supported-data-types">
+  ### Поддерживаемые типы данных
+</div>
+
+| **Тип данных**          | **Поддержка в клиенте V2** | **Поддержка в клиенте V1** |
+| ----------------------- | -------------------------- | -------------------------- |
+| Int8                    | ✔                          | ✔                          |
+| Int16                   | ✔                          | ✔                          |
+| Int32                   | ✔                          | ✔                          |
+| Int64                   | ✔                          | ✔                          |
+| Int128                  | ✔                          | ✔                          |
+| Int256                  | ✔                          | ✔                          |
+| UInt8                   | ✔                          | ✔                          |
+| UInt16                  | ✔                          | ✔                          |
+| UInt32                  | ✔                          | ✔                          |
+| UInt64                  | ✔                          | ✔                          |
+| UInt128                 | ✔                          | ✔                          |
+| UInt256                 | ✔                          | ✔                          |
+| Float32                 | ✔                          | ✔                          |
+| Float64                 | ✔                          | ✔                          |
+| Decimal                 | ✔                          | ✔                          |
+| Decimal32               | ✔                          | ✔                          |
+| Decimal64               | ✔                          | ✔                          |
+| Decimal128              | ✔                          | ✔                          |
+| Decimal256              | ✔                          | ✔                          |
+| Bool                    | ✔                          | ✔                          |
+| String                  | ✔                          | ✔                          |
+| FixedString             | ✔                          | ✔                          |
+| Nullable                | ✔                          | ✔                          |
+| Date                    | ✔                          | ✔                          |
+| Date32                  | ✔                          | ✔                          |
+| DateTime                | ✔                          | ✔                          |
+| DateTime32              | ✔                          | ✔                          |
+| DateTime64              | ✔                          | ✔                          |
+| Interval                | ✗                          | ✗                          |
+| Enum                    | ✔                          | ✔                          |
+| Enum8                   | ✔                          | ✔                          |
+| Enum16                  | ✔                          | ✔                          |
+| Array                   | ✔                          | ✔                          |
+| Map                     | ✔                          | ✔                          |
+| Nested                  | ✔                          | ✔                          |
+| Tuple                   | ✔                          | ✔                          |
+| UUID                    | ✔                          | ✔                          |
+| IPv4                    | ✔                          | ✔                          |
+| IPv6                    | ✔                          | ✔                          |
+| Object                  | ✗                          | ✔                          |
+| Point                   | ✔                          | ✔                          |
+| Nothing                 | ✔                          | ✔                          |
+| MultiPolygon            | ✔                          | ✔                          |
+| Ring                    | ✔                          | ✔                          |
+| Polygon                 | ✔                          | ✔                          |
+| SimpleAggregateFunction | ✔                          | ✔                          |
+| AggregateFunction*      | ✔                          | ✔                          |
+| Variant                 | ✔                          | ✗                          |
+| Dynamic                 | ✔                          | ✗                          |
+| JSON                    | ✔                          | ✗                          |
+
+[Типы данных ClickHouse](/ru/reference/data-types/index)
+
+<Info>
+  **Частичная поддержка**
+
+  * **AggregateFunction** — Для прямого чтения в бинарном формате поддерживается только `groupBitmap`. Для других агрегатных функций (`min`, `max`, `avg` и т. д.) используйте комбинаторы `-Merge` в запросе (например, `minMerge()`, `avgMerge()`), чтобы вычислить состояние на стороне сервера. `SELECT * FROM table ...` не поддерживается для столбцов типа `AggregateFunction`.
+</Info>
+
+<Info>
+  **Примечания по типам данных**
+
+  * **Decimal** — `SET output_format_decimal_trailing_zeros=1` в 21.9+ для единообразия.
+  * **Enum** — может обрабатываться как строка и как целое число.
+  * **UInt64** — в client-v1 сопоставляется с `long`.
+</Info>
+
+<div id="features">
+  ### Возможности
+</div>
+
+Таблица возможностей клиентов:
+
+| Имя                               | Client V2 | Client V1 |              Комментарии             |
+| --------------------------------- | :-------: | :-------: | :----------------------------------: |
+| HTTP-соединение                   |     ✔     |     ✔     |                                      |
+| HTTP-сжатие (LZ4)                 |     ✔     |     ✔     |                                      |
+| Сжатие под управлением приложения |     ✔     |     ✗     |                                      |
+| Сжатие ответа сервера — LZ4       |     ✔     |     ✔     |                                      |
+| Сжатие запроса клиента — LZ4      |     ✔     |     ✔     |                                      |
+| HTTPS                             |     ✔     |     ✔     |                                      |
+| Клиентский SSL-сертификат (mTLS)  |     ✔     |     ✔     |                                      |
+| HTTP-прокси                       |     ✔     |     ✔     |                                      |
+| POJO SerDe                        |     ✔     |     ✗     |                                      |
+| Пул соединений                    |     ✔     |     ✔     | При использовании Apache HTTP Client |
+| Именованные параметры             |     ✔     |     ✔     |                                      |
+| Повтор при сбое                   |     ✔     |     ✔     |                                      |
+| Аварийное переключение            |     ✗     |     ✔     |                                      |
+| Балансировка нагрузки             |     ✗     |     ✔     |                                      |
+| Автообнаружение сервера           |     ✗     |     ✔     |                                      |
+| Комментарий Log                   |     ✔     |     ✔     |                                      |
+| Роли сеанса                       |     ✔     |     ✔     |                                      |
+| SSL-аутентификация клиента        |     ✔     |     ✔     |                                      |
+| Конфигурация SNI                  |     ✔     |     ✗     |                                      |
+| Часовой пояс сеанса               |     ✔     |     ✔     |                                      |
+
+JDBC-драйвер наследует те же возможности, что и лежащая в его основе реализация клиента. Другие возможности JDBC перечислены на его [странице](/ru/integrations/language-clients/java/jdbc).
+
+<div id="compatibility">
+  ### Совместимость
+</div>
+
+* Все проекты в этом репозитории тестируются со всеми [актуальными LTS-версиями](https://github.com/ClickHouse/ClickHouse/pulls?q=is%3Aopen+is%3Apr+label%3Arelease) ClickHouse.
+* [Политика поддержки](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md#security-change-log-and-support)
+* Мы рекомендуем регулярно обновлять клиент, чтобы не пропускать исправления безопасности и новые улучшения
+* Если у вас возникли проблемы при миграции на API v2, [создайте issue](https://github.com/ClickHouse/clickhouse-java/issues/new?assignees=\&labels=v2-feedback\&projects=\&template=v2-feedback.md\&title=), и мы ответим!
+
+<div id="logging">
+  ### Логирование
+</div>
+
+Наш Java-клиент использует [SLF4J](https://www.slf4j.org/) для логирования. Вы можете использовать любой фреймворк логирования, совместимый со SLF4J, например `Logback` или `Log4j`.
+Например, если вы используете Maven, можно добавить в файл `pom.xml` следующую зависимость:
+
+```xml title="pom.xml"
+<dependencies>
+    <!-- SLF4J API -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version> <!-- Используйте последнюю версию -->
+    </dependency>
+
+    <!-- Logback Core -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-core</artifactId>
+        <version>1.5.16</version> <!-- Используйте последнюю версию -->
+    </dependency>
+
+    <!-- Logback Classic (связывает SLF4J с Logback) -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.5.16</version> <!-- Используйте последнюю версию -->
+    </dependency>
+</dependencies>
+```
+
+<div id="configuring-logging">
+  #### Настройка логирования
+</div>
+
+Это зависит от того, какой фреймворк логирования вы используете. Например, если вы используете `Logback`, логирование можно настроить в файле `logback.xml`:
+
+```xml title="logback.xml"
+<configuration>
+    <!-- Консольный аппендер -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Файловый аппендер -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>logs/app.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Корневой логгер -->
+    <root level="info">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- Пользовательские уровни журналирования для отдельных пакетов -->
+    <logger name="com.clickhouse" level="info" />
+</configuration>
+```
+
+[Журнал изменений](https://github.com/ClickHouse/clickhouse-java/blob/main/CHANGELOG.md)

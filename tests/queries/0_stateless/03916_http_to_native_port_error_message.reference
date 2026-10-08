@@ -1,0 +1,8 @@
+Port 9000 is for clickhouse-client program
+You must use port 8123 for HTTP.
+/play
+/dashboard
+Port 9440 is for clickhouse-client program
+You must use port 8443 for HTTP.
+/play
+/dashboard

@@ -1,0 +1,77 @@
+---
+slug: /tips-and-tricks/materialized-views
+sidebarTitle: 'materialized views'
+doc_type: 'guide'
+keywords: [
+  'clickhouse materialized views',
+  'materialized view 优化',
+  'materialized view 存储问题',
+  'materialized view 最佳实践',
+  '数据库 aggregation 模式',
+  'materialized view 反模式',
+  '存储激增问题',
+  'materialized view 性能',
+  '数据库视图优化',
+  'aggregation 策略',
+  'materialized view 故障排查',
+  '视图存储开销'
+]
+title: '经验总结 - materialized views'
+description: 'materialized views 的真实案例、问题与解决方案'
+---
+
+*本指南是社区交流会经验总结系列的一部分。想了解更多真实场景中的解决方案和洞见，可[按具体问题浏览](/zh/resources/support-center/tips-and-tricks/community-wisdom)。*
+*数据库是否被过多的 parts 拖慢了？请参阅 [parts 过多](/zh/resources/support-center/tips-and-tricks/too-many-parts) 社区经验指南。*
+*进一步了解 [Materialized Views](/zh/concepts/features/materialized-views/index)。*
+
+<div id="storage-antipattern">
+  ## 10 倍存储反模式
+</div>
+
+**真实的生产环境问题：** *“我们有一个 materialized view。原始日志表大约有 20 GB，但基于这张日志表的视图却膨胀到了 190 GB，几乎是原始表的 10 倍。出现这种情况，是因为我们为每个属性都创建了一行，而每条日志可能有 10 个属性。”*
+
+**规则：** 如果你的 `GROUP BY` 生成的行数比它消除的还多，那你构建的就是一个代价高昂的索引，而不是 materialized view。
+
+<div id="mv-health-validation">
+  ## 生产环境 materialized view 健康度验证
+</div>
+
+此查询可帮助你在创建 materialized view 之前，预测它究竟会压缩数据，还是会导致数据膨胀。请针对实际的表和列运行此查询，以避免出现“190GB 膨胀”这种情况。
+
+**它会显示：**
+
+* **低聚合率** (&lt;10%) = 好的 MV，可显著压缩数据
+* **高聚合率** (&gt;70%) = 差的 MV，存在存储膨胀风险
+* **存储倍数** = 你的 MV 最终会变大或变小多少
+
+```sql
+-- 替换为您的实际表和列
+SELECT 
+    count() as total_rows,
+    uniq(your_group_by_columns) as unique_combinations,
+    round(uniq(your_group_by_columns) / count() * 100, 2) as aggregation_ratio
+FROM your_table
+WHERE your_filter_conditions;
+
+-- 如果 aggregation_ratio > 70%，请重新考虑物化视图的设计
+-- 如果 aggregation_ratio < 10%，可获得良好的压缩效果
+```
+
+<div id="mv-problems">
+  ## 当 materialized views 开始成为问题时
+</div>
+
+**需要监控的预警信号：**
+
+* 插入延迟升高 (原本耗时 10ms 的查询现在需要 100ms 以上)
+* “parts 过多”错误出现得越来越频繁
+* 插入操作期间 CPU 使用率飙升
+* 此前未出现过的插入超时
+
+你可以使用 `system.query_log` 跟踪查询耗时趋势，对比添加 MV 前后的插入性能。
+
+<div id="video-sources">
+  ## 视频来源
+</div>
+
+* [ClickHouse at CommonRoom - Kirill Sapchuk](https://www.youtube.com/watch?v=liTgGiTuhJE) - “过度热衷于 materialized views”和“20GB→190GB 爆炸式增长”案例的来源

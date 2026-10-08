@@ -58,6 +58,8 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
             case Type::PROMETHEUS:
             case Type::INTERSERVER_HTTP:
             case Type::INTERSERVER_HTTPS:
+            case Type::ARROW_FLIGHT:
+            case Type::ICEBERG_REST_CATALOG:
                 return true;
             default:
                 return false;
@@ -99,7 +101,7 @@ bool ServerType::shouldStart(Type server_type, const std::string & server_custom
 
 bool ServerType::shouldStop(const std::string & port_name) const
 {
-    Type port_type;
+    Type port_type = {};
     std::string port_custom_name;
 
     if (port_name == "http_port")
@@ -122,6 +124,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "mysql_port")
         port_type = Type::MYSQL;
+
+    else if (port_name == "arrowflight_port")
+        port_type = Type::ARROW_FLIGHT;
 
     else if (port_name == "postgresql_port")
         port_type = Type::POSTGRESQL;
@@ -150,6 +155,9 @@ bool ServerType::shouldStop(const std::string & port_name) const
 
     else if (port_name == "cloud.port")
         port_type = Type::CLOUD;
+
+    else if (port_name == "iceberg_rest_catalog.port")
+        port_type = Type::ICEBERG_REST_CATALOG;
 
     else
         return false;

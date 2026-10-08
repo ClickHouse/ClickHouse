@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Client/IConnections.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
@@ -12,6 +13,9 @@ namespace DB
 {
 class IThrottler;
 using ThrottlerPtr = std::shared_ptr<IThrottler>;
+
+struct UnavailableShardTracker;
+using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
@@ -24,7 +28,7 @@ public:
     /// @param main_table_ if Shards contains main_table then this parameter will be ignored
     ReadFromRemote(
         ClusterProxy::SelectStreamFactory::Shards shards_,
-        Block header_,
+        SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         StorageID main_table_,
         ASTPtr table_func_ptr_,
@@ -35,13 +39,16 @@ public:
         LoggerPtr log_,
         UInt32 shard_count_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
-        const String & cluster_name_);
+        const String & cluster_name_,
+        const String & shard_scope_identity_,
+        UnavailableShardTrackerPtr unavailable_shard_tracker_ = nullptr);
 
     String getName() const override { return "ReadFromRemote"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+    void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
@@ -60,34 +67,40 @@ private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
     UInt32 shard_count;
+    /// A resolvable cluster name, also assigned to `cluster_for_parallel_replicas`.
     const String cluster_name;
+    /// Identifies the shard numbering the shipped `_shard_num` belongs to; not necessarily a cluster name.
+    const String shard_scope_identity;
+    UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
-    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const Header & out_header);
+    Pipes addPipes(const ClusterProxy::SelectStreamFactory::Shards & used_shards, const SharedHeader & out_header);
 
     void addLazyPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const Header & out_header,
+        const SharedHeader & out_header,
         size_t parallel_marshalling_threads);
 
     void addPipe(
         Pipes & pipes,
         const ClusterProxy::SelectStreamFactory::Shard & shard,
-        const Header & out_header,
+        const SharedHeader & out_header,
         size_t parallel_marshalling_threads);
 };
 
 
-class ReadFromParallelRemoteReplicasStep : public ISourceStep
+class ReadFromParallelRemoteReplicasStep : public SourceStepWithFilterBase
 {
 public:
     ReadFromParallelRemoteReplicasStep(
         ASTPtr query_ast_,
+        const QueryTreeNodePtr & query_tree_,
+        const PlannerContextPtr & planner_context,
         ClusterPtr cluster_,
         const StorageID & storage_id_,
         ParallelReplicasReadingCoordinatorPtr coordinator_,
-        Block header_,
+        SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
         ThrottlerPtr throttler_,
@@ -97,13 +110,15 @@ public:
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         std::vector<ConnectionPoolPtr> pools_to_use,
         std::optional<size_t> exclude_pool_index_ = std::nullopt,
-        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr);
+        ConnectionPoolWithFailoverPtr connection_pool_with_failover_ = nullptr,
+        std::shared_ptr<const QueryPlan> query_plan_ = nullptr);
 
     String getName() const override { return "ReadFromRemoteParallelReplicas"; }
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options) override;
+    void describeDistributedPipeline(FormatSettings & settings, bool distributed) override;
 
     void enableMemoryBoundMerging();
     void enforceAggregationInOrder(const SortDescription & sort_description);
@@ -111,14 +126,22 @@ public:
     StorageID getStorageID() const { return storage_id; }
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
-private:
-    Pipes addPipes(ASTPtr ast, const Header & out_header);
+    /// The connection pools (sized to the coordinator's replica count) and the local replica's index
+    /// within them. Captured before this step is dropped from the local INSERT SELECT plan so the
+    /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
+    const std::vector<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
+    std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
-    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const Header & out_header,
+private:
+    Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);
+
+    Pipe createPipeForSingeReplica(const ConnectionPoolPtr & pool, ASTPtr ast, IConnections::ReplicaInfo replica_info, const SharedHeader & out_header,
                                    size_t parallel_marshalling_threads);
 
     ClusterPtr cluster;
     ASTPtr query_ast;
+    QueryTreeNodePtr query_tree;
+    PlannerContextPtr planner_context;
     StorageID storage_id;
     ParallelReplicasReadingCoordinatorPtr coordinator;
     QueryProcessingStage::Enum stage;
@@ -131,6 +154,14 @@ private:
     std::vector<ConnectionPoolPtr> pools_to_use;
     std::optional<size_t> exclude_pool_index;
     ConnectionPoolWithFailoverPtr connection_pool_with_failover;
+    std::shared_ptr<const QueryPlan> query_plan;
 };
+
+ASTPtr tryBuildAdditionalFilterAST(
+    const ActionsDAG & dag,
+    const std::unordered_set<std::string> & projection_names,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    Tables * external_tables,
+    ContextMutablePtr & context);
 
 }

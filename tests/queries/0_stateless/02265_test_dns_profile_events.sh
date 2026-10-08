@@ -14,4 +14,4 @@ current_dns_errors=$($CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM system.e
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM remote('ThisHostNameDoesNotExistSoItShouldFail2', system, one)" 2>/dev/null
 ${CLICKHOUSE_CLIENT} --query "SELECT 'second_check', sum(value) > ${current_dns_errors} FROM system.events where event = 'DNSError';"
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP DNS CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR DNS CACHE"

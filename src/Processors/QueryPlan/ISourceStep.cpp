@@ -1,10 +1,11 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/IProcessor.h>
 
 namespace DB
 {
 
-ISourceStep::ISourceStep(Header output_header_)
+ISourceStep::ISourceStep(SharedHeader output_header_)
 {
     output_header = std::move(output_header_);
 }

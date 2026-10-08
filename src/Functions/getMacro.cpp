@@ -1,9 +1,12 @@
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Macros.h>
 #include <Core/Field.h>
 
@@ -23,7 +26,7 @@ namespace
   * For example, it may be used as a sophisticated replacement for the function 'hostName' if servers have complicated hostnames
   *  but you still need to distinguish them by some convenient names.
   */
-class FunctionGetMacro : public IFunction
+class FunctionGetMacro final : public IFunction
 {
 private:
     MultiVersion<Macros>::Version macros;
@@ -31,8 +34,11 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
+    /// The function is `SELECT substitution FROM system.macros WHERE macro = ...`, so it requires the
+    /// grant that query needs, down to the columns it reads.
     static FunctionPtr create(ContextPtr context)
     {
+        context->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "macros", Strings{"macro", "substitution"});
         return std::make_shared<FunctionGetMacro>(context->getMacros(), context->isDistributed());
     }
 
@@ -75,7 +81,7 @@ public:
         if (!arg_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant String", getName());
 
-        return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()));
+        return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0)));
     }
 };
 
@@ -83,7 +89,36 @@ public:
 
 REGISTER_FUNCTION(GetMacro)
 {
-    factory.registerFunction<FunctionGetMacro>();
+    FunctionDocumentation::Description description = R"(
+Returns the value of a macro from the server configuration file.
+Macros are defined in the [`<macros>`](/reference/settings/server-settings/settings/other#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
+If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard.
+
+Requires the `SELECT` privilege on `system.macros`, just like reading that table.
+)";
+    FunctionDocumentation::Syntax syntax = "getMacro(name)";
+    FunctionDocumentation::Arguments arguments = {
+        {"name", "The name of the macro to retrieve.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the value of the specified macro.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+        {
+            "Basic usage",
+            R"(
+SELECT getMacro('test');
+            )",
+            R"(
+┌─getMacro('test')─┐
+│ Value            │
+└──────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionGetMacro>(documentation);
 }
 
 }

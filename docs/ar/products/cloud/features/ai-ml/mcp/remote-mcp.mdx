@@ -1,0 +1,219 @@
+---
+slug: /use-cases/AI/MCP/remote_mcp
+sidebarTitle: 'تمكين خادم MCP البعيد'
+title: 'تمكين خادم MCP البعيد في ClickHouse Cloud والاتصال به'
+description: 'يشرح هذا الدليل كيفية تمكين ClickHouse Cloud Remote MCP واستخدامه'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوضح هذا الدليل كيفية تمكين خادم MCP البعيد في ClickHouse Cloud وإعداده للاستخدام مع أدوات التطوير الشائعة.
+
+**المتطلبات الأساسية**
+
+* [خدمة ClickHouse Cloud](/ar/get-started/setup/cloud) قيد التشغيل
+* بيئة التطوير المتكاملة (IDE) أو أداة التطوير المعتمدة على الوكلاء التي تفضّلها
+
+<div id="enable-remote-mcp-server">
+  ## تمكين خادم MCP البعيد لـ Cloud
+</div>
+
+اتصل بخدمة ClickHouse Cloud التي تريد تمكين خادم MCP البعيد لها.
+في القائمة الجانبية اليسرى، انقر على **Connect**. ستُفتح نافذة تتضمن تفاصيل الاتصال.
+
+اختر **Connect with MCP**:
+
+<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="اختر MCP في نافذة Connect" size="md" />
+
+بدّل الزر إلى وضع التشغيل لتمكين MCP لهذه الخدمة:
+
+<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="تمكين خادم MCP" size="md" />
+
+انسخ عنوان URL المعروض، وهو نفسه الظاهر أدناه:
+
+```bash
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="setup-clickhouse-cloud-remote-mcp-server">
+  ## إعداد Remote MCP للتطوير
+</div>
+
+اختر بيئة التطوير المتكاملة أو الأداة المناسبة أدناه، ثم اتبع تعليمات الإعداد المقابلة.
+
+<div id="claude-code">
+  ### Claude Code
+</div>
+
+من دليل العمل الحالي، شغِّل الأمر التالي لإضافة تكوين ClickHouse Cloud MCP Server إلى Claude Code:
+
+```bash
+claude mcp add --transport http clickhouse-cloud https://mcp.clickhouse.cloud/mcp
+```
+
+ثم شغِّل Claude Code:
+
+```bash
+claude
+```
+
+شغّل الأمر التالي لعرض خوادم MCP:
+
+```bash
+/mcp
+```
+
+حدِّد `clickhouse-cloud` وسجِّل الدخول عبر OAuth باستخدام بيانات الاعتماد الخاصة بك في ClickHouse Cloud.
+
+<div id="claude-web">
+  ### واجهة الويب لـ Claude
+</div>
+
+1. انتقل إلى **Customize** &gt; **Connectors**
+2. انقر على أيقونة &quot;+&quot; ثم **Add custom connector**
+3. سمِّ الموصل المخصص باسم مثل `clickhouse-cloud` ثم أضِفه
+4. انقر على الموصل `clickhouse-cloud` الذي أُضيف حديثًا، ثم انقر على **Connect**
+5. أكمِل المصادقة باستخدام بيانات اعتماد ClickHouse Cloud عبر OAuth
+
+<div id="cursor">
+  ### Cursor
+</div>
+
+1. تصفّح خوادم MCP وثبّتها من [متجر Cursor](https://cursor.com/marketplace).
+2. ابحث عن ClickHouse وانقر على &quot;إضافة إلى Cursor&quot; على أي خادم لتثبيته.
+3. أكمل المصادقة باستخدام OAuth.
+
+<div id="visual-studio-code">
+  ### Visual Studio Code
+</div>
+
+أضِف الإعداد التالي إلى `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "clickhouse-cloud": {
+      "type": "http",
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+لمزيد من التفاصيل، راجع [وثائق Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
+
+<div id="windsurf">
+  ### Windsurf
+</div>
+
+حرِّر ملف `mcp_config.json` باستخدام التكوين التالي:
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-cloud": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.clickhouse.cloud/mcp"]
+    }
+  }
+}
+```
+
+لمزيد من التفاصيل، اطّلع على [وثائق Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
+
+<div id="zed">
+  ### Zed
+</div>
+
+أضِف ClickHouse كخادم مخصّص.
+أضِف ما يلي إلى إعدادات Zed ضمن **context&#95;servers**:
+
+```json
+{
+  "context_servers": {
+    "clickhouse-cloud": {
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+بعد ذلك، من المفترض أن يطلب منك Zed المصادقة عبر OAuth عند اتصاله بالخادم للمرة الأولى.
+لمزيد من التفاصيل، راجع [وثائق Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
+
+<div id="codex">
+  ### Codex
+</div>
+
+نفّذ الأمر التالي لإضافة خادم MCP الخاص بـ ClickHouse Cloud عبر CLI:
+
+```bash
+codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+بمجرد الاتصال، يمكنك التفاعل مع ClickHouse Cloud عبر مطالبات باللغة الطبيعية.
+فيما يلي بعض مسارات سير العمل الشائعة والأدوات التي سيستدعيها MCP client في الخلفية.
+للاطلاع على قائمة كاملة بالأدوات المتاحة، راجع [مرجع الأدوات](/ar/products/cloud/features/ai-ml/remote-mcp#available-tools).
+
+<div id="exploring-data">
+  ### استكشاف بياناتك
+</div>
+
+ابدأ بالتعرّف على المتاح:
+
+| الموجّه                                                      | الأداة المستخدمة                             |
+| ------------------------------------------------------------ | -------------------------------------------- |
+| &quot;ما المؤسسات التي يمكنني الوصول إليها؟&quot;            | `get_organizations`                          |
+| &quot;ما قواعد البيانات المتاحة على خدمتي؟&quot;             | `list_databases`                             |
+| &quot;اعرض لي الجداول في قاعدة البيانات `default`&quot;      | `list_tables`                                |
+| &quot;اعرض جميع الجداول التي تبدأ أسماؤها بـ `events_`&quot; | `list_tables` (باستخدام عامل التصفية `like`) |
+
+<div id="running-queries">
+  ### تشغيل الاستعلامات التحليلية
+</div>
+
+اطرح أسئلة بلغة طبيعية، وسيتولى الوكيل ترجمتها إلى SQL:
+
+| الموجِّه                                                             | الأداة المستخدمة   |
+| -------------------------------------------------------------------- | ------------------ |
+| &quot;أرني أول 10 صفوف من جدول `hits`&quot;                          | `run_select_query` |
+| &quot;ما متوسط مدة الجلسة حسب البلد خلال آخر 7 أيام؟&quot;           | `run_select_query` |
+| &quot;كم عدد الصفوف في كل جدول ضمن قاعدة البيانات `analytics`؟&quot; | `run_select_query` |
+
+لا تتيح الأداة `run_select_query` سوى عبارات `SELECT`. جميع الاستعلامات للقراءة فقط.
+
+<div id="managing-services">
+  ### إدارة الخدمات والبنية التحتية
+</div>
+
+اطّلع على موارد ClickHouse Cloud لديك:
+
+| الموجّه                                               | الأداة المستخدم                  |
+| ----------------------------------------------------- | ---------------------------------- |
+| &quot;اعرض جميع خدماتي&quot;                          | `get_services_list`                |
+| &quot;ما حالة خدمة الإنتاج الخاصة بي؟&quot;           | `get_service_details`              |
+| &quot;اعرض لي جدول النسخ الاحتياطية لهذه الخدمة&quot; | `get_service_backup_configuration` |
+| &quot;اعرض أحدث النسخ الاحتياطية&quot;                | `list_service_backups`             |
+| &quot;ما هي ClickPipes المُعدّة على هذه الخدمة؟&quot; | `list_clickpipes`                  |
+
+<div id="monitoring-costs">
+  ### تكاليف المراقبة
+</div>
+
+| الموجّه                                                    | الأداة المستخدم                                    |
+| ---------------------------------------------------------- | ---------------------------------------------------- |
+| &quot;ما تكلفة مؤسستي خلال الأسبوع الماضي؟&quot;           | `get_organization_cost`                              |
+| &quot;اعرض لي التكاليف اليومية من 1 مارس إلى 15 مارس&quot; | `get_organization_cost` (مع `from_date` و `to_date`) |
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

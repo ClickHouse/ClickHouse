@@ -1,0 +1,55 @@
+---
+title: 'Como pausar e retomar um ClickPipe do Postgres'
+description: 'Como pausar e retomar um ClickPipe do Postgres'
+sidebarTitle: 'Pausar a tabela'
+slug: /integrations/clickpipes/postgres/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Há situações em que pode ser útil pausar um ClickPipe do Postgres. Por exemplo, você pode querer executar análises nos dados existentes em um estado estático. Ou talvez esteja realizando atualizações no Postgres. Veja como pausar e retomar um ClickPipe do Postgres.
+
+<div id="pause-clickpipe-steps">
+  ## Etapas para pausar um ClickPipe do Postgres
+</div>
+
+1. Na aba **Fontes de dados**, clique no ClickPipe do Postgres que você deseja pausar.
+2. Acesse a aba **Configurações**.
+3. Clique no botão **Pausar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Uma caixa de diálogo de confirmação deverá aparecer. Clique em **Pausar** novamente.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Acesse a aba **Métricas**.
+5. Em cerca de 5 segundos (e também ao atualizar a página), o status do pipe deverá ser **Pausado**.
+
+<Warning>
+  Pausar um ClickPipe do Postgres não interrompe o aumento dos slots de replicação.
+</Warning>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Etapas para retomar um ClickPipe do Postgres
+</div>
+
+1. Na aba fonte de dados, clique no ClickPipe do Postgres que você deseja retomar. O status do mirror deve estar inicialmente como **Pausado**.
+2. Vá para a aba **configuração**.
+3. Clique no botão **Retomar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Uma caixa de diálogo de confirmação será exibida. Clique em **Retomar** novamente.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Vá para a aba **métrica**.
+6. Em cerca de 5 segundos (e também ao atualizar a página), o status do pipe deve mudar para **Running**.

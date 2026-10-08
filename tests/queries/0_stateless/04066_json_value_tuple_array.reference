@@ -1,0 +1,65 @@
+--JSON_VALUE with Tuple--
+('1','hello')
+('1',NULL)
+(NULL,NULL)
+--JSON_VALUE with Array--
+['1','hello']
+['1',NULL]
+[NULL]
+--JSON_VALUE with nested structure--
+(['1','2'],'3')
+(('1','2'),['3'])
+[('10',NULL)]
+--JSON_VALUE preserves all value types--
+('null','true','1.5','text',NULL)
+--JSON_VALUE with multiple rows--
+('Alice','30')
+('Bob','25')
+(NULL,NULL)
+--JSON_VALUE with nullable=0--
+('1','')
+['1','']
+--JSON_EXISTS with Tuple--
+(1,0)
+--JSON_EXISTS with Array--
+[1,0,1]
+--JSON_EXISTS with nested structure--
+([1,0],1)
+--JSON_QUERY with Tuple--
+('[[1,2]]','[{"c":3}]')
+--JSON_QUERY with Array--
+['[[1,2]]','']
+--Named tuple preserves element names--
+1
+hello
+1
+0
+[[1,2]]
+[{"c":3}]
+2
+--JSON_VALUE multi-path matches single-path for function_json_value_return_type_allow_complex--
+\N	(NULL)
+\N	(NULL)
+(NULL,'hello')
+[1,2]	('[1,2]')
+{"x":1}	('{"x":1}')
+--Multi-row tests with non-constant JSON and multi-dimensional arrays--
+--JSON_VALUE with Tuple(Array, Array(Array)) over multiple rows--
+(['1'],[['2'],['3']])
+(['x'],[['y'],['z']])
+(['null'],[[NULL],[NULL]])
+([NULL],[[NULL],[NULL]])
+--JSON_VALUE with Array(Array) over multiple rows--
+[['1','2'],['3']]
+[['u','v'],['w']]
+[[NULL,NULL],[NULL]]
+--JSON_EXISTS with Tuple(Array, Array(Array)) over multiple rows--
+([1],[[0],[0]])
+([0],[[1],[1]])
+([1],[[1],[1]])
+([0],[[0],[0]])
+--JSON_QUERY with Array(Array) over multiple rows--
+[['[[1,2]]'],['[{"x":3}]','[42]']]
+[['["hello"]'],['[[1,2,3]]','']]
+[[''],['','']]
+--Error cases--

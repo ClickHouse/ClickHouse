@@ -1,0 +1,43 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/overview
+title: 'إدخال البيانات إلى ClickStack'
+sidebarTitle: 'نظرة عامة'
+description: 'نظرة عامة على إدخال البيانات إلى ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'observability', 'السجلات', 'المراقبة', 'المنصة']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تُدخَل جميع البيانات إلى ClickStack Open Source أو Managed ClickStack عبر **OpenTelemetry (OTel) collector**. ويُعدّ هذا المكوّن نقطة الإدخال الأساسية للسجلات والمقاييس والتتبعات وبيانات الجلسات.
+
+يكمن الفرق الرئيسي بين المعماريتين في موضع استضافة المكوّنات. ففي كلتا الحالتين، تشغّل OpenTelemetry Collector لتلقّي بيانات telemetry من تطبيقاتك. ومع ClickStack Open Source، تتولى أيضًا بنفسك إدارة واستضافة كلٍّ من ClickHouse وواجهة ClickStack (HyperDX). أما مع Managed ClickStack، فتُستضاف ClickHouse وواجهة HyperDX وتُداران داخل ClickHouse Cloud، مع توفير المصادقة المتكاملة والإدارة التشغيلية نيابةً عنك.
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="معمارية مُدارة مع التدفق" size="md" />
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="معمارية بسيطة مع التدفق" size="md" />
+  </Tab>
+</Tabs>
+
+في كلا نموذجي النشر، يوفّر الـ collector نقطتي نهاية OTLP:
+
+* **HTTP** - المنفذ `4318`
+* **gRPC** - المنفذ `4317`
+
+يمكنك إرسال البيانات إلى نقطتي النهاية هاتين إما مباشرةً من [language SDKs](/ar/clickstack/ingesting-data/sdks/index) أو من وكلاء جمع بيانات متوافقين مع OTel، مثل OTel collectors أخرى تجمع مقاييس البنية التحتية والسجلات.
+
+وبشكل أكثر تحديدًا:
+
+* [**Language SDKs**](/ar/clickstack/ingesting-data/sdks/index) مسؤولة عن جمع بيانات telemetry من داخل تطبيقك — وبالأخص **التتبعات** و**السجلات** — وتصدير هذه البيانات إلى OpenTelemetry collector عبر نقطة نهاية OTLP، التي تتولى إدخالها إلى ClickHouse. ولمزيد من التفاصيل حول language SDKs المتاحة مع ClickStack، راجع [SDKs](/ar/clickstack/ingesting-data/sdks/index).
+
+* **وكلاء جمع البيانات** هم وكلاء يُنشرون عند الحافة — على الخوادم أو عُقد Kubernetes أو إلى جانب التطبيقات. ويجمعون بيانات telemetry الخاصة بالبنية التحتية (مثل السجلات والمقاييس)، أو يستقبلون الأحداث مباشرةً من التطبيقات المزوّدة بـ SDKs. وفي هذه الحالة، يعمل الوكيل على المضيف نفسه الذي يعمل عليه التطبيق، وغالبًا ما يكون على هيئة sidecar أو مجموعة شياطين. ويعيد هؤلاء الوكلاء توجيه البيانات إلى ClickStack OTel collector المركزي، الذي يعمل كبوابة [gateway](/ar/clickstack/ingesting-data/collector#collector-roles)، ويُنشر عادةً مرة واحدة لكل cluster أو مركز بيانات أو Region. وتتلقى [gateway](/ar/clickstack/ingesting-data/collector#collector-roles) أحداث OTLP من الوكلاء أو التطبيقات، وتتولى إدخالها إلى ClickHouse. راجع [OTel collector](/ar/clickstack/ingesting-data/collector) لمزيد من التفاصيل. ويمكن أن تكون هذه الوكلاء نُسخًا أخرى من OTel collector أو تقنيات بديلة مثل [Fluentd](https://www.fluentd.org/) أو [Vector](https://vector.dev/).
+
+<Info>
+  **التوافق مع OpenTelemetry**
+
+  رغم أن ClickStack يوفّر language SDKs خاصة به وOpenTelemetry مخصّصًا مع بيانات telemetry وميزات محسّنة، يمكنك أيضًا استخدام OpenTelemetry SDKs والوكلاء الحاليين لديك بسلاسة.
+</Info>

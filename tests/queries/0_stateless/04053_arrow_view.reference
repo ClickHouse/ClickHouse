@@ -1,0 +1,4 @@
+1	Short	Bin
+2	A significantly longer string that forces out-of-line storage	A significantly longer binary sequence for out-of-line
+3	\N	\N
+4	Another significantly longer string that forces out-of-line storage after null	Another significantly longer binary sequence after null

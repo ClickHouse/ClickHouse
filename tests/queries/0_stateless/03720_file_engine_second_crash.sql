@@ -1,0 +1,2 @@
+-- Fuzzer. Second argument is some complex expression.
+CREATE TABLE `t141` (`c0` Date) ENGINE = File(`c0`, (+`c0`.2) >= ANY(SELECT '307:21:40.753024937'::Time64(3)::Time64(3) OFFSET 0 ROWS)); -- {serverError BAD_ARGUMENTS}

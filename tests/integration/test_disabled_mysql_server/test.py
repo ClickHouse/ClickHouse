@@ -1,13 +1,9 @@
 import contextlib
-import os
-import subprocess
-import time
 
 import pymysql.cursors
 import pytest
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path
+from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.config_cluster import mysql_pass
 
@@ -67,11 +63,13 @@ def test_disabled_mysql_server(started_cluster):
             f"CREATE DATABASE test_db_disabled ENGINE = MySQL('mysql80:3306', 'test_db_disabled', 'root', '{mysql_pass}')"
         )
 
-        pm._add_rule(
+        pm.add_rule(
             {
+                "instance": clickhouse_node,
                 "source": clickhouse_node.ip_address,
                 "destination_port": 3306,
                 "action": "DROP",
+                "protocol": "tcp"
             }
         )
         clickhouse_node.query("SELECT * FROM system.parts")

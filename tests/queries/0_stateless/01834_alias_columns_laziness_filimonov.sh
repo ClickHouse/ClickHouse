@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# add_minmax_index_for_numeric_columns=0: Otherwise the insert needs to evaluate the function in the alias and requires
+# sleeping for 100 rows * 0.1 seconds/row = 10 seconds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -6,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query "
 drop table if exists aliases_lazyness;
-create table aliases_lazyness (x UInt32, y ALIAS sleepEachRow(0.1)) Engine=MergeTree ORDER BY x;
+create table aliases_lazyness (x UInt32, y ALIAS sleepEachRow(0.1)) Engine=MergeTree ORDER BY x SETTINGS add_minmax_index_for_numeric_columns=0;
 insert into aliases_lazyness(x) select * from numbers(100);
 "
 

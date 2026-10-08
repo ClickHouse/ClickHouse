@@ -170,7 +170,7 @@ select 'first attempt';
 INSERT INTO dst SELECT
     0 AS key,
     'A' AS value
-FROM numbers(2)
+FROM numbers(2) ORDER BY ALL
 SETTINGS insert_deduplication_token='some_user_token';
 
 SELECT
@@ -185,7 +185,7 @@ select 'second attempt';
 INSERT INTO dst SELECT
     0 AS key,
     'A' AS value
-FROM numbers(2)
+FROM numbers(2) ORDER BY ALL
 SETTINGS insert_deduplication_token='some_user_token';
 
 SELECT
@@ -200,7 +200,7 @@ select 'third attempt';
 INSERT INTO dst SELECT
     1 AS key,
     'b' AS value
-FROM numbers(2)
+FROM numbers(2) ORDER BY ALL
 SETTINGS insert_deduplication_token='some_user_token';
 
 SELECT
@@ -232,7 +232,7 @@ SET min_insert_block_size_bytes=0;
 INSERT INTO dst SELECT
     0 AS key,
     'A' AS value
-FROM numbers(2);
+FROM numbers(2) ORDER BY ALL;
 
 SELECT
     'from dst',
@@ -281,7 +281,7 @@ select 'first attempt';
 INSERT INTO dst SELECT
     number + 1 AS key,
     IF(key = 0, 'A', 'B') AS value
-FROM numbers(2);
+FROM numbers(2) ORDER BY ALL;
 
 SELECT
     'from dst',
@@ -302,7 +302,7 @@ select 'second attempt';
 INSERT INTO dst SELECT
     number + 1 AS key,
     IF(key = 0, 'A', 'B') AS value
-FROM numbers(2);
+FROM numbers(2) ORDER BY ALL;
 
 SELECT
     'from dst',

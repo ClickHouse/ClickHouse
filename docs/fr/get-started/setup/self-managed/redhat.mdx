@@ -1,0 +1,100 @@
+---
+description: 'Installer ClickHouse sur Linux Red Hat/CentOS'
+keywords: ['ClickHouse', 'installation', 'Red Hat', 'CentOS', 'rpm']
+sidebarTitle: 'Red Hat/CentOS'
+slug: /install/redhat
+title: 'Installer ClickHouse sur des distributions Linux basées sur RPM'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/fr/recommendations.mdx';
+
+> Il est recommandé d&#39;utiliser les paquets `rpm` officiels précompilés pour **CentOS**, **RedHat** et toutes les autres
+> distributions Linux basées sur RPM.
+
+<Steps>
+  <Step title="Consulter les recommandations" id="review-recommendations">
+    <Recommendations />
+  </Step>
+
+  <Step title="Configurer le dépôt RPM" id="setup-the-rpm-repository">
+    Ajoutez le dépôt officiel en exécutant la commande suivante :
+
+    ```bash
+    sudo yum install -y yum-utils
+    sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
+    ```
+
+    Pour les systèmes utilisant le gestionnaire de paquets `zypper` (openSUSE, SLES), exécutez :
+
+    ```bash
+    sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
+    sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
+    ```
+
+    Dans les étapes ci-dessous, `yum install` peut être remplacé par `zypper install`, selon
+    le gestionnaire de paquets utilisé.
+  </Step>
+
+  <Step title="Installer ClickHouse server et client" id="install-clickhouse-server-and-client-1">
+    Pour installer ClickHouse, exécutez les commandes suivantes :
+
+    ```bash
+    sudo yum install -y clickhouse-server clickhouse-client
+    ```
+
+    * Vous pouvez remplacer `stable` par `lts` pour utiliser différents [types de version](/fr/resources/support-center/knowledge-base/setup-installation/production) selon vos besoins.
+    * Vous pouvez télécharger et installer les paquets manuellement depuis [packages.clickhouse.com/rpm](https://packages.clickhouse.com/rpm/stable).
+    * Pour spécifier une version particulière, ajoutez `-$version` à la fin du nom du paquet,
+      par exemple :
+
+    ```bash
+    sudo yum install clickhouse-server-22.8.7.34
+    ```
+  </Step>
+
+  <Step title="Démarrer ClickHouse server" id="start-clickhouse-server-1">
+    Pour démarrer ClickHouse server, exécutez :
+
+    ```bash
+    sudo systemctl enable clickhouse-server
+    sudo systemctl start clickhouse-server
+    sudo systemctl status clickhouse-server
+    ```
+
+    Pour démarrer le client ClickHouse, exécutez :
+
+    ```bash
+    clickhouse-client
+    ```
+
+    Si vous avez configuré un mot de passe pour votre serveur, vous devrez exécuter :
+
+    ```bash
+    clickhouse-client --password
+    ```
+  </Step>
+
+  <Step title="Installer ClickHouse Keeper autonome" id="install-standalone-clickhouse-keeper-1">
+    <Tip>
+      Dans les environnements de production, nous recommandons vivement d&#39;exécuter ClickHouse Keeper sur des nœuds dédiés.
+      Dans les environnements de test, si vous décidez d&#39;exécuter ClickHouse Server et ClickHouse Keeper sur le même serveur,
+      il n&#39;est pas nécessaire d&#39;installer ClickHouse Keeper, car il est inclus avec ClickHouse server.
+    </Tip>
+
+    Pour installer `clickhouse-keeper` sur des serveurs ClickHouse Keeper autonomes, exécutez :
+
+    ```bash
+    sudo yum install -y clickhouse-keeper
+    ```
+  </Step>
+
+  <Step title="Activer et démarrer ClickHouse Keeper" id="enable-and-start-clickhouse-keeper-1">
+    ```bash
+    sudo systemctl enable clickhouse-keeper
+    sudo systemctl start clickhouse-keeper
+    sudo systemctl status clickhouse-keeper
+    ```
+  </Step>
+</Steps>

@@ -9,7 +9,10 @@ namespace DB
 
 class MergeTreeData;
 class IDataPartStorage;
+struct MergeTreeSettings;
 
+struct ProjectionDescription;
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /** Various types of mark files are stored in files with various extensions:
   * .mrk, .mrk2, .mrk3, .mrk4, .cmrk, .cmrk2, .cmrk3, .cmrk4.
@@ -46,12 +49,9 @@ public:
     /// Approximate bytes size of one granule
     size_t index_granularity_bytes = 0;
 
-    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MergeTreeDataPartType type_);
+    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, const MergeTreeSettings & storage_settings, MergeTreeDataPartType type_);
 
-    MergeTreeIndexGranularityInfo(const MergeTreeData & storage, MarkType mark_type_);
-
-    MergeTreeIndexGranularityInfo(MergeTreeDataPartType type_, bool is_adaptive_, size_t index_granularity_, size_t index_granularity_bytes_);
-    MergeTreeIndexGranularityInfo(MarkType mark_type_, size_t index_granularity_, size_t index_granularity_bytes_);
+    MergeTreeIndexGranularityInfo(const MergeTreeSettings & storage_settings, MarkType mark_type_);
 
     void changeGranularityIfRequired(const IDataPartStorage & data_part_storage);
 

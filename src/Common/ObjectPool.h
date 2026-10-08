@@ -59,7 +59,7 @@ public:
             return { f(), this };
         }
 
-        auto object = stack.top().release();
+        auto *object = stack.top().release();
         stack.pop();
 
         return { object, this };

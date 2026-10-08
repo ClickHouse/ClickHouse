@@ -1,0 +1,5 @@
+<clickhouse>
+    <arrowflight>
+        <max_prepared_statements_per_user>3</max_prepared_statements_per_user>
+    </arrowflight>
+</clickhouse>

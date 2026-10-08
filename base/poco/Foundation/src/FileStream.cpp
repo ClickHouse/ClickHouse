@@ -58,6 +58,7 @@ FileInputStream::FileInputStream():
 	FileIOS(std::ios::in),
 	std::istream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 
@@ -78,6 +79,7 @@ FileOutputStream::FileOutputStream():
 	FileIOS(std::ios::out),
 	std::ostream(&_buf)
 {
+	poco_ios_init(&_buf);
 }
 
 

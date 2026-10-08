@@ -6,8 +6,27 @@
     </create_query>
     <drop_query>DROP TABLE IF EXISTS bigint</drop_query>
 
+    <!-- Random values from a table (mixed distribution) -->
     <query>SELECT * FROM bigint WHERE NOT ignore(toString(u128)) SETTINGS max_threads = 1</query>
     <query>SELECT * FROM bigint WHERE NOT ignore(toString(i128)) SETTINGS max_threads = 1</query>
     <query>SELECT * FROM bigint WHERE NOT ignore(toString(u256)) SETTINGS max_threads = 1</query>
     <query>SELECT * FROM bigint WHERE NOT ignore(toString(i256)) SETTINGS max_threads = 1</query>
+
+    <!-- UInt128: values in u64 range -->
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(toString(toUInt128(number))) SETTINGS max_threads = 1</query>
+    <!-- UInt128: values just above u64 range (~20 digits) -->
+    <query>SELECT count() FROM numbers(5000000) WHERE NOT ignore(toString(toUInt128(number) + toUInt128('18446744073709551616'))) SETTINGS max_threads = 1</query>
+    <!-- UInt128: values near Int128 max, 2^127 - 1 (~39 digits) -->
+    <query>SELECT count() FROM numbers(3000000) WHERE NOT ignore(toString(toUInt128(number) + toUInt128('170141183460469231731687303715884105727'))) SETTINGS max_threads = 1</query>
+
+    <!-- UInt256: values in u64 range -->
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore(toString(toUInt256(number))) SETTINGS max_threads = 1</query>
+    <!-- UInt256: values in u128 range, just above u64 (~20 digits) -->
+    <query>SELECT count() FROM numbers(5000000) WHERE NOT ignore(toString(toUInt256(number) + toUInt256('18446744073709551616'))) SETTINGS max_threads = 1</query>
+    <!-- UInt256: values in u128 range, near Int128 max (~39 digits) -->
+    <query>SELECT count() FROM numbers(3000000) WHERE NOT ignore(toString(toUInt256(number) + toUInt256('170141183460469231731687303715884105727'))) SETTINGS max_threads = 1</query>
+    <!-- UInt256: values just above u128 range (~40 digits) -->
+    <query>SELECT count() FROM numbers(200000) WHERE NOT ignore(toString(toUInt256(number) + toUInt256('340282366920938463463374607431768211456'))) SETTINGS max_threads = 1</query>
+    <!-- UInt256: values near Int256 max, 2^255 - 1 (~78 digits) -->
+    <query>SELECT count() FROM numbers(50000) WHERE NOT ignore(toString(toUInt256(number) + toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819967'))) SETTINGS max_threads = 1</query>
 </test>

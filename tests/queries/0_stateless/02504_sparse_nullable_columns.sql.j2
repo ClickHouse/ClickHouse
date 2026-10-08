@@ -1,0 +1,40 @@
+{% for (min_bytes, default_ratio, nullable_version) in [(0, 1.0, 'allow_sparse'), (1000000000, 0.9, 'basic'), (1000000000, 0.9, 'allow_sparse'), (0, 0.9, 'basic'), (0, 0.9, 'allow_sparse')] -%}
+
+    DROP TABLE IF EXISTS t_sparse_nullable;
+
+    CREATE TABLE t_sparse_nullable (id UInt64, n Nullable(UInt64), s Nullable(String), t Tuple(a Nullable(String), b Nullable(UInt64)))
+    ENGINE = MergeTree ORDER BY ()
+    SETTINGS index_granularity = 10, min_bytes_for_wide_part = {{ min_bytes }}, ratio_of_defaults_for_sparse_serialization = {{ default_ratio }}, serialization_info_version = 'with_types', nullable_serialization_version = '{{ nullable_version }}';
+
+    INSERT INTO t_sparse_nullable
+    SELECT
+        number,
+        if (number % 11 = 0, number, NULL) a,
+        if (number % 13 = 0, toString(number), NULL) b,
+        (a, b)
+    FROM numbers(1000);
+
+    OPTIMIZE TABLE t_sparse_nullable FINAL;
+
+    SELECT column, serialization_kind FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_sparse_nullable' AND NOT startsWith(column, '_') AND active
+    ORDER BY column;
+
+    SELECT count() FROM t_sparse_nullable WHERE NOT n.null;
+    SELECT count() FROM t_sparse_nullable WHERE NOT s.null;
+    SELECT count() FROM t_sparse_nullable WHERE NOT isNull(s.size);
+    SELECT count() FROM t_sparse_nullable WHERE NOT s.null AND NOT n.null;
+
+    -- test non-zero row_offsets deserialization
+    SELECT id, s.null, n.null FROM t_sparse_nullable WHERE id % 11 = 0 ORDER BY id LIMIT 10;
+
+    -- test named tuple
+    SELECT id, t.a.size, t.b.null FROM t_sparse_nullable WHERE id % 13 = 0 OR id % 22 = 0 ORDER BY id LIMIT 10;
+
+    -- test some interesting functions when working with nullable values
+    SELECT ifNull(n, 42), coalesce(s, t.a, '42') FROM t_sparse_nullable WHERE id % 13 = 0 OR id % 22 = 0 ORDER BY id LIMIT 2;
+
+    SELECT sum(n), uniqExact(n), uniqExact(s) FROM t_sparse_nullable;
+    SELECT id % 10 AS key, sum(n), uniqExact(s) FROM t_sparse_nullable GROUP BY key ORDER BY key;
+
+{% endfor -%}

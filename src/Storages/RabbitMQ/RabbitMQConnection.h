@@ -10,12 +10,12 @@ namespace DB
 struct RabbitMQConfiguration
 {
     String host;
-    UInt16 port;
+    UInt16 port{};
     String username;
     String password;
     String vhost;
 
-    bool secure;
+    bool secure{};
     String connection_string;
 };
 

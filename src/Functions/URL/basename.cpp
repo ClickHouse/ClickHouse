@@ -19,10 +19,9 @@ struct ExtractBasename
         res_data = data;
         res_size = size;
 
-        Pos pos = data;
-        Pos end = pos + size;
+        Pos end = data + size;
 
-        if ((pos = find_last_symbols_or_null<'/', '\\'>(pos, end)))
+        if (Pos pos = find_last_symbols_or_null<'/', '\\'>(data, end))
         {
             ++pos;
             res_data = pos;
@@ -36,7 +35,55 @@ using FunctionBasename = FunctionStringToString<ExtractSubstringImpl<ExtractBase
 
 REGISTER_FUNCTION(Basename)
 {
-    factory.registerFunction<FunctionBasename>();
+    FunctionDocumentation::Description description = R"(
+Extracts the tail of a string following its last slash or backslash.
+This function is often used to extract the filename from a path.
+    )";
+    FunctionDocumentation::Syntax syntax = "basename(expr)";
+    FunctionDocumentation::Arguments arguments = {
+        {"expr", "A string expression. Backslashes must be escaped.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the tail of the input string after its last slash or backslash. If the input string ends with a slash or backslash, the function returns an empty string. Returns the original string if there are no slashes or backslashes.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Extract filename from Unix path",
+        R"(
+SELECT 'some/long/path/to/file' AS a, basename(a)
+        )",
+        R"(
+┌─a──────────────────────┬─basename(a)─┐
+│ some/long/path/to/file │ file        │
+└────────────────────────┴─────────────┘
+        )"
+    },
+    {
+        "Extract filename from Windows path",
+        R"(
+SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
+        )",
+        R"(
+┌─a──────────────────────┬─basename(a)─┐
+│ some\long\path\to\file │ file        │
+└────────────────────────┴─────────────┘
+        )"
+    },
+    {
+        "String with no path separators",
+        R"(
+SELECT 'some-file-name' AS a, basename(a)
+        )",
+        R"(
+┌─a──────────────┬─basename(a)────┐
+│ some-file-name │ some-file-name │
+└────────────────┴────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBasename>(documentation);
 }
 
 }

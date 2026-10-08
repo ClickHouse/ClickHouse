@@ -30,13 +30,21 @@ public:
 
     ~RestoreCoordinationOnCluster() override;
 
+    void startup() override;
+
     void setRestoreQueryIsSentToOtherHosts() override;
     bool isRestoreQuerySentToOtherHosts() const override;
     Strings setStage(const String & new_stage, const String & message, bool sync) override;
-    bool setError(std::exception_ptr exception, bool throw_if_error) override;
-    bool waitOtherHostsFinish(bool throw_if_error) const override;
-    bool finish(bool throw_if_error) override;
-    bool cleanup(bool throw_if_error) override;
+    void setError(std::exception_ptr exception, bool throw_if_error) override;
+    bool isErrorSet() const override;
+    void waitOtherHostsFinish(bool throw_if_error) const override;
+    void finish(bool throw_if_error) override;
+    bool finished() const override;
+    bool allHostsFinished() const override;
+    void cleanup(bool throw_if_error) override;
+
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    bool acquireCreatingSharedDatabase(const String & database_name) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -53,9 +61,16 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) override;
 
+    /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
+    /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
+    bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) override;
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;
+
+    void addRocksDBTable(const String & rocksdb_dir, const String & election_id) override;
+    String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
@@ -65,7 +80,6 @@ public:
 
 private:
     void createRootNodes();
-    bool tryFinishImpl() noexcept;
 
     const String root_zookeeper_path;
     const BackupKeeperSettings keeper_settings;

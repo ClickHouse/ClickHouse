@@ -74,55 +74,11 @@ function (google_cloud_cpp_add_library_protos library)
     external_googleapis_set_version_and_alias(${library}_protos)
     target_link_libraries(${protos_target} PUBLIC ${proto_deps})
 
-    # google_cloud_cpp_install_proto_library_protos(
-    #     "${protos_target}" "${EXTERNAL_GOOGLEAPIS_SOURCE}" OUT_DIRECTORY
-    #     ${OUT_DIR})
-    # google_cloud_cpp_install_proto_library_headers("${protos_target}"
-    #                                                OUT_DIRECTORY ${OUT_DIR})
-
-    # external_googleapis_install_pc("${protos_target}")
-
     if (NOT _opt_EXPORT_TARGET)
         return()
     endif ()
 
     set(library_target "google_cloud_cpp_${library}")
-
-    # Export the CMake targets to make it easy to create configuration files.
-    # install(
-    #     EXPORT ${library_target}-targets
-    #     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${library_target}"
-    #     COMPONENT google_cloud_cpp_development)
-
-    # Install the libraries and headers in the locations determined by
-    # GNUInstallDirs
-    # install(
-    #     TARGETS ${protos_target}
-    #     EXPORT ${library_target}-targets
-    #     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    #             COMPONENT google_cloud_cpp_runtime
-    #     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    #             COMPONENT google_cloud_cpp_runtime
-    #             NAMELINK_COMPONENT google_cloud_cpp_development
-    #     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    #             COMPONENT google_cloud_cpp_development)
-
-    # # Create and install the CMake configuration files.
-    # include(CMakePackageConfigHelpers)
-    # set(GOOGLE_CLOUD_CPP_CONFIG_LIBRARY "${library_target}")
-    # configure_file("${PROJECT_SOURCE_DIR}/cmake/templates/config.cmake.in"
-    #                "${library_target}-config.cmake" @ONLY)
-    # write_basic_package_version_file(
-    #     "${library_target}-config-version.cmake"
-    #     VERSION ${PROJECT_VERSION}
-    #     COMPATIBILITY ExactVersion)
-
-    # install(
-    #     FILES
-    #         "${CMAKE_CURRENT_BINARY_DIR}/${library_target}-config.cmake"
-    #         "${CMAKE_CURRENT_BINARY_DIR}/${library_target}-config-version.cmake"
-    #     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${library_target}"
-    #     COMPONENT google_cloud_cpp_development)
 endfunction ()
 
 #
@@ -245,7 +201,6 @@ function (google_cloud_cpp_add_gapic_library library display_name)
         ${library_target}
         PUBLIC google-cloud-cpp::grpc_utils google-cloud-cpp::common
                google-cloud-cpp::${library}_protos ${shared_proto_dep_targets})
-    google_cloud_cpp_add_common_options(${library_target})
     set_target_properties(
         ${library_target}
         PROPERTIES EXPORT_NAME ${library_alias}
@@ -271,106 +226,4 @@ function (google_cloud_cpp_add_gapic_library library display_name)
             INTERFACE ${library_alias})
         add_library(${transition_alias} ALIAS ${transition_target})
     endif ()
-
-    # # Get the destination directories based on the GNU recommendations.
-    # include(GNUInstallDirs)
-
-    # # Export the CMake targets to make it easy to create configuration files.
-    # install(
-    #     EXPORT ${library_target}-targets
-    #     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${library_target}"
-    #     COMPONENT google_cloud_cpp_development)
-
-    # # Install the libraries and headers in the locations determined by
-    # # GNUInstallDirs
-    # install(
-    #     TARGETS ${library_target} ${protos_target}
-    #             ${backwards_compat_proto_targets} ${transition_target}
-    #     EXPORT ${library_target}-targets
-    #     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    #             COMPONENT google_cloud_cpp_runtime
-    #     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    #             COMPONENT google_cloud_cpp_runtime
-    #             NAMELINK_COMPONENT google_cloud_cpp_development
-    #     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    #             COMPONENT google_cloud_cpp_development)
-
-    # google_cloud_cpp_install_headers("${library_target}"
-    #                                  "include/google/cloud/${library}")
-
-    # google_cloud_cpp_add_pkgconfig(
-    #     ${library}
-    #     "The ${display_name} C++ Client Library"
-    #     "Provides C++ APIs to use the ${display_name}"
-    #     "google_cloud_cpp_grpc_utils"
-    #     "${protos_target}"
-    #     ${shared_proto_dep_targets})
-
-    # # Create and install the CMake configuration files.
-    # include(CMakePackageConfigHelpers)
-    # set(GOOGLE_CLOUD_CPP_CONFIG_LIBRARY "${library_target}")
-    # foreach (lib IN LISTS _opt_CROSS_LIB_DEPS _opt_SHARED_PROTO_DEPS)
-    #     list(APPEND find_dependencies
-    #          "find_dependency(google_cloud_cpp_${lib})")
-    # endforeach ()
-    # string(JOIN "\n" GOOGLE_CLOUD_CPP_ADDITIONAL_FIND_DEPENDENCIES
-    #        ${find_dependencies})
-    # configure_file("${PROJECT_SOURCE_DIR}/cmake/templates/config.cmake.in"
-    #                "${library_target}-config.cmake" @ONLY)
-    # write_basic_package_version_file(
-    #     "${library_target}-config-version.cmake"
-    #     VERSION ${PROJECT_VERSION}
-    #     COMPATIBILITY ExactVersion)
-
-    # install(
-    #     FILES
-    #         "${CMAKE_CURRENT_BINARY_DIR}/${library_target}-config.cmake"
-    #         "${CMAKE_CURRENT_BINARY_DIR}/${library_target}-config-version.cmake"
-    #     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${library_target}"
-    #     COMPONENT google_cloud_cpp_development)
-
-    # if (GOOGLE_CLOUD_CPP_WITH_MOCKS)
-    #     # Create a header-only library for the mocks. We use a CMake `INTERFACE`
-    #     # library for these, a regular library would not work on macOS (where
-    #     # the library needs at least one .o file). Unfortunately INTERFACE
-    #     # libraries are a bit weird in that they need absolute paths for their
-    #     # sources.
-    #     file(
-    #         GLOB relative_mock_files
-    #         RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
-    #         ${mocks_globs})
-    #     list(SORT relative_mock_files)
-    #     set(mock_files)
-    #     foreach (file IN LISTS relative_mock_files)
-    #         # We use a generator expression per the recommendation in:
-    #         # https://stackoverflow.com/a/62465051
-    #         list(APPEND mock_files
-    #              "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/${file}>")
-    #     endforeach ()
-    #     add_library(${mocks_target} INTERFACE)
-    #     target_sources(${mocks_target} INTERFACE ${mock_files})
-    #     target_link_libraries(
-    #         ${mocks_target} INTERFACE ${library_alias} GTest::gmock
-    #                                   GTest::gtest)
-    #     set_target_properties(${mocks_target} PROPERTIES EXPORT_NAME
-    #                                                      ${library_alias}_mocks)
-    #     target_include_directories(
-    #         ${mocks_target}
-    #         INTERFACE $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
-    #                   $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
-    #                   $<INSTALL_INTERFACE:include>)
-    #     target_compile_options(${mocks_target}
-    #                            INTERFACE ${GOOGLE_CLOUD_CPP_EXCEPTIONS_FLAG})
-    #     google_cloud_cpp_install_mocks("${library}" "${display_name}")
-    # endif ()
-
-    # # ${library_alias} must be defined before we can add the samples.
-    # if (BUILD_TESTING AND GOOGLE_CLOUD_CPP_ENABLE_CXX_EXCEPTIONS)
-    #     foreach (dir IN LISTS _opt_SERVICE_DIRS)
-    #         if ("${dir}" STREQUAL "__EMPTY__")
-    #             set(dir "")
-    #         endif ()
-    #         google_cloud_cpp_add_samples_relative("${library}" "${dir}samples/")
-    #     endforeach ()
-    # endif ()
 endfunction ()

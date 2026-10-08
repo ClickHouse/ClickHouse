@@ -1,0 +1,39 @@
+-- scalar subquery
+status: applicable
+verdict: chosen
+reason: 1 mark would be read instead of 3 from the base table
+-- IN subquery
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+-- IN subquery without PREWHERE, the set has its own plan step, and the statement does not fail
+status: applicable
+verdict: chosen (forced)
+-- the only read is in an IN subquery, so it is the read to estimate
+status: applicable
+verdict: chosen
+-- force_optimize_projection in the subquery only, the cost decides the outer read
+status: applicable
+verdict: not chosen
+reason: 2 marks would be read instead of 1 from the base table
+-- prefer for the query and force only in the IN subquery, the verdict names prefer
+status: applicable
+verdict: chosen (forced)
+reason: `prefer_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+-- force in the CTE that reads the table, prefer outside, the verdict names force
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads the same 1 mark as the base table and serves no ORDER BY
+-- force in the query of a view, WHATIF forces the projection as the real optimizer does
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads the same 1 mark as the base table and serves no ORDER BY
+-- force with make_distributed_plan, the plan stays local as for the real optimizer
+status: applicable
+verdict: chosen (forced)
+-- forced for the session
+status: applicable
+verdict: chosen (forced)
+reason: `force_optimize_projection = 1` overrides the cost; the projection reads 2 marks instead of 1 from the base table
+-- a hypothetical skip index
+status: applicable

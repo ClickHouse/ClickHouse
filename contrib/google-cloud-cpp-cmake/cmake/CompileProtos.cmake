@@ -112,14 +112,17 @@ function (google_cloud_cpp_generate_proto SRCS)
         set(pb_h "${OUT_DIR}/${D}/${file_stem}.pb.h")
         list(APPEND ${SRCS} "${pb_cc}" "${pb_h}")
 
-        if (NOT Protobuf_PROTOC_EXECUTABLE)
-            set(Protobuf_PROTOC_EXECUTABLE $<TARGET_FILE:protobuf::protoc>)
-        endif ()
+        if (NOT CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME OR NOT CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR OR USE_MUSL)
+            set(NATIVE_protoc "${PROJECT_BINARY_DIR}/native/contrib/google-protobuf-cmake/protoc")
+        else ()
+            set(NATIVE_protoc $<TARGET_FILE:protoc>)
+        endif()
         add_custom_command(
             OUTPUT "${pb_cc}" "${pb_h}"
-            COMMAND ${Protobuf_PROTOC_EXECUTABLE} ARGS --cpp_out "${OUT_DIR}"
+            COMMAND ${NATIVE_protoc} ARGS --cpp_out "${OUT_DIR}"
                     ${protobuf_include_path} "${file_path}"
-            DEPENDS "${file_path}"
+            # Depend on the compiler too, so that the files are regenerated when protobuf is updated.
+            DEPENDS "${file_path}" ${NATIVE_protoc}
             COMMENT "Running C++ protocol buffer compiler on ${file_path}"
             VERBATIM)
     endforeach ()
@@ -210,7 +213,7 @@ function (google_cloud_cpp_generate_grpcpp SRCS)
                 --plugin=protoc-gen-grpc=${GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE}
                 "--grpc_out=${OUT_DIR}" "--cpp_out=${OUT_DIR}"
                 ${protobuf_include_path} "${file_path}"
-            DEPENDS "${file_path}"
+            DEPENDS "${file_path}" ${Protobuf_PROTOC_EXECUTABLE} ${GOOGLE_CLOUD_CPP_GRPC_PLUGIN_EXECUTABLE}
             COMMENT "Running gRPC C++ protocol buffer compiler on ${file_path}"
             VERBATIM)
     endforeach ()
@@ -335,64 +338,6 @@ function (google_cloud_cpp_load_protodeps var file)
         PARENT_SCOPE)
 endfunction ()
 
-# include(GNUInstallDirs)
-
-# Install headers for a C++ proto library.
-function (google_cloud_cpp_install_proto_library_headers target)
-    # Make this a NOP because we don't need to install the proto headers.
-
-    # cmake_parse_arguments(_opt "" "OUT_DIRECTORY" "" ${ARGN})
-    # google_cloud_cpp_set_out_directory(_opt_OUT_DIRECTORY OUT_DIR)
-    # get_target_property(type ${target} TYPE)
-    # if ("${type}" STREQUAL "INTERFACE_LIBRARY")
-    #     return()
-    # endif ()
-    # get_target_property(target_sources ${target} SOURCES)
-    # foreach (header ${target_sources})
-    #     # Skip anything that is not a header file.
-    #     if (NOT "${header}" MATCHES "\\.h$")
-    #         continue()
-    #     endif ()
-    #     string(REPLACE "${OUT_DIR}/" "" relative "${header}")
-    #     get_filename_component(dir "${relative}" DIRECTORY)
-    #     install(
-    #         FILES "${header}"
-    #         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${dir}"
-    #         COMPONENT google_cloud_cpp_development)
-    # endforeach ()
-endfunction ()
-
-# Install protos for a C++ proto library.
-function (google_cloud_cpp_install_proto_library_protos target source_dir)
-    # Make this a NOP because we don't need to install the proto files.
-
-    # cmake_parse_arguments(_opt "" "OUT_DIRECTORY" "" ${ARGN})
-    # google_cloud_cpp_set_out_directory(_opt_OUT_DIRECTORY OUT_DIR)
-    # get_target_property(type ${target} TYPE)
-    # if ("${type}" STREQUAL "INTERFACE_LIBRARY")
-    #     return()
-    # endif ()
-    # get_target_property(target_protos ${target} PROTO_SOURCES)
-    # foreach (header ${target_protos})
-    #     # Skip anything that is not a header file.
-    #     if (NOT "${header}" MATCHES "\\.proto$")
-    #         continue()
-    #     endif ()
-    #     string(REPLACE "${source_dir}/" "" relative "${header}")
-    #     string(REPLACE "${OUT_DIR}/" "" relative "${relative}")
-    #     get_filename_component(dir "${relative}" DIRECTORY)
-    #     # This is modeled after the Protobuf library, it installs the basic
-    #     # protos (think google/protobuf/any.proto) in the include directory for
-    #     # C/C++ code. :shrug:
-    #     install(
-    #         FILES "${header}"
-    #         DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/${dir}"
-    #         COMPONENT google_cloud_cpp_development)
-    # endforeach ()
-endfunction ()
-
-include(GoogleCloudCppCommonOptions)
-
 function (google_cloud_cpp_proto_library libname)
     cmake_parse_arguments(_opt "" "OUT_DIRECTORY" "PROTO_PATH_DIRECTORIES"
                           ${ARGN})
@@ -417,13 +362,6 @@ function (google_cloud_cpp_proto_library libname)
     target_include_directories(
         ${libname} SYSTEM PUBLIC $<BUILD_INTERFACE:${OUT_DIR}>
                                  $<INSTALL_INTERFACE:include>)
-    google_cloud_cpp_add_common_options(${libname} NO_WARNINGS)
-    if (MSVC)
-        # The protobuf-generated files have warnings under the default MSVC
-        # settings. We are not interested in these warnings, because we cannot
-        # fix them.
-        target_compile_options(${libname} PRIVATE "/wd4244" "/wd4251")
-    endif ()
 
     # In some configs we need to only generate the protocol definitions from
     # `*.proto` files. We achieve this by having this target depend on all proto
@@ -484,20 +422,6 @@ macro (external_googleapis_install_pc_common target)
         set(GOOGLE_CLOUD_CPP_PC_LIBS "-l${target}")
     endif ()
 endmacro ()
-
-# include(AddPkgConfig)
-
-# # Use a function to create a scope for the variables.
-# function (external_googleapis_install_pc target)
-#     external_googleapis_install_pc_common("${target}")
-#     google_cloud_cpp_set_pkgconfig_paths()
-#     configure_file("${PROJECT_SOURCE_DIR}/cmake/templates/config.pc.in"
-#                    "${target}.pc" @ONLY)
-#     install(
-#         FILES "${CMAKE_CURRENT_BINARY_DIR}/${target}.pc"
-#         DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig"
-#         COMPONENT google_cloud_cpp_development)
-# endfunction ()
 
 # Find the proto include directory
 #

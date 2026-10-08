@@ -2,6 +2,7 @@
     <profiles>
         <default>
             <stream_like_engine_allow_direct_select>1</stream_like_engine_allow_direct_select>
+            <parallel_view_processing>1</parallel_view_processing>
         </default>
     </profiles>
     <users>

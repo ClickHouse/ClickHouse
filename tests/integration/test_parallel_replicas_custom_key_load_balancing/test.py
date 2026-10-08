@@ -40,16 +40,16 @@ def create_tables(table_name):
 
     # populate data
     node1.query(
-        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000)"
+        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000) ORDER BY ALL"
     )
     node1.query(
-        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000, 1000)"
+        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(1000, 1000) ORDER BY ALL"
     )
     node1.query(
-        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(2000, 1000)"
+        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(2000, 1000) ORDER BY ALL"
     )
     node1.query(
-        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(3000, 1000)"
+        f"INSERT INTO {table_name} SELECT number % 4, number FROM numbers(3000, 1000) ORDER BY ALL"
     )
     node2.query(f"SYSTEM SYNC REPLICA {table_name}")
     node3.query(f"SYSTEM SYNC REPLICA {table_name}")

@@ -1,0 +1,9 @@
+a	Array(Dynamic)					
+[42,'hello',[1,2,3]]	Array(Dynamic)	['Int64','String','Array(Int64)']
+a	Array(Dynamic)					
+[42,'hello']	Array(Dynamic)	['Int64','String']
+a	Array(Dynamic)					
+[42,'hello',(42)]	Array(Dynamic)	['Int64','String','Tuple(b Int64)']
+{"a":[42,"hello",[1,2,3]]}	{'a':'Array(Dynamic)'}	Array(Dynamic)	[42,NULL,NULL]	[NULL,'hello',NULL]	[[],[],[1,2,3]]
+{"a":[42,"hello",[1,2,3],{"b":42}]}	{'a':'Array(Dynamic)'}	Array(Dynamic)	[42,NULL,NULL,NULL]	[NULL,'hello',NULL,NULL]	[[],[],[1,2,3],[]]	[NULL,NULL,NULL,42]
+{"a":["42","hello","[1,2,3]"]}	{'a':'Array(String)'}

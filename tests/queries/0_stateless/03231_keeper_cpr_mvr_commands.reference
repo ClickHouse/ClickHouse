@@ -1,0 +1,17 @@
+initial
+A C
+copy
+A C D
+node-A
+node-B
+move
+A C H
+node-A
+node-B
+copy to existing
+Transaction failed (Node exists): Op #2, path: /test-keeper-client-default/C
+A C H
+move to existing
+Transaction failed (Node exists): Op #2, path: /test-keeper-client-default/C
+A C H
+clean up

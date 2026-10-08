@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 WITH
     numericIndexedVectorBuild(mapFromArrays([1, 2, 3], arrayMap(x -> toFloat64(x), [10, 20, 30]))) AS vec1
 SELECT

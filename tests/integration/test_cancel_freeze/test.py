@@ -24,18 +24,22 @@ def drop_after_test():
         yield
     finally:
         node.query("DROP TABLE IF EXISTS tbl SYNC")
-        node.exec_in_container(["bash", "-c", f"rm -r /var/lib/clickhouse/shadow/"])
+        node.exec_in_container(["bash", "-c", "rm -fr /var/lib/clickhouse/shadow/"])
 
 
 # Test that FREEZE operation can be cancelled with KILL QUERY.
 def test_cancel_backup():
+    if node.is_built_with_sanitizer():
+        pytest.skip("Creating 20K parts under sanitizers can be slow.")
+
     # Freezing so much parts should take at least 2 seconds
     parts = 20_000
     node.query(
         f"CREATE TABLE tbl (x UInt32, y UInt32) ENGINE=MergeTree() PARTITION BY (x%{parts}) ORDER BY x"
     )
+    # Synchronous, so that writing the 20K parts is not bounded by `wait_for_async_insert_timeout`.
     node.query(
-        f"INSERT INTO tbl SELECT number, number FROM numbers({parts}) SETTINGS max_partitions_per_insert_block={parts}"
+        f"INSERT INTO tbl SELECT number, number FROM numbers({parts}) SETTINGS max_partitions_per_insert_block={parts}, async_insert=0"
     )
 
     uuid = node.query("SELECT uuid FROM system.tables WHERE name='tbl'").strip()
@@ -47,7 +51,7 @@ def test_cancel_backup():
         shadow_dir_exists = (
             len(
                 node.exec_in_container(
-                    ["bash", "-c", f"ls /var/lib/clickhouse/shadow/"], nothrow=True
+                    ["bash", "-c", "ls /var/lib/clickhouse/shadow/"], nothrow=True
                 )
             )
             > 0
@@ -55,12 +59,12 @@ def test_cancel_backup():
         if (
             shadow_dir_exists
             and node.query(
-                f"SELECT count() FROM system.processes WHERE query_kind == 'Alter' AND query LIKE '%FREEZE%'"
+                "SELECT count() FROM system.processes WHERE query_kind == 'Alter' AND query LIKE '%FREEZE%'"
             )
             == "1\n"
         ):
             node.query(
-                f"KILL QUERY WHERE query_kind == 'Alter' AND query LIKE '%FREEZE%' SYNC"
+                "KILL QUERY WHERE query_kind == 'Alter' AND query LIKE '%FREEZE%' SYNC"
             )
             assert "killed in pending state" in freeze.get_error()
 

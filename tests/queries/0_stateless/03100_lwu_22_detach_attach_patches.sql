@@ -4,21 +4,25 @@
 DROP TABLE IF EXISTS t_detach_attach_patches SYNC;
 DROP TABLE IF EXISTS t_detach_attach_patches_dst SYNC;
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_detach_attach_patches (id UInt64, a UInt64, b UInt64, c UInt64)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_on_fly/', '1')
 ORDER BY a PARTITION BY id
 SETTINGS
     enable_block_number_column = 1,
-    enable_block_offset_column = 1;
+    enable_block_offset_column = 1,
+    merge_selecting_sleep_ms = 100,
+    max_merge_selecting_sleep_ms = 200;
 
 CREATE TABLE t_detach_attach_patches_dst AS t_detach_attach_patches
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_on_fly_dst/', '1')
 ORDER BY a PARTITION BY id
 SETTINGS
     enable_block_number_column = 1,
-    enable_block_offset_column = 1;
+    enable_block_offset_column = 1,
+    merge_selecting_sleep_ms = 100,
+    max_merge_selecting_sleep_ms = 200;
 
 SET apply_patch_parts = 1;
 SET mutations_sync = 2;

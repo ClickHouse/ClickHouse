@@ -1,19 +1,26 @@
-#include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <Access/MaskingPolicy.h>
+#include <Access/DefinerDependencies.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int HAVE_DEPENDENT_OBJECTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -21,6 +28,13 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTDropAccessEntityQuery &>();
+
+    /// Masking policies are available only in ClickHouse Cloud. Reject `DROP MASKING POLICY` outright in
+    /// open-source builds (including the `IF EXISTS` and `ON CLUSTER` forms), consistently with `CREATE`,
+    /// `ALTER` and `SHOW CREATE MASKING POLICY`, instead of silently no-op'ing (`IF EXISTS`) or reporting
+    /// a confusing `UNKNOWN_MASKING_POLICY` error from the always-empty open-source access storage.
+    if (query.type == AccessEntityType::MASKING_POLICY)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
 
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
@@ -41,15 +55,38 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         }
 
         if (query.if_exists)
-            storage->tryRemove(storage->find(query.type, names));
+            access_control.tryRemove(storage->find(query.type, names));
         else
-            storage->remove(storage->getIDs(query.type, names));
+            access_control.remove(storage->getIDs(query.type, names));
     };
+
+    if (query.type == AccessEntityType::USER)
+    {
+        auto & definer_dependencies = DefinerDependencies::instance();
+        for (const auto & name : query.names->toStrings())
+        {
+            std::vector<String> objects;
+            for (const auto & uuid : definer_dependencies.getObjectsForDefiner(name))
+            {
+                auto & catalog = DatabaseCatalog::instance();
+                if (const auto table = catalog.tryGetByUUID(uuid).second)
+                    objects.push_back(table->getStorageID().getNameForLogs());
+                else if (catalog.hasUUIDMapping(uuid))
+                    /// A detached table.
+                    objects.push_back(toString(uuid));
+                /// Otherwise the object is gone and the dependency is stale.
+            }
+            if (!objects.empty())
+                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "User `{}` is used as a definer of {}.", name, toString(objects));
+        }
+    }
 
     if (query.type == AccessEntityType::ROW_POLICY)
         do_drop(query.row_policy_names->toStrings(), query.storage_name);
+    else if (query.type == AccessEntityType::MASKING_POLICY)
+        do_drop(Strings{query.masking_policy_name->toString()}, query.storage_name);
     else
-        do_drop(query.names, query.storage_name);
+        do_drop(query.names->toStrings(), query.storage_name);
 
     return {};
 }
@@ -63,13 +100,13 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     {
         case AccessEntityType::USER:
         {
-            for (const auto & name : query.names)
+            for (const auto & name : query.names->toStrings())
                 res.emplace_back(AccessType::DROP_USER, name);
             return res;
         }
         case AccessEntityType::ROLE:
         {
-            for (const auto & name : query.names)
+            for (const auto & name : query.names->toStrings())
                 res.emplace_back(AccessType::DROP_ROLE, name);
             return res;
         }
@@ -92,12 +129,18 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
             res.emplace_back(AccessType::DROP_QUOTA);
             return res;
         }
+        case AccessEntityType::MASKING_POLICY:
+        {
+            res.emplace_back(AccessType::DROP_MASKING_POLICY);
+            return res;
+        }
         case AccessEntityType::MAX:
             break;
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
 }
 
+void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

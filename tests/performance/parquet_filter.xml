@@ -1,5 +1,5 @@
 <test>
-    <create_query>create table if not exists t (key UInt64, value String) engine = File(Parquet) settings output_format_parquet_use_custom_encoder=1, output_format_parquet_row_group_size=100000</create_query>
+    <create_query>create table if not exists t (key UInt64, value String) engine = File(Parquet) settings output_format_parquet_row_group_size=100000</create_query>
 
     <fill_query>insert into t select number, toString(number) from numbers(2000000) settings max_threads=16, max_insert_threads=16, max_insert_block_size=100000, max_block_size=100000</fill_query>
 

@@ -1,0 +1,31 @@
+Part 1: Small data (300 rows)
+hasToken apple — diff count:
+0
+hasToken cherry — diff count:
+0
+AND apple+banana — diff count:
+0
+OR apple|cherry — diff count:
+0
+hasAnyTokens [apple,cherry] — diff count:
+0
+hasAllTokens [apple,banana] — diff count:
+0
+hasToken nonexistent — diff count:
+0
+Part 2: Large data (2000 rows, multi-segment)
+hasToken red — diff count:
+0
+AND red+blue — diff count:
+0
+AND red+blue+green — diff count:
+0
+OR red|blue|green — diff count:
+0
+Part 3: After merge (1000+1000 rows)
+hasToken hot (merged) — diff count:
+0
+AND hot+cold (merged) — diff count:
+0
+OR hot|cold (merged) — diff count:
+0

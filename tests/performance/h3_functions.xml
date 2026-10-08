@@ -1,0 +1,29 @@
+<test>
+    <!-- Performance tests for the H3 functions whose performance is improved by switching the
+         backend to h3o (Rust) - see https://github.com/ClickHouse/ClickHouse/pull/100272.
+         The existing h3.xml only exercises geoToH3 at resolution 15. -->
+
+    <create_query>CREATE TABLE h3_indexes_perf (h3 UInt64) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO h3_indexes_perf SELECT geoToH3(55.75 + rand(1) / 0x100000000, 37.62 + rand(2) / 0x100000000, toUInt8(9)) FROM zeros(100000)</fill_query>
+
+    <!-- Forward direction: coordinates -> H3 index -->
+    <query>SELECT count() FROM zeros(100000) WHERE NOT ignore(geoToH3(55.75 + rand(1) / 0x100000000, 37.62 + rand(2) / 0x100000000, toUInt8(9)))</query>
+
+    <!-- Reverse direction: H3 index -> coordinates -->
+    <query>SELECT count() FROM h3_indexes_perf WHERE NOT ignore(h3ToGeo(h3))</query>
+    <query>SELECT count() FROM h3_indexes_perf WHERE NOT ignore(h3ToGeoBoundary(h3))</query>
+
+    <!-- Hierarchy and metrics -->
+    <query>SELECT count() FROM h3_indexes_perf WHERE NOT ignore(h3ToParent(h3, materialize(toUInt8(3))))</query>
+    <query>SELECT count() FROM h3_indexes_perf WHERE NOT ignore(h3CellAreaM2(h3))</query>
+
+    <!-- Validation, neighbours, and grid distance -->
+    <query>SELECT count() FROM h3_indexes_perf WHERE NOT ignore(h3IsValid(h3))</query>
+    <query>SELECT count() FROM h3_indexes_perf WHERE NOT ignore(h3kRing(h3, materialize(toUInt16(1))))</query>
+    <query>SELECT count() FROM h3_indexes_perf WHERE NOT ignore(h3Distance(h3, materialize(geoToH3(55.75, 37.62, toUInt8(9)))))</query>
+
+    <!-- Great-circle distance helper -->
+    <query>SELECT count() FROM zeros(100000) WHERE NOT ignore(h3PointDistM(55.75 + rand(1) / 0x100000000, 37.62 + rand(2) / 0x100000000, 55.76 + rand(3) / 0x100000000, 37.63 + rand(4) / 0x100000000))</query>
+
+    <drop_query>DROP TABLE IF EXISTS h3_indexes_perf</drop_query>
+</test>

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-random-settings, no-object-storage, no-replicated-database, no-shared-merge-tree
 # Tag no-random-settings: enable after root causing flakiness
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +18,7 @@ SETTINGS table_disk = true,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/03362/${CLICKHOUSE_DATABASE}/')
+      path = '${CLICKHOUSE_DISKS_FILES}/03362/${CLICKHOUSE_DATABASE}/')
 "
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -29,7 +30,7 @@ SETTINGS table_disk = true, refresh_parts_interval = 1,
       type = object_storage,
       object_storage_type = local,
       metadata_type = plain_rewritable,
-      path = 'disks/03362/${CLICKHOUSE_DATABASE}/')
+      path = '${CLICKHOUSE_DISKS_FILES}/03362/${CLICKHOUSE_DATABASE}/')
 "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO writer VALUES ('Hello')";

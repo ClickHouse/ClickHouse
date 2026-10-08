@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <base/TypeLists.h>
 
 namespace DB
 {
@@ -29,7 +30,7 @@ namespace
 {
 
 /// Throw an exception if the argument is non zero.
-class FunctionThrowIf : public IFunction
+class FunctionThrowIf final : public IFunction
 {
 public:
     static constexpr auto name = "throwIf";
@@ -82,6 +83,12 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
+    /// With a LowCardinality argument the default implementation would run throwIf on the whole
+    /// dictionary, which always contains the reserved default value even if no row references it.
+    /// That spurious entry could make throwIf throw for values absent from the data, so execute on
+    /// the minimal (only actually referenced) dictionary instead.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     /** Prevent constant folding for FunctionThrowIf because for short circuit evaluation
       * it is unsafe to evaluate this function during DAG analysis.
       */
@@ -115,16 +122,13 @@ public:
         const auto * in = first_argument_column.get();
 
         ColumnPtr res;
-        if (!((res = execute<UInt8>(in, custom_message, custom_error_code))
-            || (res = execute<UInt16>(in, custom_message, custom_error_code))
-            || (res = execute<UInt32>(in, custom_message, custom_error_code))
-            || (res = execute<UInt64>(in, custom_message, custom_error_code))
-            || (res = execute<Int8>(in, custom_message, custom_error_code))
-            || (res = execute<Int16>(in, custom_message, custom_error_code))
-            || (res = execute<Int32>(in, custom_message, custom_error_code))
-            || (res = execute<Int64>(in, custom_message, custom_error_code))
-            || (res = execute<Float32>(in, custom_message, custom_error_code))
-            || (res = execute<Float64>(in, custom_message, custom_error_code))))
+        TypeListUtils::forEach(TypeListNativeNumber{}, [&]<typename T>(TypeList<T>)
+        {
+            if (!res)
+                res = execute<T>(in, custom_message, custom_error_code);
+        });
+
+        if (!res)
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
         }
@@ -159,7 +163,7 @@ private:
             size_t result_size = in_untyped->size();
 
             /// We return non constant to avoid constant folding.
-            return ColumnUInt8::create(result_size, 0);
+            return ColumnUInt8::create(result_size, static_cast<UInt8>(0));
         }
 
         return nullptr;
@@ -172,7 +176,32 @@ private:
 
 REGISTER_FUNCTION(ThrowIf)
 {
-    factory.registerFunction<FunctionThrowIf>();
+    FunctionDocumentation::Description description = R"(
+Throw an exception if argument x is true.
+To use the `error_code` argument, configuration parameter `allow_custom_error_code_in_throw` must be enabled.
+)";
+    FunctionDocumentation::Syntax syntax = "throwIf(x[, message[, error_code]])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "The condition to check.", {"Any"}},
+        {"message", "Optional. Custom error message.", {"const String"}},
+        {"error_code", "Optional. Custom error code.", {"const Int8/16/32"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `0` if the condition is false, throws an exception if the condition is true.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT throwIf(number = 3, 'Too many') FROM numbers(10);
+        )",
+        R"(
+Received exception:
+Code: 395. DB::Exception: Too many. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)
+        )"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionThrowIf>(documentation);
 }
 
 }

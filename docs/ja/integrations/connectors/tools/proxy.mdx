@@ -1,0 +1,49 @@
+---
+description: 'ClickHouseで利用可能なサードパーティ製のプロキシソリューションについて説明します'
+sidebarTitle: 'プロキシ'
+slug: /interfaces/third-party/proxy
+title: 'サードパーティ製プロキシサーバー'
+doc_type: 'reference'
+---
+
+<div id="chproxy">
+  ## chproxy
+</div>
+
+[chproxy](https://github.com/Vertamedia/chproxy) は、ClickHouse データベース向けの HTTP プロキシ兼ロードバランサーです。
+
+特長:
+
+* ユーザーごとのルーティングとレスポンスキャッシュ。
+* 柔軟な制限設定。
+* SSL 証明書の自動更新。
+
+Go で実装されています。
+
+<div id="kittenhouse">
+  ## KittenHouse
+</div>
+
+[KittenHouse](https://github.com/VKCOM/kittenhouse) は、アプリケーション側で INSERT データをバッファリングできない場合や、それが難しい場合に、ClickHouse とアプリケーションサーバーの間でローカルプロキシとして動作するよう設計されています。
+
+機能:
+
+* メモリ内およびディスク上でのデータバッファリング。
+* テーブル単位のルーティング。
+* 負荷分散とヘルスチェック。
+
+Go で実装されています。
+
+<div id="clickhouse-bulk">
+  ## ClickHouse-Bulk
+</div>
+
+[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) は、シンプルな ClickHouse 向け insert collector です。
+
+特長:
+
+* リクエストをまとめ、しきい値または一定間隔ごとに送信します。
+* 複数のリモートserverに対応。
+* Basic認証。
+
+Go で実装されています。

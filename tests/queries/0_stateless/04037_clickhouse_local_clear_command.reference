@@ -1,0 +1,10 @@
+-- clear variants exit successfully
+OK
+-- clear via --queries-file (same path as -q)
+OK
+-- clear is not parsed as a bare SQL identifier
+OK
+-- select clear is still SQL
+OK
+-- clickhouse-client -q clear is still SQL (non-interactive)
+OK

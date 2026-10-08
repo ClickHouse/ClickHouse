@@ -1,0 +1,99 @@
+--- row count + DESCRIBE ---
+3
+arr	Array(Int64)					
+b	UInt8					
+d	Date32					
+dec	Decimal(10, 2)					
+dt	DateTime64(3, \'UTC\')					
+f64	Float64					
+i32	Int32					
+i64_neg	Int64					
+m	Map(String, String)					
+s	String					
+tup	Tuple(\n    `1` Int64,\n    `2` String)					
+u64	UInt64					
+u	UUID					
+--- full readback ---
+Row 1:
+──────
+i32:     0
+i64_neg: 0
+u64:     0
+f64:     0
+s:       0
+d:       2023-01-01
+dt:      2023-01-01 00:00:00.000
+arr:     [0,1]
+tup:     (0,'0')
+m:       {'k':'0'}
+u:       00000000-0000-0000-0000-000000000000
+dec:     0
+b:       1
+
+Row 2:
+──────
+i32:     1
+i64_neg: -1
+u64:     1
+f64:     1
+s:       1
+d:       2023-01-02
+dt:      2023-01-01 00:00:01.000
+arr:     [1,2]
+tup:     (1,'1')
+m:       {'k':'1'}
+u:       00000000-0000-0000-0000-000000000001
+dec:     1
+b:       0
+
+Row 3:
+──────
+i32:     2
+i64_neg: -2
+u64:     2
+f64:     2
+s:       2
+d:       2023-01-03
+dt:      2023-01-01 00:00:02.000
+arr:     [2,3]
+tup:     (2,'2')
+m:       {'k':'2'}
+u:       00000000-0000-0000-0000-000000000002
+dec:     2
+b:       1
+--- codec: NONE ---
+100	4950
+--- codec: SNAPPY ---
+100	4950
+--- codec: ZSTD ---
+100	4950
+--- codec: LZ4 ---
+100	4950
+--- codec: LZ4_HC ---
+skip LZ4_HC
+--- codec: GZIP ---
+100	4950
+--- codec: BROTLI ---
+100	4950
+--- multiple row groups: count ---
+5000	12497500
+--- filter pushdown: row groups pruned ---
+pruned
+--- filter pushdown: result correctness ---
+101
+0	49
+--- filter pushdown: result identical with pushdown off ---
+101
+--- column pruning ---
+9900
+4950	14850
+--- column pruning: decoding tasks shrink with projection ---
+pruned
+--- nullable columns: null counts ---
+4	5
+--- schema inference ---
+a	Int32					
+arr	Array(Int32)					
+s	String					
+--- empty parquet: count ---
+0

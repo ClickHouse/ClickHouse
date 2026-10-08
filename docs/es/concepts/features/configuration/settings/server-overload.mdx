@@ -1,0 +1,61 @@
+---
+description: 'Control del comportamiento cuando la CPU del servidor se sobrecarga.'
+sidebarTitle: 'Sobrecarga del servidor'
+slug: /operations/settings/server-overload
+title: 'Sobrecarga del servidor'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+A veces, el servidor puede sobrecargarse por distintos motivos. Para determinar la sobrecarga actual de la CPU,
+el servidor ClickHouse calcula la relación entre el tiempo de espera de la CPU (métrica `OSCPUWaitMicroseconds`) y el tiempo de actividad
+(métrica `OSCPUVirtualTimeMicroseconds`). Cuando el servidor supera una determinada proporción de sobrecarga,
+puede tener sentido descartar algunas consultas o incluso rechazar solicitudes de conexión para no aumentar aún más la carga.
+
+Existe una configuración del servidor llamada `os_cpu_busy_time_threshold` que controla el tiempo mínimo de actividad necesario para considerar que la CPU
+está realizando un trabajo útil. Si el valor actual de la métrica `OSCPUVirtualTimeMicroseconds` está por debajo de este valor,
+se asume que la sobrecarga de la CPU es 0.
+
+<div id="rejecting-queries">
+  ## Rechazo de consultas
+</div>
+
+El comportamiento del rechazo de consultas se controla mediante los ajustes a nivel de consulta `min_os_cpu_wait_time_ratio_to_throw` y
+`max_os_cpu_wait_time_ratio_to_throw`. Si esos ajustes están definidos y `min_os_cpu_wait_time_ratio_to_throw` es menor
+que `max_os_cpu_wait_time_ratio_to_throw`, la consulta se rechaza y se genera el error `SERVER_OVERLOADED`
+con cierta probabilidad si la proporción de sobrecarga es al menos `min_os_cpu_wait_time_ratio_to_throw`. La probabilidad
+se determina mediante una interpolación lineal entre las proporciones mínima y máxima. Por ejemplo, si `min_os_cpu_wait_time_ratio_to_throw = 2`,
+`max_os_cpu_wait_time_ratio_to_throw = 6` y `cpu_overload = 4`, la consulta se rechazará con una probabilidad de `0.5`.
+
+<div id="dropping-connections">
+  ## Descarte de conexiones
+</div>
+
+El descarte de conexiones está controlado por los parámetros a nivel de servidor `min_os_cpu_wait_time_ratio_to_drop_connection` y
+`max_os_cpu_wait_time_ratio_to_drop_connection`. Estos parámetros pueden modificarse sin reiniciar el servidor. La idea en la que se basan
+estos parámetros es similar a la del rechazo de consultas. La única diferencia en este caso es que, si el servidor está sobrecargado,
+el intento de conexión se rechazará del lado del servidor.
+
+<div id="resource-overload-warnings">
+  ## Advertencias de sobrecarga de recursos
+</div>
+
+ClickHouse también registra advertencias de sobrecarga de CPU y memoria en la tabla `system.warnings` cuando el servidor está sobrecargado. Puede
+personalizar estos umbrales en la configuración del servidor.
+
+**Ejemplo**
+
+```xml
+
+<resource_overload_warnings>
+    <cpu_overload_warn_ratio>0.9</cpu_overload_warn_ratio>
+    <cpu_overload_clear_ratio>0.8</cpu_overload_clear_ratio>
+    <cpu_overload_duration_seconds>600</cpu_overload_duration_seconds>
+    <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
+    <memory_overload_clear_ratio>0.8</memory_overload_clear_ratio>
+    <memory_overload_duration_seconds>600</memory_overload_duration_seconds>
+</resource_overload_warnings>
+```

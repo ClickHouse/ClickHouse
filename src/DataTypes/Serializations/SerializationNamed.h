@@ -15,8 +15,12 @@ private:
     String name;
     SubstreamType substream_type;
 
-public:
     SerializationNamed(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
+
+public:
+    static UInt128 getHash(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
+    static SerializationPtr create(const SerializationPtr & nested_, const String & name_, SubstreamType substream_type_);
+    size_t allocatedBytes() const override;
 
     const String & getElementName() const { return name; }
 
@@ -47,8 +51,7 @@ public:
         SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        ColumnPtr & column,
-        size_t rows_offset,
+        IColumn & column,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -69,11 +72,13 @@ private:
         ColumnPtr create(const ColumnPtr & prev) const override { return prev; }
         SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override
         {
-            return std::make_shared<SerializationNamed>(prev, name, substream_type);
+            return SerializationNamed::create(prev, name, substream_type);
         }
     };
 
     void addToPath(SubstreamPath & path) const;
 };
+
+SerializationPtr removeNamedSerialization(const SerializationPtr & serialization);
 
 }

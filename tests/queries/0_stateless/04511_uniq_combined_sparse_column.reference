@@ -1,0 +1,38 @@
+serialization kinds
+t_uniq_dense	n_large	Default
+t_uniq_dense	n_medium	Default
+t_uniq_dense	n_small	Default
+t_uniq_dense	s_large	Default
+t_uniq_dense	s_medium	Default
+t_uniq_dense	s_small	Default
+t_uniq_dense	z	Default
+t_uniq_sparse	n_large	Sparse
+t_uniq_sparse	n_medium	Sparse
+t_uniq_sparse	n_small	Sparse
+t_uniq_sparse	s_large	Sparse
+t_uniq_sparse	s_medium	Sparse
+t_uniq_sparse	s_small	Sparse
+t_uniq_sparse	z	Sparse
+results, sparse vs dense
+n_small	(11,11,11,11)	(11,11,11,11)	1
+n_medium	(101,101,101,101)	(101,101,101,101)	1
+n_large	(19910,19910,20006,20006)	(19910,19910,20006,20006)	1
+s_small	(11,11,11,11)	(11,11,11,11)	1
+s_medium	(101,101,101,101)	(101,101,101,101)	1
+s_large	(20086,20086,19912,19912)	(20086,20086,19912,19912)	1
+z	(1,1,1,1)	(1,1,1,1)	1
+state bytes, sparse vs dense
+n_large	1	1	1	1
+s_large	1	1	1	1
+z	1	1	1	1
+states after round-trip
+large_dense	19910	20086	19910	20086
+large_sparse	19910	20086	19910	20086
+medium_dense	101	101	101	101
+medium_sparse	101	101	101	101
+small_dense	11	11	11	11
+small_sparse	11	11	11	11
+merge of states from sparse and dense paths
+large	19910	20086	19910	20086
+medium	101	101	101	101
+small	11	11	11	11

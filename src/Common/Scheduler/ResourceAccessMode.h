@@ -15,6 +15,7 @@ enum class ResourceAccessMode
     MasterThread,
     WorkerThread,
     Query,
+    MemoryReservation,
 };
 
 inline CostUnit costUnitForMode(ResourceAccessMode mode)
@@ -23,9 +24,10 @@ inline CostUnit costUnitForMode(ResourceAccessMode mode)
     {
         case ResourceAccessMode::DiskRead: return CostUnit::IOByte;
         case ResourceAccessMode::DiskWrite: return CostUnit::IOByte;
-        case ResourceAccessMode::MasterThread: return CostUnit::CPUSlot;
-        case ResourceAccessMode::WorkerThread: return CostUnit::CPUSlot;
+        case ResourceAccessMode::MasterThread: return CostUnit::CPUNanosecond;
+        case ResourceAccessMode::WorkerThread: return CostUnit::CPUNanosecond;
         case ResourceAccessMode::Query: return CostUnit::QuerySlot;
+        case ResourceAccessMode::MemoryReservation: return CostUnit::MemoryByte;
     }
 }
 

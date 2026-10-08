@@ -8,7 +8,7 @@ namespace DB
 
 WriteSettings getWriteSettings()
 {
-    auto query_context = CurrentThread::getQueryContext();
+    auto query_context = CurrentThread::tryGetQueryContext();
     if (query_context)
         return query_context->getWriteSettings();
 

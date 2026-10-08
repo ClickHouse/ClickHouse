@@ -1,0 +1,15 @@
+
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE:Identifier};
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE {CLICKHOUSE_DATABASE:Identifier} ENGINE=Replicated('/test/02072/{database}_1', '{shard}', '{replica}_1');
+
+SET distributed_ddl_output_mode='none';
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.`test%_\_` (n int) engine=Log;
+SHOW TABLES FROM {CLICKHOUSE_DATABASE:Identifier};
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE=Replicated('/test/02072/{database}', '{shard}', '{replica}_2');
+DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};
+SYSTEM SYNC DATABASE REPLICA {CLICKHOUSE_DATABASE_1:Identifier};
+SHOW TABLES FROM {CLICKHOUSE_DATABASE_1:Identifier};
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

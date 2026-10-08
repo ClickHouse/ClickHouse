@@ -1,0 +1,200 @@
+---
+sidebarTitle: 'الأمان'
+slug: /cloud/security
+title: 'الأمان'
+description: 'تعرّف على المزيد حول تأمين ClickHouse Cloud وBYOC'
+doc_type: 'reference'
+keywords: ['الأمان', 'أمان السحابة', 'التحكم في الوصول', 'الامتثال', 'حماية البيانات']
+---
+
+توضّح هذه الوثيقة خيارات الأمان وأفضل الممارسات المتاحة لحماية المؤسسة والخدمة ضمن ClickHouse.
+تلتزم ClickHouse بتقديم حلول قواعد بيانات تحليلية آمنة؛ ولذلك تُعَدّ حماية البيانات وسلامة الخدمة أولوية.
+تغطي المعلومات الواردة هنا أساليب متنوعة صُممت لمساعدة المستخدمين على تأمين بيئات ClickHouse الخاصة بهم.
+
+<div id="cloud-console-auth">
+  ## المصادقة في Cloud Console
+</div>
+
+<div id="password-auth">
+  ### المصادقة بكلمة المرور
+</div>
+
+تُضبط كلمات المرور في وحدة تحكم ClickHouse Cloud وفقًا لمعايير NIST 800-63B، بحد أدنى 12 حرفًا، مع استيفاء 3 من أصل 4 من متطلبات التعقيد: أحرف كبيرة، وأحرف صغيرة، وأرقام، و/أو أحرف خاصة.
+
+تعرّف على المزيد حول [المصادقة بكلمة المرور](/ar/products/cloud/guides/security/cloud-access-management/manage-my-account#email-and-password).
+
+<div id="social-sso">
+  ### تسجيل الدخول الأحادي عبر الحسابات الاجتماعية (SSO)
+</div>
+
+يدعم ClickHouse Cloud المصادقة الاجتماعية عبر Google أو Microsoft لتسجيل الدخول الأحادي (SSO).
+
+تعرّف على المزيد حول [تسجيل الدخول الأحادي عبر الحسابات الاجتماعية](/ar/products/cloud/guides/security/cloud-access-management/manage-my-account#social-sso).
+
+<div id="mfa">
+  ### المصادقة متعددة العوامل
+</div>
+
+يمكن للمستخدمين الذين يسجّلون الدخول باستخدام البريد الإلكتروني وكلمة المرور أو تسجيل الدخول الأحادي عبر الحسابات الاجتماعية (SSO) أيضًا إعداد المصادقة متعددة العوامل باستخدام تطبيق مصادقة مثل Authy أو Google Authenticator.
+
+تعرّف على المزيد حول [المصادقة متعددة العوامل](/ar/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa).
+
+<div id="saml-auth">
+  ### مصادقة لغة ترميز تأكيد الأمان (SAML)
+</div>
+
+يمكن لعملاء Enterprise تهيئة المصادقة عبر SAML.
+
+تعرّف على المزيد حول [مصادقة SAML](/ar/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+
+<div id="api-auth">
+  ### مصادقة API
+</div>
+
+يمكن للعملاء إعداد مفاتيح API لاستخدامها مع OpenAPI وTerraform ونقاط نهاية Query API.
+
+اطّلع على مزيد من المعلومات حول [مصادقة API](/ar/products/cloud/features/admin-features/api/openapi).
+
+<div id="database-auth">
+  ## مصادقة قاعدة البيانات
+</div>
+
+<div id="db-password-auth">
+  ### مصادقة كلمة مرور قاعدة البيانات
+</div>
+
+تُعَدّ كلمات مرور مستخدمي قاعدة بيانات ClickHouse وفقًا لمعايير NIST 800-63B، بحد أدنى يبلغ 12 حرفًا، مع متطلبات تعقيد تشمل: أحرفًا كبيرة، وأحرفًا صغيرة، وأرقامًا و/أو رموزًا خاصة.
+
+تعرّف على المزيد حول [مصادقة كلمة مرور قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#database-user-id--password).
+
+<div id="ssh-auth">
+  ### مصادقة مستخدمي قاعدة البيانات عبر Secure Shell (SSH)
+</div>
+
+يمكن تهيئة مستخدمي قاعدة بيانات ClickHouse لاستخدام المصادقة عبر SSH.
+
+تعرّف على المزيد حول [المصادقة عبر SSH](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#database-ssh).
+
+<div id="access-control">
+  ## التحكم في الوصول
+</div>
+
+<div id="console-rbac">
+  ### التحكم في الوصول المستند إلى الأدوار (RBAC) في وحدة تحكم
+</div>
+
+يدعم ClickHouse Cloud إسناد الأدوار لأذونات المؤسسة والخدمة وقاعدة البيانات. ولا تكون أذونات قاعدة البيانات بهذه الطريقة مدعومة إلا في SQL وحدة تحكم.
+
+تعرّف على المزيد حول [RBAC في وحدة تحكم](/ar/products/cloud/reference/security/console-roles).
+
+<div id="database-user-grants">
+  ### امتيازات مستخدم قاعدة البيانات
+</div>
+
+تدعم قواعد بيانات ClickHouse إدارة دقيقة للأذونات والتحكم في الوصول المستند إلى الأدوار من خلال منح الامتيازات للمستخدمين.
+
+تعرّف على المزيد حول [امتيازات مستخدم قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#database-permissions).
+
+<div id="network-security">
+  ## أمان الشبكة
+</div>
+
+<div id="ip-filters">
+  ### فلاتر IP
+</div>
+
+قم بتكوين فلاتر IP للحد من الاتصالات الواردة إلى خدمة ClickHouse الخاصة بك.
+
+تعرّف على المزيد حول [فلاتر IP](/ar/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="private-connectivity">
+  ### الاتصال عبر شبكة خاصة
+</div>
+
+اتصل بمجموعات ClickHouse لديك من AWS أو GCP أو Azure عبر اتصال خاص.
+
+تعرّف على المزيد حول [الاتصال عبر شبكة خاصة](/ar/products/cloud/guides/security/connectivity/private-networking/index).
+
+<div id="encryption">
+  ## التشفير
+</div>
+
+<div id="storage-encryption">
+  ### التشفير على مستوى التخزين
+</div>
+
+يشفّر ClickHouse Cloud البيانات المخزّنة افتراضيًا باستخدام مفاتيح AES 256 التي يديرها موفّر السحابة.
+
+تعرّف على المزيد حول [التشفير على مستوى التخزين](/ar/products/cloud/guides/security/cmek#storage-encryption).
+
+<div id="tde">
+  ### تشفير البيانات الشفاف
+</div>
+
+بالإضافة إلى التشفير على مستوى التخزين، يمكن لعملاء ClickHouse Cloud Enterprise تفعيل تشفير البيانات الشفاف على مستوى قاعدة البيانات لمزيد من الحماية.
+
+تعرّف على المزيد حول [تشفير البيانات الشفاف](/ar/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
+
+<div id="cmek">
+  ### مفاتيح التشفير المُدارة من قِبل العميل
+</div>
+
+يمكن لعملاء ClickHouse Cloud Enterprise استخدام مفتاحهم الخاص للتشفير على مستوى قاعدة البيانات.
+
+تعرّف على المزيد حول [مفاتيح التشفير المُدارة من قِبل العميل](/ar/products/cloud/guides/security/cmek#customer-managed-encryption-keys-cmek).
+
+<div id="auditing-logging">
+  ## التدقيق والتسجيل
+</div>
+
+<div id="console-audit-log">
+  ### سجل تدقيق وحدة تحكم
+</div>
+
+تُسجَّل الأنشطة داخل وحدة تحكم. وتتوفّر السجلات للمراجعة والتصدير.
+
+تعرّف على المزيد حول [سجلات تدقيق وحدة تحكم](/ar/products/cloud/guides/security/audit-logging/console-audit-log).
+
+<div id="database-audit-logs">
+  ### سجلات تدقيق قاعدة البيانات
+</div>
+
+تُسجَّل الأنشطة داخل قاعدة البيانات، وتكون السجلات متاحة للمراجعة والتصدير.
+
+اطّلع على المزيد حول [سجلات تدقيق قاعدة البيانات](/ar/products/cloud/guides/security/audit-logging/database-audit-log).
+
+<div id="byoc-security-playbook">
+  ### الدليل الأمني لـ BYOC
+</div>
+
+استعلامات كشف نموذجية للفرق الأمنية التي تدير مثيلات ClickHouse BYOC.
+
+تعرّف على المزيد حول [الدليل الأمني لـ BYOC](/ar/products/cloud/guides/security/audit-logging/byoc-security-playbook).
+
+<div id="compliance">
+  ## الامتثال
+</div>
+
+<div id="compliance-reports">
+  ### تقارير الأمن والامتثال
+</div>
+
+تحافظ ClickHouse على برنامج قوي للأمن والامتثال. يُرجى مراجعة هذه الصفحة دوريًا للاطلاع على تقارير تدقيق جديدة من جهات خارجية.
+
+تعرّف على المزيد حول [تقارير الأمن والامتثال](/ar/products/cloud/reference/security/compliance-overview).
+
+<div id="hipaa-compliance">
+  ### الخدمات المتوافقة مع HIPAA
+</div>
+
+يمكن لعملاء ClickHouse Cloud Enterprise نشر خدمات تتضمن معلومات صحية محمية (PHI) في مناطق متوافقة مع HIPAA بعد توقيع اتفاقية شريك الأعمال (BAA).
+
+تعرّف على المزيد حول [الامتثال لـ HIPAA](/ar/products/cloud/guides/security/compliance/hipaa-onboarding).
+
+<div id="pci-compliance">
+  ### الخدمات المتوافقة مع PCI
+</div>
+
+يمكن لعملاء ClickHouse Cloud Enterprise نشر خدمات تتضمن معلومات بطاقات الائتمان في مناطق متوافقة مع PCI.
+
+تعرّف على المزيد حول [الامتثال لمعايير PCI](/ar/products/cloud/guides/security/compliance/pci-onboarding).

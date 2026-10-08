@@ -3,6 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
 #include <Formats/JSONUtils.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -55,6 +56,7 @@ NamesAndTypesList JSONColumnsWithMetadataSchemaReader::readSchema()
     return JSONUtils::readMetadata(in, format_settings.json);
 }
 
+void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory);
 void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -64,12 +66,15 @@ void registerInputFormatJSONColumnsWithMetadata(FormatFactory & factory)
            const RowInputFormatParams &,
            const FormatSettings & settings)
         {
-            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, sample, settings, std::make_unique<JSONColumnsWithMetadataReader>(buf, sample, settings));
+            return std::make_shared<JSONColumnsBlockInputFormatBase>(buf, std::make_shared<const Block>(sample), settings, std::make_unique<JSONColumnsWithMetadataReader>(buf, sample, settings));
         }
     );
     factory.markFormatSupportsSubsetOfColumns("JSONColumnsWithMetadata");
+    /// Data in this format is commonly stored in `.json` files, but the `json` extension infers as `JSON`.
+    factory.registerFileExtension("json", "JSONColumnsWithMetadata", /*used_for_format_inference=*/ false);
 }
 
+void registerJSONColumnsWithMetadataSchemaReader(FormatFactory & factory);
 void registerJSONColumnsWithMetadataSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader(

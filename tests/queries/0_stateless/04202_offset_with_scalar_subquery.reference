@@ -1,0 +1,35 @@
+-- { echo }
+SELECT number FROM numbers(10) ORDER BY number LIMIT 5 OFFSET 1 + (SELECT count() FROM numbers(2));
+3
+4
+5
+6
+7
+SELECT number FROM numbers(10) ORDER BY number LIMIT 5 OFFSET (SELECT sum(number), count() FROM numbers(3)).2;
+3
+4
+5
+6
+7
+SELECT number FROM numbers(10) ORDER BY number OFFSET (SELECT sum(number), count() FROM numbers(3)).2;
+3
+4
+5
+6
+7
+8
+9
+SELECT number % 3 AS k FROM numbers(10) ORDER BY number, k LIMIT 1 + (SELECT count() FROM numbers(1)) BY k;
+0
+1
+2
+0
+1
+2
+SELECT number % 3 AS k FROM numbers(20) ORDER BY number, k LIMIT 1 + (SELECT count() FROM numbers(1)) OFFSET (SELECT count() FROM numbers(3)) BY k;
+0
+1
+2
+0
+1
+2

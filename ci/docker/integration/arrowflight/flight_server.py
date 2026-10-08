@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+
+import argparse
+import base64
+import time
+
+import pyarrow as pa
+import pyarrow.flight as fl
+
+# How long a stalling handler blocks: a STALL_* dataset, or the stall_handshake user. Finite
+# rather than infinite, because a blocked handler occupies a gRPC worker thread throughout.
+STALL_SECONDS = 120
+# How long do_get withholds the stream for SLOW_DOGET_THEN_STALL, so the client is still inside
+# DoGet when a query-level timeout fires.
+SLOW_DOGET_SECONDS = 15
+# How long the stream that follows withholds its first message. Longer than the deadline the test
+# configures, and shorter than STALL_SECONDS so this handler is held no longer than the others.
+SLOW_DOGET_STALL_SECONDS = 60
+# How long SLOW_SCHEMA_THEN_ANSWER withholds its GetSchema answer before answering normally. Longer
+# than the deadline the test configures, and short enough that a deadline stretched past it ends the
+# query in a success rather than in another timeout.
+SLOW_SCHEMA_ANSWER_SECONDS = 5
+
+
+class FlightServer(fl.FlightServerBase):
+    def __init__(self, location, auth_handler, middleware):
+        super().__init__(
+            location=location, auth_handler=auth_handler, middleware=middleware
+        )
+        self._location = location
+        self._schema = pa.schema([("column1", pa.string()), ("column2", pa.string())])
+        self._schema_xyz = pa.schema([("column3", pa.int32()), ("column4", pa.int32())])
+        self._tables = dict()
+        self._empty_table = pa.table(
+            {"column1": pa.array([]), "column2": pa.array([])}, schema=self._schema
+        )
+        column1_data = pa.array(["test_value_1", "abcadbc", "123456789"])
+        column2_data = pa.array(["data1", "text_text_text", "data3"])
+        column3_data = pa.array([1, 2, 3])
+        column4_data = pa.array([4, 5, 6])
+        self._tables["ABC"] = pa.table(
+            {"column1": column1_data, "column2": column2_data}, schema=self._schema
+        )
+        self._tables["XYZ"] = pa.table(
+            {"column3": column3_data, "column4": column4_data}, schema=self._schema_xyz
+        )
+
+        nullable_record = pa.struct([pa.field("x", pa.int64(), nullable=True)])
+        required_record = pa.struct([pa.field("x", pa.int64(), nullable=False)])
+        nested_record = pa.struct([pa.field("child", required_record, nullable=True)])
+        struct_schema = pa.schema(
+            [
+                pa.field("id", pa.int64(), nullable=False),
+                pa.field("record", nullable_record, nullable=True),
+                pa.field("required_record", required_record, nullable=False),
+                pa.field("nested_record", nested_record, nullable=False),
+            ]
+        )
+        self._tables["STRUCTS"] = pa.Table.from_pydict(
+            {
+                "id": [0, 1, 2],
+                "record": [None, {"x": None}, {"x": 7}],
+                "required_record": [{"x": 10}, {"x": 11}, {"x": 12}],
+                "nested_record": [
+                    {"child": None},
+                    {"child": {"x": 0}},
+                    {"child": {"x": 8}},
+                ],
+            },
+            schema=struct_schema,
+        )
+
+    def _stalling_batches(self):
+        yield self._tables["ABC"].to_batches()[0]
+        time.sleep(STALL_SECONDS)
+
+    def _stalling_before_first_batch(self):
+        # Nothing is yielded first, so the client's first read blocks. The schema is supplied to
+        # GeneratorStream separately and the server writes it before pulling this generator, so
+        # DoGet itself still returns.
+        time.sleep(SLOW_DOGET_STALL_SECONDS)
+        yield self._tables["ABC"].to_batches()[0]
+
+    def do_get(self, context, ticket):
+        dataset = ticket.ticket.decode()
+        if dataset == "STALL_DOGET":
+            # Nothing is sent at all, so the client blocks inside DoGet itself.
+            time.sleep(STALL_SECONDS)
+        if dataset == "SLOW_DOGET_THEN_STALL":
+            # The reader is handed back only after the delay, and its first message never arrives.
+            time.sleep(SLOW_DOGET_SECONDS)
+            return fl.GeneratorStream(self._schema, self._stalling_before_first_batch())
+        if dataset == "STALL_STREAM":
+            # The schema and one batch arrive, so the client blocks in its read loop instead.
+            return fl.GeneratorStream(self._schema, self._stalling_batches())
+        table = (
+            self._tables[dataset] if (dataset in self._tables) else self._empty_table
+        )
+        return fl.RecordBatchStream(table)
+
+    def do_put(self, context, descriptor, reader, writer):
+        dataset = descriptor.path[0].decode()
+        if dataset == "STALL_DOPUT":
+            # Blocks the DoPut call while ClickHouse's sink waits inside ISink::work.
+            time.sleep(STALL_SECONDS)
+        new_data = reader.read_all()
+        tables_to_concat = []
+        if dataset in self._tables:
+            tables_to_concat.append(self._tables[dataset])
+        tables_to_concat.append(new_data.cast(target_schema=self._schema))
+        self._tables[dataset] = pa.concat_tables(tables_to_concat)
+
+    def get_schema(self, context, descriptor):
+        dataset = descriptor.path[0].decode()
+        if dataset == "STALL_SCHEMA":
+            # Blocks the unary GetSchema, which ClickHouse issues during query analysis.
+            time.sleep(STALL_SECONDS)
+        if dataset == "SLOW_SCHEMA_THEN_ANSWER":
+            # Answers after the delay, so a deadline longer than it lets the query through.
+            time.sleep(SLOW_SCHEMA_ANSWER_SECONDS)
+        if dataset in self._tables:
+            return fl.SchemaResult(self._tables[dataset].schema)
+        else:
+            return fl.SchemaResult(self._schema)
+
+    def do_action(self, context, action):
+        return fl.FlightDescriptor.for_command("Action executed")
+
+    def get_flight_info(self, context, descriptor):
+        descriptor_ok = (descriptor.descriptor_type == fl.DescriptorType.PATH) and (
+            len(descriptor.path) == 1
+        )
+        if not descriptor_ok:
+            raise fl.FlightServerError(
+                f"Descriptor {descriptor} is not supported. Only single-component path descriptors are supported"
+            )
+        if descriptor.path[0].decode() == "STALL_FLIGHT_INFO":
+            # Blocks GetFlightInfo, which ClickHouse issues while building the read pipeline.
+            time.sleep(STALL_SECONDS)
+        ticket = descriptor.path[0]
+        endpoints = [pa.flight.FlightEndpoint(ticket, [self._location])]
+        return fl.FlightInfo(self._schema, descriptor, endpoints)
+
+
+class NoOpAuthHandler(fl.ServerAuthHandler):
+    def authenticate(self, outgoing, incoming):
+        pass
+
+    def is_valid(self, token):
+        return ""
+
+
+class BasicAuthServerMiddlewareFactory(fl.ServerMiddlewareFactory):
+    def __init__(self, creds):
+        self.creds = creds
+
+    def start_call(self, info, headers):
+        auth_header = None
+        for header in headers:
+            if header.lower() == "authorization":
+                auth_header = headers[header]
+                break
+
+        if not auth_header:
+            raise fl.FlightUnauthenticatedError("No credentials supplied")
+
+        if not auth_header[0].startswith("Basic ") and not auth_header[0].startswith(
+            "Bearer "
+        ):
+            raise fl.FlightUnauthenticatedError("No credentials supplied")
+
+        token = auth_header[0].split(" ", 1)[1]
+        decoded = base64.b64decode(token)
+        pair = decoded.decode("utf-8").split(":")
+        if pair[0] == "stall_handshake":
+            # Blocks the Handshake that AuthenticateBasicToken issues, before any dataset is named.
+            time.sleep(STALL_SECONDS)
+        if pair[0] not in self.creds:
+            raise fl.FlightUnauthenticatedError("Unknown user")
+        if pair[1] != self.creds[pair[0]]:
+            raise fl.FlightUnauthenticatedError("Wrong password")
+        return BasicAuthServerMiddleware(token)
+
+
+class BasicAuthServerMiddleware(fl.ServerMiddleware):
+    def __init__(self, token):
+        self.token = token
+
+    def sending_headers(self):
+        return {"authorization": f"Bearer {self.token}"}
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", help="Port to serve.", type=int, required=True)
+    parser.add_argument("--username", help="Specifies username.", type=str, default="")
+    parser.add_argument("--password", help="Specifies password.", type=str, default="")
+    args = parser.parse_args()
+
+    location = f"grpc+tcp://0.0.0.0:{args.port}"
+    auth_handler = None
+    middleware = None
+    use_basic_authentication = args.username != ""
+
+    if use_basic_authentication:
+        auth_handler = NoOpAuthHandler()
+        middleware = {
+            "basic": BasicAuthServerMiddlewareFactory({args.username: args.password})
+        }
+
+    flight_server = FlightServer(
+        location=location, auth_handler=auth_handler, middleware=middleware
+    )
+    flight_server.serve()

@@ -2,8 +2,6 @@
 
 -- Tests that vector search indexes use a (non-standard) index granularity of 100 mio by default.
 
-SET enable_vector_similarity_index = 1;
-
 -- After CREATE TABLE
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (id Int32, vec Array(Float32), INDEX idx(vec) TYPE vector_similarity('hnsw', 'L2Distance', 1)) ENGINE = MergeTree ORDER BY id;

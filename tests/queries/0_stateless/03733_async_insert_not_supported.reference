@@ -1,0 +1,8 @@
+chech table_join size
+40000
+insert with self deduplication with join inside mv which produces sutable result
+2
+20000
+insert with self deduplication with join inside mv which produces large result
+INSERT INTO default.src_table (id, name) FORMAT Values	ExceptionWhileProcessing	48
+INSERT INTO default.src_table (id, name) FORMAT Values	QueryFinish	0

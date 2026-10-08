@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'Amazon DocumentDB'
+description: 'ClickPipes のソースとして Amazon DocumentDB を設定するためのステップバイステップガイド'
+slug: /integrations/clickpipes/mongodb/source/documentdb
+title: 'Amazon DocumentDB ソースの設定ガイド'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'DocumentDB', 'CDC（変更データキャプチャ）', 'データインジェスト', 'リアルタイム同期']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="supported-documentdb-versions">
+  ## サポートされる DocumentDB のバージョン
+</div>
+
+ClickPipes は DocumentDB バージョン 5.0 をサポートしています。
+
+<div id="configure-change-stream-log-retention">
+  ## 変更ストリームのログ保持期間を設定する
+</div>
+
+デフォルトでは、Amazon DocumentDB の変更ストリームのログ保持期間は 3 時間ですが、DocumentDB 内の既存データ量によっては初期ロードにそれよりも大幅に長い時間がかかる場合があります。初期スナップショットが完了する前にログが切り捨てられないよう、変更ストリームのログ保持期間は 72 時間以上に設定することを推奨します。
+
+<div id="update-change-stream-log-retention-via-aws-console">
+  ### AWS Console で変更ストリームのログ保持期間を更新する
+</div>
+
+1. 左側のパネルで `Parameter groups` をクリックし、DocumentDB クラスターで使用しているパラメータグループを見つけます (デフォルトのパラメータグループを使用している場合は、変更するために、まず新しいパラメータグループを作成する必要があります) 。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="パラメータグループを選択" size="lg" border />
+
+2. `change_stream_log_retention_duration` を検索し、選択して `259200` (72時間) に編集します。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="パラメータグループを変更" size="lg" border />
+
+3. `Apply Changes` をクリックして、変更したパラメータグループをすぐに DocumentDB クラスターへ適用します。パラメータグループのステータスは `applying` に変わり、変更が適用されると `in-sync` になります。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="パラメータグループを適用" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="パラメータグループのステータス" size="lg" border />
+
+<div id="update-change-stream-log-retention-via-aws-cli">
+  ### AWS CLI で変更ストリームのログ保持期間を更新する
+</div>
+
+また、AWS CLI を使って設定することもできます。
+
+現在の変更ストリームのログ保持期間を確認するには、次を実行します。
+
+```shell
+aws docdb describe-db-cluster-parameters --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --query "Parameters[?ParameterName=='change_stream_log_retention_duration'].{Name:ParameterName,Value:ParameterValue}"
+```
+
+変更ストリームのログの保持期間を72時間に設定するには:
+
+```shell
+aws docdb modify-db-cluster-parameter-group --db-cluster-parameter-group-name <PARAMETER_GROUP_NAME> --parameters "ParameterName=change_stream_log_retention_duration,ParameterValue=259200,ApplyMethod=immediate"
+```
+
+<div id="configure-database-user">
+  ## データベースユーザーを設定する
+</div>
+
+管理者ユーザーとして DocumentDB クラスターに接続し、次のコマンドを実行して MongoDB CDC (変更データキャプチャ)  ClickPipes 用のデータベースユーザーを作成します。
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  `clickpipes_user` と `some_secure_password` は、使用するユーザー名とパスワードに必ず置き換えてください。
+</Note>
+
+<div id="whats-next">
+  ## 次のステップ
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/mongodb/index)して、DocumentDB インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。
+ClickPipe の作成時に必要になるため、DocumentDB クラスターの設定時に使用した接続情報は必ず控えておいてください。

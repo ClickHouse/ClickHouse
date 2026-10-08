@@ -1,9 +1,9 @@
 #pragma once
 
 
+#include <Loggers/ExtendedLogMessage.h>
 #include <Poco/PatternFormatter.h>
 #include <Common/DateLUT.h>
-#include <Loggers/ExtendedLogChannel.h>
 
 
 /** Format log messages own way.

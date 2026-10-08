@@ -1,0 +1,142 @@
+=== family2: repro1 ll.Date, setting OFF (throws) ===
+=== family2: repro2 a.x, setting OFF (throws) ===
+=== family2: repro1 ll.Date, setting ON ===
+D
+=== family2: repro2 a.x, setting ON ===
+X
+=== family2: repro1 GROUP BY ALL, setting ON ===
+D	1
+=== describe: 2-join star, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: qualified matcher ll.*, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+=== describe: comma-join trigger, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: explicit unique qualified identifier a.x, setting ON ===
+a.x	String					
+=== describe: explicit bare identifier x stays bare, setting ON ===
+x	String					
+=== describe: alias always wins a.x AS y, setting ON ===
+y	String					
+=== describe: real tables without aliases, setting ON ===
+ta.x	UInt8					
+ta.ka	UInt8					
+tb.kb	UInt8					
+tc.kc	UInt8					
+=== describe: real tables, explicit qualified column ta.x, setting ON ===
+ta.x	UInt8					
+=== describe: 1 join only -- unchanged even with setting ON ===
+k	UInt8					
+Date	String					
+t1.k	UInt8					
+=== describe: function projection name unchanged (ll.k + 1), setting ON ===
+plus(ll.k, 1)	UInt16					
+=== describe: SELECT * over JOIN ... USING keeps merge semantics, setting ON ===
+k	UInt8					
+ll.Date	String					
+t2.k	UInt8					
+=== describe: unaliased joined subquery gets no prefix (old parity), setting ON ===
+k	UInt8					
+Date	String					
+t1.k2	UInt8					
+t2.k3	UInt8					
+=== describe: 2-join star, setting OFF (today unchanged) ===
+ll.k	UInt8					
+Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: comma-join trigger, setting OFF (today unchanged) ===
+ll.k	UInt8					
+Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== describe: real tables without aliases, setting OFF (today unchanged) ===
+x	UInt8					
+ka	UInt8					
+kb	UInt8					
+kc	UInt8					
+=== nested outer scope, setting ON ===
+D
+=== describe: ARRAY JOIN mixed with 2 joins, setting ON ===
+ll.k	UInt8					
+arr	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== distributed: remote() two-shard, family2 shape, setting ON ===
+D
+D
+=== describe: COLUMNS(col) identifier-list form stays bare, setting ON ===
+Date	String					
+=== describe: COLUMNS(regexp) form is qualified like * (old parity), setting ON ===
+ll.Date	String					
+=== describe: *, COLUMNS(col) -- order-independent, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+Date	String					
+=== describe: COLUMNS(col), * -- order-independent, setting ON ===
+Date	String					
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== outer scope cannot see the bare COLUMNS(col) name, setting ON ===
+=== describe: CTE joined in multiple joins gets CTE-name qualifier, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== family2: outer ref into CTE-based derived table, setting ON ===
+D
+=== describe: UNION CTE joined in multiple joins gets CTE-name qualifier, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== family2: outer ref into UNION-CTE derived table, setting ON ===
+D
+E
+=== describe: two USING chains, setting ON ===
+k	UInt8					
+ll.Date	String					
+=== two USING chains: outer ref to a qualified column, setting ON ===
+D
+=== two USING chains: merged key is referenced bare, setting ON ===
+1
+=== two USING chains: merged key is not qualified, setting ON ===
+=== describe: COLUMNS(qualified) keeps the written name, setting ON ===
+ll.Date	String					
+=== family2: outer ref into a COLUMNS(qualified) derived table, setting ON ===
+D
+=== describe: COLUMNS(qualified, qualified) keeps both written names, setting ON ===
+ll.Date	String					
+t1.k	UInt8					
+=== describe: EXCEPT still matches the bare column name, setting ON ===
+ll.Date	String					
+=== describe: COLUMNS(qualified) is untouched with the setting OFF ===
+Date	String					
+=== describe: COLUMNS(qualified) is untouched at a single JOIN, setting ON ===
+Date	String					
+=== describe: COLUMNS(qualified, qualified) APPLY(toString), setting ON ===
+toString(a.x)	String					
+toString(a.y)	String					
+=== describe: COLUMNS(qualified), unrelated toString(qualified) does not leak the qualifier, setting ON ===
+ll.Date	String					
+toString(Date)	String					
+=== describe: COLUMNS(qualified) with group_by_use_nulls + ROLLUP, setting ON ===
+ll.Date	Nullable(String)					
+=== family2: outer ref, COLUMNS(qualified) with group_by_use_nulls + ROLLUP, setting ON ===
+D
+\N
+=== describe: COLUMNS(alias) keeps the written alias, setting ON ===
+z	String					
+z	String					

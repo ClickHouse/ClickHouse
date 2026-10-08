@@ -1,0 +1,45 @@
+---
+title: Estimación de recursos
+---
+
+Lo siguiente ofrece un modelo para estimar los recursos de cómputo y almacenamiento necesarios para un despliegue de ClickStack en función del volumen de ingestión previsto. Los valores resultantes son **solo estimaciones** y deben utilizarse como una **línea base inicial**; no constituyen una respuesta prescriptiva. Los requisitos reales dependen de la complejidad de las consultas, la concurrencia, las políticas de retención y la variabilidad del rendimiento de ingestión. Supervise siempre el uso de recursos y escale según sea necesario.
+
+<Warning>
+  **Todas las cifras se basan en la ingestión bruta sin comprimir**
+
+  Todas las cifras de esta página —rendimiento (MB/s, TB/mes), dimensionamiento de CPU y almacenamiento— se expresan en términos de **volumen de ingestión bruta sin comprimir**, es decir, el tamaño de los datos tal como los generan sus aplicaciones y se envían al colector de OpenTelemetry antes de aplicar cualquier compresión.
+
+  Esta es la cifra que debe estimar a partir de sus canalizaciones actuales de logs, traces y métricas. Las cifras de almacenamiento de la tabla siguiente ya tienen aplicada sobre este volumen bruto la **relación de compresión de 10x** asumida.
+</Warning>
+
+Al desplegar ClickStack, aprovisione cómputo para cubrir dos cargas de trabajo independientes: **ingestión** y **consulta**.
+
+| Carga de trabajo | Recursos estimados                                                        |
+| ---------------- | ------------------------------------------------------------------------- |
+| **Ingestión**    | 1 vCPU por cada 10 MB/s de rendimiento de ingestión sostenido             |
+| **Consulta**     | 1 vCPU por 1 QPS y por cada 10 MB/s de rendimiento de ingestión sostenido |
+
+<Info>
+  **Aislamiento de consultas frente a ingestión**
+
+  En la mayoría de los despliegues autogestionados, la ingestión y la consulta comparten los mismos nodos. En este caso, use las **CPU totales** como línea base. El escalado aislado —donde el cómputo de ingestión y el de consulta se aprovisionan de forma independiente— es compatible con ClickHouse Cloud mediante [grupos de cómputo independientes, también conocidos como Warehouses](/es/products/cloud/features/infrastructure/warehouses).
+</Info>
+
+<Accordion title="Suposiciones">
+  * Una **relación de compresión de 10x** para el almacenamiento, normalmente conservadora para logs y traces.
+  * SLA de consultas con un P50 de 1.5 segundos y un P99 de 5 segundos.
+  * Suponemos que la mayoría de las consultas se realizan sobre datos recientes, siguiendo una distribución log-normal que alcanza su pico en torno a una hora y se extiende hasta aproximadamente seis horas. Los usuarios pueden optar por aprovisionar cómputo dedicado para consultar datos más antiguos. En ClickHouse Cloud, este puede permanecer inactivo (y, por tanto, no generar costos) cuando no se utilice.
+  * Aunque el cómputo de consultas puede escalarse de forma independiente del cómputo de ingestión, sigue estando intrínsecamente vinculado al volumen de ingestión. Suponemos que, a medida que aumenta la ingestión, crece la densidad de datos, lo que da lugar a mayores volúmenes de escaneo en tiempo de consulta y, en consecuencia, a mayores requisitos de cómputo para las consultas.
+</Accordion>
+
+La siguiente tabla muestra ejemplos de dimensionamiento basados en un rendimiento de ingestión creciente en megabytes por segundo, junto con los volúmenes de datos correspondientes en terabytes por mes. Esto supone un promedio sostenido de **1 QPS** desde ClickStack en todos los tipos de consultas (búsqueda, dashboards y alertas).
+
+| MB/s | TB/mes | CPU de ingestión | CPU de consulta | CPU totales | Almacenamiento total (por mes) (GB) |
+| ---: | -----: | ---------------: | --------------: | ----------: | ----------------------------------: |
+|   10 |  25.92 |                1 |               3 |           4 |                               2,592 |
+|   20 |  51.84 |                2 |               6 |           8 |                               5,184 |
+|   50 |  129.6 |                5 |              15 |          20 |                              12,960 |
+|  100 |  259.2 |               10 |              30 |          40 |                              25,920 |
+|  200 |  518.4 |               20 |              60 |          80 |                              51,840 |
+|  500 |  1,296 |               50 |             150 |         200 |                             129,600 |
+| 1000 |  2,592 |              100 |             300 |         400 |                             259,200 |

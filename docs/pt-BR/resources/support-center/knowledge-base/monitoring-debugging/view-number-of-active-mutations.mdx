@@ -1,0 +1,45 @@
+---
+date: 2023-06-07
+title: Como visualizar o número de mutações ativas ou na fila?
+description: Monitore o número de mutações ativas ou na fila no ClickHouse, especialmente ao executar operações `ALTER` ou `UPDATE`. Use a tabela `system.mutations` para acompanhar essas mutações.
+tags: ['Tabelas do sistema']
+keywords: ['Mutações ativas', 'Mutações na fila']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como posso ver o número de mutações ativas ou na fila?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+Monitorar o número de mutações ativas ou na fila é importante se você estiver executando muitas instruções `ALTER` ou `UPDATE` em suas tabelas. Essas consultas reescrevem partes de dados e não são atômicas — elas são ordenadas de acordo com a parte em que foram criadas e aplicadas a cada parte nessa ordem. Você pode encontrar mais detalhes sobre mutações na [documentação](/pt-BR/reference/statements/alter/index#mutations).
+
+Cada mutação gera uma entrada na tabela `system.mutations`. Ao executar um grande número de mutações, você pode monitorar a quantidade de mutações em execução e na fila com isto:
+
+```
+SELECT
+   hostname() AS host,
+   count()
+   FROM clusterAllReplicas('default', 'system.mutations') WHERE not is_done
+   GROUP BY host;
+```
+
+<Note>
+  Esta consulta pressupõe que você esteja usando um cluster chamado `default`, que é o nome do seu cluster no ClickHouse Cloud. Substitua `default` pelo nome do seu cluster.
+
+  Se você não tiver um cluster, use este comando:
+
+  ```sql
+  SELECT
+     hostname() AS host,
+     count()
+     FROM system.mutations WHERE not is_done
+     GROUP BY host;
+  ```
+</Note>
+
+Também recomendamos a leitura deste [post recente no blog sobre atualizações e exclusões](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse).

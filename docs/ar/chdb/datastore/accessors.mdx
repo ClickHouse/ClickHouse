@@ -1,0 +1,640 @@
+---
+title: 'ملحقات DataStore'
+sidebarTitle: 'الملحقات'
+slug: /chdb/datastore/accessors
+description: 'ملحقات String وDateTime وArray وJSON وURL وIP وGeo مع أكثر من 185 طريقة'
+keywords: ['chdb', 'datastore', 'accessor', 'str', 'dt', 'arr', 'json', 'url', 'ip', 'geo']
+doc_type: 'reference'
+---
+
+يوفّر DataStore 7 مساحات أسماء للملحقات مع أكثر من 185 طريقة لعمليات خاصة بالمجال.
+
+| الملحق  | الطرق | الوصف                                    |
+| ------- | ----- | ---------------------------------------- |
+| `.str`  | 56    | عمليات String                            |
+| `.dt`   | 42+   | عمليات DateTime                          |
+| `.arr`  | 37    | عمليات Array (خاصة بـ ClickHouse)        |
+| `.json` | 13    | تحليل JSON (خاصة بـ ClickHouse)          |
+| `.url`  | 15    | تحليل URL (خاصة بـ ClickHouse)           |
+| `.ip`   | 9     | عمليات عناوين IP (خاصة بـ ClickHouse)    |
+| `.geo`  | 14    | عمليات Geo/المسافات (خاصة بـ ClickHouse) |
+
+***
+
+<div id="str">
+  ## ملحق السلاسل النصية (`.str`)
+</div>
+
+جميع أساليب pandas الـ56 في `.str` مدعومة، بالإضافة إلى دوال السلاسل النصية في ClickHouse.
+
+<div id="str-case">
+  ### تحويل حالة الأحرف
+</div>
+
+| الطريقة        | ClickHouse  | الوصف                       |
+| -------------- | ----------- | --------------------------- |
+| `upper()`      | `upper()`   | التحويل إلى أحرف كبيرة      |
+| `lower()`      | `lower()`   | التحويل إلى أحرف صغيرة      |
+| `capitalize()` | `initcap()` | جعل الحرف الأول كبيرًا      |
+| `title()`      | `initcap()` | تحويل النص إلى صيغة العنوان |
+| `swapcase()`   | -           | تبديل حالة الأحرف           |
+| `casefold()`   | `lower()`   | تسوية حالة الأحرف           |
+
+```python
+ds['name_upper'] = ds['name'].str.upper()
+ds['name_title'] = ds['name'].str.title()
+```
+
+<div id="str-length">
+  ### الطول والحجم
+</div>
+
+| الدالة          | ClickHouse      | الوصف                 |
+| --------------- | --------------- | --------------------- |
+| `len()`         | `length()`      | طول السلسلة (بالبايت) |
+| `char_length()` | `char_length()` | الطول بالأحرف         |
+
+```python
+ds['name_len'] = ds['name'].str.len()
+```
+
+<div id="str-substring">
+  ### السلسلة الفرعية والتقطيع
+</div>
+
+| الطريقة              | ClickHouse    | الوصف               |
+| -------------------- | ------------- | ------------------- |
+| `slice(start, stop)` | `substring()` | استخراج سلسلة فرعية |
+| `slice_replace()`    | -             | استبدال مقطع        |
+| `left(n)`            | `left()`      | أول n حرفًا         |
+| `right(n)`           | `right()`     | آخر n حرفًا         |
+| `get(i)`             | -             | الحرف عند الفهرس    |
+
+```python
+ds['first_3'] = ds['name'].str.slice(0, 3)
+ds['last_4'] = ds['name'].str.right(4)
+```
+
+<div id="str-trim">
+  ### إزالة الفراغات
+</div>
+
+| Method     | ClickHouse    | Description                       |
+| ---------- | ------------- | --------------------------------- |
+| `strip()`  | `trim()`      | إزالة المسافات البيضاء            |
+| `lstrip()` | `trimLeft()`  | إزالة المسافات البيضاء في البداية |
+| `rstrip()` | `trimRight()` | إزالة المسافات البيضاء في النهاية |
+
+```python
+ds['trimmed'] = ds['text'].str.strip()
+```
+
+<div id="str-search">
+  ### البحث والمطابقة
+</div>
+
+| الطريقة           | ClickHouse     | الوصف                       |
+| ----------------- | -------------- | --------------------------- |
+| `contains(pat)`   | `position()`   | يحتوي على سلسلة فرعية       |
+| `startswith(pat)` | `startsWith()` | يبدأ ببادئة                 |
+| `endswith(pat)`   | `endsWith()`   | ينتهي بلاحقة                |
+| `find(sub)`       | `position()`   | العثور على الموضع           |
+| `rfind(sub)`      | -              | العثور من اليمين            |
+| `index(sub)`      | `position()`   | العثور أو رفع خطأ           |
+| `rindex(sub)`     | -              | العثور من اليمين أو رفع خطأ |
+| `match(pat)`      | `match()`      | مطابقة Regex                |
+| `fullmatch(pat)`  | -              | مطابقة Regex كاملة          |
+| `count(pat)`      | -              | عدّ مرات الظهور             |
+
+```python
+# Contains substring
+ds['has_john'] = ds['name'].str.contains('John')
+
+# Regex match
+ds['valid_email'] = ds['email'].str.match(r'^[\w.-]+@[\w.-]+\.\w+$')
+```
+
+<div id="str-replace">
+  ### الاستبدال
+</div>
+
+| Method                           | ClickHouse           | الوصف               |
+| -------------------------------- | -------------------- | ------------------- |
+| `replace(pat, repl)`             | `replace()`          | استبدال المطابقات   |
+| `replace(pat, repl, regex=True)` | `replaceRegexpAll()` | استبدال بتعبير نمطي |
+| `removeprefix(prefix)`           | -                    | إزالة البادئة       |
+| `removesuffix(suffix)`           | -                    | إزالة اللاحقة       |
+| `translate(table)`               | -                    | تحويل الأحرف        |
+
+```python
+ds['cleaned'] = ds['text'].str.replace('\n', ' ')
+ds['digits_only'] = ds['phone'].str.replace(r'\D', '', regex=True)
+```
+
+<div id="str-split">
+  ### التقسيم
+</div>
+
+| الدالة            | ClickHouse        | الوصف                       |
+| ----------------- | ----------------- | --------------------------- |
+| `split(sep)`      | `splitByString()` | تقسيم إلى مصفوفة            |
+| `rsplit(sep)`     | -                 | تقسيم من اليمين             |
+| `partition(sep)`  | -                 | تقسيم إلى 3 أجزاء           |
+| `rpartition(sep)` | -                 | تقسيم من اليمين إلى 3 أجزاء |
+
+```python
+ds['parts'] = ds['path'].str.split('/')
+```
+
+<div id="str-padding">
+  ### الحشو
+</div>
+
+| الطريقة         | ClickHouse          | الوصف          |
+| --------------- | ------------------- | -------------- |
+| `pad(width)`    | `leftPad()`         | حشو إلى اليسار |
+| `ljust(width)`  | `rightPad()`        | محاذاة لليمين  |
+| `rjust(width)`  | `leftPad()`         | محاذاة لليسار  |
+| `center(width)` | -                   | توسيط          |
+| `zfill(width)`  | `leftPad(..., '0')` | ملء بالأصفار   |
+
+```python
+ds['padded_id'] = ds['id'].astype(str).str.zfill(6)
+```
+
+<div id="str-tests">
+  ### اختبارات الأحرف
+</div>
+
+| الطريقة       | الوصف             |
+| ------------- | ----------------- |
+| `isalpha()`   | كلها حروف         |
+| `isdigit()`   | كلها أرقام        |
+| `isalnum()`   | حروف وأرقام       |
+| `isspace()`   | كلها مسافات بيضاء |
+| `isupper()`   | كلها أحرف كبيرة   |
+| `islower()`   | كلها أحرف صغيرة   |
+| `istitle()`   | بصيغة العنوان     |
+| `isnumeric()` | محارف رقمية       |
+| `isdecimal()` | محارف عشرية       |
+
+```python
+ds['is_numeric'] = ds['code'].str.isdigit()
+```
+
+<div id="str-other">
+  ### أخرى
+</div>
+
+| الطريقة            | الوصف                 |
+| ------------------ | --------------------- |
+| `repeat(n)`        | كرّر n مرة            |
+| `reverse()`        | اعكس السلسلة النصية   |
+| `wrap(width)`      | لفّ النص              |
+| `encode(enc)`      | رمّز                  |
+| `decode(enc)`      | فكّ الترميز           |
+| `normalize(form)`  | طبّع وفق Unicode      |
+| `extract(pat)`     | استخرج مجموعات Regex  |
+| `extractall(pat)`  | استخرج جميع المطابقات |
+| `cat(sep)`         | صِل الجميع            |
+| `get_dummies(sep)` | المتغيرات الوهمية     |
+
+***
+
+<div id="dt">
+  ## ملحق DateTime (`.dt`)
+</div>
+
+جميع أساليب `.dt` في pandas البالغ عددها أكثر من 42، بالإضافة إلى دوال التاريخ والوقت في ClickHouse.
+
+<div id="dt-components">
+  ### مكوّنات التاريخ
+</div>
+
+| الخاصية         | ClickHouse        | الوصف                   |
+| --------------- | ----------------- | ----------------------- |
+| `year`          | `toYear()`        | السنة                   |
+| `month`         | `toMonth()`       | الشهر (1-12)            |
+| `day`           | `toDayOfMonth()`  | اليوم (1-31)            |
+| `hour`          | `toHour()`        | الساعة (0-23)           |
+| `minute`        | `toMinute()`      | الدقيقة (0-59)          |
+| `second`        | `toSecond()`      | الثانية (0-59)          |
+| `millisecond`   | `toMillisecond()` | المللي ثانية            |
+| `microsecond`   | `toMicrosecond()` | الميكروثانية            |
+| `quarter`       | `toQuarter()`     | الربع (1-4)             |
+| `dayofweek`     | `toDayOfWeek()`   | يوم الأسبوع (0=الاثنين) |
+| `dayofyear`     | `toDayOfYear()`   | اليوم من السنة          |
+| `week`          | `toWeek()`        | رقم الأسبوع             |
+| `days_in_month` | -                 | عدد الأيام في الشهر     |
+
+```python
+ds['year'] = ds['date'].dt.year
+ds['month'] = ds['date'].dt.month
+ds['day_of_week'] = ds['date'].dt.dayofweek
+```
+
+<div id="dt-truncation">
+  ### الاقتطاع
+</div>
+
+| الدالة                  | ClickHouse           | الوصف         |
+| ----------------------- | -------------------- | ------------- |
+| `to_start_of_day()`     | `toStartOfDay()`     | بداية اليوم   |
+| `to_start_of_week()`    | `toStartOfWeek()`    | بداية الأسبوع |
+| `to_start_of_month()`   | `toStartOfMonth()`   | بداية الشهر   |
+| `to_start_of_quarter()` | `toStartOfQuarter()` | بداية الربع   |
+| `to_start_of_year()`    | `toStartOfYear()`    | بداية السنة   |
+| `to_start_of_hour()`    | `toStartOfHour()`    | بداية الساعة  |
+| `to_start_of_minute()`  | `toStartOfMinute()`  | بداية الدقيقة |
+
+```python
+ds['month_start'] = ds['date'].dt.to_start_of_month()
+```
+
+<div id="dt-arithmetic">
+  ### العمليات الحسابية
+</div>
+
+| الطريقة              | ClickHouse         | الوصف        |
+| -------------------- | ------------------ | ------------ |
+| `add_years(n)`       | `addYears()`       | إضافة سنوات  |
+| `add_months(n)`      | `addMonths()`      | إضافة أشهر   |
+| `add_weeks(n)`       | `addWeeks()`       | إضافة أسابيع |
+| `add_days(n)`        | `addDays()`        | إضافة أيام   |
+| `add_hours(n)`       | `addHours()`       | إضافة ساعات  |
+| `add_minutes(n)`     | `addMinutes()`     | إضافة دقائق  |
+| `add_seconds(n)`     | `addSeconds()`     | إضافة ثوانٍ  |
+| `subtract_years(n)`  | `subtractYears()`  | طرح سنوات    |
+| `subtract_months(n)` | `subtractMonths()` | طرح أشهر     |
+| `subtract_days(n)`   | `subtractDays()`   | طرح أيام     |
+
+```python
+ds['next_month'] = ds['date'].dt.add_months(1)
+ds['last_week'] = ds['date'].dt.subtract_weeks(1)
+```
+
+<div id="dt-checks">
+  ### التحققات المنطقية
+</div>
+
+| الطريقة              | الوصف            |
+| -------------------- | ---------------- |
+| `is_month_start()`   | أول يوم في الشهر |
+| `is_month_end()`     | آخر يوم في الشهر |
+| `is_quarter_start()` | أول يوم في الربع |
+| `is_quarter_end()`   | آخر يوم في الربع |
+| `is_year_start()`    | أول يوم في السنة |
+| `is_year_end()`      | آخر يوم في السنة |
+| `is_leap_year()`     | سنة كبيسة        |
+
+```python
+ds['is_eom'] = ds['date'].dt.is_month_end()
+```
+
+<div id="dt-formatting">
+  ### التنسيق
+</div>
+
+| Method          | ClickHouse         | Description         |
+| --------------- | ------------------ | ------------------- |
+| `strftime(fmt)` | `formatDateTime()` | التنسيق كسلسلة نصية |
+| `day_name()`    | -                  | اسم اليوم           |
+| `month_name()`  | -                  | اسم الشهر           |
+
+```python
+ds['date_str'] = ds['date'].dt.strftime('%Y-%m-%d')
+ds['day_name'] = ds['date'].dt.day_name()
+```
+
+<div id="dt-timezone">
+  ### المنطقة الزمنية
+</div>
+
+| الدالة            | ClickHouse     | الوصف                 |
+| ----------------- | -------------- | --------------------- |
+| `tz_convert(tz)`  | `toTimezone()` | تحويل المنطقة الزمنية |
+| `tz_localize(tz)` | -              | إسناد منطقة زمنية     |
+
+```python
+ds['utc_time'] = ds['timestamp'].dt.tz_convert('UTC')
+```
+
+***
+
+<div id="arr">
+  ## ملحق Array (`.arr`)
+</div>
+
+عمليات Array الخاصة بـ ClickHouse (37 طريقة).
+
+<div id="arr-properties">
+  ### الخصائص
+</div>
+
+| الخاصية     | ClickHouse   | الوصف                |
+| ----------- | ------------ | -------------------- |
+| `length`    | `length()`   | طول المصفوفة         |
+| `size`      | `length()`   | اسم مستعار لـ length |
+| `empty`     | `empty()`    | هل هي فارغة          |
+| `not_empty` | `notEmpty()` | ليست فارغة           |
+
+```python
+ds['tag_count'] = ds['tags'].arr.length
+ds['has_tags'] = ds['tags'].arr.not_empty
+```
+
+<div id="arr-access">
+  ### الوصول إلى العناصر
+</div>
+
+| الدالة                  | ClickHouse              | الوصف              |
+| ----------------------- | ----------------------- | ------------------ |
+| `array_first()`         | `arrayElement(..., 1)`  | العنصر الأول       |
+| `array_last()`          | `arrayElement(..., -1)` | العنصر الأخير      |
+| `array_element(n)`      | `arrayElement()`        | العنصر رقم n       |
+| `array_slice(off, len)` | `arraySlice()`          | اقتطاع من المصفوفة |
+
+```python
+ds['first_tag'] = ds['tags'].arr.array_first()
+ds['last_tag'] = ds['tags'].arr.array_last()
+```
+
+<div id="arr-aggregations">
+  ### عمليات التجميع
+</div>
+
+| الدالة            | ClickHouse       | الوصف             |
+| ----------------- | ---------------- | ----------------- |
+| `array_sum()`     | `arraySum()`     | مجموع العناصر     |
+| `array_avg()`     | `arrayAvg()`     | المتوسط           |
+| `array_min()`     | `arrayMin()`     | الحد الأدنى       |
+| `array_max()`     | `arrayMax()`     | الحد الأقصى       |
+| `array_product()` | `arrayProduct()` | حاصل الضرب        |
+| `array_uniq()`    | `arrayUniq()`    | عدد القيم الفريدة |
+
+```python
+ds['total'] = ds['values'].arr.array_sum()
+ds['average'] = ds['values'].arr.array_avg()
+```
+
+<div id="arr-transformations">
+  ### التحويلات
+</div>
+
+| الدالة                 | ClickHouse           | الوصف                     |
+| ---------------------- | -------------------- | ------------------------- |
+| `array_sort()`         | `arraySort()`        | فرز تصاعدي                |
+| `array_reverse_sort()` | `arrayReverseSort()` | فرز تنازلي                |
+| `array_reverse()`      | `arrayReverse()`     | عكس الترتيب               |
+| `array_distinct()`     | `arrayDistinct()`    | عناصر فريدة               |
+| `array_compact()`      | `arrayCompact()`     | إزالة التكرارات المتتالية |
+| `array_flatten()`      | `arrayFlatten()`     | تسطيح البنية المتداخلة    |
+
+```python
+ds['sorted_tags'] = ds['tags'].arr.array_sort()
+ds['unique_tags'] = ds['tags'].arr.array_distinct()
+```
+
+<div id="arr-modifications">
+  ### التعديلات
+</div>
+
+| الطريقة                  | ClickHouse         | الوصف                  |
+| ------------------------ | ------------------ | ---------------------- |
+| `array_push_back(elem)`  | `arrayPushBack()`  | إضافة إلى آخر المصفوفة |
+| `array_push_front(elem)` | `arrayPushFront()` | إضافة إلى أول المصفوفة |
+| `array_pop_back()`       | `arrayPopBack()`   | إزالة العنصر الأخير    |
+| `array_pop_front()`      | `arrayPopFront()`  | إزالة العنصر الأول     |
+| `array_concat(other)`    | `arrayConcat()`    | ربط المصفوفات          |
+
+<div id="arr-search">
+  ### البحث
+</div>
+
+| Method              | ClickHouse     | Description           |
+| ------------------- | -------------- | --------------------- |
+| `has(elem)`         | `has()`        | يحتوي على العنصر      |
+| `index_of(elem)`    | `indexOf()`    | العثور على الموضع     |
+| `count_equal(elem)` | `countEqual()` | حساب عدد مرات التكرار |
+
+```python
+ds['has_python'] = ds['skills'].arr.has('Python')
+```
+
+<div id="arr-string">
+  ### عمليات السلاسل النصية
+</div>
+
+| الطريقة                    | ClickHouse            | الوصف             |
+| -------------------------- | --------------------- | ----------------- |
+| `array_string_concat(sep)` | `arrayStringConcat()` | دمج في سلسلة نصية |
+
+```python
+ds['tags_str'] = ds['tags'].arr.array_string_concat(', ')
+```
+
+***
+
+<div id="json">
+  ## ملحق JSON (`.json`)
+</div>
+
+تحليل JSON الخاص بـ ClickHouse (13 طريقة).
+
+| الطريقة            | ClickHouse            | الوصف                  |
+| ------------------ | --------------------- | ---------------------- |
+| `get_string(path)` | `JSONExtractString()` | استخراج سلسلة نصية     |
+| `get_int(path)`    | `JSONExtractInt()`    | استخراج عدد صحيح       |
+| `get_float(path)`  | `JSONExtractFloat()`  | استخراج عدد عشري       |
+| `get_bool(path)`   | `JSONExtractBool()`   | استخراج قيمة منطقية    |
+| `get_raw(path)`    | `JSONExtractRaw()`    | استخراج JSON خام       |
+| `get_keys()`       | `JSONExtractKeys()`   | الحصول على المفاتيح    |
+| `get_type(path)`   | `JSONType()`          | الحصول على النوع       |
+| `get_length(path)` | `JSONLength()`        | الحصول على الطول       |
+| `has_key(key)`     | `JSONHas()`           | التحقق من وجود المفتاح |
+| `is_valid()`       | `isValidJSON()`       | التحقق من صحة JSON     |
+| `to_json_string()` | `toJSONString()`      | التحويل إلى JSON       |
+
+```python
+# Parse JSON columns
+ds['user_name'] = ds['json_data'].json.get_string('user.name')
+ds['user_age'] = ds['json_data'].json.get_int('user.age')
+ds['is_active'] = ds['json_data'].json.get_bool('user.active')
+ds['has_email'] = ds['json_data'].json.has_key('user.email')
+```
+
+***
+
+<div id="url">
+  ## مُلحق URL (`.url`)
+</div>
+
+تحليل عناوين URL الخاص بـ ClickHouse (15 طريقة).
+
+| الطريقة                       | ClickHouse               | الوصف                     |
+| ----------------------------- | ------------------------ | ------------------------- |
+| `domain()`                    | `domain()`               | استخراج النطاق            |
+| `domain_without_www()`        | `domainWithoutWWW()`     | النطاق بدون www           |
+| `top_level_domain()`          | `topLevelDomain()`       | نطاق المستوى الأعلى       |
+| `protocol()`                  | `protocol()`             | البروتوكول (http/https)   |
+| `path()`                      | `path()`                 | مسار URL                  |
+| `path_full()`                 | `pathFull()`             | المسار مع سلسلة الاستعلام |
+| `query_string()`              | `queryString()`          | سلسلة الاستعلام           |
+| `fragment()`                  | `fragment()`             | المقطع (#...)             |
+| `port()`                      | `port()`                 | رقم المنفذ                |
+| `extract_url_parameter(name)` | `extractURLParameter()`  | جلب معامل الاستعلام       |
+| `extract_url_parameters()`    | `extractURLParameters()` | جميع المعاملات            |
+| `cut_url_parameter(name)`     | `cutURLParameter()`      | إزالة المعامل             |
+| `decode_url_component()`      | `decodeURLComponent()`   | فك ترميز URL              |
+| `encode_url_component()`      | `encodeURLComponent()`   | ترميز URL                 |
+
+```python
+# Parse URLs
+ds['domain'] = ds['url'].url.domain()
+ds['path'] = ds['url'].url.path()
+ds['utm_source'] = ds['url'].url.extract_url_parameter('utm_source')
+```
+
+***
+
+<div id="ip">
+  ## ملحق IP (`.ip`)
+</div>
+
+عمليات عناوين IP الخاصة بـ ClickHouse (9 طرائق).
+
+| Method                     | ClickHouse          | Description              |
+| -------------------------- | ------------------- | ------------------------ |
+| `to_ipv4()`                | `toIPv4()`          | التحويل إلى IPv4         |
+| `to_ipv6()`                | `toIPv6()`          | التحويل إلى IPv6         |
+| `ipv4_num_to_string()`     | `IPv4NumToString()` | تحويل الرقم إلى سلسلة    |
+| `ipv4_string_to_num()`     | `IPv4StringToNum()` | تحويل السلسلة إلى رقم    |
+| `ipv6_num_to_string()`     | `IPv6NumToString()` | تحويل رقم IPv6 إلى سلسلة |
+| `ipv4_to_ipv6()`           | `IPv4ToIPv6()`      | التحويل إلى IPv6         |
+| `is_ipv4_string()`         | `isIPv4String()`    | التحقق من صحة IPv4       |
+| `is_ipv6_string()`         | `isIPv6String()`    | التحقق من صحة IPv6       |
+| `ipv4_cidr_to_range(cidr)` | `IPv4CIDRToRange()` | تحويل CIDR إلى نطاق      |
+
+```python
+# IP operations
+ds['is_valid_ip'] = ds['ip'].ip.is_ipv4_string()
+ds['ip_num'] = ds['ip'].ip.ipv4_string_to_num()
+```
+
+***
+
+<div id="geo">
+  ## ملحق Geo (`.geo`)
+</div>
+
+عمليات Geo والمسافة الخاصة بـClickHouse (14 دالة).
+
+<div id="geo-distance">
+  ### دوال المسافة
+</div>
+
+| الطريقة                       | ClickHouse              | الوصف                  |
+| ----------------------------- | ----------------------- | ---------------------- |
+| `great_circle_distance(...)`  | `greatCircleDistance()` | مسافة الدائرة العظمى   |
+| `geo_distance(...)`           | `geoDistance()`         | المسافة وفق WGS-84     |
+| `l1_distance(v1, v2)`         | `L1Distance()`          | مسافة مانهاتن          |
+| `l2_distance(v1, v2)`         | `L2Distance()`          | المسافة الإقليدية      |
+| `l2_squared_distance(v1, v2)` | `L2SquaredDistance()`   | مربع المسافة الإقليدية |
+| `linf_distance(v1, v2)`       | `LinfDistance()`        | مسافة تشيبيشيف         |
+| `cosine_distance(v1, v2)`     | `cosineDistance()`      | مسافة جيب التمام       |
+
+<div id="geo-vector">
+  ### عمليات المتجهات
+</div>
+
+| الطريقة               | ClickHouse      | الوصف        |
+| --------------------- | --------------- | ------------ |
+| `dot_product(v1, v2)` | `dotProduct()`  | الضرب النقطي |
+| `l2_norm(vec)`        | `L2Norm()`      | معيار المتجه |
+| `l2_normalize(vec)`   | `L2Normalize()` | التطبيع      |
+
+<div id="geo-h3">
+  ### دوال H3
+</div>
+
+| الطريقة                    | ClickHouse  | الوصف                     |
+| -------------------------- | ----------- | ------------------------- |
+| `geo_to_h3(lon, lat, res)` | `geoToH3()` | تحويل Geo إلى فهرس H3     |
+| `h3_to_geo(h3)`            | `h3ToGeo()` | تحويل H3 إلى إحداثيات Geo |
+
+<div id="geo-point">
+  ### عمليات Point
+</div>
+
+| الطريقة                      | ClickHouse          | الوصف                             |
+| ---------------------------- | ------------------- | --------------------------------- |
+| `point_in_polygon(pt, poly)` | `pointInPolygon()`  | وجود Point داخل Polygon           |
+| `point_in_ellipses(...)`     | `pointInEllipses()` | وجود Point داخل الأشكال البيضاوية |
+
+```python
+from chdb.datastore import F
+
+# Calculate distances
+ds['distance'] = F.great_circle_distance(
+    ds['lon1'], ds['lat1'],
+    ds['lon2'], ds['lat2']
+)
+
+# Vector similarity
+ds['similarity'] = F.cosine_distance(ds['embedding1'], ds['embedding2'])
+```
+
+***
+
+<div id="using-accessors">
+  ## استخدام الملحقات
+</div>
+
+<div id="lazy">
+  ### التقييم الكسول
+</div>
+
+معظم أساليب الملحقات كسولة — إذ تُرجِع تعبيرات يجري تقييمها لاحقًا:
+
+```python
+# All these are lazy
+ds['name_upper'] = ds['name'].str.upper()  # Not executed yet
+ds['year'] = ds['date'].dt.year            # Not executed yet
+ds['domain'] = ds['url'].url.domain()      # Not executed yet
+
+# Execution happens when you access results
+df = ds.to_df()  # Now everything executes
+```
+
+<div id="execute-immediately">
+  ### الطرق التي تُنفَّذ مباشرةً
+</div>
+
+يجب تنفيذ بعض طرق `.str` لأنها تغيّر البنية:
+
+| الطريقة            | يُرجع               | السبب              |
+| ------------------ | ------------------- | ------------------ |
+| `partition(sep)`   | DataStore (3 أعمدة) | ينشئ عدة أعمدة     |
+| `rpartition(sep)`  | DataStore (3 أعمدة) | ينشئ عدة أعمدة     |
+| `get_dummies(sep)` | DataStore (N أعمدة) | عدد أعمدة متغيّر   |
+| `extractall(pat)`  | DataStore           | نتيجة بفهرس متعدد  |
+| `cat(sep)`         | str                 | تجميع (N صفوف → 1) |
+
+<div id="chaining">
+  ### ربط الملحقات معًا
+</div>
+
+يمكن ربط أساليب الملحقات معًا:
+
+```python
+ds['clean_name'] = (ds['name']
+    .str.strip()
+    .str.lower()
+    .str.replace(' ', '_')
+)
+
+ds['next_month_start'] = (ds['date']
+    .dt.add_months(1)
+    .dt.to_start_of_month()
+)
+```

@@ -17,21 +17,23 @@ drop table if exists table_map;
 create table table_map (a Map(String, String), b String) engine = MergeTree() order by a SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into table_map values ({'name':'zhangsan', 'gender':'male'}, 'name'), ({'name':'lisi', 'gender':'female'}, 'gender');
 select a[b] from table_map;
-select b from table_map where a = map('name','lisi', 'gender', 'female');
+-- Use mapSort to compare maps up to key order (bucketed serialization may reorder keys)
+select b from table_map where mapSort(a) = mapSort(map('name','lisi', 'gender', 'female'));
 drop table if exists table_map;
 
 -- Big Integer type
 
 create table table_map (d DATE, m Map(Int8, UInt256)) ENGINE = MergeTree() order by d SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into table_map values ('2020-01-01', map(1, 0, 2, 1));
-select * from table_map;
+-- Use mapSort to normalize key order (bucketed serialization may reorder keys)
+select d, mapSort(m) from table_map;
 drop table table_map;
 
 -- Integer type
 
 create table table_map (d DATE, m Map(Int8, Int8)) ENGINE = MergeTree() order by d SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
 insert into table_map values ('2020-01-01', map(1, 0, 2, -1));
-select * from table_map;
+select d, mapSort(m) from table_map;
 drop table table_map;
 
 -- Unsigned Int type
@@ -51,7 +53,7 @@ insert into table_map select map('k2', [number, number + 2, number * 2]) from nu
 select a['k1'] as col1 from table_map order by col1;
 drop table if exists table_map;
 
-SELECT CAST(([1, 2, 3], ['1', '2', 'foo']), 'Map(UInt8, String)') AS map, map[1];
+SELECT mapSort(CAST(([1, 2, 3], ['1', '2', 'foo']), 'Map(UInt8, String)')) AS map, map[1];
 
 CREATE TABLE table_map (n UInt32, m Map(String, Int))
 ENGINE = MergeTree ORDER BY n SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = '10Mi';

@@ -23,6 +23,6 @@ SELECT dictGetUInt64('dict', 'val', toUInt64(0));
 SELECT query_count FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict';
 
 SELECT 'CREATE DATABASE';
-DROP DATABASE IF EXISTS empty_db_01036;
-CREATE DATABASE IF NOT EXISTS empty_db_01036;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT query_count FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict';

@@ -40,6 +40,7 @@ public:
     virtual size_t sizeInBytes() const = 0;
     virtual size_t count() const = 0;
     virtual size_t maxSizeInBytes() const = 0;
+    virtual size_t maxCount() const = 0;
 
     virtual void setMaxCount(size_t /*max_count*/) = 0;
     virtual void setMaxSizeInBytes(size_t /*max_size_in_bytes*/) = 0;

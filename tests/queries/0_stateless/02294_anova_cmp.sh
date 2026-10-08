@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# no-fasttest: Python is not so fast
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

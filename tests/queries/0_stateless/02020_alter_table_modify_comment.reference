@@ -1,25 +1,25 @@
 engine : Null
 initial comment
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'Test table with comment\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = `Null`\nCOMMENT \'Test table with comment\'
 comment=	Test table with comment
 
 change a comment
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'new comment on a table\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = `Null`\nCOMMENT \'new comment on a table\'
 comment=	new comment on a table
 
 remove a comment
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = `Null`
 comment=	
 
 add a comment back
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'another comment on a table\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = `Null`\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
 
 detach table
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'another comment on a table\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = `Null`\nCOMMENT \'another comment on a table\'
 
 re-attach table
-CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Null\nCOMMENT \'another comment on a table\'
+CREATE TABLE default.comment_test_table\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = `Null`\nCOMMENT \'another comment on a table\'
 comment=	another comment on a table
 
 engine : Memory

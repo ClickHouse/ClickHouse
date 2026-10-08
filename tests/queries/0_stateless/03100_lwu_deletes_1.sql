@@ -5,7 +5,7 @@ SYSTEM STOP MERGES t_lwu_delete;
 
 INSERT INTO t_lwu_delete SELECT number, number FROM numbers(10000);
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
 
 SELECT sum(v) FROM t_lwu_delete;

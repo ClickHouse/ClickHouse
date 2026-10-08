@@ -1,7 +1,5 @@
 -- Tags: no-fasttest, no-ordinary-database
 
-SET enable_vector_similarity_index = 1;
-
 -- Usage of vector similarity index and further skipping indexes on the same table (issue #71381)
 
 DROP TABLE IF EXISTS tab;

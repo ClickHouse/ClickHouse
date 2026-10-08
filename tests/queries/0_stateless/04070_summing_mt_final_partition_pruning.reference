@@ -1,0 +1,12 @@
+--- SummingMergeTree FINAL no filter
+1	30
+2	50
+--- SummingMergeTree FINAL WHERE category != b
+1	30
+2	50
+--- SummingMergeTree FINAL WHERE category = a
+1	30
+--- AggregatingMergeTree FINAL no filter
+1	20
+--- AggregatingMergeTree FINAL WHERE category != x
+1	20

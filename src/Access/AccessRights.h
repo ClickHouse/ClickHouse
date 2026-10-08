@@ -38,6 +38,10 @@ public:
     /// Returns the information about all the access granted.
     AccessRightsElements getElements() const;
 
+    /// Returns the subset of access rights that can be granted to others
+    /// (i.e. rights with GRANT OPTION, with partial revokes applied).
+    AccessRights getGrantableRights() const;
+
     /// Grants access on a specified database/table/column.
     /// Does nothing if the specified access has been already granted.
     void grant(const AccessFlags & flags);
@@ -159,6 +163,15 @@ public:
 
     /// Makes a difference (relative complement) of access rights.
     void makeDifference(const AccessRights & other);
+
+    /// Returns filters for specific parameter
+    /// S3('s3://url.*')
+    struct Filter
+    {
+        AccessFlags access_flags;
+        String path;
+    };
+    std::vector<Filter> getFilters(std::string_view parameter) const;
 
     /// Traverse the tree and modify each access flags.
     using ModifyFlagsFunction = std::function<AccessFlags(

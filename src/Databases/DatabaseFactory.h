@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
+#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/ASTLiteral.h>
@@ -22,7 +25,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
     if (!ast || !ast->as<ASTLiteral>())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine {} requested literal argument.", engine_name);
 
-    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
+    return static_cast<ValueType>(ast->as<ASTLiteral>()->value.safeGet<ValueType>());
 }
 
 class DatabaseFactory : private boost::noncopyable, public IHints<>
@@ -30,6 +33,11 @@ class DatabaseFactory : private boost::noncopyable, public IHints<>
 public:
 
     static DatabaseFactory & instance();
+
+    /// Helper function to validate if a specific database engine supports a setting.
+    /// Used to tell whether a setting from the `SETTINGS` clause of `CREATE DATABASE` belongs to the
+    /// engine or to the query, before the start of the query interpretation.
+    using HasBuiltinSettingFn = bool(std::string_view);
 
     struct Arguments
     {
@@ -41,6 +49,16 @@ public:
         const String & metadata_path;
         const UUID & uuid;
         ContextPtr & context;
+        LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE;
+        /// True when the database is created by the server itself (e.g. loading metadata on startup) rather
+        /// than by a user query. Lets an engine distinguish an internal reload from a user `ATTACH DATABASE`.
+        bool internal = false;
+        /// True only when the server replays a definition it stored itself, during startup metadata loading.
+        /// `internal` does not imply it: wrappers such as `PARALLEL WITH` run user statements as internal ones.
+        bool is_metadata_replay = false;
+        /// True when the definition comes from a backup being restored. Weaker than `is_metadata_replay`:
+        /// a backup may be crafted by the user, so it must not skip safety checks.
+        bool is_restore_from_backup = false;
     };
 
     struct EngineFeatures
@@ -48,6 +66,18 @@ public:
         bool supports_arguments = false;
         bool supports_settings = false;
         bool supports_table_overrides = false;
+        /// Whether this database engine accesses external data sources
+        /// (e.g. MySQL, PostgreSQL, S3, DataLakeCatalog).
+        /// Used by restore to skip external databases when
+        /// restore_replace_external_engines_to_null is set.
+        bool is_external = false;
+        /// Source access type used by `addImplicitAccessRights` to bridge
+        /// `READ`/`WRITE ON <SOURCE>` grants to implicit `TABLE_ENGINE` grants.
+        /// Defaults to `std::nullopt` for non-source engines.
+        std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
+
+        /// Must be provided whenever `supports_settings` is set; `registerDatabase` enforces it.
+        HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
     };
 
     using CreatorFn = std::function<DatabasePtr(const Arguments & arguments)>;
@@ -56,9 +86,10 @@ public:
     {
         CreatorFn creator_fn;
         EngineFeatures features;
+        Documentation documentation;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false, bool is_metadata_replay = false, bool is_restore_from_backup = false);
 
     using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
@@ -66,13 +97,22 @@ public:
         .supports_arguments = false,
         .supports_settings = false,
         .supports_table_overrides = false,
-    });
+        .is_external = false,
+        .source_access_type = std::nullopt,
+        .has_builtin_setting_fn = nullptr,
+    }, Documentation documentation = {});
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 
-    std::vector<String> getAllRegisteredNames() const override
+    /// Features of a registered database engine, or nullptr if the engine is not registered.
+    const EngineFeatures * tryGetDatabaseEngineFeatures(const String & engine_name) const;
+
+    /// Returns true if the given database engine accesses external data sources.
+    bool isDatabaseExternal(const String & engine_name) const;
+
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(database_engines.begin(), database_engines.end(), std::back_inserter(result), getter);
         return result;
@@ -81,7 +121,7 @@ public:
 private:
     DatabaseEngines database_engines;
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context);
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal, bool is_metadata_replay, bool is_restore_from_backup);
 
     /// validate validates the database engine that's specified in the create query for
     /// engine arguments, settings and table overrides.

@@ -23,7 +23,7 @@ public:
     /** with_names - in the first line the header with column names
       * with_types - on the next line header with type names
       */
-    CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+    CSVRowInputFormat(SharedHeader header_, ReadBuffer & in_, const Params & params_,
                       bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSVRowInputFormat"; }
@@ -32,10 +32,10 @@ public:
     void resetReadBuffer() override;
 
 protected:
-    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
+    CSVRowInputFormat(SharedHeader header_, std::shared_ptr<PeekableReadBuffer> in_, const Params & params_,
                                bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<CSVFormatReader> format_reader_);
 
-    CSVRowInputFormat(const Block & header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
+    CSVRowInputFormat(SharedHeader header_, std::shared_ptr<PeekableReadBuffer> in_buf_, const Params & params_,
                       bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
 private:
@@ -61,7 +61,9 @@ public:
         return *pos != '\n' && *pos != '\r' && *pos != format_settings.csv.delimiter && *pos != ' ' && *pos != '\t';
     }
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    void setDataTypes(const DataTypes & types) override;
+
+    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name, size_t column_index) override;
 
     void skipRow() override;
 
@@ -99,9 +101,15 @@ public:
 
 protected:
     PeekableReadBuffer * buf;
+
+    /// Whether the whitespace in front of a field has to be skipped, for every column of the header.
+    /// With `input_format_csv_trim_whitespaces` disabled that whitespace is a part of the value, but
+    /// only for String and FixedString, so the answer depends on nothing but the column type and is
+    /// worked out once in `setDataTypes` rather than for every field of every row.
+    std::vector<UInt8> skip_whitespaces_before_field;
 };
 
-class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
+class CSVSchemaReader final : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);

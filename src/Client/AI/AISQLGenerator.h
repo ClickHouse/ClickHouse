@@ -14,8 +14,8 @@ namespace DB
 class AISQLGenerator
 {
 public:
-    /// Constructor with configuration and query executor
-    AISQLGenerator(const AIConfiguration & config, QueryExecutor executor, std::ostream & output_stream);
+    /// Constructor with configuration, AI client, and query executor
+    AISQLGenerator(const AIConfiguration & config, ai::Client client, QueryExecutor executor, std::ostream & output_stream);
 
     /// Generate SQL from natural language prompt
     /// Returns the generated SQL query on success, throws exception on error

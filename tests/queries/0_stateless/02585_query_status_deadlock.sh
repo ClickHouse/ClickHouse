@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 while true
 do
-    res=$($CLICKHOUSE_CLIENT -q "select query, event_time from system.query_log where query_id = '$QUERY_ID' and current_database = '$CLICKHOUSE_DATABASE' and query like 'select%' limit 1")
+    res=$($CLICKHOUSE_CLIENT -q "select query, event_time from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$QUERY_ID' and current_database = '$CLICKHOUSE_DATABASE' and query like 'select%' limit 1")
     if [ -n "$res" ]; then
         break
     fi

@@ -1,0 +1,14 @@
+String -> JSON
+\N
+JSON -> JSON
+\N
+Tuple -> JSON
+\N
+Map -> JSON
+\N
+Valid String -> JSON
+{"a":42}
+Valid JSON -> JSON
+{"a":42}
+Valid Tuple -> JSON
+{"a":42}

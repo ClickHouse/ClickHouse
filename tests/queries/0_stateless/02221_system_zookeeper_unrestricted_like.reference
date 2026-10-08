@@ -8,6 +8,7 @@ blocks
 columns
 columns
 creator_info
+deduplication_hashes
 failed_parts
 flags
 host
@@ -36,12 +37,8 @@ pinned_part_uuids
 queue
 quorum
 replicas
-shared
-shared
 table_shared_id
 temp
-zero_copy_hdfs
-zero_copy_s3
 -------------------------
 1
 abandonable_lock-insert
@@ -53,6 +50,7 @@ blocks
 columns
 columns
 creator_info
+deduplication_hashes
 failed_parts
 flags
 host
@@ -81,9 +79,5 @@ pinned_part_uuids
 queue
 quorum
 replicas
-shared
-shared
 table_shared_id
 temp
-zero_copy_hdfs
-zero_copy_s3

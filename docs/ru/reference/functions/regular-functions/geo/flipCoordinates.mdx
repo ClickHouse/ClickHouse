@@ -1,0 +1,97 @@
+---
+description: 'Документация по flipCoordinates'
+sidebarTitle: 'Перестановка координат'
+slug: /sql-reference/functions/geo/flipCoordinates
+title: 'Перестановка координат'
+doc_type: 'reference'
+---
+
+<div id="flipcoordinates">
+  ## flipCoordinates
+</div>
+
+Функция `flipCoordinates` меняет местами координаты точки, Ring, Polygon или multipolygon. Это полезно, например, при преобразовании между системами координат, где порядок широты и долготы различается.
+
+```sql
+flipCoordinates(coordinates)
+```
+
+<div id="input-parameters">
+  ### Входные параметры
+</div>
+
+* `coordinates` — кортеж, представляющий точку `(x, y)`, или массив таких кортежей, представляющий Ring, Polygon или Multipolygon. Поддерживаются следующие входные типы:
+  * [**Point**](/ru/reference/data-types/geo#point): кортеж `(x, y)`, где `x` и `y` — значения [Float64](/ru/reference/data-types/float).
+  * [**Ring**](/ru/reference/data-types/geo#ring): массив точек `[(x1, y1), (x2, y2), ...]`.
+  * [**Polygon**](/ru/reference/data-types/geo#polygon): массив колец `[ring1, ring2, ...]`, где каждое кольцо — массив точек.
+  * [**Multipolygon**](/ru/reference/data-types/geo#multipolygon): массив полигонов `[polygon1, polygon2, ...]`.
+
+<div id="returned-value">
+  ### Возвращаемое значение
+</div>
+
+Функция возвращает входные данные с поменянными местами координатами. Например:
+
+* Точка `(x, y)` становится `(y, x)`.
+* Ring `[(x1, y1), (x2, y2)]` становится `[(y1, x1), (y2, x2)]`.
+* Вложенные структуры, такие как Polygon и Multipolygon, обрабатываются рекурсивно.
+
+<div id="examples">
+  ### Примеры
+</div>
+
+<div id="example-1">
+  #### Пример 1: Перестановка координат одной точки
+</div>
+
+```sql
+SELECT flipCoordinates((10, 20)) AS flipped_point
+```
+
+```text
+┌─flipped_point─┐
+│ (20,10)       │
+└───────────────┘
+```
+
+<div id="example-2">
+  #### Пример 2: Перестановка координат в массиве точек (Ring)
+</div>
+
+```sql
+SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
+```
+
+```text
+┌─flipped_ring──────────────┐
+│ [(20,10),(40,30)]         │
+└───────────────────────────┘
+```
+
+<div id="example-3">
+  #### Пример 3: Переворот Polygon
+</div>
+
+```sql
+SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_polygon
+```
+
+```text
+┌─flipped_polygon──────────────────────────────┐
+│ [[(20,10),(40,30)],[(60,50),(80,70)]]        │
+└──────────────────────────────────────────────┘
+```
+
+<div id="example-4">
+  #### Пример 4: Инвертирование Multipolygon
+</div>
+
+```sql
+SELECT flipCoordinates([[[10, 20], [30, 40]], [[50, 60], [70, 80]]]) AS flipped_multipolygon
+```
+
+```text
+┌─flipped_multipolygon──────────────────────────────┐
+│ [[[20,10],[40,30]],[[60,50],[80,70]]]             │
+└───────────────────────────────────────────────────┘
+```

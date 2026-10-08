@@ -17,7 +17,7 @@ namespace MySQLParser
 
 ASTPtr ASTCreateQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateQuery>(*this);
+    auto res = make_intrusive<ASTCreateQuery>(*this);
     res->children.clear();
 
     if (columns_list)
@@ -96,7 +96,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
-    auto create_query = std::make_shared<ASTCreateQuery>();
+    auto create_query = make_intrusive<ASTCreateQuery>();
 
     create_query->temporary = is_temporary;
     create_query->if_not_exists = if_not_exists;

@@ -7,6 +7,7 @@ CREATE TABLE t2 (x UInt32, s String) engine = ReplicatedMergeTree('/clickhouse/{
 INSERT INTO t1 (x, s) VALUES (0, 'a1'), (1, 'a2'), (2, 'a3'), (3, 'a4'), (4, 'a5');
 INSERT INTO t2 (x, s) VALUES (2, 'b1'), (4, 'b2'), (5, 'b4');
 
+SET automatic_parallel_replicas_mode = 0;
 set enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
 
 SELECT 'any left';

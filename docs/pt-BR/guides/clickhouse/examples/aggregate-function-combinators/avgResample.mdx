@@ -1,0 +1,76 @@
+---
+slug: '/examples/aggregate-function-combinators/avgResample'
+title: 'avgResample'
+description: 'Exemplo de uso do combinador Resample com avg'
+keywords: ['avg', 'Resample', 'combinador', 'exemplos', 'avgResample']
+sidebarTitle: 'avgResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample)
+pode ser aplicado à função de agregação [`count`](/pt-BR/reference/functions/aggregate-functions/count)
+para contar os valores de uma coluna-chave especificada em um número fixo
+de intervalos (`N`).
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+<div id="basic-example">
+  ### Exemplo básico
+</div>
+
+Vamos ver um exemplo. Criaremos uma tabela que contém `name`, `age` e
+`wage` dos funcionários e inseriremos alguns dados nela:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Vamos obter o salário médio das pessoas cujas idades se enquadram nos intervalos `[30,60)`
+e `[60,75)` (`[` é exclusivo e `)` é inclusivo). Como usamos uma representação inteira
+para a idade, obtemos idades nos intervalos `[30, 59]` e `[60,74]`.
+Para isso, aplicamos o combinador `Resample` à função de agregação `avg`.
+
+```sql
+WITH avg_wage AS
+(
+    SELECT avgResample(30, 75, 30)(wage, age) AS original_avg_wage
+    FROM employee_data
+)
+SELECT
+    arrayMap(x -> round(x, 3), original_avg_wage) AS avg_wage_rounded
+FROM avg_wage;
+```
+
+```response
+┌─avg_wage_rounded─┐
+│ [11.5,12.95]     │
+└──────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`count`](/pt-BR/reference/functions/aggregate-functions/count)
+* [`combinador Resample`](/pt-BR/reference/functions/aggregate-functions/combinators#-resample)

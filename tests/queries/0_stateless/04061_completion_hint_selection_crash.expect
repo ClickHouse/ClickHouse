@@ -1,0 +1,46 @@
+#!/usr/bin/expect -f
+
+# Regression test: pressing Ctrl+Up (hint_previous) before Tab completion
+# caused a crash due to _hintSelection being used as an out-of-bounds index
+# into _completions vector.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} --wait_for_suggestions_to_load --history_file=$history_file"
+expect ":) "
+
+# Type a prefix with multiple completions
+send -- "SET max_distributed"
+expect "SET max_distributed"
+
+# Send Ctrl+Up (ESC [ 1 ; 5 A) which triggers hint_previous,
+# decrementing _hintSelection from -1 to -2
+send -- "\033\[1;5A"
+
+# Press Tab — before the fix, this crashed with:
+# "vector[] index out of bounds" because _hintSelection (-2) was used
+# as an index into _completions
+send -- "\t"
+
+# If the client is still alive, completion should work normally.
+# Expect the underscore that follows "max_distributed" in completions.
+expect "_"
+
+send -- "\3\4"
+expect eof

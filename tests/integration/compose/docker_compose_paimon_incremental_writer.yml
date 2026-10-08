@@ -1,0 +1,16 @@
+services:
+  node:
+    volumes:
+      - paimon-inc-warehouse:/var/lib/clickhouse/user_files
+  paimon-incremental-writer:
+    image: clickhouse/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
+    restart: "no"
+    user: "0:0"
+    volumes:
+      - paimon-inc-warehouse:/var/lib/clickhouse/user_files
+    entrypoint: ["sleep", "infinity"]
+    stop_grace_period: 5s
+    cpus: 2
+
+volumes:
+  paimon-inc-warehouse:

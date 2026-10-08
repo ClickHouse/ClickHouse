@@ -20,7 +20,7 @@ SimpleFaultInjection::SimpleFaultInjection(Float64 probability_before, Float64 p
     exceptions_level = std::uncaught_exceptions();
 }
 
-SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
+SimpleFaultInjection::~SimpleFaultInjection() noexcept(false) /// NOLINT(bugprone-unsafe-to-allow-exceptions) throwing is the point of fault injection
 {
     if (likely(probability_after == 0.0))
         return;
@@ -36,6 +36,18 @@ SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
 
 using namespace DB;
 
+WatchCallbackPtrOrEventPtr IKeeper::createWatchFromRawCallback(const String & id, const WatchCallbackCreator & creator)
+{
+    std::lock_guard lock(watches_mutex);
+    auto it = watches_by_id.find(id);
+    if (it == watches_by_id.end())
+    {
+        WatchCallbackPtrOrEventPtr watch(std::make_shared<WatchCallback>(creator()));
+        watches_by_id.emplace(id, watch);
+        return watch;
+    }
+    return it->second;
+}
 
 static void addRootPath(String & path, const String & root_path)
 {
@@ -96,6 +108,7 @@ const char * errorMessage(Error code)
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
         case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
+        case Error::ZNOWATCHER:               return "No watcher was found";
     }
 }
 
@@ -108,6 +121,7 @@ bool isHardwareError(Error zk_return_code)
         || zk_return_code == Error::ZMARSHALLINGERROR
         || zk_return_code == Error::ZOPERATIONTIMEOUT
         || zk_return_code == Error::ZNOTREADONLY
+        || zk_return_code == Error::ZOUTOFMEMORY
         || zk_return_code == Error::ZNOAUTH;
 }
 
@@ -120,7 +134,6 @@ bool isUserError(Error zk_return_code)
         || zk_return_code == Error::ZNOTEMPTY;
 }
 
-
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRecursiveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
@@ -128,6 +141,7 @@ void ExistsRequest::addRootPath(const String & root_path) { Coordination::addRoo
 void GetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void ListRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
+void ListWithOptionsRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void CheckRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void SetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void GetACLRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
@@ -135,6 +149,40 @@ void SyncRequest::addRootPath(const String & root_path) { Coordination::addRootP
 
 void CreateResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path_created, root_path); }
 void WatchResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path, root_path); }
+void ListRecursiveResponse::removeRootPath(const String & root_path)
+{
+    for (auto & child : children)
+        Coordination::removeRootPath(child, root_path);
+}
+
+void ListOptions::validate() const
+{
+    switch (filter)
+    {
+        case ListRequestType::ALL:
+        case ListRequestType::PERSISTENT_ONLY:
+        case ListRequestType::EPHEMERAL_ONLY:
+            return;
+    }
+    throw Exception::fromMessage(Error::ZBADARGUMENTS, "Unknown ListWithOptions filter");
+}
+
+ListOptionsVersion requiredListOptionsVersion(const ListOptions & options)
+{
+    options.validate();
+    return ListOptionsVersion::V1;
+}
+
+size_t ListWithOptionsResponse::bytesSize() const
+{
+    size_t size = sizeof(stat) + sizeof(truncated);
+    for (const auto & name : names)
+        size += name.size();
+    size += stats.size() * sizeof(Stat);
+    for (const auto & value : data)
+        size += value.size();
+    return size;
+}
 
 void MultiResponse::removeRootPath(const String & root_path)
 {

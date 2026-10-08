@@ -1,0 +1,59 @@
+--- Test 1: Basic 2-key LEFT ANTI JOIN ---
+0	2
+0	2
+--- Test 2: 3-key LEFT ANTI JOIN ---
+1	2	4
+1	2	4
+--- Test 3: Mixed types (Int32 vs Int64) ---
+2	20
+2	20
+--- Test 4: Empty right side ---
+1	2
+3	4
+1	2
+3	4
+--- Test 5: All rows match ---
+--- Test 6: Single-key LEFT ANTI JOIN ---
+2	20
+2	20
+--- Test 6b: Single-key nullable LEFT ANTI JOIN ---
+\N	20
+3	30
+\N	20
+3	30
+--- Test 7: Multi-key INNER JOIN ---
+0	0
+1	1
+0	0
+1	1
+--- Test 8: Large right side (filter overflow) ---
+0	999
+0	999
+--- Test 9: Nullable multi-key LEFT ANTI JOIN ---
+1	\N
+3	4
+\N	2
+\N	\N
+1	\N
+3	4
+\N	2
+\N	\N
+--- Test 10: Nullable mixed types ---
+3	\N
+\N	5
+3	\N
+\N	5
+--- Test 11: LowCardinality(Nullable) single-key ---
+\N	2
+z	3
+\N	2
+z	3
+--- Test 12: LowCardinality(Nullable) multi-key ---
+x	\N
+y	b
+\N	a
+\N	\N
+x	\N
+y	b
+\N	a
+\N	\N

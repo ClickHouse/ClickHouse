@@ -37,5 +37,40 @@ x_idx	minmax	x	34
 auto_minmax_index_key	minmax	key	34
 auto_minmax_index_y	minmax	y	34
 auto_minmax_index_t	minmax	t	0
-tbl5 with add_minmax_index_for_numeric_columns and add_minmax_index_for_string_columns disabled
+Add datetime column
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_t	minmax	t	0
+auto_minmax_index_dt	minmax	dt	0
+Add another datetime column
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_t	minmax	t	0
+auto_minmax_index_dt	minmax	dt	0
+auto_minmax_index_dt2	minmax	dt2	0
+Drop datetime column dt2
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_t	minmax	t	0
+auto_minmax_index_dt	minmax	dt	0
+Rename column dt to dt2
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_t	minmax	t	0
+auto_minmax_index_dt2	minmax	dt2	0
+Add date/time/time64 columns
+x_idx	minmax	x	34
+auto_minmax_index_key	minmax	key	34
+auto_minmax_index_y	minmax	y	34
+auto_minmax_index_t	minmax	t	0
+auto_minmax_index_dt2	minmax	dt2	0
+auto_minmax_index_d	minmax	d	0
+auto_minmax_index_d32	minmax	d32	0
+auto_minmax_index_time	minmax	time	0
+auto_minmax_index_time64	minmax	time64	0
+tbl6 with add_minmax_index_for_*_columns settings disabled
 x_idx	minmax	x	0

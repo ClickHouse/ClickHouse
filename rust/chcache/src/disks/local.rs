@@ -19,7 +19,8 @@ impl Disk for LocalDisk {
     async fn read(&self, hash: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         let cache_file = self
             .local_path
-            .get_cache_file(LocalDisk::path_from_hash(&hash)).unwrap();
+            .get_cache_file(LocalDisk::path_from_hash(&hash))
+            .unwrap();
         trace!("Reading cache file: {:?}", cache_file);
 
         let data = fs::read(cache_file)?;

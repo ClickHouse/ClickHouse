@@ -1,28 +1,25 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Common/HTTPHeaderFilter.h>
-#include <Core/QueryProcessingStage.h>
+#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
 #include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/extractTableFunctionFromSelectQuery.h>
+
+#include <Parsers/ASTLiteral.h>
+#include <Storages/HivePartitioningUtils.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -40,6 +37,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsBool use_hive_partitioning;
 }
 
 StorageURLCluster::StorageURLCluster(
@@ -55,8 +53,9 @@ StorageURLCluster::StorageURLCluster(
     : IStorageCluster(cluster_name_, table_id_, getLogger("StorageURLCluster (" + table_id_.getFullTableName() + ")"))
     , uri(uri_), format_name(format_)
 {
+    auto headers = configuration_.headers;
     context->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context->getHTTPHeaderFilter().checkHeaders(configuration_.headers);
+    context->getHTTPHeaderFilter().checkHeaders(headers);
 
     StorageInMemoryMetadata storage_metadata;
 
@@ -65,10 +64,10 @@ StorageURLCluster::StorageURLCluster(
         ColumnsDescription columns;
         if (format_name == "auto")
             std::tie(columns, format_name) = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
         else
             columns = StorageURL::getTableStructureFromData(
-                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context);
+                format_, uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context);
 
         storage_metadata.setColumns(columns);
     }
@@ -76,12 +75,24 @@ StorageURLCluster::StorageURLCluster(
     {
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), configuration_.headers, std::nullopt, context).second;
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context).second;
 
         storage_metadata.setColumns(columns_);
     }
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context));
+    auto & storage_columns = storage_metadata.columns;
+
+    const auto sample_path = getSampleURI(uri, context);
+    /// Not grabbing the file_columns because it is not necessary to do it here.
+    std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
+        storage_columns,
+        sample_path,
+        columns_.empty(),
+        std::nullopt,
+        context);
+
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        storage_metadata.columns, context, /* format_settings */std::nullopt, PartitionStrategyFactory::StrategyType::NONE, sample_path);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -89,22 +100,27 @@ StorageURLCluster::StorageURLCluster(
             std::make_shared<DataTypeMap>(
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
-            "");
+            "",
+            VirtualsMaterializationPlace::Reader);
     }
 
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(virtual_columns_desc);
+    storage_metadata.setVirtuals(virtual_columns_desc);
     setInMemoryMetadata(storage_metadata);
 }
 
-void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context)
+void StorageURLCluster::updateQueryToSendIfNeeded(
+    ASTPtr & query,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ContextPtr & context,
+    const String & target_cluster_name)
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
-    if (!expression_list)
+    if (!expression_list || expression_list->children.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatForErrorMessage());
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
@@ -113,16 +129,33 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
         format_name,
         context
     );
+
+    /// When a non-cluster table function (`url`) was auto-converted to cluster mode
+    /// by the `parallel_replicas_for_cluster_engines` setting, rename it to the Cluster variant
+    /// (`urlCluster`) and prepend the cluster name argument. This ensures that on the shard,
+    /// `TableFunctionURLCluster` is used, which correctly handles `distributed_processing`.
+    ASTs & args = expression_list->children;
+    if (!endsWith(table_function->name, "Cluster"))
+    {
+        args.insert(args.begin(), make_intrusive<ASTLiteral>(target_cluster_name));
+        table_function->name += "Cluster";
+    }
+    else
+    {
+        /// The function is already `urlCluster`, so it carries a cluster name the user wrote. Replace it with
+        /// the cluster whose nodes will actually run the query - the two differ when the destination drives
+        /// the fan-out, and those nodes reject a name their own `remote_servers` does not define even though
+        /// they take their share of the work from the initiator rather than dispatching by it.
+        if (!target_cluster_name.empty())
+            args.front() = make_intrusive<ASTLiteral>(target_cluster_name);
+    }
 }
 
 RemoteQueryExecutor::Extension StorageURLCluster::getTaskIteratorExtension(
-    const ActionsDAG::Node * predicate,
-    const ActionsDAG * /* filter */,
-    const ContextPtr & context,
-    size_t) const
+    const ActionsDAG::Node * predicate, const ActionsDAG * /* filter */, const ContextPtr & context, ClusterPtr, StorageMetadataPtr metadata) const
 {
     auto iterator = std::make_shared<StorageURLSource::DisclosedGlobIterator>(
-        uri, context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, getVirtualsList(), context);
+        uri, urlWithGlobs(uri), context->getSettingsRef()[Setting::glob_expansion_max_elements], predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
 
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {

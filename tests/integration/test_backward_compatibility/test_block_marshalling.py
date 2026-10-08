@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 nodes = [
@@ -9,7 +9,7 @@ nodes = [
         main_configs=["configs/clusters.xml"],
         with_zookeeper=True,
         image="library/clickhouse",
-        tag="25.1",
+        tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
         stay_alive=True,
         with_installed_binary=True,
     )
@@ -84,3 +84,38 @@ def test_simple_distributed_aggregation_with_parallel_replicas(start_cluster):
             "max_threads": 2,
         },
     )
+
+
+def test_old_replica_state_under_versioned_header(start_cluster):
+    # The old replica sends `uniq` states without a state version, i.e. as version `0`, while the
+    # local header declares `AggregateFunction(1, uniq, UInt64)`. The received column must take
+    # the version of the header, otherwise the states are serialized as version `0` and read back
+    # as version `1` on a later round trip through an arena (`groupArray`).
+    for node in nodes:
+        node.query("DROP TABLE IF EXISTS uniq_states SYNC")
+        node.query(
+            "CREATE TABLE uniq_states (s AggregateFunction(uniq, UInt64)) ENGINE = Memory"
+        )
+        node.query("INSERT INTO uniq_states SELECT uniqState(number) FROM numbers(100)")
+
+    nodes[1].query("DROP TABLE IF EXISTS uniq_states_dist SYNC")
+    nodes[1].query(
+        """
+        CREATE TABLE uniq_states_dist (s AggregateFunction(1, uniq, UInt64))
+        ENGINE = Distributed(parallel_replicas, default, uniq_states)
+        """
+    )
+
+    # `in_order` load balancing picks `node0`, the old replica. `LIMIT` keeps `groupArray`
+    # on the initiator, so the received states pass through its arena.
+    assert (
+        nodes[1].query(
+            "SELECT arrayMap(x -> finalizeAggregation(x), groupArray(s)) FROM (SELECT s FROM uniq_states_dist LIMIT 10)",
+            settings={"load_balancing": "in_order", "prefer_localhost_replica": 0},
+        )
+        == "[100]\n"
+    )
+
+    nodes[1].query("DROP TABLE uniq_states_dist SYNC")
+    for node in nodes:
+        node.query("DROP TABLE uniq_states SYNC")

@@ -79,8 +79,8 @@ Sorting: x ASC
 36
 38
 Sorting
-Sorting: x ASC, sum(y) ASC
-Sort description: x ASC, sum(y) ASC
+Sorting: x ASC
+Sort description: x ASC
 MergingAggregated
 Aggregates:
 Aggregating

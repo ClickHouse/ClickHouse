@@ -5,15 +5,29 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Common/quoteString.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool parallel_replicas_plan_based;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+/// Plan-based parallel replicas build an ordinary local plan and only later, in
+/// `QueryPlanOptimizations::applyParallelReplicas`, serialize a fragment of it for the replicas.
+static bool mayShipPlanFragmentToParallelReplicas(const ContextPtr & context)
+{
+    return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
 }
 
 const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const QueryTreeNodePtr & column_node)
@@ -24,22 +38,30 @@ const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const Quer
     return createColumnIdentifier(column_node_typed.getColumn(), column_source_node);
 }
 
-const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+static std::string buildColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
 {
-    std::string column_identifier;
-
     const auto & source_alias = column_source_node->getAlias();
     if (!source_alias.empty())
-        column_identifier = source_alias + "." + column.name;
-    else
-        column_identifier = column.name;
+        return backQuoteIfNeed(source_alias) + "." + backQuoteIfNeed(column.name);
+    return column.name;
+}
 
-    auto [it, inserted] = column_identifiers.emplace(column_identifier);
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+{
+    auto column_identifier = buildColumnIdentifier(column, column_source_node);
+
+    auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
     if (!inserted)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", column_identifier);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column identifier {} is already registered", *it);
 
-    assert(inserted);
+    return *it;
+}
 
+const ColumnIdentifier & GlobalPlannerContext::createColumnIdentifierOrGet(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node)
+{
+    auto column_identifier = buildColumnIdentifier(column, column_source_node);
+
+    auto [it, inserted] = column_identifiers.emplace(std::move(column_identifier));
     return *it;
 }
 
@@ -57,6 +79,7 @@ void GlobalPlannerContext::collectTableExpressionDataForCorrelatedColumns(
     auto * union_node = table_expression_node->as<UnionNode>();
     chassert(query_node != nullptr && query_node->isCorrelated() || union_node != nullptr && union_node->isCorrelated());
 
+    shared_table_expression_data_owners.push_back(planner_context);
     const auto & correlated_columns = query_node ? query_node->getCorrelatedColumns().getNodes() : union_node->getCorrelatedColumns().getNodes();
     for (const auto & column : correlated_columns)
     {
@@ -69,12 +92,14 @@ PlannerContext::PlannerContext(ContextMutablePtr query_context_, GlobalPlannerCo
     : query_context(std::move(query_context_))
     , global_planner_context(std::move(global_planner_context_))
     , is_ast_level_optimization_allowed(!(query_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY || select_query_options_.ignore_ast_optimizations))
+    , may_be_serialized_for_remote_execution(select_query_options_.build_logical_plan || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 
 PlannerContext::PlannerContext(ContextMutablePtr query_context_, PlannerContextPtr planner_context_)
     : query_context(std::move(query_context_))
     , global_planner_context(planner_context_->global_planner_context)
     , is_ast_level_optimization_allowed(planner_context_->is_ast_level_optimization_allowed)
+    , may_be_serialized_for_remote_execution(planner_context_->may_be_serialized_for_remote_execution || mayShipPlanFragmentToParallelReplicas(query_context))
 {}
 
 TableExpressionData & PlannerContext::getOrCreateTableExpressionData(const QueryTreeNodePtr & table_expression_node)

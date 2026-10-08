@@ -55,18 +55,28 @@ public:
         else
         {
             QueryTreeNodePtrWithHashSet group_by_keys;
+            bool first_grouping_set = true;
             for (auto & group_key : query_node->getGroupBy().getNodes())
             {
                 /// For grouping sets case collect only keys that are presented in every set.
                 if (auto * list = group_key->as<ListNode>())
                 {
-                    QueryTreeNodePtrWithHashSet common_keys_set;
-                    for (auto & group_elem : list->getNodes())
+                    if (first_grouping_set)
                     {
-                        if (group_by_keys.contains(group_elem))
-                            common_keys_set.insert(group_elem);
+                        for (auto & group_elem : list->getNodes())
+                            group_by_keys.insert(group_elem);
+                        first_grouping_set = false;
                     }
-                    group_by_keys = std::move(common_keys_set);
+                    else
+                    {
+                        QueryTreeNodePtrWithHashSet common_keys_set;
+                        for (auto & group_elem : list->getNodes())
+                        {
+                            if (group_by_keys.contains(group_elem))
+                                common_keys_set.insert(group_elem);
+                        }
+                        group_by_keys = std::move(common_keys_set);
+                    }
                 }
                 else
                 {

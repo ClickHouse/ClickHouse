@@ -14,6 +14,18 @@
 /* Global client configuration file path */
 #define GLOBAL_CLIENT_CONFIG "/etc/ssh/ssh_config"
 
+/* Global configuration directory (libssh >= 0.12 uses it unconditionally) */
+#define GLOBAL_CONF_DIR "/etc/ssh"
+
+/* Define to 1 if we have support for ML-KEM in libgcrypt */
+/* #undef HAVE_GCRYPT_MLKEM */
+
+/* Define to 1 if we have support for ML-KEM in OpenSSL */
+#define HAVE_OPENSSL_MLKEM 1
+
+/* Define to 1 if we have support for ML-KEM1024 in either backend */
+#define HAVE_MLKEM1024 1
+
 /************************** HEADER FILES *************************/
 
 /* Define to 1 if you have the <argp.h> header file. */
@@ -82,13 +94,13 @@
 /* Define to 1 if you have the <pthread.h> header file. */
 #define HAVE_PTHREAD_H 1
 
-/* Define to 1 if you have eliptic curve cryptography in openssl */
+/* Define to 1 if you have elliptic curve cryptography in openssl */
 #define HAVE_OPENSSL_ECC 1
 
-/* Define to 1 if you have eliptic curve cryptography in gcrypt */
+/* Define to 1 if you have elliptic curve cryptography in gcrypt */
 /* #undef HAVE_GCRYPT_ECC */
 
-/* Define to 1 if you have eliptic curve cryptography */
+/* Define to 1 if you have elliptic curve cryptography */
 #define HAVE_ECC 1
 
 /* Define to 1 if you have DSA */

@@ -1,0 +1,33 @@
+-- Basic
+<em>Hello</em> World
+The <em>quick</em> brown <em>fox</em>
+Hello World
+<em>hello</em>
+-- Case insensitive
+<em>HELLO</em> <em>hello</em> <em>HeLLo</em>
+<em>Hello</em> <em>WORLD</em>
+-- Overlapping
+<em>abcde</em>f
+<em>abcdef</em>
+<em>foobar</em>
+<em>aaaaaa</em>
+-- Edge cases
+
+<em>Hello</em>
+-- Custom tags
+<b>Hello</b> World
+Hello World
+<span class="hl">text</span> here
+-- UTF-8
+<em>Привет</em> мир
+<em>Hello</em> Мир
+körtefa
+-- Column input
+<em>a</em>bc
+def
+gh<em>a</em>
+-- Multiple matches
+<em>cat</em> and <em>cat</em> and <em>cat</em>
+-- FixedString
+<em>Hello</em> World
+<em>abc</em>

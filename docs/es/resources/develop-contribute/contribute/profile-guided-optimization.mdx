@@ -1,0 +1,27 @@
+---
+description: 'Documentación sobre optimización guiada por perfiles'
+sidebarTitle: 'Optimización guiada por perfiles (PGO)'
+slug: /operations/optimizing-performance/profile-guided-optimization
+title: 'Optimización guiada por perfiles'
+doc_type: 'guide'
+---
+
+La optimización guiada por perfiles (PGO) es una técnica de optimización del compilador en la que un programa se optimiza en función de su perfil de ejecución.
+
+Según las pruebas, PGO ayuda a mejorar el rendimiento de ClickHouse. En ellas, observamos mejoras de hasta un 15 % en QPS en la suite de pruebas ClickBench. Los resultados más detallados están disponibles [aquí](https://pastebin.com/xbue3HMU). Las mejoras de rendimiento dependen de tu carga de trabajo habitual: puedes obtener resultados mejores o peores.
+
+Puedes leer más información sobre PGO en ClickHouse en el [issue](https://github.com/ClickHouse/ClickHouse/issues/44567) correspondiente de GitHub.
+
+<div id="how-to-build-clickhouse-with-pgo">
+  ## ¿Cómo compilar ClickHouse con PGO?
+</div>
+
+Hay dos tipos principales de PGO: [instrumentación](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) y [muestreo](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) (también conocido como AutoFDO). En esta guía se describe el PGO por instrumentación con ClickHouse.
+
+1. Compile ClickHouse en modo instrumentado. En Clang, esto puede hacerse pasando la opción `-fprofile-generate` a `CXXFLAGS`.
+2. Ejecute ClickHouse instrumentado con una carga de trabajo de muestra. Aquí debe usar su carga de trabajo habitual. Una posibilidad es usar [ClickBench](https://github.com/ClickHouse/ClickBench) como carga de trabajo de muestra. ClickHouse en modo instrumentado puede funcionar lentamente, así que téngalo en cuenta y no ejecute ClickHouse instrumentado en entornos críticos para el rendimiento.
+3. Vuelva a compilar ClickHouse con las opciones del compilador `-fprofile-use` y los perfiles recopilados en el paso anterior.
+
+En la [documentación](https://clang.llvm.org/docs/UsersManual.html#profile-guided-optimization) de Clang encontrará una guía más detallada sobre cómo aplicar PGO.
+
+Si va a recopilar una carga de trabajo de muestra directamente desde un entorno de producción, le recomendamos usar PGO por muestreo.

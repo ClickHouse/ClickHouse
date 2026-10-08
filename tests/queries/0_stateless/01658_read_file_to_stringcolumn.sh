@@ -7,10 +7,26 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# A file outside user_files, used to check that reading such a path is rejected
+# in client mode and allowed in local mode. Keep it in the per-test unique tmp
+# dir instead of a fixed /tmp path so concurrent tests cannot collide on it.
+OUTSIDE_FILE="${CLICKHOUSE_TMP}/01658_outside.txt"
+
+# Clean up on EXIT so a mid-script abort (set -e + a failing query) cannot
+# leave the short filenames `a`, `b`, `c` in `user_files_path` and break
+# other tests that rely on them being absent.
+cleanup() {
+    rm -f "${USER_FILES_PATH}"/{a,b,c}.txt
+    rm -f "${USER_FILES_PATH}"/{a,b,c}
+    rm -f "${OUTSIDE_FILE}"
+    rm -rf "${USER_FILES_PATH}"/dir
+}
+trap cleanup EXIT
+
 echo -n aaaaaaaaa > ${USER_FILES_PATH}/a.txt
 echo -n bbbbbbbbb > ${USER_FILES_PATH}/b.txt
 echo -n ccccccccc > ${USER_FILES_PATH}/c.txt
-echo -n ccccccccc > /tmp/c.txt
+echo -n ccccccccc > "${OUTSIDE_FILE}"
 mkdir -p ${USER_FILES_PATH}/dir
 
 
@@ -37,7 +53,7 @@ echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'nonexist.txt'), file('b.txt
 # Test isDir
 echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'dir'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
 # Test path out of the user_files directory. It's not allowed in client mode
-echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'/tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
+echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'${OUTSIDE_FILE}'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
 
 # Test relative path consists of ".." whose absolute path is out of the user_files directory.
 echo "${CLICKHOUSE_CLIENT} --query "'"select file('"'../../../../../../../../../../../../../../../../../../../tmp/c.txt'), file('b.txt')"'";echo :$?' | bash 2>/dev/null
@@ -50,9 +66,6 @@ echo -n aaaaaaaaa > a.txt
 echo -n bbbbbbbbb > b.txt
 echo -n ccccccccc > c.txt
 mkdir -p dir
-#Test for large files, with length : 699415
-c_count=$(wc -c ${CURDIR}/01518_nullable_aggregate_states2.reference | awk '{print $1}')
-echo $c_count
 
 # Valid cases:
 # The default dir is the CWD path in LOCAL mode
@@ -63,8 +76,7 @@ ${CLICKHOUSE_LOCAL} --query "
     insert into data select file('a.txt'), file('b.txt');
     insert into data select file('a.txt'), file('b.txt');
     select file('c.txt'), * from data;
-    select file('/tmp/c.txt'), * from data;
-    select $c_count, $c_count -length(file('${CURDIR}/01518_nullable_aggregate_states2.reference'))
+    select file('${OUTSIDE_FILE}'), * from data;
 "
 echo ":"$?
 
@@ -85,8 +97,4 @@ echo -n World > ${USER_FILES_PATH}/c
 ${CLICKHOUSE_CLIENT} --query "SELECT file(arrayJoin(['a', 'b', 'c'])) AS s, count() GROUP BY s ORDER BY s"
 ${CLICKHOUSE_CLIENT} --query "SELECT s, count() FROM file('?', TSV, 's String') GROUP BY s ORDER BY s"
 
-# Restore
-rm ${USER_FILES_PATH}/{a,b,c}.txt
-rm ${USER_FILES_PATH}/{a,b,c}
-rm /tmp/c.txt
-rm -rf ${USER_FILES_PATH}/dir
+# Cleanup is handled by the `trap cleanup EXIT` at the top of this script.

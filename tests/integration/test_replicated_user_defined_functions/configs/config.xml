@@ -1,5 +1,7 @@
 <clickhouse>
     <user_defined_zookeeper_path>/clickhouse/udf</user_defined_zookeeper_path>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+    <webassembly_udf_engine>wasmtime</webassembly_udf_engine>
     <remote_servers>
         <default>
             <shard>

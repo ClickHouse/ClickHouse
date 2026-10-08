@@ -3,6 +3,7 @@
 #include <cerrno>
 
 #include <Common/ProfileEvents.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 
 #include <IO/WriteBufferFromFile.h>

@@ -1,0 +1,24 @@
+
+<clickhouse>
+    <remote_servers>
+        <cluster_1_shard_3_replicas>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster_1_shard_3_replicas>
+    </remote_servers>
+    <macros>
+        <default_cluster_macro>cluster_simple</default_cluster_macro>
+    </macros>
+</clickhouse>

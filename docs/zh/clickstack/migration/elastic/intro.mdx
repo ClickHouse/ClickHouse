@@ -1,0 +1,31 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/intro
+title: '从 Elastic 迁移至 ClickStack'
+sidebarTitle: '概览'
+description: '从 Elastic 迁移到 ClickHouse 可观测性技术栈的概览'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'guide'
+---
+
+<div id="migrating-to-clickstack-from-elastic">
+  ## 从 Elastic 迁移到 ClickStack
+</div>
+
+本指南面向从 Elastic Stack 迁移的用户，尤其是使用 Kibana 监控由 Elastic Agent 收集并存储在 Elasticsearch 中的日志、链路追踪和指标的用户。本文概述了 ClickStack 中与之对应的概念和数据类型，说明如何将 Kibana 中基于 Lucene 的查询转换为 HyperDX 语法，并提供有关迁移数据和 agent 的指导，帮助你顺利完成过渡。
+
+在开始迁移之前，务必先了解 ClickStack 与 Elastic Stack 之间的权衡。
+
+如果符合以下情况，你应考虑迁移到 ClickStack：
+
+* 你正在摄取海量可观测性数据，并且由于压缩效率低、资源利用率差而认为 Elastic 成本过高。ClickStack 可以显著降低存储和计算成本——对原始数据至少可实现 10 倍压缩。
+* 你在大规模场景下面临搜索性能不佳或摄取瓶颈的问题。
+* 你希望使用 SQL 将可观测性信号与业务数据关联起来，统一可观测性与分析工作流。
+* 你已采用 OpenTelemetry，并希望避免供应商锁定。
+* 你希望利用 ClickHouse Cloud 中存储与计算分离的优势，实现近乎无限的扩展能力——在空闲期间仅需为摄取计算和对象存储付费。
+
+不过，在以下情况下，ClickStack 可能并不适合：
+
+* 你主要将可观测性数据用于安全用例，并且需要一款以 SIEM 为核心的产品。
+* 通用性能剖析是你工作流中的关键组成部分。
+* 你需要一个商业智能 (BI) 仪表板平台。ClickStack 有意为 SRE 和开发者提供具有明确设计取向的可视化工作流，并非作为商业智能 (BI) 工具而设计。若要获得等效能力，我们建议使用 [带有 ClickHouse plugin 的 Grafana](/zh/integrations/connectors/data-visualization/grafana/index) 或 [Superset](/zh/integrations/connectors/data-visualization/superset-and-clickhouse)。

@@ -1,0 +1,69 @@
+---
+slug: '/examples/aggregate-function-combinators/countResample'
+title: 'countResample'
+description: 'مثال لاستخدام المُركِّب Resample مع count'
+keywords: ['count', 'Resample', 'مُركِّب', 'أمثلة', 'countResample']
+sidebarTitle: 'countResample'
+doc_type: 'مرجع'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`Resample`](/ar/reference/functions/aggregate-functions/combinators#-resample)
+على الدالة التجميعية [`count`](/ar/reference/functions/aggregate-functions/count)
+لعدّ قيم عمود مفتاح معيّن عبر عدد ثابت
+من الفترات (`N`).
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="basic-example">
+  ### مثال أساسي
+</div>
+
+لنستعرض مثالًا. سننشئ جدولًا يحتوي على `name` و`age` و
+`wage` للموظفين، وسنُدرج فيه بعض البيانات:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+لنحسب جميع الأشخاص الذين تقع أعمارهم ضمن الفترتين `[30,60)`
+و`[60,75)`. وبما أننا نستخدم تمثيلًا صحيحًا للعمر، فستكون الأعمار ضمن
+الفترتين `[30, 59]` و`[60,74]`. وللقيام بذلك، نطبّق المُركِّب `Resample`
+على `count`
+
+```sql
+SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
+```
+
+```response
+┌─amount─┐
+│ [3,2]  │
+└────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`count`](/ar/reference/functions/aggregate-functions/count)
+* [`Resample مُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-resample)

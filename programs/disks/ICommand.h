@@ -64,7 +64,7 @@ protected:
     template <typename T>
     static T getValueFromCommandLineOptionsThrow(const CommandLineOptions & options, const String & name)
     {
-        if (options.count(name))
+        if (options.contains(name))
             return getValueFromCommandLineOptions<T>(options, name);
 
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "Mandatory argument '{}' is missing", name);
@@ -73,7 +73,7 @@ protected:
     template <typename T>
     static T getValueFromCommandLineOptionsWithDefault(const CommandLineOptions & options, const String & name, const T & default_value)
     {
-        if (options.count(name))
+        if (options.contains(name))
             return getValueFromCommandLineOptions<T>(options, name);
 
         return default_value;
@@ -82,7 +82,7 @@ protected:
     template <typename T>
     static std::optional<T> getValueFromCommandLineOptionsWithOptional(const CommandLineOptions & options, const String & name)
     {
-        if (options.count(name))
+        if (options.contains(name))
             return std::optional{getValueFromCommandLineOptions<T>(options, name)};
 
         return std::nullopt;
@@ -124,14 +124,17 @@ DB::CommandPtr makeCommandChangeDirectory();
 DB::CommandPtr makeCommandLink();
 DB::CommandPtr makeCommandMove();
 DB::CommandPtr makeCommandRead();
+DB::CommandPtr makeCommandReadBitmap();
 DB::CommandPtr makeCommandRemove();
 DB::CommandPtr makeCommandWrite();
+DB::CommandPtr makeCommandSed();
 DB::CommandPtr makeCommandMkDir();
 DB::CommandPtr makeCommandSwitchDisk();
 DB::CommandPtr makeCommandGetCurrentDiskAndPath();
 DB::CommandPtr makeCommandHelp(const DisksApp & disks_app);
 DB::CommandPtr makeCommandTouch();
-#if CLICKHOUSE_CLOUD
+DB::CommandPtr makeCommandDiskUsage();
+DB::CommandPtr makeCommandWordCount();
+DB::CommandPtr makeCommandReadChecksums();
 DB::CommandPtr makeCommandPackedIO();
-#endif
 }

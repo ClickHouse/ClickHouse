@@ -1,0 +1,212 @@
+<test>
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_int
+        (a Int32, b UInt32, c UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b, c)
+    </create_query>
+
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_dt
+        (a DateTime, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+    </create_query>
+
+    <!-- Low-cardinality leading PK column so WHERE a = const matches a meaningful row count. -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_low
+        (a UInt8, b UInt32, c UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b, c)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_int
+        SELECT number % 100000, number % 97, number % 7, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_int
+        SELECT number % 100000, number % 97, number % 7, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_dt
+        SELECT toDateTime(number % 100000), number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_dt
+        SELECT toDateTime(number % 100000), number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_low
+        SELECT number % 5, intDiv(number, 5), number % 7, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_low
+        SELECT number % 5, intDiv(number, 5), number % 7, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <!-- LIMIT BY length-1 PK prefix -->
+    <query>
+        SELECT a, b, c, z FROM limit_by_in_pk_order_int
+        LIMIT 5 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- LIMIT BY length-2 PK prefix -->
+    <query>
+        SELECT a, b, c, z FROM limit_by_in_pk_order_int
+        LIMIT 5 BY a, b
+        FORMAT NULL
+    </query>
+
+    <!-- LIMIT BY full PK -->
+    <query>
+        SELECT a, b, c, z FROM limit_by_in_pk_order_int
+        LIMIT 5 BY a, b, c
+        FORMAT NULL
+    </query>
+
+    <!-- WHERE fixes leading PK column (low-cardinality table so WHERE a=1 matches ~2M rows) -->
+    <query>
+        SELECT a, b, c, z FROM limit_by_in_pk_order_low
+        WHERE a = 1 LIMIT 5 BY b
+        FORMAT NULL
+    </query>
+
+    <!-- WHERE on non-PK column -->
+    <query>
+        SELECT a, b, c, z FROM limit_by_in_pk_order_int
+        WHERE z > 5 LIMIT 5 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- Monotonic function on leading PK column -->
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_dt
+        LIMIT 5 BY toStartOfHour(a)
+        FORMAT NULL
+    </query>
+
+    <!-- Strictly-monotonic negative function (reverse direction) -->
+    <query>
+        SELECT a, b, c, z FROM limit_by_in_pk_order_int
+        LIMIT 5 BY negate(a)
+        FORMAT NULL
+    </query>
+
+    <!-- LIMIT BY with OFFSET -->
+    <query>
+        SELECT a, b, c, z FROM limit_by_in_pk_order_int
+        LIMIT 5 OFFSET 2 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- Multi-stream read in order: 16 parts via partitioning on a column unrelated to the
+         LIMIT BY key. -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_multi_part
+        (a UInt32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY a
+        PARTITION BY b % 16
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_multi_part
+        SELECT number % 100000, number, number
+        FROM numbers(16000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE limit_by_in_pk_order_multi_part FINAL</fill_query>
+
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_multi_part
+        LIMIT 5 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- Merge engine over several MergeTree tables, read in primary-key order. -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_merge_1
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+    </create_query>
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_merge_2
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+    </create_query>
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_merge
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = Merge(currentDatabase(), '^limit_by_in_pk_order_merge_[12]$')
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_merge_1
+        SELECT number % 100000, number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_merge_2
+        SELECT number % 100000, number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_merge
+        LIMIT 5 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- Partition key is a function of the LIMIT BY key (per-partition reading) and the key is also a
+         PK prefix (read in order) -->
+    <create_query>
+        CREATE TABLE limit_by_in_pk_order_part_in_order
+        (a Int32, b UInt32, z UInt32)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+        PARTITION BY a % 100
+    </create_query>
+
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_part_in_order
+        SELECT number, number % 97, number
+        FROM numbers(50000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO limit_by_in_pk_order_part_in_order
+        SELECT number, number % 97, number
+        FROM numbers(50000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE limit_by_in_pk_order_part_in_order FINAL</fill_query>
+
+    <query>
+        SELECT a, b, z FROM limit_by_in_pk_order_part_in_order
+        LIMIT 5 BY a
+        FORMAT NULL
+        SETTINGS allow_limit_by_partitions_independently = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_int</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_dt</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_low</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_multi_part</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge_1</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_merge_2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS limit_by_in_pk_order_part_in_order</drop_query>
+</test>

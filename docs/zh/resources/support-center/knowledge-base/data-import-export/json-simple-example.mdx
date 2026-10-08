@@ -1,0 +1,109 @@
+---
+title: 使用落地表和 materialized view 提取 JSON 数据的简单流程示例
+description: "使用落地表和 materialized view 提取 JSON 数据的简单流程示例"
+date: 2024-05-20
+tags: ['数据格式']
+keywords: ['JSON', '落地表', 'materialized view']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+如何使用源表或落地表中的 JSON 消息，并通过 Materialized View 进行提取？
+如何在不使用 Experimental JSON Object 的情况下处理 JSON？
+
+<div id="answer">
+  ## 答案
+</div>
+
+处理 JSON 数据的一种常见方式是，先将数据写入落地表，再借助 Materialized View 触发器，使用 JSONExtract 函数将数据提取到新表中。
+这通常遵循以下流程和模式：
+
+```
+源数据 --> MergeTree 表 --> Materialized View（含基表）--> 应用程序/客户端
+```
+
+落地表应包含一个 `raw` String 字段，用于存储原始 JSON。它还应包含另外一到两个用于管理该表的字段，以便随着数据老化对其进行分区和清理。
+
+*某些集成可以向原始数据添加字段，例如使用 ClickHouse Kafka Connector Sink 时。
+
+下面是简化示例：
+
+* 创建示例数据库
+
+```
+create database db1;
+```
+
+* 创建一个落地表，用于写入原始 JSON：
+
+```
+create table db1.table2_json_raw
+(
+    id Int32,
+    timestamp DateTime,
+    raw String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* 创建 materialized view 的基表
+
+```
+create table db1.table2_json_mv_base
+(
+ id Int32,
+ timestamp DateTime,
+ raw_string String,
+ custId Int8,
+ custName String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* 在基表上创建 materialized view
+
+```
+create materialized view db1.table2_json_mv to db1.table2_json_mv_base
+AS SELECT
+ id,
+ timestamp,
+ raw as raw_string,
+ simpleJSONExtractRaw(raw, 'customerId') as custId,
+ simpleJSONExtractRaw(raw, 'customerName') as custName
+ FROM
+db1.table2_json_raw;
+```
+
+* 插入一些样本行
+
+```
+ insert into db1.table2_json_raw
+ values
+ (1, '2024-05-16 00:00:00', '{"customerId":1, "customerName":"ABC"}'),
+ (2, '2024-05-16 00:00:01', '{"customerId":2, "customerName":"XYZ"}');
+```
+
+* 查看提取结果以及查询中将使用的 materialized view
+
+```
+clickhouse-cloud :) select * from db1.table2_json_mv;
+
+SELECT *
+FROM db1.table2_json_mv
+
+Query id: 12655fd3-567a-4dfb-9ef7-abc4b11ad044
+
+┌─id─┬───────────timestamp─┬─raw_string─────────────────────────────┬─custId─┬─custName─┐
+│  1 │ 2024-05-16 00:00:00 │ {"customerId":1, "customerName":"ABC"} │ 1      │ "ABC"    │
+│  2 │ 2024-05-16 00:00:01 │ {"customerId":2, "customerName":"XYZ"} │ 2      │ "XYZ"    │
+└────┴─────────────────────┴────────────────────────────────────────┴────────┴──────────┘
+```
+
+其他参考链接：
+Materialized Views: [https://clickhouse.com/docs/guides/developer/cascading-materialized-views](https://clickhouse.com/docs/guides/developer/cascading-materialized-views)
+处理 JSON: [https://clickhouse.com/docs/integrations/data-formats/json#other-approaches](https://clickhouse.com/docs/integrations/data-formats/json#other-approaches)
+JSON 函数: [https://clickhouse.com/docs/sql-reference/functions/json-functions](https://clickhouse.com/docs/sql-reference/functions/json-functions)

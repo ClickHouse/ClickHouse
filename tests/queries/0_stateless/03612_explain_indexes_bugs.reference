@@ -1,0 +1,72 @@
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.points)
+    Indexes:
+      PrimaryKey
+        Keys:
+          x
+          y
+        Condition: pointInPolygon((x, y), [(0, 0), (0, 150), (150, 150), (150, 0), (0, 0)])
+        Parts: 1/1
+        Granules: 1/1
+        Search Algorithm: generic exclusion search
+      Ranges: 1
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.points)
+    Indexes:
+      PrimaryKey
+        Keys:
+          x
+        Condition: (plus(minus(x, 1), 10) in (-Inf, 9])
+        Parts: 0/1
+        Granules: 0/1
+        Search Algorithm: generic exclusion search
+      Ranges: 0
+Expression ((Project names + Projection))
+  Filter ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.points)
+    Indexes:
+      PrimaryKey
+        Keys:
+          x
+          y
+        Condition: ((plus(minus(x, 1), 10), minus(plus(y, 2), 20)) in 1-element set)
+        Parts: 0/1
+        Granules: 0/1
+        Search Algorithm: generic exclusion search
+      Ranges: 0
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.points)
+    Indexes:
+      PrimaryKey
+        Keys:
+          x
+        Condition: (plus(minus(x, 1), 10) in 1-element set)
+        Parts: 0/1
+        Granules: 0/1
+        Search Algorithm: generic exclusion search
+      Ranges: 0
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.morton)
+    Indexes:
+      PrimaryKey
+        Keys:
+          mortonEncode(x, y)
+        Condition: (mortonEncode(x, y) has args in [101, +Inf) × (-Inf, +Inf))
+        Parts: 0/1
+        Granules: 0/1
+        Search Algorithm: generic exclusion search
+      Ranges: 0
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.morton)
+    Indexes:
+      PrimaryKey
+        Condition: true
+        Parts: 1/1
+        Granules: 1/1
+      Ranges: 1
+300

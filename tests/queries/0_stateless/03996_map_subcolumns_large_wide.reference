@@ -1,0 +1,50 @@
+basic wide: m
+basic wide: m.keys
+basic wide: m.values
+basic wide: m.size0
+basic wide: m.key_a
+basic wide: m.key_d
+basic wide: m.key_nonexistent
+basic wide: m.keys, m.values
+basic wide: m.size0, m.key_a
+basic wide: m, m.keys
+basic wide: m, m.key_a
+basic wide: m.keys, m
+basic wide: m.key_a, m.size0, m
+basic wide: m.key_a, m.key_b, m.key_c
+basic wide: m.key_a, m.key_d
+basic wide: m, m.keys, m.values, m.size0, m.key_a
+with_buckets wide: m
+with_buckets wide: m.keys
+with_buckets wide: m.values
+with_buckets wide: m.size0
+with_buckets wide: m.key_a
+with_buckets wide: m.key_d
+with_buckets wide: m.key_nonexistent
+with_buckets wide: m.keys, m.values
+with_buckets wide: m.size0, m.key_a
+with_buckets wide: m, m.keys
+with_buckets wide: m, m.key_a
+with_buckets wide: m.keys, m
+with_buckets wide: m.key_a, m.size0, m
+with_buckets wide: m.key_a, m.key_b, m.key_c
+with_buckets wide: m.key_a, m.key_d
+with_buckets wide: m, m.keys, m.values, m.size0, m.key_a
+basic wide tuple: data.m
+basic wide tuple: data.m.keys
+basic wide tuple: data.m.values
+basic wide tuple: data.m.size0
+basic wide tuple: data.m.key_a
+basic wide tuple: data.m.key_a, data.m.key_d
+basic wide tuple: data.m, data.m.keys
+basic wide tuple: data.m.keys, data.m
+basic wide tuple: data.m, data.m.keys, data.m.values, data.m.size0, data.m.key_a
+with_buckets wide tuple: data.m
+with_buckets wide tuple: data.m.keys
+with_buckets wide tuple: data.m.values
+with_buckets wide tuple: data.m.size0
+with_buckets wide tuple: data.m.key_a
+with_buckets wide tuple: data.m.key_a, data.m.key_d
+with_buckets wide tuple: data.m, data.m.keys
+with_buckets wide tuple: data.m.keys, data.m
+with_buckets wide tuple: data.m, data.m.keys, data.m.values, data.m.size0, data.m.key_a

@@ -1,0 +1,83 @@
+-- { echo }
+
+SET optimize_read_in_order = 1;
+DROP TABLE IF EXISTS test_nullable_order_by;
+CREATE TABLE test_nullable_order_by (x UInt32, y UInt32) ENGINE=MergeTree ORDER BY x;
+INSERT INTO test_nullable_order_by SELECT number, number FROM numbers(1e6);
+SELECT ltrim(explain)
+FROM
+(
+    EXPLAIN actions=1
+    SELECT y FROM test_nullable_order_by ORDER BY x::UInt64 LIMIT 1000000000
+)
+WHERE explain LIKE '%ReadType%';
+ReadType: InOrder
+SELECT ltrim(explain)
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT y FROM test_nullable_order_by ORDER BY x::Nullable(UInt64) LIMIT 1000000000
+)
+WHERE explain LIKE '%ReadType%';
+ReadType: InOrder
+DROP TABLE IF EXISTS test_accurate_cast_or_null;
+CREATE TABLE test_accurate_cast_or_null (x Date32, y UInt32) ENGINE=MergeTree ORDER BY x;
+INSERT INTO test_accurate_cast_or_null SELECT toDate32('1969-12-29') + number, number FROM numbers(6);
+-- Should not use read in order optimization because of `accurateCastOrNull`
+SELECT ltrim(explain)
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT x, accurateCastOrNull(x, 'Date') AS d
+    FROM test_accurate_cast_or_null
+    ORDER BY accurateCastOrNull(x, 'Date')
+    LIMIT 10
+)
+WHERE explain LIKE '%ReadType%';
+ReadType: Default
+SELECT ltrim(explain)
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT x, accurateCastOrNull(toInt64(x), 'Date') AS d, toTypeName(d)
+    FROM test_accurate_cast_or_null
+    ORDER BY accurateCastOrNull(toInt64(x), 'Date')
+    LIMIT 10
+)
+WHERE explain LIKE '%ReadType%';
+ReadType: Default
+DROP TABLE IF EXISTS test_accurate_cast_or_null_float;
+CREATE TABLE test_accurate_cast_or_null_float (x Float64, y UInt32) ENGINE=MergeTree ORDER BY x;
+INSERT INTO test_accurate_cast_or_null_float VALUES
+    (1.0, 1), (1.1, 2), (1.2, 3), (1.25, 4), (1.3, 5), (1.5, 6);
+-- Should not use read in order optimization because of `accurateCastOrNull`
+SELECT ltrim(explain)
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT x, accurateCastOrNull(x, 'Float32') AS d
+    FROM test_accurate_cast_or_null_float
+    ORDER BY accurateCastOrNull(x, 'Float32')
+    LIMIT 10
+)
+WHERE explain LIKE '%ReadType%';
+ReadType: Default
+DROP TABLE IF EXISTS test_nullable_sorting_key_order_by;
+CREATE TABLE test_nullable_sorting_key_order_by (x UInt32, y UInt32) ENGINE=MergeTree ORDER BY x::Nullable(UInt32) SETTINGS allow_nullable_key = 1;
+INSERT INTO test_nullable_sorting_key_order_by SELECT number, number FROM numbers(1e6);
+SELECT ltrim(explain)
+FROM
+(
+    EXPLAIN actions=1
+    SELECT y FROM test_nullable_sorting_key_order_by ORDER BY x::UInt32 LIMIT 1000000000
+)
+WHERE explain LIKE '%ReadType%';
+ReadType: Default
+SELECT ltrim(explain)
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT y FROM test_nullable_sorting_key_order_by ORDER BY x::Nullable(UInt32) LIMIT 1000000000
+)
+WHERE explain LIKE '%ReadType%';
+ReadType: InOrder

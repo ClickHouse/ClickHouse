@@ -4,6 +4,7 @@
 #include <Common/HashTable/HashSet.h>
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 
 namespace DB
@@ -52,12 +53,10 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
-            FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_HAS_ANY,
             FUNCTION_HAS_ALL,
             FUNCTION_IN,
-            FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -74,24 +73,36 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(
+        const ActionsDAG::Node * predicate,
+        ContextPtr context_,
+        const Block & header_,
+        size_t hash_functions_,
+        NameSet columns_shadowing_map_subcolumns_,
+        JSONIndexArgumentTypes json_argument_types_);
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule) const override
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const override
     {
         if (const auto & bf_granule = typeid_cast<const MergeTreeIndexGranuleBloomFilter *>(granule.get()))
-            return mayBeTrueOnGranule(bf_granule);
+            return mayBeTrueOnGranule(bf_granule, update_partial_result_disjuntion_fn);
 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Requires bloom filter index granule.");
     }
 
+    std::string getDescription() const override { return ""; }
+
 private:
     const Block & header;
     const size_t hash_functions;
+    const NameSet columns_shadowing_map_subcolumns;
+    /// Argument types of the JSON index functions of this index, by position in `header`.
+    const JSONIndexArgumentTypes json_argument_types;
+    const bool validate_enum_literals_in_operators;
     std::vector<RPNElement> rpn;
 
-    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule) const;
+    bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
@@ -99,7 +110,7 @@ private:
 
     bool traverseTreeIn(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const ConstSetPtr & prepared_set,
         const DataTypePtr & type,
         const ColumnPtr & column,
@@ -107,7 +118,7 @@ private:
 
     bool traverseTreeEquals(
         const String & function_name,
-        const RPNBuilderTreeNode & key_node,
+        const RPNBuilderTreeNode & wrapped_key_node,
         const DataTypePtr & value_type,
         const Field & value_field,
         RPNElement & out,
@@ -139,13 +150,14 @@ class MergeTreeIndexBloomFilter final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilter(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t bits_per_row_,
         size_t hash_functions_);
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
 
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 

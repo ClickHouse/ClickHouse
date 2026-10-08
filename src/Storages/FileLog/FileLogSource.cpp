@@ -1,5 +1,7 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -7,6 +9,9 @@
 #include <Storages/FileLog/FileLogSource.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <base/scope_guard.h>
+
+#include <map>
 
 namespace DB
 {
@@ -21,8 +26,9 @@ FileLogSource::FileLogSource(
     size_t poll_time_out_,
     size_t stream_number_,
     size_t max_streams_number_,
-    StreamingHandleErrorMode handle_error_mode_)
-    : ISource(storage_snapshot_->getSampleBlockForColumns(columns))
+    StreamingHandleErrorMode handle_error_mode_,
+    bool skip_broken_records_)
+    : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(columns)))
     , storage(storage_)
     , storage_snapshot(storage_snapshot_)
     , context(context_)
@@ -32,8 +38,9 @@ FileLogSource::FileLogSource(
     , stream_number(stream_number_)
     , max_streams_number(max_streams_number_)
     , handle_error_mode(handle_error_mode_)
+    , skip_broken_records(skip_broken_records_)
     , non_virtual_header(storage_snapshot->metadata->getSampleBlockNonMaterialized())
-    , virtual_header(storage_snapshot->virtual_columns->getSampleBlock())
+    , virtual_header(storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader))
 {
     consumer = std::make_unique<FileLogConsumer>(storage, max_block_size, poll_time_out, context, stream_number_, max_streams_number_);
 
@@ -50,7 +57,7 @@ FileLogSource::~FileLogSource()
 {
     try
     {
-        if (!finished)
+        if (!closed)
             close();
     }
     catch (...)
@@ -61,9 +68,9 @@ FileLogSource::~FileLogSource()
 
 void FileLogSource::close()
 {
+    closed = true;
+    SCOPE_EXIT(storage.reduceStreams());
     storage.closeFilesAndStoreMeta(start, end);
-    storage.reduceStreams();
-    finished = true;
 }
 
 Chunk FileLogSource::generate()
@@ -83,10 +90,24 @@ Chunk FileLogSource::generate()
 
     EmptyReadBuffer empty_buf;
     auto input_format = FormatFactory::instance().getInput(
-        storage.getFormatName(), empty_buf, non_virtual_header, context, max_block_size, std::nullopt, FormatParserGroup::singleThreaded(context->getSettingsRef()));
+        storage.getFormatName(),
+        empty_buf,
+        non_virtual_header,
+        context,
+        max_block_size,
+        std::nullopt,
+        FormatParserSharedResources::singleThreaded(context->getSettingsRef()));
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
+
+    struct SkippedRecords
+    {
+        size_t count = 0;
+        UInt64 first_offset = 0;
+        String first_error;
+    };
+    std::map<String, SkippedRecords> skipped_records;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
@@ -103,6 +124,14 @@ Chunk FileLogSource::generate()
             }
 
             return 1;
+        }
+
+        if (skip_broken_records && isParseError(e.code()))
+        {
+            exception_message = e.message();
+            for (size_t i = 0; i < result_columns.size(); ++i)
+                result_columns[i]->rollback(*checkpoints[i]);
+            return 0;
         }
 
         throw std::move(e);
@@ -128,26 +157,37 @@ Chunk FileLogSource::generate()
             {
                 virtual_columns[0]->insert(file_name);
                 virtual_columns[1]->insert(offset);
+                virtual_columns[2]->insert(storage.getStorageID().getTableName());
                 if (handle_error_mode == StreamingHandleErrorMode::STREAM)
                 {
                     if (exception_message)
                     {
                         const auto & current_record = consumer->getCurrentRecord();
-                        virtual_columns[2]->insertData(current_record.data(), current_record.size());
-                        virtual_columns[3]->insertData(exception_message->data(), exception_message->size());
+                        virtual_columns[3]->insertData(current_record.data(), current_record.size());
+                        virtual_columns[4]->insertData(exception_message->data(), exception_message->size());
                     }
                     else
                     {
-                        virtual_columns[2]->insertDefault();
                         virtual_columns[3]->insertDefault();
+                        virtual_columns[4]->insertDefault();
                     }
                 }
             }
+
             total_rows = total_rows + new_rows;
         }
         else /// poll succeed, but parse failed
         {
             ++failed_poll_attempts;
+            if (exception_message)
+            {
+                auto & skipped = skipped_records[consumer->getFileName()];
+                if (skipped.count++ == 0)
+                {
+                    skipped.first_offset = consumer->getOffset();
+                    skipped.first_error = std::move(*exception_message);
+                }
+            }
         }
 
         if (!consumer->hasMorePolledRecords()
@@ -158,8 +198,14 @@ Chunk FileLogSource::generate()
         }
     }
 
+    for (const auto & [file_name, skipped] : skipped_records)
+        LOG_ERROR(storage.getLog(), "Skipped {} records of file {} that could not be parsed, the first one at offset {}: {}",
+            skipped.count, file_name, skipped.first_offset, skipped.first_error);
+
     if (total_rows == 0)
     {
+        if (!skipped_records.empty() && !consumer->noRecords())
+            storage.setReadMoreAfterSkippedRecords();
         close();
         return {};
     }
@@ -173,7 +219,8 @@ Chunk FileLogSource::generate()
     auto converting_dag = ActionsDAG::makeConvertingActions(
         result_block.cloneEmpty().getColumnsWithTypeAndName(),
         getPort().getHeader().getColumnsWithTypeAndName(),
-        ActionsDAG::MatchColumnsMode::Name);
+        ActionsDAG::MatchColumnsMode::Name,
+        context);
 
     auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
     converting_actions->execute(result_block);

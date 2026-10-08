@@ -4,6 +4,8 @@
             <password></password>
             <profile>default</profile>
             <named_collection_admin>1</named_collection_admin>
+            <use_page_cache_for_object_storage>0</use_page_cache_for_object_storage>
+            <enable_filesystem_cache>0</enable_filesystem_cache>
         </default>
     </users>
 </clickhouse>

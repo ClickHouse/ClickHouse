@@ -3,10 +3,10 @@
 <storage_configuration>
     <disks>
         <jbod1>
-            <path>/jbod1/</path>
+            <path>/test_move_partition_to_disk_on_cluster_jbod1/</path>
         </jbod1>
         <external>
-            <path>/external/</path>
+            <path>/test_move_partition_to_disk_on_cluster_external/</path>
         </external>
     </disks>
 

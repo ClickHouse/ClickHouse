@@ -2,7 +2,8 @@
 
 -- Tests that vector similarity indexes can be detached/attached.
 
-SET enable_vector_similarity_index = 1;
+SET use_skip_indexes_for_top_k = 0;
+SET use_top_k_dynamic_filtering = 0;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;

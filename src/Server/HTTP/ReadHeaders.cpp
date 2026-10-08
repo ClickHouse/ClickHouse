@@ -9,7 +9,12 @@ namespace DB
 {
 
 void readHeaders(
-    Poco::Net::MessageHeader & headers, ReadBuffer & in, size_t max_fields_number, size_t max_name_length, size_t max_value_length)
+    Poco::Net::MessageHeader & headers,
+    ReadBuffer & in,
+    size_t max_fields_number,
+    size_t max_name_length,
+    size_t max_value_length,
+    size_t max_total_size)
 {
     char ch = 0;  // silence uninitialized warning from gcc-*
     std::string name;
@@ -19,6 +24,7 @@ void readHeaders(
     value.reserve(64);
 
     size_t fields = 0;
+    size_t total_size = 0;
 
     while (true)
     {
@@ -73,6 +79,10 @@ void readHeaders(
 
         if (value.size() > max_value_length)
             throw Poco::Net::MessageException("Field value is too long");
+
+        total_size += name.size() + value.size();
+        if (max_total_size && total_size > max_total_size)
+            throw Poco::Net::MessageException("Total request header size is too large");
 
         skipToNextLineOrEOF(in);
 

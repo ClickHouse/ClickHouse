@@ -14,7 +14,7 @@ class MergingAggregatedStep : public ITransformingStep
 {
 public:
     MergingAggregatedStep(
-        const Header & input_header_,
+        const SharedHeader & input_header_,
         Aggregator::Params params_,
         GroupingSetsParamsList grouping_sets_params_,
         bool final_,
@@ -41,6 +41,13 @@ public:
 
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }
+
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

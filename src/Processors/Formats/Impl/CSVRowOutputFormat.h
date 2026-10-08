@@ -20,9 +20,11 @@ public:
     /** with_names - output in the first line a header with column names
       * with_types - output in the next line header with the names of the types
       */
-    CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types, const FormatSettings & format_settings_);
+    CSVRowOutputFormat(WriteBuffer & out_, SharedHeader header_, bool with_names_, bool with_types, const FormatSettings & format_settings_);
 
     String getName() const override { return "CSV"; }
+
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
 
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;

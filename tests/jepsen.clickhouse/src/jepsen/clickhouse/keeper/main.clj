@@ -25,7 +25,7 @@
              [tests :as tests]
              [util :as util :refer [meh]]]
             [jepsen.control.util :as cu]
-            [jepsen.os.ubuntu :as ubuntu]
+            [jepsen.clickhouse.os :as chos]
             [jepsen.checker.timeline :as timeline]
             [clojure.java.io :as io]
             [zookeeper.data :as data]
@@ -65,6 +65,10 @@
     :parse-fn read-string
     :validate [#(and (number? %) (pos? %)) "Must be a positive number"]]
    [nil "--with-auth auth" "Enable auth on connections (0 or 1)"
+    :default false
+    :parse-fn #(= % "1")
+    :validate [boolean? "Must be 0, 1, true or false"]]
+   [nil "--use-bg-thread-for-snapshot-io val" "Use background thread for NuRaft snapshot IO (0 or 1)"
     :default false
     :parse-fn #(= % "1")
     :validate [boolean? "Must be 0, 1, true or false"]]
@@ -108,7 +112,7 @@
     (merge tests/noop-test
            opts
            {:name (str "clickhouse-keeper-quorum=" quorum "-"  (name (:workload opts)) "-" (name (:nemesis opts)))
-            :os ubuntu/os
+            :os chos/os
             :db (get-db opts)
             :pure-generators true
             :client (:client workload)
@@ -134,7 +138,7 @@
     (merge tests/noop-test
            opts
            {:name (str "clickhouse-keeper-perf")
-            :os ubuntu/os
+            :os chos/os
             :db (get-db opts)
             :pure-generators true
             :client (bench/bench-client (get-port opts))

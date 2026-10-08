@@ -7,7 +7,7 @@
  * multiple allocators simultaneously.
  */
 #define JEMALLOC_PREFIX "je_"
-#define JEMALLOC_CPREFIX "JE_"
+#define JEMALLOC_CPREFIX ""
 
 /*
  * Define overrides for non-standard allocator-related functions if they are
@@ -65,8 +65,15 @@
 
 /*
  * Defined if os_unfair_lock_*() functions are available, as provided by Darwin.
+ *
+ * ClickHouse: intentionally left undefined so that malloc_mutex_t uses
+ * pthread_mutex_t (as on Linux and FreeBSD). jemalloc's background thread waits
+ * on a pthread condition variable bound to this mutex
+ * (pthread_cond_wait(&info->cond, &info->mtx.lock)), which requires a real
+ * pthread_mutex_t and does not work with an os_unfair_lock. This is a
+ * prerequisite for enabling JEMALLOC_BACKGROUND_THREAD below on macOS.
  */
-#define JEMALLOC_OS_UNFAIR_LOCK
+/* #undef JEMALLOC_OS_UNFAIR_LOCK */
 
 /* Defined if syscall(2) is usable. */
 /* #undef JEMALLOC_USE_SYSCALL */
@@ -105,8 +112,24 @@
 
 /*
  * Defined if mach_absolute_time() is available.
+ *
+ * ClickHouse: intentionally left undefined so that nstime_get() falls back to
+ * gettimeofday() (CLOCK_REALTIME). With this defined, nstime_get() uses
+ * mach_absolute_time(), a monotonic uptime clock. But the background thread's
+ * condition variable is created with the default clock (CLOCK_REALTIME): macOS
+ * provides no pthread_condattr_setclock to bind it to a monotonic clock, and
+ * jemalloc only attempts that when JEMALLOC_HAVE_CLOCK_MONOTONIC[_COARSE] is
+ * defined, which it is not here. background_thread_sleep() builds the
+ * pthread_cond_timedwait() deadline from the nstime (uptime) clock and passes
+ * it to a CLOCK_REALTIME wait; the uptime value is decades behind the realtime
+ * epoch, so the deadline is always in the past and the wait returns ETIMEDOUT
+ * immediately - the background thread busy-spins a CPU core instead of sleeping
+ * for dirty_decay_ms. Falling back to gettimeofday() makes nstime_get() use the
+ * same clock the condvar waits on (CLOCK_REALTIME), so the deadline is honoured.
+ * This is a prerequisite for JEMALLOC_BACKGROUND_THREAD to work correctly on
+ * macOS. See https://github.com/ClickHouse/ClickHouse/issues/108429
  */
-#define JEMALLOC_HAVE_MACH_ABSOLUTE_TIME
+/* #undef JEMALLOC_HAVE_MACH_ABSOLUTE_TIME */
 
 /*
  * Defined if clock_gettime(CLOCK_REALTIME, ...) is available.
@@ -138,6 +161,13 @@
 
 /* Non-empty if the tls_model attribute is supported. */
 #define JEMALLOC_TLS_MODEL __attribute__((tls_model("initial-exec")))
+
+/*
+ * Defined when the TSD thread-locals use the initial-exec (static) TLS model,
+ * i.e. live at a fixed offset from the thread pointer.  Gates the fast path of
+ * JEMALLOC_TLS_ADDR (see tsd_internals.h).
+ */
+#define JEMALLOC_TLS_MODEL_INITIAL_EXEC
 
 /*
  * JEMALLOC_DEBUG enables assertions and other sanity checks, and disables
@@ -320,6 +350,9 @@
  */
 /* #undef JEMALLOC_MADVISE_NOCORE */
 
+/* Defined if process_madvise(2) is available. */
+#undef JEMALLOC_HAVE_PROCESS_MADVISE
+
 /* Defined if mprotect(2) is available. */
 #define JEMALLOC_HAVE_MPROTECT
 
@@ -394,8 +427,14 @@
 
 /*
  * If defined, all the features necessary for background threads are present.
+ *
+ * ClickHouse: enabled on macOS. Upstream jemalloc leaves this undefined on
+ * Darwin (abi == macho and os_unfair_lock in use), but background threads work
+ * once malloc_mutex_t uses pthread_mutex_t (see JEMALLOC_OS_UNFAIR_LOCK above).
+ * This lets jemalloc purge dirty pages on a background thread with a finite
+ * dirty_decay_ms instead of purging eagerly (a madvise() per free).
  */
-/* #undef JEMALLOC_BACKGROUND_THREAD */
+#define JEMALLOC_BACKGROUND_THREAD
 
 /*
  * If defined, jemalloc symbols are not exported (doesn't work when

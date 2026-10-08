@@ -1,0 +1,13 @@
+OK
+--without grants--
+OK
+OK
+--multiple grants--
+OK
+--wrong grant--
+OK
+--partial revokes--
+OK
+--invalid regexp--
+OK
+OK

@@ -1,0 +1,19 @@
+DIRECT: constant path
+[1,3,5]
+DIRECT: vector path
+[1,3,5]
+DIRECT: no match
+[]
+DIRECT: constant path equals vector path for every value (must all be 1)
+1
+1
+1
+1
+COMPLEX_KEY_DIRECT: constant path
+[(1,'x'),(1,'z'),(3,'w')]
+COMPLEX_KEY_DIRECT: vector path
+[(1,'x'),(1,'z'),(3,'w')]
+COMPLEX_KEY_DIRECT: constant path equals vector path for every value (must all be 1)
+1
+1
+1

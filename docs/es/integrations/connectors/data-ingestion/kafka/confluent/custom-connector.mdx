@@ -1,0 +1,130 @@
+---
+sidebarTitle: 'Kafka Connector Sink en Confluent Platform'
+slug: /integrations/kafka/cloud/confluent/custom-connector
+description: 'Uso de ClickHouse Connector Sink con Kafka Connect y ClickHouse'
+title: Integración de Confluent Platform con ClickHouse
+keywords: ['integración de ClickHouse con Confluent', 'conector Kafka de ClickHouse', 'sink de ClickHouse para Kafka Connect', 'Confluent Platform ClickHouse', 'Custom Connector de Confluent']
+doc_type: 'guide'
+---
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/SQAiPVbd3gg"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+Suponemos que estás familiarizado con:
+
+* [ClickHouse Connector Sink](/es/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
+* Confluent Platform y [Custom Connectors](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html).
+
+<div id="the-official-kafka-connector-from-clickhouse-with-confluent-platform">
+  ## El conector oficial de Kafka de ClickHouse para Confluent Platform
+</div>
+
+<div id="installing-on-confluent-platform">
+  ### Instalación en Confluent Platform
+</div>
+
+Esta guía rápida te ayudará a empezar a usar el ClickHouse Sink Connector en Confluent Platform.
+Para obtener más detalles, consulta la [documentación oficial de Confluent](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
+
+<div id="create-a-topic">
+  #### Crear un topic
+</div>
+
+Crear un topic en Confluent Platform es bastante sencillo, y puedes consultar instrucciones detalladas [aquí](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
+
+<div id="important-notes">
+  #### Notas importantes
+</div>
+
+* El nombre del topic de Kafka debe ser el mismo que el nombre de la tabla de ClickHouse. Esto puede ajustarse mediante un transformador (por ejemplo, [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
+* Tener más particiones no siempre implica un mayor rendimiento; consulta nuestra próxima guía para obtener más detalles y consejos de optimización.
+
+<div id="install-connector">
+  #### Instalar el conector
+</div>
+
+Puede descargar el conector desde nuestro [repositorio](https://github.com/ClickHouse/clickhouse-kafka-connect/releases). No dude en enviarnos allí también sus comentarios e incidencias.
+
+Vaya a &quot;Connector Plugins&quot; -&gt; &quot;Add plugin&quot; y utilice la siguiente configuración:
+
+```text
+'Connector Class' - 'com.clickhouse.kafka.connect.ClickHouseSinkConnector'
+'Connector type' - Sink
+'Sensitive properties' - 'password'. This will ensure entries of the ClickHouse password are masked during configuration.
+```
+
+Ejemplo:
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="UI de Confluent Platform con la configuración para agregar un conector personalizado de ClickHouse" border />
+
+<div id="gather-your-connection-details">
+  #### Reúne los datos de conexión
+</div>
+
+<ConnectionDetails />
+
+<div id="configure-the-connector">
+  #### Configurar el conector
+</div>
+
+Ve a `Connectors` -&gt; `Add Connector` y usa la siguiente configuración (ten en cuenta que los valores son solo de ejemplo):
+
+```json
+{
+  "database": "<DATABASE_NAME>",
+  "errors.retry.timeout": "30",
+  "exactlyOnce": "false",
+  "schemas.enable": "false",
+  "hostname": "<CLICKHOUSE_HOSTNAME>",
+  "password": "<SAMPLE_PASSWORD>",
+  "port": "8443",
+  "ssl": "true",
+  "topics": "<TOPIC_NAME>",
+  "username": "<SAMPLE_USERNAME>",
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false"
+}
+```
+
+<div id="specify-the-connection-endpoints">
+  #### Especifique los endpoints de conexión
+</div>
+
+Debe especificar la lista de endpoints permitidos a los que el conector puede acceder.
+Debe usar un nombre de dominio completo (FQDN) al añadir los endpoints de salida de red.
+Ejemplo: `u57swl97we.eu-west-1.aws.clickhouse.com:8443`
+
+<Note>
+  Debe especificar un puerto HTTP(S). El conector aún no admite el protocolo nativo.
+</Note>
+
+[Lea la documentación.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#cc-byoc-endpoints)
+
+¡Ya debería tenerlo todo listo!
+
+<div id="known-limitations">
+  #### Limitaciones conocidas
+</div>
+
+* Los Custom Connectors deben usar endpoints públicos en Internet. No se admiten direcciones IP estáticas.
+* Puede anular algunas propiedades de Custom Connector. Consulte la [lista en la documentación oficial.](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
+* Los Custom Connectors están disponibles solo en [algunas regiones de AWS](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)
+* Consulte la lista de [limitaciones de Custom Connectors en la documentación oficial](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)

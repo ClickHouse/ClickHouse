@@ -1,6 +1,7 @@
 #include <sys/mman.h>
 #include <Poco/Environment.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
 #include <Common/memory.h>
 

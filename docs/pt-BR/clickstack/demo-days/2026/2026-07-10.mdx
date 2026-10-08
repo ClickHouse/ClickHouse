@@ -1,0 +1,122 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-10
+title: 'Demo days - 2026-07-10'
+sidebarTitle: '2026-07-10'
+description: 'Demo days do ClickStack de 2026-07-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="text-index-fix-for-map-column-disjunction-filters">
+  ## Correção do índice de texto para filtros de disjunção em coluna Map
+</div>
+
+*Demo por [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/i7SOQ5uSfm8" title="reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Aaron se deparou com isso enquanto ajudava a depurar um relatório cujas consultas sobre um atributo de uma coluna Map estavam inesperadamente lentas. A pessoa já havia contornado o problema por conta própria, adicionando uma coluna materializada e um filtro de Bloom, o que não deveria ser necessário, dadas as otimizações já existentes para atributos de Map.
+
+Descobriu-se que filtrar vários valores possíveis para um atributo de Map usava a função `hasAny` — na prática, uma verificação de disjunção de array. Por exemplo, para corresponder atributos de log, como um ID de usuário, com uma lista de valores. Isso não acionava o índice de texto em versões do ClickHouse anteriores à 26.5. A correção reescreve essa disjunção como um conjunto de verificações de igualdade unidas por OR e agrupadas entre parênteses, o que ativa corretamente o índice. Aaron confirmou via `EXPLAIN` que a consulta reescrita agora usa o skip index como esperado.
+
+A maioria dos usuários já está na 26.5 ou em versões posteriores, mas, para quem ainda não chegou lá, isso mantém essas consultas rápidas enquanto isso.
+
+**PRs relacionadas:** [#2643](https://github.com/hyperdxio/hyperdx/pull/2643) feat: reformular getAllKeyValues e adicionar filtros preenchidos a partir de índices de texto
+
+<div id="profiling-data-in-clickcannon">
+  ## Dados de perfilamento no ClickCannon
+</div>
+
+*Demonstração por [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Fo1XCHsA3rU" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[Recentemente publicamos um post no blog sobre o ClickCannon](https://clickhouse.com/blog/building-clickcannon-a-tool-for-benchmark-clickhouse), a ferramenta para gerar dados sintéticos e fazer benchmarking do ClickHouse. Spencer agora adicionou um sinal de perfilamento ao suporte já existente para logs, métricas e traces. É possível gerar dados de perfilamento com profundidade de pilha configurável, seja simulando-os em tempo real ou lendo-os do disco, e fazer a ingestão deles da mesma forma que os outros sinais: basta apontar o ClickCannon para uma tabela de perfis e ele começa a gerar linhas.
+
+Os payloads de perfil se mostraram consideravelmente maiores do que os dos outros sinais, então o ajuste de quantas chaves são adicionadas por amostra e a validação do throughput em relação ao tamanho da instância ainda estão em andamento. Conseguir gerar esses dados em volume permite que a equipe comece a otimizar o schema e estabeleça uma referência inicial, o que se conecta ao esforço mais amplo de dar suporte a dados de perfilamento e à sua visualização em todo o ClickStack. Spencer também deu uma primeira olhada em como renderizar frames de perfil no visualizador de logs do ClickStack.
+
+<div id="bar-charts">
+  ## Gráficos de barras
+</div>
+
+*Demonstração de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JIQJpGMh5tk" title="player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Os gráficos de barras chegaram, inspirados por uma PR que havia sido aberta meses atrás e acabou ficando desatualizada durante um rebase. Agora eles são compatíveis com todos os lugares em que gráficos aparecem no ClickStack: dashboards, o construtor de dashboards do MCP e outros. Como os gráficos de barras agora cobrem o mesmo caso de uso que os gráficos de linhas cobriam para comparações em um dado momento, os gráficos de linhas foram renomeados para séries temporais para deixar essa distinção mais clara.
+
+Os gráficos de barras oferecem suporte a um limite de séries, para que você possa controlar quantas barras aparecem quando há um group by de alta cardinalidade, e a um ORDER BY personalizado, para que você possa ordenar pela métrica mais importante em vez da ordenação padrão.
+
+**PRs relacionadas:** [#2606](https://github.com/hyperdxio/hyperdx/pull/2606) feat: Add categorical bar chart display type, [#2618](https://github.com/hyperdxio/hyperdx/pull/2618) feat: Allow custom order by on categorical (pie/bar) charts
+
+<div id="community-contributions">
+  ## Contribuições da comunidade
+</div>
+
+*Demo de [@vinzee](https://github.com/vinzee) e [@zoov-xavier](https://github.com/zoov-xavier)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/f4xNJS6tcmY" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Nesta semana, recebemos algumas boas contribuições da comunidade durante a revisão de PRs. De [@vinzee](https://github.com/vinzee): um botão de referência de sintaxe ao lado do toggle Lucene/SQL na barra de busca, oferecendo aos usuários exemplos rápidos, no próprio app, da sintaxe da consulta e das opções disponíveis, sem precisar sair da página.
+
+De [@zoov-xavier](https://github.com/zoov-xavier): as pílulas de filtro agora aceitam valores inseridos manualmente. Antes, só era possível escolher em uma lista suspensa de valores amostrados, o que significava que você não podia filtrar por um valor que ainda não tivesse sido carregado nessa amostra. Agora, basta digitar o valor desejado e pressionar Enter.
+
+**PRs relacionados:** [#2381](https://github.com/hyperdxio/hyperdx/pull/2381) Adicionar referência de sintaxe da consulta ao campo de busca, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): permitir valores de texto livre ao editar uma pílula de filtro
+
+<div id="alert-annotations-on-charts">
+  ## Anotações de alertas em gráficos
+</div>
+
+*Demo de [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/NmEYBvtjpAQ" title="player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Isso surgiu a partir de uma solicitação de um cliente para ver anotações nos gráficos quando alertas disparam. Há um novo toggle Show alert annotations, desativado por padrão, que marca exatamente quando um alerta disparou e quando foi resolvido diretamente no gráfico. Se um alerta estava em disparo fora do intervalo de tempo visível no momento, um marcador aparece na borda esquerda do gráfico para indicar que ele já estava ativo antes do início da janela, e as anotações são atualizadas em tempo real à medida que os alertas disparam e são resolvidos.
+
+Tom implementou isso com um padrão reutilizável de anotações, então adicionar novos tipos de anotação depois, como lançamentos ou eventos do Kubernetes, deve ser simples usando a mesma abordagem.
+
+**PRs relacionadas:** [#2605](https://github.com/hyperdxio/hyperdx/pull/2605) feat(dashboards): anotações de disparo/recuperação de alertas em gráficos de tiles, [#2616](https://github.com/hyperdxio/hyperdx/pull/2616) fix(dashboards): melhora da visibilidade das anotações de alertas em gráficos de tiles
+
+<div id="event-patterns-tile-polish-and-line-series-actions">
+  ## Event patterns, refinamento de tiles e ações para séries de linha
+</div>
+
+*Demo por [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Nwo_nt5VZL4" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Event patterns agora são um tipo oficial de tile do dashboard. Você pode criar um tile de padrão e fornecer uma cláusula `WHERE` ou uma expressão de padrão — por exemplo, filtrando por nome do serviço ou texto de severidade — para destacar padrões recorrentes de imediato.
+
+Brandon também melhorou a quebra de texto das visualizações em tiles pequenos, então títulos longos agora se distribuem em várias linhas com reticências, em vez de serem cortados de forma estranha, além de uma apresentação mais limpa dos botões de ação do tile: em tiles pequenos, eles são recolhidos em um menu de contexto usando uma container query de CSS e voltam a aparecer diretamente no tile quando ele é redimensionado para um tamanho maior. Também foi corrigido um caso em que fechar as configurações de exibição de um tile sem salvar podia descartar suas alterações silenciosamente; agora o sistema avisa corretamente antes de perder edições.
+
+Por fim, em resposta ao feedback dos usuários, agora você pode clicar em uma série de linha para copiar o valor dela ou focar apenas nessa linha, além da ação de Busca já existente. Brandon também está no meio de um upgrade para o Recharts v3, com o objetivo de corrigir o corte de tooltips em tabelas com muitos grupos.
+
+**PRs relacionadas:** [#2604](https://github.com/hyperdxio/hyperdx/pull/2604) feat: adicionar Event patterns como um tipo de tile do dashboard, [#2596](https://github.com/hyperdxio/hyperdx/pull/2596) fix(charts): usar reticências em várias linhas para títulos de tiles do dashboard, [#2597](https://github.com/hyperdxio/hyperdx/pull/2597) fix: rastrear configurações de exibição/heatmap como alteradas para o modal de alterações não salvas, [#2611](https://github.com/hyperdxio/hyperdx/pull/2611) feat(charts): ações de drill-down por série, drill-in em nova aba e foco sincronizado com a busca
+
+<div id="dashboard-and-service-map-styling">
+  ## Estilo do dashboard e do service map
+</div>
+
+*Demo por [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/yzgjzU8RIz0" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Uma série de melhorias de estilo voltadas à usabilidade — pequenas individualmente, mas que, no conjunto, deixam a experiência visivelmente mais limpa. Nos dashboards, os tiles editáveis tinham cores de cabeçalho inconsistentes no modo claro — alguns cinza, outros brancos — e isso agora foi padronizado com uma linha divisória limpa abaixo do cabeçalho. As ações dos tiles exibidas apenas ao passar o mouse também foram reposicionadas para evitar sobreposição com títulos em cartões pequenos e responsivos, e os gráficos agora permitem redefinir o zoom.
+
+O service map recebeu um tratamento semelhante: os controles agora se adaptam ao modo de cores, permanecendo claros no modo claro e escuros no modo escuro, em vez de sempre usarem preto por padrão; as legendas identificam com mais clareza latência, taxa de erro e throughput; e agora você pode clicar em um serviço para focá-lo e clicar novamente para remover o foco e voltar à visualização completa.
+
+**PRs relacionadas:** [#2592](https://github.com/hyperdxio/hyperdx/pull/2592) Refinamento do estilo dos dashboard tiles e do layout do cabeçalho, [#2601](https://github.com/hyperdxio/hyperdx/pull/2601) feat(service-map): alternância de cores das métricas e refinamento do popover

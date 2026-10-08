@@ -93,7 +93,7 @@ ProxyConfiguration RemoteProxyConfigurationResolver::resolve()
 
     cached_config.protocol = proxy_protocol;
     cached_config.host = proxy_host;
-    cached_config.port = proxy_port;
+    cached_config.port = static_cast<uint16_t>(proxy_port);
     cached_config.tunneling = use_tunneling_for_https_requests_over_http_proxy;
     cached_config.original_request_protocol = request_protocol;
     cached_config.no_proxy_hosts = no_proxy_hosts;

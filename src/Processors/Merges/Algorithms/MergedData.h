@@ -13,8 +13,8 @@ class Block;
 class MergedData
 {
 public:
-    explicit MergedData(bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_)
-        : max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_)
+    explicit MergedData(bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_)
+        : max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_), max_dynamic_subcolumns(max_dynamic_subcolumns_)
     {
     }
 
@@ -33,6 +33,12 @@ public:
 
     bool hasEnoughRows() const;
 
+    size_t rowsToInsertBeforeFlush(
+        const ColumnRawPtrs & raw_columns,
+        size_t start_index,
+        size_t max_rows,
+        size_t block_size) const;
+
     UInt64 mergedRows() const { return merged_rows; }
     UInt64 totalMergedRows() const { return total_merged_rows; }
     UInt64 totalChunks() const { return total_chunks; }
@@ -40,6 +46,15 @@ public:
     UInt64 maxBlockSize() const { return max_block_size; }
 
     IMergingAlgorithm::MergedStats getMergedStats() const { return {.bytes = total_allocated_bytes, .rows = total_merged_rows, .blocks = total_chunks}; }
+
+    /// Hint for the row-by-row insertion fast path. When the merge cannot receive any
+    /// `ColumnReplicated` input (no source column is replicated, e.g. a plain sort with no JOIN),
+    /// `insertRow` / `insertRows` skip the per-row `isReplicated()` wrapping check. Defaults to
+    /// `true`, so every algorithm keeps the wrapping behavior unless it explicitly opts out. An
+    /// algorithm that lowers this to `false` MUST raise it back to `true` before any replicated
+    /// column can reach `insertRow` (e.g. from a late-arriving chunk in `consume`).
+    void setMayHaveReplicatedColumns(bool value) { may_have_replicated_columns = value; }
+    bool mayHaveReplicatedColumns() const { return may_have_replicated_columns; }
 
     virtual ~MergedData() = default;
 
@@ -55,8 +70,12 @@ protected:
     const UInt64 max_block_size = 0;
     const UInt64 max_block_size_bytes = 0;
     const bool use_average_block_size = false;
+    const std::optional<size_t> max_dynamic_subcolumns;
 
     bool need_flush = false;
+
+    /// See `setMayHaveReplicatedColumns`. Conservative default keeps the wrapping check.
+    bool may_have_replicated_columns = true;
 };
 
 }

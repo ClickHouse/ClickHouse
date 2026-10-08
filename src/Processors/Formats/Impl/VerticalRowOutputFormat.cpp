@@ -5,9 +5,12 @@
 #include <Processors/Formats/Impl/VerticalRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
+#include <Formats/EscapingRuleUtils.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <Common/UTF8Helpers.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 
 
@@ -15,8 +18,8 @@ namespace DB
 {
 
 VerticalRowOutputFormat::VerticalRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_), format_settings(format_settings_)
+    WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(std::move(header_), out_), format_settings(format_settings_)
 {
     color = format_settings.pretty.color == 1 || (format_settings.pretty.color == 2 && format_settings.is_writing_to_terminal);
 
@@ -29,11 +32,18 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
 
     names_and_paddings.resize(columns);
     is_number.resize(columns);
+    is_json.resize(columns);
 
     for (size_t i = 0; i < columns; ++i)
     {
         /// Note that number of code points is just a rough approximation of visible string width.
-        const String & name = sample.getByPosition(i).name;
+        /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<CR>b``), so it gets
+        /// the same treatment as the values: the replacement happens before truncation, because a
+        /// Control Picture takes one visible position while the raw control character takes none.
+        String name = sample.getByPosition(i).name;
+        if (format_settings.pretty.display_control_characters)
+            name = replaceControlCharactersWithPictures(
+                std::move(name), /*highlight_trailing_whitespace=*/ false, /*replace_line_feeds=*/ true);
 
         auto [name_cut, width] = truncateName(name,
           format_settings.pretty.max_column_name_width_cut_to,
@@ -52,7 +62,9 @@ VerticalRowOutputFormat::VerticalRowOutputFormat(
     {
         size_t new_size = max_name_width - name_widths[i] + names_and_paddings[i].size();
         names_and_paddings[i].resize(new_size, ' ');
-        is_number[i] = isNumber(removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type)));
+        const auto & type = removeNullable(recursiveRemoveLowCardinality(sample.getByPosition(i).type));
+        is_number[i] = isNumber(type);
+        is_json[i] = isObject(type);
     }
 }
 
@@ -70,10 +82,16 @@ void VerticalRowOutputFormat::writeField(const IColumn & column, const ISerializ
 }
 
 
-void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const
+void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerialization & serialization, const size_t row_num) const
 {
-    /// If we need highlighting.
-    if (color
+    if (is_json[field_number])
+    {
+        constexpr size_t indent = 0;
+        serialization.serializeTextJSONPretty(column, row_num, out, format_settings, indent);
+    }
+    /// Highlighting inspects the whole serialized value, so it has to be materialized first.
+    /// This only happens in interactive (color) mode, where values are display-sized.
+    else if (color
         && ((format_settings.pretty.highlight_digit_groups && is_number[field_number])
             || format_settings.pretty.highlight_trailing_spaces))
     {
@@ -83,18 +101,34 @@ void VerticalRowOutputFormat::writeValue(const IColumn & column, const ISerializ
             serialization.serializeText(column, row_num, buf, format_settings);
         }
 
+        /// Make non-printable control characters visible instead of being silently swallowed.
+        /// Trailing whitespace is highlighted in the same pass: it must be detected on the
+        /// pre-replacement bytes, because the replacement turns a trailing carriage return, form
+        /// feed or vertical tab into a Control Picture that `highlightTrailingSpaces` would not recognize.
+        if (format_settings.pretty.display_control_characters)
+            serialized_value = replaceControlCharactersWithPictures(std::move(serialized_value), format_settings.pretty.highlight_trailing_spaces);
+
         /// Highlight groups of thousands.
         if (format_settings.pretty.highlight_digit_groups && is_number[field_number])
             serialized_value = highlightDigitGroups(serialized_value);
 
         /// Highlight trailing spaces.
-        if (format_settings.pretty.highlight_trailing_spaces)
+        if (format_settings.pretty.highlight_trailing_spaces && !format_settings.pretty.display_control_characters)
             serialized_value = highlightTrailingSpaces(serialized_value);
 
         out.write(serialized_value.data(), serialized_value.size());
     }
+    else if (format_settings.pretty.display_control_characters)
+    {
+        /// Make non-printable control characters visible instead of being silently swallowed.
+        /// Stream through a decorator so large values are not fully buffered in memory.
+        WriteBufferReplacingControlCharacters buf(out);
+        serialization.serializeText(column, row_num, buf, format_settings);
+        buf.finalize();
+    }
     else
     {
+        /// No post-processing: stream directly, keeping the extra memory cost O(1).
         serialization.serializeText(column, row_num, out, format_settings);
     }
 
@@ -190,17 +224,90 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
         writeField(*columns[i], *serializations[i], row_num);
 }
 
+void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory)
 {
     factory.registerOutputFormat("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
-        const FormatSettings & settings)
+        const FormatSettings & settings,
+        FormatFilterInfoPtr /*format_filter_info*/)
     {
-        return std::make_shared<VerticalRowOutputFormat>(buf, sample, settings);
+        return std::make_shared<VerticalRowOutputFormat>(buf, std::make_shared<const Block>(sample), settings);
     });
 
     factory.markOutputFormatSupportsParallelFormatting("Vertical");
+
+    /// Each field is labelled with its column name, written verbatim, so a name that is not valid UTF-8
+    /// makes the output not valid UTF-8 either. The values are written through the plain
+    /// `serializeText` kind, which writes the `Bool` representations verbatim (see
+    /// `settingsLiteralsMayProduceRawBytes`). The text framings reject or base64-encode the output in
+    /// these cases (see `checkIfOutputFormatMayProduceRawBytes`). `Vertical` does not write the data
+    /// type names.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "Vertical",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false)
+                || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None);
+        });
+
+    factory.setDocumentation("Vertical", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
+
+Prints each value on a separate line with the column name specified. This format is convenient for printing just one or a few rows if each row consists of a large number of columns.
+
+Note that [`NULL`](/reference/syntax) is output as `ᴺᵁᴸᴸ` to make it easier to distinguish between the string value `NULL` and no value. JSON columns will be pretty printed, and `NULL` is output as `null`, because it is a valid JSON value and easily distinguishable from `"null"`.
+
+## Example usage {#example-usage}
+
+Example:
+
+```sql
+SELECT * FROM t_null FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+x: 1
+y: ᴺᵁᴸᴸ
+```
+
+By default, non-printable control characters (C0 controls `0x00`–`0x1F` and `DEL` `0x7F`) in values and in column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`–`U+2421`), so they stay visible instead of being silently swallowed by the terminal. For example, a NUL is shown as `␀`:
+
+```sql
+SELECT 'string with a NUL \0 character' AS test FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+test: string with a NUL ␀ character
+```
+
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, a line feed breaks the line, and an ANSI escape sequence is what lets the data carry a visualization. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
+
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
+
+```sql
+SELECT 'string with a NUL \0 character' AS test
+FORMAT Vertical
+SETTINGS output_format_pretty_display_control_characters = 0
+```
+
+The response then contains the raw `NUL` byte instead. A terminal swallows it, so the value
+reads as if the character were simply missing.
+
+This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 }

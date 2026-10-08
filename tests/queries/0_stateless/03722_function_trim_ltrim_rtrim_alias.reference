@@ -1,0 +1,44 @@
+-- { echoOn }
+
+SELECT ltrim('   leading   '), trimLeft('   leading   ');
+leading   	leading   
+SELECT ltrim('xxleadingxx', 'x'), trimLeft('xxleadingxx', 'x');
+leadingxx	leadingxx
+SELECT rtrim('   trailing   '), trimRight('   trailing   ');
+   trailing	   trailing
+SELECT rtrim('xxtrailingxx', 'x'), trimRight('xxtrailingxx', 'x');
+xxtrailing	xxtrailing
+SELECT trim('   both   '), trimBoth('   both   ');
+both	both
+SELECT trim('$$both$$', '$'), trimBoth('$$both$$', '$');
+both	both
+SELECT TRIM('   both   '), trimBoth('   both   ');
+both	both
+SELECT TRIM(BOTH '$' FROM '$$both$$'), trimBoth('$$both$$', '$');
+both	both
+SELECT TRIM(LEADING '$' FROM '$$both$$'), trimLeft('$$both$$', '$');
+both$$	both$$
+SELECT TRIM(TRAILING '$' FROM '$$both$$'), trimRight('$$both$$', '$');
+$$both	$$both
+SELECT TRIM(BOTH '' FROM 'xx'), trimBoth('xx', '');
+xx	xx
+SELECT TRIM(LEADING '' FROM 'xx'), trimLeft('xx', '');
+xx	xx
+SELECT TRIM(TRAILING '' FROM 'xx'), trimRight('xx', '');
+xx	xx
+SELECT TRIM(BOTH concat('$', '$') FROM '$$both$$'), trimBoth('$$both$$', '$$');
+both	both
+SELECT ltrim('\t  abc', '\t '), trimLeft('\t  abc', '\t ');
+abc	abc
+SELECT rtrim('abc\t  ', '\t '), trimRight('abc\t  ', '\t ');
+abc	abc
+SELECT TrIm('  x  '), trimBoth('  x  ');
+x	x
+SELECT LTRIM('  x  '), trimLeft('  x  ');
+x  	x  
+SELECT LtRiM('  x  '), trimLeft('  x  ');
+x  	x  
+SELECT RTRIM('  x  '), trimRight('  x  ');
+  x	  x
+SELECT RtRiM('  x  '), trimRight('  x  ');
+  x	  x

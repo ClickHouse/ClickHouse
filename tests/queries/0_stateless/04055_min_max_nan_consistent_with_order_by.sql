@@ -1,0 +1,485 @@
+-- Test that min/max/argMin/argMax treat NaN consistently with ORDER BY.
+-- ClickHouse convention: NaN is always sorted LAST (after all non-NaN values).
+-- So min() and max() should both skip NaN, returning NaN only when all values are NaN.
+-- Reference: https://github.com/ClickHouse/ClickHouse/issues/72228
+
+-- { echoOn }
+
+-- ===========================================================================
+-- Section 1: Basic min/max with NaN — compare with ORDER BY LIMIT 1
+-- Tests both batch path (no GROUP BY) and scalar path (GROUP BY forces per-row add)
+-- ===========================================================================
+
+-- 1a. NaN at the beginning (triggers SIMD bug: NaN sticks as accumulator in findExtremeMin)
+SELECT 'NaN at beginning - Float32';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat32(nan), toFloat32(1), toFloat32(2), toFloat32(3)]) AS x);
+SELECT x FROM (SELECT arrayJoin([toFloat32(nan), toFloat32(1), toFloat32(2), toFloat32(3)]) AS x) ORDER BY x ASC LIMIT 1;
+SELECT x FROM (SELECT arrayJoin([toFloat32(nan), toFloat32(1), toFloat32(2), toFloat32(3)]) AS x) ORDER BY x DESC LIMIT 1;
+
+SELECT 'NaN at beginning - Float64';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(2), toFloat64(3)]) AS x);
+SELECT x FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(2), toFloat64(3)]) AS x) ORDER BY x ASC LIMIT 1;
+SELECT x FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(2), toFloat64(3)]) AS x) ORDER BY x DESC LIMIT 1;
+
+-- 1b. NaN in the middle (SIMD std::max drops NaN silently)
+SELECT 'NaN in middle';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(1), toFloat64(nan), toFloat64(3)]) AS x);
+SELECT x FROM (SELECT arrayJoin([toFloat64(1), toFloat64(nan), toFloat64(3)]) AS x) ORDER BY x ASC LIMIT 1;
+SELECT x FROM (SELECT arrayJoin([toFloat64(1), toFloat64(nan), toFloat64(3)]) AS x) ORDER BY x DESC LIMIT 1;
+
+-- 1c. NaN at the end
+SELECT 'NaN at end';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(1), toFloat64(2), toFloat64(nan)]) AS x);
+
+-- 1d. Multiple NaN values
+SELECT 'Multiple NaN';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(nan), toFloat64(2), toFloat64(nan)]) AS x);
+
+-- 1e. All NaN
+SELECT 'All NaN';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(nan), toFloat64(nan)]) AS x);
+
+-- 1f. NaN with inf and -inf
+SELECT 'NaN with inf/-inf';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(inf), toFloat64(-inf), toFloat64(0)]) AS x);
+SELECT x FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(inf), toFloat64(-inf), toFloat64(0)]) AS x) ORDER BY x ASC LIMIT 1;
+SELECT x FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(inf), toFloat64(-inf), toFloat64(0)]) AS x) ORDER BY x DESC LIMIT 1;
+
+-- 1g. No NaN (sanity check — should be unaffected)
+SELECT 'No NaN';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(3), toFloat64(1), toFloat64(2)]) AS x);
+
+-- 1h. Single NaN
+SELECT 'Single NaN';
+SELECT min(x), max(x) FROM (SELECT toFloat64(nan) AS x);
+
+-- 1i. Single non-NaN
+SELECT 'Single non-NaN';
+SELECT min(x), max(x) FROM (SELECT toFloat64(42) AS x);
+
+-- ===========================================================================
+-- Section 2: Scalar add path via GROUP BY
+-- Each group gets individual add() calls instead of batch addBatchSinglePlace()
+-- ===========================================================================
+
+SELECT 'Scalar path via GROUP BY';
+SELECT grp, min(x), max(x) FROM
+(
+    SELECT 1 AS grp, arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(2)]) AS x
+    UNION ALL
+    SELECT 2 AS grp, arrayJoin([toFloat64(3), toFloat64(nan), toFloat64(1)]) AS x
+    UNION ALL
+    SELECT 3 AS grp, arrayJoin([toFloat64(nan), toFloat64(nan)]) AS x
+)
+GROUP BY grp ORDER BY grp;
+
+-- ===========================================================================
+-- Section 3: Batch path with larger data (exercises SIMD unrolled loop)
+-- NaN at various positions within a batch large enough for SIMD
+-- ===========================================================================
+
+SELECT 'Batch path with larger data';
+DROP TABLE IF EXISTS test_nan_batch;
+CREATE TABLE test_nan_batch (x Float64) ENGINE = MergeTree ORDER BY tuple();
+
+-- 1000 rows: NaN at position 0
+INSERT INTO test_nan_batch SELECT if(number = 0, nan, toFloat64(number)) FROM numbers(1000);
+SELECT min(x), max(x) FROM test_nan_batch;
+TRUNCATE TABLE test_nan_batch;
+
+-- 1000 rows: NaN at position 500 (middle)
+INSERT INTO test_nan_batch SELECT if(number = 500, nan, toFloat64(number)) FROM numbers(1000);
+SELECT min(x), max(x) FROM test_nan_batch;
+TRUNCATE TABLE test_nan_batch;
+
+-- 1000 rows: NaN at position 999 (end)
+INSERT INTO test_nan_batch SELECT if(number = 999, nan, toFloat64(number)) FROM numbers(1000);
+SELECT min(x), max(x) FROM test_nan_batch;
+TRUNCATE TABLE test_nan_batch;
+
+-- 1000 rows: every 100th element is NaN
+INSERT INTO test_nan_batch SELECT if(number % 100 = 0, nan, toFloat64(number)) FROM numbers(1000);
+SELECT min(x), max(x) FROM test_nan_batch;
+
+DROP TABLE test_nan_batch;
+
+-- ===========================================================================
+-- Section 4: argMin / argMax with NaN
+-- ===========================================================================
+
+SELECT 'argMin/argMax basic';
+SELECT
+    argMin(id, x),
+    argMax(id, x)
+FROM
+(
+    SELECT 1 AS id, toFloat64(nan) AS x
+    UNION ALL SELECT 2, toFloat64(1)
+    UNION ALL SELECT 3, toFloat64(3)
+    UNION ALL SELECT 4, toFloat64(2)
+);
+
+SELECT 'argMin/argMax NaN in middle';
+SELECT
+    argMin(id, x),
+    argMax(id, x)
+FROM
+(
+    SELECT 1 AS id, toFloat64(1) AS x
+    UNION ALL SELECT 2, toFloat64(nan)
+    UNION ALL SELECT 3, toFloat64(3)
+);
+
+SELECT 'argMin/argMax all NaN';
+SELECT
+    argMin(id, x),
+    argMax(id, x)
+FROM (SELECT number + 1 AS id, toFloat64(nan) AS x FROM numbers(2));
+
+-- argMin/argMax with GROUP BY (scalar path for index finding)
+SELECT 'argMin/argMax GROUP BY';
+SELECT grp, argMin(id, x), argMax(id, x) FROM
+(
+    SELECT 1 AS grp, 'a' AS id, toFloat64(nan) AS x
+    UNION ALL SELECT 1, 'b', toFloat64(1)
+    UNION ALL SELECT 1, 'c', toFloat64(3)
+    UNION ALL SELECT 2, 'd', toFloat64(2)
+    UNION ALL SELECT 2, 'e', toFloat64(nan)
+    UNION ALL SELECT 2, 'f', toFloat64(0)
+)
+GROUP BY grp ORDER BY grp;
+
+-- argMin/argMax batch path with larger data
+SELECT 'argMin/argMax batch';
+DROP TABLE IF EXISTS test_nan_argminmax;
+CREATE TABLE test_nan_argminmax (id UInt64, x Float64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_nan_argminmax SELECT number, if(number = 500, nan, toFloat64(number)) FROM numbers(1000);
+SELECT argMin(id, x), argMax(id, x) FROM test_nan_argminmax;
+DROP TABLE test_nan_argminmax;
+
+-- ===========================================================================
+-- Section 5: minIf / maxIf with NaN
+-- ===========================================================================
+
+SELECT 'minIf/maxIf';
+SELECT
+    minIf(x, x > -100),
+    maxIf(x, x > -100)
+FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(2), toFloat64(3)]) AS x);
+
+SELECT
+    minIf(x, cond),
+    maxIf(x, cond)
+FROM
+(
+    SELECT toFloat64(nan) AS x, 1 AS cond
+    UNION ALL SELECT toFloat64(1), 1
+    UNION ALL SELECT toFloat64(2), 0
+    UNION ALL SELECT toFloat64(3), 1
+);
+
+-- ===========================================================================
+-- Section 6: Nullable Float with NaN
+-- Tests the NotNull batch path
+-- ===========================================================================
+
+SELECT 'Nullable Float with NaN';
+SELECT
+    min(x),
+    max(x)
+FROM (SELECT arrayJoin([toNullable(toFloat64(nan)), toNullable(toFloat64(1)), NULL, toNullable(toFloat64(3))]) AS x);
+
+SELECT
+    argMin(id, x),
+    argMax(id, x)
+FROM
+(
+    SELECT 1 AS id, toNullable(toFloat64(nan)) AS x
+    UNION ALL SELECT 2, toNullable(toFloat64(1))
+    UNION ALL SELECT 3, NULL
+    UNION ALL SELECT 4, toNullable(toFloat64(3))
+);
+
+-- Nullable + If combined (tests setSmallestNotNullIf/setGreatestNotNullIf with both maps)
+SELECT 'Nullable + If combined';
+SELECT
+    minIf(x, assumeNotNull(x) > 0),
+    maxIf(x, assumeNotNull(x) > 0)
+FROM (SELECT arrayJoin([toNullable(toFloat64(nan)), toNullable(toFloat64(1)), NULL, toNullable(toFloat64(3)), toNullable(toFloat64(nan))]) AS x);
+
+SELECT
+    argMinIf(id, x, assumeNotNull(x) > 0),
+    argMaxIf(id, x, assumeNotNull(x) > 0)
+FROM
+(
+    SELECT 1 AS id, toNullable(toFloat64(nan)) AS x
+    UNION ALL SELECT 2, toNullable(toFloat64(1))
+    UNION ALL SELECT 3, NULL
+    UNION ALL SELECT 4, toNullable(toFloat64(3))
+    UNION ALL SELECT 5, toNullable(toFloat64(nan))
+);
+
+-- ===========================================================================
+-- Section 7: Float32 specifically (separate SIMD path)
+-- ===========================================================================
+
+SELECT 'Float32 batch';
+DROP TABLE IF EXISTS test_nan_f32;
+CREATE TABLE test_nan_f32 (x Float32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_nan_f32 SELECT if(number = 0, toFloat32(nan), toFloat32(number)) FROM numbers(1000);
+SELECT min(x), max(x) FROM test_nan_f32;
+TRUNCATE TABLE test_nan_f32;
+
+INSERT INTO test_nan_f32 SELECT if(number = 500, toFloat32(nan), toFloat32(number)) FROM numbers(1000);
+SELECT min(x), max(x) FROM test_nan_f32;
+DROP TABLE test_nan_f32;
+
+-- ===========================================================================
+-- Section 7b: Comprehensive SIMD batch path coverage
+-- Tests all functions x NaN positions x float types x conditional variants
+-- Uses 1000-row MergeTree tables to guarantee SIMD findExtreme* path
+-- ===========================================================================
+
+SELECT 'SIMD: min/max Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd;
+CREATE TABLE test_simd (x Float64) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO test_simd SELECT if(number = 0, nan, toFloat64(number)) FROM numbers(1000);
+SELECT 'first', min(x), max(x) FROM test_simd;
+TRUNCATE TABLE test_simd;
+
+INSERT INTO test_simd SELECT if(number = 500, nan, toFloat64(number)) FROM numbers(1000);
+SELECT 'middle', min(x), max(x) FROM test_simd;
+TRUNCATE TABLE test_simd;
+
+INSERT INTO test_simd SELECT if(number = 999, nan, toFloat64(number)) FROM numbers(1000);
+SELECT 'last', min(x), max(x) FROM test_simd;
+DROP TABLE test_simd;
+
+SELECT 'SIMD: min/max Float32 NaN positions';
+DROP TABLE IF EXISTS test_simd_f32;
+CREATE TABLE test_simd_f32 (x Float32) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO test_simd_f32 SELECT if(number = 0, toFloat32(nan), toFloat32(number)) FROM numbers(1000);
+SELECT 'first', min(x), max(x) FROM test_simd_f32;
+TRUNCATE TABLE test_simd_f32;
+
+INSERT INTO test_simd_f32 SELECT if(number = 500, toFloat32(nan), toFloat32(number)) FROM numbers(1000);
+SELECT 'middle', min(x), max(x) FROM test_simd_f32;
+TRUNCATE TABLE test_simd_f32;
+
+INSERT INTO test_simd_f32 SELECT if(number = 999, toFloat32(nan), toFloat32(number)) FROM numbers(1000);
+SELECT 'last', min(x), max(x) FROM test_simd_f32;
+DROP TABLE test_simd_f32;
+
+SELECT 'SIMD: argMin/argMax Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd_arg;
+CREATE TABLE test_simd_arg (id UInt64, x Float64) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO test_simd_arg SELECT number, if(number = 0, nan, toFloat64(number)) FROM numbers(1000);
+SELECT 'first', argMin(id, x), argMax(id, x) FROM test_simd_arg;
+TRUNCATE TABLE test_simd_arg;
+
+INSERT INTO test_simd_arg SELECT number, if(number = 500, nan, toFloat64(number)) FROM numbers(1000);
+SELECT 'middle', argMin(id, x), argMax(id, x) FROM test_simd_arg;
+TRUNCATE TABLE test_simd_arg;
+
+INSERT INTO test_simd_arg SELECT number, if(number = 999, nan, toFloat64(number)) FROM numbers(1000);
+SELECT 'last', argMin(id, x), argMax(id, x) FROM test_simd_arg;
+DROP TABLE test_simd_arg;
+
+SELECT 'SIMD: minIf/maxIf Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd_if;
+CREATE TABLE test_simd_if (x Float64, cond UInt8) ENGINE = MergeTree ORDER BY tuple();
+
+-- NaN first among active rows: even positions active, NaN at 0
+INSERT INTO test_simd_if SELECT if(number = 0, nan, toFloat64(number)), number % 2 = 0 FROM numbers(1000);
+SELECT 'first', minIf(x, cond), maxIf(x, cond) FROM test_simd_if;
+TRUNCATE TABLE test_simd_if;
+
+-- NaN middle among active rows: even positions active, NaN at 500
+INSERT INTO test_simd_if SELECT if(number = 500, nan, toFloat64(number)), number % 2 = 0 FROM numbers(1000);
+SELECT 'middle', minIf(x, cond), maxIf(x, cond) FROM test_simd_if;
+TRUNCATE TABLE test_simd_if;
+
+-- NaN last among active rows: even positions active, NaN at 998
+INSERT INTO test_simd_if SELECT if(number = 998, nan, toFloat64(number)), number % 2 = 0 FROM numbers(1000);
+SELECT 'last', minIf(x, cond), maxIf(x, cond) FROM test_simd_if;
+DROP TABLE test_simd_if;
+
+SELECT 'SIMD: Nullable min/max Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd_null;
+CREATE TABLE test_simd_null (x Nullable(Float64)) ENGINE = MergeTree ORDER BY tuple();
+
+-- NaN first among non-null rows: odd positions null, NaN at 0
+INSERT INTO test_simd_null SELECT if(number % 2 = 1, NULL, if(number = 0, nan, toFloat64(number))) FROM numbers(1000);
+SELECT 'first', min(x), max(x) FROM test_simd_null;
+TRUNCATE TABLE test_simd_null;
+
+-- NaN middle: NaN at 500 (even, so non-null)
+INSERT INTO test_simd_null SELECT if(number % 2 = 1, NULL, if(number = 500, nan, toFloat64(number))) FROM numbers(1000);
+SELECT 'middle', min(x), max(x) FROM test_simd_null;
+TRUNCATE TABLE test_simd_null;
+
+-- NaN last: NaN at 998
+INSERT INTO test_simd_null SELECT if(number % 2 = 1, NULL, if(number = 998, nan, toFloat64(number))) FROM numbers(1000);
+SELECT 'last', min(x), max(x) FROM test_simd_null;
+DROP TABLE test_simd_null;
+
+SELECT 'SIMD: Nullable+If combined Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd_null_if;
+CREATE TABLE test_simd_null_if (x Nullable(Float64), cond UInt8) ENGINE = MergeTree ORDER BY tuple();
+
+-- NaN first among active non-null rows
+INSERT INTO test_simd_null_if SELECT if(number % 3 = 1, NULL, if(number = 0, nan, toFloat64(number))), number % 2 = 0 FROM numbers(1000);
+SELECT 'first', minIf(x, cond), maxIf(x, cond) FROM test_simd_null_if;
+TRUNCATE TABLE test_simd_null_if;
+
+INSERT INTO test_simd_null_if SELECT if(number % 3 = 1, NULL, if(number = 500, nan, toFloat64(number))), number % 2 = 0 FROM numbers(1000);
+SELECT 'middle', minIf(x, cond), maxIf(x, cond) FROM test_simd_null_if;
+TRUNCATE TABLE test_simd_null_if;
+
+INSERT INTO test_simd_null_if SELECT if(number % 3 = 1, NULL, if(number = 996, nan, toFloat64(number))), number % 2 = 0 FROM numbers(1000);
+SELECT 'last', minIf(x, cond), maxIf(x, cond) FROM test_simd_null_if;
+DROP TABLE test_simd_null_if;
+
+SELECT 'SIMD: argMinIf/argMaxIf Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd_argif;
+CREATE TABLE test_simd_argif (id UInt64, x Float64, cond UInt8) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO test_simd_argif SELECT number, if(number = 0, nan, toFloat64(number)), number % 2 = 0 FROM numbers(1000);
+SELECT 'first', argMinIf(id, x, cond), argMaxIf(id, x, cond) FROM test_simd_argif;
+TRUNCATE TABLE test_simd_argif;
+
+INSERT INTO test_simd_argif SELECT number, if(number = 500, nan, toFloat64(number)), number % 2 = 0 FROM numbers(1000);
+SELECT 'middle', argMinIf(id, x, cond), argMaxIf(id, x, cond) FROM test_simd_argif;
+TRUNCATE TABLE test_simd_argif;
+
+INSERT INTO test_simd_argif SELECT number, if(number = 998, nan, toFloat64(number)), number % 2 = 0 FROM numbers(1000);
+SELECT 'last', argMinIf(id, x, cond), argMaxIf(id, x, cond) FROM test_simd_argif;
+DROP TABLE test_simd_argif;
+
+SELECT 'SIMD: Nullable argMin/argMax Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd_argnull;
+CREATE TABLE test_simd_argnull (id UInt64, x Nullable(Float64)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO test_simd_argnull SELECT number, if(number % 2 = 1, NULL, if(number = 0, nan, toFloat64(number))) FROM numbers(1000);
+SELECT 'first', argMin(id, x), argMax(id, x) FROM test_simd_argnull;
+TRUNCATE TABLE test_simd_argnull;
+
+INSERT INTO test_simd_argnull SELECT number, if(number % 2 = 1, NULL, if(number = 500, nan, toFloat64(number))) FROM numbers(1000);
+SELECT 'middle', argMin(id, x), argMax(id, x) FROM test_simd_argnull;
+TRUNCATE TABLE test_simd_argnull;
+
+INSERT INTO test_simd_argnull SELECT number, if(number % 2 = 1, NULL, if(number = 998, nan, toFloat64(number))) FROM numbers(1000);
+SELECT 'last', argMin(id, x), argMax(id, x) FROM test_simd_argnull;
+DROP TABLE test_simd_argnull;
+
+SELECT 'SIMD: Nullable+If argMinIf/argMaxIf Float64 NaN positions';
+DROP TABLE IF EXISTS test_simd_argnullif;
+CREATE TABLE test_simd_argnullif (id UInt64, x Nullable(Float64), cond UInt8) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO test_simd_argnullif SELECT number, if(number % 3 = 1, NULL, if(number = 0, nan, toFloat64(number))), number % 2 = 0 FROM numbers(1000);
+SELECT 'first', argMinIf(id, x, cond), argMaxIf(id, x, cond) FROM test_simd_argnullif;
+TRUNCATE TABLE test_simd_argnullif;
+
+INSERT INTO test_simd_argnullif SELECT number, if(number % 3 = 1, NULL, if(number = 500, nan, toFloat64(number))), number % 2 = 0 FROM numbers(1000);
+SELECT 'middle', argMinIf(id, x, cond), argMaxIf(id, x, cond) FROM test_simd_argnullif;
+TRUNCATE TABLE test_simd_argnullif;
+
+INSERT INTO test_simd_argnullif SELECT number, if(number % 3 = 1, NULL, if(number = 996, nan, toFloat64(number))), number % 2 = 0 FROM numbers(1000);
+SELECT 'last', argMinIf(id, x, cond), argMaxIf(id, x, cond) FROM test_simd_argnullif;
+DROP TABLE test_simd_argnullif;
+
+-- ===========================================================================
+-- Section 8: ORDER BY LIMIT 1 optimization for floats
+-- ColumnVector::getPermutation with limit=1 should use findExtremeMinIndex/MaxIndex
+-- ===========================================================================
+
+SELECT 'ORDER BY LIMIT 1 optimization';
+DROP TABLE IF EXISTS test_nan_order;
+CREATE TABLE test_nan_order (x Float64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_nan_order SELECT if(number = 0, nan, toFloat64(number)) FROM numbers(10000);
+
+SELECT x FROM test_nan_order ORDER BY x ASC LIMIT 1;
+SELECT x FROM test_nan_order ORDER BY x DESC LIMIT 1;
+
+TRUNCATE TABLE test_nan_order;
+INSERT INTO test_nan_order SELECT if(number = 5000, nan, toFloat64(number)) FROM numbers(10000);
+
+SELECT x FROM test_nan_order ORDER BY x ASC LIMIT 1;
+SELECT x FROM test_nan_order ORDER BY x DESC LIMIT 1;
+
+-- No NaN sanity check
+TRUNCATE TABLE test_nan_order;
+INSERT INTO test_nan_order SELECT toFloat64(number) FROM numbers(10000);
+SELECT x FROM test_nan_order ORDER BY x ASC LIMIT 1;
+SELECT x FROM test_nan_order ORDER BY x DESC LIMIT 1;
+
+DROP TABLE test_nan_order;
+
+-- ===========================================================================
+-- Section 9: Merge of aggregation states
+-- Tests setIfSmaller/setIfGreater(const SingleValueDataFixed &, Arena *)
+-- by forcing distributed-style merge across blocks
+-- ===========================================================================
+
+SELECT 'Merge of min states';
+SELECT minMerge(state)
+FROM
+(
+    SELECT minState(x) AS state FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(5)]) AS x)
+    UNION ALL
+    SELECT minState(x) FROM (SELECT arrayJoin([toFloat64(1), toFloat64(2)]) AS x)
+);
+
+SELECT 'Merge of max states';
+SELECT maxMerge(state)
+FROM
+(
+    SELECT maxState(x) AS state FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(5)]) AS x)
+    UNION ALL
+    SELECT maxState(x) FROM (SELECT arrayJoin([toFloat64(1), toFloat64(2)]) AS x)
+);
+
+-- ===========================================================================
+-- Section 10: JIT compilation path
+-- Repeats key tests with compile_aggregate_expressions enabled
+-- ===========================================================================
+
+SET compile_aggregate_expressions = 1;
+SET min_count_to_compile_aggregate_expression = 0;
+
+SELECT 'JIT: min/max basic';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(2), toFloat64(3)]) AS x);
+
+SELECT 'JIT: min/max NaN in middle';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(1), toFloat64(nan), toFloat64(3)]) AS x);
+
+SELECT 'JIT: min/max all NaN';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(nan)]) AS x);
+
+SELECT 'JIT: min/max no NaN';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(1), toFloat64(2), toFloat64(3)]) AS x);
+
+SELECT 'JIT: min/max with inf';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat64(nan), toFloat64(inf), toFloat64(-inf), toFloat64(0)]) AS x);
+
+SELECT 'JIT: Float32';
+SELECT min(x), max(x) FROM (SELECT arrayJoin([toFloat32(nan), toFloat32(1), toFloat32(2)]) AS x);
+
+-- JIT with GROUP BY (forces per-group JIT compiled add)
+SELECT 'JIT: GROUP BY';
+SELECT grp, min(x), max(x) FROM
+(
+    SELECT 1 AS grp, arrayJoin([toFloat64(nan), toFloat64(1), toFloat64(2)]) AS x
+    UNION ALL
+    SELECT 2 AS grp, arrayJoin([toFloat64(3), toFloat64(nan), toFloat64(1)]) AS x
+    UNION ALL
+    SELECT 3 AS grp, arrayJoin([toFloat64(nan), toFloat64(nan)]) AS x
+)
+GROUP BY grp ORDER BY grp;
+
+SET compile_aggregate_expressions = 0;
+
+-- { echoOff }

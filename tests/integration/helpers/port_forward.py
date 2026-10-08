@@ -70,6 +70,10 @@ class PortForward:
     def start(self, address, listen_port=0):
         self._address = address
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Allow rebinding to the same fixed port immediately after stop(): the
+        # previously accepted connection lingers in TIME_WAIT on this port, so
+        # without SO_REUSEADDR bind() fails with "Address already in use".
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind(("", listen_port))
         self._sock.listen()
         self._sock.settimeout(1)

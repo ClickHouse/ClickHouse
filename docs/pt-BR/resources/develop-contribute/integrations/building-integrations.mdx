@@ -1,0 +1,98 @@
+---
+slug: /integrations/integration-development/building-integrations
+title: 'Desenvolvendo integrações com ClickHouse'
+sidebarTitle: 'Desenvolvendo integrações'
+description: 'Orientação sobre ingestão, consumo, protocolos wire e convenções de cliente para integrações com ClickHouse.'
+keywords: ['parceiro', 'integração', 'ingestão', 'consumo', 'ClickPipes', 'clientes para linguagens', 'user-agent']
+doc_type: 'guide'
+---
+
+Esta página apresenta os pontos de integração para ajudar você a definir o escopo do trabalho de ingestão e consumo. Para validação e publicação, continue com [Testando sua integração](/pt-BR/resources/develop-contribute/integrations/testing-your-integration) e [Documentando sua integração](/pt-BR/resources/develop-contribute/integrations/documenting-your-integration).
+
+<div id="ingestion">
+  ## Ingestão
+</div>
+
+Há duas formas de enviar dados ao ClickHouse. Escolha com base em o seu produto controlar o plano de ingestão ou delegá-lo.
+
+<div id="path-a-clickpipes">
+  ### Caminho A: ClickPipes (gerenciado, somente no ClickHouse Cloud)
+</div>
+
+Se você prefere não criar e operar a infraestrutura de ingestão, o [ClickPipes](/pt-BR/integrations/clickpipes/home) é o serviço gerenciado que extrai dados das fontes do seu cliente para o serviço ClickHouse Cloud dele. O ClickPipes cuida do escalonamento, da paralelização, das novas tentativas e dos relatórios de atraso.
+
+As fontes compatíveis atualmente incluem:
+
+* **Streaming:** Apache Kafka (incluindo MSK, Confluent Cloud, Redpanda, Azure Event Hubs, WarpStream), Amazon Kinesis
+* **Armazenamento de objetos:** Amazon S3 (e armazenamentos compatíveis com S3), Google Cloud Storage, Azure Blob Storage
+* **CDC:** PostgreSQL, MySQL, MongoDB, BigQuery
+
+<div id="path-b-language-client">
+  ### Caminho B: ingestão autogerida por meio de um cliente oficial de linguagem
+</div>
+
+Se você é responsável pelo pipeline, use um dos [clientes oficiais de linguagem](/pt-BR/integrations/language-clients/index). Eles cuidam da serialização, do processamento em lotes, do TLS, da compressão e do pool de conexões. Você fornece primitivos de runtime; o cliente cuida do formato wire.
+
+* Clientes oficiais: Python, Go, Java, JavaScript, Rust, C#, C++
+* Ambos os protocolos wire: HTTP (todos os clientes) e TCP nativo (apenas clientes Go e C++)
+* Autenticação: nome de usuário e senha via TLS por padrão; mTLS e autenticação SSL com certificado de cliente são compatíveis com todos os principais clientes
+* O formato dos dados normalmente é um detalhe de implementação. Os clientes convertem tipos de runtime para ClickHouse Native ou RowBinary format. Se você já produz Arrow, Parquet, JSONEachRow ou outro format, a maioria dos clientes expõe uma API de bytes brutos para dados pré-serializados
+* Para maior vazão, processe em lotes de **10 mil a 100 mil linhas** e tenha como meta aproximadamente **uma inserção por segundo** como limite superior para inserções síncronas. Se o processamento em lotes no lado do cliente for impraticável, use [inserções assíncronas](/pt-BR/concepts/features/operations/insert/asyncinserts) para transferir esse processamento para o servidor
+
+Veja também: [Inserções em massa](/pt-BR/concepts/features/operations/insert/bulkinserts).
+
+<div id="consumption">
+  ## Consumo
+</div>
+
+Tanto HTTP quanto TCP nativo transportam queries. O protocolo nativo é binário e tem menor sobrecarga. HTTP funciona por meio de balanceadores de carga e proxies. Ambos têm suporte de primeira classe; escolha com base na infraestrutura, não em lacunas de recursos.
+
+* **Código da aplicação:** use os mesmos [clientes oficiais de linguagem](/pt-BR/integrations/language-clients/index) usados na ingestão
+* **Ferramentas de BI e SQL:** o ClickHouse oferece um [driver JDBC v2 oficial](/pt-BR/integrations/language-clients/java/index) (Java) e um [driver ODBC](/pt-BR/concepts/features/interfaces/odbc). Tableau, Looker, Power BI, Metabase, Apache Superset e Grafana se integram por meio desses drivers ou de conectores dedicados mantidos pela ClickHouse e por parceiros
+* **Formato de resultado:** os clientes normalmente controlam a serialização. Você pode solicitar Arrow, Parquet ou outros formatos colunares via wire, se o seu produto precisar deles
+
+<div id="result-set-sizing">
+  ### Dimensionamento do conjunto de resultados
+</div>
+
+A maioria das consultas analíticas retorna conjuntos de resultados pequenos (agregações, resumos, top-N), e o wire raramente é o gargalo. As tabelas do ClickHouse podem armazenar bilhões de linhas, e um `SELECT *` sem limite em uma tabela de fatos grande pode movimentar terabytes. **Modele a requisição na sua aplicação:** use `LIMIT`, paginação, leituras em streaming e listas explícitas de colunas. Se você cria análises voltadas para o usuário, trate conjuntos de resultados não limitados como um problema de UX, não de transporte.
+
+O ClickHouse tem um sistema de tipos rico: arrays, tuplas, maps, JSON, nested, LowCardinality e muito mais. Os clientes oficiais mapeiam esses tipos para tipos idiomáticos da linguagem. Se o seu produto expõe dados do ClickHouse aos usuários finais, planeje cedo uma estratégia de mapeamento de tipos.
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+Escolha um caminho e crie um protótipo usando uma avaliação do [ClickHouse Cloud](https://clickhouse.com/cloud) e, depois, registre sua integração no [portal de parceiros](https://clickhouse.com/partners).
+
+<div id="user-agent-string-convention">
+  ## Convenção da string user-agent
+</div>
+
+Os clientes HTTP devem definir uma string `User-Agent` que identifique sua integração. O ClickHouse analisa isso no servidor para acompanhar a adoção, gerar telemetria de uso e orientar o roadmap.
+
+Formato:
+
+```text
+<app_name>/<app_version> <client_name>/<client_version> (<comment>; <key1>: <value1>; <key2>: <value2>)
+```
+
+Exemplos:
+
+* `clickhouse-java/0.8.0`
+* `my-analytics-app/3.1.2 clickhouse-js/1.2.0 (env: staging; region: us-east-1; lv: node/20.10)`
+
+Regras:
+
+* Sem espaços no nome nem na versão do cliente
+* Se você incluir um comentário, ele deve vir primeiro
+* Chaves de metadados padrão: `lv` (versão da linguagem ou do framework), `os`, `arch`
+* Clientes TCP e do protocolo nativo informam o nome e a versão do cliente por meio de campos do protocolo, não de `User-Agent`
+
+Se você usar JDBC, consulte [identificação do cliente](/pt-BR/integrations/language-clients/java/jdbc#client-identification) para ver como o driver define `User-Agent` e campos relacionados.
+
+<div id="sandbox-and-trial-access">
+  ## Acesso ao sandbox e ao teste gratuito
+</div>
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) oferece um teste gratuito para desenvolvimento e validação de integrações. Se você for um parceiro House Mate, poderá solicitar créditos adicionais de desenvolvimento por meio do [portal de parceiros](https://clickhouse.com/partners).

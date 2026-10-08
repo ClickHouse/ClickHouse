@@ -16,5 +16,5 @@ SELECT
 FROM
     system.query_log
 WHERE
-    current_database=currentDatabase() and
+    event_date >= yesterday() AND event_time >= now() - 600 AND current_database=currentDatabase() and
     query = 'SELECT * FROM 02751_query_log_test_partitions WHERE a = 3;'

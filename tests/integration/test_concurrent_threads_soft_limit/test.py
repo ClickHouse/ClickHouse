@@ -26,6 +26,7 @@ node4 = cluster.add_instance(
     "node4",
     main_configs=["configs/config_limit_reached.xml"],
     user_configs=["configs/users.xml"],
+    cpu_limit=5
 )
 
 

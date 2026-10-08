@@ -1,6 +1,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <base/scope_guard.h>
+#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteBufferFromPocoSocket.h>
 
@@ -47,7 +48,7 @@ ssize_t WriteBufferFromPocoSocket::socketSendBytesImpl(const char * ptr, size_t 
     {
         socket.setBlocking(false);
         /// Set socket to blocking mode at the end.
-        SCOPE_EXIT(socket.setBlocking(true));
+        SCOPE_EXIT_SAFE(socket.setBlocking(true));
         bool secure = socket.secure();
         res = socket.impl()->sendBytes(ptr, static_cast<int>(size));
 
@@ -105,11 +106,13 @@ void WriteBufferFromPocoSocket::socketSendBytes(const char * ptr, size_t size)
             throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
                                our_address.toString(), peer_address.toString());
         }
-        catch (const Poco::TimeoutException &)
+        catch (const Poco::TimeoutException & e)
         {
-            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms)",
+            /// Carries what timed out, e.g. the TLS handshake rather than an ordinary write.
+            const std::string detail = e.message().empty() ? "" : ": " + e.message();
+            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms){}",
                 peer_address.toString(),
-                socket.impl()->getSendTimeout().totalMilliseconds());
+                socket.impl()->getSendTimeout().totalMilliseconds(), detail);
         }
         catch (const Poco::IOException & e)
         {
@@ -160,11 +163,13 @@ void WriteBufferFromPocoSocket::nextImpl()
             throw NetException(ErrorCodes::NETWORK_ERROR, "{}, while writing to socket ({} -> {})", e.displayText(),
                                our_address.toString(), peer_address.toString());
         }
-        catch (const Poco::TimeoutException &)
+        catch (const Poco::TimeoutException & e)
         {
-            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms)",
+            /// Carries what timed out, e.g. the TLS handshake rather than an ordinary write.
+            const std::string detail = e.message().empty() ? "" : ": " + e.message();
+            throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Timeout exceeded while writing to socket ({}, {} ms){}",
                 peer_address.toString(),
-                socket.impl()->getSendTimeout().totalMilliseconds());
+                socket.impl()->getSendTimeout().totalMilliseconds(), detail);
         }
         catch (const Poco::IOException & e)
         {
@@ -181,7 +186,12 @@ void WriteBufferFromPocoSocket::nextImpl()
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size)
+    : WriteBufferFromPocoSocket(socket_, buf_size, nullptr)
+{
+}
+
+WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size, char * existing_memory)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory)
     , socket(socket_)
     , peer_address(socket.peerAddress())
     , our_address(socket.address())
@@ -194,6 +204,14 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
     : WriteBufferFromPocoSocket(socket_, buf_size)
 {
     write_event = write_event_;
+}
+
+void WriteBufferFromPocoSocket::setAsyncCallback(AsyncCallback async_callback_)
+{
+    if (async_callback_ && !socket.impl()->supportsExternalPolling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot set an async callback on a socket that does not support external polling");
+    async_callback = std::move(async_callback_);
 }
 
 }

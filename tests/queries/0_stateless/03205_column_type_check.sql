@@ -1,3 +1,5 @@
+SET query_plan_optimize_join_order_randomize = 0; -- TODO: TOTALS over CROSS JOIN with constant table loses build-side values when the join is swapped (pre-existing bug)
+
 SELECT * FROM (SELECT toUInt256(1)) AS t, (SELECT greatCircleAngle(toLowCardinality(toNullable(toUInt256(1048575))), 257, -9223372036854775808, 1048576), 1048575, materialize(2)) AS u;
 
 

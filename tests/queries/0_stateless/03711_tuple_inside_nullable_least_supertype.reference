@@ -1,0 +1,36 @@
+Basic
+Array(Nullable(Tuple(Int32, Int32)))
+Array(Nullable(Tuple(Int32, Int32)))
+Array(Nullable(String))
+Array(Nullable(Tuple(Int32, Int32)))
+Array(Nullable(Tuple(Int32, Int32)))
+Insert into table and infer
+0	\N
+1	(1,'1',0.1)
+2	(2,'2',0.2)
+3	(3,'3',0.3)
+4	(4,'4',0.4)
+5	\N
+6	(6,'6',0.6)
+Promotion
+Array(Nullable(Tuple(Int32, Int32)))
+Array(Nullable(Tuple(Int64, Int64)))
+Array(Nullable(Tuple(String, String)))
+More complex cases and misc
+Array(Nullable(Tuple(Int8, Int8)))
+Array(Nullable(Tuple(Int32, Int32)))
+Array(Nullable(Tuple(x Int32, y String)))
+Array(Nullable(Tuple(Int32, String)))
+Array(Nullable(Tuple(Int32, String)))
+Array(Nullable(Tuple(x Int32, y String)))
+Array(Nullable(Tuple(Tuple(Int32, Int32), String)))
+Array(Nullable(Tuple(Tuple(Int32, Int32), String)))
+Array(Nullable(Tuple(Nullable(Tuple(Int32, Int32)), String)))
+Array(Nullable(Tuple(Tuple(Tuple(Int32, Int32), Int32), Int32)))
+Array(Array(Nullable(Tuple(Int32, Int32))))
+Array(Array(Nullable(Tuple(Int32, Int32))))
+Array(Nullable(Tuple()))
+Array(Nullable(Tuple(Int32)))
+Array(Nullable(Tuple(Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32, Int32)))
+Array(Nullable(Tuple(Int32, String)))
+Array(Nullable(Tuple(Int32, Nullable(String))))

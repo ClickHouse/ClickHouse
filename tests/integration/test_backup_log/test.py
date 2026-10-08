@@ -23,8 +23,9 @@ def start_cluster():
 
 
 def backup_table(backup_name):
-    instance.query("CREATE DATABASE IF NOT EXISTS test")
-    instance.query("CREATE TABLE IF NOT EXISTS test.table(x UInt32) ENGINE=MergeTree ORDER BY x")
+    instance.query("DROP DATABASE IF EXISTS test")
+    instance.query("CREATE DATABASE test")
+    instance.query("CREATE TABLE test.table(x UInt32) ENGINE=MergeTree ORDER BY x")
     instance.query("INSERT INTO test.table SELECT number FROM numbers(10)")
     return instance.query(f"BACKUP TABLE test.table TO {backup_name}").split("\t")[0]
 

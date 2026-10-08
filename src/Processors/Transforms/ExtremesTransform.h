@@ -4,11 +4,15 @@
 namespace DB
 {
 
-class ExtremesTransform : public ISimpleTransform
+/// Merges the per-column min/max of `chunk` into `extremes_columns`, which is either empty (nothing
+/// accumulated yet) or fully populated with size-2 columns at every index.
+void accumulateExtremes(MutableColumns & extremes_columns, const Chunk & chunk);
+
+class ExtremesTransform final : public ISimpleTransform
 {
 
 public:
-    explicit ExtremesTransform(const Block & header);
+    explicit ExtremesTransform(SharedHeader header);
 
     String getName() const override { return "ExtremesTransform"; }
 

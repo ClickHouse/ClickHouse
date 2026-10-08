@@ -32,14 +32,21 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * /* filter */,
         const ContextPtr & context,
-        size_t number_of_replicas) const override;
+        ClusterPtr,
+        StorageMetadataPtr) const override;
 
 private:
-    void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
+    void updateQueryToSendIfNeeded(
+        ASTPtr & query,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ContextPtr & context,
+        const String & target_cluster_name) override;
+    void updateBeforeRead(const ContextPtr & context) override;
 
     Strings paths;
     String filename;
     String format_name;
+    NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 };
 
 }

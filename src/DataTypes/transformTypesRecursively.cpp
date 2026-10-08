@@ -2,13 +2,18 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <Formats/SchemaInferenceUtils.h>
+
+#include <unordered_set>
 
 
 namespace DB
 {
 
-TypeIndexesSet getTypesIndexes(const DataTypes & types)
+static TypeIndexesSet getTypesIndexes(const DataTypes & types)
 {
     TypeIndexesSet type_indexes;
     for (const auto & type : types)
@@ -16,7 +21,11 @@ TypeIndexesSet getTypesIndexes(const DataTypes & types)
     return type_indexes;
 }
 
-void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types, std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types)
+void transformTypesRecursively(
+    DataTypes & types,
+    std::function<void(DataTypes &, TypeIndexesSet &)> transform_simple_types,
+    std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types,
+    const FormatSettings * format_settings)
 {
     TypeIndexesSet type_indexes = getTypesIndexes(types);
 
@@ -41,11 +50,13 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
             }
         }
 
-        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
+        transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types, format_settings);
         for (size_t i = 0; i != types.size(); ++i)
         {
             /// Type could be changed so it cannot be inside Nullable anymore.
-            if (is_nullable[i] && nested_types[i]->canBeInsideNullable())
+            const bool can_make_nullable = format_settings ? canBeInsideNullableBySchemaSettings(nested_types[i], *format_settings)
+                                                           : nested_types[i]->canBeInsideNullable();
+            if (is_nullable[i] && can_make_nullable)
                 types[i] = makeNullable(nested_types[i]);
             else
                 types[i] = nested_types[i];
@@ -71,7 +82,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
             for (const auto & type : types)
                 nested_types.push_back(typeid_cast<const DataTypeArray *>(type.get())->getNestedType());
 
-            transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types);
+            transformTypesRecursively(nested_types, transform_simple_types, transform_complex_types, format_settings);
             for (size_t i = 0; i != types.size(); ++i)
                 types[i] = std::make_shared<DataTypeArray>(nested_types[i]);
         }
@@ -124,7 +135,7 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
                 std::vector<DataTypes> transposed_nested_types(types.size());
                 for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
                 {
-                    transformTypesRecursively(nested_types[elem_idx], transform_simple_types, transform_complex_types);
+                    transformTypesRecursively(nested_types[elem_idx], transform_simple_types, transform_complex_types, format_settings);
                     for (size_t i = 0; i != types.size(); ++i)
                         transposed_nested_types[i].push_back(nested_types[elem_idx][i]);
                 }
@@ -162,8 +173,8 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
                 value_types.emplace_back(type_map->getValueType());
             }
 
-            transformTypesRecursively(key_types, transform_simple_types, transform_complex_types);
-            transformTypesRecursively(value_types, transform_simple_types, transform_complex_types);
+            transformTypesRecursively(key_types, transform_simple_types, transform_complex_types, format_settings);
+            transformTypesRecursively(value_types, transform_simple_types, transform_complex_types, format_settings);
 
             for (size_t i = 0; i != types.size(); ++i)
                 types[i] = std::make_shared<DataTypeMap>(key_types[i], value_types[i]);
@@ -178,10 +189,158 @@ void transformTypesRecursively(DataTypes & types, std::function<void(DataTypes &
     transform_simple_types(types, type_indexes);
 }
 
-void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
+namespace
 {
-    DataTypes types = {type};
-    transformTypesRecursively(types, [callback](auto & data_types, TypeIndexesSet &){ callback(data_types[0]); }, {});
+
+bool hasEqualsAmbiguousAlternatives(const DataTypes & alternatives)
+{
+    for (size_t i = 0; i + 1 < alternatives.size(); ++i)
+        for (size_t j = i + 1; j < alternatives.size(); ++j)
+            if (alternatives[i]->equals(*alternatives[j]))
+                return true;
+    return false;
+}
+
+DataTypePtr replaceNestedTypesInPairImpl(
+    const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf, bool skip_custom_name)
+{
+    const WhichDataType left_which(left);
+    const WhichDataType right_which(right);
+
+    /// Neither wrapper hides a leaf, so a pair differing only by one of them still has to be walked.
+    if (right_which.isLowCardinality() && !left_which.isLowCardinality())
+        return replaceNestedTypesInPairImpl(left, removeLowCardinality(right), on_leaf, skip_custom_name);
+    if (right_which.isNullable() && !left_which.isNullable())
+        return replaceNestedTypesInPairImpl(left, removeNullable(right), on_leaf, skip_custom_name);
+
+    const bool descendable = left_which.isNullable() || left_which.isLowCardinality() || left_which.isArray()
+        || left_which.isMap() || left_which.isTuple() || left_which.isVariant();
+
+    if (!descendable)
+        return on_leaf(left, right);
+
+    /// Rebuilding below cannot keep the name, so hand back `right` whole, and only once the children clear:
+    /// restoring a customization over children that did not is how a relabel changes what a level means.
+    if (!skip_custom_name && (left->hasCustomName() || right->hasCustomName()) && left->getName() != right->getName())
+    {
+        if (!left->equals(*right))
+            return nullptr;
+        return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ true) ? right : nullptr;
+    }
+
+    if (left_which.isNullable())
+    {
+        const DataTypePtr left_nested = removeNullable(left);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, removeNullable(right), on_leaf, false);
+        if (!nested)
+            return nullptr;
+        return nested.get() == left_nested.get() ? left : makeNullable(nested);
+    }
+
+    if (left_which.isLowCardinality())
+    {
+        const DataTypePtr left_nested = removeLowCardinality(left);
+        auto nested = replaceNestedTypesInPairImpl(left_nested, removeLowCardinality(right), on_leaf, false);
+        if (!nested)
+            return nullptr;
+        return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeLowCardinality>(nested);
+    }
+
+    if (left_which.isArray())
+    {
+        const auto * right_array = typeid_cast<const DataTypeArray *>(right.get());
+        if (!right_array)
+            return nullptr;
+        const DataTypePtr left_nested = assert_cast<const DataTypeArray &>(*left).getNestedType();
+        auto nested = replaceNestedTypesInPairImpl(left_nested, right_array->getNestedType(), on_leaf, false);
+        if (!nested)
+            return nullptr;
+        return nested.get() == left_nested.get() ? left : std::make_shared<DataTypeArray>(nested);
+    }
+
+    if (left_which.isMap())
+    {
+        const auto * right_map = typeid_cast<const DataTypeMap *>(right.get());
+        if (!right_map)
+            return nullptr;
+        const auto & left_map = assert_cast<const DataTypeMap &>(*left);
+        auto key = replaceNestedTypesInPairImpl(left_map.getKeyType(), right_map->getKeyType(), on_leaf, false);
+        auto value = replaceNestedTypesInPairImpl(left_map.getValueType(), right_map->getValueType(), on_leaf, false);
+        if (!key || !value)
+            return nullptr;
+        if (key.get() == left_map.getKeyType().get() && value.get() == left_map.getValueType().get())
+            return left;
+        return std::make_shared<DataTypeMap>(key, value);
+    }
+
+    if (left_which.isTuple())
+    {
+        const auto * right_tuple = typeid_cast<const DataTypeTuple *>(right.get());
+        const auto & left_tuple = assert_cast<const DataTypeTuple &>(*left);
+        if (!right_tuple || right_tuple->getElements().size() != left_tuple.getElements().size())
+            return nullptr;
+        /// `DataTypeTuple::equals` cannot see the naming mode (an anonymous tuple compares by its ordinal
+        /// names), while serialization does (`toJSONString` writes an object or an array), so a pair that
+        /// disagrees on it is not interchangeable whether or not a child moves.
+        if (right_tuple->hasExplicitNames() != left_tuple.hasExplicitNames())
+            return nullptr;
+        DataTypes elements;
+        elements.reserve(left_tuple.getElements().size());
+        bool moved = false;
+        for (size_t i = 0; i < left_tuple.getElements().size(); ++i)
+        {
+            auto nested = replaceNestedTypesInPairImpl(left_tuple.getElements()[i], right_tuple->getElements()[i], on_leaf, false);
+            if (!nested)
+                return nullptr;
+            moved |= nested.get() != left_tuple.getElements()[i].get();
+            elements.push_back(std::move(nested));
+        }
+        if (!moved)
+            return left;
+        if (left_tuple.hasExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, left_tuple.getElementNames());
+        return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    const auto * right_variant = typeid_cast<const DataTypeVariant *>(right.get());
+    const auto & left_variant = assert_cast<const DataTypeVariant &>(*left);
+    if (!right_variant || right_variant->getVariants().size() != left_variant.getVariants().size())
+        return nullptr;
+    DataTypes alternatives;
+    alternatives.reserve(left_variant.getVariants().size());
+    std::unordered_set<String> names;
+    bool moved = false;
+    for (size_t i = 0; i < left_variant.getVariants().size(); ++i)
+    {
+        auto nested = replaceNestedTypesInPairImpl(left_variant.getVariants()[i], right_variant->getVariants()[i], on_leaf, false);
+        if (!nested)
+            return nullptr;
+        /// A Variant holding one type twice has no unambiguous discriminator for it, and a replacement can
+        /// turn two alternatives that differed only in a name into the same type.
+        if (!names.insert(nested->getName()).second)
+            return nullptr;
+        moved |= nested.get() != left_variant.getVariants()[i].get();
+        alternatives.push_back(std::move(nested));
+    }
+    if (!moved)
+        return left;
+    /// Alternatives are paired by position, which is what `DataTypeVariant::equals` compares, but position
+    /// is only a canonical name order: once a side holds two alternatives that are `equals`-equal to each
+    /// other, several pairings satisfy `equals` and a replacement would announce one alternative's values
+    /// under another's. `allow_suspicious_variant_types` is what admits such a type in the first place.
+    if (hasEqualsAmbiguousAlternatives(left_variant.getVariants())
+        || hasEqualsAmbiguousAlternatives(right_variant->getVariants()))
+        return nullptr;
+    /// The canonical constructor sorts alternatives by name and squashes equal ones, either of which would
+    /// renumber the discriminators the data was written with.
+    return std::make_shared<DataTypeVariant>(alternatives, DataTypeVariant::FixedDiscriminatorOrder{});
+}
+
+}
+
+DataTypePtr replaceNestedTypesInPair(const DataTypePtr & left, const DataTypePtr & right, const PairedLeafCallback & on_leaf)
+{
+    return replaceNestedTypesInPairImpl(left, right, on_leaf, /*skip_custom_name=*/ false);
 }
 
 }

@@ -1,6 +1,0 @@
-22.5
-SELECT sum(number) / 2
-FROM numbers(10)
-22.5
-SELECT sum(number) / 2
-FROM numbers(10)

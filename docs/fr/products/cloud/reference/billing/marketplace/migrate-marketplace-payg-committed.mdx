@@ -1,0 +1,97 @@
+---
+slug: /cloud/billing/marketplace/migrate
+title: "Migrer la facturation du paiement à l’usage (PAYG) vers un contrat d’engagement de dépenses sur un marketplace cloud"
+description: "Migrer du paiement à l’usage vers un contrat d’engagement de dépenses."
+keywords: ['marketplace', 'facturation', 'PAYG', 'paiement à l’usage', 'contrat d’engagement de dépenses']
+doc_type: 'guide'
+---
+
+Si votre organisation ClickHouse est actuellement facturée via un abonnement actif au paiement à l’usage (PAYG) (ou une commande) sur un marketplace cloud, et que vous souhaitez passer à une facturation via un contrat d’engagement de dépenses sur ce même marketplace cloud, veuillez accepter votre nouvelle offre, puis suivre les étapes ci-dessous selon votre fournisseur de services cloud.
+
+<div id="important-notes">
+  ## Notes importantes
+</div>
+
+Veuillez noter que l’annulation de votre abonnement Marketplace PAYG ne supprime pas votre compte ClickHouse Cloud ; elle met uniquement fin à la relation de facturation via la marketplace. Une fois l’annulation effectuée, notre système cessera de facturer les services ClickHouse Cloud via la marketplace. (Remarque : ce processus n’est pas immédiat et peut prendre quelques minutes.)
+
+Une fois votre abonnement via la marketplace annulé, si votre organisation ClickHouse dispose d’une carte de crédit enregistrée, nous facturerons cette carte à la fin de votre cycle de facturation, sauf si un nouvel abonnement via la marketplace y est rattaché entre-temps.
+
+Si aucune carte de crédit n’est configurée après l’annulation, vous disposerez de 14 jours pour ajouter à votre organisation soit une carte de crédit valide, soit un nouvel abonnement à une marketplace cloud. Si aucun mode de paiement n’est configuré dans ce délai, vos services seront suspendus et votre organisation sera considérée comme n’étant plus en [conformité de facturation](/fr/products/cloud/reference/billing/billing-compliance).
+
+Toute utilisation accumulée après l’annulation de l’abonnement sera facturée au prochain mode de paiement valide configuré : un crédit prépayé, un abonnement via la marketplace, puis une carte de crédit, dans cet ordre.
+
+Pour toute question ou pour obtenir de l’aide en cas de problème lors de la configuration de votre organisation avec un nouvel abonnement via la marketplace, veuillez contacter le [support](https://clickhouse.com/support/program) de ClickHouse.
+
+<div id="aws-marketplace">
+  ## AWS Marketplace
+</div>
+
+Si vous souhaitez utiliser le même ID de compte AWS pour migrer votre abonnement PAYG vers un contrat d’engagement de dépenses, nous vous recommandons de [contacter l’équipe commerciale](https://clickhouse.com/company/contact) pour effectuer cette modification. Ainsi, aucune étape supplémentaire ne sera nécessaire et votre organisation ou vos services ClickHouse ne subiront aucune interruption.
+
+Si vous souhaitez utiliser un autre ID de compte AWS pour migrer votre organisation ClickHouse d’un abonnement PAYG vers un contrat d’engagement de dépenses, suivez les étapes ci-dessous :
+
+<div id="cancel-aws-payg">
+  ### Étapes pour annuler l’abonnement AWS PAYG
+</div>
+
+1. **Accédez à [AWS Marketplace](https://us-east-1.console.aws.amazon.com/marketplace)**
+2. **Cliquez sur le bouton &quot;Manage Subscriptions&quot;**
+3. **Accédez à &quot;Your Subscriptions&quot; :**
+   * Cliquez sur &quot;Manage Subscriptions&quot;
+4. **Recherchez ClickHouse Cloud dans la liste :**
+   * Repérez ClickHouse Cloud sous &quot;Your Subscriptions&quot; et cliquez dessus
+5. **Annulez l’abonnement :**
+   * Dans &quot;Agreement&quot;, cliquez sur le menu déroulant ou le bouton &quot;Actions&quot; à côté de l’entrée ClickHouse Cloud
+   * Sélectionnez &quot;Cancel subscription&quot;
+
+> **Remarque :** Pour obtenir de l’aide afin d’annuler votre abonnement (par exemple, si le bouton &quot;Cancel subscription&quot; n’est pas disponible), veuillez contacter le [support AWS](https://support.console.aws.amazon.com/support/home#/).
+
+Ensuite, suivez ces [étapes](/fr/products/cloud/reference/billing/marketplace/aws-marketplace-committed) pour configurer votre organisation ClickHouse avec le nouveau contrat AWS d’engagement de dépenses que vous avez accepté.
+
+<div id="gcp-marketplace">
+  ## GCP Marketplace
+</div>
+
+<div id="cancel-gcp-payg">
+  ### Étapes pour annuler une commande GCP PAYG
+</div>
+
+1. **Accédez à votre [Console Google Cloud Marketplace](https://console.cloud.google.com/marketplace) :**
+   * Assurez-vous d’être connecté au bon compte GCP et d’avoir sélectionné le projet approprié
+2. **Repérez votre commande ClickHouse :**
+   * Dans le menu de gauche, cliquez sur &quot;Your Orders&quot;
+   * Trouvez la commande ClickHouse correspondante dans la liste des commandes actives
+3. **Annulez la commande :**
+   * Repérez le menu à trois points à droite de votre commande et suivez les instructions pour annuler la commande ClickHouse
+
+> **Remarque :** Si vous avez besoin d’aide pour annuler cette commande, veuillez contacter le [support GCP](https://cloud.google.com/support/docs/get-billing-support).
+
+Ensuite, suivez ces [étapes](/fr/products/cloud/reference/billing/marketplace/gcp-marketplace-committed) pour configurer votre organisation ClickHouse avec votre nouveau contrat d’engagement de dépenses GCP.
+
+<div id="azure-marketplace">
+  ## Azure Marketplace
+</div>
+
+<div id="cancel-azure-payg">
+  ### Étapes pour annuler un abonnement Azure PAYG
+</div>
+
+1. **Accédez au [Microsoft Azure Portal](http://portal.azure.com)**
+2. **Accédez à « Subscriptions »**
+3. **Repérez l’abonnement ClickHouse actif que vous souhaitez annuler**
+4. **Annulez l’abonnement :**
+   * Cliquez sur l’abonnement ClickHouse Cloud pour ouvrir ses détails
+   * Sélectionnez le bouton « Cancel subscription »
+
+> **Remarque :** Pour obtenir de l’aide concernant l’annulation de cette commande, veuillez ouvrir un ticket de support dans votre Azure Portal.
+
+Ensuite, suivez ces [étapes](/fr/products/cloud/reference/billing/marketplace/azure-marketplace-committed) pour configurer votre organisation ClickHouse avec votre nouveau contrat d’engagement de dépenses Azure.
+
+<div id="linking-requirements">
+  ## Exigences pour lier un contrat d’engagement de dépenses
+</div>
+
+> **Remarque :** Pour lier votre organisation à un contrat d’engagement de dépenses du marketplace :
+>
+> * L&#39;utilisateur qui suit ces étapes doit être un utilisateur Admin de l&#39;organisation ClickHouse à laquelle vous rattachez l&#39;abonnement
+> * Toutes les factures impayées de l&#39;organisation doivent avoir été réglées (pour toute question, veuillez contacter le [support](https://clickhouse.com/support/program) ClickHouse)

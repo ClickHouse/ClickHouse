@@ -220,7 +220,8 @@ String prepareAndGetCapnProtoTypeName(WriteBuffer & buf, const DataTypePtr & dat
 
 }
 
-void StructureToCapnProtoSchema::writeSchema(WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_)
+void StructureToCapnProtoSchema::writeSchema(
+    WriteBuffer & buf, const String & message_name, const NamesAndTypesList & names_and_types_, bool /* with_envelope */)
 {
     auto names_and_types = collectNested(names_and_types_, true, "CapnProto");
     writeCapnProtoHeader(buf);

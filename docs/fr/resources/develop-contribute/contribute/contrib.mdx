@@ -1,0 +1,53 @@
+---
+description: 'Page décrivant l''utilisation par ClickHouse de composants tiers et la manière
+  d''ajouter et de maintenir des bibliothèques tierces.'
+sidebarTitle: 'Bibliothèques tierces'
+slug: /development/contrib
+title: 'Bibliothèques tierces'
+doc_type: 'reference'
+---
+
+ClickHouse utilise des bibliothèques tierces à différentes fins, par exemple pour se connecter à d&#39;autres bases de données, pour décoder/encoder des données lors du chargement/de l&#39;enregistrement depuis/vers le disque, ou pour implémenter certaines fonctions SQL spécialisées.
+Afin de ne pas dépendre des bibliothèques disponibles sur le système cible, chaque bibliothèque tierce est importée en tant que sous-module Git dans l&#39;arborescence source de ClickHouse, puis compilée et liée avec ClickHouse.
+La liste des bibliothèques tierces et de leurs licences peut être obtenue à l&#39;aide de la requête suivante :
+
+```sql
+SELECT library_name, license_type, license_path FROM system.licenses ORDER BY library_name COLLATE 'en';
+```
+
+Notez que les bibliothèques répertoriées sont celles qui se trouvent dans le répertoire `contrib/` du dépôt ClickHouse.
+Selon les options de compilation, il se peut que certaines de ces bibliothèques n&#39;aient pas été compilées et que, par conséquent, leurs fonctionnalités ne soient pas disponibles à l&#39;exécution.
+
+[Exemple](https://sql.clickhouse.com?query_id=478GCPU7LRTSZJBNY3EJT3)
+
+<div id="adding-and-maintaining-third-party-libraries">
+  ## Ajout et maintenance de bibliothèques tierces
+</div>
+
+Chaque bibliothèque tierce doit se trouver dans un répertoire dédié sous le répertoire `contrib/` du dépôt ClickHouse.
+Évitez de copier simplement du code externe dans le répertoire de la bibliothèque.
+Créez plutôt un sous-module Git pour récupérer le code tiers depuis un dépôt upstream externe.
+
+Tous les sous-modules utilisés par ClickHouse sont répertoriés dans le fichier `.gitmodule`.
+
+* Si la bibliothèque peut être utilisée telle quelle (cas par défaut), vous pouvez référencer directement le dépôt upstream.
+* Si la bibliothèque doit être modifiée, créez un fork du dépôt upstream dans l’[organisation ClickHouse sur GitHub](https://github.com/ClickHouse).
+
+Dans ce dernier cas, nous cherchons à isoler autant que possible les correctifs personnalisés des commits upstream.
+Pour ce faire, créez une branche avec le préfixe `ClickHouse/` à partir de la branche ou du tag que vous souhaitez intégrer, par exemple `ClickHouse/2024_2` (pour la branche `2024_2`) ou `ClickHouse/release/vX.Y.Z` (pour le tag `release/vX.Y.Z`).
+Évitez de suivre les branches de développement upstream `master`/ `main` / `dev` (c’est-à-dire les branches préfixées `ClickHouse/master` / `ClickHouse/main` / `ClickHouse/dev` dans le dépôt forké).
+Ce sont des cibles mouvantes, ce qui complique un versionnage correct.
+Les « branches préfixées » garantissent que les pulls depuis le dépôt upstream vers le fork laisseront intactes les branches personnalisées `ClickHouse/`.
+Les sous-modules dans `contrib/` ne doivent suivre que les branches `ClickHouse/` des dépôts tiers forkés.
+
+Les correctifs ne sont appliqués que sur les branches `ClickHouse/` des bibliothèques externes.
+
+Il existe deux façons de procéder :
+
+* vous souhaitez créer un nouveau correctif sur une branche préfixée `ClickHouse/` dans le dépôt forké, par exemple un correctif sanitizer. Dans ce cas, poussez le correctif sous forme de branche avec le préfixe `ClickHouse/`, par exemple `ClickHouse/fix-sanitizer-disaster`. Créez ensuite une PR de la nouvelle branche vers la branche de suivi personnalisée, par exemple `ClickHouse/2024_2 <-- ClickHouse/fix-sanitizer-disaster`, puis fusionnez la PR.
+* vous mettez à jour le sous-module et devez réappliquer d’anciens correctifs. Dans ce cas, recréer d’anciennes PR serait excessif. À la place, faites simplement un cherry-pick des anciens commits dans la nouvelle branche `ClickHouse/` (correspondant à la nouvelle version). N’hésitez pas à squash les commits des PR qui en contenaient plusieurs. Dans le meilleur des cas, nous avons déjà contribué les correctifs personnalisés à upstream et pouvons omettre ces correctifs dans la nouvelle version.
+
+Une fois le sous-module mis à jour, mettez à jour le sous-module dans ClickHouse pour qu’il pointe vers le nouveau hash dans le fork.
+
+Créez les correctifs des bibliothèques tierces en gardant à l’esprit le dépôt officiel et envisagez de contribuer le correctif au dépôt upstream.
+Ainsi, d’autres en bénéficieront également et cela ne représentera pas une charge de maintenance pour l’équipe ClickHouse.

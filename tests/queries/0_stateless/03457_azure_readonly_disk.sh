@@ -27,8 +27,8 @@ $CLICKHOUSE_CLIENT -m -q "
                 endpoint = 'http://localhost:10000/devstoreaccount1/${CONTAINER}/tables',
                 account_name = 'devstoreaccount1',
                 account_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==');
-    INSERT INTO test_azure_readonly SELECT *, [] from numbers(1); -- { serverError TABLE_IS_READ_ONLY }
-    OPTIMIZE TABLE test_azure_readonly FINAL; -- { serverError TABLE_IS_READ_ONLY }
+    INSERT INTO test_azure_readonly SELECT *, [] from numbers(1); -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+    OPTIMIZE TABLE test_azure_readonly FINAL; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
     SELECT 'Disk is read only', is_read_only FROM system.disks WHERE name = '${DISK_NAME}';
     DROP TABLE test_azure_readonly SYNC;
 "

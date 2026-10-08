@@ -46,12 +46,10 @@ SELECT * FROM system.one UNION ALL SELECT * FROM system.one
 SELECT *
 FROM system.one
 UNION ALL
-(
-    SELECT *
-    FROM system.one
-)
+SELECT *
+FROM system.one
 # /* oneline */ select * from system.one union all (select * from system.one)
-SELECT * FROM system.one UNION ALL (SELECT * FROM system.one)
+SELECT * FROM system.one UNION ALL SELECT * FROM system.one
 # select 1 union all (select 1 union distinct select 1)
 SELECT 1
 UNION ALL
@@ -89,7 +87,8 @@ SELECT 1 IN ((
 # /* oneline */ select 1 in ((select 1) as sub)
 SELECT 1 IN ((SELECT 1) AS sub)
 # with it as ( select * from numbers(1) ) select it.number, i.number from it as i
-WITH it AS
+WITH
+    it AS
     (
         SELECT *
         FROM numbers(1)

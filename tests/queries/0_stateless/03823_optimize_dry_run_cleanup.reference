@@ -1,0 +1,24 @@
+parts before dry run
+all_1_1_0	2
+all_2_2_0	2
+all_3_3_0	2
+data before dry run
+a	1	0
+a	2	1
+b	1	0
+b	2	1
+c	1	0
+d	1	0
+parts after dry run with CLEANUP
+all_1_1_0	2
+all_2_2_0	2
+all_3_3_0	2
+data after dry run with CLEANUP
+a	1	0
+a	2	1
+b	1	0
+b	2	1
+c	1	0
+d	1	0
+profile events CLEANUP
+OPTIMIZE TABLE t_dry_run_cleanup DRY RUN PARTS \'all_1_1_0\', \'all_2_2_0\', \'all_3_3_0\' CLEANUP;	Optimize	1	6	3	4

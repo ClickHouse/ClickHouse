@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-config="${BASH_SOURCE[0]/.sh/.xml}"
+config="${CUR_DIR}/02802_clickhouse_disks_s3_copy.xml"
 
 function run_test_for_disk()
 {

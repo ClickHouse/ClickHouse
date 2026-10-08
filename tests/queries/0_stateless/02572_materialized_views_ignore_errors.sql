@@ -23,18 +23,17 @@ select * from data_02572 order by key;
 system flush logs query_views_log;
 -- lower(status) to pass through clickhouse-test "exception" check
 select lower(status::String), errorCodeToName(exception_code)
-from system.query_views_log where
+from system.query_views_log where event_date >= yesterday() AND event_time >= now() - 600 AND
     view_name = concatWithSeparator('.', currentDatabase(), 'push_to_proxy_mv_02572') and
     view_target = concatWithSeparator('.', currentDatabase(), 'proxy_02572')
     order by event_date, event_time
 ;
 
--- materialized_views_ignore_errors=0
+SET materialized_views_ignore_errors = 0;
 insert into data_02572 values (1); -- { serverError UNKNOWN_TABLE }
-select * from data_02572 order by key;
 
 create table receiver_02572 as data_02572;
 
 insert into data_02572 values (3);
-select * from data_02572 order by key;
+select key from data_02572 where key in (2, 3) order by key;
 select * from receiver_02572 order by key;

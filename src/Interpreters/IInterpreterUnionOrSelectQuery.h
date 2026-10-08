@@ -3,12 +3,13 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
+
+class ASTSelectQuery;
 
 class IInterpreterUnionOrSelectQuery : public IInterpreter
 {
@@ -24,7 +25,7 @@ public:
 
     ~IInterpreterUnionOrSelectQuery() override = default;
 
-    Block getSampleBlock() { return result_header; }
+    SharedHeader getSampleBlock() { return result_header; }
 
     size_t getMaxStreams() const { return max_streams; }
 
@@ -45,7 +46,7 @@ public:
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;
-    Block result_header;
+    SharedHeader result_header;
     SelectQueryOptions options;
     StorageLimitsList storage_limits;
 

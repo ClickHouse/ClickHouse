@@ -64,6 +64,7 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, bind_dn);
     ::updateHash(hash, user);
     ::updateHash(hash, password);
+    ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
 
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
@@ -246,6 +247,13 @@ bool LDAPClient::openConnection()
         handleError(ldap_set_option(handle, LDAP_OPT_PROTOCOL_VERSION, &value));
     }
 
+#ifdef LDAP_OPT_REFERRALS
+    handleError(ldap_set_option(
+        handle,
+        LDAP_OPT_REFERRALS,
+        params.follow_referrals ? LDAP_OPT_ON : LDAP_OPT_OFF));
+#endif
+
     handleError(ldap_set_option(handle, LDAP_OPT_RESTART, LDAP_OPT_ON));
 
 #ifdef LDAP_OPT_KEEPCONN
@@ -254,7 +262,7 @@ bool LDAPClient::openConnection()
 
 #ifdef LDAP_OPT_TIMEOUT
     {
-        ::timeval operation_timeout;
+        ::timeval operation_timeout{};
         operation_timeout.tv_sec = params.operation_timeout.count();
         operation_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_TIMEOUT, &operation_timeout));
@@ -263,7 +271,7 @@ bool LDAPClient::openConnection()
 
 #ifdef LDAP_OPT_NETWORK_TIMEOUT
     {
-        ::timeval network_timeout;
+        ::timeval network_timeout{};
         network_timeout.tv_sec = params.network_timeout.count();
         network_timeout.tv_usec = 0;
         handleError(ldap_set_option(handle, LDAP_OPT_NETWORK_TIMEOUT, &network_timeout));
@@ -352,7 +360,7 @@ bool LDAPClient::openConnection()
     {
         case LDAPClient::Params::SASLMechanism::SIMPLE:
         {
-            ::berval cred;
+            ::berval cred{};
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
@@ -467,7 +475,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         }
                     });
 
-                    ::berval bv;
+                    ::berval bv{};
 
                     handleError(ldap_get_dn_ber(handle, msg, &ber, &bv));
 
@@ -532,7 +540,12 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 
                     for (size_t i = 0; referrals[i]; ++i)
                     {
-                        LOG_WARNING(getLogger("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
+                        if (params.follow_referrals)
+                            LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference: {} (library referral chasing enabled)",
+                            referrals[i]);
+                        else
+                            LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference but not following it: {}",
+                            referrals[i]);
                     }
                 }
 

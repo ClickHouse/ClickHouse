@@ -1,0 +1,36 @@
+---
+description: 'Guía para probar y realizar benchmarks del rendimiento del hardware con ClickHouse'
+sidebarTitle: 'Pruebas de hardware'
+slug: /operations/performance-test
+title: 'Cómo probar tu hardware con ClickHouse'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/es/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+Puede ejecutar una prueba básica de rendimiento de ClickHouse en cualquier servidor sin necesidad de instalar los paquetes de ClickHouse.
+
+<div id="automated-run">
+  ## Ejecución automatizada
+</div>
+
+Puede ejecutar el benchmark con un solo script.
+
+1. Descargue el script.
+
+```bash
+wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
+```
+
+2. Ejecuta el script.
+
+```bash
+chmod a+x ./hardware.sh
+./hardware.sh
+```
+
+3. Copia la salida y envíala a feedback@clickhouse.com
+
+Todos los resultados se publican aquí: https://clickhouse.com/benchmark/hardware/

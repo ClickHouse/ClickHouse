@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
@@ -8,81 +8,20 @@
 namespace DB
 {
 
-class IAST;
 class Field;
 class FutureSet;
 using FutureSetPtr = std::shared_ptr<FutureSet>;
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
-struct Settings;
-
-/** Context of RPNBuilderTree.
-  *
-  * For AST tree context, precalculated block with constants and prepared sets are required for index analysis.
-  * For DAG tree precalculated block with constants and prepared sets are not required, because constants and sets already
-  * calculated inside COLUMN actions dag node.
-  */
-class RPNBuilderTreeContext
-{
-public:
-    /// Construct RPNBuilderTreeContext for ActionsDAG tree
-    explicit RPNBuilderTreeContext(ContextPtr query_context_);
-
-    /// Construct RPNBuilderTreeContext for AST tree
-    explicit RPNBuilderTreeContext(ContextPtr query_context_, Block block_with_constants_, PreparedSetsPtr prepared_sets_);
-
-    /// Get query context
-    const ContextPtr & getQueryContext() const
-    {
-        return query_context;
-    }
-
-    /// Get query context settings
-    const Settings & getSettings() const;
-
-    /** Get block with constants.
-      * Valid only for AST tree.
-      */
-    const Block & getBlockWithConstants() const
-    {
-        return block_with_constants;
-    }
-
-    /** Get prepared sets.
-      * Valid only for AST tree.
-      */
-    const PreparedSetsPtr & getPreparedSets() const
-    {
-        return prepared_sets;
-    }
-
-private:
-    /// Valid for both AST and ActionDAG tree
-    ContextPtr query_context;
-
-    /// Valid only for AST tree
-    Block block_with_constants;
-
-    /// Valid only for AST tree
-    PreparedSetsPtr prepared_sets;
-};
 
 class RPNBuilderFunctionTreeNode;
 
-/** RPNBuilderTreeNode is wrapper around DAG or AST node.
+/** RPNBuilderTreeNode is wrapper around an ActionsDAG node.
   * It defines unified interface for index analysis.
   */
-class RPNBuilderTreeNode
+class RPNBuilderTreeNode : public WithContext
 {
 public:
-    /// Construct RPNBuilderTreeNode with non null dag node and tree context
-    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_);
-
-    /// Construct RPNBuilderTreeNode with non null ast node and tree context
-    explicit RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_);
-
-    /// Get AST node
-    const IAST * getASTNode() const { return ast_node; }
+    /// Construct RPNBuilderTreeNode with non null dag node and the query context shared by all nodes of one tree
+    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const ContextPtr & query_context_);
 
     /// Get DAG node
     const ActionsDAG::Node * getDAGNode() const { return dag_node; }
@@ -101,6 +40,9 @@ public:
     /// Is node constant
     bool isConstant() const;
 
+    /// Whether the node's result type is Nullable
+    bool isNullable() const;
+
     bool isSubqueryOrSet() const;
 
     /** Get constant as constant column.
@@ -110,14 +52,12 @@ public:
 
     /** Try get constant from node. If node is constant returns true, and constant value and constant type output parameters are set.
       * Otherwise false is returned.
+      * The output type is the type of the value: `LowCardinality` is removed, and `Nullable` is removed when the value is not NULL.
       */
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
     /// Try get prepared set from node
     FutureSetPtr tryGetPreparedSet() const;
-
-    /// Try get prepared set from node that match data types
-    FutureSetPtr tryGetPreparedSet(const DataTypes & data_types) const;
 
     /** Convert node to function node.
       * Node must be function before calling these method, otherwise exception is thrown.
@@ -127,22 +67,11 @@ public:
     /// Convert node to function node or null optional
     std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
 
-    /// Get tree context
-    const RPNBuilderTreeContext & getTreeContext() const
-    {
-        return tree_context;
-    }
-
-    /// Get tree context
-    RPNBuilderTreeContext & getTreeContext()
-    {
-        return tree_context;
-    }
+    /// If this node is the `ARRAY_JOIN` action `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
+    std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
 
 protected:
-    const IAST * ast_node = nullptr;
     const ActionsDAG::Node * dag_node = nullptr;
-    RPNBuilderTreeContext & tree_context;
 };
 
 /** RPNBuilderFunctionTreeNode is wrapper around RPNBuilderTreeNode with function type.
@@ -156,12 +85,24 @@ public:
     /// Get function name
     std::string getFunctionName() const;
 
+    FunctionBasePtr getFunctionBase() const;
+
     /// Get function arguments size
     size_t getArgumentsSize() const;
 
     /// Get function argument at index
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
+
+/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes
+/// a non-NULL value: `LowCardinality` or `Nullable` added or dropped, at any depth of `Array`.
+/// Dropping `Nullable` throws on NULL, but an index may skip such granules and the query will not throw.
+/// Pass `allow_drop_nullable = false` when the predicate is replaced and must still throw, e.g. by direct read from a text index.
+bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable = true);
+
+/// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *
@@ -189,6 +130,28 @@ public:
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
   */
+/// `indexHint` exists so that index analysis can see a condition that is never executed. A consumer
+/// that analyses indexes has to descend into it - that is the whole point of the hint. A consumer
+/// that estimates how selective an expression is must not: the condition removes no rows, since the
+/// function evaluates to 1 for every row, so descending into it applies a selectivity the query does
+/// not have. Where the hint holds a conjunct derived from its siblings (`LogicalExpressionOptimizerPass`
+/// wraps those it derived from a chain of comparisons), it would also apply that conjunct's
+/// selectivity twice, once for the original and once for the copy. Such a consumer specialises this
+/// trait and gets an `ALWAYS_TRUE` leaf for the whole hint.
+///
+/// `ALWAYS_TRUE` bounds the claim to the number of rows the condition removes; a hint is not inert.
+/// It takes part in index analysis and prunes the read set, so a relation under one can yield fewer
+/// rows than a selectivity-based estimate suggests. That is invisible to
+/// `ConditionSelectivityEstimator` for every predicate, not just hints: it estimates
+/// `total_rows * selectivity`, and `total_rows` counts whole parts, mark ranges included whether the
+/// index selected them or not. Pruning is carried by a separate estimate,
+/// `RowEstimateSource::PrimaryIndex`, which is used only when column statistics are missing.
+template <typename RPNElement>
+struct RPNBuilderTraits
+{
+    static constexpr bool expand_index_hint = true;
+};
+
 template <typename RPNElement>
 class RPNBuilder
 {
@@ -196,93 +159,17 @@ public:
     using RPNElements = std::vector<RPNElement>;
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
 
-    explicit RPNBuilder(const ActionsDAG::Node * filter_actions_dag_node,
+    explicit RPNBuilder(
+        const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
-    {
-        RPNBuilderTreeContext tree_context(query_context_);
-        traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
-    }
+        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
 
-    explicit RPNBuilder(const RPNBuilderTreeNode & node,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
-    {
-        traverseTree(node);
-    }
-
-    RPNElements && extractRPN() && { return std::move(rpn_elements); }
+    explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
+    RPNElements && extractRPN() &&;
 
 private:
-    void traverseTree(const RPNBuilderTreeNode & node)
-    {
-        RPNElement element;
-
-        if (node.isFunction())
-        {
-            auto function_node = node.toFunctionNode();
-
-            if (extractLogicalOperatorFromTree(function_node, element))
-            {
-                size_t arguments_size = function_node.getArgumentsSize();
-
-                for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
-                {
-                    auto function_node_argument = function_node.getArgumentAt(argument_index);
-                    traverseTree(function_node_argument);
-
-                    /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
-                      * - in this case `n - 1` elements are added (where `n` is the number of arguments).
-                      */
-                    if (argument_index != 0 || element.function == RPNElement::FUNCTION_NOT)
-                        rpn_elements.emplace_back(std::move(element)); /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
-                }
-
-                if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
-                {
-                    element.function = RPNElement::ALWAYS_TRUE;
-                    rpn_elements.emplace_back(std::move(element));
-                }
-
-                return;
-            }
-        }
-
-        if (!extract_atom_from_tree_function(node, element))
-            element.function = RPNElement::FUNCTION_UNKNOWN;
-
-        rpn_elements.emplace_back(std::move(element));
-    }
-
-    bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
-    {
-        /** Functions AND, OR, NOT.
-          * Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-          * (or, the same thing - calling the function `and` from one argument).
-          */
-
-        auto function_name = function_node.getFunctionName();
-        if (function_name == "not")
-        {
-            if (function_node.getArgumentsSize() != 1)
-                return false;
-
-            out.function = RPNElement::FUNCTION_NOT;
-        }
-        else
-        {
-            if (function_name == "and" || function_name == "indexHint")
-                out.function = RPNElement::FUNCTION_AND;
-            else if (function_name == "or")
-                out.function = RPNElement::FUNCTION_OR;
-            else
-                return false;
-        }
-
-        return true;
-    }
-
+    void traverseTree(const RPNBuilderTreeNode & node);
+    bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out);
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function;
     RPNElements rpn_elements;
 };

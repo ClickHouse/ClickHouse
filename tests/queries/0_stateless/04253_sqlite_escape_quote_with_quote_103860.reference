@@ -1,0 +1,16 @@
+--- Enum, default (backslash escape) ---
+('a\'b')
+--- Enum, escape_quote_with_quote = 1 (SQL standard) ---
+('a''b')
+--- JSON, default ---
+('{"k":"a\'b"}')
+--- JSON, escape_quote_with_quote = 1 ---
+('{"k":"a''b"}')
+--- AggregateFunction, default ---
+1	0
+
+--- AggregateFunction, escape_quote_with_quote = 1 ---
+0	1
+
+--- String, escape_quote_with_quote = 1 (sanity) ---
+('a''b')

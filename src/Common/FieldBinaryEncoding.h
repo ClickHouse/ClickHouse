@@ -15,8 +15,8 @@ Binary encoding for Fields:
 | `Int64`                  | `0x02<var_int_value>`                                                                                                          |
 | `UInt128`                | `0x03<uint128_little_endian_value>`                                                                                            |
 | `Int128`                 | `0x04<int128_little_endian_value>`                                                                                             |
-| `UInt128`                | `0x05<uint128_little_endian_value>`                                                                                            |
-| `Int128`                 | `0x06<int128_little_endian_value>`                                                                                             |
+| `UInt256`                | `0x05<uint256_little_endian_value>`                                                                                            |
+| `Int256`                 | `0x06<int256_little_endian_value>`                                                                                             |
 | `Float64`                | `0x07<float64_little_endian_value>`                                                                                            |
 | `Decimal32`              | `0x08<var_uint_scale><int32_little_endian_value>`                                                                              |
 | `Decimal64`              | `0x09<var_uint_scale><int64_little_endian_value>`                                                                              |
@@ -39,5 +39,10 @@ Binary encoding for Fields:
 
 void encodeField(const Field &, WriteBuffer & buf);
 Field decodeField(ReadBuffer & buf);
+
+/// Same, but charges every decoded Field node to the complexity budget of the surrounding type decoding
+/// (see decodeDataType), so that a small type header cannot expand into an unbounded amount of work
+/// through the parameters of an AggregateFunction type. max_complexity == 0 means unlimited.
+Field decodeField(ReadBuffer & buf, size_t & complexity, size_t max_complexity);
 
 }

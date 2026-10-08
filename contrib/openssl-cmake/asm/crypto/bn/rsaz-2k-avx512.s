@@ -411,7 +411,7 @@ ossl_rsaz_amm52x20_x1_ifma256:
 	.byte	0xf3,0xc3
 .cfi_endproc	
 .size	ossl_rsaz_amm52x20_x1_ifma256, .-ossl_rsaz_amm52x20_x1_ifma256
-.data	
+.section	.rodata
 .align	32
 .Lmask52x4:
 .quad	0xfffffffffffff
@@ -887,7 +887,7 @@ ossl_extract_multiplier_2x20_win5:
 	.byte	0xf3,0xc3
 .cfi_endproc	
 .size	ossl_extract_multiplier_2x20_win5, .-ossl_extract_multiplier_2x20_win5
-.data	
+.section	.rodata
 .align	32
 .Lones:
 .quad	1,1,1,1

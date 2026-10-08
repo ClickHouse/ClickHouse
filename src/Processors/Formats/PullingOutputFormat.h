@@ -11,7 +11,7 @@ class NullWriteBuffer;
 class PullingOutputFormat : public IOutputFormat
 {
 public:
-    PullingOutputFormat(const Block & header, std::atomic_bool & consume_data_flag_);
+    PullingOutputFormat(SharedHeader header, std::atomic_bool & consume_data_flag_);
 
     String getName() const override { return "PullingOutputFormat"; }
 

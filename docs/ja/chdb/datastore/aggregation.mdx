@@ -1,0 +1,485 @@
+---
+title: 'DataStoreの集計関数'
+sidebarTitle: '集計'
+slug: /chdb/datastore/aggregation
+description: 'DataStoreの集計関数、ウィンドウ関数、F名前空間'
+keywords: ['chdb', 'datastore', 'aggregation', 'window', 'groupby', 'sum', 'mean', 'avg']
+doc_type: 'reference'
+---
+
+DataStore は、ClickHouse の強力な SQL 集計機能を活用し、集計関数とウィンドウ関数を幅広くサポートしています。
+
+<div id="basic">
+  ## 基本集計
+</div>
+
+<div id="builtin">
+  ### 組み込みメソッド
+</div>
+
+| メソッド        | SQL 相当            | 説明          |
+| ----------- | ----------------- | ----------- |
+| `sum()`     | `SUM()`           | 値の合計        |
+| `mean()`    | `AVG()`           | 平均値         |
+| `count()`   | `COUNT()`         | NULL でない値の数 |
+| `min()`     | `MIN()`           | 最小値         |
+| `max()`     | `MAX()`           | 最大値         |
+| `median()`  | `MEDIAN()`        | 中央値         |
+| `std()`     | `stddevPop()`     | 標準偏差        |
+| `var()`     | `varPop()`        | 分散          |
+| `nunique()` | `COUNT(DISTINCT)` | 一意の値の数      |
+
+**例:**
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# 単一カラムの集計
+total = ds['amount'].sum()
+average = ds['amount'].mean()
+count = ds['amount'].count()
+
+# すべての集計
+print(ds['amount'].sum())    # 合計
+print(ds['amount'].mean())   # 平均
+print(ds['amount'].std())    # 標準偏差
+print(ds['amount'].median()) # 中央値
+print(ds['amount'].nunique()) # 一意な値の数
+```
+
+***
+
+<div id="groupby">
+  ## GroupByの集計
+</div>
+
+<div id="single-agg">
+  ### 単一集計
+</div>
+
+```python
+# グループ化と集計
+result = ds.groupby('category')['amount'].sum()
+result = ds.groupby('region')['sales'].mean()
+```
+
+<div id="multi-agg">
+  ### 複数の集計
+</div>
+
+```python
+# Dictionaryの構文
+result = ds.groupby('category').agg({
+    'amount': 'sum',
+    'quantity': 'mean',
+    'order_id': 'count'
+})
+
+# カラムごとの集計一覧
+result = ds.groupby('category').agg({
+    'amount': ['sum', 'mean', 'max'],
+    'quantity': ['sum', 'count']
+})
+```
+
+<div id="named-agg">
+  ### 名前付き集計
+</div>
+
+```python
+# 名前付き集計（pandas形式）
+result = ds.groupby('region').agg(
+    total_amount=('amount', 'sum'),
+    avg_quantity=('quantity', 'mean'),
+    order_count=('order_id', 'count'),
+    max_price=('price', 'max')
+)
+```
+
+<div id="multi-groupby">
+  ### 複数のグループ化キー
+</div>
+
+```python
+# 複数のカラムでグループ化
+result = ds.groupby(['region', 'category']).agg({
+    'amount': 'sum',
+    'quantity': 'sum'
+})
+```
+
+***
+
+<div id="statistical">
+  ## 統計集計
+</div>
+
+| メソッド          | SQL相当         | 説明          |
+| ------------- | ------------- | ----------- |
+| `quantile(q)` | `quantile(q)` | q分位点 (0～1)  |
+| `skew()`      | `skewPop()`   | 歪度          |
+| `kurt()`      | `kurtPop()`   | 尖度          |
+| `corr()`      | `corr()`      | 相関          |
+| `cov()`       | `covar()`     | 共分散         |
+| `sem()`       | -             | 平均値の標準誤差    |
+
+**例:**
+
+```python
+# 分位点
+q50 = ds['amount'].quantile(0.5)  # 中央値
+q95 = ds['amount'].quantile(0.95) # 第95パーセンタイル
+
+# 複数の分位点
+quantiles = ds['amount'].quantile([0.25, 0.5, 0.75])
+
+# カラム間の相関
+correlation = ds[['sales', 'marketing_spend']].corr()
+```
+
+***
+
+<div id="conditional">
+  ## 条件付き集計
+</div>
+
+ClickHouse 独自の条件付き集計関数です。
+
+| Function         | ClickHouse  | Description  |
+| ---------------- | ----------- | ------------ |
+| `sum_if(cond)`   | `sumIf()`   | 条件を満たす場合の合計  |
+| `count_if(cond)` | `countIf()` | 条件を満たす場合の件数  |
+| `avg_if(cond)`   | `avgIf()`   | 条件を満たす場合の平均  |
+| `min_if(cond)`   | `minIf()`   | 条件を満たす場合の最小値 |
+| `max_if(cond)`   | `maxIf()`   | 条件を満たす場合の最大値 |
+
+**例:**
+
+```python
+from chdb.datastore import F, Field
+
+# 高額な注文のみを合計
+high_value_sum = F.sum_if(Field('amount'), Field('amount') > 1000)
+
+# アクティブユーザー数をカウント
+active_count = F.count_if(Field('status') == 'active')
+
+# groupby のコンテキスト内
+result = ds.groupby('region').agg({
+    'total': ('amount', 'sum'),
+    'high_value': ('amount', F.sum_if(Field('amount') > 1000)),
+})
+```
+
+***
+
+<div id="collection">
+  ## 収集系集計関数
+</div>
+
+値を収集する ClickHouse 固有の関数です。
+
+| Function             | ClickHouse         | Description  |
+| -------------------- | ------------------ | ------------ |
+| `group_array()`      | `groupArray()`     | 配列として収集      |
+| `group_uniq_array()` | `groupUniqArray()` | 一意な値を配列として収集 |
+| `group_concat(sep)`  | `groupConcat()`    | 文字列を連結       |
+| `top_k(n)`           | `topK(n)`          | 出現頻度上位 K 個の値 |
+| `any()`              | `any()`            | 任意の値         |
+| `any_last()`         | `anyLast()`        | 最後の値         |
+| `first_value()`      | `first_value()`    | 順序上の最初の値     |
+| `last_value()`       | `last_value()`     | 順序上の最後の値     |
+
+**例:**
+
+```python
+from chdb.datastore import F, Field
+
+# カテゴリごとのすべてのタグを収集
+result = ds.groupby('category').agg({
+    'all_tags': ('tag', F.group_array()),
+    'unique_tags': ('tag', F.group_uniq_array())
+})
+
+# リージョンごとの上位5つの製品を取得
+result = ds.groupby('region').agg({
+    'top_products': ('product_id', F.top_k(5))
+})
+```
+
+***
+
+<div id="window">
+  ## ウィンドウ関数
+</div>
+
+<div id="ranking">
+  ### ランキング関数
+</div>
+
+| Function         | SQL              | Description     |
+| ---------------- | ---------------- | --------------- |
+| `row_number()`   | `ROW_NUMBER()`   | 連番の行番号          |
+| `rank()`         | `RANK()`         | ギャップのある順位       |
+| `dense_rank()`   | `DENSE_RANK()`   | ギャップのない順位       |
+| `ntile(n)`       | `NTILE(n)`       | n 個のバケットに分割     |
+| `percent_rank()` | `PERCENT_RANK()` | パーセンタイル順位 (0-1) |
+| `cume_dist()`    | `CUME_DIST()`    | 累積分布            |
+
+**例:**
+
+```python
+from chdb.datastore import F, Field
+
+# 行番号を追加
+ds['row_num'] = F.row_number().over(order_by='date')
+
+# グループ内でランク付け
+ds['rank'] = F.rank().over(
+    partition_by='category',
+    order_by='sales'
+)
+
+# 密なランク（ギャップなし）
+ds['dense_rank'] = F.dense_rank().over(
+    partition_by='region',
+    order_by=('revenue', 'desc')
+)
+
+# 四分位数に分割
+ds['quartile'] = F.ntile(4).over(order_by='score')
+```
+
+<div id="value-functions">
+  ### 値関数
+</div>
+
+| 関数              | SQL                 | 説明             |
+| --------------- | ------------------- | -------------- |
+| `lag(n)`        | `LAG(col, n)`       | 前の行の値          |
+| `lead(n)`       | `LEAD(col, n)`      | 次の行の値          |
+| `first_value()` | `FIRST_VALUE()`     | ウィンドウ内の最初の値    |
+| `last_value()`  | `LAST_VALUE()`      | ウィンドウ内の最後の値    |
+| `nth_value(n)`  | `NTH_VALUE(col, n)` | ウィンドウ内の N 番目の値 |
+
+**例:**
+
+```python
+# 前の値と次の値
+ds['prev_price'] = F.lag('price', 1).over(order_by='date')
+ds['next_price'] = F.lead('price', 1).over(order_by='date')
+
+# パーティション内の最初と最後
+ds['first_order'] = F.first_value('amount').over(
+    partition_by='customer_id',
+    order_by='date'
+)
+```
+
+<div id="cumulative">
+  ### 累積関数
+</div>
+
+| 関数              | 説明        |
+| --------------- | --------- |
+| `cumsum()`      | 累積和       |
+| `cummax()`      | 累積最大値     |
+| `cummin()`      | 累積最小値     |
+| `cumprod()`     | 累積積       |
+| `diff(n)`       | n行前との差分   |
+| `pct_change(n)` | n行前からの変化率 |
+
+**例:**
+
+```python
+# 累積計算
+ds['running_total'] = ds['amount'].cumsum()
+ds['running_max'] = ds['amount'].cummax()
+
+# グループ化あり
+ds['group_cumsum'] = ds.groupby('category')['amount'].cumsum()
+
+# 期間比較
+ds['daily_diff'] = ds['sales'].diff(1)
+ds['pct_change'] = ds['sales'].pct_change(1)
+```
+
+<div id="rolling">
+  ### ローリングウィンドウ
+</div>
+
+```python
+# ローリングウィンドウ集計
+ds['rolling_avg'] = ds['price'].rolling(window=7).mean()
+ds['rolling_sum'] = ds['amount'].rolling(window=30).sum()
+ds['rolling_std'] = ds['value'].rolling(window=10).std()
+
+# 累積ウィンドウ
+ds['expanding_max'] = ds['price'].expanding().max()
+ds['expanding_sum'] = ds['amount'].expanding().sum()
+```
+
+***
+
+<div id="f-namespace">
+  ## F ネームスペース
+</div>
+
+`F` ネームスペースでは、ClickHouse 関数にアクセスできます。
+
+<div id="f-import">
+  ### Import
+</div>
+
+```python
+from chdb.datastore import F, Field
+```
+
+<div id="f-usage">
+  ### F 関数を使う
+</div>
+
+```python
+# 集計
+F.sum(Field('amount'))
+F.avg(Field('price'))
+F.count(Field('id'))
+
+# 統計
+F.quantile(Field('value'), 0.95)
+F.stddev_pop(Field('score'))
+F.corr(Field('x'), Field('y'))
+
+# 条件付き
+F.sum_if(Field('amount'), Field('status') == 'completed')
+F.count_if(Field('is_active'))
+
+# 文字列
+F.length(Field('name'))
+F.upper(Field('text'))
+
+# 日付/時刻
+F.to_year(Field('date'))
+F.date_diff('day', Field('start'), Field('end'))
+
+# Array
+F.array_sum(Field('values'))
+F.array_avg(Field('scores'))
+
+# 数学
+F.abs(Field('delta'))
+F.round(Field('price'), 2)
+F.floor(Field('value'))
+F.ceil(Field('value'))
+```
+
+<div id="f-window">
+  ### ウィンドウ関数での F
+</div>
+
+```python
+# ウィンドウフレームを定義する
+window = F.window(
+    partition_by='category',
+    order_by='date',
+    rows_between=(-7, 0)  # 現在の行と直前の7行
+)
+
+ds['rolling_avg'] = F.avg(Field('price')).over(window)
+```
+
+***
+
+<div id="patterns">
+  ## 一般的な集計パターン
+</div>
+
+<div id="top-n">
+  ### 各グループの上位N
+</div>
+
+```python
+# カテゴリ別売上上位3製品
+result = (ds
+    .assign(rank=F.row_number().over(
+        partition_by='category',
+        order_by=('sales', 'desc')
+    ))
+    .filter(ds['rank'] <= 3)
+)
+```
+
+<div id="running-total">
+  ### 累計
+</div>
+
+```python
+# 売上の累計
+ds['running_total'] = F.sum('amount').over(
+    order_by='date',
+    rows_between=(None, 0)  # 現在行までの全行
+)
+```
+
+<div id="moving-avg">
+  ### 移動平均
+</div>
+
+```python
+# 7日間移動平均
+ds['ma_7'] = F.avg('price').over(
+    order_by='date',
+    rows_between=(-6, 0)
+)
+```
+
+<div id="yoy">
+  ### 前年比較
+</div>
+
+```python
+# 前年比較
+ds['prev_year_sales'] = F.lag('sales', 12).over(
+    partition_by='product_id',
+    order_by='month'
+)
+ds['yoy_growth'] = (ds['sales'] - ds['prev_year_sales']) / ds['prev_year_sales']
+```
+
+<div id="percentile">
+  ### パーセンタイルランク
+</div>
+
+```python
+# 総支出額で顧客をランク付けする
+ds['spend_percentile'] = F.percent_rank().over(order_by='total_spend')
+```
+
+***
+
+<div id="summary">
+  ## 集計メソッドの概要
+</div>
+
+| カテゴリ       | メソッド                                                          |
+| ---------- | ------------------------------------------------------------- |
+| **基本**     | `sum`, `mean`, `count`, `min`, `max`, `median`                |
+| **統計**     | `std`, `var`, `quantile`, `skew`, `kurt`, `corr`, `cov`       |
+| **条件付き**   | `sum_if`, `count_if`, `avg_if`, `min_if`, `max_if`            |
+| **コレクション** | `group_array`, `group_uniq_array`, `group_concat`, `top_k`    |
+| **ランキング**  | `row_number`, `rank`, `dense_rank`, `ntile`, `percent_rank`   |
+| **値**      | `lag`, `lead`, `first_value`, `last_value`, `nth_value`       |
+| **累積**     | `cumsum`, `cummax`, `cummin`, `cumprod`, `diff`, `pct_change` |
+| **ローリング**  | `rolling().mean/sum/std/...`, `expanding().mean/sum/...`      |

@@ -9,10 +9,11 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Storages/MergeTree/GinIndexStore.h>
+#include <filesystem>
 #include <optional>
 
 #include <fmt/ranges.h>
+#include <fmt/std.h>
 
 
 namespace DB
@@ -64,22 +65,18 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
 
 void MergeTreeDataPartChecksum::checkSize(const IDataPartStorage & storage, const String & name) const
 {
-    /// Skip text index files, these have a default MergeTreeDataPartChecksum with file_size == 0
-    if (isGinFile(name))
-        return;
-
     // This is a projection, no need to check its size.
     if (storage.existsDirectory(name))
         return;
 
     if (!storage.existsFile(name))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", fs::path(storage.getRelativePath()) / name);
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "{} doesn't exist", std::filesystem::path(storage.getRelativePath()) / name);
 
     UInt64 size = storage.getFileSize(name);
     if (size != file_size)
         throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
             "{} has unexpected size: {} instead of {}",
-            fs::path(storage.getRelativePath()) / name, size, file_size);
+            std::filesystem::path(storage.getRelativePath()) / name, size, file_size);
 }
 
 
@@ -91,10 +88,6 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
 
     for (const auto & [name, checksum] : files)
     {
-        /// Exclude files written by text index from check. No correct checksums are available for them currently.
-        if (isGinFile(name))
-            continue;
-
         auto it = rhs.files.find(name);
         if (it == rhs.files.end())
             throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No file {} in data part", name);
@@ -119,6 +112,34 @@ UInt64 MergeTreeDataPartChecksums::getTotalSizeUncompressedOnDisk() const
     return res;
 }
 
+namespace
+{
+
+/// File names in checksums.txt are used verbatim to build paths inside the part directory
+/// (e.g. when checking sizes or removing the part), so they must not escape it.
+void assertFileNameIsRelativeAndContained(const String & name)
+{
+    if (name.empty())
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Empty file name in checksums of data part");
+
+    if (name.starts_with('/'))
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "Absolute file name '{}' in checksums of data part", name);
+
+    /// A NUL byte would be kept inside a single path component here, but the local disk layer
+    /// passes the joined path to C APIs which truncate at the first NUL, so "..\0/x" would act as "..".
+    if (name.contains('\0'))
+        throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART, "File name '{}' in checksums of data part contains a NUL byte", name);
+
+    for (const auto & component : std::filesystem::path(name))
+    {
+        if (component == "." || component == "..")
+            throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
+                "File name '{}' in checksums of data part contains '{}' path component", name, component.string());
+    }
+}
+
+}
+
 bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
 {
     switch (format_version)
@@ -141,7 +162,7 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
     files.clear();
 
     assertString("checksums format version: ", in);
-    size_t format_version;
+    size_t format_version = 0;
     readText(format_version, in);
     assertChar('\n', in);
 
@@ -151,7 +172,7 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
 
 bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
 {
-    size_t count;
+    size_t count = 0;
 
     readText(count, in);
     assertString(" files:\n", in);
@@ -162,6 +183,7 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
         Checksum sum;
 
         readString(name, in);
+        assertFileNameIsRelativeAndContained(name);
         assertString("\n\tsize: ", in);
         readText(sum.file_size, in);
         assertString("\n\thash: ", in);
@@ -189,7 +211,7 @@ bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
 
 bool MergeTreeDataPartChecksums::readV3(ReadBuffer & in)
 {
-    size_t count;
+    size_t count = 0;
 
     readVarUInt(count, in);
 
@@ -199,6 +221,7 @@ bool MergeTreeDataPartChecksums::readV3(ReadBuffer & in)
         Checksum sum;
 
         readStringBinary(name, in);
+        assertFileNameIsRelativeAndContained(name);
         readVarUInt(sum.file_size, in);
         readBinaryLittleEndian(sum.file_hash, in);
         readBinaryLittleEndian(sum.is_compressed, in);
@@ -249,6 +272,11 @@ void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
 void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)
 {
     files[file_name] = Checksum(file_size, file_hash);
+}
+
+void MergeTreeDataPartChecksums::addFile(const String & file_name, const Checksum & checksum)
+{
+    files[file_name] = checksum;
 }
 
 void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
@@ -359,7 +387,7 @@ String MinimalisticDataPartChecksums::getSerializedString() const
 bool MinimalisticDataPartChecksums::deserialize(ReadBuffer & in)
 {
     assertString("checksums format version: ", in);
-    size_t format_version;
+    size_t format_version = 0;
     readText(format_version, in);
     assertChar('\n', in);
 

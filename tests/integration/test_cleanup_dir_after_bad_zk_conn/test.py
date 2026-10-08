@@ -5,7 +5,9 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(
+    __file__, zookeeper_config_path="configs/fast_zk_timeouts.xml"
+)
 node1 = cluster.add_instance("node1", with_zookeeper=True)
 
 
@@ -40,9 +42,10 @@ def test_cleanup_dir_after_bad_zk_conn(start_cluster):
     ORDER BY id;"""
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(node1)
-        time.sleep(3)
+        # Let the connection-drop rule take effect before issuing the query.
+        time.sleep(1)
         error = node1.query_and_get_error(query_create)
-        time.sleep(3)
+        # ZooKeeper is still unreachable, no extra settle needed before retrying.
         error = node1.query_and_get_error(query_create)
         assert "Directory for table data data/replica/test/ already exists" not in error
     node1.query_with_retry(query_create)
@@ -86,12 +89,14 @@ def test_attach_without_zk(start_cluster):
     )
     node1.query("DETACH TABLE test4_r1")
     with PartitionManager() as pm:
-        pm._add_rule(
+        pm.add_rule(
             {
+                "instance": node1,
                 "probability": 0.5,
                 "source": node1.ip_address,
                 "destination_port": 2181,
                 "action": "DROP",
+                "protocol": "tcp",
             }
         )
         try:

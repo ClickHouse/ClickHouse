@@ -1,10 +1,12 @@
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Storages/System/StorageSystemErrors.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/StackTrace.h>
 #include <Core/Settings.h>
 
 
@@ -19,14 +21,15 @@ ColumnsDescription StorageSystemErrors::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        { "name",                    std::make_shared<DataTypeString>(), "Name of the error (errorCodeToName)."},
-        { "code",                    std::make_shared<DataTypeInt32>(), "Code number of the error."},
-        { "value",                   std::make_shared<DataTypeUInt64>(), "The number of times this error happened."},
-        { "last_error_time",         std::make_shared<DataTypeDateTime>(), "The time when the last error happened."},
-        { "last_error_message",      std::make_shared<DataTypeString>(), "Message for the last error."},
-        { "last_error_trace",        std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace that represents a list of physical addresses where the called methods are stored."},
-        { "remote",                  std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
-        { "query_id",                std::make_shared<DataTypeString>(), "Id of a query that caused an error (if available)." },
+        { "name",                     std::make_shared<DataTypeString>(), "Name of the error (errorCodeToName)."},
+        { "code",                     std::make_shared<DataTypeInt32>(), "Code number of the error."},
+        { "value",                    std::make_shared<DataTypeUInt64>(), "The number of times this error happened."},
+        { "last_error_time",          std::make_shared<DataTypeDateTime>(), "The time when the last error happened."},
+        { "last_error_message",       std::make_shared<DataTypeString>(), "Message for the last error."},
+        { "last_error_format_string", std::make_shared<DataTypeString>(), "Format string for the last error."},
+        { "last_error_trace",         std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "A stack trace of the last error. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, and other addresses are virtual memory addresses inside the ClickHouse server process."},
+        { "remote",                   std::make_shared<DataTypeUInt8>(), "Remote exception (i.e. received during one of the distributed queries)."},
+        { "query_id",                 std::make_shared<DataTypeString>(), "Id of a query that caused an error (if available)." },
     };
 }
 
@@ -43,11 +46,12 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             res_columns[col_num++]->insert(error.count);
             res_columns[col_num++]->insert(error.error_time_ms / 1000);
             res_columns[col_num++]->insert(error.message);
+            res_columns[col_num++]->insert(error.format_string);
             {
                 Array trace_array;
                 trace_array.reserve(error.trace.size());
                 for (size_t i = 0; i < error.trace.size(); ++i)
-                    trace_array.emplace_back(reinterpret_cast<intptr_t>(error.trace[i]));
+                    trace_array.emplace_back(StackTrace::resolveAddressForStorage(error.trace[i]));
 
                 res_columns[col_num++]->insert(trace_array);
             }
@@ -56,17 +60,21 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
         }
     };
 
-    for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
+    for (const auto code : ErrorCodes::getCodes())
     {
-        const auto & error = ErrorCodes::values[i].get();
-        std::string_view name = ErrorCodes::getName(static_cast<ErrorCodes::ErrorCode>(i));
+        std::string_view name = ErrorCodes::getName(code);
 
+        /// Custom error codes have no name, and are not shown here.
         if (name.empty())
             continue;
 
-        add_row(name, i, error.local,  /* remote= */ false);
-        add_row(name, i, error.remote, /* remote= */ true);
+        const auto & error = ErrorCodes::values[code].get();
+        add_row(name, code, error.local, /* remote= */ false);
+        add_row(name, code, error.remote, /* remote= */ true);
     }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemErrors) }

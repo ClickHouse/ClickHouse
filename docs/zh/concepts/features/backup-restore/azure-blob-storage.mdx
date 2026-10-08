@@ -1,0 +1,40 @@
+---
+description: '详细说明如何备份到 Azure Blob 存储端点，以及如何从该端点恢复'
+sidebarTitle: 'AzureBlobStorage'
+slug: /operations/backup/azure
+title: BACKUP/RESTORE 到 Azure Blob 存储或从中恢复
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/zh/_syntax.mdx';
+
+<div id="syntax">
+  ## 语法
+</div>
+
+<Syntax />
+
+<div id="configuring-backuprestore-to-use-an-azureblobstorage-endpoint">
+  ## 配置 BACKUP / RESTORE 以使用 AzureBlobStorage 端点
+</div>
+
+要将备份写入 AzureBlobStorage Container，需要以下信息：
+
+* AzureBlobStorage 端点连接字符串 / URL，
+* Container，
+* Path，
+* 账户名称 (如果指定了 URL) 
+* 账户密钥 (如果指定了 URL) 
+
+备份的目标端将指定为：
+
+```sql
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+```
+
+```sql
+BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+```

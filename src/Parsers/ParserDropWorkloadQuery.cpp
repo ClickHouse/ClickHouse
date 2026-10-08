@@ -38,7 +38,7 @@ bool ParserDropWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
             return false;
     }
 
-    auto drop_workload_query = std::make_shared<ASTDropWorkloadQuery>();
+    auto drop_workload_query = make_intrusive<ASTDropWorkloadQuery>();
     drop_workload_query->if_exists = if_exists;
     drop_workload_query->cluster = std::move(cluster_str);
 

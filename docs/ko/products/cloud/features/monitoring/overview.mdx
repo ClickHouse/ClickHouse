@@ -1,0 +1,41 @@
+---
+title: 'ClickHouse Cloud 배포 모니터링'
+slug: /cloud/monitoring
+description: 'ClickHouse Cloud의 모니터링 및 관측성 기능 개요'
+keywords: ['클라우드', '모니터링', '관측성', '메트릭']
+sidebarTitle: '개요'
+doc_type: 'guide'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+이 가이드는 ClickHouse Cloud의 프로덕션 배포를 위한 모니터링 및 관측성 기능에 대해 엔터프라이즈 팀이 알아야 할 정보를 제공합니다. 엔터프라이즈 고객은 기본 제공 모니터링 기능, Datadog 및 AWS CloudWatch 같은 도구를 포함한 기존 관측성 스택과의 통합, 그리고 ClickHouse의 모니터링이 자체 호스팅 배포와 비교해 어떤 차이가 있는지 자주 문의합니다.
+
+사용자는 다음 방법으로 ClickHouse 배포를 모니터링할 수 있습니다.
+
+| Section                                                                         | Description                                                | Wakes idle services? | Setup required       |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------- | -------------------- |
+| [Cloud Console 대시보드](/ko/products/cloud/features/monitoring/cloud-console)   | 서비스 상태, 리소스 사용률, 쿼리 성능을 확인할 수 있는 기본 제공 대시보드를 사용한 일상적인 모니터링 | 아니요                  | 없음                   |
+| [알림](/ko/products/cloud/features/monitoring/notifications)                         | 스케일링 이벤트, 오류, 뮤테이션, 청구에 대한 알림                              | 아니요                  | 없음(사용자 지정 가능)        |
+| [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus)              | 메트릭을 Grafana, Datadog 또는 기타 Prometheus 호환 도구로 내보내기         | 아니요                  | API Key + scraper 구성 |
+| [시스템 테이블 쿼리](/ko/products/cloud/features/monitoring/system-tables)                 | `system` 테이블에 직접 SQL 쿼리를 실행하여 심층 디버깅 및 사용자 지정 분석 수행        | 예                    | SQL 쿼리               |
+| [커뮤니티 및 파트너 통합](/ko/products/cloud/features/monitoring/integrations)               | Datadog agent 통합, 커뮤니티 모니터링 도구, Billing &amp; Usage API    | 상황에 따라 다름            | 도구별                  |
+| [Advanced dashboard 참고](/ko/products/cloud/features/monitoring/advanced-dashboard) | 문제 해결 예시를 포함한 각 Advanced dashboard 시각화의 상세 참고 자료           | 아니요                  | 없음                   |
+
+<div id="quick-start">
+  ## 빠른 시작
+</div>
+
+ClickHouse Cloud 콘솔을 열어 **모니터링** 탭으로 이동하십시오. 시작할 때 주의해야 할 일반적인 사항은 이 [블로그](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)에서 확인할 수 있습니다.
+
+대부분의 사용자에게는 [Cloud Console 대시보드](/ko/products/cloud/features/monitoring/cloud-console)만으로도 별도 구성 없이 서비스 상태, 리소스 사용률, 쿼리 성능을 모니터링하는 데 필요한 모든 기능이 제공됩니다. 외부 모니터링 스택과 통합해야 한다면 [Prometheus 호환 메트릭 엔드포인트](/ko/products/cloud/features/monitoring/prometheus)부터 시작하십시오.
+
+<div id="system-impact">
+  ## 시스템 영향 관련 고려 사항
+</div>
+
+위 접근 방식은 Prometheus 엔드포인트를 활용하거나, ClickHouse Cloud에서 관리하거나, 또는 [시스템 테이블](/ko/products/cloud/features/monitoring/system-tables)을 직접 쿼리하는 방법을 조합해 사용합니다. 이 가운데 마지막 옵션은 운영 중인 ClickHouse 서비스를 직접 쿼리하므로, 관찰 대상 시스템에 쿼리 부하를 추가하고 ClickHouse Cloud 인스턴스가 [유휴 상태 전환](/ko/products/cloud/features/autoscaling/overview)되지 못하게 하여 비용에 영향을 줄 수 있습니다. 또한 운영 시스템에 장애가 발생하면 두 시스템이 서로 결합되어 있으므로 모니터링 역시 영향을 받을 수 있습니다.
+
+시스템 테이블을 직접 쿼리하는 방식은 심층적인 내부 검사와 디버깅에는 효과적이지만, 실시간 운영 모니터링에는 덜 적합합니다. [Cloud Console dashboards](/ko/products/cloud/features/monitoring/cloud-console)와 [Prometheus 엔드포인트](/ko/products/cloud/features/monitoring/prometheus)는 모두 유휴 서비스를 깨우지 않는, 미리 스크레이프된 메트릭을 사용하므로 지속적인 운영 모니터링에 더 적합합니다. 상세한 시스템 분석 기능과 운영 오버헤드 사이의 이러한 절충점을 고려하십시오.

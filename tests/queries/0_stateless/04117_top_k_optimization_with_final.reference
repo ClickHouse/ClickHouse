@@ -1,0 +1,22 @@
+-- top-k dynamic filtering with FINAL
+0	0	new
+1	1	new
+2	2	new
+3	3	new
+4	4	new
+-- skip-indexes for top-k with FINAL
+0	0	new
+1	1	new
+2	2	new
+3	3	new
+4	4	new
+-- both top-k optimizations with FINAL
+0	0	new
+1	1	new
+2	2	new
+3	3	new
+4	4	new
+-- explain: no __topKFilter for FINAL
+0
+-- explain: __topKFilter present without FINAL
+1

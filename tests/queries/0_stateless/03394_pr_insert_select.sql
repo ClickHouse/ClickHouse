@@ -16,7 +16,7 @@ select '-- check result without local pipeline';
 INSERT INTO t_rmt_target SELECT * FROM t_mt_source SETTINGS log_comment='cb01f13a-410c-4985-b233-35289776b58f', parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_local_plan=0;
 
 SYSTEM FLUSH LOGS query_log;
-select count() from system.query_log where (current_database = currentDatabase() or has(databases, currentDatabase())) and type = 'QueryFinish' and query_kind = 'Insert' and log_comment='cb01f13a-410c-4985-b233-35289776b58f' and event_date >= yesterday();
+select count() from system.query_log where (current_database = currentDatabase() or has(databases, currentDatabase())) and type = 'QueryFinish' and query_kind = 'Insert' and log_comment='cb01f13a-410c-4985-b233-35289776b58f' and event_date >= yesterday() AND event_time >= now() - 600;
 
 select count() from t_rmt_target;
 select * from t_rmt_target order by k

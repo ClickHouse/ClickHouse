@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Shared settings for TPC-H tests, derived from tests/benchmarks/tpc-h/settings.json.
+# See tests/benchmarks/tpc-h/README.md for known issues and workaround details.
+
+TPCH_SETTINGS_JSON="$CURDIR/../../benchmarks/tpc-h/settings.json"
+
+# --max_rows_to_read 0 because of https://github.com/ClickHouse/ClickHouse/issues/99937. Can be removed after the issue is closed.
+SETTINGS=(-m --max_rows_to_read 0)
+_tpch_output=$(jq -e -r '
+    (.settings | to_entries[] | "--\(.key)", (.value | tostring))
+' "$TPCH_SETTINGS_JSON")
+readarray -t _tpch_lines <<< "$_tpch_output"
+SETTINGS+=("${_tpch_lines[@]}")
+
+# Disk spill for GROUP BY and joins. Kept here (not in settings.json) on purpose:
+# tests/performance/tpch.xml reads the same settings.json and must stay in-memory.
+SETTINGS+=(
+    --max_bytes_before_external_group_by 314572800
+    --max_bytes_before_external_join 314572800
+)
+
+# Plan/result test, not a perf test: spilling to disk starts slowly, so the test-env
+# estimated-time guard false-positives (TOO_SLOW) under sanitizer builds. Disable it.
+SETTINGS+=(--max_estimated_execution_time 0)

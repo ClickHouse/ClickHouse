@@ -12,8 +12,12 @@ using namespace std::literals;
 class TarArchiveWriter : public LibArchiveWriter
 {
 public:
-    explicit TarArchiveWriter(const String & path_to_archive_, std::unique_ptr<WriteBuffer> archive_write_buffer_)
-        : LibArchiveWriter(path_to_archive_, std::move(archive_write_buffer_))
+    explicit TarArchiveWriter(
+        const String & path_to_archive_,
+        std::unique_ptr<WriteBuffer> archive_write_buffer_,
+        size_t buf_size_,
+        size_t adaptive_buffer_max_size_)
+        : LibArchiveWriter(path_to_archive_, std::move(archive_write_buffer_), buf_size_, adaptive_buffer_max_size_)
     {
         createArchive();
     }

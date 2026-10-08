@@ -4,7 +4,6 @@
 #include <variant>
 #include <vector>
 
-#include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Interpreters/ActionsDAG.h>
 
@@ -16,7 +15,9 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
 
-namespace DB
+#include <mutex>
+
+namespace DB::Iceberg
 {
 
 /// Complex type schema evolution consists of multiple stages.

@@ -59,4 +59,10 @@ SELECT caseWithExpression(
     materialize(NULL),
     NULL,
     NULL
-); -- { serverError ILLEGAL_COLUMN }
+); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT caseWithExpression('C', 'A', true, 'B', false); -- { serverError BAD_ARGUMENTS }
+
+SELECT caseWithExpression(1, assumeNotNull(materialize(NULL)), 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SELECT count() WHERE caseWithExpression(1, assumeNotNull(materialize(NULL)), 1, 1); -- { serverError ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER }

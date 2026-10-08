@@ -3,29 +3,66 @@
 
 set (DEFAULT_LIBS "-nodefaultlibs")
 
-# We need builtins from Clang
-execute_process (COMMAND
-    ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt
-    OUTPUT_VARIABLE BUILTINS_LIBRARY
-    COMMAND_ERROR_IS_FATAL ANY
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
+# Wire compiler-rt runtimes (builtins/sanitizers/XRay) into the link flags.
+include (cmake/compiler_rt_link.cmake)
 
-# Apparently, in clang-19, the UBSan support library for C++ was moved out into ubsan_standalone_cxx.a, so we have to include both.
-if (SANITIZE STREQUAL undefined)
-    string(REPLACE "builtins.a" "ubsan_standalone_cxx.a" EXTRA_BUILTINS_LIBRARY "${BUILTINS_LIBRARY}")
-endif ()
+# `libllvmlibc` supplies both the math functions and the SIMD memory functions
+# (`memcpy`/`memmove`/`memset`/`memcmp`/`bcmp`/`memmem`). Disabling it on
+# x86_64/aarch64 reverts all of them to the system libc, including `memcpy` —
+# which then carries a versioned glibc symbol again (no portability shim).
+option (ENABLE_LLVM_LIBC_MATH "Use math and memory functions from llvm-libc instead of glibc" ON)
+if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
+    set(ENABLE_LLVM_LIBC_MATH OFF)
+endif()
 
-if (NOT EXISTS "${BUILTINS_LIBRARY}")
-    set (BUILTINS_LIBRARY "-lgcc")
-endif ()
+if (ENABLE_LLVM_LIBC_MATH)
+    link_directories("${CMAKE_BINARY_DIR}/contrib/libllvmlibc-cmake")
+    target_link_libraries(global-libs INTERFACE libllvmlibc)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -llibllvmlibc")
+
+    if (NOT SANITIZE)
+        # Force every llvm-libc member into the link ahead of all objects and archives
+        # (linker flags precede them on the link line; -L placement does not matter to ld).
+        # Symbol resolution in archives is first-definition-wins in command-line order, and
+        # the Rust static libraries precede libllvmlibc there, so without this the libm
+        # functions Rust's compiler_builtins exports (cbrt, fmod, fma - baseline-CPU builds)
+        # would shadow the llvm-libc ones whenever symbol localization is bypassed. With all
+        # members pre-loaded, later archives can never supply an already-defined symbol, so
+        # this also covers the mem functions without per-symbol -u flags.
+        #
+        # Skipped under sanitizers, where the interceptors must wrap the libc mem functions
+        # instead (same reason the -u forcing was skipped before).
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive -llibllvmlibc -Wl,--no-whole-archive")
+        # Redundant with --whole-archive above, but kept as a backstop for the mem functions
+        # in case the whole-archive link is ever weakened or repositioned.
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,memcpy -Wl,-u,memmove -Wl,-u,memset -Wl,-u,memcmp")
+    endif()
+endif()
 
 if (OS_ANDROID)
     # pthread and rt are included in libc
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -ldl")
 elseif (USE_MUSL)
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -static -lc")
+    # musl itself is linked in cmake/musl.cmake. -nostartfiles: don't use glibc's crt*.o
+    # from the sysroot; musl's own startup files (copied to stable paths in
+    # contrib/musl-cmake) are wired here in the canonical order: crt1.o and crti.o go
+    # through CMAKE_EXE_LINKER_FLAGS, which the link line places before all object
+    # files, and crtn.o goes at the end of DEFAULT_LIBS, after all libraries — crti and
+    # crtn provide the prologue/epilogue of the `.init`/`.fini` sections and must wrap
+    # every other contribution to them.
+    set (MUSL_CRT_DIR "${CMAKE_BINARY_DIR}/contrib/musl-cmake")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${MUSL_CRT_DIR}/crt1.o ${MUSL_CRT_DIR}/crti.o")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -static -nostartfiles ${MUSL_CRT_DIR}/crtn.o")
 else ()
-    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} ${EXTRA_BUILTINS_LIBRARY} ${COVERAGE_OPTION} -lc -lm -lrt -lpthread -ldl")
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} -lc -lm -lrt -lpthread -ldl")
+endif ()
+
+# The GPU island is built against the system libstdc++, so a binary carrying it needs that library.
+# It must stay last: both runtimes define `__gxx_personality_v0`, the linker binds the first on the
+# command line, and libstdc++'s does not recognize a libc++ exception - earlier, and the server dies
+# on the first `throw` anywhere.
+if (ENABLE_GPU)
+    set (DEFAULT_LIBS "${DEFAULT_LIBS} ${GPU_LIBSTDCXX_LIBRARY}")
 endif ()
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
@@ -33,13 +70,20 @@ message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 set(CMAKE_CXX_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 
-# Unfortunately '-pthread' doesn't work with '-nodefaultlibs'.
-# Just make sure we have pthreads at all.
-set(THREADS_PREFER_PTHREAD_FLAG ON)
-find_package(Threads REQUIRED)
+add_library(Threads::Threads INTERFACE IMPORTED)
+if (USE_MUSL)
+    # musl provides pthread in libc.
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES musl)
+else ()
+    set_target_properties(Threads::Threads PROPERTIES INTERFACE_LINK_LIBRARIES pthread)
+endif ()
 
 include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
+
+if (USE_MUSL)
+    include (cmake/musl.cmake)
+endif()
 
 if (NOT OS_ANDROID)
     if (NOT USE_MUSL)

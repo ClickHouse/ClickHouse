@@ -38,7 +38,7 @@ bool ParserDropFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
             return false;
     }
 
-    auto drop_function_query = std::make_shared<ASTDropFunctionQuery>();
+    auto drop_function_query = make_intrusive<ASTDropFunctionQuery>();
     drop_function_query->if_exists = if_exists;
     drop_function_query->cluster = std::move(cluster_str);
 

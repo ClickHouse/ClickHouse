@@ -1,0 +1,19 @@
+---
+title: 'ClickHouse 是否支持实时更新？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/updates
+description: 'ClickHouse 支持轻量级实时更新'
+doc_type: 'reference'
+keywords: ['更新', '实时']
+---
+
+ClickHouse 支持 UPDATE 语句，并且能够以接近 INSERT 操作的速度执行实时更新。
+
+这得益于 [补丁分区片段数据结构](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#stage-3-patch-parts--updates-the-clickhouse-way)，它可以快速应用更改，同时不会对 SELECT 性能造成显著影响。
+
+此外，借助 MVCC (多版本并发控制) 和快照隔离，更新还具备 ACID 特性。
+
+<Info>
+  轻量级更新最早在 ClickHouse 25.7 版本中引入。
+</Info>

@@ -2,6 +2,8 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
 
+SET enable_analyzer = 1;
+
 {% for column_expression_type in ['ALIAS', 'MATERIALIZED'] %}
 
 -- { echoOff }

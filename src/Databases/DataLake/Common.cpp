@@ -18,6 +18,7 @@
 
 namespace DB::ErrorCodes
 {
+extern const int BAD_ARGUMENTS;
 extern const int DATALAKE_DATABASE_ERROR;
 }
 
@@ -64,9 +65,12 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
 {
     String name = trim(type_name);
 
-    if (name.starts_with("array<") && name.ends_with(">"))
+    /// Iceberg names this type `list`, Hive names it `array`; Glue passes through whichever spelling
+    /// the writer that registered the table used.
+    if ((name.starts_with("array<") || name.starts_with("list<")) && name.ends_with(">"))
     {
-        String inner = name.substr(6, name.size() - 7);
+        const size_t open = name.find('<');
+        String inner = name.substr(open + 1, name.size() - open - 2);
         return std::make_shared<DB::DataTypeArray>(getType(inner, nullable));
     }
 
@@ -87,7 +91,7 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
         auto args = splitTypeArguments(inner);
 
         std::vector<String> field_names;
-        std::vector<DB::DataTypePtr> field_types;
+        DB::DataTypes field_types;
 
         for (const auto & arg : args)
         {
@@ -105,7 +109,19 @@ DB::DataTypePtr getType(const String & type_name, bool nullable, const String & 
         return std::make_shared<DB::DataTypeTuple>(field_types, field_names);
     }
 
-    return nullable ? DB::makeNullable(DB::IcebergSchemaProcessor::getSimpleType(name)) : DB::IcebergSchemaProcessor::getSimpleType(name);
+    return nullable ? DB::makeNullable(DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name))
+                    : DB::Iceberg::IcebergSchemaProcessor::getSimpleType(name);
+}
+
+std::pair<std::string, std::string> parseTableName(const std::string & name)
+{
+    auto pos = name.rfind('.');
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Table cannot have empty namespace: {}", name);
+
+    auto table_name = name.substr(pos + 1);
+    auto namespace_name = name.substr(0, name.size() - table_name.size() - 1);
+    return {namespace_name, table_name};
 }
 
 }

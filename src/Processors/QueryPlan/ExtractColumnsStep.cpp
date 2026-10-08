@@ -21,15 +21,15 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ExtractColumnsStep::ExtractColumnsStep(const Header & input_header_, const NamesAndTypesList & requested_columns_)
-    : ITransformingStep(input_header_, ExtractColumnsTransform::transformHeader(input_header_, requested_columns_), getTraits())
+ExtractColumnsStep::ExtractColumnsStep(SharedHeader input_header_, const NamesAndTypesList & requested_columns_)
+    : ITransformingStep(input_header_, std::make_unique<const Block>(ExtractColumnsTransform::transformHeader(*input_header_, requested_columns_)), getTraits())
     , requested_columns(requested_columns_)
 {
 }
 
 void ExtractColumnsStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addSimpleTransform([&](const Block & header)
+    pipeline.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<ExtractColumnsTransform>(header, requested_columns);
     });
@@ -37,7 +37,7 @@ void ExtractColumnsStep::transformPipeline(QueryPipelineBuilder & pipeline, cons
 
 void ExtractColumnsStep::updateOutputHeader()
 {
-    output_header = ExtractColumnsTransform::transformHeader(input_headers.front(), requested_columns);
+    output_header = std::make_shared<const Block>(ExtractColumnsTransform::transformHeader(*input_headers.front(), requested_columns));
 }
 
 }

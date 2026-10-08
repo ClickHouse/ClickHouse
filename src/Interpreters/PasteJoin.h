@@ -2,7 +2,6 @@
 
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
@@ -20,15 +19,20 @@ namespace ErrorCodes
 class PasteJoin : public IJoin
 {
 public:
-    explicit PasteJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
+    explicit PasteJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader & right_sample_block_)
         : table_join(table_join_)
-        , right_sample_block(right_sample_block_)
+        , right_sample_header(right_sample_block_)
     {
         LOG_TRACE(getLogger("PasteJoin"), "Will use paste join");
     }
 
     std::string getName() const override { return "PasteJoin"; }
+
+    std::string getAlgorithm() const override { return "PASTE"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+
+    /// The left and right blocks are concatenated side by side by row position.
+    bool preservesLeftBlockOrder() const override { return true; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
@@ -56,11 +60,11 @@ public:
     }
 
     /// Used just to get result header
-    void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & /* not_processed */) override
+    JoinResultPtr joinBlock(Block block) override
     {
-        for (const auto & col : right_sample_block)
+        for (const auto & col : *right_sample_header)
             block.insert(col);
-        block = materializeBlock(block).cloneEmpty();
+        return IJoinResult::createFromBlock(materializeBlock(block).cloneEmpty());
     }
 
     void setTotals(const Block & block) override { totals = block; }
@@ -78,6 +82,8 @@ public:
 
     bool alwaysReturnsEmptySet() const override { return false; }
 
+    StepAnalysisReport getAnalysisReport() const override { return {}; }
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override
     {
@@ -89,7 +95,7 @@ public:
 
 private:
     std::shared_ptr<TableJoin> table_join;
-    Block right_sample_block;
+    SharedHeader right_sample_header;
     Block totals;
 };
 

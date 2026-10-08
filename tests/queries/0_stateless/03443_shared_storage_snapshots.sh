@@ -37,7 +37,7 @@ function test_snapshot_sharing()
     for _ in $( seq 1 $(((delay+1)*10)) ); do
         ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SYSTEM FLUSH LOGS text_log"
         # We need to wait until the second subquery will enter MergeTreeData::getStorageSnapshot(), and then before the artificial delay finishes inject OPTIMIZE
-        if [[ $(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND query_id = '$query_id' AND message_format_string = 'Injecting {}ms artificial delay before taking storage snapshot' SETTINGS max_rows_to_read = 0") -eq 2 ]]; then
+        if [[ $(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT count() FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND message_format_string = 'Injecting {}ms artificial delay before taking storage snapshot' SETTINGS max_rows_to_read = 0") -eq 2 ]]; then
             found_delay=1
             break
         fi
