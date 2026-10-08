@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataTypes/NestedUtils.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -161,8 +162,11 @@ NameSet getColumnsMergedOnHorizontalStageOfVerticalMergeSet(const ChooseContext 
     for (const auto & index : metadata.getSecondaryIndices())
     {
         /// A skip index over a single column is computed on the vertical stage along with the column.
-        if (index.column_names.size() > 1)
-            key_columns.insert_range(index.column_names);
+        /// Count the source columns of the index expression, not its output columns (`column_names`):
+        /// an index like `cityHash64(a, b)` has one output column but needs both `a` and `b`.
+        auto index_columns = index.expression->getRequiredColumns();
+        if (index_columns.size() > 1)
+            key_columns.insert_range(index_columns);
     }
 
     /// A vertical merge that removes expired values merges the columns of the rows, move and recompression
