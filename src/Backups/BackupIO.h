@@ -76,6 +76,12 @@ public:
     /// contents in the lock proves nothing, because the write could have destroyed a foreign lock.
     virtual bool supportsAtomicCreateIfNotExists() const { return false; }
 
+    /// Whether `writeFileIfNotExists` creates the file exclusively already when it returns the buffer, before
+    /// any of its contents are written (an `O_EXCL` open). If the write fails afterwards, the file left in the
+    /// destination is then this caller's own, even though it does not hold the contents the caller meant to
+    /// write. Object-storage writers create the object only when the buffer is finalized, so they answer `false`.
+    virtual bool createsFileOnOpenIfNotExists() const { return false; }
+
     using CreateReadBufferFunction = std::function<std::unique_ptr<SeekableReadBuffer>()>;
     virtual void copyDataToFile(const String & path_in_backup, const CreateReadBufferFunction & create_read_buffer, UInt64 start_pos, UInt64 length) = 0;
 

@@ -58,6 +58,7 @@ namespace FailPoints
     extern const char backup_fail_lock_file_check_after_creation[];
     extern const char backup_fail_lock_file_removal[];
     extern const char backup_fail_lock_file_write_after_commit[];
+    extern const char backup_fail_lock_file_write_after_open[];
     extern const char backup_pause_before_lock_file_creation[];
     extern const char backup_pause_after_lock_file_creation[];
 }
@@ -998,9 +999,17 @@ void BackupImpl::createLockFile()
         lock_file_contents = toString(*uuid);
     const String completed_file = use_archive ? archive_params.archive_name : METADATA_FILE_NAME;
     FailPointInjection::pauseFailPoint(FailPoints::backup_pause_before_lock_file_creation);
+    /// Set once the lock has been created exclusively by the open itself, before its contents are written.
+    bool created_exclusively_on_open = false;
     try
     {
         auto out = writer->writeFileIfNotExists(lock_file_name);
+        created_exclusively_on_open = writer->createsFileOnOpenIfNotExists();
+        fiu_do_on(FailPoints::backup_fail_lock_file_write_after_open,
+        {
+            throw Exception(
+                ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_lock_file_write_after_open is triggered");
+        });
         *out << lock_file_contents;
         out->finalize();
         fiu_do_on(FailPoints::backup_fail_lock_file_write_after_commit,
@@ -1053,6 +1062,26 @@ void BackupImpl::createLockFile()
         /// backends the destination stays reported as taken, which is the safe answer; the lock itself goes
         /// back with the failed attempt (see `created_own_lock_file` above), so nothing stays fenced.
         const bool own_write_committed = lock_contents_match && writer->supportsAtomicCreateIfNotExists();
+
+        if (created_exclusively_on_open && !lock_contents_match)
+        {
+            /// The open created the lock exclusively, and writing its contents failed afterwards (`ENOSPC`,
+            /// `EIO`, a failed `finalize`, ...). Nobody else can have created or replaced that file, so it is
+            /// this attempt's own half-written lock, not a concurrent backup's: reporting the destination as
+            /// taken would misreport a local I/O error. `removeLockFile` cannot take it back either, because it
+            /// needs the lock to hold this attempt's contents, so remove it here and rethrow the original error.
+            try
+            {
+                writer->removeFile(lock_file_name);
+                own_lock_cleanup_result = true;
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Could not remove lock file {}", lock_file_name));
+                own_lock_cleanup_result = false;
+            }
+            std::rethrow_exception(exception);
+        }
 #if CLICKHOUSE_CLOUD
         /// A resumable attempt whose own contents are already there falls through, so a later failure lands
         /// inside `BackupResumer`'s inner try, which reports the lock and keeps its progress. Its contents
