@@ -73,12 +73,12 @@ private:
         /// Can condition be moved to prewhere?
         bool viable = false;
 
-        /// Does the condition presumably have good selectivity?
-        bool good = false;
-
         /// Does the condition contain a function that reports `isExpensive`?
         /// Such a condition is moved to PREWHERE after all other conditions.
         bool expensive = false;
+
+        /// Does the condition presumably have good selectivity?
+        bool good = false;
 
         /// the lower the better
         UInt64 estimated_row_count = 0;
@@ -104,12 +104,12 @@ private:
                 names += n.getColumnName();
             }
             return fmt::format(
-                "Condition(exp:{} viable: {}, good: {}, expensive: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
+                "Condition(exp:{} viable: {}, expensive: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
                 "columns_size: {}, bytes_per_rejected_row: {}, table_columns.size: {})",
                 names,
                 viable,
-                good,
                 expensive,
+                good,
                 min_position_in_primary_key,
                 estimated_row_count,
                 columns_size,
