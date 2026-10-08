@@ -215,6 +215,7 @@ namespace Setting
     extern const SettingsBool table_engine_read_through_distributed_cache;
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool use_columns_cache;
     extern const SettingsBool s3_validate_etag_on_read;
     extern const SettingsBool azure_validate_etag_on_read;
 }
@@ -1582,7 +1583,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         logIcebergFileStats(object_info, log);
 
         InputFormatPtr input_format;
-        if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
+        /// The metadata of the object identifies its version for the Parquet metadata cache and
+        /// for the columns cache.
+        if ((context_->getSettingsRef()[Setting::use_parquet_metadata_cache] || context_->getSettingsRef()[Setting::use_columns_cache])
             && (Poco::toLower(format_name) == "parquet")
             && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
         {

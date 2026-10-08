@@ -66,6 +66,9 @@ public:
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
     bool isTopKFilterApplied() const override;
 
+    /// Use the columns cache, see `Parquet::ColumnsCacheOptions`. Must be called before the first read.
+    void setColumnsCacheOptions(std::shared_ptr<const Parquet::ColumnsCacheOptions> options) { read_options.columns_cache = std::move(options); }
+
 private:
     Chunk read() override;
 
