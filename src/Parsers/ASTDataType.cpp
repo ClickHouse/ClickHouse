@@ -458,18 +458,34 @@ bool substituteBareUUIDInColumnsListLiteralArgument(ASTFunction & function)
     return false;
 }
 
-/** Whether the arguments of a table function can themselves be table functions, e.g. `loop(url(...))`,
-  * `viewIfPermitted(SELECT ... ELSE url(...))` or `remote('addresses', url(...))`. Other table functions take only
-  * scalar arguments, and a scalar function among them can share its name with a table function (the string
-  * formatting `format(pattern, ...)` in `mongodb('host', 'db', format('{} {}', 'id UUID', 'x'), ...)`), so it must
-  * not be treated as one.
+/** The index of the positional argument of a table function that can itself be a table function, e.g. `loop(url(...))`,
+  * `viewIfPermitted(SELECT ... ELSE url(...))` or `remote('addresses', url(...))`. Other arguments of these table
+  * functions and the arguments of all other table functions are scalar, and a scalar function among them can share its
+  * name with a table function (the string formatting `format(pattern, ...)` in
+  * `mongodb('host', 'db', format('{} {}', 'id UUID', 'x'), ...)` or in the sharding key of `remote`), so it must not
+  * be treated as one.
   */
-bool isTableFunctionTakingTableFunctions(const ASTFunction & function)
+std::optional<size_t> getTableFunctionArgumentIndex(const ASTFunction & function)
 {
-    for (const auto * name : {"loop", "viewIfPermitted", "remote", "remoteSecure", "cluster", "clusterAllReplicas"})
+    if (equalsCaseInsensitiveString(function.name, "loop"))
+        return 0;
+    for (const auto * name : {"viewIfPermitted", "remote", "remoteSecure", "cluster", "clusterAllReplicas"})
         if (equalsCaseInsensitiveString(function.name, name))
-            return true;
-    return false;
+            return 1;
+    return std::nullopt;
+}
+
+/// The value of the named argument `database = table_function(...)` of `remote(named_collection, database = url(...))`,
+/// or `nullptr` if `argument` is not such a named argument. Other named arguments (such as `sharding_key`) are scalar.
+const ASTPtr * getNamedTableFunctionArgument(const ASTPtr & argument)
+{
+    const auto * equals = argument->as<ASTFunction>();
+    if (!equals || equals->name != "equals" || !equals->arguments || equals->arguments->children.size() != 2)
+        return nullptr;
+    const auto * name = equals->arguments->children[0]->as<ASTIdentifier>();
+    if (!name || (name->name() != "database" && name->name() != "db"))
+        return nullptr;
+    return &equals->arguments->children[1];
 }
 
 /** Rewrite bare `UUID` type names in a persisted definition.
@@ -508,16 +524,43 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position)
         table_function_child = create->as_table_function;
 
     /// A table function nested in a wrapper (for example, `loop(url(...))`) does not have a dedicated
-    /// table-expression node of its own, so the direct arguments of a wrapper keep the position (through the
-    /// argument list, and through `equals` for a named argument such as `remote(collection, database = url(...))`).
-    /// Arguments of any other function, including scalar functions nested in table function arguments, do not.
-    const bool propagate_position = in_table_function_position
-        && (ast.as<ASTExpressionList>()
-            || (function && (isTableFunctionTakingTableFunctions(*function) || equalsCaseInsensitiveString(function->name, "equals"))));
+    /// table-expression node of its own, so only the argument of a wrapper that can be a table function keeps the
+    /// position (including the named argument `remote(collection, database = url(...))`). Other arguments of a
+    /// wrapper and arguments of any other function, including scalar functions nested in table function arguments,
+    /// do not.
+    std::optional<size_t> table_function_argument_index;
+    if (in_table_function_position && function && function->arguments)
+        table_function_argument_index = getTableFunctionArgumentIndex(*function);
 
     for (const auto & child : ast.children)
-        if (child)
-            substituted |= substituteBareUUIDInPlace(*child, propagate_position || child.get() == table_function_child);
+    {
+        if (!child)
+            continue;
+
+        if (!table_function_argument_index || child != function->arguments)
+        {
+            substituted |= substituteBareUUIDInPlace(*child, child.get() == table_function_child);
+            continue;
+        }
+
+        const auto & arguments = function->arguments->children;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (!arguments[i])
+                continue;
+
+            if (const auto * value = getNamedTableFunctionArgument(arguments[i]))
+            {
+                const auto & equals_arguments = arguments[i]->as<ASTFunction &>().arguments->children;
+                substituted |= substituteBareUUIDInPlace(*equals_arguments[0], false);
+                substituted |= substituteBareUUIDInPlace(**value, true);
+            }
+            else
+            {
+                substituted |= substituteBareUUIDInPlace(*arguments[i], i == *table_function_argument_index);
+            }
+        }
+    }
 
     return substituted;
 }
