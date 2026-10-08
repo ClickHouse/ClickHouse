@@ -88,6 +88,10 @@ public:
       * priced the merge's up-front memory reservation (see CompactionStatistics::estimateNeededMemoryForMerge):
       * MergeTask uses it instead of re-reading the live settings, so a concurrent ALTER ... MODIFY SETTING
       * cannot change the merge's writer decisions after the admission gate accepted it at the old price.
+      *
+      * mutations_snapshot - if not null, the snapshot of pending mutations the caller priced the reservation
+      * against, built with the same parameters MergeTask would use; the merge applies exactly these mutations,
+      * so an ALTER / RENAME COLUMN registered later is not applied on the fly without being priced.
       */
     MergeTaskPtr mergePartsToTemporaryPart(
         FutureMergedMutatedPartPtr future_part,
@@ -104,6 +108,7 @@ public:
         bool cleanup,
         MergeTreeData::MergingParams merging_params,
         MergeTreeTransactionPtr txn,
+        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         ProjectionDescriptionRawPtr projection = nullptr,
         IMergeTreeDataPart * parent_part = nullptr,
         const String & suffix = "");

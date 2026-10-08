@@ -152,7 +152,8 @@ void MergePlainMergeTreeTask::prepare()
     ///    current_mutations_by_version when it starts, so an ALTER / RENAME COLUMN registered while the merge
     ///    waits in the background queue is applied on the fly by the merge, and a reservation priced against
     ///    the selection-time snapshot would miss its conversions. The snapshot below is taken with the same
-    ///    parameters MergeTask uses, right before it builds its own;
+    ///    parameters MergeTask uses, and MergeTask is handed this very snapshot, so a mutation registered
+    ///    after this point is not applied by the merge without being priced;
     ///  - the destination disk's request settings: WriteBufferFromS3 / WriteBufferFromAzureBlobStorage read
     ///    them from the disk's object storage when they are constructed, and a config reload (applyNewSettings)
     ///    that raises *_strict_upload_part_size / *_max_upload_part_size / *_max_inflight_parts_for_one_file
@@ -163,6 +164,7 @@ void MergePlainMergeTreeTask::prepare()
     /// point and a writer's construction mid-merge is the irreducible remainder, covered by the reactive
     /// background_memory_tracker.
     const DiskPtr output_disk = merge_mutate_entry->tagger->reserved_space->getDisk();
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot;
     {
         const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_part->parts);
         const MergeTreeData::IMutationsSnapshot::Params mutations_params
@@ -176,7 +178,7 @@ void MergePlainMergeTreeTask::prepare()
             .need_patch_parts = false,
             .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
         };
-        const auto mutations_snapshot = storage.getMutationsSnapshot(mutations_params);
+        mutations_snapshot = storage.getMutationsSnapshot(mutations_params);
         /// `replace` swaps the selection-time reservation for the refreshed one in a single critical
         /// section; a fresh `reserve` moved over the old value would transiently expose `old + new`
         /// to concurrent selectors and spuriously reject merges that fit.
@@ -219,7 +221,8 @@ void MergePlainMergeTreeTask::prepare()
         deduplicate_by_columns,
         cleanup,
         storage.merging_params,
-        txn);
+        txn,
+        mutations_snapshot);
 }
 
 

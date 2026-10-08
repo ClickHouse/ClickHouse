@@ -679,21 +679,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// Snapshot of pending mutations for the source parts, fetched once and reused for
     /// `alter_conversions` below, so the expired-columns check observes the same mutations.
-    auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
-
-    MergeTreeData::IMutationsSnapshot::Params params
+    /// When the caller froze the snapshot it priced the memory reservation against, use that one:
+    /// a mutation registered after the reservation must not be applied on the fly by this merge.
+    MergeTreeData::MutationsSnapshotPtr mutations_snapshot = global_ctx->frozen_mutations_snapshot;
+    if (!mutations_snapshot)
     {
-        .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
-        .min_part_metadata_version = parts_info.min_metadata_version,
-        .min_part_data_versions = nullptr,
-        .max_mutation_versions = nullptr,
-        .need_data_mutations = false,
-        .need_alter_mutations = !patch_parts.empty(),
-        .need_patch_parts = false,
-        .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
-    };
+        auto parts_info = MergeTreeData::getPartsSnapshotInfo(global_ctx->future_part->parts);
 
-    auto mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+        MergeTreeData::IMutationsSnapshot::Params params
+        {
+            .metadata_version = global_ctx->metadata_snapshot->getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = !patch_parts.empty(),
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+
+        mutations_snapshot = global_ctx->data->getMutationsSnapshot(params);
+    }
     const auto & merge_tree_settings = global_ctx->data_settings;
 
     /// Alter conversions must include patch parts before they are cached below. Patch application

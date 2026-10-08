@@ -385,7 +385,9 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     /// Snapshot of the pending mutations for the source parts, built with the same parameters MergeTask
     /// builds its own: the estimate must observe the same pending RENAME COLUMN mutations the merge will
     /// apply on-fly, or a not-yet-materialized rename target would be priced as expired while the merge
-    /// reads and rewrites it (see the pending-rename handling in estimateNeededMemoryForMerge).
+    /// reads and rewrites it (see the pending-rename handling in estimateNeededMemoryForMerge). The same
+    /// snapshot is handed to the merge below, so a mutation registered after this point is not applied by
+    /// it without being priced.
     const auto parts_info = MergeTreeData::getPartsSnapshotInfo(future_merged_part->parts);
     const MergeTreeData::IMutationsSnapshot::Params mutations_params
     {
@@ -446,7 +448,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             entry.deduplicate_by_columns,
             entry.cleanup,
             storage.merging_params,
-            NO_TRANSACTION_PTR);
+            NO_TRANSACTION_PTR,
+            mutations_snapshot);
 
     /// Adjust priority
     for (auto & item : future_merged_part->parts)

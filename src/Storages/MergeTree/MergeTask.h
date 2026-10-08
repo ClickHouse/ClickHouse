@@ -113,7 +113,8 @@ public:
         MergeTreeDataMergerMutator * mutator_,
         PartitionActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_,
-        MergeTreeSettingsPtr base_data_settings_)
+        MergeTreeSettingsPtr base_data_settings_,
+        MergeTreeData::MutationsSnapshotPtr frozen_mutations_snapshot_ = nullptr)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
 
@@ -151,6 +152,7 @@ public:
             /// MergeTreeData::getSettings would apply them to the live one; the snapshot itself is
             /// carried unchanged to the nested projection merges.
             global_ctx->base_data_settings = std::move(base_data_settings_);
+            global_ctx->frozen_mutations_snapshot = std::move(frozen_mutations_snapshot_);
             global_ctx->data_settings = global_ctx->data->applySettingsChanges(
                 global_ctx->base_data_settings, global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
 
@@ -225,6 +227,9 @@ private:
         /// The table-level settings snapshot `data_settings` is derived from (without any projection's
         /// WITH SETTINGS applied), passed on to the nested merges of the projections.
         MergeTreeSettingsPtr base_data_settings;
+        /// If not null, the snapshot of pending mutations the caller priced this merge's memory reservation
+        /// against; the merge applies exactly these mutations instead of taking a fresh snapshot.
+        MergeTreeData::MutationsSnapshotPtr frozen_mutations_snapshot;
         MergeTreeDataMergerMutator * mutator{nullptr};
         PartitionActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};

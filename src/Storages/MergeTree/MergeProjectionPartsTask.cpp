@@ -122,6 +122,7 @@ bool MergeProjectionPartsTask::executeStep()
             false, // no cleanup
             projection_merging_params,
             NO_TRANSACTION_PTR,
+            /*mutations_snapshot=*/ nullptr,
             &projection,
             new_data_part.get(),
             ".tmp_proj");
