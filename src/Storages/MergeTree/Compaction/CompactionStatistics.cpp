@@ -225,8 +225,9 @@ size_t countMaterializedSkipIndexStreams(
 /// skip indexes (`add_minmax_index_for_numeric_columns`) from reserving megabytes per index for a small
 /// merge. An index some source part lacks is materialized by this merge with an unknown volume, and the
 /// sizes of a projection part are calculated against the parent table's indexes, so both are priced at
-/// the worst case. Pass empty `source_parts` when no source part represents the written index (a rebuilt
-/// projection).
+/// the worst case, and so is a merge that applies patch parts (they carry no skip indexes, so passing them
+/// in `source_parts` disables the cap). Pass empty `source_parts` when no source part represents the
+/// written index (a rebuilt projection).
 UInt64 estimatePackedSkipIndexAccumulators(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettings & settings,
@@ -2197,9 +2198,11 @@ UInt64 estimateNeededMemoryForMerge(
         output_memory,
         saturatingStreamsTimesBuffer(skip_index_streams, eager_stream_buffers_with_marks(base_max_compress_block_size)));
     /// With packing enabled, the in-memory accumulators of those substreams come on top of their buffers.
+    /// Patch parts rewrite the indexed values but store no skip indexes of their own, so including them
+    /// disables the cap by the source parts' index bytes for a merge that applies patches.
     output_memory = saturatingAdd(
         output_memory,
-        estimatePackedSkipIndexAccumulators(metadata_snapshot, settings, context, future_part.parts, base_max_compress_block_size));
+        estimatePackedSkipIndexAccumulators(metadata_snapshot, settings, context, source_and_patch_parts, base_max_compress_block_size));
 
     /// The primary index is one more writer chain held for the whole merge: `MergedBlockOutputStream`
     /// rewrites the primary key, and `MergeTreeDataPartWriterOnDisk::initPrimaryIndex` opens the `primary`
