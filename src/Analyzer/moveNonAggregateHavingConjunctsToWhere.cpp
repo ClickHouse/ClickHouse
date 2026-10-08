@@ -120,7 +120,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
                 /// `GroupingFunctionsResolvePass` replaces `grouping` with its specializations, like `__groupingOrdinary`.
                 const auto & function_name = function_node->getFunctionName();
                 bool is_grouping_function = function_name == "grouping" || function_name.starts_with("__grouping");
-                if (is_grouping_function || function_name == "arrayJoin")
+                /// `arrayJoin` may also be written as its alias `unnest`.
+                if (is_grouping_function || getFunctionCanonicalNameIfAny(function_name) == "arrayJoin")
                     keep_in_having();
             }
         }

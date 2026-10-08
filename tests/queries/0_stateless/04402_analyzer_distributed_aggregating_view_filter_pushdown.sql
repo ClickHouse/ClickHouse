@@ -85,6 +85,7 @@ FROM (
 SELECT '--- HAVING with grouping and arrayJoin';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date = '2024-01-05' AND grouping(date) = 0;
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING arrayJoin([date, date]) = '2024-01-05';
+SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING unnest([date, date]) = '2024-01-05';
 
 -- A conjunct with a deterministic subquery is moved; with a non-deterministic subquery it stays in HAVING,
 -- because a correlated subquery in WHERE would be evaluated per source row instead of per group.
