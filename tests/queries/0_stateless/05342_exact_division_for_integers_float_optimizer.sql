@@ -1,4 +1,5 @@
 SET optimize_arithmetic_operations_in_aggregate_functions = 1;
+SET optimize_syntax_fuse_functions = 1;
 SET allow_suspicious_low_cardinality_types = 1;
 
 CREATE TABLE exact_division_float_optimizer (i Int64, f Float64, n Nullable(Float64), lc LowCardinality(Float64), d Decimal32(0)) ENGINE = Memory;
