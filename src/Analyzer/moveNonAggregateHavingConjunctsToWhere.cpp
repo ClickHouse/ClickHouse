@@ -23,6 +23,7 @@ namespace
   * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
   *   `validateAggregates` rejects `grouping` in `WHERE`);
   * - else any `arrayJoin` function -> `KeepInHaving` (before aggregation it would multiply the rows);
+  * - else any `indexHint` function -> `KeepInHaving` (before aggregation it would prune granules, leaving partial groups);
   * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
   * - else -> `Move`.
   *
@@ -121,7 +122,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
                 const auto & function_name = function_node->getFunctionName();
                 bool is_grouping_function = function_name == "grouping" || function_name.starts_with("__grouping");
                 /// `arrayJoin` may also be written as its alias `unnest`.
-                if (is_grouping_function || getFunctionCanonicalNameIfAny(function_name) == "arrayJoin")
+                const auto & canonical_name = getFunctionCanonicalNameIfAny(function_name);
+                if (is_grouping_function || canonical_name == "arrayJoin" || canonical_name == "indexHint")
                     keep_in_having();
             }
         }

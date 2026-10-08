@@ -87,6 +87,12 @@ SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING date = '2024-01-05' A
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING arrayJoin([date, date]) = '2024-01-05';
 SELECT date, sum(x) FROM t_dist_04402 GROUP BY date HAVING unnest([date, date]) = '2024-01-05';
 
+-- `indexHint` conjuncts stay in HAVING: there the hint is always true, while before aggregation
+-- it would prune the other partitions.
+SELECT '--- HAVING with indexHint';
+SELECT count(), sum(s) FROM (SELECT date, sum(x) AS s FROM t_dist_04402 GROUP BY date HAVING indexHint(date = '2024-01-05'));
+SELECT count(), sum(s) FROM (SELECT date, sum(x) AS s FROM t_dist_04402 GROUP BY date HAVING indexHint(date = '2024-01-05') OR date = '2024-01-06');
+
 -- A conjunct with a deterministic subquery is moved; with a non-deterministic subquery it stays in HAVING,
 -- because a correlated subquery in WHERE would be evaluated per source row instead of per group.
 SELECT '--- HAVING with deterministic subquery';

@@ -18,6 +18,9 @@
 2024-01-05	60002
 2024-01-05	60002
 2024-01-05	60002
+--- HAVING with indexHint
+10	599990
+10	599990
 --- HAVING with deterministic subquery
 2024-01-05	60002
 1	0

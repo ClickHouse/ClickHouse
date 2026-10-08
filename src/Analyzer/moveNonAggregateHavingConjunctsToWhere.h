@@ -11,7 +11,7 @@ class QueryNode;
   * aggregation result into `WHERE`. This mimics the `tryMovePredicatesFromHavingToWhere` rewrite of the
   * query analysis that ClickHouse used before v24.3.
   *
-  * Conjuncts containing aggregate, `grouping`, `arrayJoin` or non-deterministic functions stay in `HAVING`,
+  * Conjuncts containing aggregate, `grouping`, `arrayJoin`, `indexHint` or non-deterministic functions stay in `HAVING`,
   * as well as conjuncts with subqueries containing non-deterministic functions or table functions.
   * With `keep_server_dependent_conjuncts`, conjuncts whose result may differ between servers also stay in `HAVING`:
   * the ones with functions like `shardNum` or `dictGet`, or reading a table or a table function. This is needed when
