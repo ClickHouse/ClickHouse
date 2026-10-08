@@ -184,6 +184,11 @@ public:
         return getMetadata()->supportsDelete();
     }
 
+    bool supportsTruncate() const override
+    {
+        return getMetadata()->supportsTruncate();
+    }
+
     bool supportsParallelInsert() const override
     {
         return getMetadata()->supportsParallelInsert();
