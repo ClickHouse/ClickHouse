@@ -27,6 +27,7 @@ from ci.jobs.scripts.dataset_download import (
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
+from ci.jobs.scripts.perf import s3_service, test_discovery
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -1338,6 +1339,8 @@ class CHServer:
         if res != 0:
             with open(f"{results_path}/{test_name}-err.log", "w") as f:
                 f.write(err)
+        else:
+            Path(f"{results_path}/{test_name}-err.log").unlink(missing_ok=True)
         with open(f"{results_path}/{test_name}-raw.tsv", "w") as f:
             f.write(out)
         with open(f"{results_path}/wall-clock-times.tsv", "a") as f:
@@ -2327,6 +2330,40 @@ def main():
 
     test_keyword = args.test
 
+    # Selected up front (after the release_base vintage checkout above): Configure needs the list for the S3 decision.
+    test_files = test_discovery.list_test_files("./tests/performance/")
+    # TODO: in PRs filter test files against changed files list if only tests has been changed
+    # changed_files = info.get_custom_data("changed_files")
+    if test_keyword:
+        test_files = [file for file in test_files if test_keyword in file]
+    else:
+        test_files = test_files[batch_num::total_batches]
+    print(f"Job Batch: [{batch_num}/{total_batches}]")
+    print(f"Test Files ({len(test_files)}): [{test_files}]")
+    assert test_files
+
+    # Test metadata keeps S3 off for old release_base vintages and shards without S3 tests.
+    needs_s3 = any(
+        test_discovery.test_requires_s3(f"./tests/performance/{file}")
+        for file in test_files
+    )
+    needs_s3_read_dataset = any(
+        test_discovery.test_requires_read_dataset(f"./tests/performance/{file}")
+        for file in test_files
+    )
+
+    def prepare_s3():
+        # Configure and stage re-entry must produce the same S3 fixture.
+        if not s3_service.ensure(f"{perf_wd}/s3_server.log"):
+            return False
+        if needs_s3_read_dataset and not s3_service.seed_read_dataset(
+            f"{db_path}/user_files/{s3_service.READ_DATASET_DIRECTORY}"
+        ):
+            return False
+        if not s3_service.write_side_override(perf_left_config, "left"):
+            return False
+        return s3_service.write_side_override(perf_right_config, "right")
+
     ch_path = args.ch_path
     assert (
         Path(ch_path + "/clickhouse").is_file()
@@ -2575,7 +2612,28 @@ def main():
         # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
         commands += iceberg_database_ddl_commands(perf_left)
         commands += iceberg_database_ddl_commands(perf_right)
+        if needs_s3_read_dataset:
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_left)
+            commands += s3_service.iceberg_s3_database_ddl_commands(perf_right)
+
+        if needs_s3:
+            commands.append(prepare_s3)
+        else:
+            print(
+                "No selected test uses the job-local S3 endpoint - skip its provisioning"
+            )
         results.append(Result.from_commands_run(name="Configure", command=commands))
+        res = results[-1].is_ok()
+
+    if res and needs_s3 and JobStages.CONFIGURE not in stages and any(
+        stage in stages for stage in (JobStages.RESTART, JobStages.TEST, JobStages.REPORT)
+    ):
+        results.append(
+            Result.from_commands_run(
+                name="Restore S3 endpoint",
+                command=[prepare_s3],
+            )
+        )
         res = results[-1].is_ok()
 
     leftCH = CHServer(is_left=True)
@@ -2648,18 +2706,14 @@ def main():
 
     if res and JobStages.TEST in stages:
         print("Tests")
-        test_files = [
-            file for file in os.listdir("./tests/performance/") if file.endswith(".xml")
-        ]
-        # TODO: in PRs filter test files against changed files list if only tests has been changed
-        # changed_files = info.get_custom_data("changed_files")
-        if test_keyword:
-            test_files = [file for file in test_files if test_keyword in file]
-        else:
-            test_files = test_files[batch_num::total_batches]
-        print(f"Job Batch: [{batch_num}/{total_batches}]")
-        print(f"Test Files ({len(test_files)}): [{test_files}]")
-        assert test_files
+        # test_files was selected at the start of the job, where the S3 provisioning decision needs it.
+
+        # A local rerun reuses perf_wd for downloaded datasets. The report scans
+        # all *-raw.tsv and *-err.log files, including tests not selected this
+        # time, so keep only results produced by this invocation.
+        for pattern in ("*-raw.tsv", "*-err.log", "wall-clock-times.tsv"):
+            for old_result in Path(perf_wd).glob(pattern):
+                old_result.unlink()
 
         def cleanup_user_files():
             # Tests can write into user_files (INSERT INTO FUNCTION file(...)) and nothing else removes those files.
@@ -2739,8 +2793,12 @@ def main():
         # `CHPC_CHECK_START_TIMESTAMP` is initialized once at the start of the
         # job - do not reset it here, the export stage has already used it.
 
+        # Local runs use PR_NUMBER=-1 as a sentinel. compare.sh formats the
+        # generated ci-checks.tsv using UInt32, so use the master sentinel (0)
+        # for this local-only report instead of passing a negative PR number.
+        report_pr_number = 0 if info.is_local_run else info.pr_number
         commands = [
-            f"PR_TO_TEST={info.pr_number} "
+            f"PR_TO_TEST={report_pr_number} "
             f"SHA_TO_TEST={info.sha} "
             "stage=get_profiles "
             f"{script_path}",
@@ -3054,6 +3112,10 @@ def main():
                 results=check_sub_results,
             )
         )
+
+    # Only after Report: its confirm_changes step reruns flagged queries, which may read the object store.
+    if needs_s3:
+        s3_service.stop()
 
     files_to_attach = []
     if res:
