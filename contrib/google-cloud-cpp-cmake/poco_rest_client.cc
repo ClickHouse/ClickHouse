@@ -322,10 +322,16 @@ class SessionPool {
 // on), so it can only be applied when a session is opened. Keying on it makes a
 // pooled session carry the policy of the client that borrows it, rather than the
 // policy of whichever client happened to open it.
+//
+// The TLS trust configuration discriminates too: an HTTPS session verifies its
+// peer with the SSL context it was opened with (`SslContextFor`), so a socket
+// opened under one CA bundle must not be handed to a request that configured
+// another one. The key uses the same `ca_location` that `SslContextFor` keys on.
 std::string SessionKey(
     Poco::URI const& uri,
     Poco::Net::HTTPClientSession::ProxyConfig const& proxy,
-    ::ClickHouse::PocoRestKeepAliveOption::Type const& keep_alive) {
+    ::ClickHouse::PocoRestKeepAliveOption::Type const& keep_alive,
+    std::string const& ca_location) {
   return uri.getScheme() + "://" + uri.getHost() + ":" +
          std::to_string(uri.getPort()) + "|" + proxy.host + ":" +
          std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
@@ -334,7 +340,7 @@ std::string SessionKey(
          std::to_string(std::hash<std::string>{}(proxy.password)) + "|" +
          proxy.nonProxyHosts + "|" +
          std::to_string(keep_alive.timeout.count()) + ":" +
-         std::to_string(keep_alive.max_requests);
+         std::to_string(keep_alive.max_requests) + "|" + ca_location;
 }
 
 // Where a session goes back to, and under which limit. Both are decided by the
@@ -399,7 +405,12 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     keep_alive = options.get<::ClickHouse::PocoRestKeepAliveOption>();
   }
 
-  auto const key = SessionKey(uri, effective_proxy, keep_alive);
+  std::string ca_location;
+  if (options.has<CARootsFilePathOption>()) {
+    ca_location = options.get<CARootsFilePathOption>();
+  }
+
+  auto const key = SessionKey(uri, effective_proxy, keep_alive, ca_location);
   if (ticket != nullptr) {
     ticket->key = key;
     ticket->proxy = effective_proxy;
@@ -409,8 +420,8 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   }
 
   // A pooled session already points at this endpoint through this proxy, under
-  // this keep-alive policy -- all three are in the key -- so only a fresh one
-  // needs constructing and configuring.
+  // this keep-alive policy and these trust roots -- all are in the key -- so
+  // only a fresh one needs constructing and configuring.
   ::ClickHouse::PocoRestSessionStaleCheckOption::Type stale_check;
   if (options.has<::ClickHouse::PocoRestSessionStaleCheckOption>()) {
     stale_check = options.get<::ClickHouse::PocoRestSessionStaleCheckOption>();
@@ -418,10 +429,6 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   auto session = SessionPool::Instance().Acquire(key, stale_check);
   if (!session) {
     if (uri.getScheme() == "https") {
-      std::string ca_location;
-      if (options.has<CARootsFilePathOption>()) {
-        ca_location = options.get<CARootsFilePathOption>();
-      }
       session = std::make_unique<Poco::Net::HTTPSClientSession>(
           uri.getHost(), uri.getPort(), SslContextFor(ca_location));
     } else {
