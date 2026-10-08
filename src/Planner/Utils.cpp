@@ -28,6 +28,7 @@
 #include <Storages/StorageDummy.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionContainsColumnMatcher.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -711,6 +712,19 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             filter_expression,
             make_intrusive<ASTLiteral>(Field(UInt8(0))));
     }
+
+    /// The expression is a predicate (or, for `parallel_replicas_custom_key`, a key) over the rows of a single table
+    /// expression, not a projection, so a column matcher (`*`, `t.*`, `COLUMNS(...)`) has no meaning in it: it would
+    /// only ever expand into the argument list of a function such as `ignore(*)`. Reject it deliberately, with a
+    /// clear diagnostic, instead of letting the analyzer fail on the missing table sources of such a scope. The
+    /// check descends into SQL UDF bodies, and skips subqueries, e.g. `x IN (SELECT * FROM allowed)`, which resolve
+    /// against their own tables.
+    if (const auto * matcher = findColumnMatcherInExpression(*filter_expression))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Column matcher {} is not allowed in an expression over a single table (a row policy, `additional_table_filters`, "
+            "`additional_result_filter` or `parallel_replicas_custom_key`); list the columns explicitly. In expression {}",
+            matcher->formatForErrorMessage(),
+            filter_expression->formatForErrorMessage());
 
     auto filter_query_tree = buildQueryTree(filter_expression, query_context);
 

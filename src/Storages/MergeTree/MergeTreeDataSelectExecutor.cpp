@@ -59,7 +59,9 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/quoteString.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <base/sleep.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
@@ -98,7 +100,6 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indexes;
     extern const SettingsBool force_index_by_date;
-    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_rows_to_read;
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
@@ -122,6 +123,11 @@ namespace Setting
     extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
+}
+
+namespace FailPoints
+{
+    extern const char slowdown_index_analysis_per_part[];
 }
 
 namespace ErrorCodes
@@ -1189,6 +1195,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
         auto process_part = [&](size_t part_index)
         {
+            fiu_do_on(FailPoints::slowdown_index_analysis_per_part, { sleepForMilliseconds(3000); });
+
             if (query_status)
                 query_status->checkTimeLimit();
 
@@ -1384,6 +1392,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         }
         else
         {
+            /// Outlives `pool`, whose destructor joins the jobs that still read it when scheduling throws.
+            std::atomic<size_t> next_part_index = 0;
+
             /// Parallel loading and filtering of data parts.
             ThreadPool pool(
                 CurrentMetrics::MergeTreeDataSelectExecutorThreads,
@@ -1391,24 +1402,24 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 CurrentMetrics::MergeTreeDataSelectExecutorThreadsScheduled,
                 num_threads);
 
-
-            /// Instances of ThreadPool "borrow" threads from the global thread pool.
-            /// We intentionally use scheduleOrThrow here to avoid a deadlock.
-            /// For example, queries can already be running with threads from the
-            /// global pool, and if we saturate max_thread_pool_size whilst requesting
-            /// more in this loop, queries will block infinitely.
-            /// So we wait until lock_acquire_timeout, and then raise an exception.
-            for (size_t part_index = 0; part_index < parts_with_ranges.size(); ++part_index)
+            const size_t num_jobs = std::min(num_threads, parts_with_ranges.size());
+            for (size_t job = 0; job < num_jobs; ++job)
             {
-                pool.scheduleOrThrow(
-                    [&, part_index, thread_group = CurrentThread::getGroup()]
+                pool.scheduleOrThrowOnError(
+                    [&, thread_group = CurrentThread::getGroup()]
                     {
                         ThreadGroupSwitcher switcher(thread_group, ThreadName::MERGETREE_INDEX);
 
-                        process_part(part_index);
-                    },
-                    Priority{},
-                    context->getSettingsRef()[Setting::lock_acquire_timeout].totalMicroseconds());
+                        /// The pool is finished once a job has thrown or its destructor has started, then the other parts are abandoned.
+                        while (!pool.isFinished())
+                        {
+                            const size_t part_index = next_part_index.fetch_add(1, std::memory_order_relaxed);
+                            if (part_index >= parts_with_ranges.size())
+                                break;
+
+                            process_part(part_index);
+                        }
+                    });
             }
 
             pool.wait();
@@ -2440,6 +2451,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
+    /// The conditions that `check_in_range` evaluates. The generic exclusion search may replace them, see below.
+    const KeyCondition * checked_key_condition = &key_condition;
+    const KeyCondition * checked_part_offset_condition = part_offset_condition;
+    const KeyCondition * checked_total_offset_condition = total_offset_condition;
+
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -2505,7 +2521,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
 
-                return key_condition.checkInRange(
+                return checked_key_condition->checkInRange(
                     used_key_indices,
                     sparse_key_left.data(),
                     sparse_key_right.data(),
@@ -2553,7 +2569,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            return checked_key_condition->checkInRange(
+                used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()
@@ -2572,7 +2589,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part_offset_left[1] = part->name;
             part_offset_right[1] = part->name;
 
-            return part_offset_condition->checkInRange(
+            return checked_part_offset_condition->checkInRange(
                 2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
@@ -2588,7 +2605,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
             part_offset_left[0] = begin + part_starting_offset_in_query;
             part_offset_right[0] = end + part_starting_offset_in_query;
-            return total_offset_condition->checkInRange(
+            return checked_total_offset_condition->checkInRange(
                 1, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
         };
 
@@ -2631,16 +2648,49 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             .min_marks_for_seek = min_marks_for_seek,
         };
 
-        auto search_result = genericExclusionSearch(
-            part_ranges,
-            [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
-            search_settings,
-            exact_ranges != nullptr);
+        GenericExclusionSearchResult search_result;
+        std::list<KeyCondition> substituted_conditions;
+
+        if (exact_ranges)
+        {
+            search_result = genericExclusionSearch(
+                part_ranges,
+                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                search_settings,
+                /*collect_exact_ranges=*/ true);
+
+            *exact_ranges = std::move(search_result.exact_ranges);
+        }
+        else
+        {
+            /// Without exact ranges only `can_be_true` matters, so the atoms that cannot be evaluated may be assumed true.
+            /// Then a range where no subrange can be excluded is certainly true, and the search does not split it.
+            if (checked_key_condition && checked_key_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_key_condition->createWithUnknownAtomsAssumedTrue();
+                checked_key_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            if (checked_part_offset_condition && checked_part_offset_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_part_offset_condition->createWithUnknownAtomsAssumedTrue();
+                checked_part_offset_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            if (checked_total_offset_condition && checked_total_offset_condition->hasUnknownAtoms())
+            {
+                auto substituted = checked_total_offset_condition->createWithUnknownAtomsAssumedTrue();
+                checked_total_offset_condition = &substituted_conditions.emplace_back(std::move(substituted));
+            }
+
+            search_result = genericExclusionSearch(
+                part_ranges,
+                [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+                search_settings,
+                /*collect_exact_ranges=*/ false);
+        }
 
         res = std::move(search_result.ranges);
-        if (exact_ranges)
-            *exact_ranges = std::move(search_result.exact_ranges);
-
         res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
         ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
         if (search_result.reached_step_limit)
@@ -2725,7 +2775,19 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                     if (result_exact_range.begin < result_exact_range.end)
                     {
-                        if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
+                        const size_t num_unevaluable_before = KeyCondition::getNumUnevaluableChainApplications();
+                        const bool exact_range_can_be_false
+                            = check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false;
+                        /// A monotonic function chain that could not be evaluated on the range answers "unknown":
+                        /// an over-approximation that supports no exactness claim and contradicts none either.
+                        const bool exact_range_unevaluable
+                            = KeyCondition::getNumUnevaluableChainApplications() != num_unevaluable_before;
+
+                        if (exact_range_unevaluable)
+                        {
+                            /// Neither an exact range nor an inconsistency.
+                        }
+                        else if (exact_range_can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
                             /// range doesn't seem to be continuous. Something's broken - most likely a
