@@ -655,6 +655,38 @@ Limit the number of part mutations per replica to the specified amount.
 Zero means no limit on the number of mutations per replica (the execution can
 still be constrained by other settings).
 )", 0) \
+    DECLARE(Bool, enable_row_mask_update_coalescing, true, R"(
+Coalesce adjacent singleton `UPDATE _row_exists = 0` commands while mutating a
+Wide part with Full storage. The persisted mutation commands and their
+versions are unchanged.
+Set to false to execute each command separately.
+)", 0, \
+        {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
+Maximum number of keys in one coalesced row-mask update. The effective limit
+also respects `max_rows_in_set` in the background query settings. Values below
+2 disable coalescing.
+)", 0, \
+        {"26.10", 256, 256, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_key_bytes, 64 * 1024, R"(
+Maximum total number of key-literal bytes in one coalesced row-mask update.
+This bounds the size of the generated `IN` predicate. Set to 0 to disable
+coalescing.
+)", 0, \
+        {"26.10", 64 * 1024, 64 * 1024, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_commands, 4096, R"(
+Maximum number of part-local mutation commands eligible for row-mask update
+coalescing. This bounds the extra command-list copy made by the optimization;
+the value is a resource guard, not a semantic limit. Values below 2 disable
+coalescing.
+)", 0, \
+        {"26.10", 4096, 4096, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_ast_bytes, 1024 * 1024, R"(
+Maximum sum of the original commands' `ast_text` bytes eligible for row-mask
+update coalescing. The command-count limit alone cannot bound this copy when
+commands contain large literals. Set to 0 to disable coalescing.
+)", 0, \
+        {"26.10", 1024 * 1024, 1024 * 1024, "New setting"}) \
     DECLARE(UInt64, max_number_of_merges_with_ttl_in_pool, 2, R"(When there is
     more than specified number of merges with TTL entries in pool, do not assign
     new merge with TTL. This is to leave free threads for regular merges and
@@ -2052,15 +2084,6 @@ Allow to create a table with sampling expression not in primary key. This is
 needed only to temporarily allow to run the server with wrong tables for
 backward compatibility.
 )", 0) \
-    DECLARE(Bool, use_minimalistic_checksums_in_zookeeper, true, R"(
-Use small format (dozens bytes) for part checksums in ZooKeeper instead of
-ordinary ones (dozens KB). Before enabling check that all replicas support
-new format.
-)", 0) \
-    DECLARE(Bool, use_minimalistic_part_header_in_zookeeper, true, R"(
-Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper
-stores less data. For details, see [here](/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper).
-)", 0) \
     DECLARE(UInt64, finished_mutations_to_keep, 100, R"(
 How many records about mutations that are done to keep. If zero, then keep
 all of them.
@@ -2831,6 +2854,8 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, \
         {"26.7", false, true, "New setting"}) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_minimalistic_checksums_in_zookeeper, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_minimalistic_part_header_in_zookeeper, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -3243,6 +3268,16 @@ void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr
     auto resolved_changes = changes;
     resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
     impl->applyChanges(resolved_changes);
+}
+
+void MergeTreeSettings::applyChangesLeavingDiskUnresolved(const SettingsChanges & changes)
+{
+    SettingsChanges changes_without_disk;
+    changes_without_disk.reserve(changes.size());
+    for (const auto & change : changes)
+        if (change.name != "disk")
+            changes_without_disk.push_back(change);
+    impl->applyChanges(changes_without_disk);
 }
 
 void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)

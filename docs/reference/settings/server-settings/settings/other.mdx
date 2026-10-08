@@ -215,7 +215,7 @@ The default server configuration file `config.xml` contains the following settin
 
 Requests the creation of `all_...` tables next to the system log tables (`system.all_query_log` for `system.query_log`, `system.all_text_log` for `system.text_log`, and so on). Such a table is a union of the corresponding log table, its rotated versions (`query_log_0`, `query_log_1`, ...) and/or the same tables across all replicas of a cluster, and allows querying them all at once without remembering constructs like `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
-The section is optional. If it is present, at least one of the following settings has to be specified:
+The section is optional. The default server configuration file `config.xml` contains this section with `merge_rotated_tables` enabled, so the `all_...` tables are created automatically on a default server: at the first flush of each log, or on startup if `prepare_system_log_tables_on_startup` is enabled; the `cluster` setting has to be configured explicitly. A table that already exists under one of the `all_...` names and was not created by this feature (for example, a hand-made table with data) is never replaced: it is left intact and a warning is written to the server log, and the union table is created at the next flush of the log once that table is dropped or renamed. The tables created by this feature are recognized by the marker sentence at the end of their comment: `It is safe to drop this table at any time: it will be recreated automatically.` If the section is present, at least one of the following settings has to be specified:
 
 | Setting                | Description                                                                                                                                     |
 |------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -230,9 +230,9 @@ The option applies to all system log tables; it does not allow for a different c
 When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
 </Note>
 
-<Warning>
-Once this section is enabled, the `all_...` names in the `system` database are reserved for this feature. Do not keep your own tables under these names: rename any such table before enabling the section.
-</Warning>
+<Note>
+A table under one of the `all_...` names is considered to be created by this feature, and may be replaced when its definition differs from the expected one, only if it selects from the `merge` or `clusterAllReplicas` table function and its comment contains the marker sentence above. Do not copy this sentence into the comments of your own tables.
+</Note>
 
 **Example**
 
@@ -952,6 +952,7 @@ Keys for server/client settings:
 | `caConfig` | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). Like `certificateFile` and `privateKeyFile`, the CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`. |                                            |
 | `certificateFile` | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
 | `cipherList` | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
+| `cipherSuites`     | Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `cipherList` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.                                                                                                                                                       |                                            |
 | `disableProtocols` | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
 | `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `true` for `openSSL.client`, `false` for `openSSL.server` |
 | `fips` | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
@@ -1015,6 +1016,10 @@ Keys for server/client settings:
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />Supported OpenSSL encryptions.
 
+## openSSL.client.cipherSuites {#openssl.client.ciphersuites}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.
+
 ## openSSL.client.disableProtocols {#openssl.client.disableprotocols}
 
 <SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Protocols that are not allowed to be used.
@@ -1070,6 +1075,10 @@ Keys for server/client settings:
 ## openSSL.server.cipherList {#openssl.server.cipherlist}
 
 <SettingsInfoBlock type="String" default_value="ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH" changeable_without_restart="No" />Supported OpenSSL encryptions.
+
+## openSSL.server.cipherSuites {#openssl.server.ciphersuites}
+
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `<cipherList>` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.
 
 ## openSSL.server.disableProtocols {#openssl.server.disableprotocols}
 

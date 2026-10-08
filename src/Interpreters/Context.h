@@ -111,6 +111,10 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
+struct ColumnsCacheWriteBudget;
+using ColumnsCacheWriteBudgetPtr = std::shared_ptr<ColumnsCacheWriteBudget>;
 class IcebergMetadataFilesCache;
 class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
@@ -630,6 +634,8 @@ protected:
     /// Set for CREATE queries a Replicated database replays from a definition it already stored.
     /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
+    /// `EXPLAIN WHATIF` plans the query without the projections that it weighs, so its plans skip the forced projection check
+    bool skip_forced_projection_check = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
     /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
@@ -698,6 +704,11 @@ protected:
 
     /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
     RuntimeFilterLookupPtr runtime_filter_lookup;
+
+    /// Per-query shared accounting for columns cache writes. Created in
+    /// makeQueryContext and shared across all of the query's read pools so the
+    /// columns-cache write budgets apply per query rather than per pool.
+    ColumnsCacheWriteBudgetPtr columns_cache_write_budget;
 
 public:
     /// Some counters for current query execution.
@@ -1313,7 +1324,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Reset settings to default value
+    /// Reset settings to the default in effect for them, which under an active `compatibility` is the value of that version.
     void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
@@ -1651,6 +1662,12 @@ public:
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
 
+    void setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    /// `default_size` is the size to use when `columns_cache_size` is absent from `config`, see `getDefaultColumnsCacheSize`.
+    void updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t default_size, size_t max_cache_size);
+    ColumnsCachePtr getColumnsCache() const;
+    void clearColumnsCache() const;
+
     /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;
     void allowSystemAllocateMemory(bool allow);
@@ -1936,6 +1953,9 @@ public:
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
 
     bool isRecoveryFromStoredMetadata() const { return is_recovery_from_stored_metadata; }
+
+    bool skipsForcedProjectionCheck() const { return skip_forced_projection_check; }
+    void setSkipForcedProjectionCheck() { skip_forced_projection_check = true; }
     void setRecoveryFromStoredMetadata(bool value) { is_recovery_from_stored_metadata = value; }
 
     bool isViewInnerQuery() const { return is_view_inner_query; }
@@ -2113,6 +2133,10 @@ public:
     /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
+
+    /// Per-query shared accounting for columns cache writes (see ColumnsCacheWriteBudget).
+    /// Shared across all read pools of the query so the write budgets apply per query.
+    ColumnsCacheWriteBudgetPtr getColumnsCacheWriteBudget() const;
 
     void setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions);
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;

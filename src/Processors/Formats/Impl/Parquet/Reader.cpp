@@ -1,3 +1,4 @@
+
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
@@ -12,12 +13,14 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/TypeTree.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/extractStringValueFilters.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
@@ -31,6 +34,8 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
+#include <algorithm>
+#include <bit>
 #include <mutex>
 #include <fmt/ranges.h>
 #include <lz4.h>
@@ -418,8 +423,7 @@ std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta)
         /// because the per-row filter is not `nan`-aware either - see
         /// https://github.com/ClickHouse/ClickHouse/issues/116705 - but the statistics shortcut is
         /// unsound on its own and stays unsound after that is fixed.)
-        bool can_contain_float = isFloat(output_block_type_ptr);
-        output_block_type_ptr->forEachChild([&](const IDataType & child) { can_contain_float = can_contain_float || isFloat(child); });
+        bool can_contain_float = anyInTypeTree(*output_block_type_ptr, [](const IDataType & node) { return isFloat(node); });
         if (can_contain_float)
             return std::nullopt;
 
@@ -496,9 +500,10 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     const Field & boundary = tracker.getDirection() == 1 ? range.left : range.right;
     /// `getTopKSortColumnRange` only hands out a range whose both bounds decoded into the output
     /// block type's value space, so this is unreachable - but the cost of being wrong is a lost
-    /// row: the `Range` infinity sentinels are `Null`-typed `Field`s, which `TopKThresholdTracker`
+    /// row: the `Range` infinity sentinels are `Null`-typed `Field`s, which `TopKThresholdTrackerGeneric`
     /// compares as a SQL `NULL` - ordered by `nulls_direction` - rather than as an infinity, so an
-    /// unbounded side would read as "beyond the threshold" and skip the row group.
+    /// unbounded side would read as "beyond the threshold" and skip the row group (and which
+    /// `TopKThresholdTrackerNumeric` rejects with an exception).
     chassert(!boundary.isNull());
     if (boundary.isNull())
         return false;
@@ -887,6 +892,17 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     }
 
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
+    struct RowGroupCandidate
+    {
+        const parq::RowGroup * meta = nullptr;
+        size_t row_group_idx = 0;
+        size_t start_global_row_idx = 0;
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+        Hyperrectangle hyperrectangle;
+        std::optional<Range> top_k_sort_column_range;
+    };
+    std::vector<RowGroupCandidate> candidates;
+    bool some_top_k_range_to_read = false;
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
     {
@@ -958,15 +974,47 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             && rowGroupFailsSpatialFilters(*meta, primitive_columns, geostats_spatial_filters))
             continue;
 
+        candidates.push_back(RowGroupCandidate{
+            .meta = meta,
+            .row_group_idx = row_group_idx,
+            .start_global_row_idx = total_rows - size_t(meta->num_rows),
+            .requested_rows_slice = requested_rows_slice,
+            .hyperrectangle = std::move(hyperrectangle),
+            .top_k_sort_column_range = getTopKSortColumnRange(*meta)});
+        if (candidates.back().top_k_sort_column_range.has_value()
+            && (!row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx)))
+            some_top_k_range_to_read = true;
+    }
+
+    /// TopN dynamic filtering: read first the row groups whose sort column statistics are best for the
+    /// threshold, so that it tightens early. Any order is correct when the output order is free.
+    if (format_filter_info->top_k_filter && top_k_primitive_idx.has_value() && !rows_to_read
+        && !options.format.parquet.preserve_order && candidates.size() > 1 && some_top_k_range_to_read)
+    {
+        const bool ascending = format_filter_info->top_k_filter->threshold_tracker->getDirection() == 1;
+        std::stable_sort(candidates.begin(), candidates.end(), [ascending](const RowGroupCandidate & a, const RowGroupCandidate & b)
+        {
+            const auto & a_range = a.top_k_sort_column_range;
+            const auto & b_range = b.top_k_sort_column_range;
+            if (!a_range.has_value() || !b_range.has_value())
+                return a_range.has_value() && !b_range.has_value();
+            return ascending ? accurateLess(a_range->left, b_range->left) : accurateLess(b_range->right, a_range->right);
+        });
+        row_groups_ordered_by_top_k = true;
+    }
+
+    for (RowGroupCandidate & candidate : candidates)
+    {
+        const auto * meta = candidate.meta;
         RowGroup & row_group = row_groups.emplace_back();
         row_group.meta = meta;
-        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(row_group_idx);
-        row_group.requested_rows_slice = requested_rows_slice;
-        row_group.row_group_idx = row_group_idx;
-        row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
+        row_group.need_to_process = !row_groups_to_read.has_value() || row_groups_to_read->contains(candidate.row_group_idx);
+        row_group.requested_rows_slice = candidate.requested_rows_slice;
+        row_group.row_group_idx = candidate.row_group_idx;
+        row_group.start_global_row_idx = candidate.start_global_row_idx;
         row_group.columns.resize(primitive_columns.size());
-        row_group.hyperrectangle = std::move(hyperrectangle);
-        row_group.top_k_sort_column_range = getTopKSortColumnRange(*meta);
+        row_group.hyperrectangle = std::move(candidate.hyperrectangle);
+        row_group.top_k_sort_column_range = std::move(candidate.top_k_sort_column_range);
 
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
@@ -1199,8 +1247,6 @@ void Reader::initializePrefetches()
                 /// We assume that the dictionary page is immediately followed by the first data page.
                 size_t start = size_t(column.meta->meta_data.dictionary_page_offset);
                 dict_page_length = size_t(column.meta->meta_data.data_page_offset) - start;
-                column.dictionary_page_prefetch = prefetcher.registerRange(
-                    start, dict_page_length, /*likely_to_be_used=*/ true);
 
                 /// Dictionary filter. We only enable it if prepareBloomFilterCondition produced query
                 /// hashes for this column (use_bloom_filter), i.e. the condition has an equality/IN on
@@ -1209,6 +1255,17 @@ void Reader::initializePrefetches()
                 /// is non-null whenever any column has use_dictionary_filter set.
                 if (primitive_columns[column_idx].use_bloom_filter)
                     column.use_dictionary_filter = columnChunkCanUseDictionaryFilter(*column.meta);
+
+                /// For a column with the dictionary filter, the bloom filter is checked first and may
+                /// rule the row group out (or make the dictionary filter of this column unnecessary)
+                /// before the dictionary page is requested. So don't let the prefetcher piggy-back the
+                /// dictionary page onto a nearby read, e.g. of this column's bloom filter: that would
+                /// read the page we are trying to avoid. The `Dictionary` and `ColumnData` stages
+                /// request it explicitly when it is actually needed (`Prefetcher::startPrefetch` then
+                /// allows coalescing it with the other requested ranges again). A page shorter than
+                /// `min_bytes_for_seek` can still be read incidentally, which costs less than a seek.
+                column.dictionary_page_prefetch = prefetcher.registerRange(
+                    start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
             }
 
             /// Bloom filter.
@@ -1224,14 +1281,17 @@ void Reader::initializePrefetches()
             /// it. If some smaller atom did register hashes, we still enable it for those - the
             /// unregistered over-cap hashes are handled conservatively in `BloomFilterLookup::findAnyHash`.
             /// We prepare the bloom filter even for a dictionary-filter-eligible column that also carries
-            /// one, as a fallback: the exact dictionary path can still decline at runtime when its decoded
-            /// page or value set does not fit the pruning memory budget (see `decodeDictionaryPage` and
-            /// `hashDictionaryValues`), and without this the row group would then be read in full even
-            /// though its bloom filter could have ruled it out - a regression from the pre-existing
-            /// bloom-only behavior. `applyBloomAndDictionaryFilters` still prefers the exact dictionary
-            /// filter and only falls back to the bloom filter for that case; the only extra cost here is
-            /// the small bloom-filter header read, since the filter blocks are prefetched lazily
-            /// (`likely_to_be_used=false`) and read only if the fallback is actually taken.
+            /// one, and check it first: it is the cheaper of the two - a 32-byte block per queried value
+            /// against a dictionary page of up to `dictionary_filter_limit_bytes` - and it has no false
+            /// negatives, so a row group it rules out needs no dictionary page read at all
+            /// (`ReadStage::BloomFilterBlocks`, `applyBloomFilters`; the dictionary page of such a
+            /// column is registered above as not likely to be used, so it is not read incidentally
+            /// together with the bloom filter unless it is shorter than a seek). It is also the fallback for a row
+            /// group it does not rule out: the exact dictionary path can still decline at runtime when
+            /// its decoded page or value set does not fit the pruning memory budget (see
+            /// `decodeDictionaryPage` and `hashDictionaryValues`), and without this the row group would
+            /// then be read in full even though its bloom filter could have ruled it out - a regression
+            /// from the pre-existing bloom-only behavior.
             /// The bloom filter is built only from the chunk's non-null values, so on a chunk that may
             /// contain nulls read into a non-nullable output it cannot be used at all: with
             /// `input_format_null_as_default` disabled, pruning would suppress the
@@ -1537,6 +1597,36 @@ void Reader::preparePrewhere()
             && pc.idx_in_output_block < extended_sample_block.columns()
             && pc.idx_in_output_block >= sample_block->columns())
             pc.first_step_to_calculate = SIZE_MAX;
+
+    /// Push down substring search conditions from PREWHERE into string decoding: values that do not
+    /// match are decoded as empty strings without copying their data (see `StringValueFilter`).
+    /// This is allowed only when PREWHERE is guaranteed to filter out the non-matching rows
+    /// (`need_filter`), so that the replaced values can never appear in the output. Only columns
+    /// decoded for prewhere steps can benefit: the remaining columns are decoded after the filter
+    /// is applied, i.e. only for the rows that passed it.
+    if (options.format.parquet.apply_string_filters && prewhere_info && prewhere_info->need_filter)
+    {
+        if (auto filters = extractStringValueFilters(
+                prewhere_info->prewhere_actions,
+                prewhere_info->prewhere_column_name,
+                row_level_filter ? &row_level_filter->actions : nullptr))
+        {
+            for (auto & pc : primitive_columns)
+            {
+                if (pc.first_step_to_calculate == 0 || pc.first_step_to_calculate == SIZE_MAX)
+                    continue;
+                if (pc.idx_in_output_block >= extended_sample_block.columns())
+                    continue;
+                /// Only plain String leaves, not inside arrays, decoded without conversion.
+                if (pc.max_array_def != 0 || !pc.decoder.string_converter || !pc.decoder.string_converter->isTrivial())
+                    continue;
+
+                auto it = filters->find(extended_sample_block.getByPosition(pc.idx_in_output_block).name);
+                if (it != filters->end())
+                    pc.string_value_filter = it->second;
+            }
+        }
+    }
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -1622,7 +1712,7 @@ bool Reader::decodeDictionaryPage(
     /// used, and reserve it live so several row groups pruning in parallel cannot collectively overshoot
     /// the watermark. `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary
     /// page (`dictionary_filter_limit_bytes`, 1 MiB by default); a highly compressible dictionary can
-    /// still decompress to many times that. On the pruning path (`BloomFilterBlocksOrDictionary` stage)
+    /// still decompress to many times that. On the pruning path (`Dictionary` stage)
     /// `reservation` is a live handle on the shared stage budget - the reader's memory high watermark
     /// minus what the stage already holds (the decoded dictionaries and value sets other row groups are
     /// holding right now, plus this batch's not-yet-flushed pruning memory; see
@@ -1663,7 +1753,8 @@ bool Reader::decodeDictionaryPage(
             : size_t(header.uncompressed_page_size);
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
-            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type,
+            column_info.string_value_filter != nullptr && column_info.string_value_filter->isEnabled());
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
@@ -1751,9 +1842,24 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     if (header.dictionary_page_header.num_values < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
+
+    /// Check the string filter from PREWHERE once per dictionary entry: the rows referencing
+    /// non-matching entries then materialize empty strings without copying the data.
+    /// Once the shared filter has disabled itself (it turned out to be non-selective), the mask
+    /// would never be consulted, so do not pay for the dictionary scan and the mask allocation.
+    if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
+        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter);
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
+{
+    probed = true;
+    bool res = probe(hashes);
+    found |= res;
+    return res;
+}
+
+bool Reader::BloomFilterLookup::probe(const std::vector<uint64_t> & hashes)
 {
     size_t num_blocks = size_t(column.bloom_filter_header.numBytes) / 32;
     for (size_t h : hashes)
@@ -1854,7 +1960,7 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
 }
 
 /// The value set of one column chunk's dictionary, prepared for lookups: the hashes of all
-/// dictionary values, sorted for binary search. `default_value_hash` stands for the values the
+/// dictionary values, sorted lazily (see `containsAny`). `default_value_hash` stands for the values the
 /// dictionary does not hold: nulls decoded as the type's default under `input_format_null_as_default`
 /// (see `hashDictionaryValues`). It is kept out of `hashes` so the vector stays exactly the
 /// allocation `parquetTryHashColumn` made, which the pruning-memory reservation accounts for;
@@ -1863,8 +1969,11 @@ struct DictionaryValueHashes
 {
     std::vector<UInt64> hashes;
     std::optional<UInt64> default_value_hash;
+    bool sorted = false;
+    size_t scanned_probes = 0;
 
     /// Whether any of `probes` is among the dictionary's values.
+    /// Sorting costs about log2(n) scans, so the first max(8, log2(n)) probes scan the unsorted `hashes`.
     ///
     /// For a sorted probe sequence - which is what `KeyCondition::prepareBloomFilterData` produces -
     /// this is an intersection of two sorted sequences rather than a sequence of independent binary
@@ -1876,14 +1985,31 @@ struct DictionaryValueHashes
     /// still prune them, which means `findAnyHash` can be called with thousands of probes for one
     /// column chunk. An out-of-order probe merely restarts the window, so the result does not depend
     /// on the probes being sorted.
-    bool containsAny(const std::vector<UInt64> & probes) const
+    bool containsAny(const std::vector<UInt64> & probes)
     {
+        for (UInt64 probe : probes)
+            if (probe == default_value_hash)
+                return true;
+
+        if (!sorted)
+        {
+            const size_t max_scanned_probes = std::max<size_t>(8, static_cast<size_t>(std::bit_width(hashes.size())));
+            if (scanned_probes + probes.size() <= max_scanned_probes)
+            {
+                scanned_probes += probes.size();
+                for (UInt64 probe : probes)
+                    if (std::find(hashes.begin(), hashes.end(), probe) != hashes.end())
+                        return true;
+                return false;
+            }
+            std::sort(hashes.begin(), hashes.end());
+            sorted = true;
+        }
+
         auto it = hashes.begin();
         UInt64 previous_probe = 0;
         for (UInt64 probe : probes)
         {
-            if (probe == default_value_hash)
-                return true;
             if (probe < previous_probe)
                 it = hashes.begin();
             previous_probe = probe;
@@ -1919,7 +2045,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     /// the pruning stage already holds - the decoded dictionaries charged in `ReadManager::runTask`,
     /// plus the value sets already reserved by other dictionary lookups, whether earlier in this same
     /// row-group filter evaluation or concurrently on another worker thread. Because the reservation is
-    /// held live in the shared `BloomFilterBlocksOrDictionary` stage counter (see
+    /// held live in the shared `Dictionary` stage counter (see
     /// `PruningMemoryReservation`), neither a predicate over several dictionary-filtered columns nor
     /// several row groups pruning in parallel can let each value set use the full budget and
     /// collectively overshoot the watermark. If the reservation would exceed the budget, skip the
@@ -1931,7 +2057,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
     /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
     /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
-    /// exactly `count * sizeof(UInt64)`) is always built and sorted in place; the
+    /// exactly `count * sizeof(UInt64)`) is always built in place (and sorted in place, if at all); the
     /// hashing itself allocates nothing on top - `parquetTryHashColumn` hashes string values in place
     /// from the column's buffers rather than copying each into a `Field` scratch string, and every other
     /// hashable type is stored inline in `Field`. When
@@ -1989,7 +2115,9 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
 
         auto values = column_info.decoded_type->createColumn();
         values->reserve(count);
-        column.dictionary.index(*indexes, *values);
+        /// Pruning sees each distinct value once, which says nothing about how often the scan will
+        /// meet it, so this materialization must not feed the shared `StringValueFilter` statistics.
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
         hashes = parquetTryHashColumn(values.get(), &desc);
     }
     if (!hashes.has_value())
@@ -1998,11 +2126,10 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     DictionaryValueHashes value_hashes;
     value_hashes.hashes = std::move(*hashes);
     hashes.reset();
-    /// Sort once so every lookup is a binary search. Sorting in place needs no extra memory, unlike
-    /// a hash table of the values, whose buffer (a power-of-two sized to a maximum fill factor of
-    /// 0.5) would hold up to ~4 cells per value on top of this vector - several times the footprint
-    /// for a value set that is built once per column chunk and probed a handful of times.
-    std::sort(value_hashes.hashes.begin(), value_hashes.hashes.end());
+    /// The vector is searched in place (see `DictionaryValueHashes::containsAny`), which needs no extra
+    /// memory, unlike a hash table of the values, whose buffer (a power-of-two sized to a maximum fill
+    /// factor of 0.5) would hold up to ~4 cells per value on top of this vector - several times the
+    /// footprint for a value set that is built once per column chunk and probed a handful of times.
 
     /// The dictionary holds only the non-null values of the column chunk, so we must account for how
     /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
@@ -2034,7 +2161,7 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
     }
 
     /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
-    /// evaluation finishes, so keep its persistent footprint - the sorted `hashes` buffer - reserved
+    /// evaluation finishes, so keep its persistent footprint - the `hashes` buffer - reserved
     /// against the shared budget and hand the amount to the caller to release when the value set is
     /// freed. The transient `indexes`/`values` allocations were already freed by leaving their scope
     /// above, so release that part of the reservation now: a second dictionary-filtered column, or
@@ -2115,10 +2242,44 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
     return value_hashes->containsAny(hashes);
 }
 
+bool Reader::applyBloomFilters(RowGroup & row_group)
+{
+    KeyCondition::ColumnIndexToBloomFilter filter_map;
+    std::vector<std::pair<ColumnChunk *, const BloomFilterLookup *>> lookups;
+    for (size_t i = 0; i < row_group.columns.size(); ++i)
+    {
+        ColumnChunk & column = row_group.columns[i];
+        /// Same condition as the `else if` bloom branch of `applyBloomAndDictionaryFilters`, including
+        /// the chunks whose blocks were not prefetched - `findAnyHash` reports those as possibly
+        /// present, which is what a bloom filter with no blocks to probe has to say.
+        if (column.use_bloom_filter)
+        {
+            auto lookup = std::make_unique<BloomFilterLookup>(prefetcher, column);
+            const BloomFilterLookup * lookup_ptr = lookup.get();
+            if (filter_map.emplace(primitive_columns[i].idx_in_output_block, std::move(lookup)).second)
+                lookups.emplace_back(&column, lookup_ptr);
+        }
+    }
+    if (!bloom_filter_condition->checkInHyperrectangle(
+            row_group.hyperrectangle, extended_sample_block_data_types, filter_map).can_be_true)
+        return false;
+
+    /// The row group survives, but some branch of the condition may already be dead: in `a = 1 OR b = 2`
+    /// the bloom filter of `a` can prove `a = 1` false while `b = 2` stays unresolved. The exact
+    /// dictionary filter of `a` would only confirm the miss for every atom its bloom filter ruled out,
+    /// so reading its dictionary page is wasted. Let the next pass use `a`'s bloom filter instead; the
+    /// result of the condition stays the same, because the bloom filter answers no worse than the
+    /// dictionary would for each atom it was asked about.
+    for (const auto & [column, lookup] : lookups)
+        if (column->use_dictionary_filter && lookup->probed && !lookup->found)
+            column->use_dictionary_filter = false;
+    return true;
+}
+
 bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation)
 {
     /// A single budget shared by every dictionary lookup in this row-group filter evaluation, and -
-    /// because it charges the shared `BloomFilterBlocksOrDictionary` stage counter - by every row group
+    /// because it charges the shared `Dictionary` stage counter - by every row group
     /// pruning in parallel on other worker threads. Each lookup's value set stays alive (in its
     /// `DictionaryLookup`) until the evaluation finishes, so without shared accounting a predicate over
     /// several dictionary-filtered columns, or several concurrent row groups, would let each value set
@@ -2134,6 +2295,10 @@ bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryR
         /// fallback for when the dictionary path declines because its value set does not fit the pruning
         /// memory budget. `decodeDictionaryPage` failing earlier (in `ReadManager::runTask`) clears
         /// `use_dictionary_filter`, so that case is handled by the `else if` bloom branch below.
+        /// This runs only on the row groups `applyBloomFilters` did not already rule out, so preferring
+        /// the dictionary here costs nothing: such a row group is going to be read anyway - which needs
+        /// the dictionary page regardless - unless the dictionary rules it out exactly, which is
+        /// precisely a bloom filter false positive.
         if (column.use_dictionary_filter)
         {
             auto lookup = std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i], reservation);
@@ -2687,7 +2852,6 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     const bool use_filter_in_decoder = (column_info.levels.back().rep == 0) &&
         !row_subgroup.filter.filter.empty() &&
         column.page.initialized &&
-        !column.page.is_dictionary_encoded &&
         column.data_pages.empty() &&
         !column.need_null_map;
     const size_t subgroup_end_row_idx = row_subgroup.start_row_idx + row_subgroup.filter.rows_total;
@@ -3173,7 +3337,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data);
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.
@@ -3429,23 +3593,26 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
         if (row_subgroup && !row_subgroup->filter.filter.empty())
         {
             chassert(first_row_idx >= row_subgroup->start_row_idx);
+            chassert(page.def.empty());
             filter_offset = first_row_idx - row_subgroup->start_row_idx;
             filter = row_subgroup->filter.filter.data();
         }
 
         if (page.is_dictionary_encoded)
         {
-            chassert(!filter);
+            /// A subgroup whose rows all pass is read like an unfiltered one, through the fused path.
+            if (filter && row_subgroup->filter.rows_pass == row_subgroup->filter.rows_total)
+                filter = nullptr;
             /// Fused decode-and-gather; falls back to materializing the indexes as a column when
-            /// the decoder or the dictionary mode does not support the fusion.
-            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            /// filtering, or when the decoder or the dictionary mode does not support the fusion.
+            if (filter || !page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
             {
                 if (!page.indices_column)
                     page.indices_column = ColumnUInt32::create();
                 auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
                 auto & data = indices_column_uint32.getData();
                 chassert(data.empty());
-                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, filter, filter_offset);
                 column.dictionary.index(indices_column_uint32, *subchunk.column);
                 data.clear();
             }
