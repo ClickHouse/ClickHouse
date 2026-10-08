@@ -168,12 +168,11 @@ private:
         const DataLake::TableMetadata & table_metadata,
         bool lightweight) const;
 
-    std::optional<DataLake::TableMetadata> tryGetNewTableMetadata(
+    String getNewTableLocation(
         const DatabaseDataLakeSettings & settings,
-        const DataLake::ICatalog & catalog,
-        const String & name) const;
-
-    Exception cannotTellNewTableLocation(const String & name) const;
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const String & namespace_name,
+        const String & table_name) const;
 
     /// Shared implementation of getTablesIterator / getTablesIteratorWithHint.
     /// keep_unresolved_tables controls what happens when a single table's metadata cannot

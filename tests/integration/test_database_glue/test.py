@@ -886,10 +886,8 @@ def test_create_without_engine_arguments(started_cluster, engine_clause):
     assert f"/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
-def test_create_without_engine_arguments_no_database_location(started_cluster):
-    # Only an explicit table engine takes the location from the Glue database. Without `ENGINE`
-    # the table is created natively and placed under `storage_endpoint` when Glue has no location.
-    engine_clause = " ENGINE = IcebergS3"
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_no_database_location(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_create_without_engine_arguments_no_location_{uuid.uuid4()}"
@@ -902,19 +900,18 @@ def test_create_without_engine_arguments_no_database_location(started_cluster):
     glue_client.create_database(DatabaseInput={"Name": root_namespace})
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    with pytest.raises(Exception) as exc:
-        node.query(
-            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
-            settings={"allow_experimental_database_glue_catalog": 1},
-        )
-    assert "cannot tell where table" in str(exc.value), str(exc.value)
-    assert table_name not in node.query(f"SHOW TABLES FROM {CATALOG_NAME}")
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={"allow_experimental_database_glue_catalog": 1},
+    )
+
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert f"warehouse-glue/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
-def test_create_without_engine_arguments_missing_database(started_cluster):
-    # Only an explicit table engine takes the location from the Glue database. Without `ENGINE`
-    # the table is created natively and placed under `storage_endpoint` when Glue has no location.
-    engine_clause = " ENGINE = IcebergS3"
+@pytest.mark.parametrize("engine_clause", [" ENGINE = IcebergS3", ""])
+def test_create_without_engine_arguments_missing_database(started_cluster, engine_clause):
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_create_without_engine_arguments_missing_database_{uuid.uuid4()}"
@@ -926,16 +923,14 @@ def test_create_without_engine_arguments_missing_database(started_cluster):
     )
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
-    for _ in range(2):
-        with pytest.raises(Exception) as exc:
-            node.query(
-                f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
-                settings={"allow_experimental_database_glue_catalog": 1},
-            )
-        assert "cannot tell where table" in str(exc.value), str(exc.value)
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String){engine_clause}",
+        settings={"allow_experimental_database_glue_catalog": 1},
+    )
 
-    with pytest.raises(glue_client.exceptions.EntityNotFoundException):
-        glue_client.get_database(Name=root_namespace)
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert f"warehouse-glue/{root_namespace}/{table_name}/metadata/" in metadata_location, metadata_location
 
 
 def test_create_gzip_metadata(started_cluster):

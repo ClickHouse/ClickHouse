@@ -897,33 +897,78 @@ void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageCon
     }
 }
 
-std::optional<DataLake::TableMetadata> DatabaseDataLake::tryGetNewTableMetadata(
+String DatabaseDataLake::getNewTableLocation(
     const DatabaseDataLakeSettings & settings,
-    const DataLake::ICatalog & catalog,
-    const String & name) const
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & namespace_name,
+    const String & table_name) const
 {
-    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
+    String base_location = catalog->getDefaultBaseLocation();
+    if (base_location.empty())
+        base_location = settings[DatabaseDataLakeSetting::default_base_location].value;
 
-    auto location = catalog.getDefaultTableLocation(namespace_name, table_name);
-    if (!location)
-        return std::nullopt;
+    if (!base_location.empty())
+    {
+        if (auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type.has_value()
+            && DataLake::parseStorageTypeFromLocation(base_location) != *catalog_storage_type)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`default_base_location` uses the {} storage backend, but this DataLakeCatalog stores tables on {}. "
+                "The table would be reopened with the catalog's storage backend and become unreadable "
+                "immediately after creation",
+                DataLake::parseStorageTypeFromLocation(base_location), *catalog_storage_type);
 
-    LOG_DEBUG(log, "Location assigned by the catalog for new table {}: {}", name, *location);
+        while (base_location.ends_with('/'))
+            base_location.pop_back();
+        return fmt::format("{}/{}/{}", base_location, namespace_name, table_name);
+    }
 
-    auto table_metadata = DataLake::TableMetadata().withLocation();
-    if (settings[DatabaseDataLakeSetting::force_add_bucket])
-        table_metadata.withForceAddBucket();
-    table_metadata.setLocation(*location);
-    return table_metadata;
-}
+    auto namespace_table_location = catalog->getDefaultTableLocation(namespace_name, table_name);
+    if (!namespace_table_location && catalog->assignsLocationToNewNamespaces())
+    {
+        catalog->createNamespaceIfNotExists(namespace_name);
+        namespace_table_location = catalog->getDefaultTableLocation(namespace_name, table_name);
+    }
 
-Exception DatabaseDataLake::cannotTellNewTableLocation(const String & name) const
-{
-    return Exception(
-        ErrorCodes::BAD_ARGUMENTS,
-        "Catalog of database {} cannot tell where table {} has to be created. "
-        "Specify the location in the table engine arguments explicitly",
-        backQuoteIfNeed(getDatabaseName()), name);
+    if (namespace_table_location)
+    {
+        /// The namespace has a location of its own, e.g. Glue `LocationUri`: the table goes under it.
+        String location = *namespace_table_location;
+        LOG_DEBUG(log, "Location assigned by the catalog for new table {}.{}: {}", namespace_name, table_name, location);
+
+        /// The table is read back from `storage_endpoint` with the bucket of the location as a path prefix,
+        /// see `getStorageEndpointForTable`, so the location has to name the same objects.
+        if (!settings[DatabaseDataLakeSetting::storage_endpoint].value.empty()
+            && settings[DatabaseDataLakeSetting::storage_uri_style].value != S3UriStyle::VIRTUAL_HOSTED
+            && DataLake::parseStorageTypeFromLocation(location) == DatabaseDataLakeStorageType::S3)
+        {
+            auto table_metadata = DataLake::TableMetadata().withLocation();
+            if (settings[DatabaseDataLakeSetting::force_add_bucket])
+                table_metadata.withForceAddBucket();
+            table_metadata.setLocation(location);
+
+            String path = Poco::URI(getStorageEndpointForTable(table_metadata)).getPath();
+            while (path.starts_with('/'))
+                path.erase(0, 1);
+            while (path.ends_with('/'))
+                path.pop_back();
+            location = "s3://" + path;
+        }
+        return location;
+    }
+
+    const auto storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;
+    if (storage_endpoint.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CREATE TABLE in DataLakeCatalog requires `default_base_location` or `storage_endpoint`");
+
+    if (catalog->managesTableLocation())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "This DataLakeCatalog assigns table locations itself, so `storage_endpoint` cannot be used "
+            "to place a new table. Set `default_base_location` on the database instead");
+
+    return DataLake::constructTableLocation(
+        getLocationScheme(catalog), storage_endpoint, namespace_name, table_name,
+        settings[DatabaseDataLakeSetting::storage_uri_style]);
 }
 
 ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const
@@ -932,7 +977,7 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
     const DatabaseDataLakeSettings & settings = *settings_version;
 
     auto catalog = getCatalog();
-    const auto namespace_name = DataLake::parseTableName(name).first;
+    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
     const auto engine_type = toDataLakeStorageType(engine_storage_type);
 
     auto storage_mismatch = [&](DatabaseDataLakeStorageType catalog_type)
@@ -944,25 +989,18 @@ ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStora
             backQuoteIfNeed(getDatabaseName()), name, catalog_type, engine_type, catalog_type);
     };
 
-    auto table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-    if (!table_metadata)
-    {
-        if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != engine_type)
-            throw storage_mismatch(*catalog_storage_type);
+    if (const auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type && *catalog_storage_type != engine_type)
+        throw storage_mismatch(*catalog_storage_type);
 
-        if (!catalog->assignsLocationToNewNamespaces())
-            throw cannotTellNewTableLocation(name);
+    auto table_metadata = DataLake::TableMetadata().withLocation();
+    if (settings[DatabaseDataLakeSetting::force_add_bucket])
+        table_metadata.withForceAddBucket();
+    table_metadata.setLocation(getNewTableLocation(settings, catalog, namespace_name, table_name));
 
-        catalog->createNamespaceIfNotExists(namespace_name);
-        table_metadata = tryGetNewTableMetadata(settings, *catalog, name);
-        if (!table_metadata)
-            throw cannotTellNewTableLocation(name);
-    }
+    if (table_metadata.getStorageType() != engine_type)
+        throw storage_mismatch(table_metadata.getStorageType());
 
-    if (table_metadata->getStorageType() != engine_type)
-        throw storage_mismatch(table_metadata->getStorageType());
-
-    auto engine_args = buildTableEngineArgs(settings, *catalog, *table_metadata, /* lightweight */false);
+    auto engine_args = buildTableEngineArgs(settings, *catalog, table_metadata, /* lightweight */false);
 
     const bool catalog_manages_provider_chain = catalogManagesProviderChain(*catalog);
     if (engine_args.args.size() == 1 && catalog_manages_provider_chain)
@@ -1269,16 +1307,16 @@ void DatabaseDataLake::validateCreateTableEngine(const ASTStorage & storage) con
             "This DataLakeCatalog stores {}-family tables; got table engine '{}'",
             family_name, engine.name);
 
+    if (catalog->managesTableLocation())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "This DataLakeCatalog assigns table locations itself, so an explicit table `ENGINE` "
+            "is not supported; omit the `ENGINE` clause");
+
     /// Without arguments the location and the credentials come from the catalog: `getEngineArgsForNewTable`
     /// fills them in and checks that the table engine writes to the storage backend the catalog places the table in.
     if (!engine.arguments || engine.arguments->children.empty())
         return;
-
-    if (catalog->managesTableLocation())
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "This DataLakeCatalog assigns table locations itself, so an explicit table `ENGINE` with a "
-            "user-provided location is not supported; omit the `ENGINE` clause");
 
     const auto catalog_storage_type = catalog->getStorageType();
 
@@ -1379,18 +1417,6 @@ void DatabaseDataLake::validateCreateTableEngineArguments(const ASTFunction & en
             location_str, storage_endpoint);
 }
 
-/// The location the catalog assigns to a new table from the location of its namespace, if any. A catalog that
-/// assigns a location to a new namespace gets the namespace registered first, as `getEngineArgsForNewTable` does.
-static std::optional<String> getNamespaceTableLocation(const DataLake::ICatalog & catalog, const String & namespace_name, const String & table_name)
-{
-    auto location = catalog.getDefaultTableLocation(namespace_name, table_name);
-    if (location || !catalog.assignsLocationToNewNamespaces())
-        return location;
-
-    catalog.createNamespaceIfNotExists(namespace_name);
-    return catalog.getDefaultTableLocation(namespace_name, table_name);
-}
-
 void DatabaseDataLake::createTable(
     ContextPtr context_,
     const String & name,
@@ -1449,65 +1475,7 @@ void DatabaseDataLake::createTable(
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
 
-    String base_location = catalog->getDefaultBaseLocation();
-    if (base_location.empty())
-        base_location = settings[DatabaseDataLakeSetting::default_base_location].value;
-
-    String location;
-    if (!base_location.empty())
-    {
-        if (auto catalog_storage_type = catalog->getStorageType(); catalog_storage_type.has_value()
-            && DataLake::parseStorageTypeFromLocation(base_location) != *catalog_storage_type)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "`default_base_location` uses the {} storage backend, but this DataLakeCatalog stores tables on {}. "
-                "The table would be reopened with the catalog's storage backend and become unreadable "
-                "immediately after creation",
-                DataLake::parseStorageTypeFromLocation(base_location), *catalog_storage_type);
-
-        while (base_location.ends_with('/'))
-            base_location.pop_back();
-        location = fmt::format("{}/{}/{}", base_location, namespace_name, table_name);
-    }
-    else if (auto namespace_table_location = getNamespaceTableLocation(*catalog, namespace_name, table_name))
-    {
-        /// The namespace has a location of its own, e.g. Glue `LocationUri`: the table goes under it.
-        location = *namespace_table_location;
-
-        /// The table is read back from `storage_endpoint` with the bucket of the location as a path prefix,
-        /// see `getStorageEndpointForTable`, so the location has to name the same objects.
-        if (!settings[DatabaseDataLakeSetting::storage_endpoint].value.empty()
-            && settings[DatabaseDataLakeSetting::storage_uri_style].value != S3UriStyle::VIRTUAL_HOSTED
-            && DataLake::parseStorageTypeFromLocation(location) == DatabaseDataLakeStorageType::S3)
-        {
-            auto table_metadata = DataLake::TableMetadata().withLocation();
-            if (settings[DatabaseDataLakeSetting::force_add_bucket])
-                table_metadata.withForceAddBucket();
-            table_metadata.setLocation(location);
-
-            String path = Poco::URI(getStorageEndpointForTable(table_metadata)).getPath();
-            while (path.starts_with('/'))
-                path.erase(0, 1);
-            while (path.ends_with('/'))
-                path.pop_back();
-            location = "s3://" + path;
-        }
-    }
-    else
-    {
-        const auto storage_endpoint = settings[DatabaseDataLakeSetting::storage_endpoint].value;
-        if (storage_endpoint.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "CREATE TABLE in DataLakeCatalog requires `default_base_location` or `storage_endpoint`");
-
-        if (catalog->managesTableLocation())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "This DataLakeCatalog assigns table locations itself, so `storage_endpoint` cannot be used "
-                "to place a new table. Set `default_base_location` on the database instead");
-
-        location = DataLake::constructTableLocation(
-            getLocationScheme(catalog), storage_endpoint, namespace_name, table_name,
-            settings[DatabaseDataLakeSetting::storage_uri_style]);
-    }
+    const String location = getNewTableLocation(settings, catalog, namespace_name, table_name);
 
     auto metadata_content = Iceberg::createEmptyMetadataFile(
         location,
