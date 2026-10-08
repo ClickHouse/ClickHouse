@@ -25,7 +25,14 @@ namespace DB
 std::optional<String> ITableFunction::getNamedCollectionReferencedByArguments(const ASTs & args) const
 {
     if (isClusterFunction())
-        return std::nullopt;
+    {
+        /// `*Cluster` functions take the cluster name as the first argument and parse the rest exactly
+        /// like the underlying non-clustered function, e.g. `s3Cluster(cluster, collection, ...)`.
+        if (args.empty())
+            return std::nullopt;
+        ASTs args_without_cluster(args.begin() + 1, args.end());
+        return tryGetUsedNamedCollectionName(getNonClusteredStorageEngineName(), args_without_cluster);
+    }
     return tryGetUsedNamedCollectionName(getStorageEngineName(), args);
 }
 
