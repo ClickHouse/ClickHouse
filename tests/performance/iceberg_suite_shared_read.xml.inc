@@ -1,18 +1,4 @@
-<test>
-    <settings>
-        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
-    </settings>
-
-    <!-- READ suite over the shared tpch_ice10 dataset (60M-row lineitem, 84 monthly partitions): the read-path aspects the TPC-H scans can't isolate - metadata cost, pruning, PREWHERE, push-down, parallelism, table resolution. -->
-
-    <substitutions>
-        <substitution>
-            <name>database</name>
-            <values>
-                <value>tpch_ice10</value>
-            </values>
-        </substitution>
-    </substitutions>
+<fragment>
 
     <!-- point_lookup_warm: single-day predicate prunes to one data file via partition + per-file min/max, metadata from cache. -->
     <query>SELECT count(), sum(l_extendedprice) FROM {database}.lineitem WHERE l_shipdate = toDate('1994-06-15')</query>
@@ -75,9 +61,9 @@
     <!-- threads_16: same scan on 16 threads; the ratio vs threads_1 is the file-level parallelization efficiency of the Iceberg source. -->
     <query><![CDATA[SELECT sum(l_extendedprice * (1 - l_discount)) FROM {database}.lineitem WHERE l_shipdate >= toDate('1994-01-01') AND l_shipdate < toDate('1995-01-01') SETTINGS max_threads = 16]]></query>
 
-    <!-- table_function_resolution: the point lookup via the icebergLocal table function, paying table resolution + schema inference each run; the absolute path comes from system.server_settings since the function doesn't resolve relative paths against user_files. -->
-    <query>SELECT count(), sum(l_extendedprice) FROM icebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/tpch_ice_sf10/lineitem/') WHERE l_shipdate = toDate('1994-06-15')</query>
+    <!-- table_function_resolution: pay table resolution and schema inference for this backend. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {table_function} WHERE l_shipdate = toDate('1994-06-15')</query>
 
     <!-- limit_early_exit: reader startup and cancellation - open only the first data file and stop after the first thousand wide rows. -->
     <query>SELECT * FROM {database}.lineitem LIMIT 1000</query>
-</test>
+</fragment>
