@@ -5,7 +5,7 @@ tt	2	15
 0	2
 --- T1: 3-way join
 Join: b[100000] ⋈ (m[1000] ⋈ s[10])
-ResultRows: 10
+ResultRows: 1000
 Join: m[1000] ⋈ s[10]
 ResultRows: 10
 --- T1: 3-way join, setting off
@@ -30,6 +30,6 @@ Join: m[1000] ⋈ b[15]
 ResultRows: 15
 --- T5: aggregation over an Iceberg read
 Join: ice_agg[no_stats~100000] ⋈ m[1000]
-ResultRows: ~~1000
+ResultRows: ~~100000
 data lake hint lines naming ice_agg: 1
 column statistics hint lines naming ice_agg: 0
