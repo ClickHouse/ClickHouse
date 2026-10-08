@@ -4,6 +4,7 @@
 #include <base/sort.h>
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -974,9 +975,15 @@ Block ProjectionDescription::calculateByQuery(
       * the expressions which are constant by the types of their arguments (`isNull` of a column which
       * is not `Nullable`), so it would not read the columns they use, while the projection metadata,
       * built by the required columns of the query, still describes them.
+      * The rows deleted by a lightweight delete are filtered out by `_row_exists` here, because the
+      * `_row_exists = 1` condition added to the query above is not applied at `FetchColumns`.
       */
     if (processing_stage == QueryProcessingStage::FetchColumns)
     {
+        ColumnPtr row_exists_column;
+        if (source_block.has(RowExistsColumn::name))
+            row_exists_column = source_block.getByName(RowExistsColumn::name).column->convertToFullIfWrapped();
+
         Block projection_block;
         for (const auto & column : sample_block)
         {
@@ -984,6 +991,8 @@ Block ProjectionDescription::calculateByQuery(
                 = with_parent_part_offset && column.name == "_parent_part_offset" ? String("_part_offset") : column.name;
             auto source_column = source_block.getColumnOrSubcolumnByName(source_column_name);
             source_column.name = column.name;
+            if (row_exists_column)
+                source_column.column = source_column.column->filter(assert_cast<const ColumnUInt8 &>(*row_exists_column).getData(), -1);
             projection_block.insert(std::move(source_column));
         }
         return projection_block;
