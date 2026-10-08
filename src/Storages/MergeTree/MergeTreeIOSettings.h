@@ -196,6 +196,8 @@ struct MergeTreeWriterSettings
     /// 0 is reserved, so the field is not value-initialized.
     MergeTreeObjectTypedSharedDataSerializationVersion object_typed_shared_data_serialization_version
         = MergeTreeObjectTypedSharedDataSerializationVersion::V1;
+    double object_paths_sparse_default_ratio = 1.0;
+    bool object_paths_sparse_allow_nullable = false;
     size_t max_buckets_in_map = 1;
     MergeTreeMapBucketsStrategy map_buckets_strategy = MergeTreeMapBucketsStrategy::SQRT;
     double map_buckets_coefficient = 1.0;
