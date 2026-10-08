@@ -515,6 +515,9 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
+    M(StringValueFilterValuesChecked, "Number of string values checked during a scan against a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
+    M(StringValueFilterValuesReplaced, "Number of non-matching string values replaced with empty strings during a scan by a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
+    M(StringValueFilterBytesSkipped, "Number of bytes of non-matching string values that were not copied into a column during a scan due to a filter extracted from a substring search condition in PREWHERE.", ValueType::Bytes) \
     M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.", ValueType::Number) \
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
     M(FilteringMarksWithPrimaryKeyProcessedMarks, "Total marks processed during PK analysis.", ValueType::Number) \
@@ -865,6 +868,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableOrphanedObjectsRemoved, "Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).", ValueType::Number) \
     M(DiskPlainRewritableUndoStageRetries, "Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.", ValueType::Number) \
     \
     M(MetadataTransactionRollbacks, "Number of metadata transactions that failed to commit and were rolled back.", ValueType::Number) \

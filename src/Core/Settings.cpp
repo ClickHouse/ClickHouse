@@ -1163,6 +1163,33 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
+    DECLARE(Bool, apply_string_filters_during_scan, false, R"(
+Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
+
+When a `PREWHERE` condition contains a conjunct that searches for a non-empty substring in a `String` (or `Nullable(String)`) column
+(`LIKE`, `position`, `startsWith`, `endsWith`, or equality with a non-empty string), the reader checks every value against this condition
+during deserialization and reads non-matching values as empty strings. This makes reading faster and lowers memory usage when the condition
+is selective, because the data of non-matching values is not copied into the column. The result of the query does not change,
+because the rows with non-matching values are guaranteed to be filtered out by `PREWHERE`, and such conditions never match an empty string.
+
+The filter is disabled adaptively at runtime if it turns out to be non-selective.
+
+Also allows the `WHERE` to `PREWHERE` optimization to move substring search conditions (`LIKE`, `position`, `startsWith`, `endsWith`)
+even when they use all queried columns (normally that is pointless, but with this setting the scan itself becomes cheaper).
+Equality with a constant string is not moved for this reason: it is still applied during the scan when it is already in `PREWHERE`.
+
+Supported for reading from `MergeTree` tables and from the `Parquet` format.
+
+Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
+(`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
+the amount of data read from disk when the values are replaced by empty strings.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0, \
+        {"26.10", false, false, "New setting to push down substring search conditions on String columns from PREWHERE into the column scan."}) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows you to specify how [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize), or [`TRUNCATE`](/reference/statements/truncate) queries wait for their operations to complete.
@@ -6017,7 +6044,7 @@ Possible values:
 Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
 
 The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
-Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead, and get the timeout as a Keeper error (`ZOPERATIONTIMEOUT`) that they handle like other Keeper errors.
 `SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
 
 Possible values:
