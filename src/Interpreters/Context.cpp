@@ -7192,51 +7192,50 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
                 return;
 
             shared->auxiliary_zookeepers_config = config;
+            shared->outdated_auxiliary_zookeepers.clear();
+
+            for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
+            {
+                const auto config_name = "auxiliary_zookeepers." + it->first;
+                /// As in reloadZooKeeperIfChanged: a client is not replaced while its own connection attempt is in flight.
+                if (shared->auxiliary_zookeeper_connection_attempts.contains(it->first))
+                {
+                    if (!config->has(config_name) || it->second->configChanged(*config, config_name))
+                        shared->outdated_auxiliary_zookeepers.insert(it->first);
+                    ++it;
+                    continue;
+                }
+                LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
+                if (!config->has(config_name))
+                {
+                    LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
+                    if (zookeeper_connection_log)
+                        zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
+
+                    it = shared->auxiliary_zookeepers.erase(it);
+                }
+                else
+                {
+                    LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
+                    reloadZooKeeperIfChangedImpl(
+                        config,
+                        it->first,
+                        config_name,
+                        it->second,
+                        getZooKeeperLog(),
+                        zookeeper_connection_log,
+                        getAggregatedZooKeeperLog(),
+                        shared->auxiliary_zookeepers_server_started,
+                        getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
+                        getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
+                    ++it;
+                }
+            }
 
             if (shared->auxiliary_zookeeper_connection_attempts.empty())
-            {
-                shared->outdated_auxiliary_zookeepers.clear();
-                for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
-                {
-                    const auto config_name = "auxiliary_zookeepers." + it->first;
-                    LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
-                    if (!config->has(config_name))
-                    {
-                        LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
-                        if (zookeeper_connection_log)
-                            zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
-
-                        it = shared->auxiliary_zookeepers.erase(it);
-                    }
-                    else
-                    {
-                        LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-                        reloadZooKeeperIfChangedImpl(
-                            config,
-                            it->first,
-                            config_name,
-                            it->second,
-                            getZooKeeperLog(),
-                            zookeeper_connection_log,
-                            getAggregatedZooKeeperLog(),
-                            shared->auxiliary_zookeepers_server_started,
-                            getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
-                            getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
-                        ++it;
-                    }
-                }
                 return;
-            }
             attempt = shared->auxiliary_zookeeper_connection_attempts.begin()->second;
-            shared->outdated_auxiliary_zookeepers.clear();
-            for (const auto & [zk_name, zk] : shared->auxiliary_zookeepers)
-            {
-                const auto zk_config_name = "auxiliary_zookeepers." + zk_name;
-                if (!config->has(zk_config_name) || zk->configChanged(*config, zk_config_name))
-                    shared->outdated_auxiliary_zookeepers.insert(zk_name);
-            }
         }
-        /// As in reloadZooKeeperIfChanged: no session is created while a connection attempt is in flight.
         attempt->getFuture().wait();
     }
 }

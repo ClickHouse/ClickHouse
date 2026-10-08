@@ -10,6 +10,7 @@ import uuid
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
+from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
@@ -133,6 +134,61 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
     # zoo1 rejects connections until it has rejoined the ensemble, so the next test waits for it here.
     node.query_with_retry(base_query, retry_count=60, sleep_time=1)
     node.query(f"DROP TABLE IF EXISTS rmt_{suffix} SYNC")
+
+
+def test_reload_during_connection_attempt(started_cluster):
+    """A config reload removes an auxiliary client right away, unless that client's own attempt is in flight."""
+    query = "SELECT * FROM system.zookeeper WHERE path = '/' AND zookeeperName = '{}' LIMIT 1"
+    config_path = "/etc/clickhouse-server/config.d/auxiliary_zookeepers.xml"
+    failpoint = "context_auxiliary_zookeeper_connection_attempt_pause"
+    no_limit = {"get_zookeeper_lock_acquire_timeout_ms": 0, "insert_keeper_max_retries": 0}
+
+    # The reload would create a missing default client, which fails while zoo1 is unreachable.
+    node.query_with_retry("SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 1", retry_count=60, sleep_time=1)
+    node.query_with_retry(query.format("zookeeper2"), retry_count=60, sleep_time=1)
+    node.query_with_retry(query.format("zookeeper3"), retry_count=60, sleep_time=1)
+    config = node.exec_in_container(["cat", config_path])
+    zookeeper3 = config[config.index("<zookeeper3>") : config.index("</zookeeper3>") + len("</zookeeper3>")]
+    try:
+        with PartitionManager() as pm:
+            pm.add_rule(
+                {
+                    "instance": node,
+                    "chain": "OUTPUT",
+                    "destination": cluster.get_instance_ip("zoo1"),
+                    "destination_port": 2181,
+                    "protocol": "tcp",
+                    "action": "REJECT --reject-with tcp-reset",
+                }
+            )
+            # Once this query fails, the zookeeper2 session is expired.
+            with pytest.raises(QueryRuntimeException):
+                node.query(query.format("zookeeper2"), settings=no_limit)
+
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                    connector = executor.submit(node.query, query.format("zookeeper2"), settings=no_limit, timeout=120)
+                    node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+                    node.replace_config(config_path, config.replace(zookeeper3, ""))
+                    reload = executor.submit(node.query, "SYSTEM RELOAD CONFIG", timeout=120)
+                    error = node.query_and_get_error_with_retry(query.format("zookeeper3"), settings=no_limit)
+                    assert "Unknown auxiliary ZooKeeper name" in error, error
+                    # zookeeper2 is reloaded after its attempt.
+                    assert not reload.done()
+
+                    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                    reload.result(timeout=120)
+                    with pytest.raises(QueryRuntimeException):
+                        connector.result(timeout=120)
+            finally:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+    finally:
+        node.replace_config(config_path, config)
+        node.query("SYSTEM RELOAD CONFIG")
+    node.query_with_retry(query.format("zookeeper2"), retry_count=60, sleep_time=1)
+    node.query_with_retry(query.format("zookeeper3"), retry_count=60, sleep_time=1)
 
 
 @pytest.mark.parametrize("zk_name", ["default", "zookeeper2"])
