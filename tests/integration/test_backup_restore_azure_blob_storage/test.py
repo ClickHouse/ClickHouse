@@ -166,7 +166,6 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=[path],
-            user_configs=["configs/users.xml"],
             with_azurite=True,
             with_zookeeper=True,
         )

@@ -610,7 +610,7 @@ namespace QueryPlanFormat
         for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
             buildPrettyNamesForNode(*it, pretty_names, runtime_filter_names, subquery_set_names, per_plan_columns);
 
-        for (auto * child_plan : node->step->getChildPlans(/*for_explain=*/ true))
+        for (auto * child_plan : node->step->getChildPlans())
         {
             if (child_plan && child_plan->getRootNode())
             {

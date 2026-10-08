@@ -1,0 +1,46 @@
+---
+slug: /native-protocol/columns
+title: 'Tipos de coluna do protocolo nativo'
+description: 'Tipos de coluna do protocolo nativo'
+keywords: ['colunas do protocolo nativo', 'tipos de coluna', 'tipos de dados', 'tipos de dados do protocolo', 'codificação binária']
+doc_type: 'reference'
+---
+
+Consulte [Tipos de Dados](/pt-BR/reference/data-types/index) para uma referência geral.
+
+<Tip>
+  A codificação dos tipos numéricos corresponde ao layout de memória de CPUs little endian, como AMD64 ou ARM64, o que permite codificação e decodificação muito eficientes.
+</Tip>
+
+| Tipo                                                        | Codificação                                                                                                                                   |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Inteiros** ([Int/UInt](/pt-BR/reference/data-types/int-uint))   | 8, 16, 32, 64, 128 ou 256 bits em little endian                                                                                               |
+| **Floats** ([Float32/Float64](/pt-BR/reference/data-types/float)) | Representação binária IEEE 754                                                                                                                |
+| [String](/pt-BR/reference/data-types/string)                      | Array de strings no formato (len, value)                                                                                                      |
+| [FixedString(N)](/pt-BR/reference/data-types/fixedstring)         | Array de sequências de N bytes                                                                                                                |
+| [IPv4](/pt-BR/reference/data-types/ipv4)                          | Alias de `UInt32`, representado como UInt32                                                                                                   |
+| [IPv6](/pt-BR/reference/data-types/ipv6)                          | Alias de `FixedString(16)`, representado em binário                                                                                           |
+| [Tuple](/pt-BR/reference/data-types/tuple)                        | Array de colunas codificadas de forma contínua. Exemplo: `Tuple(String, UInt8)` = duas colunas contínuas                                      |
+| [Map](/pt-BR/reference/data-types/map)                            | `Map(K, V)` = três colunas: `Offsets ColUInt64, Keys K, Values V`. A contagem de linhas em Keys/Values = último valor de Offsets              |
+| [Array](/pt-BR/reference/data-types/array)                        | `Array(T)` = duas colunas: `Offsets ColUInt64, Data T`. A contagem de linhas em Data = último valor de Offsets                                |
+| [Nullable](/pt-BR/reference/data-types/nullable)                  | `Nullable(T)` = duas colunas: `Nulls ColUInt8, Values T` com a mesma contagem de linhas. Nulls é uma máscara: 1=null, 0=value                 |
+| [UUID](/pt-BR/reference/data-types/uuid)                          | Alias de `FixedString(16)`, representado em binário                                                                                           |
+| [Enum](/pt-BR/reference/data-types/enum)                          | Alias de `Int8` ou `Int16`, com cada inteiro mapeado para um valor String                                                                     |
+| [LowCardinality](/pt-BR/reference/data-types/lowcardinality)      | `LowCardinality(T)` = duas colunas: `Index T, Keys K`, em que K é UInt8/16/32/64. Index contém valores únicos, e Keys contém índices em Index |
+| [Bool](/pt-BR/reference/data-types/boolean)                       | Alias de `UInt8`: 0=false, 1=true                                                                                                             |
+
+**Exemplo: codificação de Nullable**
+
+```text
+To encode [null, "", "hello", null, "world"]:
+  Values: ["", "", "hello", "", "world"] (len: 5)
+  Nulls:  [ 1,  0,       0,  1,       0] (len: 5)
+```
+
+**Exemplo: codificação LowCardinality**
+
+```text
+To encode ["Eko", "Eko", "Amadela", "Amadela", "Amadela", "Amadela"]:
+  Index: ["Eko", "Amadela"] (String)
+  Keys:  [0, 0, 1, 1, 1, 1] (UInt8)
+```

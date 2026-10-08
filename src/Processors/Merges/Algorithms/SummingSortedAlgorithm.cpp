@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/TypeTree.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Common/AlignedBuffer.h>
@@ -571,7 +570,7 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
     ///
     /// Wrappers such as `Nullable(Float32)`, `LowCardinality(Nullable(Float32))`, `Array(Float32)`,
     /// `Tuple(..., Float32, ...)`, and `Map(K, Float32)` all route through the same `Field` layer,
-    /// so they are affected too. We use `anyInTypeTree` to walk the whole type tree.
+    /// so they are affected too. We use `IDataType::forEachChild` to walk the whole type tree.
     def.columns_need_exact_copy.resize(num_columns, false);
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -579,7 +578,16 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
         if (!col.type)
             continue;
 
-        if (anyInTypeTree(*col.type, [](const IDataType & type) { return WhichDataType(type).isFloat(); }))
+        bool contains_float = WhichDataType(*col.type).isFloat();
+        if (!contains_float)
+        {
+            col.type->forEachChild([&contains_float](const IDataType & child)
+            {
+                if (!contains_float && WhichDataType(child).isFloat())
+                    contains_float = true;
+            });
+        }
+        if (contains_float)
             def.columns_need_exact_copy[i] = true;
     }
 
@@ -649,15 +657,10 @@ static void postprocessChunk(
     chunk.setColumns(std::move(res_columns), num_rows);
 }
 
-static void setRow(
-    Row & row,
-    Columns & row_columns,
-    const ColumnRawPtrs & raw_columns,
-    size_t row_num,
-    const Names & column_names,
-    const std::vector<bool> & columns_need_exact_copy,
-    const ColumnNumbers & column_numbers)
+static void setRow(Row & row, Columns & row_columns, const ColumnRawPtrs & raw_columns, size_t row_num,
+                   const Names & column_names, const std::vector<bool> & columns_need_exact_copy)
 {
+    size_t num_columns = row.size();
     const auto handle_exception = [&](const char * logger_name, const char * reason, const size_t column_index)
     {
         tryLogCurrentException(logger_name);
@@ -670,7 +673,7 @@ static void setRow(
                         row_num, column_index, column_name.empty() ? "" : fmt::format(" ({})", column_name), reason);
     };
 
-    for (size_t i : column_numbers)
+    for (size_t i = 0; i < num_columns; ++i)
     {
         try
         {
@@ -774,14 +777,7 @@ void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_c
 {
     is_group_started = true;
 
-    setRow(
-        current_row,
-        current_row_columns,
-        raw_columns,
-        row,
-        def.column_names,
-        def.columns_need_exact_copy,
-        def.column_numbers_not_to_aggregate);
+    setRow(current_row, current_row_columns, raw_columns, row, def.column_names, def.columns_need_exact_copy);
 
     /// Reset aggregation states for next row
     for (auto & desc : def.columns_to_aggregate)

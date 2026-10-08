@@ -2,7 +2,6 @@
 #include <Planner/CollectSets.h>
 
 #include <Storages/StorageSet.h>
-#include <Storages/StorageProxy.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedSetJoin.h>
 #endif
@@ -61,11 +60,7 @@ public:
                 pending_source_expressions.push_back(constant_node->getSourceExpression());
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node)
-            return;
-
-        const auto & function_name = function_node->getFunctionName();
-        if (!isNameOfInFunction(function_name) || function_name.ends_with("IgnoreSet"))
+        if (!function_node || !isNameOfInFunction(function_node->getFunctionName()))
             return;
 
         if (function_node->getArguments().getNodes().size() < 2)
@@ -84,12 +79,10 @@ public:
 
         /// Tables and table functions are replaced with subquery at Analysis stage, except special Set table.
         auto * second_argument_table = in_second_argument->as<TableNode>();
-        StorageSet * storage_set = second_argument_table != nullptr ? castStorage<StorageSet>(second_argument_table->getStorage(), DeferredTable::Load).get() : nullptr;
+        StorageSet * storage_set = second_argument_table != nullptr ? dynamic_cast<StorageSet *>(second_argument_table->getStorage().get()) : nullptr;
 
         if (storage_set)
         {
-            storage_set->checkNoRowPolicy(planner_context.getQueryContext());
-
             /// Handle storage_set as ready set.
             auto set_key = in_second_argument->getTreeHash({.ignore_cte = true});
             if (sets.findStorage(set_key))
