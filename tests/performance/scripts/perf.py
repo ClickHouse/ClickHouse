@@ -1126,6 +1126,8 @@ for query_index in queries_to_run:
     # continue testing the next query.
     # If prewarm fails on one of the servers, run the query on the rest of them.
     no_errors = []
+    # With `--long`, a query that fails on every server is not a regression: it is reported as skipped.
+    failed_everywhere = args.long and all(query_error_on_connection)
     for i, e in enumerate(query_error_on_connection):
         if e:
             # A tolerated (do_not_check_in_pr) setup failure is inherited by
@@ -1133,13 +1135,18 @@ for query_index in queries_to_run:
             # must not be repeated on this test's stderr, which the report stage
             # turns into Run Errors rows. An error the query produced itself is
             # still reported there.
-            if setup_error_on_connection[i] is None:
+            if setup_error_on_connection[i] is None and not failed_everywhere:
                 print(e, file=sys.stderr)
         else:
             no_errors.append(i)
 
     # With `--long`, a failure of the tested servers fails the test, unless every server timed out.
     if args.long:
+        if failed_everywhere and not prewarm_timeouts:
+            e = prewarm_exceptions[len(all_connections) - 1]
+            summary = (getattr(e, "message", None) or str(e)).splitlines()[0]
+            print(f"skipped\tquery {query_index} fails on every server: {tsv_escape(summary)}")
+            continue
         if len(prewarm_timeouts) == len(all_connections):
             print(f"double-timeout\t{query_index}")
             for i, elapsed in prewarm_timeouts.items():
