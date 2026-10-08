@@ -142,6 +142,9 @@ void CreatingSetsTransform::startSubquery()
                 {
                     LOG_TRACE(log, "Waiting for set to be built by another thread, key: {}", set_and_key->key);
                     SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
+                    /// Another task builds the set, so wait in slices to observe the cancellation of this one.
+                    while (set_built_by_another_thread.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
+                        CurrentThread::checkIfNotCancelled();
                     const SetPtr & ready_set = set_built_by_another_thread.get();
                     if (!ready_set)
                     {
@@ -226,6 +229,21 @@ void CreatingSetsTransform::init()
 
 void CreatingSetsTransform::consume(Chunk chunk)
 {
+    try
+    {
+        CurrentThread::checkIfNotCancelled();
+    }
+    catch (...)
+    {
+        /// A cancelled build is abandoned, not failed: the tasks waiting for this set build it themselves.
+        if (promise_to_build)
+        {
+            promise_to_build->set_value(nullptr);
+            promise_to_build.reset();
+        }
+        throw;
+    }
+
     read_rows += chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
