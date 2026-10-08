@@ -29,9 +29,8 @@ void logMessage(std::string message)
 
 #else
 
-void logMessage(std::string message)
+void logMessage(std::string)
 {
-    fmt::print(stderr, "Wyrd thread {}: {}\n", getThreadId(), message);
 }
 
 #endif
