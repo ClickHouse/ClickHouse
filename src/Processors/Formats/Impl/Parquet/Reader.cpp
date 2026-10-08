@@ -1431,7 +1431,7 @@ void Reader::preparePrewhere()
     ///     Probably reuse tryBuildPrewhereSteps from MergeTree for splitting the expression.
 
     /// Convert ActionsDAG to ExpressionActions.
-    /// The query's settings, as for MergeTree PREWHERE: e.g. short_circuit_function_evaluation.
+    /// Query settings, so that the steps honor e.g. short_circuit_function_evaluation.
     ExpressionActionsSettings actions_settings;
     if (auto context = format_filter_info->context.lock())
         actions_settings = ExpressionActionsSettings(context);
