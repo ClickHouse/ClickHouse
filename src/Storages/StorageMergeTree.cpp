@@ -344,8 +344,7 @@ void StorageMergeTree::shutdown(bool)
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
+    stopStatisticsCache();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
@@ -3386,7 +3385,7 @@ static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector &
         new_part.part_info.level += 1;
         new_part.partition = old_part->partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
-        new_part.metadata_snapshot = old_part->getMetadataSnapshot();
+        new_part.metadata_snapshot = MergeTreeData::getMetadataSnapshotForEmptyPart(*old_part);
 
         if (old_part->info.isPatch())
             new_part.patch_part_index = old_part->getPatchPartIndex().cloneEmpty();
