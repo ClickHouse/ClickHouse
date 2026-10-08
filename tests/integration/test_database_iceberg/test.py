@@ -2545,7 +2545,8 @@ def test_namespace_two_part_name_resolution(started_cluster):
     node.query(f"CREATE DATABASE `{X}`")
     try:
         # row 2: database X exists, X.T only in the catalog
-        assert int(node.query(query, settings=on)) == 5
+        result = int(node.query(query, settings=on))
+        assert result == 5, f"row 2, setting on: expected the catalog table (5 rows), got {result}"
         _, err = node.query_and_get_answer_with_error(query)
         assert "UNKNOWN_TABLE" in err, f"catalog-only X.T, setting off: {err}"
 
@@ -2571,13 +2572,16 @@ def test_namespace_two_part_name_resolution(started_cluster):
         # row 3: X.T in both the database and the catalog
         _, err = node.query_and_get_answer_with_error(query, settings=on)
         assert "AMBIGUOUS_IDENTIFIER" in err, f"both readings exist, setting on: {err}"
-        assert int(node.query(query)) == 3
+        result = int(node.query(query))
+        assert result == 3, f"row 3, setting off: expected the database table (3 rows), got {result}"
 
         node.query(f"DROP TABLE {CATALOG_NAME}.`{X}.{T}`")
 
         # row 4: X.T only in the database
-        assert int(node.query(query, settings=on)) == 3
-        assert int(node.query(query)) == 3
+        result = int(node.query(query, settings=on))
+        assert result == 3, f"row 4, setting on: expected the database table (3 rows), got {result}"
+        result = int(node.query(query))
+        assert result == 3, f"row 4, setting off: expected the database table (3 rows), got {result}"
 
         node.query(f"DROP TABLE `{X}`.{T}")
 
@@ -3630,7 +3634,7 @@ def test_namespace_postgresql_wire(started_cluster):
         cur = conn.cursor()
         cur.execute(f"SELECT count() FROM {CATALOG_NAME}.{ns}.t")
         result = cur.fetchone()[0]
-        assert result == 3, f"three-part path over the PostgreSQL wire: {result}"
+        assert int(result) == 3, f"three-part path over the PostgreSQL wire: expected 3 rows, got {result!r}"
         cur.close()
     finally:
         if conn is not None:
@@ -3695,6 +3699,8 @@ def test_namespace_scope_survives_reconnect(started_cluster):
             node, f"{CATALOG_NAME}.{nested}", "SELECT count() FROM t", nested_out
         )
 
+        # Detached clients connect on startup and hold the connection while blocked on stdin;
+        # the probe loops' transient `SELECT 1` connections cannot both be open before the sessions connect.
         deadline = time.time() + 60
         current = tcp_connections()
         while current < baseline + 2 and time.time() < deadline:
