@@ -1334,8 +1334,10 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
         DROP TABLE mv SYNC;
         ATTACH TABLE sample UUID '{sample_uuid}' (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
         SETTINGS storage_policy = '{policy}';
+        ATTACH TABLE `.inner_id.{mv_uuid}` UUID '{inner_uuid}' (key Int) ENGINE = MergeTree ORDER BY key
+        SETTINGS storage_policy = '{policy}', index_granularity = 8192;
         ATTACH MATERIALIZED VIEW mv UUID '{mv_uuid}' TO INNER UUID '{inner_uuid}' (key Int) ENGINE = MergeTree ORDER BY key
-        SETTINGS storage_policy = '{policy}' AS SELECT key FROM src;
+        SETTINGS storage_policy = '{policy}', index_granularity = 8192 AS SELECT key FROM src;
         """
     )
     assert instance.query("SELECT count() FROM sample") == "100\n"
@@ -1344,12 +1346,11 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     instance.query(f"BACKUP TABLE sample, TABLE mv TO {backup_destination}")
 
     # The backup has the definitions of the tables, but none of their data.
-    backup_files = [
-        obj.object_name
-        for obj in minio.list_objects(cluster.minio_bucket, f"data/backups/{backup_name}/", recursive=True)
-    ]
-    assert any(name.endswith("/metadata/default/sample.sql") for name in backup_files), backup_files
-    assert not [name for name in backup_files if f"/{backup_name}/data/" in name], backup_files
+    backup_manifest = (
+        minio.get_object(cluster.minio_bucket, f"data/backups/{backup_name}/.backup").read().decode()
+    )
+    assert "<name>metadata/default/sample.sql</name>" in backup_manifest, backup_manifest
+    assert "<name>data/" not in backup_manifest, backup_manifest
 
     # The restored table keeps its UUID, so it can't be restored next to the source table.
     err = instance.query_and_get_error(
