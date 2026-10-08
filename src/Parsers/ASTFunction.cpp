@@ -697,16 +697,18 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        bool is_like_with_escape = false;
+        /// LIKE and SIMILAR TO can carry a 3rd (String) argument that is the ESCAPE character.
+        bool is_operator_with_escape = false;
         if (arguments->children.size() == 3
-            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
+            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"
+                || name == "similarTo" || name == "notSimilarTo"))
         {
             if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
-                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
+                is_operator_with_escape = escape_literal->value.getType() == Field::Types::String;
         }
-        if (!written && (arguments->children.size() == 2 || is_like_with_escape))
+        if (!written && (arguments->children.size() == 2 || is_operator_with_escape))
         {
-            static constexpr std::array<FunctionOperatorMapping, 21> operators =
+            static constexpr std::array<FunctionOperatorMapping, 23> operators =
             {{
                 {"multiply",          " * "},
                 {"divide",            " / "},
@@ -725,6 +727,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 {"ilike",             " ILIKE "},
                 {"notLike",           " NOT LIKE "},
                 {"notILike",          " NOT ILIKE "},
+                {"similarTo",         " SIMILAR TO "},
+                {"notSimilarTo",      " NOT SIMILAR TO "},
                 {"in",                " IN "},
                 {"notIn",             " NOT IN "},
                 {"globalIn",          " GLOBAL IN "},
@@ -787,8 +791,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 else
                     arguments->children[1]->format(ostr, settings, state, nested_need_parens);
 
-                /// LIKE/ILIKE with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
-                if (is_like_with_escape)
+                /// LIKE/ILIKE/SIMILAR TO with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
+                if (is_operator_with_escape)
                 {
                     ostr << " ESCAPE ";
                     arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
@@ -881,6 +885,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             /// We have just emitted `(` around the child, so suppress the
                             /// child's own `parenthesized` parens (which would otherwise duplicate ours).
                             nested_need_parens.wrapped_in_parens = true;
+                            /// These parens isolate the operand from an enclosing argument list, so a descendant IN needs none.
+                            nested_need_parens.current_function = nullptr;
                             ostr << '(';
                         }
 
@@ -893,7 +899,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             ostr << ')';
 
                         ostr << ".";
-                        arguments->children[1]->format(ostr, settings, state, nested_dont_need_parens);
+                        /// An alias on the index has to stay inside its parens: `.(1) AS a` re-parses
+                        /// as the alias of the whole tupleElement. Copy the pristine frame, not
+                        /// `nested_need_parens`, which the left-operand code above has mutated.
+                        FormatStateStacked index_frame = nested_dont_need_parens;
+                        index_frame.need_parens = true;
+                        arguments->children[1]->format(ostr, settings, state, index_frame);
                         written = true;
 
                         if (frame.need_parens)
