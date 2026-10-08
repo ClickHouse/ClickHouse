@@ -43,6 +43,18 @@ void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistic
     stats_cache->set(key, std::make_shared<RuntimeDataflowStatistics>(stats));
 }
 
+/// How many rows to gather before the compression ratio is taken off them, and the memory that is
+/// allowed to cost. A codec measures a ratio only as good as the window it is given: on one and the same
+/// `String` key column `ZSTD(3)` reaches 1.46x over 2.8 KB and 3.30x over 553 KB. Compressing each output
+/// block on its own therefore measured whatever window the output happened to be split into - a
+/// single-stream aggregation emits a few large blocks, a multi-stream one many small blocks - and made the
+/// estimate of a `GROUP BY` on a `String` key differ 2.3x between one thread and two. The budget is a
+/// block's worth of rows, so the window matches what a replica compresses when it sends one.
+static constexpr size_t sample_rows_budget = DEFAULT_BLOCK_SIZE;
+static constexpr size_t sample_memory_budget = 4_MiB;
+/// What the destructor may compress of a sample that never reached the budget, see the call there.
+static constexpr size_t leftover_sample_rows_cap = 8192;
+
 RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
 {
     if (unsupported_case)
@@ -64,10 +76,14 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
-    /// A sample that never filled is compressed here; one that did was compressed by the thread that
-    /// filled it, and this call finds nothing left to do.
+    /// A sample that filled was compressed by the thread that filled it and leaves nothing to do here. One
+    /// that did not - an output smaller than the budget, which is most of them - is compressed here, on
+    /// the query's teardown path, so cap what that can cost: `leftover_sample_rows_cap` rows is a window
+    /// wide enough for a ratio and a couple of milliseconds of work at the very most. The samples that
+    /// reach here in practice are far smaller than the cap anyway: a few thousand rows where the bucket
+    /// Top-K conversion bounds what each call offers, a few hundred where the output has that few groups.
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
-        compressSample(output_bytes_statistics[i]);
+        compressSample(output_bytes_statistics[i], leftover_sample_rows_cap);
 
     RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
@@ -178,15 +194,6 @@ static IColumn::Permutation keyOrderPermutation(
     return permutation;
 }
 
-/// How many rows to gather before the compression ratio is taken off them, and the memory that is
-/// allowed to cost. A codec measures a ratio only as good as the window it is given: on one and the same
-/// `String` key column `ZSTD(3)` reaches 1.46x over 2.8 KB and 3.30x over 553 KB. Compressing each output
-/// block on its own therefore measured whatever window the output happened to be split into - a
-/// single-stream aggregation emits a few large blocks, a multi-stream one many small blocks - and made the
-/// estimate of a `GROUP BY` on a `String` key differ 2.3x between one thread and two. The budget is a
-/// block's worth of rows, so the window matches what a replica compresses when it sends one.
-static constexpr size_t sample_rows_budget = DEFAULT_BLOCK_SIZE;
-static constexpr size_t sample_memory_budget = 4_MiB;
 
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
@@ -237,7 +244,7 @@ bool RuntimeDataflowStatisticsCacheUpdater::appendToSample(
     return true;
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::compressSample(Statistics & statistics)
+void RuntimeDataflowStatisticsCacheUpdater::compressSample(Statistics & statistics, size_t max_rows)
 {
     Stopwatch watch;
     ColumnsWithTypeAndName cols;
@@ -247,9 +254,14 @@ void RuntimeDataflowStatisticsCacheUpdater::compressSample(Statistics & statisti
         std::lock_guard lock(statistics.mutex);
         if (statistics.sample_columns.empty() || !statistics.sample_rows)
             return;
+        const size_t rows = max_rows ? std::min(max_rows, statistics.sample_rows) : statistics.sample_rows;
         cols.reserve(statistics.sample_columns.size());
         for (size_t i = 0; i < statistics.sample_columns.size(); ++i)
-            cols.emplace_back(std::move(statistics.sample_columns[i]), statistics.sample_types[i], "");
+        {
+            auto column = rows < statistics.sample_rows ? statistics.sample_columns[i]->cut(0, rows)
+                                                        : ColumnPtr(std::move(statistics.sample_columns[i]));
+            cols.emplace_back(std::move(column), statistics.sample_types[i], "");
+        }
         statistics.sample_columns.clear();
     }
 

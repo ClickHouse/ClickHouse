@@ -191,8 +191,9 @@ private:
     static bool appendToSample(Statistics & statistics, const ColumnsWithTypeAndName & cols, size_t num_rows)
         TSA_REQUIRES(statistics.mutex);
 
-    /// Compresses whatever the sample gathered, in one go, and records the ratio.
-    static void compressSample(Statistics & statistics);
+    /// Compresses whatever the sample gathered, in one go, and records the ratio. `max_rows` caps how
+    /// much of it is compressed, for the one caller that runs on the query's teardown path.
+    static void compressSample(Statistics & statistics, size_t max_rows = 0);
 
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
