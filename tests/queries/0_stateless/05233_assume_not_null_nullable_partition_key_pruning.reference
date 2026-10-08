@@ -16,6 +16,7 @@ Parts: 2/4
 ifNull and coalesce reach the same chain once the rewrite that usually hides them is off
 ifNull(c0, 0) = 0	3	3
 coalesce(c0, 0) = 0	3	3
+NOT (ifNull(c0, 0) >= 7)	5	5
 NOT (coalesce(nullIf(c0, 5), 0) = 1)	4	4
 Min-Max
 Parts: 4/4

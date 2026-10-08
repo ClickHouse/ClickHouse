@@ -46,6 +46,8 @@ SELECT trimLeft(explain) FROM (
 SELECT 'ifNull and coalesce reach the same chain once the rewrite that usually hides them is off';
 SELECT 'ifNull(c0, 0) = 0', (SELECT count() FROM t_flat WHERE ifNull(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE ifNull(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0);
 SELECT 'coalesce(c0, 0) = 0', (SELECT count() FROM t_flat WHERE coalesce(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0), (SELECT count() FROM t_part WHERE coalesce(c0, 0) = 0 SETTINGS allow_key_condition_coalesce_rewrite = 0);
+-- The rewrite applies only to a non-negated condition, so a negated one reaches the chain with the rewrite on.
+SELECT 'NOT (ifNull(c0, 0) >= 7)', (SELECT count() FROM t_flat WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS allow_key_condition_coalesce_rewrite = 1), (SELECT count() FROM t_part WHERE NOT (ifNull(c0, 0) >= 7) SETTINGS allow_key_condition_coalesce_rewrite = 1);
 
 -- An inner link can also produce a real NULL: `nullIf` maps the exact point 5 to one, and the chain
 -- leaves it untransformed just like an infinity bound. Such a bound compares as both inside and
