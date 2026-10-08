@@ -394,7 +394,7 @@ bool removeNullMembersFromINSet(ASTFunction & function)
     return true;
 }
 
-/// Where a predicate is in the filter: `Positive` and `Negative` (under `NOT`) only need its truth, `Exact` its value.
+/// Position in the filter: only whether a predicate is TRUE (`Positive`) or FALSE (`Negative`, under `NOT`) matters; `Exact`: its value.
 enum class Polarity
 {
     Positive,
