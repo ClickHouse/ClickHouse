@@ -2503,21 +2503,23 @@ def test_iceberg_file_progress_callback(started_cluster):
     )
 
 
-def test_deterministic_two_part_resolution(started_cluster):
+def test_namespace_two_part_name_resolution(started_cluster):
     """
-    A two-part name always means database.table, never namespace.table.
+    A two-part name `X.T` in a table expression is tried both as table `T` of database `X`
+    and as table `X.T` of the current database; database `X` must exist, and both existing
+    is an error.
     """
     node = started_cluster.instances["node1"]
-    ns_settings = {"allow_experimental_table_namespaces": 1}
+    on = {"allow_experimental_table_namespaces": 1}
 
-    test_ref = f"test_two_part_{uuid.uuid4().hex[:8]}"
-    namespace = f"ns_{test_ref}"
-    table_name = "priority_table"
+    test_ref = f"test_ns_two_part_{uuid.uuid4().hex[:8]}"
+    X = f"ns_{test_ref}"
+    T = "priority_table"
 
     catalog = load_catalog_impl(started_cluster)
 
-    catalog.create_namespace(namespace)
-    iceberg_table = create_table(catalog, namespace, table_name)
+    catalog.create_namespace(X)
+    iceberg_table = create_table(catalog, X, T)
 
     data = [generate_record() for _ in range(5)]
     df = pa.Table.from_pylist(data)
@@ -2525,34 +2527,60 @@ def test_deterministic_two_part_resolution(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
-    # without a database named like the namespace, a two-part name is an unknown database
-    _, err = node.query_and_get_answer_with_error(
-        f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}",
-        settings=ns_settings,
-    )
-    assert "UNKNOWN_DATABASE" in err, f"two-part name must mean database.table: {err}"
+    query = f"USE {CATALOG_NAME}; SELECT count() FROM {X}.{T}"
 
-    # with such a database, the rule picks it - deterministically, not by precedence
-    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
-    node.query(f"CREATE DATABASE `{namespace}`")
-    node.query(f"CREATE TABLE `{namespace}`.{table_name} (id UInt64) ENGINE = Memory")
-    node.query(f"INSERT INTO `{namespace}`.{table_name} VALUES (1), (2), (3)")
+    # row 1: no database X
+    _, err = node.query_and_get_answer_with_error(query, settings=on)
+    assert "UNKNOWN_DATABASE" in err, f"no database X, setting on: {err}"
+    _, err = node.query_and_get_answer_with_error(query)
+    assert "UNKNOWN_DATABASE" in err, f"no database X, setting off: {err}"
 
-    count = int(
-        node.query(
-            f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}",
-            settings=ns_settings,
+    node.query(f"CREATE DATABASE `{X}`")
+    try:
+        # row 2: database X exists, X.T only in the catalog
+        assert int(node.query(query, settings=on)) == 5
+        _, err = node.query_and_get_answer_with_error(query)
+        assert "UNKNOWN_TABLE" in err, f"catalog-only X.T, setting off: {err}"
+
+        # non-SELECT statements keep the database reading
+        assert node.query(f"USE {CATALOG_NAME}; EXISTS TABLE {X}.{T}", settings=on).strip() == "0"
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; DESCRIBE TABLE {X}.{T}", settings=on
         )
-    )
-    assert count == 3, f"Expected 3 rows from the regular database, got {count}"
+        assert "UNKNOWN_TABLE" in err, f"DESCRIBE must not fall back to the catalog: {err}"
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; INSERT INTO {X}.{T} VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'))",
+            settings={
+                **on,
+                "allow_insert_into_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert "UNKNOWN_TABLE" in err, f"INSERT must not fall back to the catalog: {err}"
 
-    # the iceberg table is reachable through the quoted canonical name or the full path
-    count_iceberg = int(
-        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
-    )
-    assert count_iceberg == 5, f"Expected 5 rows from iceberg table, got {count_iceberg}"
+        node.query(f"CREATE TABLE `{X}`.{T} (id UInt64) ENGINE = Memory")
+        node.query(f"INSERT INTO `{X}`.{T} VALUES (1), (2), (3)")
 
-    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
+        # row 3: X.T in both the database and the catalog
+        _, err = node.query_and_get_answer_with_error(query, settings=on)
+        assert "AMBIGUOUS_IDENTIFIER" in err, f"both readings exist, setting on: {err}"
+        assert int(node.query(query)) == 3
+
+        node.query(f"DROP TABLE {CATALOG_NAME}.`{X}.{T}`")
+
+        # row 4: X.T only in the database
+        assert int(node.query(query, settings=on)) == 3
+        assert int(node.query(query)) == 3
+
+        node.query(f"DROP TABLE `{X}`.{T}")
+
+        # row 5: X.T nowhere
+        _, err = node.query_and_get_answer_with_error(query, settings=on)
+        assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting on: {err}"
+        _, err = node.query_and_get_answer_with_error(query)
+        assert "UNKNOWN_TABLE" in err, f"X.T nowhere, setting off: {err}"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS `{X}`")
 
 
 def test_use_database_with_namespace(started_cluster):
@@ -2884,8 +2912,8 @@ def test_namespace_scope_rejects_ddl(started_cluster):
         node.query(f"DROP TABLE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
         assert node.query(f"EXISTS TABLE {full_name}").strip() == "0"
 
-        # A two-part CREATE under plain USE catalog must not silently create a dotted
-        # table when the qualifier is not a real database.
+        # A two-part CREATE keeps the database reading: no database `X` means
+        # `UNKNOWN_DATABASE`, the catalog namespace is never consulted.
         _, err = node.query_and_get_answer_with_error(
             f"USE {CATALOG_NAME}; CREATE TABLE {namespace}.{table_name} (x String) ENGINE = Memory",
             settings=ns_settings,
