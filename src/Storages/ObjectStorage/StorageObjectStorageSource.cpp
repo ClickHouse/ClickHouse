@@ -2478,6 +2478,12 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
         std::future<ClusterFunctionReadTaskResponsePtr> future;
         {
             std::lock_guard lock(prefetch_mutex);
+            if (!leftover_tasks.empty())
+            {
+                object_info = leftover_tasks.front();
+                leftover_tasks.pop_front();
+                return object_info;
+            }
             if (exhausted)
                 return nullptr;
             if (prefetched_tasks.empty())
@@ -2494,11 +2500,24 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 
         if (!task || task->isEmpty())
         {
+            /// The requests in flight are not answered in the order they were scheduled, so a request
+            /// scheduled after this one may have received the last task: collect them before giving up.
             std::lock_guard lock(prefetch_mutex);
+            while (!prefetched_tasks.empty())
+            {
+                auto other = prefetched_tasks.front().get();
+                prefetched_tasks.pop_front();
+                if (other && !other->isEmpty())
+                    leftover_tasks.push_back(other->getObjectInfo());
+            }
             exhausted = true;
-            return nullptr;
+            if (leftover_tasks.empty())
+                return nullptr;
+            object_info = leftover_tasks.front();
+            leftover_tasks.pop_front();
         }
-        object_info = task->getObjectInfo();
+        else
+            object_info = task->getObjectInfo();
     }
     else
     {

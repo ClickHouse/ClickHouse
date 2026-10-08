@@ -98,6 +98,7 @@ private:
 
     void initializeIfNeeded();
     std::shared_ptr<ParquetFileBucketInfo> buckets_to_read;
+    Parquet::RowGroupSelection rowGroupSelection() const;
 
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };

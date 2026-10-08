@@ -102,14 +102,7 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
-            Parquet::RowGroupSelection selection;
-            if (buckets_to_read)
-            {
-                if (!buckets_to_read->row_group_ids.empty())
-                    selection.row_group_ids.emplace(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
-                selection.byte_range = buckets_to_read->byte_range;
-            }
-            reader->init(parser_shared_resources, std::move(selection));
+            reader->init(parser_shared_resources, rowGroupSelection());
         }
     }
 }
@@ -142,8 +135,18 @@ Chunk ParquetV3BlockInputFormat::read()
         temp_prefetcher.init(in, read_options, parser_shared_resources);
         parquet::format::FileMetaData file_metadata = getFileMetadata(temp_prefetcher);
 
+        size_t num_rows = 0;
+        if (buckets_to_read)
+        {
+            const auto selection = rowGroupSelection();
+            for (size_t i = 0; i < file_metadata.row_groups.size(); ++i)
+                if (selection.contains(i, file_metadata.row_groups[i]))
+                    num_rows += size_t(std::max<Int64>(0, file_metadata.row_groups[i].num_rows));
+        }
+        else
+            num_rows = size_t(file_metadata.num_rows);
 
-        auto chunk = getChunkForCount(size_t(file_metadata.num_rows));
+        auto chunk = getChunkForCount(num_rows);
         chunk.getChunkInfos().add(std::make_shared<ChunkInfoRowNumbers>(0));
 
         reported_count = true;
@@ -206,6 +209,18 @@ bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
     /// The reader installs `__topKFilter` only for a file that stores the sort column.
     return reader && reader->reader.format_filter_info && reader->reader.format_filter_info->top_k_filter
         && reader->reader.top_k_column_is_read;
+}
+
+Parquet::RowGroupSelection ParquetV3BlockInputFormat::rowGroupSelection() const
+{
+    Parquet::RowGroupSelection selection;
+    if (buckets_to_read)
+    {
+        if (!buckets_to_read->row_group_ids.empty())
+            selection.row_group_ids.emplace(buckets_to_read->row_group_ids.begin(), buckets_to_read->row_group_ids.end());
+        selection.byte_range = buckets_to_read->byte_range;
+    }
+    return selection;
 }
 
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)

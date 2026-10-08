@@ -203,6 +203,7 @@ private:
     ThreadPoolCallbackRunnerUnsafe<ClusterFunctionReadTaskResponsePtr> prefetch_runner;
     std::mutex prefetch_mutex;
     std::deque<std::future<ClusterFunctionReadTaskResponsePtr>> prefetched_tasks TSA_GUARDED_BY(prefetch_mutex);
+    std::deque<ObjectInfoPtr> leftover_tasks TSA_GUARDED_BY(prefetch_mutex);
     bool exhausted TSA_GUARDED_BY(prefetch_mutex) = false;
     /// path_to_archive -> archive reader.
     std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;
