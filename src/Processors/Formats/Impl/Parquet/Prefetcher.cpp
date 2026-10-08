@@ -515,10 +515,8 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
     try
     {
         /// Reference the reader's data (page cache cells or a memory-mapped file) instead of copying it.
-        /// Decoders read up to PADDING_FOR_SIMD bytes on both sides of a range, as `task->buf` allows,
-        /// so a range closer than that to either end of the file is copied.
-        if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0
-            && task->offset >= PADDING_FOR_SIMD && task->offset + task->length + PADDING_FOR_SIMD <= file_size)
+        /// Decoders read up to PADDING_FOR_SIMD bytes on both sides of a range, as `task->buf` allows.
+        if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0)
         {
             if (mmap_reader && task->read_entirely)
                 mmap_reader->adviseWillNeed(task->offset, task->length);
@@ -531,7 +529,8 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected eof: offset {}, length {}, bytes read {}, expected file size {}",
                     task->offset, task->length, bytes_read, file_size);
 
-            if (cached_regions.size() == 1)
+            if (cached_regions.size() == 1 && cached_regions[0].readable_before >= PADDING_FOR_SIMD
+                && cached_regions[0].readable_after >= PADDING_FOR_SIMD)
             {
                 /// We got lucky and the Task's range is all in one cache cell. Zero-copy it.
                 auto & cr = cached_regions[0];
@@ -545,18 +544,15 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
             }
             else
             {
-                /// If the data spans multiple cache blocks, pre-assemble it into task->buf now
+                /// If the data spans multiple cache blocks or lacks the padding, pre-assemble it into task->buf now
                 /// (on the single-threaded producer side) to avoid a data race in getRangeData,
                 /// where multiple consumer threads could try to lazily populate task->buf concurrently.
-                if (cached_regions.size() > 1)
+                task->buf.resize(task->length);
+                size_t copied = 0;
+                for (const auto & region : cached_regions)
                 {
-                    task->buf.resize(task->length);
-                    size_t copied = 0;
-                    for (const auto & region : cached_regions)
-                    {
-                        memcpy(task->buf.data() + copied, region.data, region.size);
-                        copied += region.size;
-                    }
+                    memcpy(task->buf.data() + copied, region.data, region.size);
+                    copied += region.size;
                 }
             }
 

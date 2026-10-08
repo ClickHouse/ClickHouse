@@ -103,6 +103,9 @@ public:
         const char * data;
         size_t size;
         size_t file_offset;
+        /// Bytes that may be read before `data` and after `data + size`.
+        size_t readable_before = 0;
+        size_t readable_after = 0;
     };
 
     /// Like readBigAt, but instead of copying data into a caller-provided buffer, returns

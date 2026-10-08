@@ -144,7 +144,14 @@ VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> MMapReadBufferFromFil
     adviseWillNeedOnce(mapped.getFD(), mapped.getOffset() + offset, n);
 
     VectorWithMemoryTracking<CachedRegion> regions;
-    regions.push_back(CachedRegion{.handle = nullptr, .data = mapped.getData() + offset, .size = n, .file_offset = offset});
+    regions.push_back(CachedRegion{
+        .handle = nullptr,
+        .data = mapped.getData() + offset,
+        .size = n,
+        .file_offset = offset,
+        .readable_before = offset,
+        .readable_after = mapped.getLength() - offset - n,
+    });
     return regions;
 }
 
