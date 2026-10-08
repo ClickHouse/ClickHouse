@@ -12,6 +12,7 @@
 #include <Analyzer/TableNode.h>
 #include <Common/BSONCXXHelper.h>
 #include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/parseAddress.h>
 #include <Common/FieldVisitorToString.h>
@@ -54,6 +55,46 @@ MongoDBInstanceHolder & MongoDBInstanceHolder::instance()
 {
     static MongoDBInstanceHolder instance;
     return instance;
+}
+
+namespace
+{
+
+std::pair<LogsLevel, Poco::Message::Priority> toServerLogLevel(mongocxx::log_level level)
+{
+    switch (level)
+    {
+        case mongocxx::log_level::k_error:
+        case mongocxx::log_level::k_critical:
+            return {LogsLevel::error, Poco::Message::PRIO_ERROR};
+        case mongocxx::log_level::k_warning:
+            return {LogsLevel::warning, Poco::Message::PRIO_WARNING};
+        case mongocxx::log_level::k_message:
+        case mongocxx::log_level::k_info:
+            return {LogsLevel::information, Poco::Message::PRIO_INFORMATION};
+        case mongocxx::log_level::k_debug:
+            return {LogsLevel::debug, Poco::Message::PRIO_DEBUG};
+        case mongocxx::log_level::k_trace:
+            return {LogsLevel::trace, Poco::Message::PRIO_TRACE};
+    }
+}
+
+}
+
+void MongoDBLogger::operator()(
+    mongocxx::log_level level, bsoncxx::v1::stdx::string_view domain, bsoncxx::v1::stdx::string_view message) noexcept
+{
+    try
+    {
+        const auto [logs_level, priority] = toServerLogLevel(level);
+        LOG_IMPL(
+            log, logs_level, priority, "{}: {}",
+            std::string_view(domain.data(), domain.size()), std::string_view(message.data(), message.size()));
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 namespace ErrorCodes
