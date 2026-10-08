@@ -93,7 +93,10 @@ void PartMovesBetweenShardsOrchestrator::syncStateFromZK()
 
     auto zk = storage.getZooKeeper();
 
-    Strings task_names = zk->getChildren(entries_znode_path);
+    /// A replicated table whose Keeper tree is absent stays attached in read-only mode instead of
+    /// failing to attach, so it can have no task node at all, and then it has no moves to report.
+    Strings task_names;
+    zk->tryGetChildren(entries_znode_path, task_names);
     for (auto const & task_name : task_names)
     {
         PartMovesBetweenShardsOrchestrator::Entry e;

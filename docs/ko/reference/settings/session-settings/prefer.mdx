@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="prefer_column_name_to_alias">
-  ## prefer_column_name_to_alias
-</div>
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -26,6 +24,22 @@ import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnly
 
 * 0 — 컬럼명이 별칭으로 대체됩니다.
 * 1 — 컬럼명이 별칭으로 대체되지 않습니다.
+
+조인된 테이블 간에 컬럼명이 모호하고 동일한 이름의 별칭이 존재하는 경우, 별칭이 사용됩니다:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+여기서 `id AS x`의 `id`는 `t1`과 `t3` 양쪽 모두의 컬럼이므로, 별칭 `t1.id + 10`으로 해석됩니다.
 
 **예시**
 
@@ -60,9 +74,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-<div id="prefer_external_sort_block_bytes">
-  ## prefer_external_sort_block_bytes
-</div>
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -70,9 +82,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 외부 정렬 시 최대 블록 바이트를 우선 사용하여 병합 중 메모리 사용량을 줄입니다.
 
-<div id="prefer_global_in_and_join">
-  ## prefer_global_in_and_join
-</div>
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -95,9 +105,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * `GLOBAL IN`/`GLOBAL JOIN` 사용 방법에 대한 자세한 내용은 [Distributed subqueries](/ko/reference/statements/in#distributed-subqueries)를 참조하십시오
 
-<div id="prefer_localhost_replica">
-  ## prefer_localhost_replica
-</div>
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -114,9 +122,22 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   단일 세그먼트와 여러 레플리카가 있는 클러스터에서 이 설정을 비활성화하면 부정적인 영향이 발생합니다.
 </Note>
 
-<div id="prefer_warmed_unmerged_parts_seconds">
-  ## prefer_warmed_unmerged_parts_seconds
-</div>
+## prefer_optimize_projection {#prefer_optimize_projection}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "새로운 설정: `force_optimize_projection`처럼 예상 비용과 관계없이 사용할 수 있는 프로젝션을 선택하지만, 프로젝션을 사용하지 못해도 쿼리가 실패하지 않습니다."}]}]} />
+
+프로젝션 최적화가 활성화된 경우([optimize&#95;use&#95;projections](/ko/reference/settings/session-settings/optimize-use#optimize_use_projections) 설정 참조), `SELECT` 쿼리에서 테이블보다 [프로젝션](/ko/reference/engines/table-engines/mergetree-family/mergetree#projections)을 우선적으로 사용하도록 합니다.
+
+활성화하면 테이블 자체보다 더 많은 마크를 읽어야 하더라도 쿼리를 처리할 수 있는 프로젝션을 사용합니다. 이는 [force&#95;optimize&#95;projection](/ko/reference/settings/session-settings/force-optimize#force_optimize_projection)과 동일하지만, 사용할 수 있는 프로젝션이 없어도 쿼리가 실패하지 않습니다.
+
+가능한 값:
+
+* 0 — 예상 비용을 기준으로 프로젝션을 선택합니다.
+* 1 — 예상 비용과 관계없이 사용할 수 있는 프로젝션을 선택합니다.
+
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

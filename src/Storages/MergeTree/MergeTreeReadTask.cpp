@@ -28,34 +28,32 @@ namespace ErrorCodes
 namespace
 {
 
-/// Resolves the codec to use for estimating the compressed size of a whole column.
+/// Resolves the codecs to use for estimating the compressed size of a whole column.
 ///
 /// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
 /// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
-/// generic codecs and ignores the type entirely. The estimation this codec feeds serializes the whole
+/// generic codecs and ignores the type entirely. The estimation these codecs feed serializes the whole
 /// column into a single buffer, so a type-specific codec can only be used when the column consists of a
 /// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
 /// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
-/// structural substreams. Resolving a type-specific codec against a composite type is not just imprecise,
-/// it throws: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the factory.
-CompressionCodecPtr resolveCodecForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
+/// structural substreams.
+///
+/// Which of the two applies is not decided here - the metadata does not describe the sample on its own,
+/// so `estimateCompressedColumnSize` picks between them per block. Only the type-specific resolution has
+/// to happen here, because it can throw: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the
+/// factory, so it is attempted only for a type whose default serialization is a single stream of it.
+ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
 {
-    size_t num_streams = 0;
-    bool stream_is_column_itself = false;
-    description.type->getDefaultSerialization()->enumerateStreams(
-        [&](const auto & substream_path)
-        {
-            ++num_streams;
-            const auto & substream_type = substream_path.back().data.type;
-            stream_is_column_itself = ISerialization::isSpecialCompressionAllowed(substream_path) && substream_type
-                && substream_type->equals(*description.type);
-        },
-        description.type);
-
     auto & factory = CompressionCodecFactory::instance();
-    if (num_streams == 1 && stream_is_column_itself)
-        return factory.get(description.codec, description.type.get(), default_codec);
-    return factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
+    auto generic = factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
+
+    if (!isSerializedAsSingleStreamOfColumnType(*description.type->getDefaultSerialization(), description.type))
+        return {.generic = std::move(generic)};
+
+    return {
+        .type_specific = factory.get(description.codec, description.type.get(), default_codec),
+        .type_specific_for = description.type,
+        .generic = std::move(generic)};
 }
 
 }
@@ -116,6 +114,20 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
+void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
+{
+    main->updateReadRequestMap(request_map);
+
+    for (auto & reader : prewhere)
+        reader->updateReadRequestMap(request_map);
+
+    if (!patch_request_maps.empty() && patch_request_maps.size() != patches.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} patch request maps for {} patch readers", patch_request_maps.size(), patches.size());
+
+    for (size_t i = 0; i < patch_request_maps.size(); ++i)
+        patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
+}
+
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -147,7 +159,7 @@ MergeTreeReadTask::MergeTreeReadTask(
         {
             const auto * description = metadata_columns.tryGet(name);
             if (description && description->codec)
-                resolved_codecs.emplace(name, resolveCodecForWholeColumn(*description, default_codec));
+                resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
         }
 
         dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
@@ -231,7 +243,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    const MarkRangesPtr & read_request_map,
+    const std::vector<MarkRangesPtr> & patch_read_request_maps)
 {
     Readers new_readers;
 
@@ -245,6 +259,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             extras.reader_settings,
@@ -292,6 +307,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
             extras.reader_settings,
@@ -306,6 +322,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             create_patch_reader(i),
             extras.patch_join_cache));
     }
+
+    const auto & map = read_request_map ? read_request_map : read_info->read_request_map;
+    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
+    if (map || !patch_maps.empty())
+        new_readers.updateReadRequestMap(map, patch_maps);
 
     return new_readers;
 }

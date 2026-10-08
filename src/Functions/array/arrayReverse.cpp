@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -82,12 +83,20 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
         || executeNumber<UInt16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<UInt128>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<UInt256>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int8>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Int64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Int128>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Int256>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal32>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal128>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal256>(*src_inner_col, offsets, *res_inner_col)
         || executeString(*src_inner_col, offsets, *res_inner_col)
         || executeFixedString(*src_inner_col, offsets, *res_inner_col)
         || executeGeneric(*src_inner_col, offsets, *res_inner_col);
@@ -128,10 +137,12 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
 template <typename T>
 bool FunctionArrayReverse::executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
 {
-    if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
+    using ColVecType = ColumnVectorOrDecimal<T>;
+
+    if (const ColVecType * src_data_concrete = checkAndGetColumn<ColVecType>(&src_data))
     {
         const PaddedPODArray<T> & src_vec = src_data_concrete->getData();
-        PaddedPODArray<T> & res_vec = typeid_cast<ColumnVector<T> &>(res_data).getData();
+        PaddedPODArray<T> & res_vec = typeid_cast<ColVecType &>(res_data).getData();
         res_vec.resize(src_data.size());
 
         size_t size = src_offsets.size();
@@ -250,10 +261,10 @@ REGISTER_FUNCTION(ArrayReverse)
     FunctionDocumentation::Description description = R"(
 Reverses the order of elements of a given array.
 
-:::note
+<Note>
 Function `reverse(arr)` performs the same functionality but works on other data-types
 in addition to Arrays.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "arrayReverse(arr)";
     FunctionDocumentation::Arguments arguments = {

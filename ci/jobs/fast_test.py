@@ -2,6 +2,7 @@ import argparse
 import os
 import platform
 import sys
+import tempfile
 from pathlib import Path
 
 repo_path = Path(__file__).resolve().parent.parent.parent
@@ -137,14 +138,6 @@ class JobStages(metaclass=MetaClasses.WithIter):
     TEST = "test"
 
 
-def _load_darwin_skip_tests():
-    skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
-    return tuple(
-        line
-        for line in skip_file.read_text().splitlines()
-        if line.strip() and not line.lstrip().startswith("#"))
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
     parser.add_argument(
@@ -164,8 +157,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if platform.system() == "Darwin":
-        args.skip = list(_load_darwin_skip_tests()) + args.skip
     stop_watch = Utils.Stopwatch()
 
     stages = list(JobStages)
@@ -187,6 +178,11 @@ def main():
         Path(current_directory) / "clickhouse",
     ]:
         if path.is_file():
+            if platform.system() == "Darwin" and path == temp_dir / "clickhouse":
+                # The macOS self-extracting binary replaces itself in place, unlocked, on its first run.
+                private_path = Path(tempfile.mkdtemp(prefix="clickhouse-", dir=temp_dir)) / path.name
+                path.rename(private_path)
+                path = private_path
             clickhouse_bin_path = path
             print(f"NOTE: clickhouse binary is found [{clickhouse_bin_path}] - skip the build")
 
@@ -226,7 +222,7 @@ def main():
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
@@ -283,7 +279,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
-        Shell.check("sccache --show-stats")
+        Shell.check("sccache --show-stats", verbose=True)
         results.append(
             Result.from_commands_run(
                 name="Build ClickHouse",
@@ -291,8 +287,8 @@ def main():
                 " clickhouse-bundle clickhouse-stripped lexer_test",
             )
         )
-        Shell.check(f"{build_dir}/rust/chcache/chcache stats")
-        Shell.check("sccache --show-stats")
+        Shell.check(f"{build_dir}/rust/chcache/chcache stats", verbose=True)
+        Shell.check("sccache --show-stats", verbose=True)
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:

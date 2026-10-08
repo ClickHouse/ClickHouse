@@ -11,13 +11,13 @@ REGISTER_FUNCTION(RunningDifference)
 Calculates the difference between two consecutive row values in the data block.
 Returns `0` for the first row, and for subsequent rows the difference to the previous row.
 
-:::warning Deprecated
+<Warning title="Deprecated">
 Only returns differences inside the currently processed data block.
 Because of this error-prone behavior, the function is deprecated.
 It is advised to use [window functions](/reference/functions/window-functions) instead.
 
 You can use setting [`allow_deprecated_error_prone_window_functions`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) to allow usage of this function.
-:::
+</Warning>
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 The order of rows during calculation of `runningDifference()` can differ from the order of rows returned to the user.

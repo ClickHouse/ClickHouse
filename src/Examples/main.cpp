@@ -120,6 +120,7 @@ std::pair<std::string_view, MainFunc> examples[] =
     {"select_parser", mainEntryExampleSelectParser},
     {"create_parser", mainEntryExampleCreateParser},
     {"parser_memory_profiler", mainEntryExampleParserMemoryProfiler},
+    {"storage_memory_profiler", mainEntryExampleStorageMemoryProfiler},
     {"merge_selector", mainEntryExampleMergeSelector},
     {"merge_selector2", mainEntryExampleMergeSelector2},
     {"get_current_inserts_in_replicated", mainEntryExampleGetCurrentInsertsInReplicated},

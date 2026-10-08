@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- A read is priced on the rows the primary key keeps, not on the rows the filter keeps.
 -- `t_rc_dim` is filtered on `v`, which is not in the sorting key, so the scan covers the whole
 -- table although the estimate (from column statistics) is a few hundred rows. Without the
@@ -24,7 +21,6 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_optimize_join_order_algorithm = 'dpsize greedy';
 SET optimize_move_to_prewhere = 1;
 SET query_plan_merge_filters = 1;
-SET query_plan_optimize_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET allow_reorder_prewhere_conditions = 1;
 

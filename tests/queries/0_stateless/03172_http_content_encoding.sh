@@ -7,8 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # with progress
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&send_progress_in_http_headers=1&enable_http_compression=1&http_wait_end_of_query=0" -o /dev/null \
   -H 'Accept-Encoding: zstd' --compressed --data-binary @- <<< "select distinct sleep(.1),name from generateRandom('name String',1,1000,2) limit 100009 format TSV" 2>&1 \
-  | perl -lnE 'print if /Content-Encoding/';
+  | grep 'Content-Encoding';
 # no progress
 ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&send_progress_in_http_headers=0&enable_http_compression=1&http_wait_end_of_query=0" -o /dev/null \
   -H 'Accept-Encoding: zstd' --compressed --data-binary @- <<< "select distinct sleep(.1),name from generateRandom('name String',1,1000,2) limit 100009 format TSV" 2>&1 \
-  | perl -lnE 'print if /Content-Encoding/';
+  | grep 'Content-Encoding';

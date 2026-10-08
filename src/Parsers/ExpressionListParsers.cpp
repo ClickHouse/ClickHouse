@@ -36,8 +36,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <fmt/core.h>
 
@@ -905,7 +903,7 @@ protected:
     int state = 0;
 };
 
-/// Tweaks for better highlighting of LIKE and REGEXP functions.
+/// Tweaks for better highlighting of LIKE, SIMILAR TO and REGEXP functions.
 static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t depth)
 {
     static constexpr size_t max_depth = 1000;
@@ -927,11 +925,16 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
         return;
 
     bool is_like = false;
+    bool is_similar_to = false;
     bool is_regexp = false;
     if (func->name == "like" || func->name == "notLike"
         || func->name == "ilike" || func->name == "notILike")
     {
         is_like = true;
+    }
+    else if (func->name == "similarTo" || func->name == "notSimilarTo")
+    {
+        is_similar_to = true;
     }
     else if (func->name == "match" || func->name == "notMatch"
              || func->name == "matchCaseInsensitive" || func->name == "notMatchCaseInsensitive"
@@ -971,11 +974,11 @@ static void highlightRegexps(const ASTPtr & node, Expected & expected, size_t de
     if (!token_info)
         return;
 
-    chassert(is_like || is_regexp);
+    chassert(is_like || is_similar_to || is_regexp);
     expected.highlight({
        .begin = token_info->begin,
        .end = token_info->end,
-       .highlight = is_like ? Highlight::string_like : Highlight::string_regexp});
+       .highlight = is_like ? Highlight::string_like : (is_similar_to ? Highlight::string_similar_to : Highlight::string_regexp)});
 }
 
 struct ParserExpressionImpl
@@ -1529,6 +1532,8 @@ public:
         /// expr AS type
         if (state == 0)
         {
+            rememberLiteralArgument(pos);
+
             std::optional<String> type_text;
 
             if (as_keyword_parser.ignore(pos, expected))
@@ -1536,19 +1541,22 @@ public:
                 auto old_pos = pos;
 
                 if (ParserIdentifier().parse(pos, alias, expected) &&
-                    as_keyword_parser.ignore(pos, expected) &&
-                    (type_text = parseDataTypeAsText(pos, expected)) &&
-                    ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    as_keyword_parser.ignore(pos, expected))
                 {
-                    if (!insertAlias(alias))
-                        return false;
+                    type_text = parseDataTypeAsText(pos, expected);
+                    if (type_text &&
+                        ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+                    {
+                        if (!insertAlias(alias))
+                            return false;
 
-                    if (!mergeElement())
-                        return false;
+                        if (!mergeElement())
+                            return false;
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
-                    finished = true;
-                    return true;
+                        elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
+                        finished = true;
+                        return true;
+                    }
                 }
 
                 pos = old_pos;
@@ -1569,13 +1577,14 @@ public:
 
                 pos = old_pos;
 
-                if ((type_text = parseDataTypeAsText(pos, expected)) &&
+                type_text = parseDataTypeAsText(pos, expected);
+                if (type_text &&
                     ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
                 {
                     if (!mergeElement())
                         return false;
 
-                    elements = {createFunctionCast(elements[0], std::move(*type_text))};
+                    elements = {createFunctionCast(exactArgument(elements[0], *type_text, pos), std::move(*type_text))};
                     finished = true;
                     return true;
                 }
@@ -1604,13 +1613,56 @@ public:
                 if (elements.size() != 2)
                     return false;
 
-                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), elements[0], elements[1])};
+                ASTPtr argument = elements[0];
+
+                /// The functional form carries the type as an ordinary argument, so the type is only
+                /// known here when it is spelled out as a string.
+                if (const auto * type_literal = elements[1]->as<ASTLiteral>();
+                    type_literal && type_literal->value.getType() == Field::Types::String)
+                    argument = exactArgument(argument, type_literal->value.safeGet<String>(), pos);
+
+                elements = {makeASTFunction(toString(toStringView(Keyword::CAST)), std::move(argument), elements[1])};
                 finished = true;
                 return true;
             }
         }
 
         return true;
+    }
+
+private:
+    /// The first argument, when it is a literal, kept as text. `CAST(0.1 AS Decimal256(76))` is exact
+    /// because the `Decimal` reads those digits itself, instead of `0.1` being read as a `Float64`
+    /// and rounded on the way. Which types read the text this way is only known once the type has
+    /// been parsed, which is after the argument - hence keeping the text around.
+    std::optional<LiteralAsText> literal_argument;
+
+    /// Peeks at the first argument, without consuming it, before it is parsed as an expression. Only
+    /// a whole argument can be replaced by its text, so the literal has to be followed by the end of
+    /// the argument - the `AS` of `CAST(x AS T)` or of an alias, or the comma of `CAST(x, T)`.
+    void rememberLiteralArgument(IParser::Pos pos)
+    {
+        if (!elements.empty() || !isCurrentElementEmpty())
+            return;
+
+        LiteralAsText literal;
+        if (!parseLiteralAsText(pos, literal))
+            return;
+
+        /// An `Expected` of its own: this only looks ahead, and what it finds is not what the query
+        /// is expected to hold at that position.
+        Expected lookahead;
+        if (pos->type != TokenType::Comma && !ParserKeyword(Keyword::AS).checkWithoutMoving(pos, lookahead))
+            return;
+
+        literal_argument = std::move(literal);
+    }
+
+    /// `argument` put back as text, when it is a literal and the target type reads the text more
+    /// precisely - see `exactCastArgument`.
+    ASTPtr exactArgument(const ASTPtr & argument, const String & type_text, const IParser::Pos & pos) const
+    {
+        return exactCastArgument(argument, literal_argument, type_text, pos);
     }
 };
 
@@ -1696,7 +1748,7 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
 /// aliases that `parseIntervalKind` accepts as keywords for `EXTRACT`
 /// (plurals like `years`, `SQL_TSI_*` forms, and short forms like `yy`, `mm`,
 /// `ns`). Keep in sync with `parseIntervalKind.cpp`.
-static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind::Kind & result)
+static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind & result)
 {
     if (IntervalKind::tryParseString(unit_lower, result))
         return true;
@@ -1765,12 +1817,8 @@ static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, 
 static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
 {
     extract_unit = ExtractUnit::None;
-    IntervalKind::Kind kind{};
-    if (tryParseIntervalKindFromLowerString(unit_lower, kind))
-    {
-        interval_kind = IntervalKind{kind};
+    if (tryParseIntervalKindFromLowerString(unit_lower, interval_kind))
         return true;
-    }
 
     if (unit_lower == "epoch")
         extract_unit = ExtractUnit::Epoch;
@@ -2367,17 +2415,8 @@ public:
                 if (!mergeElement())
                     return false;
 
-                /// Trimming an empty string is a no-op. (shortcut that works when we supply an empty string as the first argument)
-                ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
-                if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
-                {
-                    noop = true;
-                }
-                else
-                {
-                    to_remove = std::move(elements[0]);
-                    elements.clear();
-                }
+                to_remove = std::move(elements[0]);
+                elements.clear();
 
                 state = 2;
             }
@@ -2396,10 +2435,6 @@ public:
                 if (!mergeElement())
                     return false;
 
-                if (noop)
-                {
-                    /// The operation does nothing.
-                }
                 if (trim_left && trim_right)
                     function_name = "trimBoth";
                 else if (trim_left)
@@ -2421,10 +2456,7 @@ public:
 protected:
     bool getResultImpl(ASTPtr & node) override
     {
-        if (noop)
-            node = std::move(elements.at(1));
-        else
-            node = makeASTFunction(function_name, std::move(elements));
+        node = makeASTFunction(function_name, std::move(elements));
         return true;
     }
 
@@ -2432,7 +2464,6 @@ private:
     bool trim_left;
     bool trim_right;
     bool char_override = false;
-    bool noop = false;
 
     ASTPtr to_remove;
     String function_name;
@@ -2629,9 +2660,9 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         return {group.begin() + from_idx, group.begin() + to_idx + 1};
     };
 
-    auto range = extract_range(year_month_group, from_kind.kind, to_kind.kind);
+    auto range = extract_range(year_month_group, from_kind, to_kind);
     if (range.empty())
-        range = extract_range(day_time_group, from_kind.kind, to_kind.kind);
+        range = extract_range(day_time_group, from_kind, to_kind);
     if (range.empty())
         return {};
 
@@ -3286,6 +3317,7 @@ bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    /// Callers downcast the result without checking, so a layer must build a function, never reduce to an operand.
     ASTPtr identifier;
 
     if (ParserFunctionName().parse(pos, identifier, expected)
@@ -3359,6 +3391,8 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
+    {toStringView(Keyword::SIMILAR_TO),    Operator("similarTo",       9,  2)},
+    {toStringView(Keyword::NOT_SIMILAR_TO),Operator("notSimilarTo",    9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
@@ -3508,20 +3542,68 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 /// `OperatorType::None`). These are routed only through the `arrayExists`/`arrayAll` lambda
 /// form, never the subquery -> `IN` rewrite, which has no meaning for them.
 ///
-/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
-/// included: `MatchImpl` supports a constant haystack with a non-constant needle, so
-/// `'abc' LIKE SOME(['a%', 'b%'])` rewrites to `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])`
-/// and evaluates without throwing. Keep this in sync with the operator documentation for the
-/// array quantifier.
+/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`,
+/// `SIMILAR TO`, `NOT SIMILAR TO`) are included: `MatchImpl` supports a constant haystack with a
+/// non-constant needle (`constantVector`), so `'abc' LIKE SOME(['a%', 'b%'])` rewrites to
+/// `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])` and evaluates without throwing. Keep this in
+/// sync with the operator documentation for the array quantifier.
 static bool isArrayQuantifierPredicate(std::string_view function_name)
 {
     static const std::unordered_set<std::string_view> predicates
     {
         "isDistinctFrom", "isNotDistinctFrom",
         "like", "ilike", "notLike", "notILike",
-        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
+        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive",
+        "similarTo", "notSimilarTo"
     };
     return predicates.contains(function_name);
+}
+
+/// Predicates that accept a trailing `ESCAPE 'char'` clause: `LIKE` and `SIMILAR TO`
+/// with their case-insensitive and negated variants.
+static bool isEscapeSupportingPredicate(std::string_view function_name)
+{
+    return function_name == "like" || function_name == "ilike"
+        || function_name == "notLike" || function_name == "notILike"
+        || function_name == "similarTo" || function_name == "notSimilarTo";
+}
+
+/// See the declaration for the ambiguity this resolves. The word is read as a column only when an
+/// operator follows it, because otherwise it is the clause keyword in front of a table expression and
+/// the subquery reading is the only one: `(FROM t)`, `(FROM numbers(10) |> LIMIT 1)`,
+/// `(FROM (SELECT 1))`. Even then the reading is taken only if the parentheses really do hold an
+/// expression, which keeps a relation named after an operator readable as one: `1 IN (FROM in)`.
+bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
+{
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    /// A clause keyword is always a BareWord token, so a quoted `` `from` `` never starts a FROM clause.
+    auto contents_pos = pos;
+    if (pos->type != TokenType::BareWord || !equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from"))
+        return false;
+    ++pos;
+
+    Expected expected;
+    bool operator_follows = false;
+    for (const auto & [lexeme, unused_operator] : ParserExpressionImpl::operators_table)
+    {
+        auto operator_pos = pos;
+        if (parseOperator(operator_pos, lexeme, expected))
+        {
+            operator_follows = true;
+            break;
+        }
+    }
+
+    if (!operator_follows)
+        return false;
+
+    /// The contents can also be a tuple or carry an alias, so parse them the way RoundBracketsLayer does.
+    ASTPtr contents;
+    ParserExpressionList contents_parser(/*allow_alias_without_as_keyword*/ false);
+    return contents_parser.parse(contents_pos, contents, expected) && contents_pos->type == TokenType::ClosingRoundBracket;
 }
 
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
@@ -3572,9 +3654,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     const auto * prev_operator = layers.back()->previousOperator();
     const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
     /// The keyword comparison predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` and the
-    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` are not
-    /// tagged `OperatorType::Comparison`. They are valid on the left of the array form of
-    /// `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
+    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` /
+    /// `SIMILAR TO` / `NOT SIMILAR TO` are not tagged `OperatorType::Comparison`. They are valid
+    /// on the left of the array form of `SOME`/`ALL`, but not of the subquery form (lowered to
+    /// `IN`/`NOT IN`).
     const bool prev_is_array_predicate
         = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
 
@@ -3594,7 +3677,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
         /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
         /// `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`,
-        /// `NOT LIKE`, `NOT ILIKE`, and `REGEXP`, which only go through the lambda form.
+        /// `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO`, and `NOT SIMILAR TO`, which only go
+        /// through the lambda form.
         /// `ANY` is excluded from the array form because `any` is also an aggregate
         /// function, so `expr = any(x)` must keep its function-call meaning.
         const bool any_kw = any_parser.ignore(pos, expected);
@@ -3699,7 +3783,29 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
                     for (size_t suffix = 1; used_identifiers.contains(lambda_var); ++suffix)
                         lambda_var = "_a" + std::to_string(suffix);
 
-                    auto body = makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
+                    /// `LIKE` / `SIMILAR TO` (and their variants) accept a trailing `ESCAPE 'char'`
+                    /// clause after the array quantifier: `expr SIMILAR TO SOME(arr) ESCAPE '#'`.
+                    /// It must be consumed here, before the predicate is lowered into the lambda,
+                    /// because afterwards no `LIKE`-family operator remains on the operator stack
+                    /// for the `ESCAPE` handler in `tryParseOperator` to attach to. The escape
+                    /// literal becomes the third argument of the lambda body, mirroring the direct
+                    /// (non-quantified) form.
+                    ASTPtr escape_ast;
+                    if (isEscapeSupportingPredicate(prev_op.function_name))
+                    {
+                        Expected escape_stub;
+                        if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, escape_stub))
+                        {
+                            auto escape_pos = pos;
+                            ParserKeyword(Keyword::ESCAPE).ignore(pos, expected);
+                            if (!ParserStringLiteral().parse(pos, escape_ast, expected))
+                                pos = escape_pos;
+                        }
+                    }
+
+                    auto body = escape_ast
+                        ? makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var), escape_ast)
+                        : makeASTOperator(prev_op.function_name, argument, make_intrusive<ASTIdentifier>(lambda_var));
                     auto lambda = makeASTLambda({lambda_var}, std::move(body));
                     const char * fn_name = some_kw ? "arrayExists" : "arrayAll";
                     function = makeASTFunction(fn_name, std::move(lambda), tmp);
@@ -3827,12 +3933,12 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     if (ParserKeyword(Keyword::IN_PARTITION).checkWithoutMoving(pos, stub))
         return Action::NONE;
 
-    /// 'ESCAPE' can follow a LIKE expression: expr LIKE pattern ESCAPE char
+    /// 'ESCAPE' can follow a LIKE or SIMILAR TO expression: expr LIKE pattern ESCAPE char
     if (ParserKeyword(Keyword::ESCAPE).checkWithoutMoving(pos, stub))
     {
         /// The pattern may use operators with priority strictly higher than `LIKE` (e.g.
         /// `LIKE 'a' || 'b' ESCAPE '#'`). Fold those first so the top of the operator
-        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE` itself.
+        /// stack becomes the `LIKE`/`ILIKE`/`NOT LIKE`/`NOT ILIKE`/`SIMILAR TO`/`NOT SIMILAR TO` itself.
         constexpr int like_priority = 9;
         while (layers.back()->previousPriority() > like_priority)
         {
@@ -3852,11 +3958,10 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         Operator top_op;
         bool popped = layers.back()->popOperator(top_op);
 
-        bool is_like = popped
-            && (top_op.function_name == "like" || top_op.function_name == "ilike"
-                || top_op.function_name == "notLike" || top_op.function_name == "notILike");
+        /// LIKE and SIMILAR TO both accept a trailing `ESCAPE 'char'` clause.
+        bool supports_escape = popped && isEscapeSupportingPredicate(top_op.function_name);
 
-        if (is_like)
+        if (supports_escape)
         {
             auto saved_pos = pos;
 
@@ -4082,6 +4187,14 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (!type_text)
             return Action::NONE;
 
+        /// Nothing binds tighter than `::`, so its operand is complete: when it is a literal the
+        /// type reads more precisely as text - `(0.1)::Decimal256(76)`, `0xFF::UInt128` - it goes
+        /// as text, the way `ParserCastOperator` sends a literal written plainly.
+        ASTPtr argument;
+        if (!layers.back()->popOperand(argument))
+            return Action::NONE;
+        layers.back()->pushOperand(exactCastArgument(argument, std::nullopt, *type_text, pos));
+
         layers.back()->pushOperand(make_intrusive<ASTLiteral>(std::move(*type_text)));
         return Action::OPERATOR;
     }
@@ -4095,14 +4208,11 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
     return Action::OPERAND;
 }
 
-}
-
-namespace DB
+std::map<String, Documentation> ParserExpression::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementIn(StatementFactory & factory)
-{
-    factory.registerStatement("IN",
+    documentation["IN"] =
     {
         .description = R"DOCS_MD(
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
@@ -4409,7 +4519,9 @@ expr IN table | (subquery) | table_function(...)
 expr [GLOBAL] [NOT] IN ...
 )",
         .related = {"SELECT", "WHERE", "JOIN", "INTERSECT"},
-    });
+    };
+
+    return documentation;
 }
 
 }
