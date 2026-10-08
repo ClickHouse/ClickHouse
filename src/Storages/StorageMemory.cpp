@@ -271,9 +271,12 @@ std::optional<UInt128> StorageMemory::getModificationHash(const StorageSnapshotP
     /// captured atomically together with the blocks by the snapshot (see getStorageSnapshot). This is a
     /// true monotonic version, so different data always produces a different hash (unlike the row count or
     /// the address of the `Blocks` vector, which can repeat after TRUNCATE or allocator reuse). The version
-    /// resets to 0 on restart, which only causes a harmless cache miss.
+    /// resets to 0 on restart, so it is paired with the random `data_version_nonce` of this storage object.
     if (const auto * snapshot_data = dynamic_cast<const SnapshotData *>(storage_snapshot->data.get()))
+    {
+        hash.update(data_version_nonce);
         hash.update(snapshot_data->data_version);
+    }
 
     return hash.get128();
 }

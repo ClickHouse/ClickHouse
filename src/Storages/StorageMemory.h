@@ -10,6 +10,7 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 
 #include <Common/MultiVersion.h>
+#include <Common/randomSeed.h>
 
 namespace DB
 {
@@ -193,6 +194,12 @@ private:
     /// `getStorageSnapshot` observes a consistent state from one atomic `data.get()` without holding
     /// `mutex` (locking it there deadlocks the mutation read path, which itself calls `getStorageSnapshot`).
     MultiVersion<BlocksWithCounts> data;
+
+    /// Random per storage object, folded into `getModificationHash` next to the `data` version. The table UUID
+    /// survives a server restart but the `data` version starts from 0 again, and the on-disk query result cache
+    /// keeps its entries across restarts; without this, the first post-restart writes could reproduce a
+    /// hash of the previous server lifetime and hit a stale on-disk entry.
+    const UInt64 data_version_nonce = randomSeed();
 
     mutable std::mutex mutex;
 
