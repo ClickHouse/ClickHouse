@@ -918,6 +918,17 @@ public:
         const MutableDataPartsVector & added_parts,
         const std::optional<MergeTreePartInfo> & drop_range) const;
 
+    /// For a table created with `CREATE TEMPORARY TABLE`, throws if adding 'added_parts' and removing the active parts
+    /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
+    /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
+    /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
+    /// `MOVE PARTITION TO TABLE` and `CREATE TEMPORARY TABLE ... CLONE AS`.
+    void throwIfTemporaryTableSizeLimitsExceededForReplacement(
+        const ContextPtr & query_context,
+        const DataPartsLock & parts_lock,
+        const MutableDataPartsVector & added_parts,
+        const std::optional<MergeTreePartInfo> & drop_range) const;
+
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
@@ -1470,11 +1481,18 @@ public:
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
 
     /// `metadata_snapshot` must come from the source part being covered
-    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
+    /// (via `getMetadataSnapshotForEmptyPart`) so patch parts get patch-part metadata.
     /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
     /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
     /// With `precommit_storage = false` the returned part's storage transaction is still open, so
     /// the caller can add files to the part; it then owns the `precommitTransaction()` that seals it.
+    /// Metadata for an empty part that covers or replaces `source_part`. For a patch part it is the
+    /// synthetic patch-part metadata stamped with the metadata version of `source_part`: the synthetic
+    /// metadata alone carries version 0, and an empty patch at version 0 would drag the version of every
+    /// patch merged with it down to 0, so a pending `RENAME COLUMN` would be applied to the merged patch
+    /// on read again.
+    static StorageMetadataPtr getMetadataSnapshotForEmptyPart(const IMergeTreeDataPart & source_part);
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
