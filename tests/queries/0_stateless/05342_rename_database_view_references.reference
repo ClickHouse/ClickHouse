@@ -53,6 +53,11 @@ a database name contains a dot
 -- column expressions and the dictionary() table function
 NOT_IMPLEMENTED
 1
+NOT_IMPLEMENTED
+1
+NOT_IMPLEMENTED
+1
+INCOMPATIBLE_SCHEMA
 one
 one
 occurrences of the old name: 0

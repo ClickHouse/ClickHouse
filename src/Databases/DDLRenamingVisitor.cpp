@@ -250,7 +250,7 @@ namespace
 
     /// Replaces a qualified table name in a specified function's argument.
     /// It can be either a string or an identifier with a dot in the middle.
-    void replaceTableNameInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx)
+    void replaceTableNameInArgument(const ASTFunction & function, const DDLRenamingVisitor::Data & data, size_t arg_idx, bool accept_string = true)
     {
         /// Just ignore incorrect arguments, proper exception will be thrown later
         if (!function.arguments || function.arguments->children.size() <= arg_idx)
@@ -259,7 +259,7 @@ namespace
         auto & arg = function.arguments->as<ASTExpressionList>()->children[arg_idx];
         if (auto * literal = arg->as<ASTLiteral>())
         {
-            if (literal->value.getType() != Field::Types::String)
+            if (!accept_string || literal->value.getType() != Field::Types::String)
                 return;
 
             auto maybe_qualified_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
@@ -343,7 +343,8 @@ namespace
     {
         if (auto table_name_argument = getTableNameArgumentIndex(function))
         {
-            replaceTableNameInArgument(function, data, *table_name_argument);
+            /// A string on the right side of `IN` is a value, not a table name.
+            replaceTableNameInArgument(function, data, *table_name_argument, /*accept_string=*/ !functionIsInOrGlobalInOperator(function.name));
         }
         else if (function.name == "merge")
         {

@@ -70,7 +70,7 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE MATERIALIZED VIEW ${EXT}.rmv REFRESH EVERY 1 YEAR DEPENDS ON ${SRC}.dep TO ${EXT}.rt EMPTY AS SELECT a FROM ${EXT}.s;
 
     CREATE VIEW ${SRC}.unrelated_v AS SELECT a FROM ${EXT}.s;
-    CREATE VIEW ${EXT}.unrelated_v AS SELECT a FROM ${EXT}.s;
+    CREATE VIEW ${EXT}.unrelated_v AS SELECT a FROM ${EXT}.s WHERE '${SRC}.sample' IN '${SRC}.sample';
 "
 
 # TimeSeries targets, adapted from #110982.
@@ -188,7 +188,22 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW ${DICT_A}.inner_mv (a UInt64, d String DEFAULT dictGet('${DICT_A}.dict', 'v', a)) ENGINE = MergeTree ORDER BY a AS SELECT a FROM ${DICT_A}.t"
 ${CLICKHOUSE_CLIENT} --check_table_dependencies=0 -q "RENAME DATABASE ${DICT_A} TO ${DICT_B}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DICT_A}"
+INNER=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DICT_A}' AND name LIKE '.inner_id.%'")
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${DICT_A}.\`${INNER}\` PERMANENTLY"
+${CLICKHOUSE_CLIENT} --check_table_dependencies=0 -q "RENAME DATABASE ${DICT_A} TO ${DICT_B}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DICT_A}"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${DICT_A}.\`${INNER}\`"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DICT_A}.inner_mv SYNC"
+${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DICT_A}.inner_ts ENGINE = TimeSeries TAGS INNER COLUMNS (id UInt64 DEFAULT toUInt64OrZero(dictGet('${DICT_A}.dict', 'v', sipHash64(metric_name))))"
+${CLICKHOUSE_CLIENT} --check_table_dependencies=0 -q "RENAME DATABASE ${DICT_A} TO ${DICT_B}" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
+${CLICKHOUSE_CLIENT} -q "EXISTS DATABASE ${DICT_A}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${DICT_A}.inner_ts SYNC"
+# A TimeSeries table of a newer version must not be altered.
+uuid=$(${CLICKHOUSE_CLIENT} -q "SELECT generateUUIDv4()")
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${DICT_A}.samples (id UInt64, timestamp DateTime64(3), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)"
+${CLICKHOUSE_CLIENT} --send_logs_level=fatal --allow_experimental_time_series_table=1 -q "ATTACH TABLE ${EXT}.ts_future UUID '${uuid}' (metric_name String) ENGINE = TimeSeries SETTINGS version = 999 SAMPLES ${DICT_A}.samples"
+${CLICKHOUSE_CLIENT} --check_table_dependencies=0 -q "RENAME DATABASE ${DICT_A} TO ${DICT_B}" 2>&1 | grep -o -m1 "INCOMPATIBLE_SCHEMA"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${EXT}.ts_future SYNC"
 # The dictionary has dependents, which the default check refuses to rename.
 ${CLICKHOUSE_CLIENT} --check_table_dependencies=0 -q "RENAME DATABASE ${DICT_A} TO ${DICT_B}"
 ${CLICKHOUSE_CLIENT} -q "SELECT d FROM ${DICT_B}.cv; SELECT v FROM ${DICT_B}.dict_v"

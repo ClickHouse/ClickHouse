@@ -1,3 +1,4 @@
+#include <Backups/BackupUtils.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Databases/DatabaseOnDisk.h>
@@ -11,6 +12,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -45,22 +47,22 @@ namespace ErrorCodes
 namespace
 {
 
-/// The names of the tables that `table` created and owns, whose definitions are derived from its own.
-Strings getInnerTableNames(const IStorage & table, const ContextPtr & context)
+/// The attached tables that `table` created and owns, whose definitions are derived from its own.
+std::vector<StoragePtr> getInnerTables(const IStorage & table, const ContextPtr & context)
 {
-    Strings res;
+    std::vector<StoragePtr> res;
     if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(&table))
     {
         if (materialized_view->hasInnerTable())
             if (auto inner_table = materialized_view->tryGetTargetTable())
-                res.push_back(inner_table->getStorageID().table_name);
+                res.push_back(inner_table);
     }
     else if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(&table))
     {
         for (auto kind : StorageTimeSeries::getTargetKinds())
             if (time_series->hasTarget(kind) && time_series->isInnerTable(kind))
                 if (auto inner_table = time_series->tryGetTargetTable(kind, context))
-                    res.push_back(inner_table->getStorageID().table_name);
+                    res.push_back(inner_table);
     }
     return res;
 }
@@ -172,7 +174,8 @@ void ViewDefinitionsRenaming::checkDetachedTables() const
                 continue;
 
             const auto & create = definition->as<ASTCreateQuery &>();
-            if ((create.isView() || create.is_time_series_table) && rename(definition, {database_name, it->table()}, nullptr))
+            if ((create.isView() || create.is_time_series_table || BackupUtils::isInnerTable(database_name, it->table()))
+                && rename(definition, {database_name, it->table()}, nullptr))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Cannot rename database {} to {}, because the detached table {}.{} refers to it. Attach or drop it before renaming",
                     backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), backQuoteIfNeed(database_name), backQuoteIfNeed(it->table()));
@@ -208,7 +211,11 @@ void ViewDefinitionsRenaming::prepare()
         };
 
         for (const auto & view : views)
+        {
             guard(view.table);
+            for (const auto & inner_table : getInnerTables(*view.table, context))
+                guard(inner_table);
+        }
         for (const auto & name : tables_to_check)
             if (auto table = catalog.tryGetTable(StorageID{name.database, name.table}, context))
                 guard(table);
@@ -237,6 +244,9 @@ void ViewDefinitionsRenaming::stage()
         if (!view.definition)
             continue;
 
+        if (const auto * time_series = typeid_cast<const StorageTimeSeries *>(view.table.get()))
+            checkTimeSeriesVersionIsSupported(*time_series);
+
         auto metadata = view.table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ true);
         DatabaseRenamingInViewDefinition(definition->clone(), old_database_name, new_database_name, view.name)
             .check(metadata->getColumns(), context);
@@ -254,8 +264,9 @@ void ViewDefinitionsRenaming::stage()
                 "Drop it or rewrite it before renaming",
                 backQuoteIfNeed(old_database_name), backQuoteIfNeed(new_database_name), view.name.getFullName(), view.owner->getEngineName());
 
-        for (const auto & inner_table_name : getInnerTableNames(*view.table, context))
+        for (const auto & inner_table : getInnerTables(*view.table, context))
         {
+            auto inner_table_name = inner_table->getStorageID().table_name;
             auto inner_definition = view.owner->tryGetCreateTableQuery(inner_table_name, context);
             if (inner_definition && rename(inner_definition, {view.name.database, inner_table_name}, nullptr))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
