@@ -128,11 +128,11 @@ size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx)
 /// merges the key columns of all source parts together, and its vertical stage then gathers the other
 /// columns one column at a time - so the peak is the horizontal stage. This mirrors the key columns of
 /// `MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns` as far as the table
-/// metadata can tell: the sorting key, the columns the merging mode needs, the columns of the min-max index
-/// (in case the merge has to recompute it), the columns of multi-column skip indexes and, when the merge
-/// removes expired values (`removes_expired_values`), the columns of the TTL expressions. The columns of the
-/// projections the merge rebuilds depend on the range and are added per range, see
-/// `getColumnsOfProjectionsRebuiltByMerge`. The remaining columns are the ones the vertical stage gathers. Over-counting here is harmless - it prices a vertical merge a little higher and
+/// metadata can tell: the sorting key, the columns the merging mode needs, the columns of multi-column skip
+/// indexes and, when the merge removes expired values (`removes_expired_values`), the columns of the TTL
+/// expressions. The columns of the min-max index and of the projections the merge rebuilds depend on the range
+/// and are added per range, see `getMinMaxIndexColumns` and `getColumnsOfProjectionsRebuiltByMerge`. The
+/// remaining columns are the ones the vertical stage gathers. Over-counting here is harmless - it prices a vertical merge a little higher and
 /// predicts vertical merges a little less often - so the count leans that way whenever the exact set
 /// depends on the parts and not on the table.
 NameSet getColumnsMergedOnHorizontalStageOfVerticalMergeSet(const ChooseContext & ctx, bool removes_expired_values)
@@ -142,15 +142,6 @@ NameSet getColumnsMergedOnHorizontalStageOfVerticalMergeSet(const ChooseContext 
 
     NameSet key_columns;
     key_columns.insert_range(metadata.getColumnsRequiredForSortingKey());
-    key_columns.insert_range(metadata.getColumnsRequiredForPartitionKey());
-
-    /// With `part_minmax_index_columns = 'with_block_number_offset'` the min-max index a merge recomputes
-    /// also covers `_block_number` and `_block_offset`, see `MergeTreeData::getMinMaxColumns`.
-    if (ctx.merge_tree_settings[MergeTreeSetting::part_minmax_index_columns] >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
-    {
-        key_columns.insert(BlockNumberColumn::name);
-        key_columns.insert(BlockOffsetColumn::name);
-    }
 
     if (!params.sign_column.empty())
         key_columns.insert(params.sign_column);
@@ -193,6 +184,25 @@ NameSet getColumnsMergedOnHorizontalStageOfVerticalMergeSet(const ChooseContext 
         add_ttl_expression_columns(recompression_ttl);
 
     return key_columns;
+}
+
+/// The columns of the min-max index, which a vertical merge recomputes on its horizontal stage when the merge
+/// may reduce rows (see `rangeMayReduceRows`) and otherwise merges from the indexes of the source parts, see
+/// `MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns`.
+NameSet getMinMaxIndexColumns(const ChooseContext & ctx)
+{
+    NameSet columns;
+    columns.insert_range(ctx.metadata_snapshot.getColumnsRequiredForPartitionKey());
+
+    /// With `part_minmax_index_columns = 'with_block_number_offset'` the min-max index a merge recomputes
+    /// also covers `_block_number` and `_block_offset`, see `MergeTreeData::getMinMaxColumns`.
+    if (ctx.merge_tree_settings[MergeTreeSetting::part_minmax_index_columns] >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
+    {
+        columns.insert(BlockNumberColumn::name);
+        columns.insert(BlockOffsetColumn::name);
+    }
+
+    return columns;
 }
 
 /// Whether the table can merge vertically at all when the horizontal stage merges `key_columns` (see
@@ -357,13 +367,27 @@ bool predictVerticalMerge(const ChooseContext & ctx, PartsRangeView range, bool 
         && sum_bytes >= settings[MergeTreeSetting::vertical_merge_algorithm_min_bytes_to_activate];
 }
 
+/// Whether a merge of `range` may reduce rows, following how `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare`
+/// sets `merge_may_reduce_rows`. Deduplication and cleanup are requested only by `OPTIMIZE` and are not known here.
+bool rangeMayReduceRows(const ChooseContext & ctx, PartsRangeView range, bool removes_expired_values)
+{
+    if (removes_expired_values || ctx.merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+        return true;
+    for (const auto & part : range)
+        if (part.has_lightweight_delete)
+            return true;
+    return ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge]
+        && !ctx.predicate.getPatchesToApplyOnMerge(PartsRange(range.begin(), range.end())).empty();
+}
+
 /// The columns of the projections that a merge of `range` rebuilds on its horizontal stage, following
 /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`. A projection that every
 /// source part already has is, in the common case, merged from the projection parts of the sources after the
 /// parent merge and does not add its columns to the horizontal stage. Like the rest of the estimate, this leans
 /// towards over-counting where the exact answer depends on more than the part properties: any column TTL over
-/// a column of a projection is taken as expiring it.
-NameSet getColumnsOfProjectionsRebuiltByMerge(const ChooseContext & ctx, PartsRangeView range, bool removes_expired_values)
+/// a column of a projection is taken as expiring it, and so is a column absent from every source part (see
+/// `PartProperties::absent_projection_source_columns`). `may_reduce_rows` is `rangeMayReduceRows` of the range.
+NameSet getColumnsOfProjectionsRebuiltByMerge(const ChooseContext & ctx, PartsRangeView range, bool removes_expired_values, bool may_reduce_rows)
 {
     NameSet columns;
     const auto & metadata = ctx.metadata_snapshot;
@@ -379,14 +403,13 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(const ChooseContext & ctx, PartsRa
     if (!ordinary && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::DROP))
         return columns;
 
-    /// See how `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare` sets `merge_may_reduce_rows`.
-    bool may_reduce_rows = removes_expired_values || !ordinary;
-    for (const auto & part : range)
-        may_reduce_rows = may_reduce_rows || part.has_lightweight_delete;
-    if (!may_reduce_rows && settings[MergeTreeSetting::apply_patches_on_merge])
-        may_reduce_rows = !ctx.predicate.getPatchesToApplyOnMerge(PartsRange(range.begin(), range.end())).empty();
-
     const auto & column_ttls = metadata.getColumnTTLs();
+
+    /// A column is expired by the merge when it is absent from every source part.
+    auto is_absent_from_all_parts = [&](const String & name)
+    {
+        return std::all_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.absent_projection_source_columns.contains(name); });
+    };
 
     for (const auto & projection : projections)
     {
@@ -398,6 +421,9 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(const ChooseContext & ctx, PartsRa
             rebuild = true;
         else if (removes_expired_values && mode != DeduplicateMergeProjectionMode::IGNORE
             && std::any_of(required_columns.begin(), required_columns.end(), [&](const String & name) { return column_ttls.contains(name); }))
+            rebuild = true;
+        else if (mode != DeduplicateMergeProjectionMode::IGNORE && !range.empty()
+            && std::any_of(required_columns.begin(), required_columns.end(), is_absent_from_all_parts))
             rebuild = true;
         else if (mode != DeduplicateMergeProjectionMode::IGNORE
             && std::any_of(range.begin(), range.end(), [&](const PartProperties & part) { return part.projections_missing_columns.contains(projection.name); }))
@@ -432,7 +458,8 @@ size_t getAffordablePartsToMergeVertically(const ChooseContext & ctx, const Name
 /// horizontal ones - whose fixed cost is the very thing this estimate is about. Whether the columns of the
 /// TTL expressions are merged on the horizontal stage depends on whether the range removes expired values,
 /// so the cap of a vertical merge is taken per range from one of two precomputed values, and lowered further
-/// for a range that rebuilds projections, whose columns are merged on the horizontal stage as well.
+/// for a range that recomputes the min-max index or rebuilds projections, whose columns are merged on the
+/// horizontal stage as well.
 /// Returns the caller's filter unchanged when there is nothing to cap.
 IMergeSelector::RangeFilter capRangesByAffordableMemory(const ChooseContext & ctx, const IMergeSelector::RangeFilter & range_filter)
 {
@@ -440,6 +467,7 @@ IMergeSelector::RangeFilter capRangesByAffordableMemory(const ChooseContext & ct
     if (affordable_horizontal == 0)
         return range_filter;
 
+    NameSet table_minmax_index_columns = getMinMaxIndexColumns(ctx);
     NameSet table_key_columns = getColumnsMergedOnHorizontalStageOfVerticalMergeSet(ctx, false);
     NameSet table_key_columns_removing_expired_values = getColumnsMergedOnHorizontalStageOfVerticalMergeSet(ctx, true);
     const size_t affordable_vertical = getAffordablePartsToMergeVertically(ctx, table_key_columns, affordable_horizontal);
@@ -451,6 +479,7 @@ IMergeSelector::RangeFilter capRangesByAffordableMemory(const ChooseContext & ct
             affordable_horizontal,
             key_columns = std::move(table_key_columns),
             key_columns_removing_expired_values = std::move(table_key_columns_removing_expired_values),
+            minmax_index_columns = std::move(table_minmax_index_columns),
             affordable_vertical,
             affordable_vertical_removing_expired_values](PartsRangeView range)
     {
@@ -459,16 +488,20 @@ IMergeSelector::RangeFilter capRangesByAffordableMemory(const ChooseContext & ct
         if (range.size() <= affordable_horizontal)
             return true;
         const bool removes_expired_values = rangeRemovesExpiredValues(ctx, range);
-        /// The projection columns only add to the horizontal stage, so the cap without them is an upper bound.
+        /// The min-max index and projection columns only add to the horizontal stage, so the cap without them
+        /// is an upper bound.
         if (range.size() > (removes_expired_values ? affordable_vertical_removing_expired_values : affordable_vertical))
             return false;
         if (!predictVerticalMerge(ctx, range, removes_expired_values))
             return false;
 
-        NameSet projection_columns = getColumnsOfProjectionsRebuiltByMerge(ctx, range, removes_expired_values);
-        if (projection_columns.empty())
+        const bool may_reduce_rows = rangeMayReduceRows(ctx, range, removes_expired_values);
+        NameSet projection_columns = getColumnsOfProjectionsRebuiltByMerge(ctx, range, removes_expired_values, may_reduce_rows);
+        if (projection_columns.empty() && (!may_reduce_rows || minmax_index_columns.empty()))
             return true;
         NameSet range_key_columns = removes_expired_values ? key_columns_removing_expired_values : key_columns;
+        if (may_reduce_rows)
+            range_key_columns.insert(minmax_index_columns.begin(), minmax_index_columns.end());
         range_key_columns.merge(projection_columns);
         return range.size() <= getAffordablePartsToMergeVertically(ctx, range_key_columns, affordable_horizontal);
     };

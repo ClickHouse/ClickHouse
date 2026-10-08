@@ -32,6 +32,12 @@ struct PartProperties
     /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
     const std::set<std::string> projections_missing_columns = {};
 
+    /// The parent columns required by some projection that the part does not have and that have no default
+    /// expression. A column absent from every source part of a merge is expired by the merge, and a merge that
+    /// expires a column of a projection rebuilds the projection from the parent part, see
+    /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
+    const std::set<std::string> absent_projection_source_columns = {};
+
     const bool all_ttl_calculated_if_any = false;
     const bool is_in_volume_where_merges_avoid = false;
 
