@@ -185,8 +185,10 @@ public:
 private:
     static bool shouldSampleBlock(Statistics & statistics, size_t block_rows);
 
-    /// Appends the sampled rows to `statistics.sample_columns`, up to the budget.
-    static void appendToSample(Statistics & statistics, const ColumnsWithTypeAndName & cols, size_t num_rows)
+    /// Appends the sampled rows to `statistics.sample_columns`, up to the budget. Returns whether this
+    /// call is the one that filled it, so that its caller compresses the sample rather than the thread
+    /// that happens to finish the query.
+    static bool appendToSample(Statistics & statistics, const ColumnsWithTypeAndName & cols, size_t num_rows)
         TSA_REQUIRES(statistics.mutex);
 
     /// Compresses whatever the sample gathered, in one go, and records the ratio.

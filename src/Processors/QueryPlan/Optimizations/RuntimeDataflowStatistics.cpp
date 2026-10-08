@@ -64,7 +64,8 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
-    /// The gathered samples are compressed once, now that nothing more will be added to them.
+    /// A sample that never filled is compressed here; one that did was compressed by the thread that
+    /// filled it, and this call finds nothing left to do.
     for (size_t i = 0; i < OutputStatisticsType::MaxOutputType; ++i)
         compressSample(output_bytes_statistics[i]);
 
@@ -199,7 +200,7 @@ bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & stati
     return !statistics.sample_full.load(std::memory_order_relaxed);
 }
 
-void RuntimeDataflowStatisticsCacheUpdater::appendToSample(
+bool RuntimeDataflowStatisticsCacheUpdater::appendToSample(
     Statistics & statistics, const ColumnsWithTypeAndName & cols, size_t num_rows)
 {
     if (statistics.sample_columns.empty())
@@ -217,7 +218,7 @@ void RuntimeDataflowStatisticsCacheUpdater::appendToSample(
         /// The header changed under us, which the callers of one statistics type do not do. Keep what was
         /// gathered rather than mixing two shapes into one sample.
         statistics.sample_full.store(true, std::memory_order_relaxed);
-        return;
+        return true;
     }
 
     const size_t rows = std::min(num_rows, sample_rows_budget - statistics.sample_rows);
@@ -229,8 +230,11 @@ void RuntimeDataflowStatisticsCacheUpdater::appendToSample(
     for (const auto & col : statistics.sample_columns)
         statistics.sample_memory += col->byteSize();
 
-    if (statistics.sample_rows >= sample_rows_budget || statistics.sample_memory >= sample_memory_budget)
-        statistics.sample_full.store(true, std::memory_order_relaxed);
+    if (statistics.sample_rows < sample_rows_budget && statistics.sample_memory < sample_memory_budget)
+        return false;
+
+    statistics.sample_full.store(true, std::memory_order_relaxed);
+    return true;
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::compressSample(Statistics & statistics)
@@ -298,11 +302,19 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             col.column = col.column->permute(permutation, 0);
     }
 
-    std::lock_guard lock(statistics.mutex);
-    statistics.bytes += block_bytes;
-    if (sampling)
-        appendToSample(statistics, key_order ? sorted : cols, num_rows);
-    statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    bool sample_just_filled = false;
+    {
+        std::lock_guard lock(statistics.mutex);
+        statistics.bytes += block_bytes;
+        if (sampling)
+            sample_just_filled = appendToSample(statistics, key_order ? sorted : cols, num_rows);
+        statistics.elapsed_microseconds += watch.elapsedMicroseconds();
+    }
+
+    /// Compress it here, on the thread that filled it and while the query is still running, rather than
+    /// leaving a block's worth of rows for whichever thread tears the updater down at the end.
+    if (sample_just_filled)
+        compressSample(statistics);
 }
 
 static DataTypes getKeyTypesFrom(const Block & header, const ColumnNumbers & keys_positions)
