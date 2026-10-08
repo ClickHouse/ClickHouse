@@ -2740,7 +2740,9 @@ namespace
     class ExemptClassifier : public IClassifier
     {
     public:
+        bool has(const String &) override { return false; }
         ResourceLink get(const String &) override { return {}; }
+        WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
     };
 }
 
@@ -2873,13 +2875,13 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
 }
 
-bool Context::getUseDdlWorkload() const
+bool Context::getUseDDLWorkload() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->use_ddl_workload;
 }
 
-void Context::setUseDdlWorkload(bool use_ddl_workload)
+void Context::setUseDDLWorkload(bool use_ddl_workload)
 {
     std::lock_guard lock(shared->mutex);
     shared->use_ddl_workload = use_ddl_workload;

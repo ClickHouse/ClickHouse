@@ -2929,7 +2929,7 @@ static BlockIO executeQueryImpl(
             /// max_concurrent_queries* limits still apply and nothing is forwarded to distributed workers.
             if (isDDLQuery(out_ast.get()))
             {
-                if (context->getUseDdlWorkload())
+                if (context->getUseDDLWorkload())
                 {
                     const String & ddl_workload = settings[Setting::ddl_workload];
                     context->setSetting("workload", ddl_workload.empty() ? String("default") : ddl_workload);

@@ -2926,7 +2926,7 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
-            global_context->setUseDdlWorkload(new_server_settings[ServerSetting::use_ddl_workload]);
+            global_context->setUseDDLWorkload(new_server_settings[ServerSetting::use_ddl_workload]);
 
             /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
             /// the shared thresholds, so every monitor adopts them on its next sample,

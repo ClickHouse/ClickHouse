@@ -8596,9 +8596,9 @@ Name of the workload used to schedule DDL and administrative queries (CREATE, DR
 
 `ddl_workload` is an independent setting with its own constraints (which an administrator can configure in a user profile). It is intentionally NOT validated against the constraints placed on `workload`: to restrict which workloads DDL may use, constrain `ddl_workload` itself rather than relying on `workload`'s constraints.
 
-DDL wrapped by another statement — e.g. `EXECUTE AS <user> <ddl>` or `X PARALLEL WITH Y` — runs as an internal query and is therefore exempt from workload admission regardless of this setting.
+DDL wrapped by another statement — e.g. `EXECUTE AS <user> <ddl>` or `X PARALLEL WITH Y` — runs as an internal query: it skips query-slot and memory-reservation admission regardless of this setting, and its CPU and IO are scheduled under the `workload` of the wrapping statement.
 )", 0, \
-        {"26.9", "default", "default", "New setting naming the workload used to schedule DDL queries when the server setting use_ddl_workload is enabled."}) \
+        {"26.10", "default", "default", "New setting naming the workload used to schedule DDL queries when the server setting use_ddl_workload is enabled."}) \
     DECLARE(Double, weight, 1.0, R"(
 Base scheduling weight of the query within its workload, used by the `fair` workload scheduler (see the `scheduler` workload setting). Queries with a higher weight receive a proportionally larger share of a time-shared resource (CPU, IO) when they compete inside the same workload. Ignored by the default `fifo` scheduler. A non-positive value (`<= 0`) is meaningless for the fair share and is treated as the default `1.0`.
 )", 0, \

@@ -20,7 +20,7 @@ node_on: ClickHouseInstance = cluster.add_instance(
     cpu_limit=15,
 )
 
-# node_off: use_ddl_workload=0 (default) -> DDL is exempt from workload admission (hard skip).
+# node_off: use_ddl_workload=0 (default) -> DDL is exempt from workload scheduling.
 node_off: ClickHouseInstance = cluster.add_instance(
     "node_off",
     stay_alive=True,
@@ -169,7 +169,7 @@ def test_regular_query_uses_workload_when_enabled() -> None:
 
 
 def test_ddl_exempt_when_disabled() -> None:
-    # use_ddl_workload=0 (default): DDL is exempt from workload admission (hard skip). A regular
+    # use_ddl_workload=0 (default): DDL is exempt from workload scheduling. A regular
     # query under 'regular' is still admitted (control); a DDL under the same workload never takes
     # a query slot.
     setup_workloads(node_off)
