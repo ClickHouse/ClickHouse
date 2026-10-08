@@ -28,11 +28,11 @@ class Poller::Deadlines
 public:
     void arm(ProcessorState * state, int64_t timeout_ms)
     {
-        cancel(state);
+        drop(state);
         index[state] = queue.emplace(Clock::now() + std::chrono::milliseconds(timeout_ms), state);
     }
 
-    void cancel(ProcessorState * state)
+    void drop(ProcessorState * state)
     {
         if (auto it = index.find(state); it != index.end())
         {
@@ -78,8 +78,8 @@ void Poller::unregister(ProcessorState * state)
 
     epoll.remove(it->second);
     fds.erase(it);
+    deadlines->drop(state);
     pending_count.fetch_sub(1);
-    deadlines->cancel(state);
 }
 
 void Poller::updateTimer()
