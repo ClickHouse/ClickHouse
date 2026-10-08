@@ -1787,6 +1787,12 @@ protected:
     /// the table exists, so that it is released on `DROP` or `DETACH TABLE`. Replaced on `ALTER`.
     CustomDiskRegistrationPtr custom_disk_registration;
 
+    /// The registration of the new disk of an `ALTER TABLE ... MODIFY SETTING disk = ...` that passed
+    /// `checkAlterEligibility`, kept until `changeSettings` takes the disk over. If the `ALTER` fails
+    /// after the check, it is kept until the next change of the settings or until the table is gone.
+    mutable std::mutex pending_alter_disk_registration_mutex;
+    mutable CustomDiskRegistrationPtr pending_alter_disk_registration TSA_GUARDED_BY(pending_alter_disk_registration_mutex);
+
     /// Used to determine which UUIDs to send to root query executor for deduplication.
     mutable SharedMutex pinned_part_uuids_mutex;
     PinnedPartUUIDsPtr pinned_part_uuids;

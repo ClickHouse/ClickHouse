@@ -6648,12 +6648,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// setting-dependent projection checks in `checkProperties` validate against what the table WILL
     /// have. This handles RESET SETTING correctly: a dropped override falls back to the default.
     MergeTreeSettingsPtr alter_effective_settings = getSettings();
+    CustomDiskRegistrationPtr new_disk_registration;
     if (new_metadata.settings_changes)
     {
         auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
         /// The settings constraints below compare the resolved `disk`, so it is resolved here. A changed
         /// `disk` is a fresh definition and is checked as one, before anything registers the disk unchecked.
-        MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
+        new_disk_registration
+            = MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
@@ -6740,14 +6742,11 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
         auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
-        /// The registrations keep a newly defined disk alive for as long as the checks below need it.
-        /// A disk that no table uses yet is therefore created here, released at the end of the checks,
-        /// and created again by `changeSettings`, which is like detaching and attaching it. Changing the
-        /// disk of a table is rare enough to accept that instead of carrying the registration over from
-        /// the check to the actual `ALTER`, which may not even follow.
+        /// The registrations keep the disks alive for as long as the checks below need them. A changed
+        /// `disk` is kept alive further, see `pending_alter_disk_registration`.
         auto current_disk_registration
             = MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
-        auto new_disk_registration
+        auto checked_disk_registration
             = MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
 
         bool found_disk_setting = false;
@@ -6881,6 +6880,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                 postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
             }
         }
+    }
+
+    /// `changeSettings` resolves the new `disk` again, as an existing definition. Keep the disk checked
+    /// here registered until then, so that another query cannot define a disk with the same name and
+    /// other settings in between, which `changeSettings` would accept with only a warning.
+    if (disk_setting_changed && new_disk_registration)
+    {
+        std::lock_guard lock(pending_alter_disk_registration_mutex);
+        pending_alter_disk_registration = std::move(new_disk_registration);
     }
 }
 
@@ -7215,6 +7223,10 @@ void MergeTreeData::changeSettings(
 
         storage_settings.set(std::move(copy));
         custom_disk_registration = std::move(disk_registration);
+        {
+            std::lock_guard lock(pending_alter_disk_registration_mutex);
+            pending_alter_disk_registration.reset();
+        }
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
         /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
