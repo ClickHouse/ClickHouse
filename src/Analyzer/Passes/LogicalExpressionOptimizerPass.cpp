@@ -2190,7 +2190,7 @@ private:
             converted = tryConvertFieldToType(
                 constant_node->getValue(), *other_type, constant_type.get(), getFormatSettings(getContext()));
         else if (isLowerScaleTimePoint(constant_type, other_type))
-            converted = tryConvertFieldToTypeExact(constant_node->getValue(), *other_type, constant_type.get());
+            converted = tryConvertFieldToType(constant_node->getValue(), *other_type, constant_type.get(), {}, /*strict=*/true);
         if (converted.isNull())
             return {};
 
