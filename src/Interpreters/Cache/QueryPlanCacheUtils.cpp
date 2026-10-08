@@ -416,6 +416,20 @@ private:
                 if (const auto * cte = child->as<ASTWithElement>())
                     cte_scopes.back().emplace(cte->name, cte);
             }
+
+            /// A `WITH <expression> AS <alias>` element is not a CTE: it is substituted at its
+            /// expression use sites, which are plain identifiers that this walk cannot map back
+            /// to the alias. A scalar subquery there (`WITH (SELECT max(v) FROM t) AS m`) is
+            /// folded into a constant, so its tables must be recorded and the scalar-subquery
+            /// gate applied. Walk these elements at the definition site, which is conservative
+            /// for an alias that ends up unused.
+            for (const auto & child : with->children)
+            {
+                if (child->as<ASTWithElement>())
+                    continue;
+                if (!collectImpl(*child, default_database, /*in_set_or_table_position=*/ false, inside_scalar_subquery))
+                    return false;
+            }
         }
 
         for (const auto & child : select.children)
