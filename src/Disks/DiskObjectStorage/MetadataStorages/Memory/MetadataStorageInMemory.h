@@ -180,6 +180,8 @@ private:
     void recordBlobGroupBefore(const std::shared_ptr<MetadataStorageInMemory::BlobGroup> & group);
     void recordDirBefore(const std::string & dir);
     void rollback();
+    /// Adds `objects_to_remove` to the removal set of the storage with the strong exception guarantee.
+    void publishObjectsToRemove();
 
     /// Pre-mutation snapshot of every file entry touched by this transaction.
     /// `nullopt` means the path did not exist before the transaction started.

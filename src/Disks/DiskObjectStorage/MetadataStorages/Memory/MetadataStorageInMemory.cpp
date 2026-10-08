@@ -341,29 +341,52 @@ void MetadataStorageInMemoryTransaction::commit(const TransactionCommitOptionsVa
     if (!std::holds_alternative<NoCommitOptions>(options))
         throwNotImplemented();
 
-    {
-        std::unique_lock lock(metadata_storage.metadata_mutex);
+    std::unique_lock lock(metadata_storage.metadata_mutex);
 
-        /// Operation-level rollback: each operation records the pre-mutation state of
-        /// every entry it touches into `files_undo` / `blob_group_undo` / `dirs_undo`.
-        /// On a partial-failure exception, `rollback` replays only those touched entries,
-        /// keeping commit cost proportional to changed entries instead of the whole `files`
-        /// map (which can be very large for `borrow_from_cache`).
-        try
-        {
-            for (auto & op : operations)
-                op();
-        }
-        catch (...)
-        {
-            rollback();
-            throw;
-        }
+    /// Operation-level rollback: each operation records the pre-mutation state of
+    /// every entry it touches into `files_undo` / `blob_group_undo` / `dirs_undo`.
+    /// On a partial-failure exception, `rollback` replays only those touched entries,
+    /// keeping commit cost proportional to changed entries instead of the whole `files`
+    /// map (which can be very large for `borrow_from_cache`).
+    ///
+    /// The displaced blobs are published to the removal set within the same rollback boundary:
+    /// if that fails after the metadata mutations are already applied, the caller treats the
+    /// commit as failed and undoes the written blobs, so the metadata must be rolled back too,
+    /// or it would point at removed or rolled-back blobs.
+    try
+    {
+        for (auto & op : operations)
+            op();
+
+        publishObjectsToRemove();
     }
-
+    catch (...)
     {
-        std::lock_guard guard(metadata_storage.removed_objects_mutex);
-        metadata_storage.objects_to_remove.insert_range(objects_to_remove);
+        rollback();
+        throw;
+    }
+}
+
+void MetadataStorageInMemoryTransaction::publishObjectsToRemove()
+{
+    std::lock_guard guard(metadata_storage.removed_objects_mutex);
+
+    /// Reserved upfront, so that recording an index cannot throw after its blob is published.
+    std::vector<size_t> published_indices;
+    published_indices.reserve(objects_to_remove.size());
+    try
+    {
+        for (size_t i = 0; i < objects_to_remove.size(); ++i)
+            if (metadata_storage.objects_to_remove.insert(objects_to_remove[i]).second)
+                published_indices.push_back(i);
+    }
+    catch (...)
+    {
+        /// Take out only the entries added here: the metadata is about to be rolled back to
+        /// reference these blobs again, so they must not be removed.
+        for (size_t i : published_indices)
+            metadata_storage.objects_to_remove.erase(objects_to_remove[i]);
+        throw;
     }
 }
 
