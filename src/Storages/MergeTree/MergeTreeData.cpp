@@ -3,8 +3,10 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/PartitionCommands.h>
 #include <Common/CurrentThread.h>
@@ -18,7 +20,10 @@
 #endif
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryWrappedWith.h>
 #include <Backups/IBackup.h>
@@ -34,6 +39,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -41,11 +47,14 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -53,7 +62,11 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DDLTask.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -63,19 +76,21 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/Resolve/QueryAnalyzer.h>
-#include <Planner/PlannerContext.h>
 #include <Planner/TableExpressionData.h>
-#include <Planner/CollectTableExpressionData.h>
 #include <Storages/StorageDummy.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Functions/FunctionFactory.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTExpressionList.h>
@@ -83,13 +98,16 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTIndexDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/SquashingTransform.h>
@@ -118,7 +136,11 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -126,10 +148,14 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ErrnoException.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
+#include <base/sleep.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
@@ -148,6 +174,7 @@
 
 #include <boost/algorithm/string/join.hpp>
 
+#include <base/hex.h>
 #include <base/insertAtEnd.h>
 #include <base/interpolate.h>
 #include <base/isSharedPtrUnique.h>
@@ -167,6 +194,7 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
+#include <Poco/JSON/JSONException.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -189,6 +217,7 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
+    extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
     extern const Event InsertedWideParts;
@@ -210,6 +239,7 @@ namespace ProfileEvents
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
     extern const Event LoadedStatisticsMicroseconds;
+    extern const Event LoadedStatistics;
 }
 
 namespace CurrentMetrics
@@ -234,10 +264,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
-    extern const SettingsBool allow_suspicious_indices;
+    extern const SettingsBool allow_suspicious_indexes;
     extern const SettingsBool allow_minmax_index_for_json;
     extern const SettingsBool alter_move_to_space_execute_async;
     extern const SettingsBool alter_partition_verbose_result;
@@ -250,7 +279,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
-    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
     extern const SettingsUInt64 dead_blobs_to_delay_insert;
     extern const SettingsUInt64 dead_blobs_to_throw_insert;
     extern const SettingsUInt64 parts_to_delay_insert;
@@ -261,9 +289,12 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsUInt64 max_temporary_table_size_bytes_compressed;
+    extern const SettingsUInt64 max_temporary_table_size_bytes_uncompressed;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
+    extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_skip_indexes;
 }
@@ -307,6 +338,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_file_name_length;
     extern const MergeTreeSettingsUInt64 max_parts_in_total;
     extern const MergeTreeSettingsUInt64 max_projections;
+    extern const MergeTreeSettingsUInt64 max_table_size_rows;
+    extern const MergeTreeSettingsUInt64 max_table_size_bytes_compressed;
+    extern const MergeTreeSettingsUInt64 max_table_size_bytes_uncompressed;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
     extern const MergeTreeSettingsUInt64 min_bytes_for_wide_part;
@@ -360,6 +394,10 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
+    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -373,7 +411,16 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+    extern const char merge_tree_drop_all_data_pause_before_removing_parts[];
     extern const char claim_inject_stale_part_dir[];
+    /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
+    /// test can make the table read-only while the loading is pending and check that it stops.
+    extern const char mt_pause_before_loading_outdated_part[];
+    /// Pauses every queued load of an outdated part right before it checks whether the background
+    /// workers are still enabled, so a test can make the table read-only while several loads are
+    /// already queued in the thread pool and check that none of them runs.
+    extern const char mt_pause_before_loading_queued_outdated_part[];
+    extern const char slowdown_system_parts_enumeration[];
 }
 
 namespace ErrorCodes
@@ -388,12 +435,16 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
     extern const int CORRUPTED_DATA;
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int BACKUP_DAMAGED;
+    extern const int BACKUP_VERSION_NOT_SUPPORTED;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
+    extern const int TOO_MANY_BYTES;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int BAD_TTL_EXPRESSION;
     extern const int INCORRECT_FILE_NAME;
@@ -421,6 +472,9 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int TABLE_SIZE_LIMIT_EXCEEDED;
+    extern const int ILLEGAL_PROJECTION;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
 namespace FailPoints
@@ -429,6 +483,20 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
+    /// background. Used to test that the loading is retried later instead of terminating the server.
+    extern const char merge_tree_load_outdated_parts_retryable_error[];
+    /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
+    /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
+    extern const char merge_tree_load_outdated_parts_pause[];
+    /// Throws a `CANNOT_WRITE_TO_FILE_DESCRIPTOR` error with `ENOSPC` while loading a part restored from a backup,
+    /// after its files have been read. Used to test that a failure of the destination is not reported as a damaged backup.
+    extern const char restore_part_inject_no_space_error[];
+}
+
+namespace ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -679,6 +747,20 @@ void MergeTreeData::MutationsSnapshotBase::addPatches(DataPartsVector patches_)
     params.need_patch_parts = true;
 }
 
+bool MergeTreeData::MutationsSnapshotBase::hasLightweightDeletedMask() const
+{
+    if (params.has_lightweight_delete_parts)
+        return true;
+
+    return std::ranges::any_of(patches_by_partition, [](const auto & partition)
+    {
+        return std::ranges::any_of(partition.second, [](const auto & patch)
+        {
+            return patch->hasLightweightDelete();
+        });
+    });
+}
+
 NameSet MergeTreeData::MutationsSnapshotBase::getColumnsUpdatedInPatches() const
 {
     if (!params.need_patch_parts)
@@ -775,15 +857,8 @@ MergeTreeData::MergeTreeData(
     /// Check sanity of MergeTreeSettings. Only when table is created.
     if (sanity_checks)
     {
-        const auto & ac = getContext()->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
         settings->sanityCheck(
             getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_private_preview,
-            allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
 
@@ -826,6 +901,21 @@ MergeTreeData::MergeTreeData(
     /// UNIQUE KEY — sidecar lifecycle helper. Constructed unconditionally;
     /// methods are no-ops on non-UK tables (one pointer + one ctor call cost).
     unique_key_dense_index_ops = std::make_unique<UniqueKeyDenseIndexOps>(*this);
+
+    /// Here and not on first use: `setProperties` above published the metadata, so the answer is
+    /// settled from this point on, and every caller of `uniqueKeyTxnManager()` already sits behind
+    /// `hasUniqueKey()`. Left null otherwise, which is what that accessor asserts on.
+    if (metadata_.hasUniqueKey())
+    {
+        /// The bitmap cache is co-owned with the Context, which outlives the table, so it cannot
+        /// dangle; null when caching is off, which the store tolerates.
+        DeleteBitmapCachePtr bitmap_cache;
+        if (auto ctx = getContext())
+            bitmap_cache = ctx->getDeleteBitmapCache();
+
+        unique_key_txn_manager = std::make_unique<UniqueKeyTxnManager>(
+            std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
+    }
 
     String reason;
     if (!canUsePolymorphicParts(*settings, reason) && !reason.empty())
@@ -942,7 +1032,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
-        auto parts_lock = readLockParts();
+        ProfileEvents::increment(ProfileEvents::LoadedStatistics);
         auto stats = part.data_part->loadStatistics(required_columns);
         estimator_builder.markDataPart(part.data_part);
         for (const auto & [column_name, stat] : stats)
@@ -981,15 +1071,58 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     for (const ColumnWithTypeAndName & element : sample_block)
     {
         const ColumnPtr & column = element.column;
+        /// Name the offending element: a key can be long or an expression, and the message is the only
+        /// thing the user has to find which part of it is the problem.
         if (column && (isColumnConst(*column) || column->isDummy()))
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants", key_name);
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants, but {} is one",
+                key_name, backQuote(element.name));
 
         if (!allow_nullable_key && hasNullable(element.type))
             throw Exception(
                             ErrorCodes::ILLEGAL_COLUMN,
-                            "{} key contains nullable columns, "
-                            "but merge tree setting `allow_nullable_key` is disabled", key_name);
+                            "{} key contains nullable column {} of type {}, "
+                            "but merge tree setting `allow_nullable_key` is disabled",
+                            key_name, backQuote(element.name), element.type->getName());
     }
+}
+
+/// A function that opts out of constant folding may do context-dependent work (an access check, a remote
+/// call) before it looks at the row count, and the expression here was analyzed with the context of the user
+/// running the DDL rather than the storage's, so probing such an expression could answer a different question.
+static bool indexExpressionMayBeProbed(const IndexDescription & index)
+{
+    if (!index.expression)
+        return false;
+
+    for (const auto & node : index.expression->getActionsDAG().getNodes())
+        if (node.type == ActionsDAG::ActionType::FUNCTION
+            && (!node.function_base || !node.function_base->isSuitableForConstantFolding()))
+            return false;
+
+    return true;
+}
+
+static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & index)
+{
+    if (!indexExpressionMayBeProbed(index))
+        return {};
+
+    try
+    {
+        Block header;
+        for (const auto & column : index.expression->getRequiredColumnsWithTypes())
+            header.insert({column.type->createColumn(), column.type, column.name});
+
+        /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
+        /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
+        index.expression->getActionsDAG().updateHeader(header);
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+
+    return {};
 }
 
 void MergeTreeData::checkProperties(
@@ -1015,7 +1148,7 @@ void MergeTreeData::checkProperties(
 
     bool allow_suspicious_indices = (*getSettings())[MergeTreeSetting::allow_suspicious_indices];
     if (local_context)
-        allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
+        allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indexes];
 
     bool allow_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
     if (local_context)
@@ -1102,25 +1235,32 @@ void MergeTreeData::checkProperties(
 
     if (!added_key_column_expr_list->children.empty())
     {
-        auto syntax = TreeRewriter(getContext()).analyze(added_key_column_expr_list, new_columns_for_analysis);
-        Names used_columns = syntax->requiredSourceColumns();
-
         NamesAndTypesList deleted_columns;
         NamesAndTypesList added_columns;
         old_columns_for_analysis.getDifference(new_columns_for_analysis, deleted_columns, added_columns);
 
+        /// Only the columns added by this ALTER are accepted right below, so only they may be suggested for a typo.
+        auto syntax = TreeRewriter(getContext())
+                          .setHintColumns(added_columns.getNames())
+                          .analyze(added_key_column_expr_list, new_columns_for_analysis);
+        Names used_columns = syntax->requiredSourceColumns();
+
         for (const String & col : used_columns)
         {
-            if (!added_columns.contains(col) || deleted_columns.contains(col))
+            /// A subcolumn (for example, an element of a Tuple) is as new as its storage column, and has its default expression.
+            const auto resolved_column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, col);
+            const String name_in_storage = resolved_column ? resolved_column->getNameInStorage() : col;
+
+            if (!added_columns.contains(name_in_storage) || deleted_columns.contains(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Existing column {} is used in the expression that was added to the sorting key. "
                                 "You can add expressions that use only the newly added columns",
-                                backQuoteIfNeed(col));
+                                backQuoteIfNeed(name_in_storage));
 
-            if (new_metadata.columns.getDefaults().contains(col))
+            if (const auto column_default = new_metadata.columns.getDefault(name_in_storage))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Newly added column {} has a default expression, so adding expressions that use "
-                                "it to the sorting key is forbidden", backQuoteIfNeed(col));
+                                "Newly added column {} has a {} expression, so adding expressions that use "
+                                "it to the sorting key is forbidden", backQuoteIfNeed(name_in_storage), toString(column_default->kind));
         }
     }
 
@@ -1155,6 +1295,29 @@ void MergeTreeData::checkProperties(
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
                 MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
+
+                /// An index the server generates from a setting is not the user's declaration, so it
+                /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
+                /// one it cannot validate instead of failing the statement.
+                if (!attach && !index.isImplicitlyCreated())
+                {
+                    if (auto failure = tryEvaluateIndexExpression(index))
+                    {
+                        const IndexDescription * old_index = nullptr;
+                        /// The create path and the projection recursion pass the same metadata object as both
+                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
+                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
+                        if (&old_metadata != &new_metadata)
+                            for (const auto & candidate : old_metadata.secondary_indices)
+                                if (candidate.name == index.name)
+                                    old_index = &candidate;
+
+                        const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
+
+                        if (!inherited)
+                            std::rethrow_exception(failure);
+                    }
+                }
             }
             catch (Exception & e)
             {
@@ -1206,12 +1369,7 @@ void MergeTreeData::checkProperties(
 
     if (!new_metadata.projections.empty())
     {
-        /// Projections on a UNIQUE KEY table would read through the projection
-        /// part, bypassing the delete-bitmap filter and exposing logically-
-        /// deleted rows. ALTER ADD PROJECTION is already rejected (see
-        /// `checkAlterIsPossible`); reject CREATE-with-projection too so the
-        /// combination cannot exist. CREATE only — ATTACH must still load.
-        /// TODO(unique-key): support projections on UNIQUE KEY tables.
+        /// TODO(unique-key): support projections; ATTACH must still load.
         if (new_metadata.hasUniqueKey() && !attach)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Projections are not supported on tables with UNIQUE KEY");
@@ -1444,6 +1602,66 @@ void MergeTreeData::setProperties(
         setInMemoryMetadata(new_metadata);
         patch_parts_sorting_keys_cache.clear();
     }
+
+    /// Invalidate the columns cache when column identity changes: cache keys identify
+    /// columns by name, so any operation that makes a name refer to a different column
+    /// (drop, rename, or single-statement `RENAME a TO b, ADD COLUMN a` where the old
+    /// name is reintroduced as a new column) can otherwise serve stale data. We also
+    /// invalidate on type or default changes for the same name, since `MODIFY COLUMN`
+    /// can change how the data is interpreted on read.
+    ///
+    /// We compare columns by sequence position rather than only by name: the prefix
+    /// of old columns must match the prefix of new columns by `(name, type, default)`.
+    /// If any old position now holds a column with a different name, the column at
+    /// that position has been dropped, renamed, or reordered, and any cached entries
+    /// for the old name are stale. This catches the `RENAME a TO b, ADD COLUMN a`
+    /// case even when the reintroduced `a` has the same type and default as the old
+    /// one: the new `a` is appended at the end, so the position previously occupied
+    /// by `a` now holds `b`.
+    ///
+    /// Leftover columns on either side also count as an identity change. Leftover old
+    /// columns mean columns were dropped or renamed away at the end. Leftover new
+    /// columns cannot be assumed to be pure additions: `RENAME a TO b, ADD COLUMN a
+    /// AFTER <the column preceding a>` puts the reintroduced `a` back into `a`'s old
+    /// slot and leaves only the renamed `b` as the new suffix, producing exactly the
+    /// same positional prefix as a plain `ADD COLUMN b` — the metadata alone cannot
+    /// distinguish the two, so we conservatively invalidate whenever the column list
+    /// changed at all. Schema changes are rare enough that flushing the table's cache
+    /// on every one of them is acceptable.
+    ///
+    /// This check runs regardless of `attach`: callers that reload the table's own
+    /// current metadata (attach) pass an identical `old_metadata`/`new_metadata`, so
+    /// the loop below finds no identity change for them, but callers that apply a
+    /// genuine schema change while passing `attach = true` to skip unrelated checks
+    /// still need the cache invalidated.
+    {
+        const auto & old_columns = old_metadata.columns;
+        const auto & new_columns = new_metadata.columns;
+        bool columns_identity_changed = false;
+        auto old_it = old_columns.begin();
+        auto new_it = new_columns.begin();
+        for (; old_it != old_columns.end() && new_it != new_columns.end(); ++old_it, ++new_it)
+        {
+            if (old_it->name != new_it->name
+                || !old_it->type->equals(*new_it->type)
+                || !(old_it->default_desc == new_it->default_desc))
+            {
+                columns_identity_changed = true;
+                break;
+            }
+        }
+        /// Any leftover columns on either side: dropped/renamed-away old columns, or a
+        /// new suffix that may hide a rename whose reintroduced name landed in its old
+        /// slot via `AFTER` (see the comment above).
+        if (!columns_identity_changed && (old_it != old_columns.end() || new_it != new_columns.end()))
+            columns_identity_changed = true;
+        if (columns_identity_changed)
+        {
+            if (auto columns_cache = getContext()->getColumnsCache())
+                columns_cache->removeTable(getStorageID().uuid);
+        }
+    }
+
     {
         std::lock_guard lock(patch_parts_metadata_mutex);
         patch_parts_metadata_cache.clear();
@@ -1468,8 +1686,7 @@ void MergeTreeData::checkMinMaxIndexForJSON(const IndexDescription & index) cons
                     idx_column.type->getName(), idx_column.name);
             }
         };
-        check_json(*idx_column.type);
-        idx_column.type->forEachChild(check_json);
+        forEachInTypeTree(*idx_column.type, check_json);
     }
 }
 
@@ -1512,7 +1729,12 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
         if (!partition_key.column_names.empty())
+        {
             columns = partition_key.expression->getRequiredColumnsWithTypes();
+            /// Min-max index slots are addressed by position and a loaded part keeps the order it was
+            /// built with, so this order must not follow the mutable table column order.
+            columns.sort();
+        }
 
     if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
@@ -1647,6 +1869,19 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
             }
         }
     }
+}
+
+void MergeTreeData::checkColumnTTLsForKeyColumns(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata)
+{
+    if (new_metadata.column_ttls_by_name.empty())
+        return;
+
+    NameSet key_columns = old_metadata.getStorageColumnsRequiredForKeys();
+    key_columns.merge(new_metadata.getStorageColumnsRequiredForKeys());
+
+    for (const auto & [name, _] : new_metadata.column_ttls_by_name)
+        if (key_columns.contains(name))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Trying to set TTL for key column {}", name);
 }
 
 namespace
@@ -2122,8 +2357,11 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (!filter_dag)
         return {};
 
-    /// Generate valid expressions for filtering
-    bool valid = true;
+    /// Generate valid expressions for filtering.
+    /// The surviving rows are mapped back to parts by their name, so a physical column named
+    /// `_part` shadowing the virtual one - which leaves it out of the block, see
+    /// `getHeaderWithVirtualsForFilter` - makes the filtering by virtual columns unavailable.
+    bool valid = virtual_columns_block.has("_part");
     for (const auto * input : filter_dag->getInputs())
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
@@ -2248,11 +2486,11 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 return RollbackStatus::Committed;
 
             /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
-            csn = TransactionLog::getCSN(version_info.creation_tid);
+            csn = TransactionManager::getCSN(version_info.creation_tid);
             if (!csn
-                && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+                && TransactionManager::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
             {
-                csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
+                csn = TransactionManager::getCSN(version_info.creation_tid);  /// re-check after the race window
                 if (!csn)
                     return RollbackStatus::RolledBack;
             }
@@ -2505,7 +2743,7 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     if (!current_version_info.isRemoved())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
-        part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
+        part->version->setAndStoreNonTransactionalRemovalTID(LockKind::REMOVAL, transaction_context);
     }
 }
 
@@ -2658,6 +2896,20 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         }
     }
 
+    /// Above `setState`: a broken part's children are promoted only while it is not Active.
+    try
+    {
+        loadUniqueKeyBitmaps(res.part);
+    }
+    catch (...)
+    {
+        if (isRetryableException(std::current_exception()))
+            throw;
+
+        mark_broken();
+        return res;
+    }
+
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
@@ -2676,6 +2928,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         {
             LOG_ERROR(log, "Duplicate part {}", res.part->getDataPartStorage().getFullPath());
             res.part->is_duplicate = true;
+            /// Its links stay: the index is keyed by part info, so `dropPart` here would erase
+            /// the live part's links too.
             return res;
         }
 
@@ -3001,7 +3255,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 if (unexpected)
                 {
                     LOG_DEBUG(log, "loadDataParts: Part {} is broken, but it's not expected to be in parts set, "
-                              " will not count it as suspicious broken part", res.part->name);
+                              "will not count it as suspicious broken part", res.part->name);
                     ++suspicious_broken_unexpected_parts;
                 }
                 else
@@ -3076,21 +3330,18 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
         for (auto & part : broken_parts_to_detach)
             part->renameToDetached("broken-on-start", /*ignore_error=*/ replicated); /// detached parts must not have '_' in prefixes
 
-    /// UNIQUE KEY — SST sweep + per-part validation for parts that landed
-    /// without a usable sidecar (restore, freeze taken before UK shipped, or a
-    /// corrupt/truncated SST that survived because it carries no checksums.txt
-    /// entry). The active set is captured here under `part_lock`; the I/O-heavy
+    /// UNIQUE KEY - per-part validation. The sidecar is recorded in
+    /// `checksums.txt`, so a missing or wrongly-sized SST is already rejected by
+    /// `checkConsistencyBase` above; what is left for the validation below is
+    /// size-preserving damage plus parts that legitimately carry no SST entry
+    /// (UNIQUE KEY added by ALTER, or a restored backup without the sidecar).
+    /// The active set is captured here under `part_lock`; the I/O-heavy
     /// per-part validate+rebuild runs below, after the lock is released.
     ///
-    /// The sweep deletes files, so it stays gated on writability. Validation is
-    /// read-only I/O and runs regardless: a UK part with a missing/corrupt SST
-    /// on readonly storage must fail the load, not activate unprobeable. (UK
-    /// tables require local disks per the storage-policy guard, so static/web
-    /// UK parts are practically unreachable — still fail closed, not skip.)
+    /// Validation is read-only I/O and runs regardless: a UK part with an
+    /// unusable SST on readonly storage must fail the load, not activate
+    /// unprobeable.
     MutableDataPartsVector active_uk_parts_to_rebuild;
-    const bool uk_storage_is_writable = !is_static_storage && !all_disks_are_readonly && !is_table_readonly;
-    if (uk_storage_is_writable)
-        unique_key_dense_index_ops->sweepOrphans(part_lock);
     {
         auto metadata_snapshot_for_rebuild = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/false);
         if (metadata_snapshot_for_rebuild && metadata_snapshot_for_rebuild->hasUniqueKey())
@@ -3116,7 +3367,20 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     {
         try
         {
-            unique_key_dense_index_ops->ensureValidDenseIndex(p, uk_storage_is_writable);
+            /// `loadDataPart` already counted the part into the data-volume
+            /// totals with its pre-repair size; the rebuild below may change it
+            /// (a new SST sidecar) and refreshes the per-part cache itself, so
+            /// adjust the aggregate by the delta. Rows and part count are
+            /// unaffected by the rebuild.
+            const auto bytes_on_disk_before = p->getBytesOnDisk();
+            /// Writability is per-part: a mixed policy can place parts on
+            /// readonly disks even when the table itself is writable, and a
+            /// table-wide flag would misroute such parts to the rebuild path.
+            const bool part_storage_is_writable
+                = !is_static_storage && !is_table_readonly && !p->isStoredOnReadonlyDisk();
+            unique_key_dense_index_ops->ensureValidDenseIndex(p, part_storage_is_writable);
+            if (const auto bytes_on_disk_after = p->getBytesOnDisk(); bytes_on_disk_after != bytes_on_disk_before)
+                increaseDataVolume(static_cast<ssize_t>(bytes_on_disk_after - bytes_on_disk_before), 0, 0);
         }
         catch (...)
         {
@@ -3178,9 +3442,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// If all disks are readonly or the table is explicitly marked as readonly,
-    /// it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
+    /// Retain outdated parts for a read-only table: its loading task starts when it becomes writable.
+    /// Until then, the unfinished flag also prevents cleanup from removing their empty covering parts.
+    if (!unloaded_parts.empty() && !all_disks_are_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -3195,6 +3459,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             [this, component_name = Coordination::getCurrentComponent()]
             {
                 auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                /// TODO(unique-key): an Outdated part is indexed only once loaded, which happens
+                /// here -- after the table is readable. Until then a read of a part it holds kills
+                /// for applies fewer deletes than it should.
                 loadOutdatedDataParts(/*is_async=*/ true);
             });
     }
@@ -3224,6 +3491,7 @@ void MergeTreeData::startStatisticsCache()
 {
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+    std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
     if (refresh_statistics_seconds)
@@ -3235,6 +3503,14 @@ void MergeTreeData::startStatisticsCache()
 
         refresh_stats_task->activateAndSchedule();
     }
+}
+
+void MergeTreeData::stopStatisticsCache()
+{
+    /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
+    std::lock_guard lock(refresh_stats_task_mutex);
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -3302,34 +3578,73 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
     PartLoadingTreeNodes parts_to_add;
 
+    /// Only an already-indexed active part shadows its subtree. Must be called with the parts lock held.
+    std::function<void(const PartLoadingTree::NodePtr &)> seed = [&](const auto & node)
+    {
+        auto it = data_parts_by_info.find(node->info);
+        if (it == data_parts_by_info.end())
+        {
+            parts_to_add.emplace_back(node);
+            return;
+        }
+        if ((*it)->getState() != DataPartState::Active)
+            for (const auto & [_, child] : node->children)
+                seed(child);
+    };
+
     {
         auto part_lock = lockParts();
-
-        /// Collect only "the most covering" parts from the top level of the tree.
-        loading_tree.traverse(/*recursive=*/ false, [&, this](const auto & node)
-        {
-            if (auto it = data_parts_by_info.find(node->info); it == data_parts_by_info.end())
-                parts_to_add.emplace_back(node);
-        });
+        loading_tree.traverse(/*recursive=*/ false, [&](const auto & node) { seed(node); });
     }
 
     bool have_non_adaptive_parts = false;
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
-    for (const auto & my_part : parts_to_add)
+    /// `seed` appends to `parts_to_add` inside the loop, so iterators and references into it do not stay valid.
+    /// NOLINTNEXTLINE(modernize-loop-convert)
+    for (size_t i = 0; i < parts_to_add.size(); ++i)
     {
+        /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+        auto my_part = parts_to_add[i];
         auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-        if (res.is_broken)
+        /// A part loaded `Outdated` (e.g. rolled back) must not be committed: that would reset it to `PreActive`.
+        if (res.is_broken || res.part->getState() == DataPartState::Outdated)
         {
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+            if (res.is_broken)
+                LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+
+            if (!my_part->children.empty())
+            {
+                auto part_lock = lockParts();
+                for (const auto & [_, child] : my_part->children)
+                    seed(child);
+            }
         }
         else
         {
+            try
+            {
+                unique_key_dense_index_ops->ensureValidDenseIndex(res.part, /*storage_is_writable=*/false);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log,
+                    fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
+                if (res.part->getState() == DataPartState::PreActive)
+                {
+                    removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
+                    /// This removal skips `removePartsFinally`, so it owes the reclaim itself:
+                    /// a link to a part in neither Active nor Outdated throws on every later read.
+                    dropUniqueKeyBitmaps({res.part});
+                }
+                continue;
+            }
+
             {
                 auto part_lock = lockParts();
                 Transaction transaction(*this, nullptr);
@@ -3377,7 +3692,7 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
-        auto parts_lock = readLockParts();
+        ProfileEvents::increment(ProfileEvents::LoadedStatistics);
         auto stats = data_part->loadStatistics();
         estimator_builder.markDataPart(data_part);
         for (const auto & [column_name, stat] : stats)
@@ -3412,8 +3727,7 @@ MergeTreeData::~MergeTreeData()
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        if (refresh_stats_task)
-            refresh_stats_task->deactivate();
+        stopStatisticsCache();
     }
     catch (...)
     {
@@ -3424,6 +3738,16 @@ MergeTreeData::~MergeTreeData()
 void MergeTreeData::loadUnexpectedDataParts()
 try
 {
+    /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
+    /// Loading detaches broken parts, so it waits for the commit. A rolled-back commit restores
+    /// `table_readonly` and the task then stays idle until the next toggle schedules it again.
+    if (!areBackgroundWorkersEnabled())
+    {
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            unexpected_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
         if (unexpected_data_parts.empty())
@@ -3444,18 +3768,40 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_UNEXPECTED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+    bool suspended = false;
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
-        chassert(!load_state.part);
         if (unexpected_data_parts_loading_canceled)
         {
             runner.waitForAllToFinishAndRethrowFirstError();
             return;
         }
+
+        /// The table was made read-only while its unexpected parts were still loading, see
+        /// `StorageMergeTree::alter`. No further part is handed to the pool, and a load that was
+        /// queued but has not started yet returns without touching the disk (see the task below),
+        /// so only the parts whose loading already started may finish. The rest are loaded when the
+        /// setting is toggled back, which schedules this task again.
+        if (!areBackgroundWorkersEnabled())
+        {
+            suspended = true;
+            break;
+        }
+
+        /// Already loaded by an earlier run of this task that was suspended half way through.
+        if (load_state.part)
+            continue;
+
         /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
         runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
         {
+            /// This load was queued while the table was still writable. The pool runs a bounded
+            /// number of loads at a time, so the loop above can be far ahead of it, and a load that
+            /// starts after the table became read-only must not detach a part.
+            if (!areBackgroundWorkersEnabled())
+                return;
+
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
             loadUnexpectedDataPart(load_state);
 
@@ -3465,6 +3811,17 @@ try
         }, Priority{});
     }
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// Either the loop stopped because the workers were disabled, or it handed out every part but
+    /// some queued loads found the workers disabled and returned without loading.
+    if (suspended || std::ranges::any_of(unexpected_data_parts, [](const auto & state) { return !state.part; }))
+    {
+        LOG_DEBUG(log, "Suspended loading unexpected data parts because the background workers are disabled");
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            unexpected_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     LOG_DEBUG(log, "Loaded {} unexpected data parts", unexpected_data_parts.size());
 
     {
@@ -3484,6 +3841,18 @@ catch (...)
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
 try
 {
+    /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
+    /// Loading detaches broken parts, removes duplicates, and prepares parts for removal, so it waits
+    /// for the commit. A rolled-back commit restores `table_readonly` and the task then stays idle
+    /// until the next toggle schedules it again. The same holds for a writable table that was made
+    /// read-only while this task was still pending from its start: it loads nothing until toggled back.
+    if (is_async && !areBackgroundWorkersEnabled())
+    {
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            outdated_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     {
         std::lock_guard lock(outdated_data_parts_mutex);
         if (outdated_unloaded_data_parts.empty())
@@ -3504,18 +3873,64 @@ try
     /// Acquire shared lock because 'relative_data_path' is used while loading parts.
     TableLockHolder shared_lock;
     if (is_async)
-        shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+    {
+        shared_lock = tryLockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+        if (!shared_lock)
+        {
+            /// The table is being dropped, detached or restarted (e.g. by `SYSTEM RESTART REPLICA`).
+            /// It is not an inconsistency of the set of parts, so retry later instead of terminating:
+            /// if the table is going away, the task is deactivated in `shutdown` anyway.
+            LOG_DEBUG(log, "Cannot lock the table to load outdated data parts because it is being dropped or restarted, will retry later");
+            outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+            return;
+        }
+    }
 
     std::atomic_size_t num_loaded_parts = 0;
+
+    /// A retryable error (e.g. not enough memory or a network error) is not a sign of an inconsistent
+    /// set of parts, so the parts that failed with it are put back to the queue and loaded later.
+    ///
+    /// The workers collect them under a dedicated mutex and must not touch `outdated_data_parts_mutex`:
+    /// the cancellation branch below waits for all the workers while holding that mutex,
+    /// so a worker that takes it before its future becomes ready would deadlock
+    /// `DETACH`, `DROP`, shutdown and `SYSTEM RESTART REPLICA`. The failed parts are returned
+    /// to `outdated_unloaded_data_parts` only after all the workers have finished.
+    std::mutex failed_parts_mutex;
+    PartLoadingTreeNodes failed_parts;
+    std::exception_ptr retryable_exception;
+    std::atomic_bool has_retryable_exception = false;
+
+    /// Must be called after `runner.waitForAllToFinishAndRethrowFirstError()` and under `outdated_data_parts_mutex`.
+    auto requeue_failed_parts = [&]() TSA_REQUIRES(outdated_data_parts_mutex)
+    {
+        std::lock_guard lock(failed_parts_mutex);
+        outdated_unloaded_data_parts.insert(outdated_unloaded_data_parts.end(), failed_parts.begin(), failed_parts.end());
+        failed_parts.clear();
+    };
 
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_OUTDATED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+
+    /// Why the scheduling loop below stopped handing parts to the thread pool.
+    enum class StopReason : uint8_t
+    {
+        /// `stopOutdatedAndUnexpectedDataPartsLoadingTask`: the table is shutting down.
+        Canceled,
+        /// The background workers were disabled, see `StorageMergeTree::alter`.
+        Suspended,
+        /// Every part was handed to the pool.
+        Drained,
+    };
+    StopReason stop_reason = StopReason::Drained;
+
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();
+        FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_outdated_part);
         PartLoadingTree::NodePtr part;
 
         {
@@ -3523,32 +3938,77 @@ try
 
             if (is_async && outdated_data_parts_loading_canceled)
             {
-                /// Wait for every scheduled task
-                /// In case of any exception it will be re-thrown and server will be terminated.
-                runner.waitForAllToFinishAndRethrowFirstError();
-
-                LOG_DEBUG(log,
-                    "Stopped loading outdated data parts because task was canceled. "
-                    "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
-                return;
+                stop_reason = StopReason::Canceled;
+                break;
             }
 
-            if (outdated_unloaded_data_parts.empty())
+            /// The table was made read-only while its outdated parts were still loading, see
+            /// `StorageMergeTree::alter`. No further part is handed to the pool, and a load that was
+            /// queued but has not started yet puts its part back (see the task below), so only the
+            /// parts whose loading already started may finish, like any other background operation in
+            /// progress. The rest stay unloaded on disk until the setting is toggled back, which
+            /// schedules this task again.
+            if (is_async && !areBackgroundWorkersEnabled())
+            {
+                stop_reason = StopReason::Suspended;
+                break;
+            }
+
+            /// Do not start loading the remaining parts if the loading is going to be retried later anyway.
+            if (outdated_unloaded_data_parts.empty() || has_retryable_exception)
                 break;
 
             part = outdated_unloaded_data_parts.back();
             outdated_unloaded_data_parts.pop_back();
         }
 
-        /// num_loaded_parts will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, replicated]()
+        /// The captured locals will outlive runner, so capturing by reference is ok
+        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
+                                    &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
+            FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
+
+            /// This load was queued while the table was still writable. The pool runs a bounded
+            /// number of loads at a time, so the scheduling loop can be far ahead of it, and a load
+            /// that starts after the table became read-only must not touch the disk: the part goes
+            /// back to the unloaded ones, and the loop above accounts for it after the pool drained.
+            if (is_async && !areBackgroundWorkersEnabled())
+            {
+                std::lock_guard lock(outdated_data_parts_mutex);
+                outdated_unloaded_data_parts.push_back(my_part);
+                return;
+            }
+
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
-            auto res = loadDataPartWithRetries(
-                my_part->info, my_part->name, my_part->disk,
-                DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                loading_parts_max_backoff_ms, loading_parts_max_tries);
+            LoadPartResult res;
+            try
+            {
+                FailPointInjection::pauseFailPoint(FailPoints::merge_tree_load_outdated_parts_pause);
+
+                fiu_do_on(FailPoints::merge_tree_load_outdated_parts_retryable_error,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable error while loading outdated part {}", my_part->name);
+                });
+
+                res = loadDataPartWithRetries(
+                    my_part->info, my_part->name, my_part->disk,
+                    DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
+                    loading_parts_max_backoff_ms, loading_parts_max_tries);
+            }
+            catch (...)
+            {
+                if (!isRetryableException(std::current_exception()))
+                    throw;
+
+                /// The part is not added to the set of parts if the loading failed, so it can be loaded again from scratch.
+                std::lock_guard lock(failed_parts_mutex);
+                failed_parts.push_back(my_part);
+                if (!retryable_exception)
+                    retryable_exception = std::current_exception();
+                has_retryable_exception = true;
+                return;
+            }
 
             ++num_loaded_parts;
             if (res.is_broken)
@@ -3563,16 +4023,57 @@ try
         }, Priority{});
     }
 
+    /// Wait for every queued load without holding `outdated_data_parts_mutex`: a load that found the
+    /// workers disabled takes it to put its part back.
+    /// In case of any exception it will be re-thrown and server will be terminated.
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    std::lock_guard lock(outdated_data_parts_mutex);
+
+    /// All the workers have finished, so the parts that failed with a retryable error can be
+    /// returned to the queue and `retryable_exception` can be read without synchronization.
+    requeue_failed_parts();
+
+    if (stop_reason == StopReason::Canceled)
+    {
+        LOG_DEBUG(log,
+            "Stopped loading outdated data parts because task was canceled. "
+            "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+        return;
+    }
+
+    if (has_retryable_exception)
+    {
+        /// Synchronous loading (on table drop) has no task to retry with, so it fails fast as before.
+        if (!is_async)
+            std::rethrow_exception(retryable_exception);
+
+        LOG_WARNING(log, "Loading of outdated data parts was interrupted by a retryable error, will retry later. "
+            "Loaded {} parts, {} left unloaded. Error: {}",
+            num_loaded_parts.load(), outdated_unloaded_data_parts.size(),
+            getExceptionMessage(retryable_exception, /*with_stacktrace=*/ false));
+
+        outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+        return;
+    }
+
+    /// Either the loop stopped because the workers were disabled, or it handed out every part but
+    /// some queued loads found the workers disabled and put their parts back.
+    if (stop_reason == StopReason::Suspended || !outdated_unloaded_data_parts.empty())
+    {
+        LOG_DEBUG(log,
+            "Suspended loading outdated data parts because the background workers are disabled. "
+            "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            outdated_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
 
-    {
-        std::lock_guard lock(outdated_data_parts_mutex);
-        outdated_data_parts_loading_finished = true;
-        outdated_data_parts_cv.notify_all();
-    }
+    outdated_data_parts_loading_finished = true;
+    outdated_data_parts_cv.notify_all();
 }
 catch (...)
 {
@@ -3585,8 +4086,9 @@ catch (...)
 /// No TSA because of std::unique_lock and std::condition_variable.
 void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    /// Background tasks are not run if storage is static.
-    if (isStaticStorage())
+    /// Static and read-only tables do not start the outdated-parts loading task, and a started
+    /// task loads nothing while the background workers are disabled.
+    if (isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly] || !areBackgroundWorkersEnabled())
         return;
 
     /// If waiting is not required, do NOT log and do NOT enable/disable turbo mode to make `waitForOutdatedPartsToBeLoaded` a lightweight check
@@ -3627,8 +4129,9 @@ void MergeTreeData::triggerBackgroundOperations()
 
 void MergeTreeData::waitForUnexpectedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    /// Background tasks are not run if storage is static.
-    if (isStaticStorage())
+    /// Background tasks are not run if storage is static, and a started loading task loads nothing
+    /// while the background workers are disabled.
+    if (isStaticStorage() || !areBackgroundWorkersEnabled())
         return;
 
     /// If waiting is not required, do NOT log and do NOT enable/disable turbo mode to make `waitForUnexpectedPartsToBeLoaded` a lightweight check
@@ -3844,8 +4347,7 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
     return true;
 }
 
-
-size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     size_t cleared_count = 0;
 
@@ -3853,14 +4355,15 @@ size_t MergeTreeData::clearOldTemporaryDirectories(size_t custom_directories_lif
 
     if (allowRemoveStaleMovingParts())
     {
+        static constexpr std::array<std::string_view, 1> moving_prefixes = {""};
         /// Clear _all_ parts from the `moving` directory
-        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, {""});
+        cleared_count += clearOldTemporaryDirectories(fs::path(relative_data_path) / "moving", custom_directories_lifetime_seconds, moving_prefixes);
     }
 
     return cleared_count;
 }
 
-size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes)
+size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
@@ -3887,7 +4390,7 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const String & root_path, siz
             bool start_with_valid_prefix = false;
             for (const auto & prefix : valid_prefixes)
             {
-                if (startsWith(basename, prefix))
+                if (std::string_view(basename).starts_with(prefix))
                 {
                     start_with_valid_prefix = true;
                     break;
@@ -4099,6 +4602,14 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 continue;
             }
 
+            /// Above the `force` branch below: a forced round must not drop another part's kills either.
+            if (isPinnedByDeleteBitmap(*part, parts_lock))
+            {
+                part->removal_state.store(DataPartRemovalState::PINNED_BY_DELETE_BITMAP, std::memory_order_relaxed);
+                skipped_parts.push_back(part->info);
+                continue;
+            }
+
             /// First remove all covered parts, then remove covering empty part
             /// Avoids resurrection of old parts for MergeTree and issues with unexpected parts for Replicated
             if (part->rows_count == 0 && !getCoveredOutdatedParts(part, parts_lock).empty())
@@ -4188,11 +4699,21 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         }
     }
 
+    /// The parts are out of the set now, so nothing can resolve them and nothing will consult what
+    /// the unique-key bitmap store still has indexed under their names. Outside the lock above,
+    /// because the store must not be entered under the exclusive side of `data_parts_mutex`.
+    dropUniqueKeyBitmaps(parts);
+
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
 
-    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
-    /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
+    /// Parts removed by DROP TABLE do not pass through here; dropAllData() logs them itself.
+    writePartRemovalLog(parts);
+}
 
+void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts) const
+try
+{
+    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
     auto table_id = getStorageID();
     if (auto part_log = getContext()->getPartLog())
     {
@@ -4210,10 +4731,11 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         part_log_elem.table_name = table_id.table_name;
         part_log_elem.table_uuid = table_id.uuid;
 
+        PartitionKeySamples partition_key_samples;
         for (const auto & part : parts)
         {
             part_log_elem.partition_id = part->info.getPartitionId();
-            part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+            part_log_elem.partition = part->partition.serializeToString(partition_key_samples.get(*part));
             part_log_elem.part_name = part->name;
             part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
@@ -4223,6 +4745,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log->add([&](PartLogElement & element) { element = part_log_elem; });
         }
     }
+}
+catch (...)
+{
+    tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
 
@@ -4504,7 +5030,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts"
+                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts "
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
@@ -4549,6 +5075,53 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
     return finally_remove_parts.size();
 }
 
+/// ----- UNIQUE KEY -----
+
+UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
+{
+    chassert(unique_key_txn_manager);
+    return *unique_key_txn_manager;
+}
+
+bool MergeTreeData::isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const
+{
+    /// Ahead of the lock: every table without a unique key reaches this on its own cleanup path,
+    /// and none should pay a `data_parts_mutex` acquisition for an answer that is always no.
+    if (!unique_key_txn_manager)
+        return false;
+
+    const auto lock = readLockParts();
+    return isPinnedByDeleteBitmap(part, lock);
+}
+
+bool MergeTreeData::isPinnedByDeleteBitmap(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const
+{
+    if (!unique_key_txn_manager)
+        return false;
+
+    return uniqueKeyTxnManager().deleteBitmapStore().isPinned(part, lock);
+}
+
+void MergeTreeData::loadUniqueKeyBitmaps(const DataPartPtr & part)
+{
+    if (!unique_key_txn_manager)
+        return;
+
+    uniqueKeyTxnManager().deleteBitmapStore().loadPart(part->info, part->getDataPartStorage());
+}
+
+void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
+{
+    if (parts.empty() || !unique_key_txn_manager)
+        return;
+
+    for (const auto & part : parts)
+    {
+        uniqueKeyTxnManager().deleteBitmapStore().dropPart(*part);
+        LOG_TRACE(log, "Dropped the delete bitmaps of part {}", part->name);
+    }
+}
+
 size_t MergeTreeData::clearEmptyParts()
 {
     if (!(*getSettings())[MergeTreeSetting::remove_empty_parts])
@@ -4573,8 +5146,10 @@ size_t MergeTreeData::clearEmptyParts()
                 continue;
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
-            if (!part->version->getInfo().creation_tid.isNonTransactional()
-                && !part->version->isVisible(TransactionLog::instance().getLatestSnapshot()))
+            if (!part->version->isVisibleByLatestSnapshot())
+                continue;
+
+            if (isPinnedByDeleteBitmap(*part))
                 continue;
 
             parts_names_to_drop.emplace_back(part->name);
@@ -4693,6 +5268,8 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_TRACE(log, "dropAllData: waiting for locks.");
+
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_drop_all_data_pause_before_removing_parts);
     auto settings_ptr = getSettings();
 
     auto lock = lockParts();
@@ -4730,6 +5307,17 @@ void MergeTreeData::dropAllData()
 
         LOG_TRACE(log, "dropAllData: removing all data parts from memory.");
         data_parts_indexes.clear();
+
+        /// Invalidate every deferred columns-cache write and reclaim part
+        /// generation tombstones left by the per-part cleanup above. This is
+        /// done only after all part removal has succeeded: on failure the
+        /// table remains usable and the per-part invalidations must stay.
+        if (getStorageID().hasUUID())
+        {
+            if (auto columns_cache = getContext()->getColumnsCache())
+                columns_cache->removeTable(getStorageID().uuid);
+        }
+
         all_data_dropped = true;
     }
     catch (...)
@@ -4738,17 +5326,25 @@ void MergeTreeData::dropAllData()
         /// Parts removal process can be important and on the next try it's better to try to remove
         /// them instead of remove recursive call.
         LOG_WARNING(log, "dropAllData: got exception removing parts from disk, removing successfully removed parts from memory.");
+        DataPartsVector removed_parts;
         for (const auto & part : all_parts)
         {
             if (!part_names_failed.contains(part->name))
+            {
                 data_parts_indexes.erase(part->info);
+                removed_parts.push_back(part);
+            }
         }
+        writePartRemovalLog(removed_parts);
 
         throw;
     }
 
+    /// The parts of a dropped table never reach removePartsFinally(), so log their removal here.
+    writePartRemovalLog(all_parts);
+
     LOG_INFO(log, "dropAllData: clearing temporary directories");
-    clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
 
     resetColumnSizes();
     unregisterFromMergeSelection(settings_ptr);
@@ -4795,6 +5391,9 @@ void MergeTreeData::dropAllData()
 
         LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+
+        if ((*settings_ptr)[MergeTreeSetting::table_disk])
+            removeOwnFilesInDiskRootOnDrop(disk);
 
         if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
         {
@@ -4986,8 +5585,9 @@ Names expressionSourceColumns(const ASTPtr & ast, const ColumnsDescription & col
     auto planner_context = std::make_shared<PlannerContext>(analysis_context, global_planner_context, SelectQueryOptions{});
     collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
 
+    /// ALIAS columns are inlined above, so the physical columns their expressions read are the dependencies.
     if (const auto * table_expression_data = planner_context->getTableExpressionDataOrNull(table_node))
-        return table_expression_data->getSelectedColumnsNames();
+        return table_expression_data->getColumnNames();
     return {};
 }
 
@@ -5015,6 +5615,40 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Schema-changing ALTER is rejected while a streaming query holds a subscription on this table.");
     }
 
+    checkAlterEligibility(commands, local_context);
+}
+
+/// TODO(unique-key): allow the mutations that keep every row.
+static void checkUniqueKeyMutationCommands(const MutationCommands & commands)
+{
+    for (const auto & command : commands)
+    {
+        switch (command.type)
+        {
+            /// Metadata only, no part is written.
+            case MutationCommand::ALTER_WITHOUT_MUTATION:
+            case MutationCommand::EMPTY:
+                continue;
+
+            case MutationCommand::DELETE:
+            case MutationCommand::UPDATE:
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY. "
+                    "Use DELETE FROM, which the unique key implements through its delete bitmaps.");
+
+            default:
+                break;
+        }
+
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Mutation {} is not supported on tables with UNIQUE KEY yet: only mutation kinds verified "
+            "to keep every row of the part they rewrite are allowed.",
+            command.type == MutationCommand::DROP_COLUMN && command.clear ? std::string_view{"CLEAR COLUMN"} : magic_enum::enum_name(command.type));
+    }
+}
+
+void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, ContextPtr local_context) const
+{
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
     auto storage_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
@@ -5091,25 +5725,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "Column TTL is not supported on tables with UNIQUE KEY");
 
-            /// CLEAR COLUMN (parsed as DROP_COLUMN with `clear`) rewrites the whole
-            /// part and drops the per-part `unique_key_index.sst`, regardless of
-            /// which column is targeted. Reject it on UNIQUE KEY tables, but only
-            /// when it would actually rewrite a part: the target must be an existing
-            /// physical (stored) column. `CLEAR COLUMN missing IF EXISTS` and CLEAR
-            /// of a non-stored column are no-ops (`hasPhysical` is false for both),
-            /// so they fall through to normal handling. CLEAR of a UK column falls
-            /// through to the ALTER_OF_COLUMN_IS_FORBIDDEN guard below. Note the
-            /// mutation-path guard in `checkMutationIsPossible` never sees CLEAR
-            /// COLUMN — it is dispatched as an AlterCommand, not a mutation — so this
-            /// is the effective chokepoint.
-            if (command.type == AlterCommand::DROP_COLUMN && command.clear
-                && !uk_set.contains(command.column_name)
-                && old_metadata.columns.hasPhysical(command.column_name))
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
-                    "the whole part is rewritten regardless of which column is targeted, so the "
-                    "per-part UNIQUE KEY dense index would be lost.",
-                    backQuoteIfNeed(command.column_name));
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
@@ -5127,13 +5742,17 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 : "MODIFY";
 
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "ALTER {} COLUMN {} is forbidden: the column is part of the table's "
-                "UNIQUE KEY ({}). Drop the UNIQUE KEY first (not supported in the "
-                "current phase) or pick a different column.",
+                "ALTER {} COLUMN {} is forbidden: the column is part of the table's UNIQUE KEY ({}).",
                 action_str,
                 backQuoteIfNeed(command.column_name),
                 uk_list_str());
         }
+
+        /// `StorageMergeTree::alter` queues these without `checkMutationIsPossible`.
+        checkUniqueKeyMutationCommands(
+            commands.getMutationCommands(
+                old_metadata, settings[Setting::materialize_ttl_after_modify], local_context,
+                /*with_alters*/ false, (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]));
     }
 
     /// Must be collected before the commands are applied below: dropping a column used in a key has to
@@ -5272,7 +5891,73 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context, share_nested_offsets);
+    auto settings_defaults = getDefaultSettings();
+    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
+
+    /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
+    /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
+    /// directions: every reader of a regular data part's order takes them from the current metadata. A direction change in
+    /// place would therefore make the metadata describe an order the data does not have, and primary key index
+    /// analysis compares boundary tuples in the claimed order, so it would prune the wrong mark ranges and silently
+    /// return wrong results.
+    {
+        /// Under a Replicated database every replica re-runs this interpreter over an entry the initiator already
+        /// committed. A replica catching up on an ALTER accepted by an older version must not be failed by a check
+        /// that version did not have, or the DDL queue stalls on an entry it cannot skip.
+        bool is_initial_alter = true;
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
+            is_initial_alter = txn->isInitialQuery();
+
+        bool changes_order_by = false;
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::MODIFY_ORDER_BY)
+            {
+                changes_order_by = true;
+                break;
+            }
+        }
+
+        if (is_initial_alter && changes_order_by)
+        {
+            const KeyDescription & old_sorting_key = old_metadata.getSortingKey();
+            const KeyDescription & new_sorting_key = new_metadata.getSortingKey();
+
+            /// Positions beyond the stored flags are ascending, and an empty vector means the whole key is ascending
+            /// (the `KeyOrder` convention).
+            auto is_reversed = [](const std::vector<bool> & flags, size_t column)
+            {
+                return column < flags.size() && flags[column];
+            };
+
+            const Names & old_key_columns = old_sorting_key.column_names;
+            const Names & new_key_columns = new_sorting_key.column_names;
+
+            /// Walk the two keys with the same correspondence rule `checkProperties` uses for added key columns: the
+            /// old index advances only on a name match, so extending the key with new trailing columns is not flagged.
+            for (size_t new_i = 0, old_i = 0; new_i < new_key_columns.size() && old_i < old_key_columns.size(); ++new_i)
+            {
+                if (new_key_columns[new_i] != old_key_columns[old_i])
+                    continue;
+
+                const bool was_reversed = is_reversed(old_sorting_key.reverse_flags, old_i);
+                const bool is_now_reversed = is_reversed(new_sorting_key.reverse_flags, new_i);
+
+                if (was_reversed != is_now_reversed)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Sort direction of the sorting key column {} would change from {} to {}. The existing parts are "
+                        "physically sorted in the old direction, so the table would return wrong results. Changing the "
+                        "sort direction of an existing sorting key column is not supported; create a new table with the "
+                        "desired ORDER BY and copy the data with INSERT ... SELECT into it.",
+                        backQuoteIfNeed(old_key_columns[old_i]),
+                        was_reversed ? "DESC" : "ASC",
+                        is_now_reversed ? "DESC" : "ASC");
+
+                ++old_i;
+            }
+        }
+    }
 
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
     /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
@@ -5326,64 +6011,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
 
-    /// UNIQUE KEY tables must remain on a local-only storage policy. Mirror the
-    /// CREATE-time check from registerStorageMergeTree.cpp here so ALTER ...
-    /// MODIFY/RESET SETTING storage_policy|disk cannot bypass the gate. Runs on
-    /// the post-apply new_metadata so a MODIFY_SETTING that injects
-    /// settings_changes into a previously-empty old_metadata is also covered.
-    if (old_metadata.hasUniqueKey())
-    {
-        for (const auto & command : commands)
-        {
-            if (command.type == AlterCommand::RESET_SETTING
-                && (command.settings_resets.contains("storage_policy")
-                    || command.settings_resets.contains("disk")))
-            {
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... RESET SETTING storage_policy|disk is not supported "
-                    "on tables with UNIQUE KEY: the table must remain on a local-only "
-                    "storage policy.");
-            }
-        }
-
-        if (new_metadata.settings_changes)
-        {
-            auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
-            MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-            for (const auto & changed : new_changes)
-            {
-                StoragePolicyPtr new_policy;
-                if (changed.name == "storage_policy")
-                    new_policy = local_context->getStoragePolicy(changed.value.safeGet<String>());
-                else if (changed.name == "disk")
-                    new_policy = local_context->getStoragePolicyFromDisk(changed.value.safeGet<String>());
-                else
-                    continue;
-
-                for (const auto & disk : new_policy->getDisks())
-                {
-                    const auto & desc = disk->getDataSourceDescription();
-                    if (desc.type != DataSourceType::Local)
-                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "UNIQUE KEY on non-local disks is not yet supported "
-                            "(disk `{}` has source type `{}`). "
-                            "UNIQUE KEY tables must currently reside on a local-only storage policy.",
-                            disk->getName(), desc.toString());
-                }
-            }
-        }
-    }
-
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
-    /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
+    /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
     /// the gate for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
     /// with the query context; applying the resulting metadata (`changeSettings`, e.g. on other replicas)
     /// is not re-checked, so tables that already carry such a codec keep working. The same applies to
     /// `ALTER TABLE ... RESET SETTING`: the post-reset value comes from the current `<merge_tree>` config
-    /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying an
-    /// experimental codec must not re-enter the table without the session opting in. The CREATE-time
+    /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying a
+    /// gated codec must not re-enter the table without the session opting in. The CREATE-time
     /// counterpart of this check lives in `registerStorageMergeTree`.
     std::unique_ptr<MergeTreeSettings> default_settings;
     for (const auto & command : commands)
@@ -5414,6 +6050,95 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Only the state after all commands can decide, because one command can
+    /// turn a column non-physical and another give it statistics.
+    /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    /// Shared Catalog secondaries replay without a metadata transaction and are told apart by the
+    /// client info instead (the same marker `AlterCommands` and `StorageKeeperMap` use).
+    {
+        const auto txn = local_context->getZooKeeperMetadataTransaction();
+        const bool is_ddl_replay = txn && !txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+        const bool is_shared_catalog_replay = local_context->getClientInfo().is_shared_catalog_internal
+            && !SharedDatabaseCatalog::isInitialQuery(local_context);
+#else
+        const bool is_shared_catalog_replay = false;
+#endif
+
+        if (!is_ddl_replay && !is_shared_catalog_replay)
+        {
+            /// Only effective commands count. `command.ignore` covers a command that is a no-op against
+            /// the pre-ALTER snapshot (`ADD COLUMN IF NOT EXISTS` for a column that already exists), but
+            /// it is decided before any command ran, so the commands are replayed here against the set
+            /// of names present after each preceding one, the way `AlterCommand::apply` will see them:
+            /// an `ADD COLUMN IF NOT EXISTS` of a name a preceding rename created adds nothing, and a
+            /// rename or drop of a name a preceding drop or rename already removed moves nothing.
+            NameSet present;
+            for (const auto & column : old_columns)
+                present.insert(column.name);
+
+            NameSet statistics_named_by_alter;
+            NameSet dropped_by_alter;
+            std::unordered_map<String, String> renamed_from;
+            for (const auto & command : commands)
+            {
+                if (command.ignore)
+                    continue;
+
+                if (command.type == AlterCommand::ADD_COLUMN)
+                {
+                    if (present.contains(command.column_name))
+                        continue;
+                    present.insert(command.column_name);
+                }
+
+                if (command.column_statistics_decl != nullptr)
+                    statistics_named_by_alter.insert(command.column_name);
+
+                /// A drop only ends the stored column's identity while that column still holds the
+                /// name. `CLEAR COLUMN` shares this type but only erases data, leaving the column in place.
+                if (command.type == AlterCommand::DROP_COLUMN && !command.clear && present.erase(command.column_name))
+                    dropped_by_alter.insert(command.column_name);
+
+                if (command.type == AlterCommand::RENAME_COLUMN && present.erase(command.column_name))
+                {
+                    present.insert(command.rename_to);
+                    renamed_from[command.rename_to] = command.column_name;
+                }
+            }
+
+            for (const auto & column : new_metadata.columns)
+            {
+                if (new_metadata.columns.hasPhysical(column.name) || !column.statistics.hasExplicitStatistics())
+                    continue;
+
+                /// A table created before this check stays alterable: the state is only refused when
+                /// this ALTER produced it, not when it was inherited untouched. A rename carries the
+                /// whole column description across, so resolve the pre-ALTER name. One hop is the
+                /// whole relation: transitive renames in one statement are rejected earlier, so a
+                /// second hop can only reach a different column reusing a name freed here.
+                String old_name = column.name;
+                if (auto it = renamed_from.find(old_name); it != renamed_from.end())
+                    old_name = it->second;
+
+                /// Dropping the stored column ends its identity, so a later column of the same name is
+                /// a new one and the state it carries is this ALTER's, however it reached that name.
+                if (!statistics_named_by_alter.contains(column.name)
+                    && !dropped_by_alter.contains(old_name)
+                    && old_columns.has(old_name)
+                    && !old_columns.hasPhysical(old_name)
+                    && old_columns.get(old_name).statistics.hasExplicitStatistics())
+                    continue;
+
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+            }
+        }
+    }
 
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -5937,13 +6662,84 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     MergeTreeSettingsPtr alter_effective_settings = getSettings();
     if (new_metadata.settings_changes)
     {
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        /// The settings constraints below compare the resolved `disk`, so it is resolved here. A changed
+        /// `disk` is a fresh definition and is checked as one, before anything registers the disk unchecked.
+        MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
         auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
     }
+
+    /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,
+    /// the one the database queue executes, decides whether the change is allowed. Checking it again on the
+    /// other replicas only adds a way to fail: `allow_feature_tier` comes from each replica's own config, so
+    /// a replica set to a stricter tier would refuse a change that is already in the queue. That stops the
+    /// queue and leaves the replicas with different table metadata. `CREATE` skips the same check on replay,
+    /// see `is_fresh_definition` in `registerStorageMergeTree.cpp`.
+    const auto txn = local_context->getZooKeeperMetadataTransaction();
+    const bool is_replay_on_another_replica = txn && !txn->isInitialQuery();
+
+    /// What this ALTER changes for the table, however it was written: `MODIFY SETTING`, `RESET SETTING`, or
+    /// an override simply gone from the new list.
+    if (!is_replay_on_another_replica)
+        local_context->checkMergeTreeSettingsConstraints(
+            *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
+
+    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
+    /// info rather than in a ZooKeeper metadata transaction.
+    bool is_secondary_replay = is_replay_on_another_replica;
+#if CLICKHOUSE_CLOUD
+    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
+        is_secondary_replay = true;
+#endif
+
+    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
+    /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
+    /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.
+    if (!is_secondary_replay && new_metadata.projections.hasUnavailable())
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type == AlterCommand::DROP_PROJECTION)
+                continue;
+
+            throw Exception(
+                ErrorCodes::ILLEGAL_PROJECTION,
+                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded, "
+                "so this ALTER cannot be validated against it. The server log records why. Removing that cause and "
+                "restarting the server may make the projection usable again; otherwise drop the declaration with "
+                "ALTER TABLE ... DROP PROJECTION",
+                getStorageID().getNameForLogs(),
+                fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
+        }
+    }
+
+    /// A renamed column keeps its rows, and renaming a column of the old sorting key is refused above,
+    /// so the new sorting key can use a renamed column only in an added expression.
+    if (!is_secondary_replay)
+    {
+        for (const auto & command : commands)
+        {
+            if (command.type != AlterCommand::RENAME_COLUMN || !old_columns.has(command.column_name))
+                continue;
+
+            for (const auto & name : new_metadata.getColumnsRequiredForSortingKey())
+            {
+                const auto column = new_metadata.columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+                if (column && column->getNameInStorage() == command.rename_to)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Existing column {} (renamed to {}) is used in the expression that was added to the sorting key. "
+                        "You can add expressions that use only the newly added columns",
+                        backQuoteIfNeed(command.column_name), backQuoteIfNeed(command.rename_to));
+            }
+        }
+    }
+
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
+    if (!is_secondary_replay)
+        checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())
     {
@@ -5958,8 +6754,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
-
-        local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
         bool found_storage_policy_setting = false;
@@ -6018,7 +6812,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             {
                 /// Use default settings + new and check if doesn't affect part format settings
                 auto copy = getDefaultSettings();
-                copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
+                copy->applyChangesLeavingDiskUnresolved(new_changes);
                 String reason;
                 if (!canUsePolymorphicParts(*copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
@@ -6027,26 +6821,70 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
-    for (const auto & part : getDataPartsVectorForInternalUsage())
+    if (!dropped_columns.empty())
     {
-        bool at_least_one_column_rest = false;
-        for (const auto & column : part->getColumns())
+        auto parts = getDataPartsVectorForInternalUsage();
+        auto parts_info = getPartsSnapshotInfo(parts);
+
+        /// A part can carry a column under a name the table does not know, because a rename this part
+        /// has not applied yet is recorded in the mutations, not in the part. Resolve those names, so a
+        /// pending rename is not mistaken for a column the table has lost.
+        IMutationsSnapshot::Params params
         {
-            if (!dropped_columns.contains(column.name))
+            .metadata_version = old_metadata.getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = true,
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+
+        auto mutations_snapshot = getMutationsSnapshot(params);
+
+        for (const auto & part : parts)
+        {
+            auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, local_context
+#if CLICKHOUSE_CLOUD
+                , nullptr
+#endif
+                );
+
+            bool at_least_one_column_rest = false;
+            for (const auto & column : part->getColumns())
             {
-                at_least_one_column_rest = true;
-                break;
+                auto name_in_table = alter_conversions->columnHasNewName(column.name)
+                    ? alter_conversions->getColumnNewName(column.name)
+                    : column.name;
+
+                /// A column the table no longer has does not keep the part alive: the mutation does not
+                /// carry it over into the new part either (`splitAndModifyMutationCommands` skips a column
+                /// absent from the table), so the part would be left with no columns at all. That is not a
+                /// loadable part - `loadColumns` and `loadIndexGranularity` reject it, and
+                /// `calculateColumnsSizesOnDisk` throws - so the mutation must not be allowed to produce
+                /// one. A partition detached before a `DROP COLUMN` and re-attached after it, or a
+                /// `KILL MUTATION` of a `RENAME COLUMN`, leaves a part in that state. The condition
+                /// mirrors the one `splitAndModifyMutationCommands` applies, virtual columns included:
+                /// a part written by a lightweight delete keeps its `_row_exists` through the mutation.
+                if (!dropped_columns.contains(name_in_table)
+                    && (old_metadata.columns.has(name_in_table) || old_metadata.virtuals.has(name_in_table)))
+                {
+                    at_least_one_column_rest = true;
+                    break;
+                }
             }
-        }
-        if (!at_least_one_column_rest)
-        {
-            std::string postfix;
-            if (dropped_columns.size() > 1)
-                postfix = "s";
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Cannot drop or clear column{} '{}', because all columns "
-                            "in part '{}' will be removed from disk. Empty parts are not allowed",
-                            postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+
+            if (!at_least_one_column_rest)
+            {
+                std::string postfix;
+                if (dropped_columns.size() > 1)
+                    postfix = "s";
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Cannot drop or clear column{} '{}', because all columns "
+                                "in part '{}' will be removed from disk. Empty parts are not allowed",
+                                postfix, boost::algorithm::join(dropped_columns, ", "), part->name);
+            }
         }
     }
 }
@@ -6072,75 +6910,23 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
     return false;
 }
 
-void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
 {
+    /// Every command that passes `hasNonEmptyMutationCommands` rewrites parts on disk.
+    /// Callers that synthesize an ALTER on behalf of a lightweight write relax the setting
+    /// on their own context copy, so provenance is decided there, not by command shape.
+    if (!settings[Setting::allow_non_metadata_alters] && commands.hasNonEmptyMutationCommands())
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The following mutation commands: '{}' will modify data on disk, "
+                        "but setting `allow_non_metadata_alters` is disabled",
+                        commands.ast()->formatForErrorMessage());
+
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
-    /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
-    /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
-    /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
-    {
-        const auto & uk_column_names = uk_metadata->getUniqueKeyColumns();
-
-        for (const auto & command : commands)
-        {
-            if (command.type == MutationCommand::DELETE || command.type == MutationCommand::UPDATE)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER DELETE / ALTER UPDATE is not supported on tables with UNIQUE KEY");
-
-            /// MATERIALIZE TTL rewrites parts to apply expiration, bypassing the UNIQUE KEY
-            /// dedup path (like MATERIALIZE COLUMN below) — and TTL is unsupported anyway
-            /// while merges are disabled. Reject so an ATTACH-loaded UK+TTL table cannot
-            /// materialize it.
-            if (command.type == MutationCommand::MATERIALIZE_TTL)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... MATERIALIZE TTL is not supported on tables with UNIQUE KEY");
-
-            /// MATERIALIZE / CLEAR COLUMN rewrite the whole part via MutateTask
-            /// regardless of which column is targeted (compact and full-rewrite
-            /// parts lose all sidecars; `unique_key_index.sst` is in
-            /// `getFileNamesWithoutChecksums` → `files_to_skip`), so the dense
-            /// index is dropped even for a non-UK column. Reject both for the
-            /// whole table until mutation-side SST rebuild lands (mirrors the
-            /// REWRITE-family stance below).
-            if (command.type == MutationCommand::MATERIALIZE_COLUMN)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... MATERIALIZE COLUMN `{}` is not supported on tables with UNIQUE KEY: "
-                    "the whole part is rewritten regardless of which column is targeted, so the "
-                    "per-part UNIQUE KEY dense index would be lost. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
-
-            if (command.type == MutationCommand::DROP_COLUMN && command.clear)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... CLEAR COLUMN `{}` is not supported on tables with UNIQUE KEY: "
-                    "the whole part is rewritten regardless of which column is targeted, so the "
-                    "per-part UNIQUE KEY dense index would be lost. UNIQUE KEY columns: ({}).",
-                    command.column_name, fmt::join(uk_column_names, ", "));
-
-            /// These commands rebuild whole parts (the full read+rewrite mutation path) and
-            /// drop the delete_bitmap_*.rbm sidecars, silently resurrecting deleted rows once
-            /// DELETE lands. MATERIALIZE INDEX/STATISTICS/PROJECTION reach the same path via
-            /// MutateAllPartColumnsTask for compact or non-full parts (which only hardlinks
-            /// checksummed entries, not the sidecars). Reject the whole destructive-rewrite family.
-            if (command.type == MutationCommand::REWRITE_PARTS
-                || command.type == MutationCommand::APPLY_DELETED_MASK
-                || command.type == MutationCommand::APPLY_PATCHES
-                || command.type == MutationCommand::MATERIALIZE_INDEX
-                || command.type == MutationCommand::MATERIALIZE_STATISTICS
-                || command.type == MutationCommand::MATERIALIZE_PROJECTION)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "ALTER TABLE ... {} is not supported on tables with UNIQUE KEY",
-                    command.type == MutationCommand::REWRITE_PARTS ? "REWRITE PARTS"
-                        : command.type == MutationCommand::APPLY_DELETED_MASK ? "APPLY DELETED MASK"
-                        : command.type == MutationCommand::APPLY_PATCHES ? "APPLY PATCHES"
-                        : command.type == MutationCommand::MATERIALIZE_INDEX ? "MATERIALIZE INDEX"
-                        : command.type == MutationCommand::MATERIALIZE_STATISTICS ? "MATERIALIZE STATISTICS"
-                        : "MATERIALIZE PROJECTION");
-        }
-    }
+        checkUniqueKeyMutationCommands(commands);
 
     const auto index_mode = (*getSettings())[MergeTreeSetting::alter_column_secondary_index_mode];
     auto secondary_indices_metadata = getInMemoryMetadataPtr(getContext(), false);
@@ -6241,8 +7027,10 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
 
+    /// TODO(unique-key): support Packed storage; SSTIndexWriter needs Full parts.
     auto storage_type = PartStorageType::Full;
-    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))
+    if (!hasUniqueKey()
+        && satisfies((*settings)[MergeTreeSetting::min_bytes_for_full_part_storage], (*settings)[MergeTreeSetting::min_rows_for_full_part_storage], (*settings)[MergeTreeSetting::min_level_for_full_part_storage]))
         storage_type = PartStorageType::Packed;
 
     /// The trained `pq` method of the `Quantize(...)` codec stores a per-part codebook (one artifact for the whole
@@ -6279,6 +7067,76 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     const String & name, const VolumePtr & volume, const String & part_dir, const ReadSettings & read_settings_, PartDirIntent intent) const
 {
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, intent);
+}
+
+void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
+{
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
+    if (!disk->existsFileOrDirectory(format_version_path))
+        return;
+
+    if (!disk->existsFile(format_version_path))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+    auto buf = disk->readFileIfExists(format_version_path, getReadSettings());
+    if (buf)
+    {
+        UInt32 current_format_version{0};
+        if (!tryReadIntText(current_format_version, *buf) || !buf->eof())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+        if (current_format_version != format_version.toUnderType())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Version file on {} contains version {} expected version is {}.",
+                fullPath(disk, format_version_path),
+                current_format_version,
+                format_version.toUnderType());
+
+        return;
+    }
+
+    throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+}
+
+bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
+{
+    if (!disk->existsDirectory(relative_data_path))
+        return false;
+
+    /// A newly added disk may have only explicitly safe entries.
+    /// Anything else would become owned by the table path after the policy change.
+    validateFormatVersion(disk);
+
+    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+    {
+        const auto name = it->name();
+
+        /// `format_version.txt` is validated above and has no table rows or mutable table state.
+        if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
+            continue;
+
+        const auto entry_path = fs::path(relative_data_path) / name;
+        if (name == DETACHED_DIR_NAME)
+        {
+            /// `detached/` is removed recursively on `DROP TABLE`, so accept it only when empty.
+            if (!disk->existsDirectory(entry_path))
+                return true;
+
+            if (!disk->isDirectoryEmpty(entry_path))
+                return true;
+
+            continue;
+        }
+
+        /// Recovery-only entries like `tmp_`, `delete_tmp_`, `tmp-fetch_`, `tmp_mutation_`,
+        /// and `moving/` are not cleaned before `changeSettings` publishes the new policy.
+        /// They can conflict with later writes, merges, mutations, or moves. See #109823.
+        return true;
+    }
+
+    return false;
 }
 
 void MergeTreeData::changeSettings(
@@ -6319,8 +7177,11 @@ void MergeTreeData::changeSettings(
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->existsDirectory(relative_data_path))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+
+                        if (containsTableDataOnNewDisk(disk))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
                     for (const String & disk_name : all_diff_disk_names)
@@ -6329,7 +7190,10 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// FIXME how would that be done while reloading configuration???
+                    /// FIXME: current update in config reload is done asynchronously, so we can't guarantee that it will
+                    /// initialize new disks before they are actually used
+                    /// so we can't use disks reliably without some kind of authoritative initialization model
+                    /// but this issue is relatively rare
 
                     has_storage_policy_changed = true;
                 }
@@ -6341,15 +7205,8 @@ void MergeTreeData::changeSettings(
         copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
             copy->sanityCheck(
                 getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_private_preview,
-                allow_beta,
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
@@ -6398,7 +7255,12 @@ std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const Stora
     Field new_statistics_types = new_metadata.getSettingChange("auto_statistics_types");
 
     if (new_statistics_types.isNull())
-        return std::make_pair(old_settings[MergeTreeSetting::auto_statistics_types], false);
+    {
+        /// Not set in the table definition, either never or since a reset: the engine default applies.
+        String default_types = (*getDefaultSettings())[MergeTreeSetting::auto_statistics_types];
+        String old_types = old_settings[MergeTreeSetting::auto_statistics_types];
+        return std::make_pair(default_types, default_types != old_types);
+    }
 
     return std::make_pair(new_statistics_types.safeGet<String>(), true);
 }
@@ -6678,7 +7540,8 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     Transaction & out_transaction,
     DataPartsLock & lock,
     DataPartsVector * out_covered_parts,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     LOG_TRACE(log, "Renaming temporary part {} to {} with tid {}.", part->getDataPartStorage().getPartDirectory(), part->name, out_transaction.getTID());
 
@@ -6710,6 +7573,11 @@ bool MergeTreeData::renameTempPartAndReplaceImpl(
     if (hierarchy.duplicate_part)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected duplicate part {}. It is a bug.", hierarchy.duplicate_part->getNameWithState());
 
+    /// Empty parts do not add data and are used to remove it (e.g. by TRUNCATE or DROP PARTITION),
+    /// so they are always allowed regardless of the table size limits.
+    if (check_table_size_limits && part->rows_count != 0)
+        throwIfTableSizeLimitsExceeded(lock, part.get(), hierarchy.covered_parts);
+
     if (part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
 
@@ -6730,28 +7598,31 @@ bool MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
-    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction);
+    return renameTempPartAndReplaceImpl(part, out_transaction, lock, /*out_covered_parts=*/ nullptr, rename_in_transaction, check_table_size_limits);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     auto lock = lockParts();
-    return renameTempPartAndReplaceUnlocked(part, lock, out_transaction, rename_in_transaction);
+    return renameTempPartAndReplaceUnlocked(part, lock, out_transaction, rename_in_transaction, check_table_size_limits);
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplaceUnlocked(
     MutableDataPartPtr & part,
     DataPartsLock & lock,
     Transaction & out_transaction,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     DataPartsVector covered_parts;
-    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction);
+    renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction, check_table_size_limits);
     return covered_parts;
 }
 
@@ -6759,11 +7630,12 @@ bool MergeTreeData::renameTempPartAndAdd(
     MutableDataPartPtr & part,
     Transaction & out_transaction,
     DataPartsLock & lock,
-    bool rename_in_transaction)
+    bool rename_in_transaction,
+    bool check_table_size_limits)
 {
     DataPartsVector covered_parts;
 
-    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction))
+    if (!renameTempPartAndReplaceImpl(part, out_transaction, lock, &covered_parts, rename_in_transaction, check_table_size_limits))
         return false;
 
     if (!covered_parts.empty())
@@ -6780,11 +7652,16 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
+    /// Write the removal metadata of the whole batch before touching the part states: without a
+    /// transaction a partially applied batch cannot be rolled back, see NonTransactionalRemovalLocks.
+    NonTransactionalRemovalLocks removal_locks;
+    for (const DataPartPtr & part : remove)
+        if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
+            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, LockKind::REMOVAL, removal_locks);
+    removal_locks.store();
+
     for (const DataPartPtr & part : remove)
     {
-        if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
-            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn);
-
         if (part->getState() == MergeTreeDataPartState::Active)
         {
             removePartContributionToColumnAndSecondaryIndexSizes(part);
@@ -6843,6 +7720,37 @@ void MergeTreeData::removePartsFromWorkingSet(
 void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
     removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true);
+}
+
+void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const
+{
+    for (const auto & part : parts)
+    {
+        auto & version = *part->version;
+
+        if (kind == NonTransactionalRemovalKind::Republish)
+        {
+            if (!version.isCreationCommitted())
+                throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                    "Cannot non-transactionally move object {} whose creation_tid {} is not committed",
+                    version.getObjectName(), version.getInfo().creation_tid);
+        }
+        else if (version.isCreatedByUncommittedTransaction())
+        {
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                version.getObjectName(), version.getInfo().creation_tid);
+        }
+
+        /// The other way the later removal can be refused: another transaction is already removing the
+        /// part, so `lockRemovalTID` will not give up the lock. A part that is *already* removed is not
+        /// a problem -- the removal skips it -- but one that is merely locked is. Both this check and
+        /// the removal run under the same parts lock, so the answer cannot change in between.
+        if (!version.getInfo().isRemoved() && version.isRemovalTIDLocked())
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {}, it is locked for removal by another transaction",
+                version.getObjectName());
+    }
 }
 
 DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
@@ -6950,9 +7858,6 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         }
     }
 
-    /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
-    removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
-
     /// We can only create a covering part for a blocks range that starts with 0 (otherwise we may get "intersecting parts"
     /// if we remove a range from the middle when dropping a part).
     /// Maybe we could do it by incrementing mutation version to get a name for the empty covering part,
@@ -6965,6 +7870,8 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
     /// Under a running MVCC transaction the removed parts keep their version metadata (creation/removal CSN
     /// persisted on disk), which already prevents them from being resurrected on restart, so no covering part
     /// is needed (mirrors plain MergeTree DROP PARTITION, which only covers parts in its non-transaction path).
+    MutableDataPartPtr empty_covering_part;
+    scope_guard empty_covering_part_tmp_dir_holder;
     if (create_empty_part && !txn && !parts_to_remove.empty() && is_new_syntax && !range_in_the_middle)
     {
         /// We are going to remove a lot of parts from zookeeper just after returning from this function.
@@ -6972,18 +7879,43 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         /// But if the server restarts in-between, then it will notice a lot of unexpected parts,
         /// so it may refuse to start. Let's create an empty part that covers them.
         /// We don't need to commit it to zk, and don't even need to activate it.
+        ///
+        /// The part is written before the covered parts leave the working set, because writing it can throw
+        /// (e.g. `MEMORY_LIMIT_EXCEEDED`). If it threw after the removal, the covered parts would already be
+        /// outdated without a covering part, a following `REPLACE_RANGE` would find no active parts to cover,
+        /// and the parts would be removed from ZooKeeper only, becoming unexpected parts after a restart.
 
         MergeTreePartInfo empty_info = drop_range;
         empty_info.level = empty_info.mutation = 0;
         empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
-        for (const auto & part : parts_to_remove)
+
+        /// We still have to take min_block into account to avoid creating multiple covering ranges
+        /// that intersect each other. The level and the mutation version matter just as much:
+        /// `MergeTreePartInfo::contains` demands a strictly greater level when the block ranges
+        /// differ, so a covering part whose level is not above the level of everything it spans
+        /// does not actually cover it.
+        auto widen_to_cover = [&](const MergeTreePartInfo & info)
         {
-            /// We still have to take min_block into account to avoid creating multiple covering ranges
-            /// that intersect each other
-            empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
-            empty_info.level = std::max(empty_info.level, part->info.level);
-            empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
-        }
+            empty_info.min_block = std::min(empty_info.min_block, info.min_block);
+            empty_info.level = std::max(empty_info.level, info.level);
+            empty_info.mutation = std::max(empty_info.mutation, info.mutation);
+        };
+
+        for (const auto & part : parts_to_remove)
+            widen_to_cover(part->info);
+
+        /// Parts that were outdated earlier are still on disk: they are only unlinked once
+        /// `old_parts_lifetime` has passed. The ones that no active part covers - a part dropped by
+        /// `DROP PART`, or an empty part dropped in the background - are seen by the part loader
+        /// after a restart. The covering part has to contain those as well, otherwise the loader
+        /// finds a pair of parts that neither contain one another nor are disjoint, and the server
+        /// refuses to start with "Part ... intersects previous part ...".
+        /// Only the block range is checked here (not `drop_range.contains`), because a part that
+        /// lies inside the dropped blocks has to be covered whatever its level and mutation are.
+        for (const auto & part : inactive_parts_to_remove_immediately)
+            if (drop_range.min_block <= part->info.min_block && part->info.max_block <= drop_range.max_block)
+                widen_to_cover(part->info);
+
         empty_info.level += 1;
 
         const auto & source_part = parts_to_remove.front();
@@ -6991,25 +7923,50 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         String empty_part_name = empty_info.getPartNameAndCheckFormat(format_version);
 
         /// Use the source part's metadata so patch parts pick up patch-part metadata.
-        auto [new_data_part, tmp_dir_holder] = createEmptyPart(
+        std::tie(empty_covering_part, empty_covering_part_tmp_dir_holder) = createEmptyPart(
             empty_info,
             partition,
             empty_part_name,
-            source_part->getMetadataSnapshot(),
+            getMetadataSnapshotForEmptyPart(*source_part),
             NO_TRANSACTION_PTR,
             source_part->info.isPatch() ? std::optional(source_part->getPatchPartIndex().cloneEmpty()) : std::nullopt);
+    }
 
+    /// If anything below throws before the part storage transaction is committed, undo it (best-effort).
+    /// Otherwise, on object storage, the already uploaded blobs would be stranded: the part directory does not exist
+    /// until the commit, so the destructor of the temporary part finds nothing to remove.
+    scope_guard undo_empty_covering_part_guard = [&]
+    {
+        if (!empty_covering_part)
+            return;
+
+        try
+        {
+            empty_covering_part->getDataPartStorage().undoTransaction();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while undoing the transaction of the empty covering part {}", empty_covering_part->name));
+        }
+    };
+
+    /// FIXME refactor removePartsFromWorkingSet(...), do not remove parts twice
+    removePartsFromWorkingSet(txn, parts_to_remove, clear_without_timeout, lock);
+
+    if (empty_covering_part)
+    {
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         scope_guard rollback_tx_guard = [&]() { transaction.rollback(&lock); };
 
-        renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
-        new_data_part->getDataPartStorage().commitTransaction();
+        renameTempPartAndAdd(empty_covering_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
+        empty_covering_part->getDataPartStorage().commitTransaction();
         rollback_tx_guard.reset();
+        undo_empty_covering_part_guard.release();
 
-        new_data_part->remove_time.store(0, std::memory_order_relaxed);
+        empty_covering_part->remove_time.store(0, std::memory_order_relaxed);
         /// Such parts are always local, they don't participate in replication, they don't have shared blobs.
         /// So we don't have locks for shared data in zk for them, and can just remove blobs (this avoids leaving garbage in S3)
-        new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS_OF_NOT_TEMPORARY;
+        empty_covering_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS_OF_NOT_TEMPORARY;
     }
 
     /// Since we can return parts in Deleting state, we have to use a wrapper that restricts access to such parts.
@@ -7045,6 +8002,7 @@ void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & 
 {
     LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
     part_to_detach->makeCloneInDetached("unexpected", metadata_snapshot, /*disk_transaction*/ {});
 
     auto lock = lockParts();
@@ -7055,6 +8013,16 @@ void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & 
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix)
 {
+    /// Before anything is renamed or dropped, and ahead of `lockParts()` below: this route skips
+    /// Outdated, so `grabOldParts` never gets to hold the part back, and a bitmap inside it may
+    /// be the only copy of another part's kills.
+    /// TODO(unique-key): an operator escape for a part whose target will never go away.
+    if (isPinnedByDeleteBitmap(*part_to_detach))
+        throw Exception(ErrorCodes::ABORTED,
+            "Refusing to detach part {} of table {}: it holds delete bitmaps for other parts, and "
+            "`detached/` puts them out of reach of every read",
+            part_to_detach->name, getStorageID().getNameForLogs());
+
     if (prefix.empty())
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
     else
@@ -7122,6 +8090,10 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
+
+    /// This path skips `removePartsFinally`, so it owes the reclaim itself. Safe under the parts
+    /// lock: forgetting an index entry resolves no part.
+    dropUniqueKeyBitmaps({part});
 }
 
 
@@ -7197,31 +8169,17 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
 }
 
 MergeTreeData::ColumnDefaultnessStatsUnavailableReason
-MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot)
-{
-    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
-    if (query_context->getCurrentTransaction())
-        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
-
-    if (!mutations_snapshot)
-        return ColumnDefaultnessStatsUnavailableReason::None;
-
-    if (mutations_snapshot->hasPatchParts())
-        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
-    if (mutations_snapshot->hasDataMutations())
-        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
-    if (mutations_snapshot->hasAlterMutations())
-        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
-
-    return ColumnDefaultnessStatsUnavailableReason::None;
-}
-
-MergeTreeData::ColumnDefaultnessStatsUnavailableReason
 MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const
 {
-    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
-    if (query_context->getCurrentTransaction())
+    /// Storages supporting transactions should return stats from the actual visible snapshot.
+    /// If the storage does not support transactions it may return stats from all active parts instead of snapshot
+    /// visible to the transaction.
+    if (!supportsTransactions() && query_context->getCurrentTransaction())
         return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
+
+    /// TODO(unique-key): support defaultness stats.
+    if (hasUniqueKey())
+        return ColumnDefaultnessStatsUnavailableReason::UniqueKey;
 
     /// Patch parts apply updates/deletes at read time and don't update the base part's
     /// `serialization.json`, so the recorded `num_defaults` would be stale.
@@ -7274,6 +8232,7 @@ const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(Colu
         case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
         case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
         case ColumnDefaultnessStatsUnavailableReason::MaskingPolicy: return "table has a masking policy";
+        case ColumnDefaultnessStatsUnavailableReason::UniqueKey: return "table has a unique key";
     }
     UNREACHABLE();
 }
@@ -7292,11 +8251,24 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         return std::nullopt;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column_name);
+    if (!column_in_metadata)
+        return std::nullopt;
+
     ColumnDefaultnessStats aggregate;
     for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
     {
         if (part->isEmpty())
             continue;
+
+        /// A metadata-only `MODIFY COLUMN` (e.g. `UInt64` -> `Nullable(UInt64)`) does not rewrite the part,
+        /// so its `num_defaults` counts defaults of the old type while reads return the new type.
+        if (part->getColumnsDescription().tryGetPhysical(column_name) != column_in_metadata)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: type in part {} differs from the type in metadata", column_name, part->name);
+            return std::nullopt;
+        }
 
         const auto & infos = part->getSerializationInfos();
         auto it = infos.find(column_name);
@@ -7416,11 +8388,276 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 }
 
 
+void MergeTreeData::throwIfTableSizeLimitsExceeded() const
+{
+    const auto settings = getSettings();
+
+    /// Fast path to avoid taking the parts lock when the limits are not set.
+    if (!(*settings)[MergeTreeSetting::max_table_size_rows]
+        && !(*settings)[MergeTreeSetting::max_table_size_bytes_compressed]
+        && !(*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed])
+        return;
+
+    auto parts_lock = readLockParts();
+    throwIfTableSizeLimitsExceeded(parts_lock, nullptr, {});
+}
+
+MergeTreeData::PartsSize MergeTreeData::calculatePartsSize(const DataPartsVector & parts)
+{
+    PartsSize result;
+    for (const auto & part : parts)
+    {
+        /// Patch parts represent mutations of rows in regular parts, not additional table rows.
+        if (!part->info.isPatch())
+            result.rows += part->rows_count;
+
+        result.bytes_compressed += part->getBytesOnDisk();
+        result.bytes_uncompressed += part->getBytesUncompressedOnDisk();
+    }
+    return result;
+}
+
+MergeTreeData::PartsSize MergeTreeData::calculateTableSizeForLimits(const DataPartsAnyLock &) const
+{
+    /// Parts in the `PreActive` state have been already accepted into the working set by a concurrent
+    /// operation and are about to become active, so they have to be counted as well. Otherwise a batch of
+    /// parts precommitted in a single transaction, or a concurrent insert running between
+    /// `renameTempPartAndAdd` and `Transaction::commit`, would be invisible to the check and the limits
+    /// could be overshot by the whole precommitted batch.
+    auto pre_active_range = getDataPartsStateRange(DataPartState::PreActive);
+    DataPartsVector pre_active_parts(pre_active_range.begin(), pre_active_range.end());
+
+    /// An active part covered by a `PreActive` part will be removed from the active set when the
+    /// corresponding transaction commits, so it should not be counted twice.
+    auto is_covered_by_pre_active = [&](const MergeTreePartInfo & info)
+    {
+        return std::any_of(pre_active_parts.begin(), pre_active_parts.end(),
+            [&](const DataPartPtr & pre_active) { return pre_active->info.contains(info); });
+    };
+
+    PartsSize result;
+
+    for (const auto & part : pre_active_parts)
+    {
+        if (!part->info.isPatch())
+            result.rows += part->rows_count;
+    }
+
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+    {
+        if (!part->info.isPatch() && !is_covered_by_pre_active(part->info))
+            result.rows += part->rows_count;
+    }
+
+    /// Inactive (outdated) parts are counted as well because the purpose of the limits is to restrict disk usage.
+    /// They are removed in the background, so the total size can decrease over time. Parts in the `Deleting`
+    /// state are counted for the same reason: `clearOldPartsFromFilesystem` moves a part to `Deleting` before
+    /// its files are removed from the disk, and only `removePartsFinally` erases it from `data_parts_indexes`
+    /// afterwards, so until then its bytes still occupy the disk.
+    ///
+    /// The limits apply to the set of data parts of the table, which is not exactly the same as the instantaneous
+    /// number of bytes occupied on the disks. In-flight copies of data are not counted: a temporary part being
+    /// written by an insert or a merge, and the old copy of a part that has been moved to another disk or volume,
+    /// which is put into the `DeleteOnDestroy` state and is deleted as soon as the last reader releases it.
+    /// Such copies cannot be counted here in any case: `swapActivePart` and `MergeTreePartsMover` erase the old
+    /// part from `data_parts_indexes` in the same operation that assigns the `DeleteOnDestroy` state to it, so
+    /// no part in that state is ever reachable through `getDataPartsStateRange`. This is not a hole in the
+    /// accounting: the moved part itself is still counted through its new copy, and the extra space is bounded
+    /// by the size of the data being moved or merged and is released without any user action.
+    for (auto state : {DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated, DataPartState::Deleting})
+    {
+        for (const auto & part : getDataPartsStateRange(state))
+        {
+            result.bytes_compressed += part->getBytesOnDisk();
+            result.bytes_uncompressed += part->getBytesUncompressedOnDisk();
+        }
+    }
+
+    return result;
+}
+
+void MergeTreeData::throwIfTableSizeLimitsExceeded(
+    const DataPartsAnyLock & parts_lock,
+    const IMergeTreeDataPart * added_part,
+    const DataPartsVector & covered_parts) const
+{
+    const auto settings = getSettings();
+
+    const UInt64 max_rows = (*settings)[MergeTreeSetting::max_table_size_rows];
+    const UInt64 max_bytes_compressed = (*settings)[MergeTreeSetting::max_table_size_bytes_compressed];
+    const UInt64 max_bytes_uncompressed = (*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed];
+
+    if (!max_rows && !max_bytes_compressed && !max_bytes_uncompressed)
+        return;
+
+    const PartsSize current = calculateTableSizeForLimits(parts_lock);
+    const PartsSize covered = calculatePartsSize(covered_parts);
+
+    if (max_rows)
+    {
+        /// The parts covered by the operation are removed from the active set when it commits,
+        /// so they are not part of the table size any more.
+        const UInt64 total_rows = current.rows - std::min(current.rows, covered.rows);
+
+        /// An operation that replaces the covered parts with a part that has no more rows than they
+        /// had is always allowed, so that a table that has already crossed the limit can be brought
+        /// back under it by a merge or mutation, and not only by dropping whole parts - the same
+        /// carve-out the byte limits below have. Without it no partial merge of an over-limit table
+        /// can ever commit, so the table cannot be compacted at all and its part count grows until
+        /// inserts start failing with `parts_to_throw_insert`.
+        /// A patch part represents a mutation of rows in a regular part rather than additional table
+        /// rows, so it never grows the row count.
+        const UInt64 added_rows = added_part && !added_part->info.isPatch() ? added_part->rows_count : 0;
+        const bool is_shrinking_rows = added_part && added_rows <= covered.rows;
+
+        if (total_rows > max_rows && !is_shrinking_rows)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total number of rows in active data parts of table {} is {}, "
+                "which exceeds the 'max_table_size_rows' setting value ({})",
+                getLogName(), total_rows, max_rows);
+    }
+
+    if (max_bytes_compressed || max_bytes_uncompressed)
+    {
+        /// An operation that replaces the covered parts with a not larger part is always allowed, so that a
+        /// table that has already crossed a limit can be brought back under it by a size-reducing merge or
+        /// mutation, and not only by dropping whole parts. Note that the covered parts are not subtracted
+        /// from the total: they only become inactive and still occupy the disk until they are removed in
+        /// the background.
+        const bool is_shrinking_compressed = added_part && added_part->getBytesOnDisk() <= covered.bytes_compressed;
+        const bool is_shrinking_uncompressed = added_part && added_part->getBytesUncompressedOnDisk() <= covered.bytes_uncompressed;
+
+        if (max_bytes_compressed && current.bytes_compressed > max_bytes_compressed && !is_shrinking_compressed)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total size of compressed data in active and inactive parts of table {} is {}, "
+                "which exceeds the 'max_table_size_bytes_compressed' setting value ({}). "
+                "Note: inactive parts are removed in the background, so the total size can decrease over time",
+                getLogName(), ReadableSize(current.bytes_compressed), ReadableSize(max_bytes_compressed));
+
+        if (max_bytes_uncompressed && current.bytes_uncompressed > max_bytes_uncompressed && !is_shrinking_uncompressed)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the total size of uncompressed data in active and inactive parts of table {} is {}, "
+                "which exceeds the 'max_table_size_bytes_uncompressed' setting value ({}). "
+                "Note: inactive parts are removed in the background, so the total size can decrease over time",
+                getLogName(), ReadableSize(current.bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
+    }
+}
+
+void MergeTreeData::throwIfTableSizeLimitsExceededForReplacement(
+    const DataPartsLock & parts_lock,
+    const MutableDataPartsVector & added_parts,
+    const std::optional<MergeTreePartInfo> & drop_range) const
+{
+    const auto settings = getSettings();
+
+    const UInt64 max_rows = (*settings)[MergeTreeSetting::max_table_size_rows];
+    const UInt64 max_bytes_compressed = (*settings)[MergeTreeSetting::max_table_size_bytes_compressed];
+    const UInt64 max_bytes_uncompressed = (*settings)[MergeTreeSetting::max_table_size_bytes_uncompressed];
+
+    if (!max_rows && !max_bytes_compressed && !max_bytes_uncompressed)
+        return;
+
+    /// The parts that the operation is going to remove after committing the new ones.
+    DataPartsVector replaced_parts;
+    if (drop_range)
+        replaced_parts = getPartHierarchy(*drop_range, DataPartState::Active, parts_lock).covered_parts;
+
+    const PartsSize current = calculateTableSizeForLimits(parts_lock);
+    const PartsSize replaced = calculatePartsSize(replaced_parts);
+    const PartsSize added = calculatePartsSize(DataPartsVector(added_parts.begin(), added_parts.end()));
+
+    /// Unlike a single insert, whose parts are checked one by one against the current table size, the whole
+    /// batch is known in advance here, so it is accounted at once and the operation is rejected as a whole
+    /// instead of being interrupted in the middle. An operation that does not increase the table size is
+    /// always allowed, so that an already over-limit table can be brought back under the limit.
+
+    if (max_rows)
+    {
+        /// The replaced parts are removed from the active set when the operation completes.
+        const UInt64 total_rows = current.rows - std::min(current.rows, replaced.rows) + added.rows;
+
+        if (total_rows > max_rows && added.rows > replaced.rows)
+            throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+                "Table size limit exceeded: the operation would make the total number of rows in active data parts "
+                "of table {} equal to {}, which exceeds the 'max_table_size_rows' setting value ({})",
+                getLogName(), total_rows, max_rows);
+    }
+
+    /// The replaced parts are not subtracted from the number of bytes: they only become inactive and still
+    /// occupy the disk until they are removed in the background.
+
+    if (max_bytes_compressed && current.bytes_compressed + added.bytes_compressed > max_bytes_compressed
+        && added.bytes_compressed > replaced.bytes_compressed)
+    {
+        throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+            "Table size limit exceeded: the operation would make the total size of compressed data in active and "
+            "inactive parts of table {} equal to {}, which exceeds the 'max_table_size_bytes_compressed' setting "
+            "value ({}). Note: inactive parts are removed in the background, so the total size can decrease over time",
+            getLogName(), ReadableSize(current.bytes_compressed + added.bytes_compressed), ReadableSize(max_bytes_compressed));
+    }
+
+    if (max_bytes_uncompressed && current.bytes_uncompressed + added.bytes_uncompressed > max_bytes_uncompressed
+        && added.bytes_uncompressed > replaced.bytes_uncompressed)
+    {
+        throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
+            "Table size limit exceeded: the operation would make the total size of uncompressed data in active and "
+            "inactive parts of table {} equal to {}, which exceeds the 'max_table_size_bytes_uncompressed' setting "
+            "value ({}). Note: inactive parts are removed in the background, so the total size can decrease over time",
+            getLogName(), ReadableSize(current.bytes_uncompressed + added.bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
+    }
+}
+
+void MergeTreeData::throwIfTemporaryTableSizeLimitsExceededForReplacement(
+    const ContextPtr & query_context,
+    const DataPartsLock & parts_lock,
+    const MutableDataPartsVector & added_parts,
+    const std::optional<MergeTreePartInfo> & drop_range) const
+{
+    /// Only `CREATE TEMPORARY TABLE` creates `MergeTree` tables in the temporary database.
+    if (getStorageID().database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        return;
+
+    const auto & settings = query_context->getSettingsRef();
+    const UInt64 max_bytes_compressed = settings[Setting::max_temporary_table_size_bytes_compressed];
+    const UInt64 max_bytes_uncompressed = settings[Setting::max_temporary_table_size_bytes_uncompressed];
+
+    if (!max_bytes_compressed && !max_bytes_uncompressed)
+        return;
+
+    /// The limits are accounted in the same way as `total_bytes` and `total_bytes_uncompressed` in `system.tables`,
+    /// that is, by the active regular parts, which the parts covered by 'drop_range' stop being after the operation.
+    auto active_range = getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular);
+    const PartsSize current = calculatePartsSize(DataPartsVector(active_range.begin(), active_range.end()));
+
+    DataPartsVector replaced_parts;
+    if (drop_range)
+        replaced_parts = getPartHierarchy(*drop_range, DataPartState::Active, parts_lock).covered_parts;
+
+    const PartsSize replaced = calculatePartsSize(replaced_parts);
+    const PartsSize added = calculatePartsSize(DataPartsVector(added_parts.begin(), added_parts.end()));
+
+    /// An operation that does not increase the size is always allowed, as for the 'max_table_size_*' limits.
+    const UInt64 total_bytes_compressed = current.bytes_compressed - std::min(current.bytes_compressed, replaced.bytes_compressed) + added.bytes_compressed;
+    if (max_bytes_compressed && total_bytes_compressed > max_bytes_compressed && added.bytes_compressed > replaced.bytes_compressed)
+        throw Exception(ErrorCodes::TOO_MANY_BYTES,
+            "The temporary table would take {} of compressed data, the maximum is {} (the `max_temporary_table_size_bytes_compressed` setting)",
+            ReadableSize(total_bytes_compressed), ReadableSize(max_bytes_compressed));
+
+    const UInt64 total_bytes_uncompressed = current.bytes_uncompressed - std::min(current.bytes_uncompressed, replaced.bytes_uncompressed) + added.bytes_uncompressed;
+    if (max_bytes_uncompressed && total_bytes_uncompressed > max_bytes_uncompressed && added.bytes_uncompressed > replaced.bytes_uncompressed)
+        throw Exception(ErrorCodes::TOO_MANY_BYTES,
+            "The temporary table would take {} of uncompressed data, the maximum is {} (the `max_temporary_table_size_bytes_uncompressed` setting)",
+            ReadableSize(total_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
+}
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
 {
     const auto settings = getSettings();
     const auto & query_settings = query_context->getSettingsRef();
     const size_t parts_count_in_total = getActivePartsCount();
+
+    if (allow_throw)
+        throwIfTableSizeLimitsExceeded();
 
     const auto active_parts_to_delay_insert = query_settings[Setting::parts_to_delay_insert] ? query_settings[Setting::parts_to_delay_insert] : (*settings)[MergeTreeSetting::parts_to_delay_insert];
     const auto active_parts_to_throw_insert = query_settings[Setting::parts_to_throw_insert] ? query_settings[Setting::parts_to_throw_insert] : (*settings)[MergeTreeSetting::parts_to_throw_insert];
@@ -7483,7 +8720,19 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
     }
 
-    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
+    size_t parts_count_in_partition = 0;
+    size_t size_of_partition = 0;
+    {
+        /// Smallest threshold that could trigger a throw or delay.
+        /// A zero parts_to_throw_insert means "throw on any part", so treat it as 1 to never skip.
+        UInt64 min_enabled_threshold = active_parts_to_throw_insert > 0 ? active_parts_to_throw_insert : 1;
+        if (active_parts_to_delay_insert > 0)
+            min_enabled_threshold = std::min(min_enabled_threshold, static_cast<UInt64>(active_parts_to_delay_insert));
+
+        /// If total number of parts is less than minimal threshold, avoid iterating over parts under lock
+        if (parts_count_in_total >= min_enabled_threshold)
+            std::tie(parts_count_in_partition, size_of_partition) = getMaxPartsCountAndSizeForPartition();
+    }
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     size_t active_parts_over_threshold = 0;
 
@@ -7847,7 +9096,7 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     /// If the part has no metadata_version.txt (very old parts), the fallback in
     /// loadColumnsChecksumsIndexes will use the table's current version with a special flag.
 
-    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
     part->removeDeleteOnDestroyMarker();
@@ -7869,6 +9118,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & /*
 
     column_sizes.clear();
     secondary_index_sizes.clear();
+    primary_index_size = {};
 
     /// Take into account only committed parts
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
@@ -7885,6 +9135,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
 
     column_sizes.clear();
     secondary_index_sizes.clear();
+    primary_index_size = {};
 
     auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
 
@@ -7913,12 +9164,30 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
+/// A part whose sizes are not computed yet cannot be accounted for without reading them from its
+/// storage. Callers hold the parts lock, and `Transaction::commit` calls them from inside a
+/// NOEXCEPT_SCOPE, where a read that fails to schedule a thread would terminate the server. So drop
+/// the aggregates instead and let the next reader rebuild them from the active parts.
+void MergeTreeData::invalidateColumnAndSecondaryIndexSizesUnlocked() const
+{
+    column_sizes.clear();
+    secondary_index_sizes.clear();
+    primary_index_size = {};
+    are_columns_and_secondary_indices_sizes_calculated = false;
+}
+
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
     /// If sizes are calculated lazily, don't add part contribution. All sizes from all active parts will be calculated later.
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
+
+    if (!part->areColumnAndSecondaryIndexSizesCalculated())
+    {
+        invalidateColumnAndSecondaryIndexSizesUnlocked();
+        return;
+    }
 
     addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
 }
@@ -8010,6 +9279,12 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     if (!are_columns_and_secondary_indices_sizes_calculated)
         return;
 
+    if (!part->areColumnAndSecondaryIndexSizesCalculated())
+    {
+        invalidateColumnAndSecondaryIndexSizesUnlocked();
+        return;
+    }
+
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
@@ -8029,12 +9304,11 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
         log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
     }
 
-    const auto metadata_ptr = getInMemoryMetadataPtr(getContext(), false);
     for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
     {
-        if (!part->hasSecondaryIndex(secondary_index_name, metadata_ptr))
-            continue;
-
+        /// No `hasSecondaryIndex` check: it resolves the index file through the part storage, which
+        /// reads on packed storage, and `getSecondaryIndexSize` already returns an empty size for an
+        /// index the part does not have, so subtracting it is a no-op.
         IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
@@ -8347,21 +9621,36 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     }
 }
 
+/// Patch parts carry data versions allocated from the block numbers of their own table, so they cannot be copied to another table.
+static void assertNotPatchPartition(const MergeTreeData & data, const ASTPtr & partition, ContextPtr query_context, std::string_view command)
+{
+    if (partition->as<ASTPartition &>().all)
+        return;
+
+    const auto partition_id = data.getPartitionIDFromQuery(partition, query_context);
+    if (isPatchPartitionId(partition_id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot execute {} for partition {} of patch parts, they cannot be copied to another table. "
+            "Apply them with `ALTER TABLE ... APPLY PATCHES IN PARTITION ID '{}'` and use that partition instead",
+            command, partition_id, getOriginalPartitionIdOfPatch(partition_id));
+}
+
 void MergeTreeData::movePartitionToTable(const PartitionCommand & command, ContextPtr query_context)
 {
     String dest_database = query_context->resolveDatabase(command.to_database);
-    auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
+    auto dest_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context));
 
     /// The target table and the source table are the same.
     if (dest_storage->getStorageID() == this->getStorageID())
         return;
 
-    auto * dest_storage_merge_tree = dynamic_cast<MergeTreeData *>(dest_storage.get());
+    auto * dest_storage_merge_tree = castStorage<MergeTreeData>(dest_storage, DeferredTable::Load).get();
     if (!dest_storage_merge_tree)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Cannot move partition from table {} to table {} with storage {}",
             getStorageID().getNameForLogs(), dest_storage->getStorageID().getNameForLogs(), dest_storage->getName());
 
+    assertNotPatchPartition(*this, command.partition, query_context, "MOVE PARTITION TO TABLE");
     dest_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
     movePartitionToTable(dest_storage, command.partition, query_context);
 }
@@ -8391,15 +9680,16 @@ Pipe MergeTreeData::alterPartition(
     const PartitionCommands & commands,
     ContextPtr query_context)
 {
-    /// Reject all ALTER ... PARTITION ... operations on UNIQUE KEY tables.
-    /// Each command interacts with the dense-index sidecar and bitmap state
-    /// in ways that require UK-aware semantics not yet implemented.
-    if (metadata_snapshot && metadata_snapshot->hasUniqueKey() && !commands.empty())
+    /// TODO(unique-key): support ALTER ... PARTITION.
+    if (hasUniqueKey() && !commands.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
-    /// A read-only table must reject explicit partition mutations as well.
-    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    /// A read-only table must reject explicit partition mutations as well. `isReadonlyCommitInFlight`
+    /// covers the window in which a `table_readonly` 1 -> 0 `ALTER` has published `table_readonly = 0`
+    /// in memory but has not committed it: the table is still durably read-only, and the wait for the
+    /// outdated parts below returns at once because nothing is loading while the workers are disabled.
+    if ((*getSettings())[MergeTreeSetting::table_readonly] || isReadonlyCommitInFlight())
     {
         for (const PartitionCommand & command : commands)
         {
@@ -8487,18 +9777,24 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::REPLACE_PARTITION:
             {
+                assertNotPatchPartition(*this, command.partition, query_context, command.replace ? "REPLACE PARTITION" : "ATTACH PARTITION FROM");
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
 
                 auto resolved = query_context->resolveStorageID({command.from_database, command.from_table});
-                auto from_storage = DatabaseCatalog::instance().getTable(resolved, query_context);
+                            auto from_storage = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(resolved, query_context));
 
-                auto * from_storage_merge_tree = dynamic_cast<MergeTreeData *>(from_storage.get());
+                auto * from_storage_merge_tree = castStorage<MergeTreeData>(from_storage, DeferredTable::Load).get();
                 if (!from_storage_merge_tree)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Cannot replace partition from table {} with storage {} to table {}",
                         from_storage->getStorageID().getNameForLogs(), from_storage->getName(), getStorageID().getNameForLogs());
 
+                /// The wait returns at once while the source is read-only, including inside both windows
+                /// of its `table_readonly` 1 -> 0 `ALTER`, because nothing is loading. That is safe for the
+                /// source: cloning reads only its active parts, and their set is complete once the source
+                /// is attached, since the deferred outdated parts are exactly the parts covered by an
+                /// active one.
                 from_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
@@ -8681,10 +9977,7 @@ void MergeTreeData::restoreDataFromBackup(RestorerFromBackup & restorer, const S
     if (!backup->hasFiles(data_path_in_backup))
         return;
 
-    /// TODO(unique-key): sidecar-aware backup/restore. Delete-bitmap sidecars
-    /// are not preserved across backup/restore, so restoring data parts would
-    /// resurrect deleted rows. BACKUP is already rejected; gate the symmetric
-    /// restore path too for backups produced by older builds.
+    /// TODO(unique-key): support RESTORE.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata && uk_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "RESTORE of data is not supported for UNIQUE KEY tables yet: delete-bitmap "
@@ -8889,6 +10182,89 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         restored_parts_holder->increaseNumBrokenParts();
 }
 
+namespace
+{
+
+/// Whether the error describes the disk or the configuration of this server rather than the contents of
+/// the backup. The files of the part have already been copied from the backup to the destination disk, so
+/// an OS-level failure while accessing them is a failure of that disk (no space, readonly filesystem,
+/// permissions, I/O error, ...) - except for a missing file, which means the backup does not contain it.
+/// `UNIQUE_KEY_DENSE_INDEX_UNREADABLE` means that `unique_key_index.sst` could not be validated on the
+/// destination disk and was left in place for a retry (a corrupt one is rebuilt instead), so it says
+/// nothing about the backup either.
+bool isDestinationSideError(const Exception & e)
+{
+    if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
+        return errno_exception->getErrno() != ENOENT;
+    return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
+        || e.code() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
+}
+
+/// Whether a non-`DB::Exception` error comes from parsing the metadata files of a part with Poco
+/// (`Poco::JSON::Parser`, `Poco::Dynamic::Var` conversions), i.e. describes the contents of the files.
+bool isPartMetadataParseError(const Poco::Exception & e)
+{
+    return dynamic_cast<const Poco::JSON::JSONException *>(&e)
+        || dynamic_cast<const Poco::DataException *>(&e)
+        || dynamic_cast<const Poco::BadCastException *>(&e)
+        || dynamic_cast<const Poco::RangeException *>(&e)
+        || dynamic_cast<const Poco::InvalidAccessException *>(&e);
+}
+
+/// Assigns the final error code to a failure that happened while loading a part restored from a backup,
+/// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
+/// has been recorded for it yet).
+///
+/// A retryable failure (network, timeouts, ...) says nothing about the backup and keeps its original code.
+/// So does a failure of the destination (see `isDestinationSideError`): restoring a valid backup onto a full
+/// or readonly disk must not tell the user that the backup is damaged. Everything else means the backup
+/// cannot be read: either it was written by a newer server whose format this one does not understand
+/// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
+///
+/// A failure that is not a `DB::Exception` has no code to reassign. If it is positively identified as a
+/// failure to parse the metadata of the part (see `isPartMetadataParseError`, e.g. a truncated or malformed
+/// `serialization.json`), `error` is replaced with a fresh `BACKUP_DAMAGED` exception carrying its text.
+/// Any other such failure (`std::bad_alloc`, `Poco::IOException` of the local filesystem, ...) says nothing
+/// about the backup: it is left as is and is not attributed to a broken part.
+///
+/// `in_local_step` is set if the failure happened in a step that only writes to the destination.
+/// Returns whether the failure is attributed to the part in the backup being broken.
+bool classifyAndRecordRestoreError(std::exception_ptr & error, bool retryable, bool in_local_step)
+{
+    try
+    {
+        std::rethrow_exception(error);
+    }
+    catch (...)
+    {
+        /// Ok: nothing is swallowed here. The caller still owns `error` and rethrows it after this call;
+        /// this block only reaches into the exception object to assign and record its final code.
+        Exception * e = current_exception_cast<Exception *>();
+        if (!e)
+        {
+            const auto * poco_exception = current_exception_cast<const Poco::Exception *>();
+            if (retryable || in_local_step || !poco_exception || !isPartMetadataParseError(*poco_exception))
+                return false;
+
+            /// The constructor records the new exception in `system.errors`.
+            error = std::make_exception_ptr(Exception(ErrorCodes::BACKUP_DAMAGED, "{}", poco_exception->displayText()));
+            return true;
+        }
+
+        bool part_is_broken = !retryable && !in_local_step && !isDestinationSideError(*e);
+        if (part_is_broken)
+        {
+            e->resetCode(
+                e->code() == ErrorCodes::UNKNOWN_FORMAT_VERSION ? ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED : ErrorCodes::BACKUP_DAMAGED);
+        }
+
+        e->recordToSystemErrors();
+        return part_is_broken;
+    }
+}
+
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
 {
     MutableDataPartPtr part;
@@ -8905,15 +10281,26 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     String parent_part_dir = full_part_dir.parent_path();
     String part_dir_name = full_part_dir.filename();
 
+    /// Set while `load_part` runs a step that only writes to the destination, so that its failure is not
+    /// attributed to the backup.
+    bool in_local_step = false;
+
     /// Load this part from the directory `temp_part_dir`.
     auto load_part = [&]
     {
         MergeTreeDataPartBuilder builder(*this, part_name, single_disk_volume, parent_part_dir, part_dir_name, getReadSettings(), PartDirIntent::OpenExisting);
         builder.withPartFormatFromDisk();
         part = std::move(builder).build();
+        in_local_step = true;
         part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
-        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", {BlockNumberColumn::name, BlockOffsetColumn::name}, getContext()->getWriteSettings());
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*part->getDataPartStoragePtr(), "", IMergeTreeDataPart::getSystemColumnsToInvalidate(part->info), getContext()->getWriteSettings());
+        in_local_step = false;
         part->loadColumnsChecksumsIndexes(/* require_columns_checksums= */ false, /* check_consistency= */ true);
+        fiu_do_on(FailPoints::restore_part_inject_no_space_error,
+        {
+            ErrnoException::throwWithErrno(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, ENOSPC,
+                "Injected failure to write a file of part {} restored from backup", part_name);
+        });
         /// UNIQUE KEY: a restored part may not ship its `unique_key_index.sst`
         /// (older backup, or one taken before UK). Build it here so the part is
         /// usable; a failure throws and routes the part to `mark_broken` below
@@ -8944,8 +10331,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     {
         std::exception_ptr error;
         bool retryable = false;
+        in_local_step = false;
         try
         {
+            /// A failure to load a restored part is a property of the backup, not of this server, so it is
+            /// reported below with a backup-level error code. Suppress the recording of error codes while the
+            /// part is being loaded so that the failure is accounted in `system.errors` exactly once, under
+            /// that final code - otherwise a damaged backup keeps incrementing `CORRUPTED_DATA`, which is
+            /// reserved for corruption of the data this server owns and is alerted on as such.
+            Exception::SuppressErrorCodesScope suppress_error_codes;
             load_part();
         }
         catch (const Poco::Net::NetException &)
@@ -8967,13 +10361,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
         if (!error)
             return part;
 
-        if (!retryable && detach_if_broken)
+        bool part_is_broken = classifyAndRecordRestoreError(error, retryable, in_local_step);
+
+        /// A failure of the destination is not a broken part: it is not detached and fails the `RESTORE`.
+        if (part_is_broken && detach_if_broken)
         {
             mark_broken(error);
             return nullptr;
         }
 
-        if (!retryable)
+        if (part_is_broken)
         {
             LOG_ERROR(log,
                       "Failed to restore part {} because it's broken. You can skip broken parts while restoring by setting "
@@ -9003,6 +10400,138 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     }
 
     UNREACHABLE();
+}
+
+/// Converts one field of a partition value to the type of the partition key column.
+///
+/// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
+/// (`'2024-02-30'` is read as `2024-03-01`, `'2024-02-29 25:00:00'` as `2024-03-01 01:00:00`), and a value outside
+/// the range of the type is clamped to its boundary or replaced with the zero date. Such a string would name another
+/// partition, which a statement like `DROP PARTITION` would then remove. So it is parsed with the range checks of
+/// `date_time_overflow_behavior = 'throw'`, and the date and time it spells must be the ones of the parsed value.
+/// This also rejects a local time that does not exist in the time zone of a `DateTime` key because of a daylight
+/// saving time shift (`'2024-03-31 02:30:00'` in `Europe/Berlin` is read as `01:30:00`): no row can have that value.
+static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & type)
+{
+    const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
+    const WhichDataType which(nested_type);
+    if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
+        return convertFieldToTypeOrThrow(value, *type);
+
+    FormatSettings format_settings;
+    format_settings.date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
+    Field converted = convertFieldToTypeOrThrow(value, *type, nullptr, format_settings);
+
+    const String & literal = value.safeGet<String>();
+    auto column = nested_type->createColumn();
+    column->insert(converted);
+    WriteBufferFromOwnString parsed_text;
+    nested_type->getDefaultSerialization()->serializeText(*column, 0, parsed_text, {});
+
+    bool spells_parsed_value = true;
+    if (which.isDateOrDate32())
+    {
+        /// The same reader as in the text parsing of `Date`, so it accepts every form the conversion accepted.
+        LocalDate spelled;
+        LocalDate parsed;
+        ReadBufferFromString spelled_in(literal);
+        ReadBufferFromString parsed_in(parsed_text.str());
+        readDateText(spelled, spelled_in);
+        readDateText(parsed, parsed_in);
+        spells_parsed_value = spelled == parsed;
+    }
+    else
+    {
+        /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if the fifth character is not a digit,
+        /// and a Unix timestamp otherwise, which is read as an integer and cannot roll over. A negative `DateTime64`
+        /// timestamp such as `'-123.5'` is always read as a timestamp.
+        auto is_digit_at = [&](size_t pos) { return pos < literal.size() && isNumericASCII(literal[pos]); };
+        auto is_separator_at = [&](size_t pos) { return pos < literal.size() && !isNumericASCII(literal[pos]); };
+        const bool is_broken_down = literal.size() > 4 && literal[0] != '-' && !isNumericASCII(literal[4]);
+        const bool has_time = is_broken_down && literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
+        if (is_broken_down)
+        {
+            /// The broken-down reader takes the characters at their positions without checking them, so `'2024-02-2/'`
+            /// would be read as `2024-02-19` and `'20/4-03-01 00:00:00'` as `1994-03-01 00:00:00`, and the comparison
+            /// below would agree with it.
+            if (!is_digit_at(0) || !is_digit_at(1) || !is_digit_at(2) || !is_digit_at(3)
+                || !is_digit_at(5) || !is_digit_at(6) || !is_separator_at(7) || !is_digit_at(8) || !is_digit_at(9)
+                || (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_separator_at(13) || !is_digit_at(14)
+                    || !is_digit_at(15) || !is_separator_at(16) || !is_digit_at(17) || !is_digit_at(18))))
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                                "Partition value '{}' is not a valid value of type {}: expected a date and time "
+                                "in the YYYY-MM-DD hh:mm:ss format",
+                                literal, type->getName());
+
+            /// Reads the date and the optional time of day; the fractional part of `DateTime64` is not compared.
+            LocalDateTime spelled;
+            LocalDateTime parsed;
+            ReadBufferFromString spelled_in(literal);
+            ReadBufferFromString parsed_in(parsed_text.str());
+            readDateTimeText(spelled, spelled_in);
+            readDateTimeText(parsed, parsed_in);
+            spells_parsed_value = spelled == parsed;
+        }
+
+        if (which.isDateTime64())
+        {
+            /// `DateTime64` text parsing keeps `scale` fractional digits and ignores the rest, so on a `DateTime64(3)` key
+            /// `'2024-02-19 00:00:00.5009'` would be read as `.500`.
+            const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*nested_type).getScale();
+            /// The date and time separators of a broken-down value may be `.` too, as in `'2024.02.19 00:00:00.500'`.
+            const size_t dot = literal.find('.', is_broken_down ? (has_time ? 19 : 10) : 0);
+            if (dot != String::npos)
+                for (size_t pos = dot + 1 + scale; is_digit_at(pos); ++pos)
+                    if (literal[pos] != '0')
+                        spells_parsed_value = false;
+        }
+    }
+
+    if (!spells_parsed_value)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                        "Partition value '{}' is not a valid value of type {}: it is read as {}",
+                        literal, type->getName(), parsed_text.str());
+
+    return converted;
+}
+
+/// Checks a string that a conversion turns into a date or a time the same way as a partition literal. A tuple is
+/// checked element by element.
+static void checkDateTimeConversionArgument(const Field & value, const DataTypePtr & type)
+{
+    if (value.getType() == Field::Types::String)
+    {
+        if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
+            convertPartitionFieldToType(value, type);
+    }
+    else if (value.getType() == Field::Types::Tuple)
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+        const auto & elements = value.safeGet<Tuple>();
+        if (tuple_type && tuple_type->getElements().size() == elements.size())
+            for (size_t i = 0; i < elements.size(); ++i)
+                checkDateTimeConversionArgument(elements[i], tuple_type->getElement(i));
+    }
+}
+
+/// A conversion such as `CAST('2024-02-30', 'Date')` or `toDate(concat('2024-02-', '30'))` in a partition value is
+/// folded to `2024-03-01` before `convertPartitionFieldToType` sees it, so the string it converts is checked first.
+static void checkDateTimeConversionsInPartitionValue(const ASTPtr & ast, ContextPtr context)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments)
+        return;
+
+    for (const auto & child : function->arguments->children)
+        checkDateTimeConversionsInPartitionValue(child, context);
+
+    static const std::unordered_set<std::string_view> date_time_conversions
+        = {"toDate", "toDate32", "toDateTime", "toDateTime32", "toDateTime64"};
+    if (function->arguments->children.empty() || (!isFunctionCast(function) && !date_time_conversions.contains(function->name)))
+        return;
+
+    const Field argument = evaluateConstantExpression(function->arguments->children[0], context).first;
+    checkDateTimeConversionArgument(argument, evaluateConstantExpression(ast, context).second);
 }
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
@@ -9094,12 +10623,17 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 
     /// Re-parse partition key fields using the information about expected field types.
     auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    /// Existing parts hold partition values produced with the adjusted partition key (`modulo` becomes
+    /// `moduloLegacy`, which can differ in signedness), so a value parsed here must use the same types.
+    const auto adjusted_partition_key = MergeTreePartition::adjustPartitionKey(metadata_snapshot, local_context);
+    const Block & key_sample_block = adjusted_partition_key.sample_block;
     size_t fields_count = key_sample_block.columns();
     if (partition_ast_fields_count != fields_count)
         throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                         "Wrong number of fields in the partition expression: {}, must be: {}",
                         partition_ast_fields_count, fields_count);
+
+    checkDateTimeConversionsInPartitionValue(partition_value_ast, local_context);
 
     Row partition_row(fields_count);
     if (fields_count == 0)
@@ -9159,7 +10693,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             partition_key_value = std::move(tuple_value[0]);
         }
 
-        partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
+        partition_row[0] = convertPartitionFieldToType(partition_key_value, key_sample_block.getByPosition(0).type);
     }
     else
     {
@@ -9175,7 +10709,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                             "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
         for (size_t i = 0; i < fields_count; ++i)
-            partition_row[i] = convertFieldToTypeOrThrow(tuple[i], *key_sample_block.getByPosition(i).type);
+            partition_row[i] = convertPartitionFieldToType(tuple[i], key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
@@ -9189,10 +10723,11 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             existing_part_in_partition = getAnyPartInPartition(partition_id, readLockParts());
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
-            auto partition_str = partition.serializeToString(existing_part_in_partition->getMetadataSnapshot());
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
-                            "doesn't match partition value for an existing part with the same partition ID: {}",
-                            partition_str, existing_part_in_partition->name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value {} does not match partition value {} "
+                            "of the existing part {} with the same partition ID",
+                            partition.serializeToString(key_sample_block),
+                            existing_part_in_partition->partition.serializeToString(key_sample_block),
+                            existing_part_in_partition->name);
         }
     }
 
@@ -9303,23 +10838,393 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     return partition_ids;
 }
 
-std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
-    const MutationCommands & commands, ContextPtr query_context) const
+std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
+    const ASTPtr & predicate,
+    ContextPtr query_context,
+    bool command_runs_in_background,
+    std::unordered_set<String> * analyzed_partition_ids) const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    if (!metadata_snapshot->hasPartitionKey())
+        return std::nullopt;
+
+    if (!query_context->getSettingsRef()[Setting::use_partition_pruning])
+        return std::nullopt;
+
+    /// A deferred set is evaluated independently by the pruning pass and by mutation execution.
+    /// It can therefore produce a different partition set between those evaluations. This is
+    /// also unsafe for foreground lightweight updates: their partition block numbers bound the
+    /// parts that `updateLightweightImpl` reads, rather than merely serving as an optimization
+    /// hint. Besides explicit subqueries, `IN` accepts tables and table functions; the analyzer
+    /// turns all three forms into prepared sets. Conservatively leave such commands unpruned.
+    auto contains_deferred_set = [](const ASTPtr & ast, const auto & self) -> bool
+    {
+        if (ast->as<ASTSubquery>())
+            return true;
+
+        if (const auto * function = ast->as<ASTFunction>(); function && function->arguments && isNameOfInFunction(function->name))
+        {
+            const auto & arguments = function->arguments->children;
+            if (arguments.size() >= 2)
+            {
+                const auto & right_argument = arguments[1];
+                if (right_argument->as<ASTTableIdentifier>())
+                    return true;
+
+                /// A non-literal function in the right-hand side may be a table function. It is
+                /// resolved to a prepared set by the analyzer, whereas literal tuples and arrays
+                /// are always stable constant sets.
+                auto is_literal_enumeration = [](const ASTPtr & node, const auto & literal_self) -> bool
+                {
+                    if (node->as<ASTLiteral>())
+                        return true;
+
+                    const auto * rhs_function = node->as<ASTFunction>();
+                    if (!rhs_function || !rhs_function->arguments || (rhs_function->name != "tuple" && rhs_function->name != "array"))
+                        return false;
+
+                    return std::ranges::all_of(rhs_function->arguments->children, [&](const auto & child)
+                    {
+                        return literal_self(child, literal_self);
+                    });
+                };
+
+                if (right_argument->as<ASTFunction>() && !is_literal_enumeration(right_argument, is_literal_enumeration))
+                    return true;
+            }
+        }
+
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
+    };
+    if (contains_deferred_set(predicate, contains_deferred_set))
+        return std::nullopt;
+
+    /// A query-time non-deterministic constant (e.g. `now` or `today`) is folded to its
+    /// submission-time value by this analysis, but the stored mutation re-evaluates it during
+    /// the asynchronous execution - possibly much later, or on another replica. That happens
+    /// when `allow_nondeterministic_mutations = 1` and the initiator did not rewrite the
+    /// predicate to literals (`mutations_execute_nondeterministic_on_initiator = 0`). The two
+    /// evaluations can disagree, and a partition matching only the execution-time value would
+    /// be missing from the mutation scope and escape the mutation. The same holds for a
+    /// foreground lightweight update, whose predicate is evaluated once more after this
+    /// analysis. Prune only predicates built from deterministic functions; a predicate already
+    /// rewritten to literals on the initiator passes this check naturally. A function unknown
+    /// to the factory (e.g. a user-defined function) is conservatively treated as
+    /// non-deterministic.
+    /// A column definition is only followed once: the definitions form a directed acyclic graph,
+    /// but a diamond-shaped one (`c2 ALIAS c1 + c1`, `c3 ALIAS c2 + c2`, ...) would otherwise be
+    /// walked an exponential number of times. It doubles as a backstop against a cycle in
+    /// hand-edited metadata.
+    NameSet followed_column_definitions;
+    /// The parameters of the lambdas enclosing the node being visited. A lambda keeps its
+    /// parameters as plain identifiers in the AST, and inside its body such a name shadows a
+    /// storage column of the same name, so it must not be mistaken for that column.
+    std::vector<String> lambda_parameters;
+    auto contains_nondeterministic_function = [&](const ASTPtr & ast, const auto & self) -> bool
+    {
+        if (const auto * function = ast->as<ASTFunction>())
+        {
+            /// Being deterministic for a lambda expression is completely determined by the
+            /// contents of its definition, so just proceed to the body, remembering the
+            /// parameters it binds. The parameter list itself contains only identifiers.
+            if (function->name == "lambda")
+            {
+                if (function->arguments && function->arguments->children.size() == 2)
+                {
+                    const auto & arguments = function->arguments->children;
+                    const size_t enclosing_parameters = lambda_parameters.size();
+                    const auto & parameters = arguments[0];
+                    if (const auto * parameters_tuple = parameters->as<ASTFunction>(); parameters_tuple && parameters_tuple->arguments)
+                    {
+                        for (const auto & parameter : parameters_tuple->arguments->children)
+                            if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
+                                lambda_parameters.push_back(parameter_identifier->name());
+                    }
+                    else if (const auto * parameter_identifier = parameters->as<ASTIdentifier>())
+                    {
+                        lambda_parameters.push_back(parameter_identifier->name());
+                    }
+
+                    const bool body_is_nondeterministic = self(arguments[1], self);
+                    lambda_parameters.resize(enclosing_parameters);
+                    return body_is_nondeterministic;
+                }
+            }
+            else
+            {
+                if (!FunctionFactory::instance().has(function->name))
+                    return true;
+
+                if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
+                    return true;
+            }
+        }
+
+        /// A non-deterministic function can also hide inside a column's own expression. The analysis
+        /// below resolves an `ALIAS` column against the storage - that is deliberate - so `now` inside
+        /// such a definition is folded here just the same, while the asynchronous execution re-expands
+        /// the definition and evaluates it again, later.
+        ///
+        /// Only a read-time carrier is re-expanded: `QueryAnalyzer` attaches an expression to `ALIAS`
+        /// columns alone, while a stored `DEFAULT`/`MATERIALIZED` column is read as it was written, so
+        /// its definition cannot diverge between this analysis and the execution and following it
+        /// would only lose pruning for a perfectly safe predicate. `EPHEMERAL` is a computed carrier
+        /// just like `ALIAS`, so it is followed for symmetry.
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            /// The identifier is the raw text of the predicate, so the column can be spelled
+            /// qualified (`db.table.column`) or addressed through a subcolumn (`column.subcolumn`),
+            /// while `getDefault` is keyed by the bare storage column name. Look up every
+            /// contiguous range of the name parts: an accidental match with an unrelated column of
+            /// that name only costs a pruning opportunity, whereas a miss hides the very expression
+            /// this check exists to find.
+            /// A name bound by an enclosing lambda (`arrayExists(x -> x = 1, arr)`) is that lambda's
+            /// parameter, or a subcolumn of it, and never a storage column - even if a column of the
+            /// same name exists.
+            const auto & name_parts = identifier->name_parts;
+            const bool is_lambda_parameter = !name_parts.empty()
+                && std::ranges::find(lambda_parameters, name_parts.front()) != lambda_parameters.end();
+            for (size_t begin = 0; !is_lambda_parameter && begin < name_parts.size(); ++begin)
+            {
+                String candidate;
+                for (size_t end = begin; end < name_parts.size(); ++end)
+                {
+                    if (end > begin)
+                        candidate += ".";
+                    candidate += name_parts[end];
+
+                    if (!followed_column_definitions.emplace(candidate).second)
+                        continue;
+
+                    auto column_default = metadata_snapshot->getColumns().getDefault(candidate);
+                    if (!column_default || !column_default->expression)
+                        continue;
+
+                    if (column_default->kind != ColumnDefaultKind::Alias && column_default->kind != ColumnDefaultKind::Ephemeral)
+                        continue;
+
+                    /// A column definition is authored at table scope, so an identifier inside it is a
+                    /// storage column even when a lambda of the predicate binds that name.
+                    std::vector<String> enclosing_lambda_parameters;
+                    lambda_parameters.swap(enclosing_lambda_parameters);
+                    const bool definition_is_nondeterministic = self(column_default->expression, self);
+                    lambda_parameters.swap(enclosing_lambda_parameters);
+
+                    if (definition_is_nondeterministic)
+                        return true;
+                }
+            }
+        }
+
+        return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
+    };
+    if (contains_nondeterministic_function(predicate, contains_nondeterministic_function))
+        return std::nullopt;
+
+    auto predicate_clone = predicate->clone();
+
+    /// The analysis must accept everything the mutation itself accepts, so it has to run in the
+    /// same context the commands will be interpreted in. An ALTER mutation does not run with the
+    /// submitting session's context: the background worker builds a fresh context from the
+    /// background context (`MutatePlainMergeTreeTask::createTaskContext`,
+    /// `MutateFromLogEntryTask::prepare`), so session-only settings do not propagate to the
+    /// execution. Derive the analysis context the same way, so that the pruning analysis and the
+    /// asynchronous execution cannot diverge. A lightweight update, on the contrary, interprets
+    /// its commands in the foreground with the submitting context
+    /// (`MergeTreeData::updateLightweightImpl`), where the session settings and the current
+    /// database do apply: unlike ALTER commands, which `InterpreterAlterQuery` qualifies with
+    /// `AddDefaultDatabaseVisitor`, its predicate may reference tables without a database, so
+    /// analyzing it in the background context (which has no current database) would reject
+    /// a predicate the update itself accepts.
+    ContextMutablePtr execution_context;
+    if (command_runs_in_background)
+    {
+        execution_context = Context::createCopy(getContext()->getBackgroundContext());
+        execution_context->makeQueryContextForMutate(*getSettings());
+    }
+    else
+    {
+        execution_context = Context::createCopy(query_context);
+    }
+
+    /// The predicate comes from a serialized mutation command that was re-parsed, so its set
+    /// operations (`UNION`/`INTERSECT`/`EXCEPT`) are not normalized yet and the analyzer would
+    /// reject them with "UNION mode UNION_DEFAULT must be normalized". Normalize them exactly as
+    /// the mutation execution path does in `getPartitionAndPredicateExpressionForMutationCommand`.
+    normalizeSetOperations(predicate_clone, execution_context);
+
+    /// Some predicate shapes (e.g. qualified column names) resolve only under the query-tree
+    /// analyzer.
+    std::optional<ActionsDAG> actions_dag;
+    const ActionsDAG::Node * predicate_node = nullptr;
+
+    {
+        auto expression = buildQueryTree(predicate_clone, execution_context);
+
+        /// Resolve against the real storage, so that its columns (including `ALIAS` and
+        /// `EPHEMERAL`), subcolumns and virtual columns (e.g. `_part`, `_partition_id`)
+        /// are visible, just like during the mutation execution.
+        auto table_expression = std::make_shared<TableNode>(
+            std::const_pointer_cast<IStorage>(shared_from_this()), execution_context);
+
+        QueryAnalyzer analyzer(false);
+        analyzer.resolveConstantExpression(expression, table_expression, execution_context);
+
+        GlobalPlannerContextPtr global_planner_context
+            = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+        auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+        collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/ false);
+        collectSets(expression, *planner_context);
+
+        ColumnNodePtrWithHashSet empty_correlated_columns_set;
+        /// Use plain column names for the DAG inputs (instead of planner column identifiers
+        /// like `__table1.x`), so that `PartitionPruner` can match them against the partition
+        /// key expression columns.
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/ {},
+            planner_context,
+            empty_correlated_columns_set,
+            /*use_column_identifier_as_action_node_name=*/ false);
+        correlated_subtrees.assertEmpty("in a mutation predicate");
+
+        /// Plan the subqueries, so that `KeyCondition` can build the sets for `IN (SELECT ...)`.
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        for (auto & subquery : planner_context->getPreparedSets().getSubqueries())
+        {
+            auto query_tree = subquery->detachQueryTree();
+            createUniqueAliasesIfNecessary(query_tree, execution_context);
+            Planner subquery_planner(
+                query_tree,
+                subquery_options,
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+            subquery_planner.buildQueryPlanIfNeeded();
+
+            auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+            subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        }
+
+        actions_dag.emplace(std::move(actions));
+        if (actions_dag->getOutputs().size() != 1)
+            return std::nullopt;
+        predicate_node = actions_dag->getOutputs().front();
+    }
+
+    if (!predicate_node)
+        return std::nullopt;
+
+    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, execution_context, /* boolean_context */ true);
+
+    PartitionPruner partition_pruner(
+        metadata_snapshot,
+        inverted_dag,
+        execution_context,
+        false /* strict */);
+
+    if (partition_pruner.isUseless())
+        return std::nullopt;
+
+    DataPartsVector active_parts;
+    {
+        auto lock = readLockParts();
+        active_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+    }
+
+    std::set<String> affected_partition_ids;
+    for (const auto & part : active_parts)
+    {
+        if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+            continue;
+
+        if (analyzed_partition_ids)
+            analyzed_partition_ids->insert(part->info.getPartitionId());
+
+        /** The partition value decides, not the part: an empty part - the state a delete-all
+          * mutation or a `TTL` expiry leaves behind until the cleanup thread removes it - would
+          * otherwise prune its whole partition out of the mutation while ruling it analyzed, which
+          * also keeps `allocateBlockNumbersInAffectedPartitions` from widening the scope with the
+          * partitions only ZooKeeper knows. Rows another replica acknowledged in that partition
+          * would then survive the mutation on every replica.
+          */
+        if (!partition_pruner.canPartitionBePruned(*part))
+            affected_partition_ids.insert(part->info.getPartitionId());
+    }
+
+    LOG_DEBUG(log, "Mutation partition pruning: {} partition(s) affected for predicate '{}'",
+        affected_partition_ids.size(), predicate->formatForErrorMessage());
+
+    return affected_partition_ids;
+}
+
+std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands(
+    const MutationCommands & commands,
+    ContextPtr query_context,
+    bool commands_run_in_background,
+    std::unordered_set<String> * analyzed_partition_ids) const
 {
     std::set<String> affected_partition_ids;
+    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
+
+    /// Each pruned command analyzes its own snapshot of the local parts, taken at a slightly
+    /// different time. A partition counts as analyzed only if every pruned command has seen it,
+    /// so the per-command sets are intersected.
+    bool has_analyzed_partition_ids = false;
 
     for (const auto & command : commands)
     {
         auto alter = command.ast();
-        if (!alter || !alter->partition)
+        if (alter && alter->partitions)
         {
-            affected_partition_ids.clear();
-            break;
+            for (const auto & partition_ast : alter->partitions->children)
+            {
+                affected_partition_ids.insert(
+                    getPartitionIDFromQuery(partition_ast, query_context)
+                );
+            }
         }
+        else if (alter && alter->partition)
+        {
+            affected_partition_ids.insert(
+                getPartitionIDFromQuery(ASTPtr(alter->partition), query_context)
+            );
+        }
+        else if (optimize_with_pruning && alter && alter->predicate)
+        {
+            std::unordered_set<String> command_analyzed_partition_ids;
+            auto pruned = getPartitionIdsPrunedByPredicate(
+                ASTPtr(alter->predicate),
+                query_context,
+                commands_run_in_background,
+                analyzed_partition_ids ? &command_analyzed_partition_ids : nullptr);
+            if (!pruned.has_value())
+            {
+                /// Pruning was not possible, fall back to all partitions
+                return std::nullopt;
+            }
+            affected_partition_ids.insert(pruned->begin(), pruned->end());
 
-        affected_partition_ids.insert(
-            getPartitionIDFromQuery(ASTPtr(alter->partition), query_context)
-        );
+            if (analyzed_partition_ids)
+            {
+                if (!has_analyzed_partition_ids)
+                {
+                    *analyzed_partition_ids = std::move(command_analyzed_partition_ids);
+                    has_analyzed_partition_ids = true;
+                }
+                else
+                {
+                    std::erase_if(*analyzed_partition_ids, [&](const String & partition_id)
+                    {
+                        return !command_analyzed_partition_ids.contains(partition_id);
+                    });
+                }
+            }
+        }
+        else
+        {
+            /// No partition and no predicate (e.g. MATERIALIZE_TTL) - affects all partitions
+            return std::nullopt;
+        }
     }
 
     return affected_partition_ids;
@@ -9341,10 +11246,40 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
+namespace
+{
+
+/// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
+/// is enabled, and even then it only affects the tables with a special name prefix, so that the
+/// tests using the failpoint do not affect concurrent queries over the tables of other tests.
+/// When active, the parts-snapshot walks below sleep on every enumerated element and poll
+/// `need_stop` on every element instead of every 8192, so a test with a fixture of a reasonable
+/// size can prove with a timed assertion that the walk itself honors `need_stop` (reaching the
+/// regular polling cadence would require a fixture with many thousands of parts).
+bool isPartsSnapshotSlowdownActive(const StorageID & storage_id)
+{
+    bool active = false;
+    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
+    {
+        active = storage_id.table_name.starts_with("t_slowdown_system_parts_snap");
+    });
+    return active;
+}
+
+void sleepForPartsSnapshotSlowdown()
+{
+    ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
+    sleepForMilliseconds(500);
+}
+
+}
+
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     DataPartsVector res;
     DataPartsVector buf;
+    bool stopped = false;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
 
     for (auto state : affordable_states)
     {
@@ -9353,8 +11288,44 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
             auto range = getDataPartsStateRange(state, kind);
             std::swap(buf, res);
             res.clear();
-            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+
+            if (need_stop || slowdown)
+            {
+                /// Merge manually instead of std::merge to be able to check `need_stop`
+                /// periodically during the walk (the ranges can be arbitrarily large).
+                auto it = range.begin();
+                auto buf_it = buf.begin();
+                size_t counter = 0;
+                while (it != range.end() || buf_it != buf.end())
+                {
+                    ++counter;
+                    if (slowdown)
+                        sleepForPartsSnapshotSlowdown();
+                    if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+                    {
+                        stopped = true;
+                        break;
+                    }
+
+                    if (it == range.end())
+                        res.push_back(*buf_it++);
+                    else if (buf_it == buf.end() || !LessDataPart()(*buf_it, *it))
+                        res.push_back(*it++);
+                    else
+                        res.push_back(*buf_it++);
+                }
+            }
+            else
+            {
+                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
+            }
+
+            if (stopped)
+                break;
         }
+
+        if (stopped)
+            break;
     }
 
     if (out_states != nullptr)
@@ -9367,10 +11338,10 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     auto lock = readLockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states);
+    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states, need_stop);
 }
 
 DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states) const
@@ -9421,19 +11392,34 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & pa
     return getPatchPartsVectorForPartition(partition_id, lock);
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     auto lock = readLockParts();
     ProjectionPartsVector res;
+    size_t counter = 0;
+    bool stopped = false;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (auto state : affordable_states)
     {
         auto range = getDataPartsStateRange(state);
         for (const auto & part : range)
         {
+            ++counter;
+            if (slowdown)
+                sleepForPartsSnapshotSlowdown();
+            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+            {
+                stopped = true;
+                break;
+            }
+
             res.data_parts.push_back(part);
             for (const auto & [_, projection_part] : part->getProjectionParts())
                 res.projection_parts.push_back(projection_part);
         }
+
+        if (stopped)
+            break;
     }
 
     if (out_states != nullptr)
@@ -9446,11 +11432,29 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForI
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     DataPartsVector res;
     auto lock = readLockParts();
-    res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
+    if (need_stop || slowdown)
+    {
+        res.reserve(data_parts_by_info.size());
+        size_t counter = 0;
+        for (const auto & part : data_parts_by_info)
+        {
+            ++counter;
+            if (slowdown)
+                sleepForPartsSnapshotSlowdown();
+            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+                break;
+            res.push_back(part);
+        }
+    }
+    else
+    {
+        res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
+    }
     if (out_states != nullptr)
     {
         out_states->resize(res.size());
@@ -9513,12 +11517,20 @@ bool MergeTreeData::areAsynchronousInsertsEnabled() const
     return (*getSettings())[MergeTreeSetting::async_insert];
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
 {
     ProjectionPartsVector res;
     auto lock = readLockParts();
+    size_t counter = 0;
+    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (const auto & part : data_parts_by_info)
     {
+        ++counter;
+        if (slowdown)
+            sleepForPartsSnapshotSlowdown();
+        if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
+            break;
+
         res.data_parts.push_back(part);
         for (const auto & [p_name, projection_part] : part->getProjectionParts())
             res.projection_parts.push_back(projection_part);
@@ -9697,6 +11709,26 @@ void MergeTreeData::optimizeDryRun(
         future_part,
         task_context);
 
+    /// `DRY RUN` takes no merge guard, so a concurrent real merge on the same parts would otherwise
+    /// reserve the same temporary directory. See `MergeTask::buildTempPartBasename`. Random rather than
+    /// a counter, because the directory can live on storage shared with other servers, where a
+    /// process-local counter restarts and repeats itself.
+    ///
+    /// A dry run cannot simply reuse the directory name of the merge it simulates: the two would then
+    /// claim the same name, which is the very `LOGICAL_ERROR` this fixes, only raised by the real
+    /// merge instead. The name therefore has to be distinct, and the only cost that can be minimized
+    /// is by how much it exceeds the budget of the merge being simulated.
+    ///
+    /// 48 random bits, written as 12 hexadecimal digits, are kept out of the generated UUID, so the
+    /// whole basename is a fixed `tmp_merge_dr_<12 hex>`: 25 bytes of the filename limit, 36 once
+    /// `IMergeTreeDataPart::remove` prepends `delete_tmp_`, which is 6 bytes more than the merge of
+    /// the shortest possible pair of parts takes and no more than the merge of any part whose name
+    /// is 15 characters or longer. The temporary directory of a dry run lives only for that one query, and
+    /// there are at most a handful of them at a time, so 48 bits leave the collision probability at
+    /// nothing.
+    const String dry_run_suffix = String(MergeTask::DRY_RUN_TEMP_INFIX)
+        + getHexUIntLowercase(UUIDHelpers::getLowBytes(UUIDHelpers::generateV4())).substr(4);
+
     auto merge_task = merger_mutator.mergePartsToTemporaryPart(
         future_part,
         metadata_snapshot,
@@ -9710,7 +11742,10 @@ void MergeTreeData::optimizeDryRun(
         deduplicate_by_columns,
         cleanup,
         merging_params,
-        nullptr /* txn */);
+        nullptr /* txn */,
+        /*projection=*/ nullptr,
+        /*parent_part=*/ nullptr,
+        dry_run_suffix);
 
     auto new_part = executeHere(merge_task);
 
@@ -10371,9 +12406,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         std::vector<DataPartsVector> covered_parts_for_commit;
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        /// Track covered parts locked by non-transactional operations for cleanup on failure.
-        /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
-        DataPartsVector locked_parts_to_cleanup;
+        std::vector<DataPartPtr> covering_parts;
+        covering_parts.reserve(precommitted_parts.size());
 
         for (const auto & part : precommitted_parts)
         {
@@ -10400,17 +12434,26 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
             }
 
-            /// Call addNewPartAndRemoveCovered only if there's no covering part.
-            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-            if (!covering_part)
-            {
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-                /// Track successfully locked parts for cleanup in case a later iteration fails.
-                if (!txn)
-                    locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());
-            }
-
+            covering_parts.push_back(std::move(covering_part));
             covered_parts_for_commit.push_back(std::move(covered_parts));
+        }
+
+        /// Remove the covered parts. Skip when a covering part exists -- NOEXCEPT_SCOPE below
+        /// marks the precommitted part obsolete instead.
+        /// Without a transaction the whole batch is locked first and written afterwards, so that a
+        /// conflict on one covered part cannot leave the previous ones durably removed by a
+        /// statement that ends up failing. See NonTransactionalRemovalLocks.
+        {
+            NonTransactionalRemovalLocks removal_locks;
+            size_t idx = 0;
+            for (const auto & part : precommitted_parts)
+            {
+                if (!covering_parts[idx])
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(
+                        data.shared_from_this(), part, covered_parts_for_commit[idx], txn, LockKind::REMOVAL, removal_locks);
+                ++idx;
+            }
+            removal_locks.store();
         }
 
 
@@ -10510,6 +12553,51 @@ bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(
             return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front(), metadata_snapshot);
 
     return false;
+}
+
+namespace
+{
+
+/// NULL and NaN sort above every ordinary value in a key while min/max skip them, so a bound
+/// holding one at any depth does not answer the aggregate.
+bool containsOrderInconsistentValue(const Field & field)
+{
+    return anyFieldSatisfies(field, [](const Field & f) { return f.isNull() || isNaNField(f); });
+}
+
+/// Both ends the same degenerate value means the part holds no ordinary comparable value, which only
+/// follows when the pair samples both physical ends. Matched by exact value, because the whole-universe
+/// pair [-Inf, +Inf] means "nothing is known" and must not qualify.
+bool isRepeatedDegenerateBound(const Field & left, const Field & right)
+{
+    auto is_plain_null = [](const Field & f) { return f.isNull() && !f.isPositiveInfinity() && !f.isNegativeInfinity(); };
+
+    if (is_plain_null(left) && is_plain_null(right))
+        return true;
+    if (left.isPositiveInfinity() && right.isPositiveInfinity())
+        return true;
+    return isNaNField(left) && isNaNField(right);
+}
+
+/// A minmax column's bounds are computed per column, so a Tuple bound is a component-wise
+/// envelope that need not be any row. The other composites select a real row and stay usable.
+bool isUnusableComputedBound(const Field & left, const Field & right, const Field & value)
+{
+    if (isRepeatedDegenerateBound(left, right))
+        return false;
+    return containsOrderInconsistentValue(value) || value.getType() == Field::Types::Tuple;
+}
+
+/// The primary key's bounds are stored index rows, so a composite is a genuine value here and only
+/// order-inconsistent leaves break the equivalence. Without a final mark the index samples granule
+/// starts only, so its last entry is not the part's last row and the pair proves nothing.
+bool isUnusableIndexBound(const Field & left, const Field & right, const Field & value, bool bounds_sample_both_ends)
+{
+    if (bounds_sample_both_ends && isRepeatedDegenerateBound(left, right))
+        return false;
+    return containsOrderInconsistentValue(value);
+}
+
 }
 
 Block MergeTreeData::getMinMaxCountProjectionBlock(
@@ -10612,6 +12700,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
+
+        /// A physical column named `_part` shadows the virtual one, which is then absent from the
+        /// block (see `getHeaderWithVirtualsForFilter`), so the surviving rows cannot be mapped back
+        /// to parts. Decline the projection instead of failing the query; the caller falls back to an
+        /// ordinary read.
+        if (!virtual_columns_block.has("_part"))
+            return {};
+
         part_name_column = virtual_columns_block.getByName("_part").column;
     }
 
@@ -10691,6 +12787,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             for (const auto & part : real_parts)
             {
                 const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
+                if (isUnusableComputedBound(range.left, range.right, range.left))
+                    return {};
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(min_column, range.left);
             }
@@ -10702,6 +12800,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             for (const auto & part : real_parts)
             {
                 const auto & range = part->getMinMaxIndex()->hyperrectangle[i];
+                if (isUnusableComputedBound(range.left, range.right, range.right))
+                    return {};
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
                 insert(max_column, range.right);
             }
@@ -10717,8 +12817,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             {
                 auto index = part->getIndex();
                 const auto & primary_key_column = *index->at(0);
+                Field lowest = primary_key_column[0];
+                Field highest = primary_key_column[primary_key_column.size() - 1];
+                if (isUnusableIndexBound(lowest, highest, lowest, part->index_granularity->hasFinalMark()))
+                    return {};
                 auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
-                insert(min_column, primary_key_column[0]);
+                insert(min_column, lowest);
             }
         }
         ++pos;
@@ -10729,8 +12833,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             {
                 auto index = part->getIndex();
                 const auto & primary_key_column = *index->at(0);
+                Field lowest = primary_key_column[0];
+                Field highest = primary_key_column[primary_key_column.size() - 1];
+                if (isUnusableIndexBound(lowest, highest, highest, part->index_granularity->hasFinalMark()))
+                    return {};
                 auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
-                insert(max_column, primary_key_column[primary_key_column.size() - 1]);
+                insert(max_column, highest);
             }
         }
         ++pos;
@@ -10787,49 +12895,6 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
     return filter_nodes;
 }
 
-QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
-    ContextPtr query_context,
-    QueryProcessingStage::Enum to_stage,
-    const StorageSnapshotPtr &,
-    SelectQueryInfo &) const
-{
-    /// with the analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
-    if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        const auto & settings = query_context->getSettingsRef();
-        if (query_context->canUseParallelReplicasCustomKey())
-        {
-            if (query_context->getClientInfo().distributed_depth > 0)
-                return QueryProcessingStage::FetchColumns;
-
-            if (!supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
-                return QueryProcessingStage::Enum::FetchColumns;
-
-            if (to_stage >= QueryProcessingStage::WithMergeableState
-                && query_context->canUseParallelReplicasCustomKeyForCluster(*query_context->getClusterForParallelReplicas()))
-                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-        }
-
-        if (query_context->getClientInfo().collaborate_with_initiator)
-            return QueryProcessingStage::Enum::FetchColumns;
-
-        /// Parallel replicas
-        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState)
-        {
-            /// ReplicatedMergeTree
-            if (supportsReplication())
-                return QueryProcessingStage::Enum::WithMergeableState;
-
-            /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
-            if (settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
-                return QueryProcessingStage::Enum::WithMergeableState;
-        }
-    }
-
-    return QueryProcessingStage::Enum::FetchColumns;
-}
-
-
 UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
@@ -10869,18 +12934,33 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     if (metadata.settings_changes)
     {
         const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+        settings->applyChangesLeavingDiskUnresolved(changes);
     }
 
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
 }
 
-void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+namespace
 {
-    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
+
+/// Two streams that render to the same file name, and so end up written into one file.
+struct StreamFileNameCollision
+{
+    String stream_name;
+    String full_stream_name;
+    String other_full_stream_name;
+    NameAndTypePair column;
+    /// Not set when both streams belong to `column`.
+    std::optional<NameAndTypePair> other_column;
+};
+
+/// File names are rendered as they would be for a part written with the given serialization versions.
+std::optional<StreamFileNameCollision> findStreamFileNameCollision(
+    const NamesAndTypesList & columns_list,
+    const MergeTreeSettings & settings,
+    MergeTreeMapSerializationVersion map_serialization_version,
+    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version)
+{
     SerializationInfo::Settings serialization_settings
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -10889,51 +12969,106 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
-        settings[MergeTreeSetting::map_serialization_version],
+        map_serialization_version,
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
+
+    ISerialization::EnumerateStreamsSettings enumerate_settings;
+    enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
+    enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
+    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
+    enumerate_settings.enumerate_dynamic_streams = false;
+
+    std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
+        std::optional<StreamFileNameCollision> collision;
 
         auto callback = [&](const auto & substream_path)
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            column_streams.emplace(stream_name, full_stream_name);
+            auto [it, inserted] = column_streams.emplace(stream_name, full_stream_name);
+            /// Keep the first one: which later collision gets reported would depend on the enumeration order.
+            if (!inserted && !collision)
+                collision = StreamFileNameCollision{stream_name, full_stream_name, it->second, column, {}};
         };
 
         auto serialization = column.type->getSerialization(serialization_settings);
-        serialization->enumerateStreams(callback);
+        auto substream_data = ISerialization::SubstreamData(serialization);
+        serialization->enumerateStreams(enumerate_settings, callback, substream_data);
+
+        if (collision)
+            return collision;
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
-            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
+            auto [it, inserted] = stream_name_to_column.emplace(stream_name, std::pair{full_stream_name, column});
             if (!inserted)
             {
-                const auto & [other_full_name, other_column_name] = it->second;
-                auto other_type = columns.getPhysical(other_column_name).type;
-
-                auto message = fmt::format(
-                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
-
-                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
-                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
-
-                if (throw_on_error)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
-                return;
+                const auto & [other_full_stream_name, other_column] = it->second;
+                return StreamFileNameCollision{stream_name, full_stream_name, other_full_stream_name, column, other_column};
             }
         }
     }
+
+    return {};
+}
+
+}
+
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
+{
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
+
+    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
+    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
+    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
+    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
+
+    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
+
+    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
+    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
+    /// configurations never share a file.
+    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
+        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
+
+    if (!collision)
+        return;
+
+    String message = collision->other_column.has_value()
+        ? fmt::format(
+            "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+            collision->column.name, collision->column.type->getName(),
+            collision->other_column->name, collision->other_column->type->getName(),
+            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name)
+        : fmt::format(
+            "Column '{} {}' has two streams ({} and {}) with collision in file name {}",
+            collision->column.name, collision->column.type->getName(),
+            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name);
+
+    /// Identical full names collide on their own; only distinct ones can have been merged by hashing.
+    if (collision->full_stream_name != collision->other_full_stream_name && settings[MergeTreeSetting::replace_long_file_name_to_hash])
+        message += collision->other_column.has_value()
+            ? ". It may be a collision between a filename for one column and a hash of filename for another column"
+              " (see setting 'replace_long_file_name_to_hash')"
+            : ". It may be a collision between a filename for one stream and a hash of filename for another stream"
+              " (see setting 'replace_long_file_name_to_hash')";
+
+    if (throw_on_error)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+    LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
+    /// NOLINT(storage-cast): a reference, and the `StoragePtr` overload below resolves the proxy.
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
     if (!src_data)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -10993,7 +13128,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(
     const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
-    return checkStructureAndGetMergeTreeData(*source_table, src_snapshot, my_snapshot);
+    return checkStructureAndGetMergeTreeData(*resolveStorageProxyLoading(source_table), src_snapshot, my_snapshot);
 }
 
 /// must_on_same_disk=false is used only when attach partition; Both for same disk and different disk.
@@ -11040,6 +13175,15 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
+    /// The clone keeps the source's physically stored data, so it must also keep the source's
+    /// disclaimer of the persisted _block_number/_block_offset values. Callers that adopt a part
+    /// from another table pass the columns explicitly; for all other clones (e.g. a mutation that
+    /// does not touch the part) propagate the source part's own invalidated set, otherwise the
+    /// clone would resurrect the stale persisted values (issue #107501).
+    IDataPartStorage::ClonePartParams params_with_invalidated_columns = params;
+    params_with_invalidated_columns.invalidated_columns_to_write.insert(
+        src_part->invalidated_system_columns.begin(), src_part->invalidated_system_columns.end());
+
     /// `freeze` rejects a non-empty destination, so reclaim the leftover here, once the destination disk
     /// is known (the claim itself was taken above).
     std::shared_ptr<IDataPartStorage> dst_part_storage{};
@@ -11052,7 +13196,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params);
+            params_with_invalidated_columns);
     }
     else
     {
@@ -11071,7 +13215,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             read_settings,
             write_settings,
             /* save_metadata_callback= */ {},
-            params);
+            params_with_invalidated_columns);
     }
 
     if (params.metadata_version_to_write.has_value())
@@ -11113,11 +13257,25 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         params.hardlinked_files->source_part_name = src_part->name;
         params.hardlinked_files->source_table_shared_id = src_part->storage.getTableSharedID();
 
+        /// invalidated_system_columns.txt is not shared with the source part whenever the destination
+        /// receives a fresh copy of it: a non-empty set makes every freeze path remove the inherited
+        /// file and rewrite it, and packed storage never hardlinks the file at all (only data.packed is
+        /// hardlinked, and the file is written separately next to it). Recording it as hardlinked from
+        /// the source would put it into `files_not_to_remove` of `unlockSharedDataByID`, so the source
+        /// blob would be kept alive - leaked - for a child that does not reference it. Only the
+        /// full-storage clone that inherits the file (an empty set) keeps the hardlink, and only there
+        /// the file has to stay in the list.
+        const bool dst_part_owns_invalidated_system_columns_file
+            = !params_with_invalidated_columns.invalidated_columns_to_write.empty()
+            || isPackedPartStorage(src_part->getDataPartStorage());
+
         for (auto it = src_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
             if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
                 && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
-                && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
+                && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME
+                && !(dst_part_owns_invalidated_system_columns_file
+                     && it->name() == IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
             {
                 params.hardlinked_files->hardlinks_from_source_part.insert(it->name());
             }
@@ -11130,7 +13288,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             for (auto it = projection_storage.iterate(); it->isValid(); it->next())
             {
                 auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
-                if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
+                /// Match on the bare file name: that is how the clone itself decides copy-vs-hardlink inside
+                /// a projection (`BackupImpl` recursing into the projection directory, and the packed
+                /// projection `freeze` receiving the same `params`). Matching on the prefixed name would record
+                /// e.g. `p.proj/checksums.txt` as hardlinked although the untouched-part mutation copied it,
+                /// so zero-copy would keep the source blob alive for a child that does not reference it.
+                if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
                     && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                     && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
                 {
@@ -11440,6 +13603,13 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
             return false;
     }
 
+    /// A non-adaptive part records no per-mark row counts on disk, so its granularity is rebuilt from
+    /// the mark count and this table's `index_granularity`. Under a different value every mark maps to
+    /// the wrong row range.
+    if (!src_part->index_granularity_info.mark_type.adaptive
+        && src_part->index_granularity_info.fixed_index_granularity != (*settings)[MergeTreeSetting::index_granularity])
+        return false;
+
     return true;
 }
 
@@ -11516,9 +13686,9 @@ try
         element.partition_id = MergeTreePartInfo::fromPartName(new_part_name, format_version).getPartitionId();
 
         if (result_part)
-            element.partition = result_part->partition.serializeToString(result_part->getMetadataSnapshot());
+            element.partition = result_part->partition.serializeToString(*result_part);
         else if (!source_parts.empty())
-            element.partition = source_parts.front()->partition.serializeToString(source_parts.front()->getMetadataSnapshot());
+            element.partition = source_parts.front()->partition.serializeToString(*source_parts.front());
 
         element.part_name = new_part_name;
 
@@ -12068,11 +14238,7 @@ MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
 
 std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdate() const
 {
-    /// Lightweight updates rewrite stored row bytes via patch parts, bypassing
-    /// MergeTreeSinkUniqueKeyCommit::run. Allowing them on UNIQUE KEY tables
-    /// would produce duplicate live keys. Reject here so the rewrite path in
-    /// InterpreterAlterQuery::tryRewriteToLightweightUpdate falls back through
-    /// the heavy path, which is rejected by checkMutationIsPossible.
+    /// TODO(unique-key): support lightweight updates.
     if (auto uk_metadata = getInMemoryMetadataPtr(getContext(), false); uk_metadata->hasUniqueKey())
         return std::unexpected(PreformattedMessage::create(
             "Lightweight updates are not supported on tables with UNIQUE KEY"));
@@ -12198,6 +14364,17 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
         }
     }
 
+    /** The synthetic metadata of a patch part describes the patch's own structure and knows nothing of
+      * the table's metadata version, which would leave the written part at version 0. A part at version
+      * 0 is behind every metadata mutation there has ever been, so a `RENAME COLUMN` whose
+      * materialization is still pending was applied on read to a patch that already stores the new
+      * name: the patch was then looked up under the old name, found nothing, and the update it carries
+      * was silently invisible. The patch is written against the table as it is now, so stamp that.
+      */
+    auto patch_metadata_with_version = std::make_shared<StorageInMemoryMetadata>(*patch_metadata.metadata);
+    patch_metadata_with_version->setMetadataVersion(metadata_snapshot->getMetadataVersion());
+    patch_metadata.metadata = std::move(patch_metadata_with_version);
+
     return {std::move(pipeline), std::move(patch_metadata)};
 }
 
@@ -12310,7 +14487,8 @@ ReservationPtr MergeTreeData::balancedReservation(
     MergeTreeData::DataPartsVector covered_parts,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
     const IMergeTreeDataPart::TTLInfos * ttl_infos,
-    bool is_insert)
+    bool is_insert,
+    time_t time_of_move)
 {
     ReservationPtr reserved_space;
     auto min_bytes_to_rebalance_partition_over_jbod = (*getSettings())[MergeTreeSetting::min_bytes_to_rebalance_partition_over_jbod];
@@ -12433,7 +14611,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                         metadata_snapshot,
                         part_size,
                         *ttl_infos,
-                        time(nullptr),
+                        time_of_move ? time_of_move : time(nullptr),
                         max_volume_index,
                         is_insert,
                         getStoragePolicy()->getDiskByName(selected_disk_name));
@@ -12560,7 +14738,7 @@ bool MergeTreeData::supportsTrivialCountOptimization(const StorageSnapshotPtr & 
     if (!mutations_snapshot)
         return supports_trivial_count();
 
-    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasPatchParts() && !mutations_snapshot->hasLightweightDeletedMask();
+    return !mutations_snapshot->hasDataMutations() && !mutations_snapshot->hasLightweightDeletedMask();
 }
 
 MergeTreeData::PartsSnapshotInfo MergeTreeData::getPartsSnapshotInfo(const DataPartsVector & parts)
@@ -12675,15 +14853,8 @@ StorageSnapshotPtr MergeTreeData::getStorageSnapshot(const StorageMetadataPtr & 
 {
     /// A pinned snapshot is captured in advance for atomic `CREATE MATERIALIZED VIEW ... POPULATE`,
     /// so the population reads exactly the data that existed when the view was subscribed to new inserts.
-    /// The pin is stored on the query context, so consult it as well: the population's read runs under
-    /// contexts derived from the query context rather than the exact context the pin was set on.
     if (auto pinned = query_context->getPinnedStorageSnapshot(getStorageID().uuid))
         return pinned;
-    if (query_context->hasQueryContext())
-    {
-        if (auto pinned = query_context->getQueryContext()->getPinnedStorageSnapshot(getStorageID().uuid))
-            return pinned;
-    }
 
     /// Inject artificial delay when taking storage snapshot.
     /// Useful for simulating concurrent mutations during snapshot acquisition.
@@ -12746,13 +14917,25 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
     }
 }
 
+StorageMetadataPtr MergeTreeData::getMetadataSnapshotForEmptyPart(const IMergeTreeDataPart & source_part)
+{
+    auto metadata_snapshot = source_part.getMetadataSnapshot();
+    if (!source_part.info.isPatch())
+        return metadata_snapshot;
+
+    auto metadata_with_version = std::make_shared<StorageInMemoryMetadata>(*metadata_snapshot);
+    metadata_with_version->setMetadataVersion(source_part.getMetadataVersion());
+    return metadata_with_version;
+}
+
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
     MergeTreePartInfo & new_part_info,
     const MergeTreePartition & partition,
     const String & new_part_name,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeTransactionPtr & txn,
-    std::optional<PatchPartIndex> patch_part_index) const
+    std::optional<PatchPartIndex> patch_part_index,
+    bool precommit_storage) const
 {
     auto settings = getSettings();
 
@@ -12863,7 +15046,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     out.finalizeIndexGranularity();
     out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert);
 
-    new_data_part_storage->precommitTransaction();
+    /// Sealing the storage closes the packed archive, so a caller with a sidecar still to write
+    /// defers it -- the same build/seal split `MergeTreeTemporaryPart::finalize` gives the insert path.
+    if (precommit_storage)
+        new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));
 }
 

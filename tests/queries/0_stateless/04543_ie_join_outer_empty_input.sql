@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- OUTER/SEMI/ANTI kinds with an empty side: the unmatched post-phase must emit every row of
 -- the other side padded with defaults (NULLs with `join_use_nulls`), and nothing otherwise.
 

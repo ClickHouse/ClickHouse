@@ -7,8 +7,10 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -46,6 +48,7 @@ IMergeTreeReader::IMergeTreeReader(
     const StorageSnapshotPtr & storage_snapshot_,
     const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
+    ColumnsCache * columns_cache_,
     MarkCache * mark_cache_,
     const MarkRanges & all_mark_ranges_,
     const MergeTreeReaderSettings & settings_,
@@ -56,6 +59,7 @@ IMergeTreeReader::IMergeTreeReader(
         ? data_part_info_for_read->getColumnsDescriptionWithCollectedNested()
         : data_part_info_for_read->getColumnsDescription())
     , uncompressed_cache(uncompressed_cache_)
+    , columns_cache(columns_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
     , storage_settings(storage_settings_)
@@ -78,15 +82,89 @@ IMergeTreeReader::IMergeTreeReader(
 
     for (const auto & column : getColumns())
     {
-        const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
-        serializations.emplace_back(getSerializationInPart(column));
-
-        if (column.isSubcolumn())
+        auto column_and_serialization_in_part = getColumnAndSerializationInPart(column);
+        const auto & column_to_read = columns_to_read.emplace_back(std::move(column_and_serialization_in_part.column));
+        auto & serialization = column_and_serialization_in_part.serialization;
+        if (data_part_info_for_read->isCompactPart()
+            && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
-            NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
-            serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
+            auto it = serializations_of_full_columns.find(column_to_read.getNameInStorage());
+            if (it == serializations_of_full_columns.end())
+            {
+                NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
+                it = serializations_of_full_columns.emplace(
+                    column_to_read.getNameInStorage(),
+                    column.isSubcolumn() ? getSerializationInPart(requested_column_in_storage) : serialization).first;
+            }
+            serializations.emplace_back(column.isSubcolumn() ? std::move(serialization) : it->second);
+        }
+        else
+            serializations.emplace_back(std::move(serialization));
+    }
+
+    /// On-fly `UPDATE` and `DELETE` mutations are executed as steps ahead of PREWHERE, and their
+    /// expressions (assignments and `WHERE` conditions) may read any column, so they would observe
+    /// the substituted empty strings of the rows that PREWHERE rejects afterwards: for example,
+    /// a pending `DELETE WHERE throwIf(empty(s)) = 0` would start throwing. Read the values in full then.
+    const bool has_mutations_on_fly = alter_conversions && alter_conversions->hasMutations();
+
+    /// The columns read from the part may be written to the columns cache and then served to other
+    /// queries, which must not see the substituted empty strings. Read the values in full then.
+    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes;
+
+    if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
+    {
+        /// Count how many requested columns read from each storage column
+        /// (e.g. a column requested together with its subcolumn).
+        std::unordered_map<String, size_t> storage_column_use_count;
+        for (const auto & column : getColumns())
+            ++storage_column_use_count[column.getNameInStorage()];
+
+        size_t pos = 0;
+        for (const auto & column : getColumns())
+        {
+            size_t current_pos = pos++;
+
+            /// Only full String and Nullable(String) columns are supported.
+            if (column.isSubcolumn() || !isString(removeNullable(column.type)))
+                continue;
+
+            auto it = settings.string_value_filters->find(column.name);
+            if (it == settings.string_value_filters->end())
+                continue;
+
+            /// If some other requested column reads from the same storage column (e.g. the `.size` subcolumn),
+            /// the deserialized data may be shared between them through caches, so the values must be read in full.
+            if (storage_column_use_count[column.getNameInStorage()] > 1)
+                continue;
+
+            /// If the column is overwritten by an on-fly mutation, PREWHERE is evaluated
+            /// on the values computed by the mutation expression, not on the stored values,
+            /// so the stored values must be read in full.
+            if (alter_conversions && alter_conversions->getAllUpdatedColumns().contains(column.name))
+                continue;
+
+            /// Only the plain serialization reads values one by one and supports filtering.
+            if (serializations[current_pos]->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+                continue;
+
+            /// The key is the name in the part: it may differ from the requested name
+            /// when the column is affected by a pending RENAME.
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, it->second);
         }
     }
+}
+
+StringValueFilterPtr IMergeTreeReader::getStringValueFilter(const NameAndTypePair & column_in_part) const
+{
+    if (string_value_filters_by_part_column_name.empty())
+        return nullptr;
+
+    auto it = string_value_filters_by_part_column_name.find(column_in_part.name);
+    if (it == string_value_filters_by_part_column_name.end())
+        return nullptr;
+
+    return it->second;
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
@@ -150,6 +228,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (isTextIndexVirtualColumn(it->name))
             continue;
 
+        if (virtual_columns.getDefault(it->name))
+            continue;
+
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
@@ -187,6 +268,43 @@ void IMergeTreeReader::fillMissingColumns(
         {
             NamesAndTypesList available_columns(columns_to_read.begin(), columns_to_read.end());
 
+            /// Markers use part-time physical names; reads expose current names.
+            const auto & part_missing_columns = data_part_info_for_read->getSerializationInfos().getMissingColumns();
+            NameSet missing_column_names;
+            if (!part_missing_columns.empty())
+            {
+                size_t column_index = 0;
+                for (const auto & column : converted_requested_columns)
+                {
+                    auto name_in_part = column.getNameInStorage();
+                    if (alter_conversions->isColumnRenamed(name_in_part))
+                        name_in_part = alter_conversions->getColumnOldName(name_in_part);
+
+                    /// DROP/CLEAR invalidates both the physical and current name.
+                    bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
+                    if (alter_conversions->isColumnDropped(name_in_part, share_nested)
+                        || alter_conversions->isColumnDropped(column.getNameInStorage(), share_nested))
+                    {
+                        ++column_index;
+                        continue;
+                    }
+
+                    if (const auto * missing_info = data_part_info_for_read->getSerializationInfos().getMissingColumnInfo(name_in_part))
+                    {
+                        missing_column_names.insert(column.getNameInStorage());
+                        if (!res_columns[column_index] && !missing_info->type_name.empty())
+                        {
+                            auto frozen_type = DataTypeFactory::instance().get(missing_info->type_name);
+                            auto frozen_column = frozen_type->createColumnConstWithDefaultValue(num_rows)->convertToFullColumnIfConst();
+                            if (column.isSubcolumn())
+                                frozen_column = frozen_type->getSubcolumn(column.getSubcolumnName(), frozen_column);
+                            res_columns[column_index] = std::move(frozen_column);
+                        }
+                    }
+                    ++column_index;
+                }
+            }
+
             bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
             DB::fillMissingColumns(
                 res_columns,
@@ -197,6 +315,7 @@ void IMergeTreeReader::fillMissingColumns(
                 : available_columns,
                 partially_read_columns,
                 storage_snapshot,
+                missing_column_names,
                 share_nested,
                 previous_step_columns);
 
@@ -222,7 +341,6 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
     enableAllExperimentalSettings(context_copy);
-    context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
     return context_copy;
 }
 
@@ -368,62 +486,115 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     return {name_in_storage, subcolumn_name};
 }
 
-NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
+std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String & name_in_storage, const String & subcolumn_name) const
 {
-    auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto name_in_part = Nested::concatenateName(name_in_storage, subcolumn_name);
 
-    if (!column_in_part)
+    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withRegularSubcolumns();
+    if (auto column_in_part = part_columns.tryGetColumn(options, name_in_part))
+        return column_in_part;
+
+    /// Resolve a dynamic subcolumn against the serialization the part holds for its column, instead of building one.
+    if (!subcolumn_name.empty())
     {
-        /// If column is missing in part, return column with required type but with name that should be
-        /// in part according to renames to avoid ambiguity in case of transitive renames.
-        ///
-        /// Consider that we have column A in part and the following chain (not materialized in current part) of alters:
-        /// ADD COLUMN B, RENAME COLUMN A TO C, RENAME COLUMN B TO A.
-        /// If requested columns are A and C, we will read column A from part (as column C) and will
-        /// add missing column B (as column A) to fill with default values, because the first name of this column was B.
-        return NameAndTypePair{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
+        auto parent_column = part_columns.tryGetColumn(GetColumnsOptions::AllPhysical, name_in_storage);
+        auto parent_serialization = data_part_info_for_read->tryGetSerialization(name_in_storage);
+        if (parent_column && parent_serialization)
+        {
+            if (auto subcolumn_type = parent_column->type->tryGetSubcolumnType(subcolumn_name, parent_serialization))
+                return NameAndTypePair{name_in_storage, subcolumn_name, parent_column->type, subcolumn_type};
+        }
     }
 
-    return *column_in_part;
+    /// Other splits of the name into a column and a subcolumn are resolved by the general lookup.
+    return part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
 }
 
-SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
+SerializationPtr IMergeTreeReader::tryGetSerializationFromPart(const NameAndTypePair & column_in_part) const
+{
+    auto serialization_in_part = data_part_info_for_read->tryGetSerialization(column_in_part.getNameInStorage());
+    if (!serialization_in_part)
+        return nullptr;
+
+    /// A subcolumn is composed from the serialization of its column, never looked up by its own full name, which a
+    /// column of the part can be named after: a column `n.a` next to the subcolumn `a` of a `Nested` column `n`.
+    SerializationPtr serialization = column_in_part.isSubcolumn()
+        ? column_in_part.getTypeInStorage()->getSubcolumnSerialization(column_in_part.getSubcolumnName(), serialization_in_part)
+        : serialization_in_part;
+
+    /// All the readers of the part use one serialization at once, so only one that is safe to use concurrently can be
+    /// taken from it. `supportsPooling` is that property: a poolable serialization is shared by all of its users.
+    return serialization->supportsPooling() ? serialization : nullptr;
+}
+
+IMergeTreeReader::ColumnAndSerializationInPart IMergeTreeReader::getColumnAndSerializationInPart(const NameAndTypePair & required_column) const
 {
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
-    auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryGetColumnInPart(name_pair.first, name_pair.second);
+
+    const auto & infos = data_part_info_for_read->getSerializationInfos();
 
     if (!column_in_part)
     {
-        NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
-        return IDataType::getSerialization(missed_column);
-    }
+        DataTypePtr type_in_part = required_column.getTypeInStorage();
+        DataTypePtr requested_type_in_part = required_column.type;
+        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        {
+            type_in_part = DataTypeFactory::instance().get(missing->type_name);
+            requested_type_in_part = name_pair.second.empty()
+                ? type_in_part
+                : type_in_part->getSubcolumnType(name_pair.second);
+        }
 
-    const auto & infos = data_part_info_for_read->getSerializationInfos();
+        NameAndTypePair missed_column{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
+        return {missed_column, IDataType::getSerialization(missed_column)};
+    }
 
     /// The `Quantize` codec attaches a custom serialization that exposes companion subcolumns (`quantized`,
     /// `pq_codebook`) which the part's plain columns list (columns.txt) cannot represent - they round-trip to the bare
     /// type name and are lost. Honor that serialization directly: rebuilding it from the part's `SerializationInfo` via
     /// `IDataType::getSerialization(info)` would re-wrap it with the recorded kind stack and discard the companion
-    /// streams, so the subcolumn read would fall back to recomputing it and fail. This is restricted to that specific
-    /// serialization (a Quantize column is always dense) so it does not interfere with the Default/Sparse kind stack of
-    /// ordinary columns.
+    /// streams, so the subcolumn read would fall back to recomputing it and fail. The same applies to the serialization
+    /// the part stores, which is that re-wrapped one. This is restricted to that specific serialization (a Quantize
+    /// column is always dense) so it does not interfere with the Default/Sparse kind stack of ordinary columns.
     const auto & type_in_storage = required_column.getTypeInStorage();
     if (const auto * custom = type_in_storage->getCustomSerialization();
         custom && typeid(*custom) == typeid(SerializationQuantizedVector))
     {
         auto serialization = type_in_storage->getDefaultSerialization();
         if (required_column.isSubcolumn())
-            return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
-        return serialization;
+            serialization = type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
+        return {*column_in_part, serialization};
     }
 
-    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
-        return IDataType::getSerialization(*column_in_part, *it->second);
+    /// The part holds the serialization of every column it stores, built with the same call as below, so take it
+    /// instead of building an equal one for every reader.
+    if (auto serialization = tryGetSerializationFromPart(*column_in_part))
+        return {*column_in_part, serialization};
 
-    return IDataType::getSerialization(*column_in_part, infos.getSettings());
+    if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
+        return {*column_in_part, IDataType::getSerialization(*column_in_part, *it->second)};
+
+    return {*column_in_part, IDataType::getSerialization(*column_in_part, infos.getSettings())};
+}
+
+NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
+{
+    return getColumnAndSerializationInPart(required_column).column;
+}
+
+SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair & required_column) const
+{
+    return getColumnAndSerializationInPart(required_column).serialization;
+}
+
+bool IMergeTreeReader::hasSubcolumnInPart(const String & name_in_part, const IDataType & type_in_part, const String & subcolumn_name) const
+{
+    /// Resolved against the serialization the part holds for the column, when there is one, instead of building one.
+    if (auto serialization_in_part = data_part_info_for_read->tryGetSerialization(name_in_part))
+        return type_in_part.tryGetSubcolumnType(subcolumn_name, serialization_in_part) != nullptr;
+
+    return type_in_part.hasSubcolumn(subcolumn_name);
 }
 
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
@@ -482,6 +653,11 @@ void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
 {
     all_mark_ranges = ranges;
     last_mark_to_read = getLastMark(all_mark_ranges);
+}
+
+void IMergeTreeReader::updateReadRequestMap(MarkRangesPtr request_map)
+{
+    read_request_map = std::move(request_map);
 }
 
 std::optional<IMergeTreeReader::ColumnForOffsets>
@@ -576,6 +752,7 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -590,6 +767,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -604,6 +782,7 @@ MergeTreeReaderPtr createMergeTreeReader(
     const MarkRanges & mark_ranges,
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
+    ColumnsCache * columns_cache,
     MarkCache * mark_cache,
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
@@ -619,6 +798,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
+            columns_cache,
             mark_cache,
             deserialization_prefixes_cache,
             reader_settings,
@@ -634,6 +814,7 @@ MergeTreeReaderPtr createMergeTreeReader(
             mark_ranges,
             virtual_fields,
             uncompressed_cache,
+            columns_cache,
             mark_cache,
             deserialization_prefixes_cache,
             reader_settings,

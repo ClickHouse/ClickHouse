@@ -16,23 +16,23 @@
 
 SET use_query_condition_cache = 0;
 
-DROP TABLE IF EXISTS t_cv_d32p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_d32p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_d32n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_d32n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_d64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_d64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_u64 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_u64 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_dhole SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_lc SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_lc SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS t_cv_nul SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE IF EXISTS m_cv_nul SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS t_cv_d32p;
+DROP TABLE IF EXISTS m_cv_d32p;
+DROP TABLE IF EXISTS t_cv_d32n;
+DROP TABLE IF EXISTS m_cv_d32n;
+DROP TABLE IF EXISTS t_cv_d64p;
+DROP TABLE IF EXISTS m_cv_d64p;
+DROP TABLE IF EXISTS t_cv_u64;
+DROP TABLE IF EXISTS m_cv_u64;
+DROP TABLE IF EXISTS t_cv_f64n;
+DROP TABLE IF EXISTS m_cv_f64n;
+DROP TABLE IF EXISTS t_cv_f64p;
+DROP TABLE IF EXISTS m_cv_f64p;
+DROP TABLE IF EXISTS t_cv_dhole;
+DROP TABLE IF EXISTS t_cv_lc;
+DROP TABLE IF EXISTS m_cv_lc;
+DROP TABLE IF EXISTS t_cv_nul;
+DROP TABLE IF EXISTS m_cv_nul;
 
 -- ---------------------------------------------------------------------------------------------
 -- Case 5: a `Decimal` on either operand, with no `Float` operand, computes in the decimal's
@@ -130,20 +130,20 @@ SET explain_query_plan_default = 'legacy';
 
 SELECT 'c8 live dec/f', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_f64n WHERE divide(toDecimal32(-1000, 0), a) = 25) WHERE explain ILIKE '%Granules: 1/4%';
 
-DROP TABLE t_cv_d32p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_d32p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_d32n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_d32n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_d64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_d64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_u64 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_u64 SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_f64n SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_f64p SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_dhole SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_lc SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_lc SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE t_cv_nul SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE m_cv_nul SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE t_cv_d32p;
+DROP TABLE m_cv_d32p;
+DROP TABLE t_cv_d32n;
+DROP TABLE m_cv_d32n;
+DROP TABLE t_cv_d64p;
+DROP TABLE m_cv_d64p;
+DROP TABLE t_cv_u64;
+DROP TABLE m_cv_u64;
+DROP TABLE t_cv_f64n;
+DROP TABLE m_cv_f64n;
+DROP TABLE t_cv_f64p;
+DROP TABLE m_cv_f64p;
+DROP TABLE t_cv_dhole;
+DROP TABLE t_cv_lc;
+DROP TABLE m_cv_lc;
+DROP TABLE t_cv_nul;
+DROP TABLE m_cv_nul;

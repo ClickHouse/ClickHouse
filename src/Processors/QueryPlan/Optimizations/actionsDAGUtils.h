@@ -1,17 +1,75 @@
 #pragma once
 
 #include <Interpreters/ActionsDAG.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
+
+#include <limits>
 
 namespace DB
 {
 
+/// Find the `__applyFilter(<key>, key_column)` conjuncts planted by tryAddJoinRuntimeFilter
+/// among the top-level AND conjuncts of the given filter predicate. One descriptor per
+/// bare-column conjunct (aliases and CASTs on the key are looked through); an `__applyFilter`
+/// outside the conjunction — under an OR or a NOT, or in an unrelated expression of the same
+/// DAG — is not applied to every row and is not reported. The overload takes the filter
+/// column of a FilterStep by name.
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG::Node * predicate);
+std::vector<RuntimeFilterIndexAnalysisDescriptor> findAppliedRuntimeFilters(const ActionsDAG & dag, const String & filter_column_name);
+
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
+
+/// Describes how one `ActionsDAG` output can be traced to one input.
+/// `ValuePreserving` is deliberately restricted to operations explicitly known
+/// to retain the input value. `DistinctValuesBound` is weaker: it only proves
+/// that output NDV is bounded by input NDV (plus `ndv_delta`).
+enum class ActionsDAGLineageKind : UInt8
+{
+    Identity,
+    ValuePreserving,
+    DistinctValuesBound,
+};
+
+struct ActionsDAGLineageHop
+{
+    ActionsDAGLineageKind kind;
+    UInt64 ndv_delta;
+    /// Whether the input column's average value width remains applicable after this hop.
+    bool preserves_width;
+};
+
+struct ActionsDAGInputLineage
+{
+    size_t input_position;
+    ActionsDAGLineageKind kind;
+    UInt64 ndv_delta;
+    /// True only when every hop from the input preserves the average value width.
+    bool preserves_width;
+};
+
+struct ActionsDAGOutputLineage
+{
+    size_t output_position;
+    /// Absence means that this output cannot be traced to an input through supported hops.
+    std::optional<ActionsDAGInputLineage> input;
+};
+
+/// Classify a single node relative to its first child. This does not recursively
+/// establish that the child itself reaches an input. Absence means the hop is unsupported.
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node);
+
+/// Trace every output to at most one input using iterative, memoized traversal.
+/// The returned vector is ordered by output position and remains unambiguous even
+/// when input or output names are duplicated.
+std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions);
 
 /// This structure stores a node mapping from one DAG to another.
 /// The rule is following:
 /// * Input nodes are mapped by name.
-/// * Function is mapped to function if all children are mapped and function names are same.
+/// * Function is mapped to function if all children are mapped, function names are same, and
+///   result types are equal. The two DAGs can be built under different settings, and the same
+///   expression can then have different result types in each.
 /// * Alias is mapped to it's children mapping.
 /// * Monotonic function can be mapped to it's children mapping if direct mapping does not exist.
 ///   In this case, information about monotonicity is filled.
@@ -90,6 +148,40 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     const MatchedTrees::Matches & matches,
     const std::unordered_set<const ActionsDAG::Node *> & allowed_inputs,
     const ActionsDAG::NodeRawConstPtrs & nodes);
+
+/// What each column of a header is to a DAG's inputs: one entry per header column, in header order,
+/// holding the position in `inputs` of the input reading it, or `passes_through` when no input reads it
+/// and the column goes past the DAG untouched.
+///
+/// Names can repeat in both, so the n-th input named `x` reads the n-th header column named `x`, which
+/// is the rule `ActionsDAG::updateHeader` follows to build the block a step runs on. A caller holding
+/// some of the inputs can therefore ask where exactly those read from, which
+/// `ActionsDAG::matchInputPositionsToHeader` cannot answer: it returns a plain list of the positions
+/// something reads, with no way back to which input reads which.
+struct HeaderColumnsToInputs
+{
+    static constexpr size_t passes_through = std::numeric_limits<size_t>::max();
+
+    std::vector<size_t> read_by;
+
+    size_t size() const { return read_by.size(); }
+    bool passesThrough(size_t header_position) const { return read_by[header_position] == passes_through; }
+};
+
+HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header);
+
+/// All nodes reachable from `roots`, including the roots themselves. `roots` may hold duplicates.
+/// A node for which `is_barrier` returns true is included, but the walk does not descend into its
+/// children.
+///
+/// Used to answer what `removeUnusedActions` would keep without modifying the DAG: pass the nodes it
+/// treats as roots - the kept outputs, every ARRAY_JOIN (it never drops them, they change the number
+/// of rows), and every input when inputs may not be removed - and, when it may fold constants, a
+/// barrier for the nodes it would fold, because folding clears their children before it collects the
+/// nodes to keep.
+NodeSet findReachableNodes(
+    const ActionsDAG::NodeRawConstPtrs & roots,
+    const std::function<bool(const ActionsDAG::Node *)> & is_barrier = {});
 
 bool isInjectiveFunction(const ActionsDAG::Node * node);
 

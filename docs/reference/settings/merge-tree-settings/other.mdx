@@ -18,7 +18,9 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Initial size of an adaptive write buffer
+Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
+
+Adaptive write buffers are only used in wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -188,7 +190,7 @@ all of them.
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Force read-through filesystem cache for merges
+Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 
 ## initialization_retry_period {#initialization_retry_period}
 <SettingsInfoBlock type="Seconds" default_value="60" />
@@ -444,7 +446,7 @@ Possible values:
 
 ## patch_parts_version {#patch_parts_version}
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "v2"},{"label": "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "v2"},{"label": "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."}]}]}/>
 
 On-disk serialization version for patch parts produced by lightweight UPDATE queries.
 
@@ -624,10 +626,13 @@ Possible values:
 - `basic` - Basic format.
 - `with_types` - Format with additional `types_serialization_versions` field, allowing per-type serialization versions.
 This makes settings like `string_serialization_version` effective.
+- `with_missing_columns` - Everything `with_types` records, plus a `missing_columns` field
+listing omitted columns and the type whose default represents their values.
+Required to enable `skip_empty_columns_on_insert`.
 
 During rolling upgrades, set this to `basic` so that new servers produce
 data parts compatible with old servers. After the upgrade completes,
-switch to `WITH_TYPES` to enable per-type serialization versions.
+switch to `with_types` (or `with_missing_columns`) to enable the corresponding features.
 
 ## share_nested_offsets {#share_nested_offsets}
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -647,6 +652,26 @@ If there are a lot of outdated parts cleanup thread will try to delete up to
 `simultaneous_parts_removal_limit` parts during one iteration.
 `simultaneous_parts_removal_limit` set to `0` means unlimited.
 
+## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to skip writing all type-default columns on INSERT"}]}]}/>
+
+If enabled, columns whose values are entirely type-defaults in a given INSERT
+block are not written to the data part on disk. When the part is later read,
+missing columns are filled with the default of their recorded type. This saves
+disk space for sparse-update workloads
+where most columns in each INSERT are left at their type's default value.
+Columns with `DEFAULT`, `MATERIALIZED`, or `ALIAS` expressions are never
+skipped, because the read path would evaluate the expression instead of
+returning the type-default that was explicitly inserted. Patch parts
+(used by lightweight UPDATE) are also excluded.
+This optimization records the missing columns in the part's
+`serialization.json` using the `with_missing_columns` format version, so it
+only takes effect when `serialization_info_version` is set to
+`with_missing_columns`. With a lower version (for example pinned to a lower
+value for a rolling upgrade so older servers can read freshly written parts)
+no columns are skipped.
+
 ## storage_policy {#storage_policy}
 <SettingsInfoBlock type="String" default_value="default" />
 
@@ -658,7 +683,7 @@ Name of storage disk policy
 
 Controls the serialization format for top-level `String` columns.
 
-This setting is only effective when `serialization_info_version` is set to "with_types".
+This setting is only effective when `serialization_info_version` is set to "with_types" or newer.
 When set to `with_size_stream`, top-level `String` columns are serialized with a separate
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
@@ -703,6 +728,27 @@ expired based on their TTL settings are removed.
 
 When `ttl_only_drop_parts` is enabled, the entire part is dropped if all
 rows in that part have expired according to their `TTL` settings.
+
+This applies only to the TTLs that delete rows. A column `TTL` can only be
+honoured by rewriting the part, so the merges that clear expired columns are
+still assigned when this setting is enabled. Such a merge rewrites the part
+anyway, and therefore also removes the rows that have expired in it.
+
+## unique_key_conflict_action {#unique_key_conflict_action}
+
+<ExperimentalBadge/>
+<SettingsInfoBlock type="UniqueKeyConflictAction" default_value="overwrite" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "overwrite"},{"label": "New table setting: how an INSERT on a UNIQUE KEY table resolves a key already live in the partition (overwrite \/ ignore \/ abort)"}]}]}/>
+
+For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
+
+- `overwrite` — the incoming row supersedes the existing live row (UPSERT). Default.
+- `ignore` — the existing row is kept and the conflicting incoming row is dropped.
+- `abort` — the INSERT fails on the first live duplicate and publishes nothing.
+
+The policy is a property of the table, so every writer is held to it. Note that an INSERT is
+atomic only when it produces a single part, so `abort` may reject one part of a multi-part
+INSERT after earlier parts committed, exactly as plain MergeTree does.
 
 ## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 <SettingsInfoBlock type="Milliseconds" default_value="0" />

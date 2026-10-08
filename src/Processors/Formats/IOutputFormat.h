@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <unordered_map>
 #include <Core/Block_fwd.h>
 #include <IO/Progress.h>
 #include <Processors/Chunk.h>
@@ -34,6 +35,10 @@ public:
 
     Status prepare() override;
     void work() override;
+
+    /// The statistics written after the data (e.g. `rows_read`) are complete only when the whole pipeline has finished,
+    /// so the format is finalized by the executor rather than when its inputs are exhausted.
+    void onPipelineFinished() override;
 
     void flush();
     void setAutoFlush() { auto_flush = true; }
@@ -85,6 +90,8 @@ public:
 
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
+
+    virtual std::unordered_map<String, size_t> getColumnSizesOnDisk() const { return {}; }
 
     /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
     /// packets (progress, logs, profile events, exceptions) in the output stream. The format must
@@ -160,6 +167,15 @@ protected:
 
     virtual void flushImpl();
 
+    /// Counterpart of `flushImpl` for the framing payload boundary: re-attach format-owned buffers
+    /// to the payload buffer after the framing has taken the boundary. A format-owned buffer can
+    /// write straight into the payload buffer's memory and keep its own copy of the write position
+    /// (`PeekableWriteBuffer`, used by the formats that can replace a partially written row with an
+    /// exception), while the framing finalizes and restarts the payload buffer at every boundary
+    /// (see `IFramingFormat::onPayload`) - which moves that position back to the start and may move
+    /// the memory. Without re-attaching, the next row would be written outside the payload buffer.
+    virtual void reattachBuffers() {}
+
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
@@ -224,7 +240,6 @@ protected:
     Chunk current_chunk;
     PortKind current_block_kind = PortKind::Main;
     bool has_input = false;
-    bool finished = false;
     bool finalized = false;
     bool framing_finalize_deferred = false;
     /// The framing was attached only to serialize an exception packet (see `setFraming`'s

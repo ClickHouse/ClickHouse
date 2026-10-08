@@ -46,3 +46,9 @@ t
 4
 -- ...and only the tables the caller may see are listed
 t
+-- an Alias in the underlying database does not expose its target through the proxy (prints 1)
+1
+-- ...a column-scoped privilege on the target is not enough either (prints 1)
+1
+-- ...and it resolves once the target is describable too (prints secret UInt64)
+secret	UInt64

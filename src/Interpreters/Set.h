@@ -4,8 +4,10 @@
 #include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
 #include <Interpreters/SetKeys.h>
+#include <Core/PlainRanges.h>
 #include <Storages/MergeTree/BoolMask.h>
 
+#include <Common/callOnce.h>
 #include <Common/SharedMutex.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/castColumn.h>
@@ -87,6 +89,13 @@ public:
     bool hasSetElements() const { return !set_elements.empty(); }
     Columns getSetElements() const;
 
+    /// The elements of a single-column set viewed as sorted, non-overlapping ranges, built once and
+    /// shared afterwards. Deriving them costs one `Field` per element plus an O(N log N) sort, which is
+    /// substantial for a large set, and every consumer of the same set derives exactly the same value —
+    /// notably the two plan builds that automatic parallel replicas performs for one query.
+    /// Returns null for a multi-column (tuple) set, which has no single-column range representation.
+    std::shared_ptr<const PlainRanges> getPlainRanges() const;
+
     void checkColumnsNumber(size_t num_key_columns) const;
     bool areTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
     void checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) const;
@@ -151,6 +160,9 @@ private:
     /// Collected elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
     MutableColumns set_elements;
+
+    mutable std::shared_ptr<const PlainRanges> plain_ranges;
+    mutable OnceFlag plain_ranges_once;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -242,7 +254,8 @@ private:
       */
     struct FieldValue
     {
-        explicit FieldValue(MutableColumnPtr && column_) : column(std::move(column_)) {}
+        explicit FieldValue(MutableColumnPtr && column_, bool block_memory_tracker_ = false)
+            : column(std::move(column_)), block_memory_tracker(block_memory_tracker_) {}
         void update(const Field & x);
 
         bool isNormal() const { return !value.isPositiveInfinity() && !value.isNegativeInfinity(); }
@@ -253,14 +266,40 @@ private:
 
         // If value is Null, uses the actual value in column
         MutableColumnPtr column;
+
+        /// True when the column belongs to the thread-local buffer of getFieldValueRangesBuffer,
+        /// which outlives the query; its reallocations must not be charged to the current query.
+        bool block_memory_tracker = false;
     };
+
+    struct FieldValueRange
+    {
+        FieldValue left;
+        FieldValue right;
+        bool left_included = false;
+        bool right_included = false;
+
+        explicit FieldValueRange(const IColumn & prototype, bool block_memory_tracker = false)
+            : left(prototype.cloneEmpty(), block_memory_tracker), right(prototype.cloneEmpty(), block_memory_tracker) {}
+    };
+
+    using FieldValueRanges = std::vector<FieldValueRange>;
+
+    /// Buffer reused across checkInRange calls (which run once per mark during index analysis)
+    /// to avoid per-call column allocations. For fixed-width key types it is a per-thread cache
+    /// (invalidated by the next call on the same thread) whose retained size is small and bounded.
+    /// Variable-width key types (e.g. String) could pin arbitrarily large reserved capacity in
+    /// thread-local storage after the query ends, so for them the given query-scoped scratch
+    /// buffer is filled and returned instead.
+    FieldValueRanges & getFieldValueRangesBuffer(FieldValueRanges & scratch) const;
 
     // If all arguments in tuple are key columns, we can optimize NOT IN when there is only one element.
     bool has_all_keys;
     Columns ordered_set;
     std::vector<KeyTuplePositionMapping> indexes_mapping;
-
-    using FieldValues = std::vector<FieldValue>;
+    const UInt64 instance_id;
+    /// Whether all key columns have fixed-width values, making the ranges buffer cacheable.
+    bool cache_ranges = false;
 };
 
 }

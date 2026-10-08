@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>
 
@@ -128,6 +129,9 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
         }
 
+        normalizeBoolFields(min_ref);
+        normalizeBoolFields(max_ref);
+
         if (update_in_place)
         {
             hyperrectangle[i].left_included = true;
@@ -208,6 +212,8 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
+    /// The granule bound comes from `getExtremes`, which skips NaN.
+    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
@@ -313,6 +319,9 @@ void MergeTreeIndexBulkGranulesMinMax::deserializeBinary(size_t granule_num, Rea
         serialization->deserializeBinary(scratch, istr, format_settings);
         serialization->deserializeBinary(value, istr, format_settings);
     }
+
+    normalizeBoolFields(value);
+
     /// If index granularity is not 1, we insert the same value as the min
     /// or max for all the corresponding granules. For our top-K purpose, this
     /// is safe and maybe lead to false positives, but never wrong results.
@@ -513,8 +522,7 @@ void minmaxIndexValidator(const IndexDescription & index, bool attach, const Mer
                     "with different data types. Consider using typed subcolumns or cast column to a specific data type",
                     column.type->getName(), column.name);
         };
-        check_not_dynamic_or_variant(*column.type);
-        column.type->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*column.type, check_not_dynamic_or_variant);
     }
 }
 
