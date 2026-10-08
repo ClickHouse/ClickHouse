@@ -451,7 +451,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (trivial_filter)
     {
         if (filter_step->removesFilterColumn())
-            filter_dag.removeUnusedResult(filter_step->getFilterColumnName());
+            filter_dag.removeFromOutputs(filter_step->getFilterColumnName());
         parent_node->step = std::make_unique<ExpressionStep>(filter_step->getInputHeaders().front(), std::move(filter_dag));
     }
 

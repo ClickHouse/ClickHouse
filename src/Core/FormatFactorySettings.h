@@ -225,6 +225,10 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
 When reading Parquet files (with reader v3), skip whole row groups based on the WHERE/PREWHERE expressions and the dictionary page contents, when all data pages of a column chunk are dictionary-encoded. The value is the maximum dictionary page size (in bytes) for which this optimization is applied; set to 0 to disable. This takes precedence over the bloom filter when both are available.
 )", 0, \
         {"26.8", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."}) \
+    DECLARE(UInt64, input_format_parquet_footer_read_size, 0, R"(
+Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) sizes the read adaptively to the file - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
+)", 0, \
+        {"26.10", 65536, 0, "New setting to override the adaptive Parquet footer initial read size with a fixed number of bytes; 0 keeps the adaptive behavior."}) \
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0, \
@@ -716,6 +720,10 @@ When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not 
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0, \
         {"24.2", true, false, "Don't infer floats in exponential notation by default"}) \
+    DECLARE(UInt64, input_format_freeform_max_search_steps, 4096, R"(
+The maximum number of steps of the search for the structure of a row in the `Freeform` format. The search branches on every field that several escaping rules read alike (for example, a word in a tab-separated row is read the same by the `Raw` and `Escaped` rules), so a wide row of strings has exponentially many candidate structures. When the search exceeds this number of steps, an exception is thrown instead of exhausting memory and time. 0 means unlimited.
+)", 0, \
+        {"26.10", 0, 4096, "New setting bounding the search for the structure of a `Freeform` row. The search was unbounded before and could exhaust memory on a wide row of strings; 0 restores that behavior."}) \
     DECLARE(Bool, output_format_markdown_escape_special_characters, false, R"(
 When enabled, escape special characters in Markdown.
 
@@ -942,7 +950,7 @@ The maximum allowed size for String in RowBinary format. It prevents allocating 
 The maximum allowed size for Array in RowBinary format. It prevents allocating large amount of memory in case of corrupted data. 0 means there is no limit
 )", 0) \
     DECLARE(UInt64, input_format_binary_max_type_complexity, 1000, R"(
-Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Protects against malicious inputs. 0 = unlimited.
+Max type nodes when decoding binary types (not depth, but total count). `Map(String, UInt32)` = 3 nodes. Parameters of `AggregateFunction` types count as one node per value, including nested ones. Protects against malicious inputs. 0 = unlimited.
 )", 0, \
         {"26.1", 0, 1000, "Add a new setting to control max number of type nodes when decoding binary types. Protects against malicious inputs."}) \
     DECLARE(UInt64, format_binary_max_object_size, 100000, R"(
@@ -1596,6 +1604,12 @@ Print a readable number tip on the right side of the table if the block consists
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0, \
         {"25.1", false, true, "A new setting."}) \
+    DECLARE(Bool, output_format_pretty_display_control_characters, true, R"(
+If enabled, non-printable control characters (NUL, SOH, CR, DEL, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␁, ␍, ␡) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. A tab advances to the next tab stop, a multi-line value keeps being broken across lines so that it stays easy to read and copy-paste, and the ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
+)", 0, \
+        {"26.10", false, true, "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the `Vertical` and `Pretty*` output formats."}) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
 If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
@@ -1789,6 +1803,15 @@ Use REPLACE statement instead of INSERT
     DECLARE(Bool, output_format_sql_insert_quote_names, true, R"(
 Quote column names with '`' characters
 )", 0) \
+    \
+    DECLARE(String, input_format_sqlite_table_name, "", R"(
+Name of the table in SQLite input from which to read data. If empty, the first table from the SQLite database is used.
+)", 0, \
+        {"26.10", "", "", "New setting for the `SQLite` input format: the name of the table to read."}) \
+    DECLARE(String, output_format_sqlite_table_name, "table", R"(
+Name of the table in SQLite output
+)", 0, \
+        {"26.10", "table", "table", "New setting for the `SQLite` output format: the name of the table to write."}) \
     \
     DECLARE(Bool, output_format_values_escape_quote_with_quote, false, R"(
 If true escape ' with '', otherwise quoted with \\'

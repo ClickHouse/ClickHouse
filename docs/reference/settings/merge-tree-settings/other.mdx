@@ -18,7 +18,9 @@ These settings are available in [system.merge_tree_settings](/reference/system-t
 ## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
-Initial size of an adaptive write buffer
+Sets the initial size, in bytes, of each adaptive write buffer used when writing MergeTree data. Buffers grow automatically as needed. Lower values reduce initial memory use, especially for tables with many columns, but may cause more frequent buffer flushes. This is a starting size, not a memory limit.
+
+Adaptive write buffers are only used in wide parts, as controlled by [`min_columns_to_activate_adaptive_write_buffer`](/reference/settings/merge-tree-settings/min#min_columns_to_activate_adaptive_write_buffer) and [`use_adaptive_write_buffer_for_dynamic_subcolumns`](/reference/settings/merge-tree-settings/use#use_adaptive_write_buffer_for_dynamic_subcolumns).
 
 ## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -188,7 +190,7 @@ all of them.
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Force read-through filesystem cache for merges
+Controls how background merge and mutation reads handle cache misses. When disabled, existing cached ranges are used, but missing ranges are read directly from the underlying storage without populating the cache. When enabled, missing ranges are read through and stored in the filesystem cache, and in the distributed cache when enabled. This can warm data for later reads, but also consumes cache capacity.
 
 ## initialization_retry_period {#initialization_retry_period}
 <SettingsInfoBlock type="Seconds" default_value="60" />

@@ -5,11 +5,13 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
@@ -38,6 +40,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnArray.h>
@@ -73,6 +76,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -1278,6 +1282,32 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
+
+            /// Rewrites that are valid only for a non-inverted condition in a boolean context.
+            /// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
+            auto try_rewrite_boolean_condition = [&]() -> const ActionsDAG::Node *
+            {
+                if (need_inversion || !boolean_context)
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                return nullptr;
+            };
+
             /// A `not` that receives an inversion cancels against it and substitutes its argument for
             /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
             /// not `x`. Where the value is merely truth-tested (`boolean_context`) that is exactly what
@@ -1366,20 +1396,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
-            else if (!need_inversion
-                && boolean_context
-                && ((res = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+            else if (const auto * rewritten = try_rewrite_boolean_condition())
             {
-                handled_inversion = true;
-            }
-            else if (!need_inversion
-                && boolean_context
-                && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
-                && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
-            {
+                res = rewritten;
                 handled_inversion = true;
             }
             else
@@ -1597,6 +1616,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
     , multiple_key_columns_per_condition(context->getSettingsRef()[Setting::analyze_index_with_multiple_key_columns_per_condition])
 {
     size_t key_index = 0;
@@ -1809,12 +1829,42 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     return true;
 }
 
-bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type)
+bool KeyCondition::hasUnknownAtoms() const
 {
-    RPNBuilderTreeContext tree_context(nullptr, block_with_constants, nullptr);
-    RPNBuilderTreeNode node(expr.get(), tree_context);
+    return std::ranges::any_of(expandAtomGroups(rpn), [](const RPNElement & element)
+    {
+        return element.function == RPNElement::FUNCTION_UNKNOWN;
+    });
+}
 
-    return node.tryGetConstant(out_value, out_type);
+KeyCondition KeyCondition::createWithUnknownAtomsAssumedTrue() const
+{
+    KeyCondition result = *this;
+
+    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
+    std::vector<bool> positive_stack = {true};
+    for (auto it = result.rpn.rbegin(); it != result.rpn.rend(); ++it)
+    {
+        RPNElement & element = *it;
+        chassert(!positive_stack.empty());
+        bool positive = positive_stack.back();
+        positive_stack.pop_back();
+
+        if (element.function == RPNElement::FUNCTION_NOT)
+            positive_stack.push_back(!positive);
+        else if (element.function == RPNElement::FUNCTION_AND || element.function == RPNElement::FUNCTION_OR)
+            positive_stack.insert(positive_stack.end(), {positive, positive});
+        else
+        {
+            /// Every atom in a group bounds the same predicate leaf and inherits its polarity.
+            for (auto & atom : expandAtomGroups(std::span<RPNElement>(&element, 1)))
+                if (atom.function == RPNElement::FUNCTION_UNKNOWN)
+                    atom = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+        }
+    }
+
+    chassert(positive_stack.empty());
+    return result;
 }
 
 bool KeyCondition::hasOnlyConjunctions() const
@@ -2287,7 +2337,7 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     const bool first_match_only = !multiple_key_columns_per_condition;
 
     auto chains = collectKeyWrappingChains(
-        node.getTreeContext().getQueryContext(), expr_name, info, first_match_only, std::move(allow_key_function));
+        node.getContext(), expr_name, info, first_match_only, std::move(allow_key_function));
 
     if (chains.empty())
         return {};
@@ -2451,6 +2501,29 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
 }
 
 
+/// Returns a copy of `elem_type` with every `DateTime`/`DateTime64` leaf replaced by the corresponding
+/// leaf of `dag_type`, or nullptr if the two do not describe the same shape. Keeps `elem_type`'s own
+/// structure, so only what `equals` ignores moves: the DAG reads those off the type it is handed.
+static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, const DataTypePtr & dag_type)
+{
+    return replaceNestedTypesInPair(elem_type, dag_type, [](const DataTypePtr & elem_leaf, const DataTypePtr & dag_leaf) -> DataTypePtr
+    {
+        /// Adopting is unconditional here: two `DateTime` types can both report the bare name `DateTime` and
+        /// still have captured different zones, so the name cannot say whether the leaf needs to move.
+        if (WhichDataType(elem_leaf).isDateTimeOrDateTime64())
+            return dag_leaf->equals(*elem_leaf) ? dag_leaf : nullptr;
+
+        /// A custom name on a leaf changes what the transform computes on it (`Bool` renders every nonzero
+        /// `UInt8` as `true`), so a pair whose names disagree is not interchangeable.
+        if ((elem_leaf->hasCustomName() || dag_leaf->hasCustomName()) && elem_leaf->getName() != dag_leaf->getName())
+            return nullptr;
+
+        /// Every other leaf carries no timezone, so there is nothing to adopt.
+        return elem_leaf->equals(*dag_leaf) ? elem_leaf : nullptr;
+    });
+}
+
+
 /// Materializes a transformed column and rejects a transformation that produced NULLs:
 /// - materialize output column (Const/LowCardinality)
 /// - reject if any NULLs were created as a result of transformation
@@ -2601,6 +2674,15 @@ static bool convertColumnForDeterministicDag(
 
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
+
+    /// Hand the DAG the timezone it was built against; `equals` cannot see it, so the pair is
+    /// interchangeable everywhere except inside the transform. Relabel, never convert.
+    if (auto adopted = adoptDateTimeLeafTimezones(input_type, dag.input_type))
+        input_type = std::move(adopted);
+    /// A refusal on an otherwise equal pair means it is not interchangeable, so the DAG cannot be
+    /// given either type. A refusal on an unequal pair leaves the casts below to reconcile it.
+    else if (input_type->equals(*dag.input_type))
+        return false;
 
     if (!input_type->equals(*dag.input_type))
     {
@@ -2867,10 +2949,30 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         /// A float zero equals the zero of the other sign, which a key function can tell apart
         /// (`toString(-0.0)` is `'-0'`, and `cityHash64` differs). The transformed constant then
         /// describes only one of the two zeros, so `x = 0` does not imply `f(x) = f(0)`, and not
-        /// even a relaxed atom would be a superset of the matching rows. The transform cannot
-        /// constrain this key column; skip the candidate.
+        /// even a relaxed atom would be a superset of the matching rows. For a scalar float input,
+        /// compare the images of both signs and keep only transforms that do not distinguish them.
+        /// A zero nested in a container, such as `(0.0, 1.0)` or `[0.0, 1.0]`, would require probing
+        /// every combination of signs, so that candidate cannot constrain the key column.
         if (!transform_applied && anyFieldSatisfies((*transform_input_column)[0], isFloatZeroField))
-            continue;
+        {
+            const auto key_input_type = removeLowCardinalityAndNullable(transform_input_type);
+            if (!isFloat(key_input_type))
+                continue;
+
+            auto zeros_column = key_input_type->createColumn();
+            zeros_column->insert(Float64(0.0));
+            zeros_column->insert(Float64(-0.0));
+
+            ColumnPtr transformed_zeros_column;
+            DataTypePtr transformed_zeros_type;
+            if (!applyDeterministicDagToColumn(
+                    std::move(zeros_column), key_input_type, expr_name, candidate.dag,
+                    transformed_zeros_column, transformed_zeros_type))
+                continue;
+
+            if ((*transformed_zeros_column)[0] != (*transformed_zeros_column)[1])
+                continue;
+        }
 
         ColumnPtr transformed_const_column = transform_input_column;
         DataTypePtr transformed_const_type = transform_input_type;
@@ -3203,15 +3305,10 @@ namespace
 
 bool typeContainsFloat(const DataTypePtr & type)
 {
-    if (isFloat(type))
-        return true;
+    if (!type)
+        return false;
 
-    bool has_float = false;
-    type->forEachChild([&](const IDataType & child)
-    {
-        has_float |= isFloat(child);
-    });
-    return has_float;
+    return anyInTypeTree(*type, [](const IDataType & subtype) { return isFloat(subtype); });
 }
 
 /** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
@@ -3663,7 +3760,7 @@ void KeyCondition::prepareSetAtomsForIn(
     if (info.require_ready_sets && !future_set->get())
         return;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_arg.getContext());
     if (!prepared_set)
         return;
 
@@ -3948,8 +4045,8 @@ bool KeyCondition::tryMatchKeyColumnThroughMonotonicChain(
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
-        auto function = *it;
-        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getTreeContext().getQueryContext());
+        const auto & function = *it;
+        auto func_builder = FunctionFactory::instance().tryGet(function.getFunctionName(), node.getContext());
         if (!func_builder)
             return false;
         ColumnsWithTypeAndName arguments;
@@ -5145,7 +5242,7 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
             if (has_atom_for_key_column[candidate.key_column_num])
                 continue;
 
-            auto atom = tryBuildComparisonAtom(candidate, func_name, key_arg.getTreeContext().getQueryContext());
+            auto atom = tryBuildComparisonAtom(candidate, func_name, key_arg.getContext());
             if (!atom)
                 continue;
 
@@ -5168,7 +5265,7 @@ std::vector<KeyCondition::ComparisonAtomCandidate> KeyCondition::collectComparis
 
     /// Keep the original column: rebuilding a `Dynamic` or `Variant` from its `Field` loses the
     /// active alternative, such as an enum whose stored number differs from its string label.
-    /// A constant AST literal can have a zero-sized wrapper, so give transforms its single data row.
+    /// A constant column can have a zero-sized wrapper, so give transforms its single data row.
     ColumnWithTypeAndName constant_for_transform = constant;
     constant_for_transform.column = assert_cast<const ColumnConst &>(*constant.column).getDataColumnPtr();
 
@@ -5456,6 +5553,21 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryBuildComparisonAtom(
                     const auto * fixed_key = typeid_cast<const DataTypeFixedString *>(key_expr_type_not_null.get());
                     if (!fixed_key || fixed_key->getN() < const_value.safeGet<String>().size())
                         return std::nullopt;
+                }
+
+                /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
+                /// constant instead of throwing, so the index must do the same instead of converting.
+                /// Nullable keys are declined, as for NaN above: `NULL <op> 'x'` is NULL, not a constant.
+                if (!validate_enum_literals_in_operators && isUnknownEnumElement(*key_expr_type_not_null, const_value))
+                {
+                    if (key_expr_type_is_nullable)
+                        return std::nullopt;
+
+                    if (func_name == "equals")
+                        return RPNElement(RPNElement::ALWAYS_FALSE);
+                    if (func_name == "notEquals")
+                        return RPNElement(RPNElement::ALWAYS_TRUE);
+                    return std::nullopt;
                 }
 
                 const_value = convertFieldToType(const_value, *key_expr_type_not_null);
@@ -7170,6 +7282,38 @@ bool KeyCondition::mayReadNullKeyValue(
     return false;
 }
 
+bool KeyCondition::fieldHasNullInside(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::Null:
+            return !field.isPositiveInfinity() && !field.isNegativeInfinity();
+        case Field::Types::Tuple:
+        {
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Array:
+        {
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Map:
+        {
+            for (const auto & element : field.safeGet<Map>())
+                if (fieldHasNullInside(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
 BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
@@ -7213,12 +7357,25 @@ BoolMask KeyCondition::checkInHyperrectangle(
             const Range * key_range_ptr = &hyperrectangle[key_column];
             std::optional<Range> key_range_storage;
 
+            /// A NULL nested in a `Tuple` key value is stored above every value of its element, while
+            /// `Field` order puts it below them, so the upper bound comes out in `Field` order below
+            /// rows the key stores under it: `(2, 3)` is above `(2, NULL)`. The upper bound is widened to
+            /// `+inf`, which claims nothing about the column. A lower bound holding such a NULL only
+            /// comes out lower and needs no widening.
+            const bool upper_bound_widened = fieldHasNullInside(key_range_ptr->right);
+            if (unlikely(upper_bound_widened))
+            {
+                key_range_storage = *key_range_ptr;
+                key_range_storage->right = POSITIVE_INFINITY;
+                key_range_storage->right_included = true;
+                key_range_ptr = &*key_range_storage;
+            }
+
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             if (!element.monotonic_functions_chain.empty())
             {
-                key_range_storage = hyperrectangle[key_column];
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    *key_range_storage,
+                    *key_range_ptr,
                     element.monotonic_functions_chain,
                     data_types[key_column],
                     single_point
@@ -7250,7 +7407,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                 intersects = false;
                 contains = false;
             }
-            else if (unlikely(key_range.right.isNaN()))
+            else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
             {
                 contains = false;
             }
@@ -7594,19 +7751,18 @@ BoolMask KeyCondition::checkInHyperrectangle(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
     };
 
-    size_t element_idx = 0;
-    for (const auto & element : rpn)
+    /// The reported position is the element's index in `rpn`: the disjunction bitset is read positionally
+    /// against the template RPN. A position that is never reported keeps the bitset's all-true default.
+    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
     {
+        const auto & element = rpn[element_idx];
         if (element.function == RPNElement::FUNCTION_ATOM_GROUP)
             pushAtomGroupMask(element, apply_element, rpn_stack);
         else
             apply_element(element);
 
         if (update_partial_disjunction_result_fn)
-        {
             update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            ++element_idx;
-        }
     }
 
     if (rpn_stack.size() != 1)
@@ -7666,10 +7822,19 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
+                /// The upper bound is widened when it holds a nested NULL, as in the overload above.
+                Range sparse_key_range = sparse_hyperrectangle[sparse_pos];
+                const bool upper_bound_widened = fieldHasNullInside(sparse_key_range.right);
+                if (unlikely(upper_bound_widened))
+                {
+                    sparse_key_range.right = POSITIVE_INFINITY;
+                    sparse_key_range.right_included = true;
+                }
+
                 /// The column may be wrapped in a chain of possibly monotonic functions; for an empty chain
                 /// the helper returns the range unchanged.
                 std::optional<Range> new_range = applyMonotonicFunctionsChainToRange(
-                    sparse_hyperrectangle[sparse_pos],
+                    std::move(sparse_key_range),
                     element.monotonic_functions_chain,
                     sparse_data_types[sparse_pos],
                     single_point);
@@ -7698,7 +7863,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         intersects = false;
                         contains = false;
                     }
-                    else if (unlikely(key_range.right.isNaN()))
+                    else if (unlikely(key_range.right.isNaN() || upper_bound_widened))
                     {
                         contains = false;
                     }

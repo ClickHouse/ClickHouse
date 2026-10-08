@@ -37,6 +37,23 @@ File/S3 engines/table function will parse paths with '::' as `<archive> :: <file
 
 Use background I/O pool to read from MergeTree tables. This setting may increase performance for I/O bound queries
 
+## allow_block_nested_loop_join {#allow_block_nested_loop_join}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting that gates the block nested loop join, which executes a `JOIN` whose `ON` section determines no join key instead of rejecting it with `INVALID_JOIN_ON_EXPRESSION`. The compatibility value 0 restores the previous behavior."}]}]}/>
+
+Allow executing a `JOIN` with an arbitrary `ON` condition, one with no equality between the joined tables, as a [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition).
+
+It examines every pair of rows, which costs the product of the two tables' row counts. The operator is the last resort of join planning, reached only when no [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) can execute the condition, so it is not selected through that setting.
+
+When the setting is disabled, a query that reaches the operator is rejected with `INVALID_JOIN_ON_EXPRESSION` while it is being planned.
+
+Possible values:
+
+- 0 — Reject such a query.
+- 1 — Execute it as a block nested loop join (default).
+
 ## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -368,12 +385,6 @@ Set to false to force the old full-mutation behavior.
 
 Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
 index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
-
-## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-Allow named collections' fields override by default.
 
 ## allow_non_metadata_alters {#allow_non_metadata_alters}
 

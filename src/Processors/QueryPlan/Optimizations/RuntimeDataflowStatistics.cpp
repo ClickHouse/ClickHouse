@@ -236,14 +236,35 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationKeySizes(
-    const Chunk & chunk, const ColumnNumbers & keys_positions, const DataTypes & key_types, size_t full_key_bytes)
+    const Chunk & chunk,
+    const ColumnNumbers & keys_positions,
+    const DataTypes & key_types,
+    size_t full_key_bytes,
+    const Columns & untruncated_sample_columns)
 {
-    const auto & columns = chunk.getColumns();
     ColumnsWithTypeAndName cols;
     cols.reserve(keys_positions.size());
-    for (size_t i = 0; i < keys_positions.size(); ++i)
-        cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
-    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], chunk.getNumRows(), cols, full_key_bytes);
+
+    size_t num_rows = chunk.getNumRows();
+    if (!untruncated_sample_columns.empty())
+    {
+        /// The byte count describes the untruncated keys, so the ratio it is divided by has to come from
+        /// them as well - the chunk holds the kept groups only, and their keys compress differently.
+        /// When every group was rejected the chunk holds nothing at all, and without a ratio the byte
+        /// count is dropped rather than estimated. The conversion kept a bounded sample for both cases.
+        chassert(untruncated_sample_columns.size() == keys_positions.size());
+        for (size_t i = 0; i < untruncated_sample_columns.size(); ++i)
+            cols.emplace_back(untruncated_sample_columns[i], key_types[i], "");
+        num_rows = untruncated_sample_columns.front()->size();
+    }
+    else
+    {
+        const auto & columns = chunk.getColumns();
+        for (size_t i = 0; i < keys_positions.size(); ++i)
+            cols.emplace_back(columns[keys_positions[i]], key_types[i], "");
+    }
+
+    recordColumns(output_bytes_statistics[OutputStatisticsType::AggregationKeys], num_rows, cols, full_key_bytes);
 }
 
 void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateColumnSizes(

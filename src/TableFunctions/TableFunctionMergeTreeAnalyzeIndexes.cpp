@@ -3,10 +3,12 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Storages/StorageMergeTreeAnalyzeIndexes.h>
@@ -39,6 +41,11 @@ const char * mergeTreeAnalyzeIndexFunctionName(bool resolve_by_uuid)
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_limit_for_vector_search_queries;
+}
 
 namespace ErrorCodes
 {
@@ -158,6 +165,18 @@ static UInt64 getVectorSearchUnsignedArgument(const Array & args, size_t index)
             return static_cast<UInt64>(value);
     }
     throwBadVectorSearchArgument(field, index, "a non-negative integer");
+}
+
+/// The plan optimization refuses a larger limit before building these parameters for a regular vector search.
+static UInt64 getVectorSearchLimitArgument(const Array & args, size_t index, UInt64 max_limit)
+{
+    UInt64 limit = getVectorSearchUnsignedArgument(args, index);
+    if (limit > max_limit)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Parameter #{} ({}) of the 'vector_search_index_analysis' optimization is {}, which exceeds "
+            "setting 'max_limit_for_vector_search_queries' ({})",
+            index + 1, vector_search_parameter_names[index], limit, max_limit);
+    return limit;
 }
 
 /// `buildAnalyzeIndexQuery` formats the flags as `true` / `false`, a hand-written list is likely to use `1` / `0`.
@@ -347,7 +366,8 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
         vector_search_parameters = VectorSearchParameters{
             getVectorSearchStringArgument(vector_search_args, 0),
             getVectorSearchStringArgument(vector_search_args, 1),
-            getVectorSearchUnsignedArgument(vector_search_args, 2),
+            getVectorSearchLimitArgument(vector_search_args, 2,
+                context->getSettingsRef()[Setting::max_limit_for_vector_search_queries]),
             getVectorSearchReferenceVector(vector_search_args, 3),
             getVectorSearchBoolArgument(vector_search_args, 4),
             getVectorSearchBoolArgument(vector_search_args, 5)};
