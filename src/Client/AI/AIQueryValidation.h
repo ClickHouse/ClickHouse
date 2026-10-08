@@ -46,6 +46,12 @@ bool changesSecretDisplayForAIAgent(const IAST & ast);
 /// the read-only tool but can run through the confirmed one.
 bool isReadOnlyStatementForAISession(const IAST & ast);
 
+/// Whether the statement changes only the state of the session, not data, schema or access:
+/// `USE`, `SET ROLE` (but not `SET DEFAULT ROLE`, which writes the access metadata of a user), and
+/// the transaction control statements. They need no privilege that `readonly` takes away, so a
+/// read-only session accepts them whatever its level.
+bool isSessionStateStatementForAISession(const IAST & ast);
+
 /// Whether the statement type can be considered by the unconfirmed read-only AI tool. Callers
 /// must use `validateReadOnlyQueryForAIAgent` before executing it: this predicate only classifies
 /// the statement type and does not check for external access or unsafe settings.

@@ -14,6 +14,8 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTTransactionControl.h>
+#include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
 #include <Parsers/ASTShowEngineQuery.h>
 #include <Parsers/ASTShowFunctionsQuery.h>
@@ -27,6 +29,7 @@
 #include <Parsers/Access/ASTShowAccessQuery.h>
 #include <Parsers/Access/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
+#include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTShowPrivilegesQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
@@ -419,6 +422,14 @@ bool isReadOnlyStatementForAISession(const IAST & ast)
         ASTCheckDatabaseQuery>(ast);
 }
 
+bool isSessionStateStatementForAISession(const IAST & ast)
+{
+    if (const auto * set_role = ast.as<ASTSetRoleQuery>())
+        return set_role->kind != ASTSetRoleQuery::Kind::SET_DEFAULT_ROLE;
+
+    return isAnyOf<ASTUseQuery, ASTTransactionControl>(ast);
+}
+
 bool isReadOnlyStatementForAIAgent(const IAST & ast)
 {
     /// `EXISTS DICTIONARY` and `SHOW CREATE DICTIONARY` are left out: their target is a dictionary
@@ -604,6 +615,9 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "settings_profile_elements",
         "row_policies",
         "user_directories",
+        /// The definitions of the HTTP handlers created with `CREATE HANDLER`: their URLs and the
+        /// texts of the queries they run (`url`, `query`, `create_query`).
+        "handlers",
         /// Shows the values of the server settings with the secrets unmasked: it does not obey
         /// `format_display_secrets_in_show_and_select`.
         "server_settings",

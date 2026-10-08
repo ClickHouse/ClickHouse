@@ -4992,6 +4992,11 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
         if (changesSecretDisplayForAIAgent(ast))
             changes_secret_display = true;
 
+        /// `USE`, `SET ROLE` and transaction control change only the state of the session and
+        /// need no privilege that `readonly` takes away, so the server accepts them at any level.
+        if (readonly != 0 && isSessionStateStatementForAISession(ast))
+            return;
+
         if (readonly == 1)
         {
             /// Nothing but reads, and not a single setting change - neither a `SET` statement nor
@@ -5001,7 +5006,7 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
         }
         else if (readonly >= 2)
         {
-            /// Reads and setting changes, but no writes.
+            /// Reads, setting changes and session state changes, but no writes.
             if (!isReadOnlyStatementForAISession(ast) && !ast.as<ASTSetQuery>())
                 accepted_by_session = false;
         }
@@ -5041,8 +5046,8 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
             "The session is read-only (the `readonly` setting is {}), so the server would reject this query: {}. "
             "It was not run and the user was not asked. Tell them that their session does not allow it.",
             readonly,
-            readonly == 1 ? "it accepts only read-only queries, and no setting changes"
-                          : "it accepts only read-only queries and setting changes");
+            readonly == 1 ? "it accepts only read-only queries and session state changes (`USE`, `SET ROLE`), and no setting changes"
+                          : "it accepts only read-only queries, setting changes and session state changes (`USE`, `SET ROLE`)");
         return decision;
     }
 

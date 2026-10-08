@@ -183,6 +183,7 @@ TEST(AIQueryValidation, RejectsRunningQueriesAndAccessMetadata)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "errors"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "users"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "grants"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "handlers"));
     /// The values of the server settings are shown there with the secrets unmasked.
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "server_settings"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "columns"));
@@ -638,9 +639,26 @@ TEST(AIQueryValidation, ReadOnlyStatementTypes)
     EXPECT_FALSE(isReadOnlyStatement("SET max_threads = 1"));
     EXPECT_FALSE(isReadOnlyStatement("SYSTEM FLUSH LOGS"));
     EXPECT_FALSE(isReadOnlyStatement("KILL QUERY WHERE 1"));
-    /// `USE` changes no data, but it is not in the allowlist: the agent qualifies the table names
-    /// of its queries anyway, so there is nothing to gain from admitting more statement types.
+    /// `USE` changes no data, but it is not a read: it is admitted as a session state change.
     EXPECT_FALSE(isReadOnlyStatement("USE system"));
+}
+
+TEST(AIQueryValidation, SessionStateStatementTypes)
+{
+    /// The statements a read-only session accepts whatever its level, because they change only the
+    /// state of the session and need no privilege that `readonly` takes away.
+    EXPECT_TRUE(isSessionStateStatementForAISession(*parse("USE system")));
+    EXPECT_TRUE(isSessionStateStatementForAISession(*parse("SET ROLE r")));
+    EXPECT_TRUE(isSessionStateStatementForAISession(*parse("SET ROLE DEFAULT")));
+    EXPECT_TRUE(isSessionStateStatementForAISession(*parse("BEGIN TRANSACTION")));
+    EXPECT_TRUE(isSessionStateStatementForAISession(*parse("COMMIT")));
+    EXPECT_TRUE(isSessionStateStatementForAISession(*parse("ROLLBACK")));
+
+    /// `SET DEFAULT ROLE` writes the access metadata of a user.
+    EXPECT_FALSE(isSessionStateStatementForAISession(*parse("SET DEFAULT ROLE r TO u")));
+    EXPECT_FALSE(isSessionStateStatementForAISession(*parse("SET max_threads = 1")));
+    EXPECT_FALSE(isSessionStateStatementForAISession(*parse("SELECT 1")));
+    EXPECT_FALSE(isSessionStateStatementForAISession(*parse("INSERT INTO t VALUES (1)")));
 }
 
 TEST(AIQueryValidation, DetectsSettingChanges)
