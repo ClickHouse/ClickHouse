@@ -139,7 +139,10 @@ std::vector<ViewDefinitionsRenaming::View> ViewDefinitionsRenaming::scan(std::se
 
             QualifiedTableName name{database_name, it->name()};
             auto definition = database->tryGetCreateTableQuery(name.table, context);
-            if (definition && rename(definition, name, &tables_to_check))
+            if (!definition)
+                continue;
+            qualifyNamesFromLegacyMetadata(definition->as<ASTCreateQuery &>(), name.database, context);
+            if (rename(definition, name, &tables_to_check))
                 res.push_back({database, name, table, nullptr});
         }
     }
@@ -252,6 +255,8 @@ void ViewDefinitionsRenaming::stage()
     {
         /// Read again: the scan may have read it before it was guarded.
         auto definition = view.owner->getCreateTableQuery(view.name.table, context);
+        /// As on load, the unqualified names of legacy metadata resolve against the database of the view.
+        qualifyNamesFromLegacyMetadata(definition->as<ASTCreateQuery &>(), view.name.database, context);
         view.definition = rename(definition, view.name, nullptr);
         if (!view.definition)
             continue;
@@ -303,7 +308,10 @@ void ViewDefinitionsRenaming::commit()
         {
             DatabaseRenamingInViewDefinition(create_query, old_database_name, new_database_name, view.name).apply(context->getGlobalContext());
         };
-        view.owner->alterTableDefinition(context, view.table->getStorageID(), modifier);
+        /// The dependencies of the definition are resolved against the database of the view, as on load.
+        auto view_context = Context::createCopy(context);
+        view_context->setCurrentDatabase(view.owner->getDatabaseName());
+        view.owner->alterTableDefinition(view_context, view.table->getStorageID(), modifier);
     }
 }
 
