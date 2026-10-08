@@ -196,6 +196,10 @@ public:
     /// exact metadata). See `QueryConditionCache::Entry::file_metadata_digest`.
     virtual UInt64 getFileMetadataDigest() const { return 0; }
 
+    /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
+    /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
+    virtual bool isTopKFilterApplied() const { return false; }
+
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 

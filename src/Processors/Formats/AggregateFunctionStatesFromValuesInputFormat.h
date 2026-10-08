@@ -45,6 +45,7 @@ public:
     void setQueryParameters(const NameToNameMap & parameters) override { underlying->setQueryParameters(parameters); }
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override { return underlying->getMatchedBuckets(); }
     UInt64 getFileMetadataDigest() const override { return underlying->getFileMetadataDigest(); }
+    bool isTopKFilterApplied() const override { return underlying->isTopKFilterApplied(); }
 
 protected:
     /// The underlying format already annotates the exceptions with the file name, no need to do it twice.
