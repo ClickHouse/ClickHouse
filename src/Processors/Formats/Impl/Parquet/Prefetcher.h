@@ -10,6 +10,7 @@ namespace DB
 {
 class ReadBuffer;
 class SeekableReadBuffer;
+class MMapReadBufferFromFileDescriptor;
 }
 
 namespace DB::Parquet
@@ -41,6 +42,9 @@ public:
     /// If likely_to_be_used is true, Prefetcher will be more eager to piggy-back this range when
     /// reading other ranges.
     PrefetchHandle registerRange(size_t offset, size_t length, bool likely_to_be_used);
+
+    /// Marks a registered range that may be read only in part. Must be called before the range is prefetched.
+    void markMayBeReadPartially(const PrefetchHandle & handle);
 
     /// Called at most once, after all registerRange calls and before all enqueue/getRangeData calls.
     void finalizeRanges();
@@ -93,6 +97,8 @@ private:
         /// Whether this range can be piggy-backed to nearby other reads.
         std::atomic<bool> allow_incidental_read {true};
 
+        bool may_be_read_partially = false;
+
         Task * task = nullptr; // if HasTask
         size_t range_set_idx = 0;
         size_t range_idx = UINT64_MAX;
@@ -130,6 +136,7 @@ private:
         size_t offset{};
         size_t length{};
         double memory_amplification = 1;
+        bool read_entirely = true;
 
         /// TODO [parquet]: If the range is long, it may make sense to have multiple subtasks reading parts of
         ///       the range in parallel (into subranges of one buffer). E.g. if there's a big column
@@ -177,6 +184,7 @@ private:
     std::mutex read_mutex;
     ReadMode read_mode{};
     SeekableReadBuffer * reader = nullptr;
+    const MMapReadBufferFromFileDescriptor * mmap_reader = nullptr;
     PaddedPODArray<char> entire_file;
 
     size_t file_size{};

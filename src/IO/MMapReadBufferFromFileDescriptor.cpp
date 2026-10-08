@@ -27,10 +27,22 @@ namespace
 {
 
 /// Best effort: a failed hint must not fail a read.
-void adviseWillNeed([[maybe_unused]] int fd, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t n)
+void adviseWillNeedOnce([[maybe_unused]] int fd, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t n)
 {
 #if defined(POSIX_FADV_WILLNEED)
     [[maybe_unused]] int res = ::posix_fadvise(fd, static_cast<off_t>(offset), static_cast<off_t>(n), POSIX_FADV_WILLNEED);
+#endif
+}
+
+/// One hint makes Linux read at most max(read_ahead_kb, max_sectors_kb) of the range, so a longer range is
+/// advised in pieces that fit the default limit.
+void adviseWillNeedInPieces([[maybe_unused]] int fd, [[maybe_unused]] size_t offset, [[maybe_unused]] size_t size)
+{
+#if defined(POSIX_FADV_WILLNEED)
+    constexpr size_t piece_size = 128 * 1024;
+    for (size_t pos = 0; pos < size; pos += piece_size)
+        [[maybe_unused]] int res = ::posix_fadvise(
+            fd, static_cast<off_t>(offset + pos), static_cast<off_t>(std::min(piece_size, size - pos)), POSIX_FADV_WILLNEED);
 #endif
 }
 
@@ -117,7 +129,7 @@ size_t MMapReadBufferFromFileDescriptor::readBigAt(char * to, size_t n, size_t o
     /// A page fault on a page that is not in the page cache reads the whole read-ahead window around it.
     char probe = 0;
     if (n > 0 && preadNoWait(mapped.getFD(), &probe, 1, mapped.getOffset() + offset) != 1)
-        adviseWillNeed(mapped.getFD(), mapped.getOffset() + offset, n);
+        adviseWillNeedInPieces(mapped.getFD(), mapped.getOffset() + offset, n);
 
     memcpy(to, mapped.getData() + offset, n);
     return n;
@@ -129,11 +141,18 @@ VectorWithMemoryTracking<SeekableReadBuffer::CachedRegion> MMapReadBufferFromFil
         return {};
 
     n = std::min(n, mapped.getLength() - offset);
-    adviseWillNeed(mapped.getFD(), mapped.getOffset() + offset, n);
+    adviseWillNeedOnce(mapped.getFD(), mapped.getOffset() + offset, n);
 
     VectorWithMemoryTracking<CachedRegion> regions;
     regions.push_back(CachedRegion{.handle = nullptr, .data = mapped.getData() + offset, .size = n, .file_offset = offset});
     return regions;
+}
+
+void MMapReadBufferFromFileDescriptor::adviseWillNeed(size_t offset, size_t n) const
+{
+    if (offset >= mapped.getLength())
+        return;
+    adviseWillNeedInPieces(mapped.getFD(), mapped.getOffset() + offset, std::min(n, mapped.getLength() - offset));
 }
 
 }

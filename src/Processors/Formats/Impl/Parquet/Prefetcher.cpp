@@ -2,6 +2,7 @@
 
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>
+#include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
@@ -67,6 +68,7 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
             {
                 reader = seekable;
                 read_mode = ReadMode::RandomRead;
+                mmap_reader = dynamic_cast<const MMapReadBufferFromFileDescriptor *>(seekable);
             }
             else if (seekable->checkIfActuallySeekable())
             {
@@ -142,6 +144,12 @@ PrefetchHandle Prefetcher::registerRange(size_t offset, size_t length, bool like
     req.allow_incidental_read.store(likely_to_be_used || length < min_bytes_for_seek, std::memory_order_relaxed);
     range_sets[0].ranges.push_back(RangeState {.request = &req, .start = offset, .end = offset + length});
     return PrefetchHandle(&req);
+}
+
+void Prefetcher::markMayBeReadPartially(const PrefetchHandle & handle)
+{
+    if (handle)
+        handle.request->may_be_read_partially = true;
 }
 
 void Prefetcher::finalizeRanges()
@@ -402,6 +410,8 @@ void Prefetcher::pickRangesAndCreateTaskIfNotExists(RequestState * initial_req, 
         RequestState * req = range.request;
         req->task = &task;
         req->task_offset = range.start - task.offset;
+        if (req->may_be_read_partially)
+            task.read_entirely = false;
 
         RequestState::State s = RequestState::State::HasRange;
         if (req->state.compare_exchange_strong(s, RequestState::State::HasTask))
@@ -510,6 +520,9 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
         if (read_mode == ReadMode::RandomRead && reader->supportsReadAtRetainCells() && task->length > 0
             && task->offset >= PADDING_FOR_SIMD && task->offset + task->length + PADDING_FOR_SIMD <= file_size)
         {
+            if (mmap_reader && task->read_entirely)
+                mmap_reader->adviseWillNeed(task->offset, task->length);
+
             auto cached_regions = reader->readBigAtRetainCells(task->length, task->offset);
             size_t bytes_read = 0;
             for (const auto & region : cached_regions)

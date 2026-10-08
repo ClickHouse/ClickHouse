@@ -47,6 +47,9 @@ public:
     VectorWithMemoryTracking<CachedRegion> readBigAtRetainCells(size_t n, size_t offset) const override;
     bool supportsReadAtRetainCells() const override { return true; }
 
+    /// Starts reading all of [offset, offset + n) into the page cache (best effort), for a caller that reads all of it.
+    void adviseWillNeed(size_t offset, size_t n) const;
+
     /// mmap has no producer behind `nextImpl` -- `working_buffer` already points at the entire
     /// mapped region. After `set(dest, size)` the buffer cannot refill into `dest`, so callers
     /// must use `read(dest, n)` instead, which memcpys from the mapped region into the caller's
