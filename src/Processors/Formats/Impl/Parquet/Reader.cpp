@@ -1245,13 +1245,13 @@ void Reader::initializePrefetches()
         {
             ColumnChunk & column = row_group.columns[column_idx];
 
-            /// The data of a column served from the columns cache is not read: neither its data pages
-            /// nor its dictionary page. Its bloom filter and column index are still read, as they
-            /// prune row groups and pages for the other columns too.
+            /// The data pages of a column served from the columns cache are not read. Its bloom filter,
+            /// dictionary filter and column index are still used, as they prune row groups and pages
+            /// for the other columns too: the dictionary page is read only for the dictionary filter.
 
             /// Dictionary page.
             size_t dict_page_length = 0;
-            if (column.meta->meta_data.__isset.dictionary_page_offset && !column.served_from_cache)
+            if (column.meta->meta_data.__isset.dictionary_page_offset)
             {
                 /// We assume that the dictionary page is immediately followed by the first data page.
                 size_t start = size_t(column.meta->meta_data.dictionary_page_offset);
@@ -1273,8 +1273,9 @@ void Reader::initializePrefetches()
                 /// request it explicitly when it is actually needed (`Prefetcher::startPrefetch` then
                 /// allows coalescing it with the other requested ranges again). A page shorter than
                 /// `min_bytes_for_seek` can still be read incidentally, which costs less than a seek.
-                column.dictionary_page_prefetch = prefetcher.registerRange(
-                    start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
+                if (!column.served_from_cache || column.use_dictionary_filter)
+                    column.dictionary_page_prefetch = prefetcher.registerRange(
+                        start, dict_page_length, /*likely_to_be_used=*/ !column.use_dictionary_filter);
             }
 
             /// Bloom filter.
