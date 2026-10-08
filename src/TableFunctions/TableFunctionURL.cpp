@@ -327,6 +327,11 @@ bool TableFunctionURL::hasStaticStructure() const
     return delegate ? delegate->hasStaticStructure() : (structure != "auto");
 }
 
+bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
+{
+    return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
+}
+
 void TableFunctionURL::setPartitionBy(const ASTPtr & partition_by_)
 {
     if (delegate)
