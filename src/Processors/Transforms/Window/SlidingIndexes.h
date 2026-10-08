@@ -28,6 +28,7 @@ public:
 
 private:
     const WindowTransformParams & params;
+    const bool has_order_by_collation;
     std::optional<Columns> last_partition_key;
     std::optional<Columns> last_order_key;
 };
