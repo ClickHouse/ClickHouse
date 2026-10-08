@@ -440,6 +440,70 @@ spec:
   Operator는 지정된 모든 마운트를 포함하는 프로젝티드 볼륨을 생성합니다.
 </Note>
 
+### 상태 프로브 {#health-probes}
+
+연산자는 모든 ClickHouse 및 Keeper 컨테이너에 활성 상태(liveness) 프로브와 준비 상태(readiness) 프로브를 구성합니다.
+시작(startup) 프로브는 기본적으로 설정되지 않습니다.
+
+| 리소스                 | 프로브       | 기본 검사                                                                                         |
+| ------------------- | --------- | --------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | liveness  | 서버 간(interserver) 포트 `9009`에 HTTP `GET /ping` 요청                                              |
+| `ClickHouseCluster` | readiness | 관리용 HTTP 포트 `9002`에 HTTP `GET /ping` 요청                                                       |
+| `KeeperCluster`     | liveness  | 클라이언트 포트 `2181`에 TCP 연결 (`settings.tls.enabled`와 `settings.tls.required`가 모두 `true`이면 `2281`) |
+| `KeeperCluster`     | readiness | `http_control` 포트 `9123`에 HTTP `GET /ready` 요청                                                |
+
+ClickHouse와 Keeper는 동일한 기본 타이밍 설정을 사용합니다.
+
+| 프로브       | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse는 테이블을 로드하기 전에 서버 간 리스너를 열고, 테이블 로드가 끝난 후에 클라이언트 리스너를 엽니다. 따라서 테이블 로딩이 오래 걸리더라도 활성 상태 프로브는 실패하지 않으며, 준비 상태 프로브를 통과했다면 레플리카가 쿼리를 처리할 수 있는 상태임을 뜻합니다.
+
+두 리소스 모두 `spec.containerTemplate`을 통해 어떤 프로브든 재정의할 수 있습니다. 예를 들어 ClickHouse 활성 상태 프로브는 다음과 같이 사용자 정의합니다.
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  직접 설정한 프로브(probe)는 연산자 기본값을 완전히 대체하며, 필드 단위로 머지되지 않습니다.
+  핸들러(`httpGet`, `tcpSocket` 또는 `exec`)와 필요한 타이밍 필드를 모두 지정하십시오. 생략한 필드는 위의 연산자 값이 아니라 Kubernetes 기본값(예: `timeoutSeconds: 1`, `failureThreshold: 3`)으로 폴백됩니다.
+</Warning>
+
+#### 시작 프로브(Startup probe) {#startup-probe}
+
+컨테이너 시작에 활성 상태 프로브가 허용하는 시간보다 더 오래 걸리는 경우 `startupProbe`를 사용하십시오. 기본값에서 활성 상태 프로브는 약 60초의 초기 지연 후 5초 간격으로 최대 10회의 검사 실패를 허용합니다.
+Kubernetes는 시작 프로브가 성공할 때까지 활성 상태 프로브와 준비 상태 프로브의 실행을 보류하므로, 시작이 느려도 재시작 루프가 발생하지 않습니다.
+예를 들어, 대용량 스냅샷을 재생(replay)하는 Keeper 레플리카에 연결 수락을 시작하기까지 최대 10분을 부여하려면 다음과 같이 설정합니다:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+시작 프로브(startup probe)가 성공하면 이후에는 일반 활성 상태 프로브(liveness probe)와 준비 상태 프로브(readiness probe)가 상태 확인을 이어받습니다.
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### 지원되는 모든 컨테이너 템플릿 옵션은 [API 참조](/ko/products/kubernetes-operator/reference/api-reference#containertemplatespec)에서 확인하십시오. {#see-api-reference-for-all-supported-container-template-options}
 </div>

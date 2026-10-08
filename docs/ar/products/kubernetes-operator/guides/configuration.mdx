@@ -445,6 +445,70 @@ spec:
   سينشئ المشغّل وحدة تخزين من نوع `projected` تضم جميع عمليات الربط المحددة.
 </Note>
 
+### مجسّات الصحة {#health-probes}
+
+يهيّئ المشغّل مجسّات الحيوية (liveness) والجاهزية (readiness) على كل حاوية من حاويات ClickHouse وKeeper.
+لا يُضبط أي مجسّ بدء تشغيل (startup) افتراضيًا.
+
+| المورد              | المجسّ    | الفحص الافتراضي                                                                                                             |
+| ------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | liveness  | طلب HTTP `GET /ping` على منفذ الاتصال بين الخوادم `9009`                                                                    |
+| `ClickHouseCluster` | readiness | طلب HTTP `GET /ping` على منفذ HTTP الخاص بالإدارة `9002`                                                                    |
+| `KeeperCluster`     | liveness  | اتصال TCP بمنفذ العميل `2181` (أو `2281` عندما تكون قيمة كلٍّ من `settings.tls.enabled` و`settings.tls.required` هي `true`) |
+| `KeeperCluster`     | readiness | طلب HTTP `GET /ready` على المنفذ `http_control` رقم `9123`                                                                  |
+
+يستخدم ClickHouse وKeeper إعدادات التوقيت الافتراضية نفسها:
+
+| المجسّ    | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+يفتح ClickHouse مستمع الاتصال بين الخوادم قبل تحميل الجداول، ثم يفتح مستمعات العملاء بعد ذلك؛ ولهذا يتحمّل مجسّ الحيوية بطء تحميل الجداول، في حين يدلّ نجاح مجسّ الجاهزية على أن النسخة المتماثلة أصبحت جاهزة لخدمة الاستعلامات.
+
+يمكنك تجاوز إعدادات أي مجسّ عبر `spec.containerTemplate` في أيٍّ من الموردين. على سبيل المثال، لتخصيص مجسّ الحيوية في ClickHouse:
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  أي مجسّ تضبطه يحلّ محلّ الإعداد الافتراضي للمشغّل بالكامل، ولا يُدمج معه حقلاً بحقل.
+  حدّد المعالج (`httpGet` أو `tcpSocket` أو `exec`) وكل حقل توقيت يهمّك؛ فالحقول المُغفلة تأخذ القيم الافتراضية لـ Kubernetes (مثل `timeoutSeconds: 1` و`failureThreshold: 3`)، لا قيم المشغّل المذكورة أعلاه.
+</Warning>
+
+#### مجسّ بدء التشغيل {#startup-probe}
+
+استخدم `startupProbe` عندما تحتاج الحاوية إلى وقت للبدء أطول مما يسمح به مجسّ الحيوية، وهو بالإعدادات الافتراضية نحو 60 ثانية من التأخير الأولي، تليها 10 فحوصات فاشلة يفصل بين كل منها 5 ثوانٍ.
+يؤجّل Kubernetes تشغيل مجسّي الحيوية والجاهزية إلى أن ينجح مجسّ بدء التشغيل، فلا يؤدي البدء البطيء إلى الدخول في حلقة متكررة من إعادة التشغيل.
+على سبيل المثال، امنح نسخة متماثلة من Keeper تعيد تطبيق لقطة كبيرة مهلةً تصل إلى 10 دقائق لتبدأ في قبول الاتصالات:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+بعد نجاح مجسّ بدء التشغيل (مجسّ startup)، تتولى مجسّات الحيوية (الحيوية) والجاهزية (الجاهزية) المعتادة المهمة من بعده.
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#containertemplatespec) للاطلاع على جميع خيارات قوالب الحاويات المدعومة. {#see-api-reference-for-all-supported-container-template-options}
 </div>

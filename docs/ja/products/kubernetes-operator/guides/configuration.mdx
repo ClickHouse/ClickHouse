@@ -439,6 +439,70 @@ spec:
   Operator は、指定されたすべてのマウントを含む projected volume を作成します。
 </Note>
 
+### ヘルスプローブ {#health-probes}
+
+オペレーターは、すべての ClickHouse および Keeper コンテナーに liveness プローブと readiness プローブを設定します。
+デフォルトでは startup プローブは設定されません。
+
+| リソース                | プローブ      | デフォルトのチェック                                                                                             |
+| ------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
+| `ClickHouseCluster` | liveness  | interserver ポート `9009` への HTTP `GET /ping`                                                             |
+| `ClickHouseCluster` | readiness | 管理用 HTTP ポート `9002` への HTTP `GET /ping`                                                                |
+| `KeeperCluster`     | liveness  | クライアントポート `2181` への TCP 接続 (`settings.tls.enabled` と `settings.tls.required` の両方が `true` の場合は `2281`)  |
+| `KeeperCluster`     | readiness | `http_control` ポート `9123` への HTTP `GET /ready`                                                         |
+
+ClickHouse と Keeper では、デフォルトのタイミング設定は共通です。
+
+| プローブ      | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse は、テーブルのロード前に interserver リスナーを開き、ロード完了後にクライアントリスナーを開きます。そのため、テーブルのロードに時間がかかっても liveness プローブは失敗しません。一方、readiness プローブが成功していれば、そのレプリカはクエリを処理できる状態にあります。
+
+どちらのリソースでも、`spec.containerTemplate` を使用して任意のプローブをオーバーライドできます。たとえば、ClickHouse の liveness プローブは次のようにカスタマイズします。
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  プローブを設定すると、オペレーターのデフォルト設定は完全に置き換えられます。フィールド単位でマージされるわけではありません。
+  ハンドラー (`httpGet`、`tcpSocket`、`exec` のいずれか) と、必要なタイミング関連のフィールドをすべて指定してください。省略したフィールドには、上記のオペレーターの値ではなく Kubernetes のデフォルト値 (例：`timeoutSeconds: 1`、`failureThreshold: 3`) が適用されます。
+</Warning>
+
+#### startup プローブ {#startup-probe}
+
+コンテナーの起動に liveness プローブで許容される時間より長くかかる場合は、`startupProbe` を使用します。デフォルト設定では、liveness プローブで許容されるのは、約 60 秒の初期遅延に加えて、5 秒間隔で 10 回チェックが失敗するまでの時間です。
+Kubernetes はstartup プローブが成功するまで liveness プローブと readiness プローブの実行を保留するため、起動に時間がかかっても再起動ループに陥ることはありません。
+例えば、大きなスナップショットをリプレイする Keeper レプリカに、接続の受け付けを開始するまで最大 10 分の猶予を与えるには、次のように設定します。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+startup プローブが成功すると、以降は通常の liveness プローブと readiness プローブが引き継ぎます。
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### サポートされているすべての コンテナー テンプレートオプションについては、[API リファレンス](/ja/products/kubernetes-operator/reference/api-reference#containertemplatespec)を参照してください。 {#see-api-reference-for-all-supported-container-template-options}
 </div>

@@ -438,6 +438,70 @@ spec:
   Operator 会将所有已指定的挂载创建为一个投影卷。
 </Note>
 
+### 健康探针 {#health-probes}
+
+Operator 会为每个 ClickHouse 和 Keeper 容器配置存活探针 (存活) 和就绪探针 (就绪) 。
+默认不配置启动探针 (startup) 。
+
+| 资源                  | 探针        | 默认检查                                                                                            |
+| ------------------- | --------- | ----------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | 存活  | 对服务器间端口 `9009` 执行 HTTP `GET /ping`                                                              |
+| `ClickHouseCluster` | 就绪 | 对管理 HTTP 端口 `9002` 执行 HTTP `GET /ping`                                                          |
+| `KeeperCluster`     | 存活  | 通过 TCP 连接客户端端口 `2181` (当 `settings.tls.enabled` 和 `settings.tls.required` 均为 `true` 时为 `2281`)  |
+| `KeeperCluster`     | 就绪 | 对 `http_control` 端口 `9123` 执行 HTTP `GET /ready`                                                 |
+
+ClickHouse 和 Keeper 使用相同的默认时间设置：
+
+| 探针        | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| 存活  | 60                    | 5               | 10               | 1                  | 10                 |
+| 就绪 | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse 会在加载表之前启动服务器间监听器，在加载完成后再启动客户端监听器。因此，即使表加载较慢，存活探针也不会失败；而就绪探针一旦通过，即表示该副本已能够处理查询。
+
+可在任一资源上通过 `spec.containerTemplate` 覆盖任意探针。例如，自定义 ClickHouse 的存活探针：
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  您设置的探针会完全取代 operator 的默认配置，而不会逐字段合并。
+  请指定处理程序 (`httpGet`、`tcpSocket` 或 `exec`) 以及所有需要的计时字段；未指定的字段将回退到 Kubernetes 默认值 (例如 `timeoutSeconds: 1`、`failureThreshold: 3`) ，而不是上文所述的 operator 配置值。
+</Warning>
+
+#### 启动探针 {#startup-probe}
+
+如果容器启动所需的时间超过存活探针所允许的时长，请使用 `startupProbe`。按默认配置，存活探针允许的时长约为 60 秒初始延迟，外加 10 次间隔 5 秒的失败检查。
+在启动探针成功之前，Kubernetes 会暂缓执行存活探针和就绪探针，因此启动缓慢不会导致重启循环。
+例如，某个 Keeper 副本需要重放大型快照，可为其预留最多 10 分钟来开始接受连接：
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+启动探针成功后，将由常规的 存活 和 就绪 探针接管。
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### 有关所有受支持的容器模板选项，请参见 [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference#containertemplatespec)。 {#see-api-reference-for-all-supported-container-template-options}
 </div>

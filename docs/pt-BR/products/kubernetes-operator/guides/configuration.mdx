@@ -445,6 +445,70 @@ spec:
   O Operator criará um volume projetado com todas as montagens especificadas.
 </Note>
 
+### Probes de saúde {#health-probes}
+
+O operador configura probes de liveness e readiness em todos os contêineres do ClickHouse e do Keeper.
+Por padrão, nenhum probe de inicialização é definido.
+
+| Recurso             | Probe     | Verificação padrão                                                                                                      |
+| ------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | liveness  | HTTP `GET /ping` na porta entre servidores `9009`                                                                       |
+| `ClickHouseCluster` | readiness | HTTP `GET /ping` na porta HTTP de gerenciamento `9002`                                                                  |
+| `KeeperCluster`     | liveness  | Conexão TCP à porta do cliente `2181` (`2281` quando `settings.tls.enabled` e `settings.tls.required` são ambos `true`) |
+| `KeeperCluster`     | readiness | HTTP `GET /ready` na porta `http_control` `9123`                                                                        |
+
+O ClickHouse e o Keeper usam as mesmas configurações de tempo padrão:
+
+| Probe     | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+O ClickHouse abre o listener entre servidores antes de carregar as tabelas, e os listeners de cliente somente depois. Dessa forma, o probe de liveness tolera um carregamento lento das tabelas, enquanto um probe de readiness bem-sucedido indica que a réplica já está atendendo consultas.
+
+Substitua qualquer probe por meio de `spec.containerTemplate` em qualquer um dos dois recursos. Por exemplo, para personalizar o probe de liveness do ClickHouse:
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  Uma probe definida por você substitui completamente o padrão do operador — ela não é mesclada campo a campo.
+  Especifique o handler (`httpGet`, `tcpSocket` ou `exec`) e todos os campos de temporização que forem relevantes para você; os campos omitidos assumem os valores padrão do Kubernetes (por exemplo, `timeoutSeconds: 1`, `failureThreshold: 3`), e não os valores do operador indicados acima.
+</Warning>
+
+#### Probe de inicialização {#startup-probe}
+
+Use `startupProbe` quando um contêiner precisar de mais tempo para iniciar do que o liveness probe permite — com os valores padrão, cerca de 60 segundos de atraso inicial mais 10 verificações com falha, em intervalos de 5 segundos.
+O Kubernetes adia os probes de liveness e readiness até que o probe de inicialização seja bem-sucedido, para que uma inicialização lenta não dispare um ciclo de reinicializações.
+Por exemplo, para dar a uma réplica do Keeper que reaplica um snapshot grande até 10 minutos para começar a aceitar conexões:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+Depois que a probe de inicialização é bem-sucedida, as probes regulares de liveness e readiness passam a atuar.
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### Consulte a [Referência da API](/pt-BR/products/kubernetes-operator/reference/api-reference#containertemplatespec) para ver todas as opções de template de contêiner suportadas. {#see-api-reference-for-all-supported-container-template-options}
 </div>

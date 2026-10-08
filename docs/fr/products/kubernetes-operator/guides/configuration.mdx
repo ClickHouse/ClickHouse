@@ -446,6 +446,70 @@ spec:
   L’opérateur créera un volume projeté regroupant tous les montages spécifiés.
 </Note>
 
+### Sondes de santé {#health-probes}
+
+L&#39;opérateur configure des sondes liveness et readiness sur chaque conteneur ClickHouse et Keeper.
+Aucune sonde de démarrage n&#39;est définie par défaut.
+
+| Ressource           | Sonde     | Vérification par défaut                                                                                                        |
+| ------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `ClickHouseCluster` | liveness  | HTTP `GET /ping` sur le port interserveur `9009`                                                                               |
+| `ClickHouseCluster` | readiness | HTTP `GET /ping` sur le port HTTP de gestion `9002`                                                                            |
+| `KeeperCluster`     | liveness  | Connexion TCP au port client `2181` (`2281` lorsque `settings.tls.enabled` et `settings.tls.required` valent tous deux `true`) |
+| `KeeperCluster`     | readiness | HTTP `GET /ready` sur le port `http_control` `9123`                                                                            |
+
+ClickHouse et Keeper utilisent les mêmes paramètres de temporisation par défaut :
+
+| Sonde     | `initialDelaySeconds` | `periodSeconds` | `timeoutSeconds` | `successThreshold` | `failureThreshold` |
+| --------- | --------------------- | --------------- | ---------------- | ------------------ | ------------------ |
+| liveness  | 60                    | 5               | 10               | 1                  | 10                 |
+| readiness | 5                     | 1               | 10               | 5                  | 10                 |
+
+ClickHouse ouvre l&#39;écouteur interserveur avant de charger les tables, et les écouteurs client ensuite. La sonde liveness tolère donc un chargement lent des tables, tandis qu&#39;une sonde readiness réussie indique que la réplique est en mesure de traiter les requêtes.
+
+Vous pouvez remplacer n&#39;importe quelle sonde via `spec.containerTemplate`, quelle que soit la ressource. Par exemple, pour personnaliser la sonde liveness de ClickHouse :
+
+```yaml
+spec:
+  containerTemplate:
+    livenessProbe:
+      httpGet:
+        path: /ping
+        port: 9009
+      initialDelaySeconds: 120
+      periodSeconds: 10
+      timeoutSeconds: 10
+      failureThreshold: 10
+```
+
+<Warning>
+  Toute sonde que vous définissez remplace entièrement celle définie par défaut par l&#39;opérateur — elle n&#39;est pas fusionnée champ par champ.
+  Spécifiez le handler (`httpGet`, `tcpSocket` ou `exec`) ainsi que chacun des champs de temporisation qui vous importent ; les champs omis reprennent les valeurs par défaut de Kubernetes (par exemple `timeoutSeconds: 1`, `failureThreshold: 3`), et non les valeurs de l&#39;opérateur indiquées ci-dessus.
+</Warning>
+
+#### Sonde de démarrage {#startup-probe}
+
+Utilisez `startupProbe` lorsqu&#39;un conteneur a besoin de plus de temps pour démarrer que ne le permet la sonde liveness — avec les valeurs par défaut, environ 60 secondes de délai initial, plus 10 vérifications en échec espacées de 5 secondes.
+Kubernetes suspend les sondes liveness et readiness jusqu&#39;à ce que la sonde de démarrage réussisse, de sorte qu&#39;un démarrage lent ne déclenche pas de boucle de redémarrage.
+Par exemple, pour laisser jusqu&#39;à 10 minutes à une réplique Keeper qui rejoue un snapshot volumineux avant de commencer à accepter des connexions :
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  containerTemplate:
+    startupProbe:
+      tcpSocket:
+        port: 2181
+      periodSeconds: 10
+      failureThreshold: 60
+```
+
+Une fois la sonde de démarrage réussie, les sondes habituelles de liveness et de readiness prennent le relais.
+
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
   ### Voir la [Référence de l’API](/fr/products/kubernetes-operator/reference/api-reference#containertemplatespec) pour toutes les options prises en charge des modèles de conteneur. {#see-api-reference-for-all-supported-container-template-options}
 </div>
