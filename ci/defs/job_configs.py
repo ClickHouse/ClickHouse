@@ -21,7 +21,8 @@ LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Using nearly all host RAM for the outer container can starve the host runner
 # and lead to "runner lost communication". Reserve a larger margin on the host
 # by capping Keeper to ~70% of physical memory.
-KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100
+# Whole GiB: docker_in_docker.sh compares it with the page-granular memory.max.
+KEEPER_DIND_MEM = Utils.physical_memory() * 70 // 100 // 1024**3 * 1024**3
 
 # Integration tests run a nested Docker daemon, so `docker_in_docker.sh` splits the job's
 # `--memory` into capped cgroup leaves. `/init`'s cap is a ceiling rather than a share, so the
@@ -49,42 +50,49 @@ INTEGRATION_DIND_INIT_RESERVE = 8 * 1024**3
 # concurrency rather than staying at the daemon's own footprint. An absolute floor, never a
 # fraction of the job limit: too small and the daemons cannot boot at all.
 INTEGRATION_DIND_DAEMON_RESERVE = 2 * 1024**3
-# What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
-# scheduling and containment agree on one number. Clamped at zero because a negative reads to
-# `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
-INTEGRATION_NESTED_BUDGET = max(
-    LIMITED_MEM
-    - INTEGRATION_DIND_ROOT_RESERVE
-    - INTEGRATION_DIND_INIT_RESERVE
-    - INTEGRATION_DIND_DAEMON_RESERVE,
-    0,
-)
-# `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
-# cache of the logs it reads and archives, and neither is bounded by the reserve above. It
-# overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
-# which is what lets the reserve shrink without `/init` losing any room it actually uses.
-INTEGRATION_DIND_INIT_LIMIT = max(
-    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
-    INTEGRATION_DIND_INIT_RESERVE,
-)
-# `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
-# every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
-# reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
-# is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
-INTEGRATION_DIND_DAEMON_LIMIT = max(
-    LIMITED_MEM - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
-    INTEGRATION_DIND_DAEMON_RESERVE,
-)
-integration_dind_env = (
-    "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
-    f"+--env=CI_DIND_JOB_MEM={LIMITED_MEM}"
-    f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
-    f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
-    f"+--env=CI_DIND_INIT_LIMIT={INTEGRATION_DIND_INIT_LIMIT}"
-    f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
-    f"+--env=CI_DIND_DAEMON_LIMIT={INTEGRATION_DIND_DAEMON_LIMIT}"
-    f"+--env=CI_DIND_NESTED_BUDGET={INTEGRATION_NESTED_BUDGET}"
-)
+
+
+def dind_containment_env(job_mem):
+    """`run_in_docker` flags that make `docker_in_docker.sh` split `job_mem` into capped cgroup leaves."""
+    # What the nested test containers may collectively use. Also bounds xdist worker concurrency, so
+    # scheduling and containment agree on one number. Clamped at zero because a negative reads to
+    # `docker_in_docker.sh`'s validator as a malformed variable rather than a host too small.
+    nested_budget = max(
+        job_mem
+        - INTEGRATION_DIND_ROOT_RESERVE
+        - INTEGRATION_DIND_INIT_RESERVE
+        - INTEGRATION_DIND_DAEMON_RESERVE,
+        0,
+    )
+    # `/init`'s ceiling, not its share: its peak is one test's host-side client fan-out plus the page
+    # cache of the logs it reads and archives, and neither is bounded by the reserve above. It
+    # overlaps `/docker`, so this cap alone is within the job limit but the three together are not -
+    # which is what lets the reserve shrink without `/init` losing any room it actually uses.
+    init_limit = max(
+        job_mem - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_DAEMON_RESERVE,
+        INTEGRATION_DIND_INIT_RESERVE,
+    )
+    # `/dockerd`'s ceiling, not its share, for the same reason `/init` has one: an image pull writes
+    # every layer through this leaf, so the leaf also holds that page cache, and a dirty page cannot be
+    # reclaimed until its writeback completes. The reserve stays the daemons' own anon footprint, which
+    # is what the other leaves must leave room for. Overlaps `/docker` exactly as `/init` does.
+    daemon_limit = max(
+        job_mem - INTEGRATION_DIND_ROOT_RESERVE - INTEGRATION_DIND_INIT_RESERVE,
+        INTEGRATION_DIND_DAEMON_RESERVE,
+    )
+    return (
+        "+--env=CI_DIND_REQUIRE_CGROUP_CONTAINMENT=1"
+        f"+--env=CI_DIND_JOB_MEM={job_mem}"
+        f"+--env=CI_DIND_ROOT_RESERVE={INTEGRATION_DIND_ROOT_RESERVE}"
+        f"+--env=CI_DIND_INIT_RESERVE={INTEGRATION_DIND_INIT_RESERVE}"
+        f"+--env=CI_DIND_INIT_LIMIT={init_limit}"
+        f"+--env=CI_DIND_DAEMON_RESERVE={INTEGRATION_DIND_DAEMON_RESERVE}"
+        f"+--env=CI_DIND_DAEMON_LIMIT={daemon_limit}"
+        f"+--env=CI_DIND_NESTED_BUDGET={nested_budget}"
+    )
+
+
+integration_dind_env = dind_containment_env(LIMITED_MEM)
 
 BINARY_DOCKER_COMMAND = (
     "clickhouse/binary-builder+--network=host"
@@ -150,6 +158,8 @@ darwin_fast_test_digest_config = Job.CacheDigestConfig(
     + ["./ci/defs/darwin.skip", "./ci/jobs/scripts/fast_test_darwin.sh"],
 )
 
+TIDY_SHARDS = 4
+
 common_build_job_config = Job.Config(
     name=JobNames.BUILD,
     runs_on=[],  # from parametrize()
@@ -175,6 +185,7 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/seaweedfs_service.py",
             # clickhouse_proc.py's "No such key" check runs this script, and so does
             # check_logs_for_critical_errors in tests/docker_scripts/stress_tests.lib.
             "./ci/jobs/scripts/s3_key_lifecycle.py",
@@ -344,12 +355,18 @@ class JobConfigs:
             requires=[ArtifactNames.CH_ARM_DARWIN_BIN],
         ),
     )
+    # The clang-tidy build does not link anything, so its object files are split
+    # across independent shards, see `write_tidy_shard_targets` in `build_clickhouse.py`.
     tidy_build_arm_jobs = common_build_job_config.parametrize(
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_TIDY,
-            provides=[],
-            runs_on=RunnerLabels.ARM_LARGE,
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"{BuildTypes.ARM_TIDY}, {i}/{TIDY_SHARDS}",
+                command=f'python3 ./ci/jobs/build_clickhouse.py --build-type "{BuildTypes.ARM_TIDY}" --shard {i}/{TIDY_SHARDS}',
+                provides=[],
+                runs_on=RunnerLabels.ARM_LARGE,
+            )
+            for i in range(1, TIDY_SHARDS + 1)
+        ]
     )
     tidy_build_amd_jobs = common_build_job_config.parametrize(
         Job.ParamSet(
@@ -614,14 +631,14 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
-            parameter=BuildTypes.AMD_FUZZERS,
+            parameter=BuildTypes.ARM_FUZZERS,
             provides=[],
-            # The target arch comes from the toolchain file, not from the host, so this
-            # cross-compiles on arm like every other Linux `amd_*` build. It has to: the
-            # ~18 fuzzers each statically link the whole of ClickHouse with its own copy
-            # of the ASan+debug DWARF, ~94 GiB of build output, which does not fit in the
-            # ~135 GiB free on `amd-large` (`m7i.8xlarge`) and dies linking one of the
-            # last targets. Only the job that *runs* the binaries needs an amd64 host.
+            # Targets aarch64: each fuzzer statically links all of ClickHouse with ASan
+            # and SanitizerCoverage, and that image's allocated sections already exceed
+            # 2 GiB - out of reach of x86-64's 32-bit displacements, which lld cannot
+            # repair with thunks, while aarch64 addresses +-4 GiB and does thunk calls.
+            # The ~94 GiB of build output also does not fit the ~135 GiB free on
+            # `amd-large` (`m7i.8xlarge`).
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -642,7 +659,7 @@ class JobConfigs:
                     with_git_submodules=True,
                 )
             )
-            if job.parameter == BuildTypes.AMD_FUZZERS
+            if job.parameter == BuildTypes.ARM_FUZZERS
             else job
         )
         for job in special_build_jobs
@@ -1450,7 +1467,8 @@ class JobConfigs:
         command="python3 ./ci/jobs/keeper_stress_job.py",
         run_in_docker=(
             f"clickhouse/integration-tests-runner+root+--memory={KEEPER_DIND_MEM}+--privileged+--dns-search='.'+"
-            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--ulimit nofile=262144:262144"
+            f"--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=private+--ulimit nofile=262144:262144"
+            f"{dind_containment_env(KEEPER_DIND_MEM)}"
         ),
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1629,12 +1647,16 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                # Provisions the job-local S3 endpoint (ci/jobs/scripts/perf/s3_service.py)
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             ],
         ),
         timeout=2 * 3600,
@@ -1670,12 +1692,16 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                # Provisions the job-local S3 endpoint (ci/jobs/scripts/perf/s3_service.py)
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             ],
         ),
         timeout=2 * 3600,
@@ -1953,7 +1979,7 @@ class JobConfigs:
     )
     libfuzzer_job = Job.Config(
         name=JobNames.LIBFUZZER_TEST,
-        runs_on=RunnerLabels.AMD_MEDIUM,
+        runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
         # Five hours of fuzzing per target, all targets in parallel, plus
         # artifact download and corpus upload. Praktika's default is exactly
@@ -1963,9 +1989,9 @@ class JobConfigs:
         # from the actual set of functions, data types and keywords. It has to be the
         # binary for the arch this job runs the fuzzers on.
         requires=[
-            ArtifactNames.AMD_FUZZERS,
+            ArtifactNames.ARM_FUZZERS,
             ArtifactNames.FUZZERS_CORPUS,
-            ArtifactNames.CH_AMD_RELEASE,
+            ArtifactNames.CH_ARM_RELEASE,
         ],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -1982,12 +2008,12 @@ class JobConfigs:
     )
     libfuzzer_corpus_minimization_job = Job.Config(
         name=JobNames.LIBFUZZER_CORPUS_MINIMIZATION,
-        runs_on=RunnerLabels.AMD_MEDIUM,
+        runs_on=RunnerLabels.ARM_MEDIUM,
         command=(
             "python3 ./ci/jobs/libfuzzer_test_check.py --minimize-only "
             "'libFuzzer corpus minimization'"
         ),
-        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
@@ -2005,6 +2031,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/collect_clickhouse_profiles.py",
                 "./ci/jobs/scripts/server_cleanup.py",
+                # Classifies tests (needs-S3 / shell-query) for the skip decisions
+                "./ci/jobs/scripts/perf/test_discovery.py",
                 "./cmake/profile_optimization.cmake",
                 "./tests/performance/",
             ],

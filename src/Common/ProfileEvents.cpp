@@ -171,20 +171,26 @@
     M(TextIndexLazySegmentsBuilt, "Number of segments actually read and decoded (cache misses) in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyBruteForceIntersections, "Number of brute-force intersections performed in lazy posting list mode.", ValueType::Number) \
     M(TextIndexLazyLeapfrogIntersections, "Number of leapfrog intersections performed in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.", ValueType::Number) \
+    M(TextIndexLazyBruteForceEarlyExits, "Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.", ValueType::Number) \
     M(TextIndexLazySegmentsSkippedDense, "Number of fully-dense segments padded as a whole (memset for OR, increment for AND) instead of decoding blocks, in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
-    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazySegmentsSkippedResolved, "Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedResolved, "Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.", ValueType::Number) \
+    M(TextIndexLazyBlocksSkippedDense, "Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.", ValueType::Number) \
     M(TextIndexDiscardPatternScan, "Number of times pattern-based dictionary scan in a text index was discarded because the number of posting lists to read exceeded the threshold.", ValueType::Number) \
+    M(TextIndexPatternBypassCacheHits, "Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the text index.", ValueType::Number) \
     M(TextIndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the text index reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(EncryptionHeaderCacheHits, "Number of times encryption header bytes were found in the encryption header cache, so the source read of the header was skipped.", ValueType::Number) \
     M(EncryptionHeaderCacheMisses, "Number of times encryption header bytes were not found in the encryption header cache, so they were read from the source.", ValueType::Number) \
-    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
-    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.", ValueType::Number) \
+    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Counts the query cache as a whole: a miss in memory followed by a hit in the query cache on disk is one hit. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Counts the query cache as a whole: a query is a miss only if it was found in neither the in-memory nor the on-disk backend. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskHits, "Number of times a query result has been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheHits. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskMisses, "Number of times a query result has not been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheMisses. Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheOnDiskReadBytes, "Number of serialized (compressed) bytes read from the query cache on disk.", ValueType::Bytes) \
+    M(QueryCacheOnDiskWrittenBytes, "Number of serialized (compressed) bytes written into the query cache on disk.", ValueType::Bytes) \
+    M(QueryCacheAgeSeconds, "The sum of ages of found query cache entries in seconds. Only updated for hits, of both the in-memory and the on-disk backend of the query cache.", ValueType::Number) \
     M(QueryCacheReadRows, "The number of rows read from the query cache.", ValueType::Number) \
     M(QueryCacheReadBytes, "The number of (uncompressed) bytes read from the query cache.", ValueType::Bytes) \
     M(QueryCacheWrittenRows, "The number of rows saved into the query cache.", ValueType::Number) \
@@ -458,6 +464,8 @@
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalDistinctWritePart, "Number of times a temporary file was written to disk for DISTINCT in external memory.", ValueType::Number) \
     M(ExternalDistinctMerge, "Number of times temporary files were merged for DISTINCT in external memory.", ValueType::Number) \
+    M(ExternalDistinctTailSpilledRows, "Number of buffered rows selected for spilling before the final external DISTINCT merge.", ValueType::Number) \
+    M(ExternalDistinctTailKeptRows, "Number of buffered rows retained in memory for the final external DISTINCT merge.", ValueType::Number) \
     M(ExternalDistinctCompressedBytes, "Number of compressed bytes written for DISTINCT in external memory.", ValueType::Bytes) \
     M(ExternalDistinctUncompressedBytes, "Amount of data (uncompressed, before compression) written for DISTINCT in external memory.", ValueType::Bytes) \
     \
@@ -507,6 +515,9 @@
     M(SelectedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) SELECTed from all tables.", ValueType::Bytes) \
     M(RowsReadByMainReader, "Number of rows read from MergeTree tables by the main reader (after PREWHERE step).", ValueType::Number) \
     M(RowsReadByPrewhereReaders, "Number of rows read from MergeTree tables (in total) by prewhere readers.", ValueType::Number) \
+    M(StringValueFilterValuesChecked, "Number of string values checked during a scan against a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
+    M(StringValueFilterValuesReplaced, "Number of non-matching string values replaced with empty strings during a scan by a filter extracted from a substring search condition in PREWHERE.", ValueType::Number) \
+    M(StringValueFilterBytesSkipped, "Number of bytes of non-matching string values that were not copied into a column during a scan due to a filter extracted from a substring search condition in PREWHERE.", ValueType::Bytes) \
     M(LoadedDataParts, "Number of data parts loaded by MergeTree tables during initialization.", ValueType::Number) \
     M(LoadedDataPartsMicroseconds, "Microseconds spent by MergeTree tables for loading data parts during initialization.", ValueType::Microseconds) \
     M(FilteringMarksWithPrimaryKeyProcessedMarks, "Total marks processed during PK analysis.", ValueType::Number) \
@@ -528,6 +539,10 @@
     M(MarkCacheEvictedBytes, "Number of bytes evicted from the mark cache.", ValueType::Bytes) \
     M(MarkCacheEvictedMarks, "Number of marks evicted from the mark cache.", ValueType::Number) \
     M(MarkCacheEvictedFiles, "Number of mark files evicted from the mark cache.", ValueType::Number) \
+    M(ColumnsCacheHits, "Number of times a deserialized column was found in the columns cache.", ValueType::Number) \
+    M(ColumnsCacheMisses, "Number of times a deserialized column was not found in the columns cache.", ValueType::Number) \
+    M(ColumnsCacheEvictedBytes, "Number of bytes evicted from the columns cache.", ValueType::Bytes) \
+    M(ColumnsCacheEvictedEntries, "Number of entries evicted from the columns cache.", ValueType::Number) \
     M(LoadedPrimaryIndexFiles, "Number of primary index files loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexRows, "Number of rows of primary key loaded.", ValueType::Number) \
     M(LoadedPrimaryIndexBytes, "Number of rows of primary key loaded.", ValueType::Bytes) \
@@ -823,7 +838,7 @@ The server successfully detected this situation and will download merged part fr
     M(S3DeleteObjects, "Number of S3 API DeleteObject(s) calls.", ValueType::Number) \
     M(S3CopyObject, "Number of S3 API CopyObject calls.", ValueType::Number) \
     M(S3ListObjects, "Number of S3 API ListObjects calls.", ValueType::Number) \
-    M(S3HeadObject,  "Number of S3 API HeadObject calls.", ValueType::Number) \
+    M(S3HeadObject, "Number of S3 API HeadObject calls.", ValueType::Number) \
     M(S3GetObjectTagging, "Number of S3 API GetObjectTagging calls.", ValueType::Number) \
     M(S3CreateMultipartUpload, "Number of S3 API CreateMultipartUpload calls.", ValueType::Number) \
     M(S3UploadPartCopy, "Number of S3 API UploadPartCopy calls.", ValueType::Number) \
@@ -853,6 +868,7 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableOrphanedObjectsRemoved, "Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).", ValueType::Number) \
     M(DiskPlainRewritableUndoStageRetries, "Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.", ValueType::Number) \
     \
     M(MetadataTransactionRollbacks, "Number of metadata transactions that failed to commit and were rolled back.", ValueType::Number) \
@@ -876,6 +892,8 @@ The server successfully detected this situation and will download merged part fr
     M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
+    M(QueryMemoryDriftSettled, "Number of queries that ended with memory still charged to them (or over-credited). The difference is taken off the per-user tracker, so that it ends at zero for the query.", ValueType::Number) \
+    M(QueryMemoryDriftSettledBytes, "Absolute amount of bytes taken off per-user trackers when queries ended, that is, how far per-query accounting was off.", ValueType::Bytes) \
     M(MemoryLargeAllocationTraced, "Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
@@ -913,7 +931,6 @@ The server successfully detected this situation and will download merged part fr
     M(CachedReadBufferReadFromSourceBytes, "Bytes read from filesystem cache source (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferPredownloadedFromSourceBytes, "Bytes read from filesystem cache source for predownload (from remote fs, etc)", ValueType::Bytes) \
     M(CachedReadBufferReadFromCacheBytes, "Bytes read from filesystem cache", ValueType::Bytes) \
-    M(CachedReadBufferPredownloadedBytes, "Bytes read from filesystem cache source. Cache segments are read from left to right as a whole, it might be that we need to predownload some part of the segment irrelevant for the current task just to get to the needed data", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedReadBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedReadBufferCacheWriteStopped, "Number of times writing a file segment into the filesystem cache was stopped mid-download (space reservation or the cache write failed), after which the read continues bypassing the cache", ValueType::Number) \
@@ -944,7 +961,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
     M(FilesystemCacheReserveMicroseconds, "Filesystem cache space reservation time", ValueType::Microseconds) \
     M(FilesystemCacheReserveAttempts, "Filesystem cache space reservation attempt", ValueType::Number) \
-    M(FilesystemCacheFailedReserveAttempts, "Number of failed file cache space reservation attempts.", ValueType::Number) \
+    M(FilesystemCacheReserveAheadRetries, "Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size", ValueType::Number) \
+    M(FilesystemCacheFailedReserveAttempts, "Number of failed file cache space reservation attempts, including reserve-ahead attempts that were retried with the exact size (see FilesystemCacheReserveAheadRetries).", ValueType::Number) \
     M(FilesystemCacheEvictMicroseconds, "Filesystem cache eviction time", ValueType::Microseconds) \
     M(FilesystemCacheGetOrSetMicroseconds, "Filesystem cache getOrSet() time", ValueType::Microseconds) \
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time", ValueType::Microseconds) \
@@ -1041,6 +1059,7 @@ The server successfully detected this situation and will download merged part fr
     M(AdaptiveAggregationSharedTableSpills, "How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.", ValueType::Number) \
     M(AdaptiveAggregationBucketsRetired, "Number of two-level buckets whose working memory (arena slot, staged-chunk references) was retired right after their merge-and-convert completed, ahead of the whole merge finishing.", ValueType::Number) \
     M(AggregationBucketTopKConversions, "Number of two-level buckets converted through the bucket-local Top-K selection (the aggregationBucketTopK plan optimization).", ValueType::Number) \
+    M(AggregationHavingPrefilterGroupsSkipped, "Number of groups whose key columns were not materialized while a two-level bucket of an aggregation was converted, because a HAVING bound on that group's own count() already rejected it (the aggregationHavingPrefilter plan optimization).", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
     M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
@@ -1664,6 +1683,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ParquetReadRowGroups, "The total number of row groups read from parquet data", ValueType::Number) \
     M(ParquetPrunedRowGroups, "The total number of row groups pruned from parquet data", ValueType::Number) \
+    M(ParquetTopKSkippedRowGroups, "The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)", ValueType::Number) \
     M(ParquetReadPages, "The total number of Parquet data pages read", ValueType::Number) \
     M(ParquetPrunedPages, "The total number of pages pruned from parquet data via column index", ValueType::Number) \
     M(ParquetDecodingTasks, "Tasks issued by parquet reader", ValueType::Number) \
@@ -1681,6 +1701,9 @@ The server successfully detected this situation and will download merged part fr
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting", ValueType::Number) \
     M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
+    \
+    M(AutomaticParallelReplicasProbePlansBuilt, "Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins", ValueType::Number) \
+    \
     M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
     M(DistributedConnectionConnectCount, "Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.", ValueType::Number) \
     \
@@ -1708,6 +1731,7 @@ The server successfully detected this situation and will download merged part fr
     M(SetsBuiltFromSubquery, "Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
+    M(LoadedStatistics, "Number of data parts for which column statistics were loaded", ValueType::Number) \
     M(SelectivityEstimatorInSetNotBuilt, "Number of `IN` conditions the selectivity estimator could not analyse because the set was not built yet, and it must not run the subquery to fill it", ValueType::Number) \
     M(SelectivityEstimatorInSetEstimatedFromSize, "Number of `IN` conditions whose selectivity was estimated from the size and bounds of the set instead of its exact ranges, because the set exceeds `statistics_max_set_size_for_exact_selectivity_estimation`", ValueType::Number) \
     \
@@ -1726,6 +1750,7 @@ The server successfully detected this situation and will download merged part fr
     M(RuntimeFilterBloomFilterBuildsSkipped, "Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits", ValueType::Number) \
     M(RuntimeFilterGranulesConsidered, "Number of granules examined for read time pruning by JOIN Runtime Filters", ValueType::Number) \
     M(RuntimeFilterGranulesDropped, "Number of granules pruned at read time by JOIN Runtime Filters", ValueType::Number) \
+    M(RuntimeFilterLookupsBeforeBuildFinished, "Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered", ValueType::Number) \
     \
     M(JoinBuildPostProcessingMicroseconds, "Elapsed time of post-processing steps after building the right JOIN side.", ValueType::Microseconds) \
     \

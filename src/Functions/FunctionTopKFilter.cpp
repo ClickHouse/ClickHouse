@@ -132,6 +132,10 @@ private:
         ColumnPtr threshold_column = data_type->createColumnConst(input_rows_count, convertFieldToType(current_threshold, *data_type));
         ColumnsWithTypeAndName args{argument, {threshold_column, data_type, {}}};
         auto elem_compare = compare_function->build(args);
+        /// getReturnTypeImpl always declares UInt8, so a comparison resolving to anything else
+        /// (a Nullable nested in a Tuple makes it Nullable(UInt8)) must not be returned here.
+        if (!isUInt8(elem_compare->getResultType()))
+            return executeGeneral(argument, current_threshold, data_type, input_rows_count);
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 

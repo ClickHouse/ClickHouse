@@ -20,6 +20,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/StringUtils.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -125,6 +127,7 @@ void SetOrJoinSink::consume(Chunk & chunk)
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
+    setCurrentQueryMemoryDriftExpected();
     if (backup_buf)
     {
         backup_stream->flush();
@@ -287,6 +290,8 @@ void StorageSet::truncate(const ASTPtr &, const StorageMetadataPtr & metadata_sn
     auto new_set = std::make_shared<Set>(SizeLimits(), 0, true);
     new_set->setHeader(header.getColumnsWithTypeAndName());
     {
+        /// Table data belongs to the server, not to the query releasing it.
+        MemoryTrackerBlockerInThread table_data_not_charged_to_the_query;
         std::lock_guard lock(mutex);
         set = new_set;
     }
