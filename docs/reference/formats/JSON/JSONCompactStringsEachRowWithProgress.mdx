@@ -16,14 +16,9 @@ doc_type: 'reference'
 
 ## Description {#description}
 
-Similar to [`JSONCompactEachRowWithProgress`](/reference/formats/JSON/JSONCompactEachRowWithProgress), but all values are converted to strings.
-This is useful when you need consistent string representation of all data types.
+Similar to [`JSONCompactEachRowWithProgress`](/reference/formats/JSON/JSONCompactEachRowWithProgress), but all values are converted to strings. Uses the same top-level object kinds (`meta`, `row`, `progress`, `totals`, `min`/`max`, `rows_before_limit_at_least`, `rows_before_aggregation`, and a top-level `exception`); `row` / `totals` / `min` / `max` payloads remain **arrays** in column order, with each element serialized as a string.
 
-Key features:
-- Same structure as `JSONCompactEachRowWithProgress`
-- All values are represented as strings (numbers, arrays, etc. are all quoted strings)
-- Includes progress updates, totals, and exception handling
-- Useful for clients that prefer or require string-based data
+See [`JSONCompactEachRowWithProgress`](/reference/formats/JSON/JSONCompactEachRowWithProgress) for the full stream-object contract (`progress` may arrive before `meta`; `rows_before_limit_at_least` is a lower estimate when the query contains `LIMIT`, not proof rows were dropped; `exception` is only written on the HTTP path with `http_write_exception_in_output_format=1`).
 
 ## Example usage {#example-usage}
 

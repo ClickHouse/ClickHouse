@@ -1035,7 +1035,10 @@ void SystemLog<LogElement>::prepareTable()
             query_context->makeQueryContext();
             addSettingsForQuery(query_context, IAST::QueryKind::Rename);
 
-            InterpreterRenameQuery(rename, query_context).execute();
+            InterpreterRenameQuery interpreter_rename(rename, query_context);
+            /// Views over the log read it by name, so they stay with the name, not with the archived table.
+            interpreter_rename.setKeepSourceViewDependencies(true);
+            interpreter_rename.execute();
 
             if (rotated_documentation_source)
                 registerSystemTableDocumentationSource(rotated_table_name, rotated_documentation_source);
