@@ -9,6 +9,7 @@
 -- the context the check is handed. A regression that reads those settings from the wrong context
 -- would reject such queries, and parallel replicas would silently stop being considered for them.
 
+SET use_statistics_for_sum_avg_aggregation = 0;
 DROP TABLE IF EXISTS t_autopr_gate;
 DROP TABLE IF EXISTS t_autopr_gate_2;
 DROP TABLE IF EXISTS t_autopr_gate_alias;

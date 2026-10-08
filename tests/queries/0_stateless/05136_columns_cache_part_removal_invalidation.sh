@@ -70,7 +70,8 @@ $CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
 
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(id), sum(value), count() FROM t_columns_cache_removal
-SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, max_threads = 1
+SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1, max_threads = 1,
+         use_statistics_for_sum_avg_aggregation = 0
 "
 
 echo -n 'cached source parts before the merge: '
@@ -90,13 +91,13 @@ wait_for_parts_to_leave_the_cache "$table_uuid" "['all_1_1_0', 'all_2_2_0']"
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(id), sum(value), count() FROM t_columns_cache_removal
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1,
-         max_threads = 1, log_queries = 1, log_comment = '05136_merged_part_read_1'
+         max_threads = 1, use_statistics_for_sum_avg_aggregation = 0, log_queries = 1, log_comment = '05136_merged_part_read_1'
 "
 
 $CLICKHOUSE_CLIENT -q "
 SELECT sum(id), sum(value), count() FROM t_columns_cache_removal
 SETTINGS use_columns_cache = 1, enable_writes_to_columns_cache = 1, enable_reads_from_columns_cache = 1,
-         max_threads = 1, log_queries = 1, log_comment = '05136_merged_part_read_2'
+         max_threads = 1, use_statistics_for_sum_avg_aggregation = 0, log_queries = 1, log_comment = '05136_merged_part_read_2'
 "
 
 echo -n 'only the merged part is cached: '

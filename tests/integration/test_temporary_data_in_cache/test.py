@@ -113,7 +113,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         },
     ]:
         # Read some data to fill the cache
-        q("SELECT sum(x) FROM t1")
+        q("SELECT sum(x) FROM t1 SETTINGS use_statistics_for_sum_avg_aggregation = 0")
 
         cache_size_with_t1 = get_cache_size()
         assert cache_size_with_t1 > 8 * MB, dump_debug_info()
@@ -143,7 +143,7 @@ def test_cache_evicted_by_temporary_data(start_cluster):
         assert get_free_space() > free_space_with_t1 + 3 * MB, dump_debug_info()
 
     # Read some data to fill the cache again
-    q("SELECT avg(x) FROM t1")
+    q("SELECT avg(x) FROM t1 SETTINGS use_statistics_for_sum_avg_aggregation = 0")
 
     cache_size_with_t1 = get_cache_size()
     assert cache_size_with_t1 > 8 * MB, dump_debug_info()

@@ -43,25 +43,25 @@ SELECT 'the default auto_statistics_types: answered from statistics';
 SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_default_stats;
 SELECT 'the same values without the optimization';
 SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_default_stats SETTINGS use_statistics_for_min_max_aggregation = 0;
-SELECT count() FROM (EXPLAIN SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_default_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_default_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'explicit auto_statistics_types = basic: answered from statistics';
 SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_basic_stats;
 SELECT 'the same values without the optimization';
 SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_basic_stats SETTINGS use_statistics_for_min_max_aggregation = 0;
-SELECT count() FROM (EXPLAIN SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_basic_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(value), max(value), min(date), max(date), min(event_time), max(event_time), min(amount), max(amount), count() FROM t_basic_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'nothing is read when every part is answered from statistics';
 SELECT count() FROM (EXPLAIN SELECT min(value), max(value), count() FROM t_default_stats) WHERE explain LIKE '%ReadFromMergeTree%';
 
 SELECT 'not applied: basic statistics do not track the min/max of a String column';
 SELECT min(str), max(str) FROM t_default_stats;
-SELECT count() FROM (EXPLAIN SELECT min(str), max(str) FROM t_default_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
-SELECT count() FROM (EXPLAIN SELECT min(str), max(str) FROM t_basic_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(str), max(str) FROM t_default_stats) WHERE explain LIKE '%_statistics_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(str), max(str) FROM t_basic_stats) WHERE explain LIKE '%_statistics_projection%';
 
 SELECT 'not applied: a single unsupported column disables the whole aggregation';
 SELECT min(value), max(str) FROM t_default_stats;
-SELECT count() FROM (EXPLAIN SELECT min(value), max(str) FROM t_default_stats) WHERE explain LIKE '%_statistics_min_max_projection%';
+SELECT count() FROM (EXPLAIN SELECT min(value), max(str) FROM t_default_stats) WHERE explain LIKE '%_statistics_projection%';
 
 DROP TABLE t_default_stats;
 DROP TABLE t_basic_stats;

@@ -75,7 +75,7 @@ def test_noskip_cache_on_disk_failure_select(started_cluster):
         node.query("SYSTEM ENABLE FAILPOINT cache_filesystem_failure")
         try:
             with pytest.raises(Exception) as exc_info:
-                node.query("SELECT sum(x) FROM t_noskip_sel")
+                node.query("SELECT sum(x) FROM t_noskip_sel SETTINGS use_statistics_for_sum_avg_aggregation = 0")
             assert "CACHE_CANNOT_WRITE_TO_CACHE_DISK" in str(exc_info.value)
         finally:
             node.query("SYSTEM DISABLE FAILPOINT cache_filesystem_failure")

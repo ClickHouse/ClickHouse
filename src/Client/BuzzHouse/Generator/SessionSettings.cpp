@@ -639,6 +639,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"use_statistics", trueOrFalseSetting},
        {"use_statistics_for_min_max_aggregation", trueOrFalseSetting},
        {"use_statistics_for_part_pruning", trueOrFalseSetting},
+       {"use_statistics_for_sum_avg_aggregation", trueOrFalseSetting},
        {"use_streaming_marks_compression", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering", trueOrFalseSetting},
        {"use_top_k_dynamic_filtering_for_variable_length_types", trueOrFalseSetting}};
