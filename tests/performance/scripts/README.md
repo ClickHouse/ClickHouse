@@ -86,6 +86,8 @@ Profile runs are normally limited to the queries whose performance changed, beca
 
 In CI, most tests run only a random sample of their queries (`perf.py --max-queries 10`). A fixed benchmark suite such as `tpch.xml` can opt out with `<test run_all_queries="1">`; the attribute takes effect only when the runner also passes `--soft-max-queries`.
 
+Tests can reuse ordered setup and measured queries with `<include file="shared_workload.xml.inc"/>` inside `<test>`. An included file has a `<fragment>` root; its children are inserted at the include's position before substitutions are expanded. Nested includes and `file` attributes inside fragments resolve relative to the fragment that declares them. Keep fragments outside the `*.xml` test selection (for example, use `.xml.inc`).
+
 #### Unstable Queries
 Action required for the cells marked in red.
 
@@ -146,6 +148,11 @@ There are some environment variables that influence what the test does:
  * `-e CHPC_LOCAL_SCRIPT` -- use the comparison scripts from the docker container and not from the tested commit.
 
 #### Re-genarate report with your tweaks
+`compare.sh` rejects suites declaring `requires_s3="1"`; use the Praktika performance-comparison job to provision the endpoint.
+The `iceberg_suite_local_*` tests use the downloaded local Iceberg dataset; the `iceberg_suite_s3_*` tests use job-local SeaweedFS.
+The read and TPC-H S3 suites use one shared immutable `perf_s3_data` dataset uploaded from that same download, while S3 write tests use isolated left/right `perf_s3` namespaces.
+SeaweedFS's cross-request S3 chunk cache is disabled; the OS page cache and ClickHouse's intentionally test-controlled metadata cache still apply.
+
 From the workspace directory (extracted test output archive):
 ```
 stage=report compare.sh

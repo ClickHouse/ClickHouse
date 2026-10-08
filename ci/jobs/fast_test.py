@@ -2,6 +2,7 @@ import argparse
 import os
 import platform
 import sys
+import tempfile
 from pathlib import Path
 
 repo_path = Path(__file__).resolve().parent.parent.parent
@@ -187,6 +188,11 @@ def main():
         Path(current_directory) / "clickhouse",
     ]:
         if path.is_file():
+            if platform.system() == "Darwin" and path == temp_dir / "clickhouse":
+                # The macOS self-extracting binary replaces itself in place, unlocked, on its first run.
+                private_path = Path(tempfile.mkdtemp(prefix="clickhouse-", dir=temp_dir)) / path.name
+                path.rename(private_path)
+                path = private_path
             clickhouse_bin_path = path
             print(f"NOTE: clickhouse binary is found [{clickhouse_bin_path}] - skip the build")
 

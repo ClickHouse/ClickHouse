@@ -33,7 +33,9 @@ void checkNamedCollectionOverrideLock(const NamedCollection & collection, const 
 /// Then, replacing a stored key (including an alias) requires `SHOW NAMED COLLECTIONS SECRETS` in `context`.
 /// Replacing a stored `'auto'` value of `format` or `structure` is exempt, because ClickHouse appends the inferred values itself.
 /// The context is required and must not be null: a caller that loads an already authorized object uses `checkNamedCollectionOverrideLock`.
-void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context);
+/// If `is_replayed_definition`, such a stored `'auto'` may be replaced even if it is `NOT OVERRIDABLE`.
+void checkNamedCollectionOverride(
+    const NamedCollection & collection, const std::string & key, ContextPtr context, bool is_replayed_definition = false);
 
 /// Checks the overrides of the stored keys in the source of a dictionary at its creation, attachment or restore.
 /// `config_prefix` is the source configuration "<dict_root>.source.<type>" (e.g. "dictionary.source.clickhouse").
@@ -52,7 +54,8 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     bool throw_unknown_collection = true,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args = nullptr,
     const StorageID * dependent_table_id = nullptr,
-    const ASTSetQuery * settings = nullptr);
+    const ASTSetQuery * settings = nullptr,
+    bool is_replayed_definition = false);
 
 /// Helper function to get named collection for dictionary source.
 /// Dictionaries have the collection name as the `name` argument of their configuration.

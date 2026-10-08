@@ -443,14 +443,12 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
-    /// disable parallel replicas if cluster contains only shards with 1 replica
     if (context->canUseTaskBasedParallelReplicas())
     {
-        bool disable_parallel_replicas = false;
         if (is_remote_function && cluster.getName().empty())
         {
-            /// disable parallel replicas with remote() table functions w/o configured cluster
-            disable_parallel_replicas = true;
+            /// `remote()` without a configured cluster has no cluster to scope parallel replicas to.
+            new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
         }
         else
         {
@@ -485,23 +483,11 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         /// (`RemoteQueryExecutor::sendQueryUnlocked`).
         new_client_info.collaborate_with_initiator = false;
         new_client_info.number_of_current_replica = 0;
-
-        if (!disable_parallel_replicas)
-        {
-            disable_parallel_replicas = true;
-            for (const auto & shard : cluster.getShardsInfo())
-            {
-                if (shard.getAllNodeCount() > 1)
-                {
-                    disable_parallel_replicas = false;
-                    break;
-                }
-            }
-        }
-
-        if (disable_parallel_replicas)
-            new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     }
+    /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
+    /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
+    /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
+    /// that cannot declines on its own, see `canUseParallelReplicasOnInitiator`.
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
