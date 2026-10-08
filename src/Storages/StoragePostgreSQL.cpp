@@ -936,6 +936,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
         .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
         .enumerate_engine_settings_fn = enumerateCompiledDefaults<PostgreSQLSettings>,
+        .is_inherited_setting_fn = PostgreSQLSettings::isLoadedFromQueryContext,
     },
     Documentation{
         .description = R"DOCS_MD(

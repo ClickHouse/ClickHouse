@@ -46,6 +46,8 @@ struct MySQLSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromQueryContext(ContextPtr context, ASTStorage & storage_def);
+    /// Whether `loadFromQueryContext` takes the setting from the query context.
+    static bool isLoadedFromQueryContext(std::string_view name);
     void loadFromNamedCollection(const NamedCollection & named_collection);
 
     static bool hasBuiltin(std::string_view name);
