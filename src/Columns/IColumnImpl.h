@@ -171,7 +171,7 @@ void IColumn::updatePermutationImpl(
 
     if (limit)
     {
-        const auto & [first, last] = equal_ranges.back();
+        const auto [first, last] = equal_ranges.back();
 
         if (limit < first || limit > last)
         {
@@ -193,12 +193,19 @@ void IColumn::updatePermutationImpl(
             }
         }
 
+        /// Rows equal to the last one within `limit` are moved right after it, so the next sort key sees them
+        /// as one range. `res[new_first]` lies before `limit` and is never swapped, so its row is loaded once.
+        /// In a column of mostly default values nearly every row is equal and `j == new_last` for all of them:
+        /// swapping a row with itself cost two stores per row and, with clang-23 on AArch64, made the loop
+        /// carry `new_last` through the stack (`sparse_column` `ORDER BY ... LIMIT` queries, +20%).
+        const size_t pivot_row = res[new_first];
         size_t new_last = limit;
         for (size_t j = limit; j < last; ++j)
         {
-            if (equals(res[j], res[new_first]))
+            if (equals(res[j], pivot_row))
             {
-                std::swap(res[j], res[new_last]);
+                if (j != new_last)
+                    std::swap(res[j], res[new_last]);
                 ++new_last;
             }
         }
