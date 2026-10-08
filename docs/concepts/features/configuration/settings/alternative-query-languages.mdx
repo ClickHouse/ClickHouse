@@ -92,7 +92,7 @@ ClickHouse translates a LogsQL query to a `SELECT` query over a configured log t
 To enable it and point it at a table with a time column and a message column:
 
 ```sql
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_database = 'default';
 SET logsql_table = 'logs';
 SET logsql_time_column = '_time';
