@@ -9,10 +9,6 @@ keywords: ['clickstack', 'dashboards', 'drilldown', 'table', 'row click', 'inspe
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Warning>
-This guide has been carried over from the existing documentation and still needs review for ClickHouse Observability. The source and dashboard selection workflows need verification for this offering.
-</Warning>
-
 A table tile is often a **catalog**: one row per service, host, endpoint, or error group, with a few columns that score each one. Row-click actions turn that catalog into an inspection workflow. You scan the catalog to find the row that matters, click it, and ClickHouse Observability carries the clicked row's values through as filters. The destination then opens already scoped to that one item with no query to rebuild by hand.
 
 A click can land in one of two places:
@@ -43,7 +39,7 @@ On an overview dashboard, add a **Table** tile on your traces source grouped by 
 
 Order by `Requests` descending so the busiest services sort to the top. This table is the catalog: one row per service, scored by RED.
 
-<Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="Service inventory table with RED columns (Requests, Errors, P95 Duration) for each service, ordered by request volume, above a requests-over-time trend" size="lg"/>
+<Image img="/images/clickstack/observability-row-click-catalog.png" alt="Service inventory table with RED columns (Requests, Errors, P95 Duration) for each service, ordered by request volume" size="lg"/>
 
 <Tip>
 **Lead with the group-by column**
@@ -55,6 +51,8 @@ By default a table renders its group-by column (here `ServiceName`) on the right
 
 On the inventory table, open **Row Click Action**, select **Dashboard**, and choose `Service Detail` from the dashboard list. Picking the dashboard directly pins it by ID. The link keeps working if the dashboard is renamed later, and it survives dashboard export and import. (Reserve the **Template** option for choosing a different dashboard per row; see [Set up a row-click action](#set-up).)
 
+<Image img="/images/clickstack/observability-row-click-button.png" alt="Table editor with the Row Click Action button outlined in yellow" size="lg"/>
+
 Because `Service Detail` declares a `ServiceName` custom filter, the drawer pre-fills an empty filter for that expression. Fill in its template:
 
 - **Expression**: `ServiceName` (already filled in)
@@ -64,7 +62,9 @@ Click **Apply** and save. The clicked row's service now flows into the dashboard
 </Step>
 <Step title="Click a row" id="click-dashboard">
 
-Hovering a row reveals a link affordance on the right edge of the table, with a hint describing the action (`Open dashboard "Service Detail"`). Clicking the row opens the `Service Detail` dashboard with its `Service` filter set to the clicked value, so every tile (the RED key figures, the latency percentiles, the per-endpoint breakdown) re-scopes to that one service in a single click.
+Hover over a row to reveal a link icon on the right edge of the table, with a tooltip describing the action (`Open dashboard "Service Detail"`).
+
+Clicking the row opens the `Service Detail` dashboard with its `Service` filter set to the clicked value, so every tile (the RED key figures, the latency percentiles, the per-endpoint breakdown) re-scopes to that one service in a single click.
 
 <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Service Detail dashboard after a row click, with the Service filter set to the clicked service and the RED key figures, latency percentiles, and per-endpoint breakdown all scoped to it" size="lg"/>
 </Step>

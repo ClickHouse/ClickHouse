@@ -9,29 +9,29 @@ keywords: ['clickstack', 'dashboards', 'templates', 'import', 'observability']
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Warning>
-This guide has been carried over from the existing documentation and still needs review for ClickHouse Observability. Template availability, data-source selection, and the advice to modify table schemas for performance need verification for this offering.
-</Warning>
-
-ClickHouse Observability includes a library of pre-built dashboard templates that give you instant visibility into common infrastructure and application metrics.
+ClickHouse Observability includes a library of pre-built dashboard templates that help you visualize common infrastructure and application telemetry. Charts display data once your ClickHouse service receives the telemetry required by the template.
 
 ## Browsing available templates {#browsing-templates}
 
-To browse the built-in template library, navigate to **Dashboards** and click **Browse dashboard templates**. 
+To browse the built-in template library, navigate to **Dashboards** and click **Browse dashboard templates**.
 
-<Image img="/images/use-cases/observability/browse-dashboard-template.webp" alt="Browse Dashboard Templates Button" size="lg"/>
+<Image img="/images/clickstack/observability-browse-dashboard-templates.png" alt="Browse Dashboard Templates Button" size="lg"/>
 
-This opens the template gallery, where templates are organized by category. Click **Import** to begin the import flow for that template.
+This opens the template gallery, where templates are organized by category. Click **Import** on the template you want to use.
 
-<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Dashboard Template Gallery" size="lg"/>
+<Image img="/images/clickstack/observability-dashboard-template-gallery.png" alt="Dashboard Template Gallery" size="lg"/>
 
 ## Importing a template {#importing-a-template}
 
-To import a template, a data source must be set for each dashboard visualization. Select a data source from the dropdown for each visualization, then click `Finish Import`.
+In **Step 2: Map Data**, review the **Dashboard Name** and **Tags**, then confirm the data source in the **To** column for each tile and filter. Sources may already be selected. In the example below, the Node.js Runtime Metrics template maps its charts and service filter to the **Metrics** source. Click **Finish Import** to create the dashboard.
 
-<Image img="/images/use-cases/observability/import-dashboard-template.webp" alt="Dashboard Template Import" size="lg"/>
+<Image img="/images/clickstack/observability-import-dashboard-template.png" alt="Dashboard Template Import" size="lg"/>
 
 ## Pre-built templates {#pre-built-templates}
+
+### Browser RUM {#browser-rum}
+
+The **Browser RUM** (real user monitoring) template provides Core Web Vitals, page-load percentiles, traffic breakdowns, and error tracking. It uses browser sessions instrumented with the HyperDX Browser SDK or OpenTelemetry RUM instrumentation that emits `rum.sessionId`.
 
 ### OTel runtime metrics {#otel-runtime-metrics}
 
@@ -39,14 +39,13 @@ The built-in OTel Runtime Metrics templates are designed for applications instru
 
 | Template                | Description                                                                                              |
 |-------------------------|----------------------------------------------------------------------------------------------------------|
-| **.NET Runtime Metrics** | GC collections, heap size, thread pool usage, and assembly counts for .NET applications                 |
-| **Go Runtime Metrics**   | Goroutine counts, GC pause times, heap usage, and memory stats for Go applications                     |
-| **JVM Runtime Metrics**  | Heap and non-heap memory, GC duration, thread counts, and class loading for JVM-based applications     |
+| **.NET Runtime Metrics** | Garbage collection, heap fragmentation, exceptions, thread pool usage, and CPU metrics for .NET applications                 |
+| **Go Runtime Metrics**   | Memory usage, allocations, GC targets, CPU utilization, and goroutine metrics for Go applications                     |
+| **JVM Runtime Metrics**  | Heap memory, CPU utilization, threads, and GC metrics for JVM-based applications     |
 | **Node.js Runtime Metrics** | Event loop delay, heap usage, CPU utilization, and V8 memory for Node.js applications               |
+| **Python Runtime Metrics** | CPU utilization, memory usage, GC collections, and thread count for Python applications |
 
 Notes:
 
-- Each template is configured with a [custom filter](/clickstack/observability/features/dashboards/overview#custom-filters) for services which have the [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) resource attribute matching the dashboard's runtime.
-  - Environments with custom ClickHouse metric table schemas may need to adjust this filter to query the correct Service Name and Resource Attributes columns.
-  - For high-volume environments, filter load times can be reduced by [materializing (OSS guidance)](/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) the `ResourceAttributes['telemetry.sdk.language']` column.
-- Templates reference up-to-date OTel Semantic Conventions when published, and are updated periodically as the OTel Spec is updated. For services instrumented with older OTel SDKs, the visualizations may need to be [edited](/clickstack/observability/features/dashboards/overview#dashboards-editing-visualizations) to reference older metric names.
+- Each template is configured with a [custom filter](/clickstack/observability/features/dashboards/overview#custom-filters) for services whose [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) resource attribute matches the dashboard's runtime.
+- Metric names can vary between OpenTelemetry SDK versions. If your SDK emits different metric names, [edit the visualizations](/clickstack/observability/features/dashboards/overview#dashboards-editing-visualizations) to match your data.

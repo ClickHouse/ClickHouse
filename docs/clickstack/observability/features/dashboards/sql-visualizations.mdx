@@ -9,26 +9,22 @@ keywords: ['clickstack', 'dashboards', 'visualization', 'sql', 'observability']
 
 import { Image } from "/snippets/components/Image.jsx";
 
-<Warning>
-This guide has been carried over from the existing documentation and still needs review for ClickHouse Observability. Connection selection, available tables and permissions, and the public-demo examples need verification for this offering.
-</Warning>
-
 ClickHouse Observability supports visualizations based on raw SQL queries. This gives you full control over the query logic while still integrating with dashboard-level time ranges, filters, and chart rendering.
 
 SQL-based visualizations are useful when you need to go beyond the built-in Chart Explorer — for example, to join tables or build complex aggregations that are not supported by the chart builder.
 
 ## Creating a SQL-based visualization {#creating-a-raw-sql-chart}
 
-To create a SQL-based visualization, open a dashboard tile editor and select the **SQL** tab. 
+To create a SQL-based visualization, open a dashboard tile editor and select **SQL**.
 
-<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="SQL Editor Button" size="lg"/>
+<Image img="/images/clickstack/observability-sql-editor.png" alt="SQL visualization editor with query instructions and macros" size="lg"/>
 
 From there:
 
-1. Select a **ClickHouse connection** to run the query against.
+1. Select the **Connection** to run the query against.
 2. Optionally select a **Source** — this enables dashboard-level filters to be applied to your chart via the `$__filters` macro.
 3. Write your SQL query in the editor, using query parameters and macros to integrate with the dashboard time range, filters, and variables.
-4. Click the **play** button to preview results, then **Save**.
+4. Click **Run** to preview the results, then **Save** to save the visualization.
 
 ## Query parameters {#query-parameters}
 
@@ -38,7 +34,7 @@ From there:
 
 The parameters available depend on the chart type:
 
-**Line and Stacked Bar charts:**
+**Time Series charts (including stacked bars):**
 
 | Parameter                       | Type    | Description                                                      |
 |---------------------------------|---------|------------------------------------------------------------------|
@@ -91,7 +87,7 @@ AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:In
 
 ### Time interval macros {#time-interval-macros}
 
-These macros bucket a timestamp column into intervals matching the dashboard granularity. They are typically used in `SELECT` and `GROUP BY` clauses for time series charts. These are only available for Line and Stacked-bar visualizations.
+These macros bucket a timestamp column into intervals matching the dashboard granularity. They are typically used in `SELECT` and `GROUP BY` clauses for time series charts. These macros are only available for **Time Series** visualizations, including stacked bars.
 
 | Macro                        | Description                                                            |
 |------------------------------|------------------------------------------------------------------------|
@@ -130,20 +126,20 @@ A variable's values can also be interpolated directly as `$name` or `${name}`, w
 
 The UI automatically maps result columns to chart elements based on column types. The mapping rules differ by chart type.
 
-### Line and Stacked Bar charts {#line-and-stacked-bar-charts}
+### Time Series charts {#line-and-stacked-bar-charts}
 
 | Role               | Column type                        | Description                                                                                 |
 |--------------------|------------------------------------|---------------------------------------------------------------------------------------------|
 | **Timestamp**      | First `Date` or `DateTime` column  | Used as the x-axis.                                                                         |
 | **Series Value**   | All numeric columns                | Each numeric column is plotted as a separate series. These are typically aggregate values.   |
-| **Group Names**    | String, Map, or Array columns      | Optional. Rows with different group values are plotted as separate series.                   |
+| **Group Names**    | `String`, `Map`, or `Array` columns      | Optional. Rows with different group values are plotted as separate series.                   |
 
 ### Pie chart {#pie-chart}
 
 | Role              | Column type                        | Description                                                      |
 |-------------------|------------------------------------|------------------------------------------------------------------|
 | **Slice Value**   | First numeric column               | Determines each slice's size.                                    |
-| **Slice Label**   | String, Map, or Array columns      | Optional. Each unique value becomes a slice label.               |
+| **Slice Label**   | `String`, `Map`, or `Array` columns      | Optional. Each unique value becomes a slice label.               |
 
 ### Number chart {#number-chart}
 
@@ -158,12 +154,12 @@ All result columns are displayed directly as table columns.
 ## Examples {#examples}
 
 <Info>
-**Required system table access**
+**Example table names**
 
-You will need to specify `otel_v2.otel_logs` or `otel_v2.otel_traces` if running the following examples on [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
+The examples use `otel_logs` and `otel_traces`. Adjust the table and column names to match your data. When running the examples on [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), use `otel_v2.otel_logs` or `otel_v2.otel_traces`.
 </Info>
 
-### Line chart — log count over time by service {#example-line-chart}
+### Time Series chart — log count over time by service {#example-line-chart}
 
 This query counts log events per service, bucketed into time intervals matching the dashboard granularity.
 
@@ -180,11 +176,11 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
-- `ts` (DateTime) is used as the x-axis timestamp.
+- `ts` (`DateTime`) is used as the x-axis timestamp.
 - `count` (numeric) is plotted as the series value.
 - `ServiceName` (string) creates a separate line per service.
 
-### Line chart — using macros {#example-line-chart-macros}
+### Time Series chart — using macros {#example-line-chart-macros}
 
 The same query written using macros for brevity:
 
@@ -200,7 +196,7 @@ GROUP BY ServiceName, ts
 ORDER BY ts ASC
 ```
 
-### Line chart — using dashboard variables {#example-line-chart-variables}
+### Time Series chart — using dashboard variables {#example-line-chart-variables}
 
 Given a dashboard with a `service` variable on `ServiceName` and a `severity` variable on `SeverityText`, this query scopes the chart to the current service selection and excludes the selected severities. Both macros expand to `1=1` while their variable has no selection, so the chart renders unfiltered until the viewer picks a value.
 
@@ -277,8 +273,8 @@ The single numeric value `total_errors` from the first row is displayed.
 ## Notes {#notes}
 
 - SQL-based visualizations execute with `readonly` mode enabled — only `SELECT` queries are permitted.
-- SQL-based visualizations must be exactly one SQL query - multiple queries are not supported.
+- Each SQL-based visualization supports a single query; multiple queries are not supported.
 - The SQL editor provides autocomplete suggestions for both query parameters and macros.
-- A source must be selected to apply dashboard filters to SQL-based visualizations. The source should match the table being queried, for accurate filtering.
+- A source must be selected to apply dashboard filters to SQL-based visualizations. The source should match the table being queried to ensure accurate filtering.
 - Dashboard variables need no source — the values come from the dashboard's filter dropdowns, not from the tile's own source.
 - Alerts on a SQL tile that references a dashboard variable evaluate with every variable in its empty state, not the values selected on the dashboard.
