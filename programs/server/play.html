@@ -16824,6 +16824,17 @@ function sameConnectionUser(a_server, a_user, a_implicit_user, b_server, b_user,
     return a_account !== '' && a_account === b_account;
 }
 
+/// The `user` to serialize into the URL of an entry that carries `run=1`: an auto-executed link must
+/// replay under the account that produced it, but an implicit connection (an empty field) is
+/// authenticated as whatever the server's `default_session_user` is when the link is opened. So once
+/// the stamp denotes a known name (`resolvedImplicitUser`), the link names that account explicitly
+/// (the server authenticates it with the same password). A connection naming its user (the field or
+/// the userinfo of the server address) keeps the field as it is.
+function runEntryUser(server_address, user, implicit_user) {
+    if (effectiveConnectionUser(server_address, user)) return user;
+    return resolvedImplicitUser(server_address, implicit_user);
+}
+
 /// `sameConnectionUser` of a stored connection and the live connection fields.
 function sameAsLiveConnectionUser(server, user, implicit_user) {
     return sameConnectionUser(server, user, implicit_user,
@@ -16970,9 +16981,13 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     const entry_database = use_snapshot ? run_snapshot.database : selected_database;
     const entry_server = use_snapshot ? run_snapshot.url : url_elem.value;
     const entry_user = use_snapshot ? run_snapshot.user : user_elem.value;
-    const entry_implicit_user = use_snapshot
+    /// A marker of this visit is stored as the name it has resolved to by now (`resolvedImplicitUser`):
+    /// the marker itself would no longer resolve on a later visit (after a reload, or when the link is
+    /// shared) and would fail closed against the very account the entry ran as.
+    const entry_implicit_stamp = use_snapshot
         ? (run_snapshot.implicitUser || '')
         : implicitUserStamp(url_elem.value, user_elem.value);
+    const entry_implicit_user = resolvedImplicitUser(entry_server, entry_implicit_stamp) || entry_implicit_stamp;
     const carries_run = fromRun && !live_diverged;
     /// `run=1` additionally requires the tab's own `runnableUrl` policy (see `makeTab`): only a tab
     /// whose entries a genuine run produced under a `?run=1` load — or that adopted such a policy
@@ -17073,7 +17088,11 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     /// on reload would not reproduce it (and must not fire a write against the wrong server/database).
     /// The producing user/server/database are serialized into the URL and stamped into the state so
     /// Back/Forward can restore this entry's `database=` only while the live connection still matches.
-    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, shape, entry_user, entry_server, entry_database);
+    /// A `run=1` URL names the account of an implicit run explicitly once it is known (`runEntryUser`).
+    /// The state keeps `connectionUser`/`connectionImplicitUser` as recorded: the identity gates see
+    /// both spellings as the same connection (`sameConnectionUser`).
+    const url_user = stamp_run ? runEntryUser(entry_server, entry_user, entry_implicit_user) : entry_user;
+    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, shape, url_user, entry_server, entry_database);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(recorded_query);

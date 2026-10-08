@@ -127,7 +127,7 @@ function makeContext(storage) {
 }
 
 const FUNCTIONS = ['effectiveConnectionUser', 'implicitUserStamp', 'implicitUserVisitState', 'pendingImplicitUserStamp',
-    'resolvedImplicitUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
+    'resolvedImplicitUser', 'runEntryUser', 'sameConnectionUser', 'sameAsLiveConnectionUser',
     'serverIdentityKey', 'implicitUsersStorageKey', 'loadImplicitUsers', 'learnedImplicitUser', 'rememberImplicitUser',
     'serverAddressWithoutSession', 'storeCredentials', 'getServerStatus', 'buildCompletionUrl',
     'isAutofilled', 'dropAutofilledStalePassword'];
@@ -360,6 +360,29 @@ scenario('run-snapshot-before-implicit-user-learned', async js => {
     assertEqual(sameAsLive(ctx, other_snapshot), true, 'nothing learned for the other server yet');
     ctx.user_elem.value = 'alice';
     assertEqual(sameAsLive(ctx, other_snapshot), false, 'a name learned for one server does not resolve the marker for another');
+});
+
+/// An auto-executed `run=1` link must replay under the account that produced it, not under whatever
+/// the server's `default_session_user` is when the link is opened: once the implicit user is known,
+/// the link names it explicitly, including for a run snapshotted before the name was learned.
+scenario('run-link-names-implicit-account', async js => {
+    const ctx = boot(js);
+    ctx.implicit_user = 'alice';
+    ctx.url_elem.value = 'http://host:8123/';
+    ctx.user_elem.value = '';
+    ctx.password_elem.value = 'secret';
+    const run_snapshot = stampConnection(ctx);
+    ctx.entry = run_snapshot;
+    const runUser = () => vm.runInContext('runEntryUser(entry.server, entry.user, entry.implicitUser)', ctx);
+    assertEqual(runUser(), '', 'nothing to name before the implicit user is known');
+    await store(ctx);
+    assertEqual(runUser(), 'alice', 'the learned account of the in-flight run');
+    ctx.entry = { ...run_snapshot, implicitUser: 'carol' };
+    assertEqual(runUser(), 'carol', 'the account the stored entry was stamped with');
+    ctx.entry = { server: 'http://host:8123/', user: 'bob', implicitUser: '' };
+    assertEqual(runUser(), 'bob', 'an explicit user is kept');
+    ctx.entry = { server: 'http://dave@host:8123/', user: '', implicitUser: '' };
+    assertEqual(runUser(), '', 'a userinfo connection keeps the empty field');
 });
 
 scenario('implicit-default-round-trip-with-query-string', async js => {
