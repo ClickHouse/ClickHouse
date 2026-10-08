@@ -451,6 +451,14 @@ private:
         ActionsDAGWithInversionPushDown canonical_dag(&function_node, context, /* boolean_context */ false);
         const auto & canonical_node = canonical_dag.predicate ? *canonical_dag.predicate : function_node;
 
+        /// The index is analyzed under a `CAST` that drops `Nullable` and throws on NULL. Direct read replaces or
+        /// short-circuits the predicate, so `NOT hasToken(CAST(s, 'String'), 'a')` would return the NULL row
+        /// instead of throwing. Use the index only to skip granules then.
+        const bool drops_nullable = std::ranges::any_of(canonical_node.children, [](const auto * argument)
+        {
+            return unwrapLosslessConversion(argument, /*allow_drop_nullable=*/ false) != unwrapLosslessConversion(argument);
+        });
+
         NameSet used_index_columns;
         std::vector<SelectedCondition> selected_conditions;
 
@@ -470,7 +478,8 @@ private:
                 continue;
 
             /// For None mode, the condition is still needed for preprocessing (tokenizer/preprocessor injection).
-            if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+            /// The same applies to a `CAST` that drops `Nullable`, which must not be read directly (see above).
+            if (drops_nullable || search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info);
                 used_index_columns.insert(index_header.begin()->name);
@@ -735,7 +744,7 @@ private:
         std::vector<SelectedCondition> selected_conditions;
         for (const auto & condition : all_conditions)
         {
-            if (condition.search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
+            if (!condition.virtual_column_name.empty() && condition.search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
                 selected_conditions.push_back(condition);
         }
         if (selected_conditions.empty())
