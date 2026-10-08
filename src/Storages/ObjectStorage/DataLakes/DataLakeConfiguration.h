@@ -283,6 +283,11 @@ public:
         return getMetadata()->totalBytes(local_context);
     }
 
+    std::optional<MinMaxCountStatistics> getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr local_context) override
+    {
+        return getMetadata()->getMinMaxCountStatistics(columns, local_context);
+    }
+
     bool isDataSortedBySortingKey(StorageMetadataPtr metadata_snapshot, ContextPtr local_context) const override
     {
         return getMetadata()->isDataSortedBySortingKey(metadata_snapshot, local_context);

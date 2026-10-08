@@ -189,6 +189,10 @@ public:
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
+    std::optional<MinMaxCountStatistics> getMinMaxCountStatistics(const NamesAndTypesList & columns, ContextPtr query_context) const override
+    {
+        return getNested()->getMinMaxCountStatistics(columns, query_context);
+    }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }
     std::optional<UInt64> lifetimeBytes() const override { return getNested()->lifetimeBytes(); }
 
