@@ -438,6 +438,32 @@ TEST(AIAgentProtocol, BudgetDoesNotCutAToolCallBlock)
     EXPECT_NE(rendered.find("the arguments were cut"), String::npos);
 }
 
+TEST(AIAgentProtocol, BudgetKeepsTheCallOfAnOversizedToolResult)
+{
+    /// The newest tool result alone is larger than the budget. It is cut, but the assistant message
+    /// with the call it answers stays before it: a result without its call refers to a call the
+    /// model cannot read the name and arguments of.
+    static constexpr size_t budget = 64 * 1024;
+
+    ai::Messages messages;
+    messages.push_back(ai::Message::user("how many rows are in the big table?"));
+    appendStep(messages, "call_0", 1024);
+    appendStep(messages, "call_1", 128 * 1024);
+
+    const String rendered = AIServerFunctionTransport::renderConversationWithinBudget(messages, budget);
+
+    EXPECT_LE(rendered.size(), budget);
+    EXPECT_NE(rendered.find("how many rows are in the big table?"), String::npos);
+    EXPECT_NE(rendered.find("Tool result [call_1]"), String::npos);
+    EXPECT_NE(rendered.find("Cut here"), String::npos);
+    EXPECT_EQ(countLinesStartingWith(rendered, "<tool_call>"), 1u);
+    const size_t block = rendered.find("<tool_call>");
+    ASSERT_NE(block, String::npos);
+    EXPECT_LT(block, rendered.find("Tool result [call_1]"));
+    /// The older step does not fit any more and goes whole, its result together with its call.
+    EXPECT_EQ(rendered.find("Tool result [call_0]"), String::npos);
+}
+
 TEST(AIAgentProtocol, RenderSystemPromptListsTools)
 {
     ai::ToolSet tools;

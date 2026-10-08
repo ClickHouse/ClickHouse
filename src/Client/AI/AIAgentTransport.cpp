@@ -423,9 +423,16 @@ String AIServerFunctionTransport::renderConversationWithinBudget(const ai::Messa
     }
 
     /// Then the steps of the turn, newest first: the last tool results are what the model is about
-    /// to reason over, so they are the ones worth the remaining budget.
+    /// to reason over, so they are the ones worth the remaining budget. A `Tool result [<id>]`
+    /// message is only kept together with the assistant message that made the call: without it the
+    /// model reads a result of a call it cannot see the name and arguments of.
     const size_t lower = has_question ? question + 1 : 0;
+    auto is_tool_results = [&](size_t i) { return messages[i].role == ai::kMessageRoleUser && messages[i].has_tool_results(); };
+    auto is_tool_call = [&](size_t i) { return messages[i].role == ai::kMessageRoleAssistant && messages[i].has_tool_calls(); };
+
     std::vector<String> kept;
+    /// The number of tool-results messages at the end of `kept` that wait for their assistant message.
+    size_t pending_results = 0;
     size_t next = parts.size();
     while (next > lower)
     {
@@ -434,6 +441,7 @@ String AIServerFunctionTransport::renderConversationWithinBudget(const ai::Messa
         {
             budget -= part.size();
             kept.push_back(std::move(part));
+            pending_results = is_tool_results(next - 1) ? pending_results + 1 : 0;
             --next;
             continue;
         }
@@ -442,27 +450,54 @@ String AIServerFunctionTransport::renderConversationWithinBudget(const ai::Messa
         /// rather than left over, and stop - everything older than it is dropped. When it is the
         /// newest message of all, this is also what leaves the model with the beginning of the
         /// work of this turn instead of nothing of it.
-        const auto & message = messages[next - 1];
-        if (message.role == ai::kMessageRoleAssistant && message.has_tool_calls())
+        if (is_tool_call(next - 1))
         {
             /// A tool call block must not be cut in the middle: the results after it refer to it.
-            part = renderAssistantMessageWithinBudget(message, budget);
+            part = renderAssistantMessageWithinBudget(messages[next - 1], budget);
             if (!part.empty())
             {
                 kept.push_back(std::move(part));
+                pending_results = 0;
                 --next;
             }
         }
-        else if (budget > CONVERSATION_CUT.size())
+        else if (is_tool_results(next - 1) && next - 1 > lower && is_tool_call(next - 2))
+        {
+            /// The results and the call they answer are budgeted together: the call gets up to
+            /// half of what is left (it is only cut if it is that large), the results the rest.
+            String call_part = parts[next - 2];
+            if (call_part.size() > budget / 2)
+                call_part = renderAssistantMessageWithinBudget(messages[next - 2], budget / 2);
+            const size_t results_budget = budget - std::min(budget, call_part.size());
+            if (!call_part.empty() && results_budget > CONVERSATION_CUT.size())
+            {
+                truncateToUTF8Boundary(part, results_budget - CONVERSATION_CUT.size());
+                part += CONVERSATION_CUT;
+                kept.push_back(std::move(part));
+                kept.push_back(std::move(call_part));
+                pending_results = 0;
+                next -= 2;
+            }
+        }
+        else if (!is_tool_results(next - 1) && budget > CONVERSATION_CUT.size())
         {
             truncateToUTF8Boundary(part, budget - CONVERSATION_CUT.size());
             part += CONVERSATION_CUT;
             kept.push_back(std::move(part));
+            pending_results = 0;
             --next;
         }
+
         /// Whatever is left of the budget after this message is of no use: everything older than it
         /// is dropped, so there is nothing left to fit.
         break;
+    }
+
+    /// The results whose call was dropped go as well, for the same reason.
+    if (next > lower && pending_results)
+    {
+        kept.resize(kept.size() - pending_results);
+        next += pending_results;
     }
 
     WriteBufferFromOwnString out;
