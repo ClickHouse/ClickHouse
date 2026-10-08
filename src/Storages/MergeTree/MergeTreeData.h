@@ -918,6 +918,17 @@ public:
         const MutableDataPartsVector & added_parts,
         const std::optional<MergeTreePartInfo> & drop_range) const;
 
+    /// For a table created with `CREATE TEMPORARY TABLE`, throws if adding 'added_parts' and removing the active parts
+    /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
+    /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
+    /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
+    /// `MOVE PARTITION TO TABLE` and `CREATE TEMPORARY TABLE ... CLONE AS`.
+    void throwIfTemporaryTableSizeLimitsExceededForReplacement(
+        const ContextPtr & query_context,
+        const DataPartsLock & parts_lock,
+        const MutableDataPartsVector & added_parts,
+        const std::optional<MergeTreePartInfo> & drop_range) const;
+
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// Adds the part in the PreActive state (the part will be added to the active set later with out_transaction->commit()).
@@ -1725,7 +1736,10 @@ protected:
 
     void resetColumnSizes()
     {
+        std::lock_guard sizes_lock(columns_and_secondary_indices_sizes_mutex);
         column_sizes.clear();
+        secondary_index_sizes.clear();
+        primary_index_size = {};
         are_columns_and_secondary_indices_sizes_calculated = false;
     }
 
