@@ -469,6 +469,18 @@ bool writeMetadataFileAndVersionHint(
         ++i;
     }
 
+    /// The metadata file is already written with `If-None-Match: *`, which is the commit itself: reporting
+    /// a failure here would make the caller retry and commit the same change a second time. A stale hint
+    /// only delays readers with `iceberg_use_version_hint = 1` until the next writer advances it.
+    if (i == MAX_TRANSACTION_RETRIES)
+        LOG_WARNING(
+            getLogger("IcebergMetadataFileWriter"),
+            "Committed the Iceberg metadata file {}, but could not advance {} to version {} after {} attempts",
+            storage_metadata_path,
+            storage_version_hint_path,
+            metadata_file_info.version,
+            MAX_TRANSACTION_RETRIES);
+
     return true;
 }
 
