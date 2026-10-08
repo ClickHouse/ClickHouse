@@ -701,13 +701,12 @@ private:
 
                     /// Publish under the final name only now. `writer_mutex` stays held until the merge is listed,
                     /// so the sources cannot be rewritten between the validation above and the publication.
+                    /// `copyFile` within the same object storage disk is a server-side copy, so the merged bytes
+                    /// are not streamed through Keeper while the write thread is blocked on `writer_mutex`.
                     try
                     {
-                        auto reader = getDisk()->readFile(merged_in_progress_path, getReadSettings());
-                        auto writer = getDisk()->writeFile(merged_changelog->path);
-                        copyData(*reader, *writer);
-                        writer->sync();
-                        writer->finalize();
+                        auto disk = getDisk();
+                        disk->copyFile(merged_in_progress_path, *disk, merged_changelog->path, getReadSettings());
                     }
                     catch (...)
                     {
@@ -914,11 +913,8 @@ private:
             /// recovery in either case.
             try
             {
-                auto reader = disk->readFile(in_progress_path, getReadSettings());
-                auto writer = disk->writeFile(new_path);
-                copyData(*reader, *writer);
-                writer->sync();
-                writer->finalize();
+                /// A server-side copy within the object storage, so the segment is not downloaded and uploaded again.
+                disk->copyFile(in_progress_path, *disk, new_path, getReadSettings());
             }
             catch (...)
             {
