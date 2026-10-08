@@ -358,17 +358,19 @@ def test_top_k_through_join_does_not_defer_for_merge_object_storage(started_clus
     )
     instance.query("INSERT INTO top_k_merge_object_storage_right VALUES (0, 'zero')")
 
-    plan = instance.query(
-        f"EXPLAIN actions = 0 SELECT left.key, right.value FROM {merge_source} AS left "
-        "LEFT JOIN top_k_merge_object_storage_right AS right ON right.key = left.key "
-        "ORDER BY left.key LIMIT 3 "
-        "SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, "
-        "query_plan_read_in_order_through_join = 1, query_plan_top_k_through_join = 1, "
-        "query_plan_join_swap_table = 0, query_plan_max_limit_for_top_k_optimization = 0, "
-        "enable_parallel_replicas = 0, max_bytes_before_external_join = 0, "
-        "max_bytes_ratio_before_external_join = 0"
-    )
-    assert plan.count("Sorting") >= 2
-    assert plan.count("Limit") >= 2
+    # Both directions: the descending probe must not defer either.
+    for direction in ["ASC", "DESC"]:
+        plan = instance.query(
+            f"EXPLAIN actions = 0 SELECT left.key, right.value FROM {merge_source} AS left "
+            "LEFT JOIN top_k_merge_object_storage_right AS right ON right.key = left.key "
+            f"ORDER BY left.key {direction} LIMIT 3 "
+            "SETTINGS optimize_read_in_order = 1, query_plan_read_in_order = 1, "
+            "query_plan_read_in_order_through_join = 1, query_plan_top_k_through_join = 1, "
+            "query_plan_join_swap_table = 0, query_plan_max_limit_for_top_k_optimization = 0, "
+            "enable_parallel_replicas = 0, max_bytes_before_external_join = 0, "
+            "max_bytes_ratio_before_external_join = 0"
+        )
+        assert plan.count("Sorting") >= 2, direction
+        assert plan.count("Limit") >= 2, direction
 
     instance.query("DROP TABLE top_k_merge_object_storage_right")

@@ -206,10 +206,6 @@ public:
     /// request is all-or-nothing.
     bool canReadInOrder(size_t prefix_size, int direction);
 
-    /// Whether `requestReadingInOrder` accepts a reverse direction: every reading step of every child plan
-    /// has to accept it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
-    bool canReadInReverseOrder();
-
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     /// Propagate `setPreferMultipleStreams` to child `ReadFromMergeTree` steps, so a

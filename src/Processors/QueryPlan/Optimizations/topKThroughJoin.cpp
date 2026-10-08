@@ -487,10 +487,11 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
                     *merge,
                     *preserved_input_node);
 
-                const bool reverse_read_blocks_pass2
-                    = order_info && order_info->direction != 1 && !merge->canReadInReverseOrder();
-
-                if (order_info && !reverse_read_blocks_pass2)
+                /// Ask the same preflight that `ReadFromMerge::requestReadingInOrder` runs in pass 2, so
+                /// that every child which refuses the request there (a reverse direction with `FINAL`,
+                /// a prefix longer than a child's sorting key, an object storage child) also keeps the
+                /// explicit `Sort + Limit` here.
+                if (order_info && merge->canReadInOrder(order_info->used_prefix_of_sorting_key_size, order_info->direction))
                     return 0;
             }
         }

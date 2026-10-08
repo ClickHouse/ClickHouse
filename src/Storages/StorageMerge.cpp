@@ -2563,38 +2563,6 @@ bool ReadFromMerge::canReadInOrder(size_t prefix_size, int direction)
     return true;
 }
 
-bool ReadFromMerge::canReadInReverseOrder()
-{
-    filterTablesAndCreateChildrenPlans();
-
-    auto can_read_in_reverse_order = [](ReadFromMergeTree & read_from_merge_tree)
-    {
-        return read_from_merge_tree.canReadInReverseOrder();
-    };
-
-    auto can_read_in_reverse_order_nested = [](ReadFromMerge & nested_read_from_merge)
-    {
-        return nested_read_from_merge.canReadInReverseOrder();
-    };
-
-    /// Only the direction is asked here. An object storage child is rejected in any direction by
-    /// `requestReadingInOrder` (see `canReadInOrder`).
-    auto can_read_in_reverse_order_object_storage = [](ReadFromObjectStorageStep &)
-    {
-        return true;
-    };
-
-    for (const auto & child_plan : *child_plans)
-        if (child_plan.plan.isInitialized() && !recursivelyApplyToReadingSteps(
-                child_plan.plan.getRootNode(),
-                can_read_in_reverse_order,
-                can_read_in_reverse_order_nested,
-                can_read_in_reverse_order_object_storage))
-            return false;
-
-    return true;
-}
-
 void ReadFromMerge::resetChildPlans()
 {
     chassert(!order_info);
