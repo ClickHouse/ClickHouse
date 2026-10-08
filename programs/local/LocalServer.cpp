@@ -171,6 +171,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
     extern const ServerSettingsUInt64 point_in_polygon_cache_size;
+    extern const ServerSettingsUInt64 query_cache_max_entry_size_in_bytes;
+    extern const ServerSettingsUInt64 query_cache_max_entry_size_in_rows;
     extern const ServerSettingsString vector_similarity_index_cache_policy;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
@@ -838,7 +840,7 @@ void LocalServer::startServers(const ServerType & server_type)
             std::lock_guard lock(servers_lock);
             result.reserve(servers.size());
             for (const auto & server : servers)
-                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentConnections(), 0});
+                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.getProtocolType(), server.currentConnections(), 0});
             return result;
         };
         /// Note: we intentionally don't call `start` on it, to avoid an extra background thread
@@ -916,6 +918,7 @@ void LocalServer::startServers(const ServerType & server_type)
                     return ProtocolServerAdapter(
                         listen_host,
                         port_name,
+                        ServerType::Type::TCP,
                         "native protocol (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
@@ -946,6 +949,7 @@ void LocalServer::startServers(const ServerType & server_type)
                         return ProtocolServerAdapter(
                             listen_host,
                             port_name,
+                            ServerType::Type::HTTP,
                             "http://" + address.toString(),
                             std::make_unique<HTTPServer>(
                                 std::make_shared<HTTPContext>(global_context),
@@ -1502,7 +1506,8 @@ void LocalServer::processConfig()
     {
         getClientConfiguration().setString("logger", "logger");
         getClientConfiguration().setString("logger.level", logging ? level : "fatal");
-        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
+        /// Crash reports must reach stderr, which the configured channels may not write to.
+        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local", {fatal_log_name});
     }
 
     shared_context = Context::createShared();
@@ -1825,8 +1830,10 @@ void LocalServer::processConfig()
     /// system.server_settings can report its size).
     global_context->setEncryptionHeaderCache(DEFAULT_ENCRYPTION_HEADER_CACHE_POLICY, 0, 0);
 
-    /// Initialize a dummy query result cache.
-    global_context->setQueryResultCache(0, 0, 0, 0);
+    /// Initialize a query result cache which stores nothing in memory. The maximum entry sizes are configured as in the server: they
+    /// apply to the query result cache on disk as well, which is usable in `clickhouse-local`.
+    global_context->setQueryResultCache(
+        0, 0, server_settings[ServerSetting::query_cache_max_entry_size_in_bytes], server_settings[ServerSetting::query_cache_max_entry_size_in_rows]);
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
@@ -2001,7 +2008,8 @@ void LocalServer::processConfig()
         prompt = getClientConfiguration().getString("prompt");
     else if (getClientConfiguration().has("prompt_by_server_display_name.default"))
         prompt = getClientConfiguration().getRawString("prompt_by_server_display_name.default");
-    prompt = appendSmileyIfNeeded(prompt);
+    else
+        prompt = "{display_name}";
 
     /// Set default ports if not specified, so SYSTEM START LISTEN works out of the box.
     if (!getClientConfiguration().has("tcp_port"))

@@ -108,6 +108,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -732,6 +733,14 @@ QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
+    if (nodes == 0)
+    {
+        /// In case of 0 shards, the query should be processed fully on the initiator,
+        /// since we need to apply aggregations.
+        /// That's why we need to return FetchColumns.
+        return QueryProcessingStage::FetchColumns;
+    }
+
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
     if (to_stage == QueryProcessingStage::WithMergeableState)
@@ -747,13 +756,6 @@ QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
         /// we cannot return Complete (will break aliases and similar),
         /// relevant for Distributed over Distributed
         return std::max(to_stage, QueryProcessingStage::Complete);
-    }
-    if (nodes == 0)
-    {
-        /// In case of 0 shards, the query should be processed fully on the initiator,
-        /// since we need to apply aggregations.
-        /// That's why we need to return FetchColumns.
-        return QueryProcessingStage::FetchColumns;
     }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
@@ -1176,7 +1178,16 @@ void StorageDistributed::read(
 
         /// Return directly (with correct header) if no shard to query.
         if (modified_query_info.getCluster()->getShardsInfo().empty())
+        {
+            /// At `FetchColumns` the planner builds the empty source from the table columns itself.
+            if (processed_stage != QueryProcessingStage::FetchColumns)
+            {
+                auto read_nothing = std::make_unique<ReadNothingStep>(header);
+                read_nothing->setStepDescription("Read from NullSource (Distributed)");
+                query_plan.addStep(std::move(read_nothing));
+            }
             return;
+        }
     }
 
     ClusterProxy::SelectStreamFactory select_stream_factory =

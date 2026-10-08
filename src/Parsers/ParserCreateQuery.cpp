@@ -2567,6 +2567,7 @@ ClickHouse supports temporary tables which have the following characteristics:
 - Impossible to create a temporary table with distributed DDL query on all cluster servers (by using `ON CLUSTER`): this table exists only in the current session.
 - If a temporary table has the same name as another one and a query specifies the table name without specifying the DB, the temporary table will be used.
 - For distributed query processing, temporary tables with Memory engine used in a query are passed to remote servers.
+- The number of temporary tables in a session and their sizes can be limited with the [max_temporary_tables](/reference/settings/session-settings/max-temporary#max_temporary_tables), [max_temporary_table_memory_usage](/reference/settings/session-settings/max-temporary#max_temporary_table_memory_usage) (for the `Memory` engine), [max_temporary_table_size_bytes_compressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_compressed) and [max_temporary_table_size_bytes_uncompressed](/reference/settings/session-settings/max-temporary#max_temporary_table_size_bytes_uncompressed) (for the `MergeTree` family) settings.
 
 ## Syntax {#syntax}
 
@@ -3766,6 +3767,11 @@ key_name3 = 'some value' [[NOT] OVERRIDABLE],
 
 `OR REPLACE` and `IF NOT EXISTS` cannot be used together. `CREATE OR REPLACE` of an existing collection
 replaces it entirely: keys and overridability flags absent from the new definition are removed.
+
+Overriding a stored key when using the collection requires `SHOW NAMED COLLECTIONS SECRETS` on that collection,
+including keys marked `OVERRIDABLE`. Keys marked `NOT OVERRIDABLE` cannot be overridden.
+Dictionary sources follow the same rule. The privilege is checked when the dictionary is created, attached, or restored.
+When the dictionary is loaded, only keys marked `NOT OVERRIDABLE` are enforced.
 
 **Example**
 

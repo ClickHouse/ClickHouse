@@ -337,7 +337,7 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
 {
     for (auto & alias : aliases)
     {
-        ColumnDescription description(std::move(alias.name), std::move(alias.type), std::move(alias.comment));
+        ColumnDescription description(std::move(alias.name), std::move(alias.type));
         description.default_desc.kind = ColumnDefaultKind::Alias;
 
         const char * alias_expression_pos = alias.expression.data();
@@ -355,16 +355,16 @@ void ColumnsDescription::setAliases(NamesAndAliases aliases)
 /// names are considered the same if they completely match or `name_without_dot` matches the part of the name to the point
 static auto getNameRange(const ColumnsDescription::ColumnsContainer & columns, const String & name_without_dot)
 {
-    String name_with_dot = name_without_dot + ".";
-
     /// First we need to check if we have column with name name_without_dot
     /// and if not - check if we have names that start with name_with_dot
-    for (auto it = columns.begin(); it != columns.end(); ++it)
+    const auto & columns_by_name = columns.get<1>();
+    if (auto it = columns_by_name.find(name_without_dot); it != columns_by_name.end())
     {
-        if (it->name == name_without_dot)
-            return std::make_pair(it, std::next(it));
+        auto sequenced_it = columns.project<0>(it);
+        return std::make_pair(sequenced_it, std::next(sequenced_it));
     }
 
+    String name_with_dot = name_without_dot + ".";
     auto begin = std::find_if(columns.begin(), columns.end(), [&](const auto & column){ return startsWith(column.name, name_with_dot); });
 
     if (begin == columns.end())
@@ -491,10 +491,17 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
                         column_from, getHintsMessage(column_from));
     }
 
-    columns.get<1>().modify_key(it, [&column_to] (String & old_name)
+    /// Before `modify_key`: `column_from` may refer to the name of the renamed column itself.
+    const bool has_subcolumns = subcolumns.get<1>().find(column_from) != subcolumns.get<1>().end();
+    removeSubcolumns(column_from);
+
+    bool renamed = columns.get<1>().modify_key(it, [&column_to] (String & old_name)
     {
         old_name = column_to;
     });
+
+    if (renamed && has_subcolumns)
+        addSubcolumns(column_to, it->type);
     invalidateGetCache();
 }
 
