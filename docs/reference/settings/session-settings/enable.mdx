@@ -271,6 +271,38 @@ materialized during inserts and background merges instead of rewriting the histo
 
 Enables lazy columns replication in `JOIN`, `ARRAY JOIN` and lambda captures of higher-order functions (e.g. `arrayMap`), it allows to avoid unnecessary copy of the same rows multiple times in memory.
 
+## enable_logsql_dialect {#enable_logsql_dialect}
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to enable the LogsQL dialect (the log query language of VictoriaLogs)."}]}]}/>
+
+Enable LogsQL - the log query language of VictoriaLogs. Queries in this dialect are translated into SELECT queries over the table specified by the `logsql_table` setting.
+
+Usage:
+```sql
+SET enable_logsql_dialect = 1;
+SET logsql_table = 'logs';
+SET dialect = 'logsql';
+
+_time:1h error | stats by (host) count()
+```
+
+A complete standalone `SET` query is still parsed as plain SQL so that the dialect can
+be switched back; a LogsQL query merely starting with the word `set` keeps its meaning.
+The `logsql_time_column` and `logsql_message_column` settings configure the columns
+referred to by the `_time` field and by the default (message) field.
+
+Unlike VictoriaLogs, which stores every field as a string, the translated queries run
+over the existing table schema. The key contract deviations that follow from this:
+- Text filters (words, phrases, prefixes, regexps) expect `String`-backed columns and do not convert numeric columns to text.
+- Numeric comparison filters compare numeric columns natively (exactly for integer and decimal values, as long as the compared literal fits `Int128` or `Decimal256(38)`; a wider value, e.g. an integer above 1e38 in a `UInt256` field, is compared with `Float64` precision, and so are the integral bucket steps of `stats by (<field>:<step>)`). For `String` columns, only plain numeric text is parsed per row; values in the LogsQL number grammar (e.g. `10KiB`, `1h30m`) are not parsed per row.
+- The numeric stats functions (`sum`, `avg`, `median`, `quantile`, `stddev`, `rate_sum`) parse the numeric value of every field, skipping the values that are not numbers, like VictoriaLogs. The values are `Float64`, so a numeric column is aggregated with `Float64` precision and not exactly.
+- The `math` pipe requires numeric operand columns; `String` columns are not coerced.
+- Query results are returned with the types of the underlying columns, not as strings.
+
 ## enable_materialized_cte {#enable_materialized_cte}
 
 <ExperimentalBadge/>
@@ -402,6 +434,16 @@ The downside is potentially higher memory usage.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to enable the experimental `Quantized` compression codec individually, without the `allow_experimental_codecs`."}]}]}/>
 
 Enables the `Quantized` compression codec.
+
+## enable_reads_from_columns_cache {#enable_reads_from_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control reading from columns cache"}]}]}/>
+
+Whether to read from the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 
 ## enable_reads_from_query_cache {#enable_reads_from_query_cache}
 
@@ -587,6 +629,16 @@ Disabled by default.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "1"},{"label": "Enable vertical final by default again after fixing bug"}]}, {"id": "row-2","items": [{"label": "24.1"},{"label": "1"},{"label": "Use vertical final by default"}]}]}/>
 
 If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
+
+## enable_writes_to_columns_cache {#enable_writes_to_columns_cache}
+
+<BetaBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to control writing to columns cache"}]}]}/>
+
+Whether to write to the columns cache when `use_columns_cache` is enabled. Accepts 0 or 1. By default, 1 (enabled).
 
 ## enable_writes_to_query_cache {#enable_writes_to_query_cache}
 

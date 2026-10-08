@@ -408,6 +408,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+    extern const char merge_tree_drop_all_data_pause_before_removing_parts[];
     extern const char claim_inject_stale_part_dir[];
     /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
     /// test can make the table read-only while the loading is pending and check that it stops.
@@ -3486,6 +3487,7 @@ void MergeTreeData::startStatisticsCache()
 {
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+    std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
     if (refresh_statistics_seconds)
@@ -3497,6 +3499,14 @@ void MergeTreeData::startStatisticsCache()
 
         refresh_stats_task->activateAndSchedule();
     }
+}
+
+void MergeTreeData::stopStatisticsCache()
+{
+    /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
+    std::lock_guard lock(refresh_stats_task_mutex);
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -3713,8 +3723,7 @@ MergeTreeData::~MergeTreeData()
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        if (refresh_stats_task)
-            refresh_stats_task->deactivate();
+        stopStatisticsCache();
     }
     catch (...)
     {
@@ -5255,6 +5264,8 @@ void MergeTreeData::dropAllData()
     }
 
     LOG_TRACE(log, "dropAllData: waiting for locks.");
+
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_drop_all_data_pause_before_removing_parts);
     auto settings_ptr = getSettings();
 
     auto lock = lockParts();
@@ -5376,6 +5387,9 @@ void MergeTreeData::dropAllData()
 
         LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+
+        if ((*settings_ptr)[MergeTreeSetting::table_disk])
+            removeOwnFilesInDiskRootOnDrop(disk);
 
         if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
         {
@@ -7870,14 +7884,34 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         MergeTreePartInfo empty_info = drop_range;
         empty_info.level = empty_info.mutation = 0;
         empty_info.min_block = MergeTreePartInfo::MAX_BLOCK_NUMBER;
-        for (const auto & part : parts_to_remove)
+
+        /// We still have to take min_block into account to avoid creating multiple covering ranges
+        /// that intersect each other. The level and the mutation version matter just as much:
+        /// `MergeTreePartInfo::contains` demands a strictly greater level when the block ranges
+        /// differ, so a covering part whose level is not above the level of everything it spans
+        /// does not actually cover it.
+        auto widen_to_cover = [&](const MergeTreePartInfo & info)
         {
-            /// We still have to take min_block into account to avoid creating multiple covering ranges
-            /// that intersect each other
-            empty_info.min_block = std::min(empty_info.min_block, part->info.min_block);
-            empty_info.level = std::max(empty_info.level, part->info.level);
-            empty_info.mutation = std::max(empty_info.mutation, part->info.mutation);
-        }
+            empty_info.min_block = std::min(empty_info.min_block, info.min_block);
+            empty_info.level = std::max(empty_info.level, info.level);
+            empty_info.mutation = std::max(empty_info.mutation, info.mutation);
+        };
+
+        for (const auto & part : parts_to_remove)
+            widen_to_cover(part->info);
+
+        /// Parts that were outdated earlier are still on disk: they are only unlinked once
+        /// `old_parts_lifetime` has passed. The ones that no active part covers - a part dropped by
+        /// `DROP PART`, or an empty part dropped in the background - are seen by the part loader
+        /// after a restart. The covering part has to contain those as well, otherwise the loader
+        /// finds a pair of parts that neither contain one another nor are disjoint, and the server
+        /// refuses to start with "Part ... intersects previous part ...".
+        /// Only the block range is checked here (not `drop_range.contains`), because a part that
+        /// lies inside the dropped blocks has to be covered whatever its level and mutation are.
+        for (const auto & part : inactive_parts_to_remove_immediately)
+            if (drop_range.min_block <= part->info.min_block && part->info.max_block <= drop_range.max_block)
+                widen_to_cover(part->info);
+
         empty_info.level += 1;
 
         const auto & source_part = parts_to_remove.front();
@@ -7889,7 +7923,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             empty_info,
             partition,
             empty_part_name,
-            source_part->getMetadataSnapshot(),
+            getMetadataSnapshotForEmptyPart(*source_part),
             NO_TRANSACTION_PTR,
             source_part->info.isPatch() ? std::optional(source_part->getPatchPartIndex().cloneEmpty()) : std::nullopt);
     }
@@ -9540,6 +9574,20 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
     }
 }
 
+/// Patch parts carry data versions allocated from the block numbers of their own table, so they cannot be copied to another table.
+static void assertNotPatchPartition(const MergeTreeData & data, const ASTPtr & partition, ContextPtr query_context, std::string_view command)
+{
+    if (partition->as<ASTPartition &>().all)
+        return;
+
+    const auto partition_id = data.getPartitionIDFromQuery(partition, query_context);
+    if (isPatchPartitionId(partition_id))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot execute {} for partition {} of patch parts, they cannot be copied to another table. "
+            "Apply them with `ALTER TABLE ... APPLY PATCHES IN PARTITION ID '{}'` and use that partition instead",
+            command, partition_id, getOriginalPartitionIdOfPatch(partition_id));
+}
+
 void MergeTreeData::movePartitionToTable(const PartitionCommand & command, ContextPtr query_context)
 {
     String dest_database = query_context->resolveDatabase(command.to_database);
@@ -9555,6 +9603,7 @@ void MergeTreeData::movePartitionToTable(const PartitionCommand & command, Conte
             "Cannot move partition from table {} to table {} with storage {}",
             getStorageID().getNameForLogs(), dest_storage->getStorageID().getNameForLogs(), dest_storage->getName());
 
+    assertNotPatchPartition(*this, command.partition, query_context, "MOVE PARTITION TO TABLE");
     dest_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
     movePartitionToTable(dest_storage, command.partition, query_context);
 }
@@ -9681,6 +9730,7 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::REPLACE_PARTITION:
             {
+                assertNotPatchPartition(*this, command.partition, query_context, command.replace ? "REPLACE PARTITION" : "ATTACH PARTITION FROM");
                 if (command.replace)
                     checkPartitionCanBeDropped(command.partition, query_context);
 
@@ -14267,6 +14317,17 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
         }
     }
 
+    /** The synthetic metadata of a patch part describes the patch's own structure and knows nothing of
+      * the table's metadata version, which would leave the written part at version 0. A part at version
+      * 0 is behind every metadata mutation there has ever been, so a `RENAME COLUMN` whose
+      * materialization is still pending was applied on read to a patch that already stores the new
+      * name: the patch was then looked up under the old name, found nothing, and the update it carries
+      * was silently invisible. The patch is written against the table as it is now, so stamp that.
+      */
+    auto patch_metadata_with_version = std::make_shared<StorageInMemoryMetadata>(*patch_metadata.metadata);
+    patch_metadata_with_version->setMetadataVersion(metadata_snapshot->getMetadataVersion());
+    patch_metadata.metadata = std::move(patch_metadata_with_version);
+
     return {std::move(pipeline), std::move(patch_metadata)};
 }
 
@@ -14807,6 +14868,17 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
         default:
             break;
     }
+}
+
+StorageMetadataPtr MergeTreeData::getMetadataSnapshotForEmptyPart(const IMergeTreeDataPart & source_part)
+{
+    auto metadata_snapshot = source_part.getMetadataSnapshot();
+    if (!source_part.info.isPatch())
+        return metadata_snapshot;
+
+    auto metadata_with_version = std::make_shared<StorageInMemoryMetadata>(*metadata_snapshot);
+    metadata_with_version->setMetadataVersion(source_part.getMetadataVersion());
+    return metadata_with_version;
 }
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
