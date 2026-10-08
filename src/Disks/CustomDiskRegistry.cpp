@@ -117,19 +117,26 @@ void CustomDiskRegistry::waitForShutdown(const String & name, UInt128 settings_h
 {
     /// A disk is usually referenced only briefly after the last table using it is gone.
     static constexpr auto max_wait_for_referenced_disk = std::chrono::seconds(10);
+    /// A disk with the same definition can be used again, but a new one starts with fresh metadata (e.g. after
+    /// a failed attach that left the old one with stale metadata), so it is preferred if the wait is short.
+    static constexpr auto max_wait_for_referenced_disk_with_same_definition = std::chrono::seconds(1);
 
     std::unique_lock lock(mutex);
     shutdown_finished_cv.wait(lock, [&]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !names_pending_shutdown.contains(name); });
 
+    auto it = lingering_disks.find(name);
+    if (it == lingering_disks.end())
+        return;
+
+    const bool same_definition = it->second->getCustomDiskSettings() == settings_hash;
+    const auto max_wait = same_definition ? max_wait_for_referenced_disk_with_same_definition : max_wait_for_referenced_disk;
+
     auto can_create = [&]() TSA_NO_THREAD_SAFETY_ANALYSIS
     {
-        if (names_pending_shutdown.contains(name))
-            return false;
-        auto it = lingering_disks.find(name);
-        return it == lingering_disks.end() || it->second->getCustomDiskSettings() == settings_hash;
+        return !names_pending_shutdown.contains(name) && !lingering_disks.contains(name);
     };
 
-    if (!shutdown_finished_cv.wait_for(lock, max_wait_for_referenced_disk, can_create) && !names_pending_shutdown.contains(name))
+    if (!shutdown_finished_cv.wait_for(lock, max_wait, can_create) && !same_definition && !names_pending_shutdown.contains(name))
         LOG_WARNING(log, "Custom disk {} released earlier, with another definition, is still referenced after {} seconds",
             backQuote(name), max_wait_for_referenced_disk.count());
 }
