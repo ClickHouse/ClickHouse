@@ -6,6 +6,7 @@ SET enable_analyzer = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
 SET optimize_move_to_prewhere = 1;
+SET apply_string_filters_during_scan = 0; -- EXPLAIN output depends on it: it moves the LIKE conditions to PREWHERE
 
 DROP TABLE IF EXISTS tab;
 
