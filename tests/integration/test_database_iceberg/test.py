@@ -2999,6 +2999,171 @@ def test_namespace_nested_sql_ddl(started_cluster):
     ), "EXISTS on a non-namespaced name must return 0"
 
 
+def test_namespace_scope_reads_and_gating(started_cluster):
+    """
+    Under USE db.namespace unqualified names resolve inside the namespace for
+    reads, inserts and metadata statements; multipart qualifiers, nested quoted
+    paths and the setting itself are gated.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+    insert_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **ns_settings,
+    }
+
+    test_ref = f"test_ns_scope_reads_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    row = "(NULL, 'AAPL', 193.24, 193.31, tuple('bot'))"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    catalog.create_namespace(f"{ns}.child")
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+    table_child = create_table(catalog, f"{ns}.child", "t2")
+    table_child.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    scope = f"USE {CATALOG_NAME}.{ns}; "
+
+    result = node.query(scope + "SELECT count() FROM t", settings=ns_settings).strip()
+    assert result == "3", f"unqualified SELECT under scope: {result}"
+
+    node.query(scope + f"INSERT INTO t VALUES {row}", settings=insert_settings)
+    result = node.query(scope + "SELECT count() FROM t", settings=ns_settings).strip()
+    assert result == "4", f"unqualified INSERT under scope: {result}"
+
+    node.query(f"INSERT INTO {CATALOG_NAME}.{ns}.t VALUES {row}", settings=insert_settings)
+    result = node.query(
+        f"SELECT count() FROM {CATALOG_NAME}.`{ns}.t`", settings=ns_settings
+    ).strip()
+    assert result == "5", f"INSERT by three-part path: {result}"
+
+    result = node.query(scope + "EXISTS TABLE t", settings=ns_settings).strip()
+    assert result == "1", f"EXISTS TABLE of an existing table under scope: {result}"
+    result = node.query(scope + "EXISTS TABLE nope", settings=ns_settings).strip()
+    assert result == "0", f"EXISTS TABLE of a missing table under scope: {result}"
+
+    result = node.query(scope + "DESCRIBE TABLE t", settings=ns_settings)
+    assert "symbol" in result and "bid" in result, f"DESCRIBE TABLE under scope: {result}"
+    result = node.query(scope + "SHOW CREATE TABLE t", settings=ns_settings)
+    assert f"`{ns}.t`" in result, f"SHOW CREATE TABLE under scope: {result}"
+
+    for query in (
+        f"SELECT {CATALOG_NAME}.{ns}.t.symbol FROM {CATALOG_NAME}.{ns}.t WHERE symbol = 'kek' LIMIT 1",
+        f"SELECT {ns}.t.symbol FROM {CATALOG_NAME}.{ns}.t WHERE symbol = 'kek' LIMIT 1",
+        f"SELECT a.symbol FROM {CATALOG_NAME}.{ns}.t AS a WHERE symbol = 'kek' LIMIT 1",
+    ):
+        result = node.query(query, settings=ns_settings).strip()
+        assert result == "kek", f"qualified column in `{query}`: {result}"
+
+    gated_query = f"SELECT max({ns}.t.bid) FROM {CATALOG_NAME}.`{ns}.t`"
+    result = node.query(gated_query, settings=ns_settings).strip()
+    assert result != "", "multipart column qualifier must work with the setting on"
+    _, err = node.query_and_get_answer_with_error(gated_query)
+    assert (
+        "UNKNOWN_IDENTIFIER" in err
+        or "Unknown expression" in err
+        or "INVALID_IDENTIFIER" in err
+    ), f"multipart column qualifier must fail with the setting off: {err}"
+
+    _, err = node.query_and_get_answer_with_error(
+        f"SELECT * FROM {CATALOG_NAME}.`{ns}.child`.t2", settings=ns_settings
+    )
+    assert (
+        "SYNTAX_ERROR" in err or "Syntax error" in err
+    ), f"quoted dotted component inside a path must be a syntax error: {err}"
+
+    _, err = node.query_and_get_answer_with_error(
+        scope + "SET allow_experimental_table_namespaces = 0", settings=ns_settings
+    )
+    assert "SUPPORT_IS_DISABLED" in err, f"SET of the setting under scope: {err}"
+    _, err = node.query_and_get_answer_with_error(
+        scope + "SELECT count() FROM t SETTINGS allow_experimental_table_namespaces = 0",
+        settings=ns_settings,
+    )
+    assert "SUPPORT_IS_DISABLED" in err, f"SETTINGS clause under scope: {err}"
+
+    _, err = node.query_and_get_answer_with_error(
+        scope + "SELECT * FROM `child.t2`", settings=ns_settings
+    )
+    assert "BAD_ARGUMENTS" in err, f"quoted dotted name under scope: {err}"
+
+    result = node.query(
+        f"USE {CATALOG_NAME}.{ns}.child; SELECT count() FROM t2", settings=ns_settings
+    ).strip()
+    assert result == "2", f"nested namespace scope: {result}"
+
+
+def test_namespace_show_tables_variants(started_cluster):
+    """
+    SHOW TABLES variants under a namespace: FROM, LIKE, FULL, nested namespace,
+    USE scope, plain listing, missing namespace, SHOW DICTIONARIES, gating.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_show_variants_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    catalog.create_namespace(f"{ns}.child")
+    create_table(catalog, ns, "alpha")
+    create_table(catalog, ns, "beta")
+    create_table(catalog, f"{ns}.child", "gamma")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    expected = sorted([f"{ns}.alpha", f"{ns}.beta"])
+
+    result = node.query(f"SHOW TABLES FROM {CATALOG_NAME}.{ns}", settings=ns_settings)
+    assert sorted(result.split()) == expected, f"SHOW TABLES FROM: {result}"
+
+    result = node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME}.{ns} LIKE '{ns}.al%'", settings=ns_settings
+    )
+    assert sorted(result.split()) == [f"{ns}.alpha"], f"SHOW TABLES FROM LIKE: {result}"
+
+    result = node.query(
+        f"SHOW FULL TABLES FROM {CATALOG_NAME}.{ns} LIKE '{ns}.beta'", settings=ns_settings
+    )
+    lines = result.strip().split("\n")
+    assert len(lines) == 1, f"SHOW FULL TABLES must return one line: {result}"
+    fields = lines[0].split("\t")
+    assert fields[0] == f"{ns}.beta", f"SHOW FULL TABLES name: {result}"
+    assert "Iceberg" in fields[1], f"SHOW FULL TABLES engine: {result}"
+
+    result = node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME}.{ns}.child", settings=ns_settings
+    )
+    assert sorted(result.split()) == [f"{ns}.child.gamma"], f"nested SHOW TABLES FROM: {result}"
+
+    result = node.query(f"USE {CATALOG_NAME}.{ns}; SHOW TABLES", settings=ns_settings)
+    assert sorted(result.split()) == expected, f"SHOW TABLES under scope: {result}"
+
+    result = node.query(f"SHOW TABLES FROM {CATALOG_NAME}", settings=ns_settings)
+    for name in (f"{ns}.alpha", f"{ns}.beta", f"{ns}.child.gamma"):
+        assert name in result, f"plain listing misses {name}: {result}"
+
+    _, err = node.query_and_get_answer_with_error(
+        f"SHOW TABLES FROM {CATALOG_NAME}.no_such_namespace_{test_ref}", settings=ns_settings
+    )
+    assert "BAD_ARGUMENTS" in err, f"SHOW TABLES FROM a missing namespace: {err}"
+
+    _, err = node.query_and_get_answer_with_error(
+        f"SHOW DICTIONARIES FROM {CATALOG_NAME}.{ns}", settings=ns_settings
+    )
+    assert "UNKNOWN_DATABASE" in err, f"SHOW DICTIONARIES FROM a namespace: {err}"
+
+    _, err = node.query_and_get_answer_with_error(f"SHOW TABLES FROM {CATALOG_NAME}.{ns}")
+    assert (
+        "SYNTAX_ERROR" in err or "Syntax error" in err
+    ), f"SHOW TABLES FROM a namespace with the setting off: {err}"
+
+
 def test_alter_database_settings_not_supported(started_cluster):
     node = started_cluster.instances["node1"]
 
