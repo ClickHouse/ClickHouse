@@ -6,7 +6,7 @@
     <create_query>CREATE TABLE t_prewhere_json (id UInt64, j JSON(max_dynamic_paths = 0)) ENGINE = MergeTree ORDER BY id</create_query>
     <create_query>CREATE TABLE t_prewhere_map (id UInt64, m Map(String, String)) ENGINE = MergeTree ORDER BY id</create_query>
 
-    <fill_query>INSERT INTO t_prewhere_json SELECT number, concat('{"kind":"a","n":', toString(number), ',"payload":"', repeat('x', 2000), '"}') FROM numbers_mt(3000000)</fill_query>
+    <fill_query>INSERT INTO t_prewhere_json SELECT number, concat('{{"kind":"a","n":', toString(number), ',"payload":"', repeat('x', 2000), '"}}') FROM numbers_mt(3000000)</fill_query>
     <fill_query>INSERT INTO t_prewhere_map SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(16)), arrayMap(i -> repeat('v', 60), range(16))) FROM numbers_mt(10000000)</fill_query>
 
     <!-- No row passes the first condition, so the rest of the column should not be read -->
