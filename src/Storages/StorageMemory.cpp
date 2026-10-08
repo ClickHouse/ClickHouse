@@ -257,12 +257,9 @@ void StorageMemory::drop()
 
 static inline void updateBlockData(Block & old_block, const Block & new_block)
 {
-    for (const auto & it : new_block)
-    {
-        auto col_name = it.name;
-        auto & col_with_type_name = old_block.getByName(col_name);
-        col_with_type_name.column = it.column;
-    }
+    /// A stored block keeps the column types of its INSERT, so the type is replaced together with the data.
+    for (const auto & column : new_block)
+        old_block.getByName(column.name) = column;
 }
 
 void StorageMemory::checkMutationIsPossible(const MutationCommands & /*commands*/, const Settings & /*settings*/) const

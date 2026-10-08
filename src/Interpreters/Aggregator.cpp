@@ -13,6 +13,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 #include <bit>
@@ -887,6 +888,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
+    cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -1168,21 +1170,27 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
-    if (params.top_k && method.top_k_heap.shouldFreeze())
+    if (params.top_k && !method.top_k_heap.frozen)
     {
-        method.top_k_heap.freeze();
-        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
-    }
-
-    const bool top_k = params.top_k && !method.top_k_heap.frozen;
-
-    if (top_k)
         method.top_k_heap.initIfNeeded(
             key_columns, params.top_k->key_columns,
             params.keys.size(),
             params.top_k->k, params.top_k->directions,
             params.top_k->nulls_directions,
-            params.top_k->observation_rows);
+            params.top_k->observation_rows,
+            params.top_k->shared_boundary ? &top_k_shared_boundary : nullptr);
+
+        /// Before the freeze check, which must judge the heap against the latest shared boundary.
+        method.top_k_heap.exchangeSharedBoundary();
+
+        if (method.top_k_heap.shouldFreeze())
+        {
+            method.top_k_heap.freeze();
+            ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+        }
+    }
+
+    const bool top_k = params.top_k && !method.top_k_heap.frozen;
 
     auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
     {
@@ -1231,7 +1239,11 @@ void Aggregator::executeImpl(
     };
 
     if (top_k)
+    {
         dispatch.template operator()<true>();
+        /// Publish this block's tightenings now: this may be the thread's last block.
+        method.top_k_heap.exchangeSharedBoundary();
+    }
     else
         dispatch.template operator()<false>();
 }
@@ -1466,7 +1478,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
     [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
     if constexpr (top_k)
     {
-        if (method.top_k_heap.size() >= params.top_k->k)
+        if (method.top_k_heap.hasBoundary())
             skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
     }
 
@@ -1490,7 +1502,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
         if constexpr (top_k)
         {
             if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                            : (method.top_k_heap.size() >= params.top_k->k
+                            : (method.top_k_heap.hasBoundary()
                                && method.top_k_heap.shouldSkipTyped(typed_key_data, heap_key_cols, i)))
             {
                 ++top_k_rows_skipped;
@@ -1679,7 +1691,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             [[maybe_unused]] const UInt8 * skip_bitmap = nullptr;
             if constexpr (top_k)
             {
-                if (method.top_k_heap.size() >= params.top_k->k)
+                if (method.top_k_heap.hasBoundary())
                     skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, row_begin, row_end);
             }
 
@@ -1700,7 +1712,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                 if constexpr (top_k)
                 {
                     if (skip_bitmap ? static_cast<bool>(skip_bitmap[i])
-                                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
+                                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                     {
                         ++top_k_rows_skipped;
                         continue;
@@ -1796,7 +1808,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if constexpr (top_k)
         {
             destroyed_states.clear();
-            if (method.top_k_heap.size() >= params.top_k->k)
+            if (method.top_k_heap.hasBoundary())
                 skip_bitmap = method.top_k_heap.fillSkipBitmap(typed_key_data, key_start, key_end);
         }
 
@@ -1822,7 +1834,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             {
                 if (skip_bitmap
                     ? static_cast<bool>(skip_bitmap[i])
-                    : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
+                    : (method.top_k_heap.hasBoundary() && heap_should_skip(i)))
                 {
                     places[i] = nullptr;
                     ++top_k_rows_skipped;
@@ -2306,6 +2318,13 @@ bool Aggregator::executeOnBlock(Columns columns,
             all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
     }
 
+    /// The plan's `top_k` flag stays set after the heap has frozen, and `executeImpl` may freeze
+    /// the heap at the start of this block. `topKHeapInactive` is true only when `executeImpl`
+    /// certainly will not rank the block: it errs towards "active" when the shared-boundary
+    /// exchange in `executeImpl` may still restart the profitability window and keep the heap
+    /// running, so an active heap never sees key columns in a representation it cannot rank.
+    const bool top_k_active = params.top_k && !result.topKHeapInactive();
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
@@ -2322,6 +2341,18 @@ bool Aggregator::executeOnBlock(Columns columns,
 
         if (!result.isLowCardinality())
         {
+            /// Serialized methods read key columns through `IColumn` virtuals, so a non-nullable
+            /// `LowCardinality` key can be serialized from its dictionary without being copied into
+            /// a full column first. `LowCardinality(Nullable)` keys need the materialized
+            /// representation, which carries their null map, and so does an active top-K heap, whose
+            /// ranked columns are built from the key columns.
+            if (result.isSerialized() && !top_k_active)
+            {
+                const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
+                if (low_cardinality && !low_cardinality->getDictionary().nestedColumnIsNullable())
+                    continue;
+            }
+
             auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
             if (column_no_lc.get() != key_columns[i])
             {
@@ -2841,6 +2872,13 @@ private:
     bool sampling = true;
 };
 
+}
+
+std::optional<UInt64> Aggregator::getPeakMemoryUsage() const
+{
+    if (!memory_tracker)
+        return std::nullopt;
+    return std::max<Int64>(memory_tracker->getPeak(), 0);
 }
 
 template <typename Method>
@@ -4388,6 +4426,9 @@ Aggregator::AggregatedChunk Aggregator::prepareChunkAndFillWithoutKey(Aggregated
     }
 
     Chunk chunk = finalizeChunk(params, std::move(out_cols), final);
+    /// Without keys and aggregate functions there is no column to carry the row.
+    if (!chunk.hasColumns())
+        chunk.setColumns(Columns{}, rows);
 
     if (final)
         destroyWithoutKey(data_variants);
