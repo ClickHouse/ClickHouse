@@ -119,6 +119,13 @@ void StorageGCSConfiguration::fromAST(ASTs & args, ContextPtr context, bool with
             auth[setting] = it->second.safeGet<String>();
     }
 
+    /// The token endpoint the refresh token of the triple is exchanged at. `S3AuthSettings` has no slot for
+    /// it (the S3-compatibility path always uses Google's endpoint), so it is kept here. Dropping it would
+    /// silently send the refresh token to another host than the one the user named. A named collection
+    /// cannot carry it: `validateNamedCollection` rejects the key as unexpected.
+    if (auto it = key_value_args.find("google_adc_token_uri"); it != key_value_args.end())
+        google_adc_token_uri = it->second.safeGet<String>();
+
     if (auto it = key_value_args.find("use_environment_credentials"); it != key_value_args.end())
         auth[S3AuthSetting::use_environment_credentials] = it->second.safeGet<UInt64>() != 0;
 }
@@ -238,6 +245,7 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.google_adc_client_id = auth[S3AuthSetting::google_adc_client_id];
     gcs_settings.google_adc_client_secret = auth[S3AuthSetting::google_adc_client_secret];
     gcs_settings.google_adc_refresh_token = auth[S3AuthSetting::google_adc_refresh_token];
+    gcs_settings.google_adc_token_uri = google_adc_token_uri;
 
     /// `use_environment_credentials = 0` means "do not resolve an ambient, server-managed identity".
     /// On the S3-compatibility path a request with no explicit key pair and that flag off goes

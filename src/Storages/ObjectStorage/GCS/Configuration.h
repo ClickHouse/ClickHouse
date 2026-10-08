@@ -37,7 +37,8 @@ public:
 
 protected:
     /// The inherited parser silently ignores the key-value arguments that only matter to the native
-    /// backend (`google_adc_*` and `use_environment_credentials`), which named collections do carry.
+    /// backend (`google_adc_*`, including `google_adc_token_uri`, and `use_environment_credentials`),
+    /// most of which named collections do carry.
     /// Read them on top of it, so that the bare-URL form authenticates the same way.
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
@@ -47,6 +48,8 @@ private:
     /// of translating the `s3(...)` argument grammar.
     std::shared_ptr<const GCSObjectStorageSettings> disk_settings;
     String backing_disk_name;
+    /// The `google_adc_token_uri` key-value argument, which has no counterpart in `S3AuthSettings`.
+    String google_adc_token_uri;
 };
 
 }
