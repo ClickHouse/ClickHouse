@@ -11,10 +11,6 @@
 #    include <Compression/registerCompressionCodecs.h>
 #    include <Core/TypeId.h>
 #    include <DataTypes/IDataType.h>
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteHelpers.h>
-#    include <Interpreters/Context.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"
@@ -35,6 +31,7 @@ public:
     CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return 0; }
 
@@ -103,7 +100,11 @@ CompressionCodecSZ3::CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_
     , error_bound_mode(error_bound_mode_)
     , error_value(error_value_)
 {
-    setCodecDescription(
+}
+
+ASTPtr CompressionCodecSZ3::getCodecDescription() const
+{
+    return makeCodecDescription(
         "SZ3",
         {make_intrusive<ASTLiteral>(getSZ3AlgorithmString(algorithm)),
          make_intrusive<ASTLiteral>(getSZ3ErrorBoundModeString(error_bound_mode)),
@@ -117,7 +118,7 @@ uint8_t CompressionCodecSZ3::getMethodByte() const
 
 void CompressionCodecSZ3::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, true);
+    getCodecDescription()->updateTreeHash(hash, true);
     hash.update(float_width);
 }
 

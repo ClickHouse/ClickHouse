@@ -140,10 +140,10 @@ public:
         if (!physical_names_map_.empty())
         {
             for (auto & [name, value] : expression_schema)
-                name = getPhysicalName(name, physical_names_map_);
+                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
 
             for (auto & name : partition_columns)
-                name = getPhysicalName(name, physical_names_map_);
+                name = getPhysicalName(appendToLogicalPath({}, name), physical_names_map_);
         }
 
         thread = ThreadFromGlobalPool(
@@ -1051,6 +1051,13 @@ const DB::NamesAndTypesList & TableSnapshot::getReadSchema() const
     std::lock_guard lock(mutex);
     initOrUpdateSchemaIfChanged();
     return schema->read_schema;
+}
+
+Poco::JSON::Array::Ptr TableSnapshot::getRawDeltaSchemaFields() const
+{
+    std::lock_guard lock(mutex);
+    auto state = getKernelSnapshotState();
+    return getDeltaSchemaFieldsFromSnapshot(state->snapshot.get());
 }
 
 const DB::Names & TableSnapshot::getPartitionColumns() const

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
@@ -84,6 +85,17 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
         initPrimaryIndex();
 
     initSkipIndices();
+}
+
+UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
+{
+    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
+    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
+    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
+    if (column_desc)
+        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
+            return value->safeGet<UInt64>();
+    return settings.min_compress_block_size;
 }
 
 void MergeTreeDataPartWriterOnDisk::cancel() noexcept
@@ -694,7 +706,7 @@ void MergeTreeDataPartWriterOnDisk::initStreamsIfNeeded()
 
     for (const auto & column : columns_list)
     {
-        auto compression = getCodecDescOrDefault(column.name, default_codec);
+        auto compression = getCodecDescriptionOrDefault(column.name, default_codec);
         addStreams(column, compression);
     }
 

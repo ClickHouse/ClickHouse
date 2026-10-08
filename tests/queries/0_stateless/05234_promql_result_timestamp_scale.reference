@@ -1,0 +1,32 @@
+-- DateTime64(1) timestamps are returned as DateTime64(3), sub-second evaluation times and offsets keep the tenths of a second
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000',0.1),('1970-01-01 00:16:55.500',0.2),('1970-01-01 00:17:10.000',0.3)]
+tags	timestamp	value
+Array(Tuple(String, String))	DateTime64(3, \'UTC\')	Float64
+[('__name__','up'),('job','j')]	1970-01-01 00:16:55.500	0.2
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(3, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.500',0.1),('1970-01-01 00:16:56.000',0.2),('1970-01-01 00:17:10.500',0.3)]
+-- Offsets keep the scale of DateTime64(4)
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(4, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.0010',0.10000000149011612),('1970-01-01 00:16:55.0010',0.20000000298023224),('1970-01-01 00:17:10.0010',0.30000001192092896)]
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(4, \'UTC\')					
+value	Float64					
+-- DateTime64(9) keeps nanoseconds in the results and in the evaluation time
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(9, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.000000001',0.1),('1970-01-01 00:16:55.000000000',0.2),('1970-01-01 00:17:10.000000000',0.3)]
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(9, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:40.001000001',0.1),('1970-01-01 00:16:55.001000000',0.2),('1970-01-01 00:17:10.001000000',0.3)]
+tags	Array(Tuple(String, String))					
+timestamp	DateTime64(9, \'UTC\')					
+value	Float64					
+timestamp	DateTime64(9, \'UTC\')					
+value	Float64					
+tags	samples
+Array(Tuple(String, String))	Array(Tuple(DateTime64(9, \'UTC\'), Float64))
+[('__name__','up'),('job','j')]	[('1970-01-01 00:16:55.000000000',0.2),('1970-01-01 00:17:10.000000000',0.3)]

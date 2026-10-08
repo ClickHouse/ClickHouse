@@ -34,9 +34,10 @@ public:
 
     OutputPort & getOutputPort();
 
-    /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
-    void addInput();
-    /// Need to be called after all inputs are added. (only if have_all_inputs was not specified).
+    /// Adds an input before registration is closed with `setHaveAllInputs`. Its header may differ
+    /// from the output header when the algorithm changes the column layout.
+    void addInput(const Block & input_header);
+    /// Closes input registration when constructed with `have_all_inputs_` set to false.
     void setHaveAllInputs();
 
     Status prepare() override;

@@ -65,6 +65,19 @@ private:
     size_t last_positive_pos = 0;                  /// Row number of last_positive
     PODArray<RowSourcePart> current_row_sources;   /// Sources of rows with the current primary key
 
+    /// Rows of the current primary key whose sign is neither 1 nor -1, held back so `insertRows`
+    /// can emit them in read order against the selected rows. Copied by value: a `RowRef` would
+    /// pin a shared chunk from a fixed pool.
+    struct BufferedInvalidSignRow
+    {
+        size_t pos;                /// Row number within the key, to order it against the selected rows.
+        size_t source_block_size;  /// Rows of its source chunk, which is what `MergedData` averages.
+    };
+
+    MutableColumns invalid_sign_columns;
+    std::vector<BufferedInvalidSignRow> invalid_sign_rows;
+    size_t next_invalid_sign_index = 0;
+
     /// To prevent too many error messages from writing to the log.
     size_t count_incorrect_data = 0;
     size_t count_invalid_sign = 0;
@@ -73,6 +86,9 @@ private:
 
     void reportIncorrectData();
     void insertRow(RowRef & row);
+
+    void bufferInvalidSignRow(const RowRef & row, size_t pos);
+    void insertBufferedInvalidSignRowsBefore(size_t pos);
 
     /// Insert ready rows into merged_data. We may want to insert 0, 1 or 2 rows.
     /// It may happen that 2 rows is going to be inserted and, but merged data has free space only for 1 row.

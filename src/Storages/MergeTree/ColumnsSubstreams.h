@@ -65,6 +65,9 @@ public:
     size_t getTotalSubstreams() const { return total_substreams; }
     bool empty() const { return !total_substreams; }
 
+    /// Names of the recorded columns, in serialization order.
+    std::vector<String> getColumnNames() const;
+
     /// Check that we have substreams for all columns and they have the same order as in provided list.
     void validateColumns(const std::vector<String> & columns) const;
 
