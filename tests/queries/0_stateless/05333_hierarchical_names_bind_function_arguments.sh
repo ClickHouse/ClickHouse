@@ -33,10 +33,11 @@ $CLICKHOUSE_CLIENT --query_id "$query_id" --prefer_localhost_replica 0 -q "
         dictGet(ns.d, 'v', toUInt64(dummy + 1)), dictGet('ns.d', 'v', toUInt64(dummy + 1))
     FROM remote('127.0.0.2', system.one)"
 run "SYSTEM FLUSH LOGS query_log"
-# The backquoted aliases repeat the names as written, so they are removed first.
+# The backquoted aliases repeat the names as written, so they are removed first. The queries on the shards may be
+# logged with `current_database` = `default` rather than the test database.
 run "SELECT arraySort(arrayDistinct(extractAll(replaceRegexpAll(query, '\\\`[^\\\`]*\\\`', ''), '(?:joinGet|dictGet)\\\\(\\'[^\\']+\\''))) AS names
     FROM system.query_log
-    WHERE event_date >= yesterday() AND initial_query_id = '$query_id' AND NOT is_initial_query AND type = 'QueryFinish' AND notEmpty(names)"
+    WHERE event_date >= yesterday() AND current_database IN ['default', currentDatabase()] AND initial_query_id = '$query_id' AND NOT is_initial_query AND type = 'QueryFinish' AND notEmpty(names)"
 
 echo '--- SHOW TABLES of a prefix of a remote database'
 run "CREATE DATABASE \`${db}_pfx.r\` ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', '${db}')"
