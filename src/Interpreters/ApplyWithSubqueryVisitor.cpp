@@ -178,9 +178,10 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
             if (subquery_it != data.subqueries.end())
             {
                 auto old_alias = table.database_and_table_name->tryGetAlias();
+                auto old_table_name = table.database_and_table_name;
                 table.children.clear();
                 table.database_and_table_name.reset();
-                table.subquery = data.budget->clone(subquery_it->second);
+                table.subquery = data.budget->replace(old_table_name, subquery_it->second);
                 table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
                 if (!old_alias.empty())
                     table.subquery->setAlias(old_alias);
@@ -207,7 +208,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
-                    func.arguments->children[1] = data.budget->clone(subquery_it->second);
+                    func.arguments->children[1] = data.budget->replace(func.arguments->children[1], subquery_it->second);
                     func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
@@ -218,7 +219,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                     if (literal_it != data.literals.end())
                     {
                         auto old_alias = func.arguments->children[1]->tryGetAlias();
-                        func.arguments->children[1] = data.budget->clone(literal_it->second);
+                        func.arguments->children[1] = data.budget->replace(func.arguments->children[1], literal_it->second);
                         if (!old_alias.empty())
                             func.arguments->children[1]->setAlias(old_alias);
                     }
@@ -238,7 +239,7 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
             if (literal_it != data.literals.end())
             {
                 auto old_alias = dict_name_arg->tryGetAlias();
-                dict_name_arg = data.budget->clone(literal_it->second);
+                dict_name_arg = data.budget->replace(dict_name_arg, literal_it->second);
                 /// Always reset the alias name, otherwise the aliases will not match after AddDefaultDatabaseVisitor
                 dict_name_arg->setAlias(old_alias);
             }
