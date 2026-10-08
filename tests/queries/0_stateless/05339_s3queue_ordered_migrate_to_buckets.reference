@@ -5,10 +5,11 @@ unset / buckets setting	2
 unset / processed after	0
 unset / bucket 0	1	unset.csv
 unset / bucket 1	1	unset.csv
-one / buckets setting	2
-one / processed after	1	one.csv
-one / buckets after	0
-conc / bucket 1 before	1
-conc / buckets setting	2
-conc / bucket 0	1	bucket0.csv
-conc / bucket 1	1	bucket1.csv
+fresh / processed before	0
+fresh / buckets setting	2
+fresh / processed after	0
+fresh / buckets after	0
+block / children before	1
+block / buckets setting	0
+block / pointer after	1	block.csv
+block / bucket 0 after	0
