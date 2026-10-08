@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Adversary/Adversary.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Adversary.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 
 #include <algorithm>

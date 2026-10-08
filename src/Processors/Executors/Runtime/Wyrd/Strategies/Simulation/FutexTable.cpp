@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Simulation/FutexTable.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/FutexTable.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 
 namespace DB::Runtime::Wyrd

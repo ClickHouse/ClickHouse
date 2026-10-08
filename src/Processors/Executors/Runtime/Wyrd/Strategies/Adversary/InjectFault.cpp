@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
-#include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/InjectFault.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
 
 namespace DB::Runtime::Wyrd
 {

@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulatedThread.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulatedThread.h>
 #include <Processors/Executors/Runtime/Wyrd/Random.h>
 #include <Common/Exception.h>
 

@@ -1,7 +1,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Testing/Run.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
+#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
 #    include <Common/randomSeed.h>
 
 #    include <fmt/format.h>
@@ -20,7 +20,7 @@
 #    include <string_view>
 #    include <thread>
 #elif defined(WYRD_ADVERSARY)
-#    include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
+#    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
 #    include <base/scope_guard.h>
 
 #    include <fmt/format.h>

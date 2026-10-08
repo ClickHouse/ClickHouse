@@ -2,15 +2,15 @@
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
-#    include <Processors/Executors/Runtime/Wyrd/Simulation/InjectFault.h>
-#    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
+#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/InjectFault.h>
+#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#    include <fmt/format.h>
 #elif defined(WYRD_ADVERSARY)
 #    include <Processors/Executors/Runtime/Wyrd/Facade/Futex.h>
-#    include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
-#    include <Processors/Executors/Runtime/Wyrd/Adversary/Syscall.h>
+#    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/InjectFault.h>
+#    include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Syscall.h>
+#    include <fmt/format.h>
 #endif
-
-#include <fmt/format.h>
 
 namespace DB::Runtime::Wyrd
 {

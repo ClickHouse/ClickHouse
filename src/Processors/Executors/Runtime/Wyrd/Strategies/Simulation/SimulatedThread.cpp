@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulatedThread.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulatedThread.h>
 
 #include <boost/context/protected_fixedsize_stack.hpp>
 

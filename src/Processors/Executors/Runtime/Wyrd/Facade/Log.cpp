@@ -1,7 +1,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Log.h>
 
 #if defined(WYRD_SIMULATION)
-#    include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
+#    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
 #else
 #    include <base/getThreadId.h>
 

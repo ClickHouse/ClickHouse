@@ -1,5 +1,5 @@
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Syscall.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Syscall.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
 
 namespace DB::Runtime::Wyrd
 {

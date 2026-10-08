@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Simulation/FutexTable.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Scheduler.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulationParams.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/FutexTable.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Scheduler.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulationParams.h>
 #include <Common/SipHash.h>
 
 #include <exception>

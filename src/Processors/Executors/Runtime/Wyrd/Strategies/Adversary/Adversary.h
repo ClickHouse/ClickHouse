@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Adversary/AdversaryParams.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/AdversaryParams.h>
 #include <base/defines.h>
 
 #include <atomic>

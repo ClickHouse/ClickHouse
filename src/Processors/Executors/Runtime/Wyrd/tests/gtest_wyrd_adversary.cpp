@@ -1,7 +1,7 @@
 #if defined(WYRD_ADVERSARY)
 
-#include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
-#include <Processors/Executors/Runtime/Wyrd/Adversary/InjectFault.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/InjectFault.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>

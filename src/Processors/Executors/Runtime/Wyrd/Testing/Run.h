@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/Wyrd/Adversary/AdversaryParams.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/SimulationParams.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/AdversaryParams.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/SimulationParams.h>
 
 #include <functional>
 #include <optional>

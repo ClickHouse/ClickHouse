@@ -596,8 +596,8 @@ add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/V2/Pipel
 add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/V2/Pipeline/Updates)
 add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/Wyrd)
 add_headers_and_sources(clickhouse_runtime Processors/Executors/Runtime/Wyrd/Facade)
-add_headers_and_sources(clickhouse_runtime_adversary Processors/Executors/Runtime/Wyrd/Adversary)
-add_headers_and_sources(clickhouse_runtime_simulation Processors/Executors/Runtime/Wyrd/Simulation)
+add_headers_and_sources(clickhouse_runtime_adversary Processors/Executors/Runtime/Wyrd/Strategies/Adversary)
+add_headers_and_sources(clickhouse_runtime_simulation Processors/Executors/Runtime/Wyrd/Strategies/Simulation)
 
 add_library (clickhouse_runtime STATIC ${clickhouse_runtime_headers} ${clickhouse_runtime_sources})
 add_library (clickhouse_runtime_adversary STATIC ${clickhouse_runtime_headers} ${clickhouse_runtime_sources} ${clickhouse_runtime_adversary_sources})

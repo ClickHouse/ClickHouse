@@ -5,7 +5,7 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Preemption.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Thread.h>
-#include <Processors/Executors/Runtime/Wyrd/Simulation/Simulation.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/Simulation.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/LockFreeScope.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Test.h>
 #include <Processors/Executors/Runtime/Wyrd/Testing/Race.h>

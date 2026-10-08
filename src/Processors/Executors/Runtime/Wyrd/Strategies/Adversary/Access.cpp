@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/Wyrd/Adversary/Access.h>
+#include <Processors/Executors/Runtime/Wyrd/Strategies/Adversary/Access.h>
 
 #include <memory>
 
