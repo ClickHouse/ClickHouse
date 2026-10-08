@@ -196,6 +196,9 @@ IProcessor::Status MergeTreeInOrderSliceRouter::prepare()
     if (read_ahead && budget > marks_in_flight)
         demand.read_ahead_marks = budget - marks_in_flight;
     demand.spans_lanes = spans_lanes;
+    demand.lane_in_flight.resize(lanes.size());
+    for (size_t lane = 0; lane < lanes.size(); ++lane)
+        demand.lane_in_flight[lane] = !lanes[lane].slices.empty();
 
     auto scheduled = pool->schedule(demand, parked);
     for (const auto & cut : scheduled.cut)

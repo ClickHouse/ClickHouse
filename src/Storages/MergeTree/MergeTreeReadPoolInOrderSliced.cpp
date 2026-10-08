@@ -195,10 +195,9 @@ size_t MergeTreeReadPoolInOrderSliced::nextSliceMarks(size_t lane) const
     return std::min({max_slice_marks, ramp, lane_state.unread.getNumberOfMarks()});
 }
 
-bool MergeTreeReadPoolInOrderSliced::canShare(size_t lane) const
+bool MergeTreeReadPoolInOrderSliced::canShare(size_t lane, const Demand & demand) const
 {
-    const auto & lane_state = lanes[lane];
-    if (lane_state.slices_reading == 0 || !is_part_on_remote_disk[lane] || read_marks == 0)
+    if (!demand.lane_in_flight[lane] || !is_part_on_remote_disk[lane] || read_marks == 0)
         return true;
     /// On remote storage every slice read by another source is a request. A slice that reads less than
     /// a compressed block is not worth one: the source reading the lane gets it for nothing from the
@@ -240,10 +239,10 @@ std::optional<size_t> MergeTreeReadPoolInOrderSliced::nextLaneBefore(size_t lane
     return head.lane;
 }
 
-bool MergeTreeReadPoolInOrderSliced::startedLaneAfter(LaneQueue::const_iterator position) const
+bool MergeTreeReadPoolInOrderSliced::inFlightAfter(LaneQueue::const_iterator position, const Demand & demand) const
 {
     for (auto it = std::next(position); it != queue.end(); ++it)
-        if (lanes[it->lane].slices_cut > 0)
+        if (demand.lane_in_flight[it->lane])
             return true;
     return false;
 }
@@ -263,7 +262,6 @@ MergeTreeReadPoolInOrderSliced::Cut MergeTreeReadPoolInOrderSliced::cutSlice(siz
         .marks = ranges.getNumberOfMarks(),
         .boundary_mark = reverse ? ranges.back().end : ranges.front().begin};
     ++lane_state.slices_cut;
-    ++lane_state.slices_reading;
     fifo.push_back(QueuedSlice{.slice = cut.slice, .ranges = std::move(ranges)});
     return cut;
 }
@@ -275,7 +273,6 @@ void MergeTreeReadPoolInOrderSliced::finishLaneUnlocked(size_t lane)
         return;
 
     lane_state.finished = true;
-    lane_state.slices_reading = 0;
     std::erase_if(fifo, [lane](const QueuedSlice & queued) { return queued.slice.lane == lane; });
     dequeueLane(lane);
     lane_state.unread.clear();
@@ -300,8 +297,6 @@ MergeTreeReadTaskPtr MergeTreeReadPoolInOrderSliced::getTask(size_t task_idx, Me
             source.reading.reset();
             read_bytes += previous_task->getNumReadBytes();
             read_marks += source.reading_marks;
-            if (!lanes[*source.lane].finished)
-                --lanes[*source.lane].slices_reading;
         }
 
         if (fifo.empty())
@@ -445,7 +440,7 @@ MergeTreeReadPoolInOrderSliced::schedule(const Demand & demand, const std::vecto
         /// reading them now costs no more rows than waiting for the merge to ask for each of them in turn.
         while (auto before = nextLaneBefore(lane))
         {
-            if (!can_cut() || !canShare(*before))
+            if (!can_cut() || !canShare(*before, demand))
                 break;
             cut(*before);
         }
@@ -453,18 +448,19 @@ MergeTreeReadPoolInOrderSliced::schedule(const Demand & demand, const std::vecto
 
     /// Read ahead in the order the merge is going to need the data, never past the allowance. A lane that
     /// is being read and is too short to share is left to its reader; the next lane in key order is read
-    /// ahead instead. Lanes the merge has not started and that lie after every lane it has are left alone
-    /// until the query spans lanes: one that ends within the lanes it is on, as a LIMIT met in the first
-    /// part does, reads nothing else.
+    /// ahead instead. A lane with nothing in flight that lies after everything in flight is left alone
+    /// until the query spans lanes: the lane the merge is on gets its next slice when the merge asks for
+    /// it, so a LIMIT met by that slice reads nothing else, and lanes the merge has not reached wait.
+    /// Lanes whose key lies before data in flight are read: the merge needs them before that data.
     for (auto it = queue.begin(); it != queue.end() && can_cut();)
     {
         const size_t lane = it->lane;
-        if (!canShare(lane))
+        if (!canShare(lane, demand))
         {
             ++it;
             continue;
         }
-        if (!demand.spans_lanes && lanes[lane].slices_cut == 0 && !startedLaneAfter(it))
+        if (!demand.spans_lanes && !demand.lane_in_flight[lane] && !inFlightAfter(it, demand))
             break;
         if (marks_cut + nextSliceMarks(lane) > demand.read_ahead_marks)
             break;

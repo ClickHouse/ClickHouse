@@ -1,5 +1,6 @@
 -- Tags: no-random-merge-tree-settings
 
+SET read_in_order_use_sliced_pool = 0; -- this test pins the reading thread per part; the setting is randomized by the test runner
 SET use_uncompressed_cache=0;
 
 -- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the

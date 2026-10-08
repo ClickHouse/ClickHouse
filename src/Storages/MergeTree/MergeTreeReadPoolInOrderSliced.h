@@ -81,6 +81,8 @@ public:
     {
         /// Lanes the merge waits for with no slice cut for them. Each gets a slice whatever the read-ahead.
         std::vector<size_t> blocked_lanes;
+        /// Per lane, whether slices cut for it are still in flight: cut and not yet consumed by the merge.
+        std::vector<bool> lane_in_flight;
         /// Marks to cut beyond that, in the order the merge is going to need them.
         size_t read_ahead_marks = 0;
         /// The merge went through a lane to its end, so the query is not answered within the lanes it
@@ -129,8 +131,6 @@ private:
         MarkRanges unread;
         /// Slices cut so far: the number of the next one, and the ramp.
         size_t slices_cut = 0;
-        /// Slices cut and not yet handed back read by a source.
-        size_t slices_reading = 0;
         /// The ranges refiner was applied to the whole lane.
         bool refined = false;
         /// Readers of sources that moved on to other lanes.
@@ -165,20 +165,20 @@ private:
         /// The lane of the last task the source got, i.e. the lane its current readers belong to.
         std::optional<size_t> lane;
         /// The slice the source is reading, until it hands the task back with its next getTask, and its
-        /// marks as read.
+        /// marks as read: what a slice costs, for canShare.
         std::optional<MergeTreeSliceTag> reading;
         size_t reading_marks = 0;
     };
 
     size_t nextSliceMarks(size_t lane) const TSA_REQUIRES(mutex);
-    /// Whether the lane may get a slice while a source is reading one of it: the slice must be worth a
-    /// request of its own.
-    bool canShare(size_t lane) const TSA_REQUIRES(mutex);
+    /// Whether the lane may get a slice while it has slices in flight: the slice must be worth a request
+    /// of its own.
+    bool canShare(size_t lane, const Demand & demand) const TSA_REQUIRES(mutex);
     void enqueueLane(size_t lane) TSA_REQUIRES(mutex);
     void dequeueLane(size_t lane) TSA_REQUIRES(mutex);
     std::optional<size_t> nextLaneBefore(size_t lane) const TSA_REQUIRES(mutex);
-    /// A lane that has been cut lies after the position in key order.
-    bool startedLaneAfter(LaneQueue::const_iterator position) const TSA_REQUIRES(mutex);
+    /// A lane with slices in flight lies after the position in key order.
+    bool inFlightAfter(LaneQueue::const_iterator position, const Demand & demand) const TSA_REQUIRES(mutex);
     Cut cutSlice(size_t lane) TSA_REQUIRES(mutex);
     void finishLaneUnlocked(size_t lane) TSA_REQUIRES(mutex);
 

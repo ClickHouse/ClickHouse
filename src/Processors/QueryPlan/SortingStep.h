@@ -136,7 +136,7 @@ public:
     void enableBuffering() { use_buffering = true; }
     /// The reading side reads ahead itself (the sliced pool): the merge's read-ahead window stays off unless
     /// `read_in_order_virtual_row_prefetch_window` asks for one explicitly.
-    void readAheadOnReadingSide()
+    void disableDefaultReadAheadWindow()
     {
         sort_settings.virtual_row_prefetch_window = std::max<Int64>(sort_settings.virtual_row_prefetch_window, 0);
     }

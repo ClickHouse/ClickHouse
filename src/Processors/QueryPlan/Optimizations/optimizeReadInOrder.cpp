@@ -1808,7 +1808,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
             if (reader->usesSlicedPool())
             {
                 use_buffering = false;
-                sorting->readAheadOnReadingSide();
+                sorting->disableDefaultReadAheadWindow();
             }
         }
 
@@ -1826,7 +1826,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
         if (virtual_row_reader && virtual_row_reader->usesSlicedPool())
         {
             use_buffering = false;
-            sorting->readAheadOnReadingSide();
+            sorting->disableDefaultReadAheadWindow();
         }
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
     }
