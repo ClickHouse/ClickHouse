@@ -91,10 +91,12 @@ void assertResponseIsOk(
 {
     auto status = response.getStatus();
 
-    if (!(status == Poco::Net::HTTPResponse::HTTP_OK || status == Poco::Net::HTTPResponse::HTTP_CREATED
-          || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
-          || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
-          || (isRedirect(status) && allow_redirects)))
+    if (!(status == Poco::Net::HTTPResponse::HTTP_OK
+        || status == Poco::Net::HTTPResponse::HTTP_CREATED
+        || status == Poco::Net::HTTPResponse::HTTP_ACCEPTED
+        || status == Poco::Net::HTTPResponse::HTTP_NO_CONTENT /// Success without a body, e.g. Iceberg REST DropTable.
+        || status == Poco::Net::HTTPResponse::HTTP_PARTIAL_CONTENT /// Reading with Range header was successful.
+        || (isRedirect(status) && allow_redirects)))
     {
         int code = status == Poco::Net::HTTPResponse::HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
                                                                              : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
