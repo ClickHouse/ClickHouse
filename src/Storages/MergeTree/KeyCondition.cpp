@@ -4920,11 +4920,14 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
                 "The ESCAPE argument of function {} must be a single ASCII character, got '{}'",
                 func_name, escape_str);
 
-        Field rewritten_like_pattern
-            = Field(likePatternWithCustomEscapeToLikePattern(pattern_field.safeGet<String>(), escape_str[0]));
+        const ColumnWithTypeAndName rewritten_constant{
+            pattern_type->createColumnConst(
+                1, Field(likePatternWithCustomEscapeToLikePattern(pattern_field.safeGet<String>(), escape_str[0]))),
+            pattern_type,
+            {}};
 
         extractBinaryComparisonAtoms(
-            func, info, func_name, allow_relaxed_pruning, group, &rewritten_like_pattern, pattern_type);
+            func, info, func_name, allow_relaxed_pruning, group, &rewritten_constant);
     }
 }
 
@@ -5039,19 +5042,17 @@ void KeyCondition::extractBinaryComparisonAtoms(
     const std::string & func_name,
     bool allow_relaxed_pruning,
     AtomGroup & group,
-    const Field * rewritten_const_value,
-    const DataTypePtr & rewritten_const_type)
+    const ColumnWithTypeAndName * rewritten_constant)
 {
     ColumnWithTypeAndName constant;
 
     /// Looking for func(key, const) or func(const, key).
     size_t const_arg_pos = 0;
-    if (rewritten_const_value)
+    if (rewritten_constant)
     {
         /// `like(col, pattern, escape)` rewritten to `like(col, rewritten_pattern)` by the caller:
         /// the key is at position 0, the rewritten pattern is the constant.
-        constant.type = rewritten_const_type;
-        constant.column = constant.type->createColumnConst(1, *rewritten_const_value);
+        constant = *rewritten_constant;
         const_arg_pos = 1;
     }
     else if (func.getArgumentAt(1).isConstant())
@@ -5077,7 +5078,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
         /// to the NULL granule exactly, instead of declining and scanning every granule.
         if (func_name == "isNotDistinctFrom")
         {
-            extractIsNullAtomForNotDistinctFrom(func.getArgumentAt(1 - const_arg_pos), info, const_value, group);
+            extractIsNullAtomForNotDistinctFrom(func.getArgumentAt(1 - const_arg_pos), info, group);
             return;
         }
 
@@ -5134,7 +5135,7 @@ void KeyCondition::extractBinaryComparisonAtoms(
 /// `isNull(k)` and prune a granule the predicate does not cover (wrong results). Such a key
 /// gets no atom at all, which falls back to a scan and is always correct.
 void KeyCondition::extractIsNullAtomForNotDistinctFrom(
-    const RPNBuilderTreeNode & key_arg, const BuildInfo & info, const Field & const_value, AtomGroup & group)
+    const RPNBuilderTreeNode & key_arg, const BuildInfo & info, AtomGroup & group)
 {
     DataTypePtr key_expr_type;
     size_t key_column_num = size_t(-1);
@@ -5157,8 +5158,8 @@ void KeyCondition::extractIsNullAtomForNotDistinctFrom(
     element.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
 
     const auto atom_it = atom_map.find("isNull");
-    if (!atom_it->second(element, const_value))
-        return;
+    [[maybe_unused]] const bool built = atom_it->second(element, {});
+    chassert(built);
 
     group.atoms.emplace_back(std::move(element));
 }
