@@ -81,17 +81,25 @@ public:
     /// match, `replaced_bytes` is the total size of their data.
     void updateStats(size_t checked, size_t replaced, size_t replaced_bytes) const;
 
+    /// Same as `updateStats`, for values that were decided by a lookup in a precomputed mask
+    /// instead of a check of every value (e.g. rows of a dictionary-encoded `Parquet` page, where
+    /// every distinct dictionary entry is checked once). Such values are cheap to filter even when
+    /// they are short, so they only participate in the selectivity rule, not in the minimum
+    /// average size of skipped values.
+    void updateStatsForMaskedValues(size_t checked, size_t replaced, size_t replaced_bytes) const;
+
     const std::vector<Condition> & getConditions() const { return conditions; }
 
 private:
     /// After this many values are checked, the filter is disabled if less than half of them were replaced,
     /// or if the replaced values are too short on average for skipping their data to pay off.
     static constexpr size_t MIN_VALUES_TO_EVALUATE_SELECTIVITY = 8192;
-    /// The minimum average number of skipped bytes per checked value to keep the filter enabled.
+    /// The minimum average number of skipped bytes per individually checked value to keep the filter enabled.
     /// Checking a value costs more than copying a few bytes, so replacing short values only slows the reading down.
     static constexpr size_t MIN_AVG_BYTES_SKIPPED_PER_VALUE = 16;
 
     bool matchImpl(const char * data, size_t size, size_t skip_condition) const;
+    void updateStatsImpl(size_t checked, size_t replaced, size_t replaced_bytes, bool checked_individually) const;
 
     const std::vector<Condition> conditions;
     /// Searchers for Substring conditions (empty entries for other types).
@@ -103,7 +111,9 @@ private:
 
     mutable std::atomic<size_t> values_checked{0};
     mutable std::atomic<size_t> values_replaced{0};
-    mutable std::atomic<size_t> bytes_skipped{0};
+    /// Values accounted by `updateStats` only (not by `updateStatsForMaskedValues`), and the size of the replaced ones.
+    mutable std::atomic<size_t> values_checked_individually{0};
+    mutable std::atomic<size_t> bytes_skipped_individually{0};
     mutable std::atomic<bool> disabled{false};
 };
 

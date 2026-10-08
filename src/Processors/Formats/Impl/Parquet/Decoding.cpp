@@ -1669,7 +1669,7 @@ void Dictionary::appendIndexes(const UInt32 * indexes, size_t n, IColumn & out, 
                 }
                 /// Report the observed selectivity to the shared filter, so that a non-selective
                 /// filter disables itself for all readers, same as in the non-dictionary paths.
-                string_value_filter->updateStats(n, values_replaced, bytes_skipped);
+                string_value_filter->updateStatsForMaskedValues(n, values_replaced, bytes_skipped);
                 break;
             }
             for (size_t i = 0; i < n; ++i)
@@ -1733,10 +1733,10 @@ void Dictionary::appendRepeated(size_t idx, size_t n, IColumn & out)
                 if (!string_value_filter_mask[idx])
                 {
                     c.insertManyDefaults(n);
-                    string_value_filter->updateStats(n, n, len * n);
+                    string_value_filter->updateStatsForMaskedValues(n, n, len * n);
                     break;
                 }
-                string_value_filter->updateStats(n, 0, 0);
+                string_value_filter->updateStatsForMaskedValues(n, 0, 0);
             }
             c.reserve(c.size() + n);
             for (size_t i = 0; i < n; ++i)

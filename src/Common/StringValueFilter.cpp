@@ -146,6 +146,16 @@ bool StringValueFilter::matchOtherConditions(const char * data, size_t size) con
 
 void StringValueFilter::updateStats(size_t checked, size_t replaced, size_t replaced_bytes) const
 {
+    updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ true);
+}
+
+void StringValueFilter::updateStatsForMaskedValues(size_t checked, size_t replaced, size_t replaced_bytes) const
+{
+    updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ false);
+}
+
+void StringValueFilter::updateStatsImpl(size_t checked, size_t replaced, size_t replaced_bytes, bool checked_individually) const
+{
     if (!checked)
         return;
 
@@ -155,15 +165,26 @@ void StringValueFilter::updateStats(size_t checked, size_t replaced, size_t repl
 
     size_t total_checked = values_checked.fetch_add(checked, std::memory_order_relaxed) + checked;
     size_t total_replaced = values_replaced.fetch_add(replaced, std::memory_order_relaxed) + replaced;
-    size_t total_bytes_skipped = bytes_skipped.fetch_add(replaced_bytes, std::memory_order_relaxed) + replaced_bytes;
 
     /// If most of the values match the filter, checking them does not pay off:
     /// the query will process almost all values anyway, and we would only add
     /// the cost of an extra search per value.
+    if (total_checked >= MIN_VALUES_TO_EVALUATE_SELECTIVITY && total_replaced * 2 < total_checked)
+    {
+        disabled.store(true, std::memory_order_relaxed);
+        return;
+    }
+
+    if (!checked_individually)
+        return;
+
     /// The same is true when the replaced values are short (e.g. `l_returnflag = 'R'`):
     /// skipping the copy of a few bytes does not compensate for the check of every value.
-    if (total_checked >= MIN_VALUES_TO_EVALUATE_SELECTIVITY
-        && (total_replaced * 2 < total_checked || total_bytes_skipped < total_checked * MIN_AVG_BYTES_SKIPPED_PER_VALUE))
+    /// This does not apply to the values decided by a mask lookup, see `updateStatsForMaskedValues`.
+    size_t total_checked_individually = values_checked_individually.fetch_add(checked, std::memory_order_relaxed) + checked;
+    size_t total_bytes_skipped = bytes_skipped_individually.fetch_add(replaced_bytes, std::memory_order_relaxed) + replaced_bytes;
+    if (total_checked_individually >= MIN_VALUES_TO_EVALUATE_SELECTIVITY
+        && total_bytes_skipped < total_checked_individually * MIN_AVG_BYTES_SKIPPED_PER_VALUE)
         disabled.store(true, std::memory_order_relaxed);
 }
 
