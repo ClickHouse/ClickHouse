@@ -148,11 +148,34 @@ GENERATOR_INPUT_PATHS = {
     "contrib/clickstack-cmake": ("ClickStackResources.generated.h",),
     "contrib/sql-console": ("SQLConsoleResources.generated.h",),
     "contrib/sql-console-cmake": ("SQLConsoleResources.generated.h",),
+    # The Prometheus protocol bindings that `src/Storages/TimeSeries` includes as
+    # `prompb/remote.pb.h`. `types.proto` imports `gogoproto/gogo.proto`, so the
+    # generated `types.pb.h` includes `gogo.pb.h`.
+    "contrib/prometheus-protobufs": ("remote.pb.h", "types.pb.h"),
+    "contrib/prometheus-protobufs-gogo": ("gogo.pb.h", "remote.pb.h", "types.pb.h"),
 }
-# Where such inputs can live: the analyzed roots, and `contrib`, whose generated
-# headers the analyzed code includes as well - `contrib/prometheus-protobufs`
-# becomes the `prompb/remote.pb.h` that `src/Storages/TimeSeries` includes.
-GENERATOR_INPUT_ROOTS = ANALYZED_ROOTS + ("contrib",)
+# Generator inputs in `contrib` whose generated headers the analyzed code does not
+# include by name, but only through the library's own public headers, mapped to
+# the names of those public headers. `llvm-config.h` and the other templates of
+# `contrib/llvm-project-cmake/config` are reached through `<llvm/...>` headers,
+# the `liburing-cmake` templates through `liburing.h`. A path matches an entry the
+# way it matches one of `GENERATOR_INPUT_PATHS`. The public headers only select
+# the consumers: they are not regenerated, so diagnostics in them are not
+# reported.
+GENERATOR_INPUT_INCLUDED_THROUGH = {
+    "contrib/llvm-project": ("IRBuilder.h", "PassBuilder.h", "TargetMachine.h"),
+    "contrib/llvm-project-cmake": ("IRBuilder.h", "PassBuilder.h", "TargetMachine.h"),
+    "contrib/liburing": ("liburing.h",),
+    "contrib/liburing-cmake": ("liburing.h",),
+}
+# The suffix rules of `GENERATOR_INPUTS` apply only under the analyzed roots,
+# where the name of a generated header identifies it: a basename such as
+# `config.h` is generated from templates in several `contrib` directories, and
+# matching those against the consumers and diagnostics of `src/Common/config.h`
+# would check a change against an unrelated header. A generator input in
+# `contrib` is covered only when it is listed in `GENERATOR_INPUT_PATHS` or
+# `GENERATOR_INPUT_INCLUDED_THROUGH`; any other change there is left to the full
+# check, like every other change to `contrib`.
 
 CANARY_TRANSLATION_UNITS = (
     "base/base/JSON.cpp",
@@ -299,22 +322,28 @@ def is_tidy_config_path(path):
     return path in TIDY_CONFIG_PATHS
 
 
-def generator_input_path_entry(path):
-    """The longest entry of `GENERATOR_INPUT_PATHS` that `path` is or lies under, or `None`."""
+def generator_input_path_entry(path, table=GENERATOR_INPUT_PATHS):
+    """The longest entry of `table` that `path` is or lies under, or `None`."""
     matching = [
-        entry
-        for entry in GENERATOR_INPUT_PATHS
-        if path == entry or path.startswith(f"{entry}/")
+        entry for entry in table if path == entry or path.startswith(f"{entry}/")
     ]
     return max(matching, key=len, default=None)
 
 
+def is_suffix_generator_input(path):
+    """True for an input under the analyzed roots matched by `GENERATOR_INPUTS`."""
+    root = path.split("/", 1)[0]
+    return root in ANALYZED_ROOTS and path.endswith(tuple(GENERATOR_INPUTS))
+
+
 def is_generator_input(path):
     """True for an input of a code generator that produces C++ clang-tidy parses."""
-    if generator_input_path_entry(path) is not None:
-        return True
-    root = path.split("/", 1)[0]
-    return root in GENERATOR_INPUT_ROOTS and path.endswith(tuple(GENERATOR_INPUTS))
+    return (
+        generator_input_path_entry(path) is not None
+        or generator_input_path_entry(path, GENERATOR_INPUT_INCLUDED_THROUGH)
+        is not None
+        or is_suffix_generator_input(path)
+    )
 
 
 def normalize_changed_path(path):
@@ -353,6 +382,8 @@ def generated_headers(path):
     entry = generator_input_path_entry(path)
     if entry is not None:
         headers.update(GENERATOR_INPUT_PATHS[entry])
+    if not is_suffix_generator_input(path):
+        return sorted(headers)
     for input_suffix, output_suffixes in GENERATOR_INPUTS.items():
         if path.endswith(input_suffix):
             stem = os.path.basename(path)[: -len(input_suffix)]
@@ -379,12 +410,17 @@ def generated_header_consumers(inputs, repo_dir, limit, is_coverable):
     that files no translation unit in the build covers cannot crowd out ones it
     does. The include is matched by file name: the generated header is found
     through the build directory's include path, so it is included by its name
-    alone.
+    alone. An input reached only through a library's public headers is matched by
+    their names instead (see `GENERATOR_INPUT_INCLUDED_THROUGH`).
     """
     index = include_index(repo_dir)
     consumers = set()
     for path in inputs:
-        for header in generated_headers(path):
+        included = list(generated_headers(path))
+        entry = generator_input_path_entry(path, GENERATOR_INPUT_INCLUDED_THROUGH)
+        if entry is not None:
+            included += GENERATOR_INPUT_INCLUDED_THROUGH[entry]
+        for header in included:
             includers = {includer for includer, _ in index.get(header, ())}
             found = sorted(
                 includers,
@@ -948,6 +984,14 @@ def self_test(repo_dir, build_dir, compile_commands):
         consumers,
         f"`generated_header_consumers` found no file including the headers "
         f"generated from {generator_input}",
+    )
+    # A `contrib` template of the same name generates an unrelated header: it
+    # must not be attributed to the one generated from `generator_input`.
+    contrib_template = "contrib/llvm-project-cmake/config/config.h.in"
+    expect(
+        not set(generated_headers(contrib_template))
+        & set(generated_headers(generator_input)),
+        f"{contrib_template} is mapped to the headers generated from {generator_input}",
     )
 
     # LLVM regular expressions are POSIX extended ones; the filter uses only
