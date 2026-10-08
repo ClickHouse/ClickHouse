@@ -233,6 +233,7 @@ It reports only the diagnostics located in the changed files, so a diagnostic th
 That narrower scope is the trade-off: a change to a widely included header is only spot-checked here, and the full job is what covers the rest of the tree.
 A change to an input of a code generator, such as a `.proto` file, a FlatBuffers `.fbs` schema, a `configure_file` template like `config.h.in`, or the embedded web UI resources, is checked through a few of the files that include the generated header, as if those files had changed.
 A change to the `clang-tidy` configuration, to the check itself, or to the definition of the job touches no translation unit, so instead it analyzes a small fixed set of translation units and reports every diagnostic found in them.
+A change to the check itself additionally runs a self-test of how it selects translation units and attributes diagnostics, and analyzes a representative changed header and a representative generator input as if the pull request had changed them.
 
 Both jobs can be run locally:
 

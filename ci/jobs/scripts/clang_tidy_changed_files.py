@@ -159,6 +159,21 @@ CANARY_TRANSLATION_UNITS = (
     "src/Common/Exception.cpp",
 )
 
+# The canaries are analyzed without `--header-filter` and with every diagnostic
+# reported, so they exercise none of the selection and filtering this module
+# implements for ordinary changes. A change to this module could disable the
+# coverage of changed headers or of generator inputs for every later change and
+# still merge green on them. So a change to this module also runs `self_test`,
+# and these representative files are analyzed as if the change touched them,
+# through the ordinary path: a header-only change, covered through the
+# includers of its includer (`wide_integer.h` has no translation unit of its
+# own), and a generator input, covered through the files including the header
+# generated from it. `master` is clean under the full check, so a diagnostic
+# reported for them is one the change to this module introduced.
+SELF_PATH = "ci/jobs/scripts/clang_tidy_changed_files.py"
+SELF_TEST_CHANGED_HEADER = "base/base/wide_integer_impl.h"
+SELF_TEST_GENERATOR_INPUT = "src/Common/config.h.in"
+
 # Upper bound on the translation units one run analyzes, so that a sweeping
 # change cannot turn the merge-queue gate back into a multi-hour build. Beyond
 # it the selection is truncated and the job says so; the full check still covers
@@ -883,6 +898,139 @@ def changed_files_from_ci(info):
     return changed_files
 
 
+def self_test(repo_dir, build_dir, compile_commands):
+    """Check the selection and filtering of this module on representative cases.
+
+    Run when this module changes (see `SELF_PATH`): each case is a property the
+    ordinary path relies on and that a regression in this module would silently
+    break - a changed header is covered by translation units of the build, a
+    generator input is covered through the consumers of its generated header,
+    the header filter matches the changed header even by a non-canonical path,
+    and diagnostics are parsed and attributed to the right files.
+    """
+    stop_watch = Utils.Stopwatch()
+    failures = []
+
+    def expect(condition, description):
+        if not condition:
+            failures.append(description)
+
+    header = SELF_TEST_CHANGED_HEADER
+    includers = find_includers(
+        header,
+        repo_dir,
+        MAX_INCLUDERS_PER_HEADER,
+        lambda path: lookup_translation_unit(path, repo_dir, compile_commands)
+        is not None,
+    )
+    expect(
+        includers and all(path.endswith(SOURCE_SUFFIXES) for path in includers),
+        f"`find_includers` found no translation unit covering {header}: {includers}",
+    )
+    units, notes = select_translation_units([header], repo_dir, compile_commands)
+    expect(
+        units and not notes,
+        f"`select_translation_units` did not cover {header}: {units}, {notes}",
+    )
+
+    generator_input = SELF_TEST_GENERATOR_INPUT
+    expect(
+        changed_generator_inputs([generator_input]) == [generator_input],
+        f"{generator_input} is not recognized as a generator input",
+    )
+    consumers = generated_header_consumers(
+        [generator_input],
+        repo_dir,
+        MAX_INCLUDERS_PER_HEADER,
+        lambda path: is_coverable(path, repo_dir, compile_commands),
+    )
+    expect(
+        consumers,
+        f"`generated_header_consumers` found no file including the headers "
+        f"generated from {generator_input}",
+    )
+
+    # LLVM regular expressions are POSIX extended ones; the filter uses only
+    # constructs that Python's `re` interprets the same way.
+    header_name = os.path.basename(header)
+    header_filter = re.compile(header_filter_regex([header]))
+    for path in (
+        f"{repo_dir}/{header}",
+        f"{repo_dir}/base/base/../base/{header_name}",
+        header_name,
+    ):
+        expect(header_filter.search(path), f"The header filter does not match {path}")
+    for path in (f"{repo_dir}/base/base/x{header_name}", f"{repo_dir}/{header}pp"):
+        expect(not header_filter.search(path), f"The header filter matches {path}")
+    expect(
+        not re.search(header_filter_regex([]), f"{repo_dir}/{header}"),
+        "The header filter for no changed headers matches a header",
+    )
+
+    changed_path = os.path.realpath(f"{repo_dir}/{header}")
+    other_path = os.path.realpath(f"{repo_dir}/base/base/wide_integer.h")
+    generated_path = os.path.realpath(f"{build_dir}/src/Common/config.h")
+    output = "\n".join(
+        [
+            f"{changed_path}:1:1: warning: changed [bugprone-test]",
+            "   1 | quoted source line",
+            f"{changed_path}:1:1: note: a note of the warning above",
+            f"{other_path}:2:2: warning: unchanged [bugprone-test]",
+            f"{other_path}:3:3: error: does not compile [clang-diagnostic-error]",
+            f"{generated_path}:4:4: warning: regenerated [bugprone-test]",
+            "4 warnings and 1 error generated.",
+            "error: unattributed [clang-diagnostic-error]",
+        ]
+    )
+    diagnostics = parse_diagnostics(output)
+    expect(
+        [d["message"].split(" [")[0] for d in diagnostics]
+        == ["changed", "unchanged", "does not compile", "regenerated", "unattributed"],
+        f"`parse_diagnostics` split the output wrongly: {diagnostics}",
+    )
+    expect(
+        diagnostics and "a note of the warning above" in diagnostics[0]["text"],
+        "`parse_diagnostics` did not attach a note to its diagnostic",
+    )
+    generated = GeneratedHeaders(
+        names=generated_headers(generator_input),
+        build_dir=build_dir,
+        full_filter=config_header_filter_regex(repo_dir),
+    )
+    relevant = relevant_diagnostics(diagnostics, {changed_path}, generated=generated)
+    expect(
+        [d["message"].split(" [")[0] for d in relevant]
+        == ["changed", "does not compile", "regenerated", "unattributed"],
+        f"`relevant_diagnostics` selected the wrong diagnostics: {relevant}",
+    )
+    expect(
+        len(relevant_diagnostics(diagnostics, set(), report_all=True))
+        == len(diagnostics),
+        "`relevant_diagnostics` with `report_all` dropped diagnostics",
+    )
+
+    expect(
+        not infrastructure_error(output, 1),
+        "A compile error is taken for an infrastructure error",
+    )
+    expect(
+        infrastructure_error("error: unknown check 'foo'", 1),
+        "clang-tidy refusing to run is not an infrastructure error",
+    )
+    expect(
+        infrastructure_error("", -9),
+        "A killed clang-tidy is not an infrastructure error",
+    )
+
+    return Result(
+        name="Self-test",
+        status=Result.Status.FAIL if failures else Result.Status.OK,
+        start_time=stop_watch.start_time,
+        duration=stop_watch.duration,
+        info="\n".join(failures),
+    )
+
+
 def run(changed_files, repo_dir, build_dir, temp_dir):
     """Run the limited clang-tidy check and report it as a single `Result`."""
     stop_watch = Utils.Stopwatch()
@@ -901,6 +1049,15 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
         )
 
     compile_commands = load_compile_commands(build_dir)
+    self_results = []
+    if SELF_PATH in config_changed:
+        self_results.append(self_test(repo_dir, build_dir, compile_commands))
+        changed = sorted(set(changed) | {SELF_TEST_CHANGED_HEADER})
+        generator_inputs = sorted(set(generator_inputs) | {SELF_TEST_GENERATOR_INPUT})
+        print(
+            f"This module changed, also analyzing as changed: "
+            f"{SELF_TEST_CHANGED_HEADER}, {SELF_TEST_GENERATOR_INPUT}"
+        )
     consumers = generated_header_consumers(
         generator_inputs,
         repo_dir,
@@ -945,7 +1102,7 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
     if not generate.is_ok():
         return Result.create_from(
             name=RESULT_NAME,
-            results=[generate],
+            results=self_results + [generate],
             stopwatch=stop_watch,
             info=notes,
         )
@@ -1000,7 +1157,7 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
 
     return Result.create_from(
         name=RESULT_NAME,
-        results=[generate] + results,
+        results=self_results + [generate] + results,
         stopwatch=stop_watch,
         info=notes,
     )
