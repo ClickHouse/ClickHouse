@@ -634,7 +634,6 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns, const B
         if (copy_block.empty())
             return;
 
-        /// The other columns of the same rows, which a DEFAULT replacing NULLs may read.
         Block row_columns;
         if (previous_step_columns && replaces_nulls_with_defaults)
         {
