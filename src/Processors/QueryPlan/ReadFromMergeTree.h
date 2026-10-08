@@ -369,10 +369,15 @@ public:
         bool allow_query_condition_cache_,
         bool allow_top_k_prewhere_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
-        bool check_row_limits);
+        bool check_row_limits,
+        bool allow_exact_count_optimization = true);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
+    /// Collect exact ranges for eliminating predicates while still reading their payload rows.
+    /// This does not enable the read-limit deferral or replica analysis policy of exact-count candidate analysis.
+    AnalysisResultPtr selectRangesToReadForPredicateElimination() const;
+
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
     /// or memoizing the result. The executed read analyzes again after its final mode is known.
     AnalysisResultPtr selectRangesToReadForEstimation() const;
@@ -658,6 +663,8 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    AnalysisResultPtr selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization) const;
+
     static void buildPartitionPruningIndexes(
         Indexes & indexes,
         const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
