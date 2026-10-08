@@ -5523,12 +5523,12 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Float classification (arity mismatch intentional: ifNotFinite takes (x, alternative))
         {"isNaN", "isInfinite", "isFinite", "ifNotFinite"},
         /// Map accessors (map → array)
-        {"mapKeys", "mapValues"},
+        {"mapKeys", "mapValues", "mapEntries"},
         /// Numeric map arithmetic (map, map → map, element-wise). `mapUpdate` and `mapConcat` take
         /// the same two-map shape but merge instead of adding.
         {"mapAdd", "mapSubtract", "mapUpdate", "mapConcat"},
-        /// Map filtering by pattern (map, pattern → map)
-        {"mapExtractKeyLike", "mapExtractValueLike"},
+        /// Map filtering by pattern or key (map, pattern/key → map)
+        {"mapExtractKeyLike", "mapExtractValueLike", "mapRemove"},
         /// Two-array map builders (key array, value array[, extra] → map)
         {"mapFromArrays", "mapPopulateSeries"},
         /// Key-value text parsers (String → Map)
