@@ -1,5 +1,5 @@
 -- Tests that text index layout parameters can be configured at the table level via MergeTree settings
--- (text_index_dictionary_block_frontcoding_compression, text_index_posting_list_block_size and
+-- (text_index_dictionary_block_encoding, text_index_posting_list_block_size and
 -- text_index_posting_list_codec), that these table-level defaults feed the index creator, and that an
 -- explicit per-index argument still overrides the table setting.
 --
@@ -19,7 +19,7 @@ DROP TABLE IF EXISTS t_text_settings;
 CREATE TABLE t_text_settings (s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha'))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS
-    text_index_dictionary_block_frontcoding_compression = 0, -- default 1 (front coding on)
+    text_index_dictionary_block_encoding = 'none',          -- default 'frontcoding_v1'
     text_index_posting_list_block_size = 256,                -- default 1048576 (single block)
     text_index_posting_list_codec = 'bitpacking';            -- default 'none' (uncompressed)
 
@@ -39,7 +39,7 @@ DROP TABLE IF EXISTS t_text_defaults;
 CREATE TABLE t_text_defaults (s String, INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha'))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS
-    text_index_dictionary_block_frontcoding_compression = 1,
+    text_index_dictionary_block_encoding = 'frontcoding_v1',
     text_index_posting_list_block_size = 1048576,
     text_index_posting_list_codec = 'none';
 
@@ -57,12 +57,12 @@ DROP TABLE t_text_defaults;
 DROP TABLE IF EXISTS t_text_override;
 CREATE TABLE t_text_override (s String, INDEX idx s TYPE text(
         tokenizer = 'splitByNonAlpha',
-        dictionary_block_frontcoding_compression = 1,
+        dictionary_block_encoding = 'frontcoding_v1',
         posting_list_block_size = 1048576,
         posting_list_codec = 'none'))
 ENGINE = MergeTree ORDER BY tuple()
 SETTINGS
-    text_index_dictionary_block_frontcoding_compression = 0,
+    text_index_dictionary_block_encoding = 'none',
     text_index_posting_list_block_size = 256,
     text_index_posting_list_codec = 'bitpacking';
 
