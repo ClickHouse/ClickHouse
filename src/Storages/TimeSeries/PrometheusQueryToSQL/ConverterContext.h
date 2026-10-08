@@ -28,6 +28,10 @@ struct ConverterContext
     const NodeEvaluationRangeGetter node_range_getter;
     SQLSubqueries subqueries;
 
+    /// Set when dropMetricName marked series with `kDroppedMetricNameMarker` instead of removing the metric name.
+    /// finalizeSQL then removes the marked metric names and checks the final result for duplicate series.
+    bool metric_name_drop_deferred = false;
+
     ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
                      const PrometheusQueryEvaluationSettings & settings_);
 };

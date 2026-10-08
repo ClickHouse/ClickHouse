@@ -355,6 +355,27 @@ def send_test_data():
         ]
     )
 
+    # `gap_early` and `gap_late` share `job` and differ by metric name.
+    # The samples are 15 minutes apart, past the 5 minute lookback, so the series do not overlap.
+    # `gap_one` supplies the one side of a `group_left` match on `job` at both timestamps.
+    # A subquery with step 900s aligns its grid to multiples of 900s.
+    send_data(
+        [
+            (
+                {"__name__": "gap_early", "job": "gap"},
+                {900: 1},
+            ),
+            (
+                {"__name__": "gap_late", "job": "gap"},
+                {1800: 2},
+            ),
+            (
+                {"__name__": "gap_one", "job": "gap"},
+                {900: 10, 1800: 20},
+            ),
+        ]
+    )
+
     # Groups with a NaN or an infinite sample for `stddev` and `stdvar`: such a group is NaN, even with one sample.
     send_data(
         [
@@ -3499,6 +3520,67 @@ def test_multiple_series_in_same_resultset():
         "Multiple series have the same tags {'http_code': '404'}",
     )
 
+    do_query_test_expect_error(
+        "abs(rate({http_code='404'}[100]))",
+        200,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags {'http_code': '404'}",
+    )
+
+    # The metric name is removed at the end of the evaluation, so an inner expression may hold series
+    # which differ only by metric name. The reference Prometheus runs without `promql-delayed-name-removal`
+    # and fails on these queries, so they are checked in ClickHouse only.
+    do_clickhouse_only_query_test(
+        'label_replace(rate({http_code=\'404\'}[100]), "name", "$1", "__name__", "(.*)")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"http_code": "404", "name": "download_failures"}, "values": [[200, "0.015"]]}, {"metric": {"http_code": "404", "name": "http_errors"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('http_code','404'),('name','download_failures')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('http_code','404'),('name','http_errors')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        'label_replace(rate({http_code=\'404\'}[100]), "__name__", "${1}_rate", "__name__", "(.*)")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "download_failures_rate", "http_code": "404"}, "values": [[200, "0.015"]]}, {"metric": {"__name__": "http_errors_rate", "http_code": "404"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('__name__','download_failures_rate'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('__name__','http_errors_rate'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        'label_join(rate({http_code=\'404\'}[100]), "__name__", "_", "__name__", "http_code")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "download_failures_404", "http_code": "404"}, "values": [[200, "0.015"]]}, {"metric": {"__name__": "http_errors_404", "http_code": "404"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('__name__','download_failures_404'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('__name__','http_errors_404'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        "count(rate({http_code='404'}[100]))",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [200, "2"]}]}',
+        [["[]", "1970-01-01 00:03:20.000", 2]],
+    )
+
+    do_clickhouse_only_query_test(
+        'sum by (name) (label_replace(rate({http_code=\'404\'}[100]), "name", "$1", "__name__", "(.*)"))[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"name": "download_failures"}, "values": [[200, "0.015"]]}, {"metric": {"name": "http_errors"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('name','download_failures')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('name','http_errors')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
     # FIXME: Function count_over_time() is not implemented yet.
     # do_query_test_expect_error(
     #     "count_over_time({http_code='404'}[10])[100:10]",
@@ -4438,6 +4520,27 @@ def test_comparison_operators():
         ],
     )
 
+    # group_left(__name__) copies a visible name from the one side onto a marked many side.
+    do_query_test(
+        "((bar + 1) >= on(size) group_left(__name__) foo)[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[120, "17"], [130, "51"], [140, "51"], [150, "1001"]]}, {"metric": {"__name__": "foo", "shape": "rectangle", "size": "l"}, "values": [[130, "91"], [140, "91"], [150, "91"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "4"], [120, "41"], [130, "41"], [140, "701"], [150, "701"]]}]}',
+        [
+            [
+                "[('__name__','foo'),('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',51),('1970-01-01 00:02:20.000',51),('1970-01-01 00:02:30.000',1001)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','rectangle'),('size','l')]",
+                "[('1970-01-01 00:02:10.000',91),('1970-01-01 00:02:20.000',91),('1970-01-01 00:02:30.000',91)]",
+            ],
+            [
+                "[('__name__','foo'),('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',41),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',701),('1970-01-01 00:02:30.000',701)]",
+            ],
+        ],
+    )
+
     # on(__name__, shape) uses __name__ as part of the join key.
     # In filter mode __name__ is preserved in the result, so the result group is {__name__, shape}.
     do_query_test(
@@ -4449,6 +4552,19 @@ def test_comparison_operators():
             ["[('__name__','bar'),('shape','rectangle')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',9),('1970-01-01 00:02:10.000',90),('1970-01-01 00:02:20.000',90),('1970-01-01 00:02:30.000',90)]"],
             ["[('__name__','bar'),('shape','square')]", "[('1970-01-01 00:01:50.000',3),('1970-01-01 00:02:00.000',40),('1970-01-01 00:02:10.000',40),('1970-01-01 00:02:20.000',700),('1970-01-01 00:02:30.000',700)]"],
             ["[('__name__','bar'),('shape','triangle')]", "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',8),('1970-01-01 00:02:10.000',8),('1970-01-01 00:02:20.000',8),('1970-01-01 00:02:30.000',30)]"],
+        ],
+    )
+
+    # A filter comparison keeps a pending drop, so on(__name__, shape) hides __name__.
+    do_clickhouse_only_query_test(
+        '(({__name__=~"foo|bar"} + 1) >= on(__name__, shape) bar)[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle"}, "values": [[110, "11"], [120, "17"], [130, "51"], [140, "51"], [150, "1001"]]}, {"metric": {"shape": "rectangle"}, "values": [[110, "10"], [120, "10"], [130, "91"], [140, "91"], [150, "91"]]}, {"metric": {"shape": "square"}, "values": [[110, "4"], [120, "41"], [130, "41"], [140, "701"], [150, "701"]]}, {"metric": {"shape": "triangle"}, "values": [[110, "9"], [120, "9"], [130, "9"], [140, "9"], [150, "31"]]}]}',
+        [
+            ["[('shape','circle')]", "[('1970-01-01 00:01:50.000',11),('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',51),('1970-01-01 00:02:20.000',51),('1970-01-01 00:02:30.000',1001)]"],
+            ["[('shape','rectangle')]", "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',10),('1970-01-01 00:02:10.000',91),('1970-01-01 00:02:20.000',91),('1970-01-01 00:02:30.000',91)]"],
+            ["[('shape','square')]", "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',41),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',701),('1970-01-01 00:02:30.000',701)]"],
+            ["[('shape','triangle')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',9),('1970-01-01 00:02:10.000',9),('1970-01-01 00:02:20.000',9),('1970-01-01 00:02:30.000',31)]"],
         ],
     )
 
@@ -6051,4 +6167,124 @@ def test_label_manipulation_functions():
         1753176757.89,
         'expected at least 3 argument(s) in call to "label_join", got 2',
         "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
+    )
+
+    # The regex matches `__name__` and writes that same name back, so the name stays.
+    # Prometheus drops the name before `label_replace`, so this result is ClickHouse only.
+    do_clickhouse_only_query_test(
+        'label_replace(foo + 1, "__name__", "$1", "__name__", "(.*)")[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "circle", "size": "l"}, "values": [[110, "17"], [120, "17"], [130, "17"], [140, "17"], [150, "17"]]}, {"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[110, "5"], [120, "5"], [130, "41"], [140, "41"], [150, "41"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "9"], [120, "81"], [130, "81"], [140, "81"], [150, "81"]]}]}',
+        [
+            ["[('__name__','foo'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',17),('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',17),('1970-01-01 00:02:20.000',17),('1970-01-01 00:02:30.000',17)]"],
+            ["[('__name__','foo'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',5),('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',41),('1970-01-01 00:02:30.000',41)]"],
+            ["[('__name__','foo'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',81),('1970-01-01 00:02:10.000',81),('1970-01-01 00:02:20.000',81),('1970-01-01 00:02:30.000',81)]"],
+        ],
+    )
+
+    # An empty source label is missing. The empty regex matches that value and writes `__name__`.
+    # Prometheus drops the name before `label_replace`, so this result is ClickHouse only.
+    do_clickhouse_only_query_test(
+        'label_replace(foo + 1, "__name__", "service_up", "", "")[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "service_up", "shape": "circle", "size": "l"}, "values": [[110, "17"], [120, "17"], [130, "17"], [140, "17"], [150, "17"]]}, {"metric": {"__name__": "service_up", "shape": "square", "size": "s"}, "values": [[110, "5"], [120, "5"], [130, "41"], [140, "41"], [150, "41"]]}, {"metric": {"__name__": "service_up", "shape": "triangle", "size": "m"}, "values": [[110, "9"], [120, "81"], [130, "81"], [140, "81"], [150, "81"]]}]}',
+        [
+            ["[('__name__','service_up'),('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',17),('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',17),('1970-01-01 00:02:20.000',17),('1970-01-01 00:02:30.000',17)]"],
+            ["[('__name__','service_up'),('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',5),('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',41),('1970-01-01 00:02:30.000',41)]"],
+            ["[('__name__','service_up'),('shape','triangle'),('size','m')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',81),('1970-01-01 00:02:10.000',81),('1970-01-01 00:02:20.000',81),('1970-01-01 00:02:30.000',81)]"],
+        ],
+    )
+
+    # `foo + 1` drops the metric name. A regex miss on `job` leaves the series unchanged, so the name stays absent.
+    do_query_test(
+        'label_replace(foo + 1, "__name__", "x", "job", "nomatch")[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "17"], [120, "17"], [130, "17"], [140, "17"], [150, "17"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "5"], [120, "5"], [130, "41"], [140, "41"], [150, "41"]]}, {"metric": {"shape": "triangle", "size": "m"}, "values": [[110, "9"], [120, "81"], [130, "81"], [140, "81"], [150, "81"]]}]}',
+        [
+            ["[('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',17),('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',17),('1970-01-01 00:02:20.000',17),('1970-01-01 00:02:30.000',17)]"],
+            ["[('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',5),('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',41),('1970-01-01 00:02:30.000',41)]"],
+            ["[('shape','triangle'),('size','m')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',81),('1970-01-01 00:02:10.000',81),('1970-01-01 00:02:20.000',81),('1970-01-01 00:02:30.000',81)]"],
+        ],
+    )
+
+    # An empty source label behaves like a missing label after the metric name was dropped,
+    # so the destination label gets an empty value and is not added.
+    do_query_test(
+        'label_replace(foo + 1, "copied", "$1", "", "(.*)")[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "17"], [120, "17"], [130, "17"], [140, "17"], [150, "17"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "5"], [120, "5"], [130, "41"], [140, "41"], [150, "41"]]}, {"metric": {"shape": "triangle", "size": "m"}, "values": [[110, "9"], [120, "81"], [130, "81"], [140, "81"], [150, "81"]]}]}',
+        [
+            ["[('shape','circle'),('size','l')]", "[('1970-01-01 00:01:50.000',17),('1970-01-01 00:02:00.000',17),('1970-01-01 00:02:10.000',17),('1970-01-01 00:02:20.000',17),('1970-01-01 00:02:30.000',17)]"],
+            ["[('shape','square'),('size','s')]", "[('1970-01-01 00:01:50.000',5),('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:10.000',41),('1970-01-01 00:02:20.000',41),('1970-01-01 00:02:30.000',41)]"],
+            ["[('shape','triangle'),('size','m')]", "[('1970-01-01 00:01:50.000',9),('1970-01-01 00:02:00.000',81),('1970-01-01 00:02:10.000',81),('1970-01-01 00:02:20.000',81),('1970-01-01 00:02:30.000',81)]"],
+        ],
+    )
+
+    # An empty source label is rejected before the marker could be read.
+    do_query_test_expect_error(
+        'label_join(foo + 1, "copied", "", "")',
+        150,
+        "invalid source label name in label_join()",
+        "Function 'label_join' received invalid label name '' in argument #4",
+    )
+
+
+def test_nonoverlapping_series_merge_after_metric_name_change():
+    # Prometheus drops `__name__` before `label_replace`, so `.+` does not match and the result has no metric name.
+    # The name stays readable here until the end, the regex matches, and the two series merge into one.
+    do_clickhouse_only_query_test(
+        'label_replace((gap_early + 1) or (gap_late + 1), "__name__", "same", "__name__", ".+")[1800:900]',
+        1800,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "same", "job": "gap"}, "values": [[900, "2"], [1800, "3"]]}]}',
+        [
+            [
+                "[('__name__','same'),('job','gap')]",
+                "[('1970-01-01 00:15:00.000',2),('1970-01-01 00:30:00.000',3)]",
+            ]
+        ],
+    )
+
+    # `*` drops `__name__`. The two left series share `job` and do not overlap, so they become one series.
+    do_query_test(
+        '(({__name__=~"gap_early|gap_late"} + 1) * on(job) group_left gap_one)[1800:900]',
+        1800,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "gap"}, "values": [[900, "20"], [1800, "60"]]}]}',
+        [
+            [
+                "[('job','gap')]",
+                "[('1970-01-01 00:15:00.000',20),('1970-01-01 00:30:00.000',60)]",
+            ]
+        ],
+    )
+
+    # One-to-one match on `job`. Addition drops `__name__` before the match.
+    # Each step sees one left series, so the series merge and the name stays dropped.
+    do_query_test(
+        '(({__name__=~"gap_early|gap_late"} + 1) * on(job) gap_one)[1800:900]',
+        1800,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "gap"}, "values": [[900, "20"], [1800, "60"]]}]}',
+        [
+            [
+                "[('job','gap')]",
+                "[('1970-01-01 00:15:00.000',20),('1970-01-01 00:30:00.000',60)]",
+            ]
+        ],
+    )
+
+    # Each timestamp keeps the metric name from its own one-side series.
+    # Prometheus drops that name on `+ 1` before the match, so this result is ClickHouse only.
+    do_clickhouse_only_query_test(
+        '(gap_one * on(job) group_left(__name__) ({__name__=~"gap_early|gap_late"} + 1))[1800:900]',
+        1800,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "gap_early", "job": "gap"}, "values": [[900, "20"]]}, {"metric": {"__name__": "gap_late", "job": "gap"}, "values": [[1800, "60"]]}]}',
+        [
+            [
+                "[('__name__','gap_early'),('job','gap')]",
+                "[('1970-01-01 00:15:00.000',20)]",
+            ],
+            [
+                "[('__name__','gap_late'),('job','gap')]",
+                "[('1970-01-01 00:30:00.000',60)]",
+            ],
+        ],
     )

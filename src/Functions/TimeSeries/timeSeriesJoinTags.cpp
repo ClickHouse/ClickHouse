@@ -22,7 +22,10 @@ public:
     static constexpr auto name = "timeSeriesJoinTags";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesJoinTags>(context); }
-    explicit FunctionTimeSeriesJoinTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    explicit FunctionTimeSeriesJoinTags(ContextPtr context)
+        : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector())
+        , allow_empty_tag_name(context->getAllowEmptyTimeSeriesTagName())
+    {}
 
     String getName() const override { return name; }
 
@@ -64,9 +67,9 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
-        auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
+        auto dest_tag = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1, allow_empty_tag_name);
         auto separator = TimeSeriesTagsFunctionHelpers::extractConstStringFromArgument(name, arguments, 2);
-        auto src_tags = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 3);
+        auto src_tags = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 3, allow_empty_tag_name);
 
         auto new_groups = tags_collector->joinTags(old_groups, dest_tag, separator, src_tags);
         chassert(new_groups.size() == input_rows_count);
@@ -76,6 +79,7 @@ public:
 
 private:
     std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
+    bool allow_empty_tag_name = false;
 };
 
 

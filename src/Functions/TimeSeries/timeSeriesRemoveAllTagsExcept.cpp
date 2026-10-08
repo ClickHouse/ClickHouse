@@ -22,7 +22,10 @@ public:
     static constexpr auto name = "timeSeriesRemoveAllTagsExcept";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesRemoveAllTagsExcept>(context); }
-    explicit FunctionTimeSeriesRemoveAllTagsExcept(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    explicit FunctionTimeSeriesRemoveAllTagsExcept(ContextPtr context)
+        : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector())
+        , allow_empty_tag_name(context->getAllowEmptyTimeSeriesTagName())
+    {}
 
     String getName() const override { return name; }
 
@@ -62,7 +65,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
         auto old_groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
-        auto tags_to_keep = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 1);
+        auto tags_to_keep = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 1, allow_empty_tag_name);
 
         auto new_groups = tags_collector->removeAllTagsExcept(old_groups, tags_to_keep);
         chassert(new_groups.size() == input_rows_count);
@@ -72,6 +75,7 @@ public:
 
 private:
     std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
+    bool allow_empty_tag_name = false;
 };
 
 

@@ -22,7 +22,10 @@ public:
     static constexpr auto name = "timeSeriesCopyTags";
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTimeSeriesCopyTags>(context); }
-    explicit FunctionTimeSeriesCopyTags(ContextPtr context) : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector()) {}
+    explicit FunctionTimeSeriesCopyTags(ContextPtr context)
+        : tags_collector(context->getQueryContext()->getTimeSeriesTagsCollector())
+        , allow_empty_tag_name(context->getAllowEmptyTimeSeriesTagName())
+    {}
 
     String getName() const override { return name; }
 
@@ -69,7 +72,7 @@ public:
         chassert((dest_groups.size() == input_rows_count) || (dest_groups.size() == 1));
         chassert((src_groups.size() == input_rows_count) || (src_groups.size() == 1));
 
-        auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 2);
+        auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 2, allow_empty_tag_name);
 
         VectorWithMemoryTracking<Group> new_groups;
 
@@ -88,6 +91,7 @@ public:
 
 private:
     std::shared_ptr<ContextTimeSeriesTagsCollector> tags_collector;
+    bool allow_empty_tag_name = false;
 };
 
 

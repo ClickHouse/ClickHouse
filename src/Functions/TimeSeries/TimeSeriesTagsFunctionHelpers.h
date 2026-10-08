@@ -50,15 +50,17 @@ void checkArgumentTypeForConstTagName(std::string_view function_name, const Colu
 void checkArgumentTypeForConstString(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 
 /// Extracts a constant tag name from a function argument.
-String extractConstTagNameFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+/// `allow_empty_tag_name` is true only for PromQL-generated SQL.
+String extractConstTagNameFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_empty_tag_name);
 String extractConstStringFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 
 /// Checks the type of a function argument containing a constant array of tag names.
 void checkArgumentTypeForConstTagNames(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 void checkArgumentTypeForConstStrings(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 
-/// Checks the type of a function argument containing a constant array of tag names.
-Strings extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+/// Extracts a constant array of tag names from a function argument.
+/// `allow_empty_tag_name` is true only for PromQL-generated SQL.
+Strings extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool allow_empty_tag_name);
 Strings extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 
 /// Checks the type of a function argument containing an identifier of time series.

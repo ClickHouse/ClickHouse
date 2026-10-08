@@ -62,6 +62,30 @@ namespace
         return res;
     }
 
+    /// True when two samples share one grid position.
+    ASTPtr makeGridOverlapPredicate(ASTPtr values)
+    {
+        return makeASTFunction(
+            "arrayExists",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                makeASTFunction("greater", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
+            makeASTFunction("countForEach", std::move(values)));
+    }
+
+    /// HAVING clause: throw when `values` overlap, and keep the query otherwise.
+    ASTPtr makeNoGridOverlapHaving(ASTPtr values, ASTPtr group)
+    {
+        return makeASTFunction(
+            "equals",
+            makeASTFunction(
+                "timeSeriesThrowDuplicateSeriesIf",
+                makeGridOverlapPredicate(std::move(values)),
+                std::move(group)),
+            make_intrusive<ASTLiteral>(0u));
+    }
+
     /// Applies a simple operator if both operands are instant vectors.
     SQLQueryPiece applyOperatorToVectors(
         const PrometheusQueryTree::BinaryOperator * operator_node,
@@ -94,23 +118,21 @@ namespace
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
 
-        /// Step 1:
-        /// new_left:
+        /// Step 1 and step 2 keep every source series as its own row:
         /// SELECT group AS original_group,
         ///        timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
         ///        values
-        /// FROM left
-        /// [GROUP BY join_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, join_group) = 0]
+        /// FROM <side>
         ///
-        /// Step 2:
-        /// new_right:
-        /// SELECT group AS original_group,
-        ///        timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,
-        ///        values
-        /// FROM right
-        /// [GROUP BY join_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, join_group) = 0]
+        /// The side that must be unique per timestamp is joined to a key-only aggregate.
+        /// That aggregate throws when two values share a grid position. It does not choose labels:
+        /// SELECT join_group
+        /// FROM <side_rows>
+        /// GROUP BY join_group
+        /// HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(x -> x > 1, countForEach(values)), join_group) = 0
         ///
         bool metric_name_dropped_from_join_group = false;
+        bool sides_keep_separate_rows = false;
 
         for (auto & side : sides)
         {
@@ -139,60 +161,83 @@ namespace
             /// If `join_group` is the same as `group` then we already know it's unique.
             bool check_side_one = !group_on_side && (tryGetIdentifierName(join_group.get()) != ColumnNames::Group);
 
-            /// We add column `original_group` because we may need it at step 3.
+            /// `original_group` is this series' own tags. Step 3 reads it per output row.
             ASTPtr original_group = make_intrusive<ASTIdentifier>(ColumnNames::Group);
-            if (check_side_one)
-                original_group = makeASTFunction("any", std::move(original_group));
             original_group->setAlias(ColumnNames::OriginalGroup);
             builder.select_list.push_back(std::move(original_group));
 
             builder.select_list.push_back(join_group);
             builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-            ASTPtr values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
-            if (check_side_one)
-            {
-                values = makeASTFunction("any", std::move(values));
-                values->setAlias(ColumnNames::Values);
-            }
-            builder.select_list.push_back(std::move(values));
-
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
             builder.from_table = side;
 
-            if (check_side_one)
-            {
-                /// We throw an exception if there are multiple matches on the side "one".
-                builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
-
-                builder.having = makeASTFunction(
-                    "equals",
-                    makeASTFunction(
-                        "timeSeriesThrowDuplicateSeriesIf",
-                        makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
-                        make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup)),
-                    make_intrusive<ASTLiteral>(0u));
-            }
-
             ASTPtr ast = builder.getSelectQuery();
-            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), SQLSubqueryType::TABLE});
+            /// The overlap check and the join both read this grid.
+            const auto subquery_type = check_side_one ? SQLSubqueryType::MATERIALIZED_TABLE : SQLSubqueryType::TABLE;
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), subquery_type});
 
             side = context.subqueries.back().name;
+
+            if (check_side_one)
+            {
+                /// Several series may share `join_group` when their samples do not overlap.
+                /// The check selects only the join key, so it cannot pick one series' labels.
+                sides_keep_separate_rows = true;
+
+                SelectQueryBuilder keys_builder;
+                keys_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+                keys_builder.from_table = side;
+                keys_builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+                keys_builder.having = makeNoGridOverlapHaving(
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                    make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+
+                ASTPtr keys_ast = keys_builder.getSelectQuery();
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(keys_ast), SQLSubqueryType::TABLE});
+                const String keys_name = context.subqueries.back().name;
+
+                SelectQueryBuilder kept_builder;
+                kept_builder.select_list.push_back(make_intrusive<ASTIdentifier>(Strings{side, ColumnNames::OriginalGroup}));
+                kept_builder.select_list.back()->setAlias(ColumnNames::OriginalGroup);
+                kept_builder.select_list.push_back(make_intrusive<ASTIdentifier>(Strings{side, ColumnNames::JoinGroup}));
+                kept_builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+                kept_builder.select_list.push_back(make_intrusive<ASTIdentifier>(Strings{side, ColumnNames::Values}));
+                kept_builder.select_list.back()->setAlias(ColumnNames::Values);
+                kept_builder.from_table = side;
+                kept_builder.join_kind = JoinKind::Inner;
+                kept_builder.join_strictness = JoinStrictness::All;
+                kept_builder.join_table = keys_name;
+                kept_builder.join_on = makeASTFunction(
+                    "equals",
+                    make_intrusive<ASTIdentifier>(Strings{side, ColumnNames::JoinGroup}),
+                    make_intrusive<ASTIdentifier>(Strings{keys_name, ColumnNames::JoinGroup}));
+
+                ASTPtr kept_ast = kept_builder.getSelectQuery();
+                context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(kept_ast), SQLSubqueryType::TABLE});
+                side = context.subqueries.back().name;
+            }
         }
 
-        /// Step 3:
+        /// Step 3 emits one row per matching pair, then merges rows that share the result group.
+        /// Each pair keeps the source series' `original_group`, so labels stay with their timestamp.
+        ///
         /// if without grouping:
-        /// SELECT timeSeriesRemoveTag(join_group, '__name__') AS group,
+        /// SELECT timeSeriesRemoveTags(join_group, ['__name__', '']) AS group,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
-        /// FROM left INNER ANY JOIN right
+        /// FROM left INNER ALL JOIN right
         /// ON left.join_group = right.join_group
-        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0]
+        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(x -> x > 1, countForEach(mapped)), group) = 0]
         ///
         /// if with group_left/group_right:
-        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTag(side_many.original_group, '__name__'), side_one.original_group, extra_labels) AS group,
+        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTags(side_many.original_group, ['__name__', '']), side_one.original_group, tags_to_copy) AS group,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
-        /// FROM left LEFT/RIGHT SEMI JOIN right
+        /// FROM left INNER ALL JOIN right
         /// ON left.join_group = right.join_group
-        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0]
+        /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(arrayExists(x -> x > 1, countForEach(mapped)), group) = 0]
+        ///
+        /// The GROUP BY merges rows that become the same group. Samples that do not overlap are merged.
+        /// Two values at the same grid position are duplicate series.
         ///
         ASTPtr result_ast;
         bool metric_name_dropped_from_result = false;
@@ -200,7 +245,8 @@ namespace
             SelectQueryBuilder builder;
 
             JoinKind join_kind = JoinKind::Inner;
-            JoinStrictness join_strictness = JoinStrictness::Any;
+            /// ALL keeps one output row per matching series. ANY or SEMI would keep a single label set.
+            JoinStrictness join_strictness = sides_keep_separate_rows ? JoinStrictness::All : JoinStrictness::Any;
 
             ASTPtr new_group;
             bool check_no_duplicate_groups = false;
@@ -214,8 +260,8 @@ namespace
                 bool can_use_join_group_in_result = true;
 
                 /// We can't use `join_group` as the result group in case when
-                /// the metric name `__name__` should be preserved in the result but it has already been dropped from `join_group`.
-                if (!drop_metric_name && !left_argument.metric_name_dropped && metric_name_dropped_from_join_group)
+                /// the metric name `__name__` should be preserved in the result: `join_group` may have dropped `__name__` or the drop marker.
+                if (!drop_metric_name && !left_argument.metric_name_dropped)
                 {
                     /// Example 1. `foo == ignoring(size) bar`
                     /// - here the result should have only `size` removed, but `join_group` has both `size` and `__name__` removed,
@@ -223,6 +269,9 @@ namespace
                     /// Example 2. `foo == bar`
                     /// - here the result should have all the tags of `foo`, but `join_group` has `__name__` removed,
                     /// so we take the original group from the left argument.
+                    /// Example 3. `(foo + 1) == on(__name__, shape) bar`
+                    /// - here the result should keep `__name__` and the drop marker, but `join_group` has the marker removed,
+                    /// so we recompute the group from the `original_group`.
                     can_use_join_group_in_result = false;
                 }
 
@@ -247,14 +296,13 @@ namespace
                 {
                     /// For example `a + on(__name__) b`
                     /// - here `join_group` has the __name__ tag, but the result shouldn't have it.
-                    new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+                    new_group = makeASTFunction(
+                        "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
                     metric_name_dropped_from_result = true;
                     check_no_duplicate_groups = true;
                 }
 
-                /// We look for one-to-one matches.
-                /// We've already made sure that values of `join_group` are unique on both sides,
-                /// so INNER ANY JOIN is good here.
+                /// One-to-one matches. A shared grid position was already rejected on each side.
             }
             else
             {
@@ -274,8 +322,10 @@ namespace
                     metric_name_dropped_from_side_many = left_argument.metric_name_dropped;
                     metric_name_dropped_from_side_one = right_argument.metric_name_dropped;
 
-                    /// We look for many-to-one matches.
-                    join_kind = JoinKind::Left;
+                    /// Many-to-one. An outer join would keep an unmatched many-side row and
+                    /// fill the one side with an empty array.
+                    if (!sides_keep_separate_rows)
+                        join_kind = JoinKind::Left;
                 }
                 else
                 {
@@ -285,11 +335,12 @@ namespace
                     metric_name_dropped_from_side_many = right_argument.metric_name_dropped;
                     metric_name_dropped_from_side_one = left_argument.metric_name_dropped;
 
-                    /// We look for one-to-many matches.
-                    join_kind = JoinKind::Right;
+                    if (!sides_keep_separate_rows)
+                        join_kind = JoinKind::Right;
                 }
 
-                join_strictness = JoinStrictness::Semi;
+                if (!sides_keep_separate_rows)
+                    join_strictness = JoinStrictness::Semi;
 
                 /// Drop the metric name from the side "many".
                 new_group = make_intrusive<ASTIdentifier>(Strings{side_many, ColumnNames::OriginalGroup});
@@ -298,7 +349,8 @@ namespace
 
                 if (drop_metric_name && !metric_name_dropped_from_result)
                 {
-                    new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+                    new_group = makeASTFunction(
+                        "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
                     metric_name_dropped_from_result = true;
                     check_no_duplicate_groups = true;
                 }
@@ -312,8 +364,19 @@ namespace
 
                     if (allow_grouping_modifier_copy_metric_name)
                     {
-                        if (std::binary_search(tags_to_copy.begin(), tags_to_copy.end(), kMetricName) && !metric_name_dropped_from_side_one)
-                            metric_name_dropped_from_result = false;
+                        if (std::binary_search(tags_to_copy.begin(), tags_to_copy.end(), kMetricName))
+                        {
+                            /// The many side may still carry the drop marker. A one side that kept its
+                            /// metric name clears that marker, so the copied name stays.
+                            if (!metric_name_dropped_from_side_one)
+                            {
+                                metric_name_dropped_from_result = false;
+                                new_group = makeASTFunction(
+                                    "timeSeriesRemoveTag",
+                                    std::move(new_group),
+                                    make_intrusive<ASTLiteral>(kDroppedMetricNameMarker));
+                            }
+                        }
                     }
                     else
                     {
@@ -344,8 +407,15 @@ namespace
                 make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
                 make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values}));
 
+            /// Pairs that share a result group merge here. The source rows stayed separate until this point.
+            if (sides_keep_separate_rows)
+                check_no_duplicate_groups = true;
+
             if (check_no_duplicate_groups)
-                values = makeASTFunction("any", std::move(values));
+            {
+                builder.having = makeNoGridOverlapHaving(values->clone(), make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                values = makeASTFunction("anyForEach", std::move(values));
+            }
 
             builder.select_list.push_back(std::move(values));
             builder.select_list.back()->setAlias(ColumnNames::Values);
@@ -362,17 +432,7 @@ namespace
                 make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::JoinGroup}));
 
             if (check_no_duplicate_groups)
-            {
                 builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-
-                builder.having = makeASTFunction(
-                    "equals",
-                    makeASTFunction(
-                        "timeSeriesThrowDuplicateSeriesIf",
-                        makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u)),
-                        make_intrusive<ASTIdentifier>(ColumnNames::Group)),
-                    make_intrusive<ASTLiteral>(0u));
-            }
 
             result_ast = builder.getSelectQuery();
         }

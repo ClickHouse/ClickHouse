@@ -210,6 +210,7 @@ void StoragePrometheusQuery::readImpl(
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+    query_context->setAllowEmptyTimeSeriesTagName(true);
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

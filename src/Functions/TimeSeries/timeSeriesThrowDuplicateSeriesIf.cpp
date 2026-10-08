@@ -7,6 +7,7 @@
 #include <Functions/TimeSeries/TimeSeriesTagsFunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
+#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 
 
 namespace DB
@@ -103,13 +104,31 @@ public:
             throw Exception(
                 ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                 "Multiple series have the same tags {}, duplicate series in the same result set are not allowed",
-                ContextTimeSeriesTagsCollector::toString(tags));
+                ContextTimeSeriesTagsCollector::toString(removeDroppedMetricName(*tags)));
         }
 
         return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
     }
 
 private:
+    /// A series marked with `TimeSeriesTagNames::DroppedMetricNameMarker` has no metric name in the final result,
+    /// so the message shows the tags the way the result would show them.
+    static ContextTimeSeriesTagsCollector::TagNamesAndValues removeDroppedMetricName(const ContextTimeSeriesTagsCollector::TagNamesAndValues & tags)
+    {
+        bool marked = false;
+        for (const auto & [tag_name, _] : tags)
+            marked |= (tag_name == TimeSeriesTagNames::DroppedMetricNameMarker);
+
+        ContextTimeSeriesTagsCollector::TagNamesAndValues res;
+        for (const auto & tag : tags)
+        {
+            if (marked && (tag.first == TimeSeriesTagNames::DroppedMetricNameMarker || tag.first == TimeSeriesTagNames::MetricName))
+                continue;
+            res.push_back(tag);
+        }
+        return res;
+    }
+
     size_t findPositionOfNonZero(const ColumnPtr & column, const DataTypePtr & data_type) const
     {
         WhichDataType which{data_type};

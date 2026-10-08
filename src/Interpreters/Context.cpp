@@ -1495,6 +1495,7 @@ ContextData::ContextData(const ContextData &o) :
     external_tables_mapping(o.external_tables_mapping),
     scalars(o.scalars),
     special_scalars(o.special_scalars),
+    allow_empty_time_series_tag_name(o.allow_empty_time_series_tag_name),
     next_task_callback(o.next_task_callback),
     merge_tree_read_task_callback(o.merge_tree_read_task_callback),
     merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),

@@ -455,6 +455,10 @@ protected:
     /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
     std::shared_ptr<ContextTimeSeriesTagsCollector> time_series_tags_collector;
 
+    /// Set on the context that executes PromQL-generated SQL.
+    /// Tag helpers read it from that context. A user query leaves it false.
+    bool allow_empty_time_series_tag_name = false;
+
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
     std::optional<ClusterFunctionReadTaskCallback> next_task_callback;
@@ -1141,6 +1145,10 @@ public:
     /// Mapping between identifiers and time series tags collected in the context of the currently executed query.
     std::shared_ptr<const ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector() const;
     std::shared_ptr<ContextTimeSeriesTagsCollector> getTimeSeriesTagsCollector();
+
+    /// PromQL-generated SQL may pass an empty tag name. User SQL may not.
+    void setAllowEmptyTimeSeriesTagName(bool allow) { allow_empty_time_series_tag_name = allow; }
+    bool getAllowEmptyTimeSeriesTagName() const { return allow_empty_time_series_tag_name; }
 
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
