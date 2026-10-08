@@ -53,9 +53,11 @@ Expect g ~1 (5 rows / 5 ids) and c ~200 (1000 rows / 5 values of cg), joined fir
 Join: l[30000] ⋈ (o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1]))
 Join: o[10000] ⋈ (c[no_stats~200] ⋈ g[no_stats~1])
 Join: c[no_stats~200] ⋈ g[no_stats~1]
---- T5: result, then rows put into hash tables, column statistics off and on
-Expect 6000 rows; off builds c (200), l (30000) and g (1) = 30201; on builds g (1), c x g (200) and o x c x g (2000) = 2201.
+--- T5: result, column statistics off and on
+Expect 6000 both times.
 6000
 6000
+--- T5: JoinBuildTableRowCount, column statistics off and on
+Expect off: c (200) + l (30000) + g (1) = 30201; on: g (1) + c x g (200) + o x c x g (2000) = 2201.
 off	30201
 on	2201

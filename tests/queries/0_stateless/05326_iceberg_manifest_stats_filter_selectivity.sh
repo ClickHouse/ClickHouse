@@ -126,11 +126,13 @@ echo '--- T5: plan, column statistics on'
 echo 'Expect g ~1 (5 rows / 5 ids) and c ~200 (1000 rows / 5 values of cg), joined first.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query "
     SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1 ${T5}) WHERE explain LIKE '%Join: %'"
-echo '--- T5: result, then rows put into hash tables, column statistics off and on'
-echo 'Expect 6000 rows; off builds c (200), l (30000) and g (1) = 30201; on builds g (1), c x g (200) and o x c x g (2000) = 2201.'
+echo '--- T5: result, column statistics off and on'
+echo 'Expect 6000 both times.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query_id="${CLICKHOUSE_DATABASE}_t5_off" --query "${T5}"
 ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query_id="${CLICKHOUSE_DATABASE}_t5_on" --query "${T5}"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+echo '--- T5: JoinBuildTableRowCount, column statistics off and on'
+echo 'Expect off: c (200) + l (30000) + g (1) = 30201; on: g (1) + c x g (200) + o x c x g (2000) = 2201.'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT replaceOne(query_id, currentDatabase() || '_t5_', ''), ProfileEvents['JoinBuildTableRowCount']
     FROM system.query_log
