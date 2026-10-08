@@ -17,9 +17,9 @@ SELECT '{{ predicate | replace("\\", "\\\\") | replace("'", "\\'") }}', (SELECT 
 FORMAT TSVRaw;
 {%- endmacro %}
 
--- Wrapped constant modes retain their numbering convention. Monday-first numbering prunes to three marks for
--- Saturday and Sunday; Sunday-first numbering must retain the full week. A NULL mode matches no rows. The
--- checks run for a `Date32` key and then for a `DateTime64` key.
+-- Wrapped constant modes retain their numbering convention. The paired Monday- and Sunday-week factor
+-- permits pruning in both conventions while keeping ranges that cross Sunday. A NULL mode matches no rows.
+-- The checks run for a `Date32` key and then for a `DateTime64` key.
 CREATE TABLE test_day_of_week (d Date32) ENGINE = MergeTree ORDER BY d
 SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_day_of_week SELECT toDate32('2026-08-03') + number FROM numbers(7);
