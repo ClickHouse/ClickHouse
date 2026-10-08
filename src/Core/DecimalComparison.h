@@ -220,16 +220,6 @@ UInt8 NO_INLINE compareScaledValues(T x, T y, T multiplier, bool scale_left)
     return compareScaled<T, Op, false>(x, y, bounds);
 }
 
-MULTITARGET_FUNCTION_X86_V4(
-MULTITARGET_FUNCTION_HEADER(
-template <typename T, typename Op, bool v_is_left> void NO_INLINE
-), compareWithConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
-    const T * v, T k, UInt8 * c, size_t size)
-{
-    for (size_t i = 0; i < size; ++i)
-        c[i] = v_is_left ? Op::apply(v[i], k) : Op::apply(k, v[i]);
-}))
-
 /// Compares the column `v` with the constant `k`, one of them (`scale_vector`) multiplied by `multiplier`.
 template <typename T, typename Op>
 void NO_INLINE compareScaledVectorConstant(const T * v, T k, T multiplier, bool scale_vector, bool v_is_left, UInt8 * c, size_t size)
@@ -269,22 +259,14 @@ void NO_INLINE compareScaledVectorConstant(const T * v, T k, T multiplier, bool 
         k = common::mulIgnoreOverflow(k, multiplier);
     }
 
-#if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v4))
-    {
-        if (v_is_left)
-            compareWithConstantImpl_x86_64_v4<T, Op, true>(v, k, c, size);
-        else
-            compareWithConstantImpl_x86_64_v4<T, Op, false>(v, k, c, size);
-        return;
-    }
-#endif
     if (v_is_left)
-        compareWithConstantImpl<T, Op, true>(v, k, c, size);
+        compareVectorConstant<T, Op>(v, k, c, size);
     else
-        compareWithConstantImpl<T, Op, false>(v, k, c, size);
+        compareConstantVector<T, Op>(k, v, c, size);
 }
 
+/// With x86-64-v3 the per-row bounds check keeps this loop scalar, 1.5-2x slower than comparing without the check;
+/// x86-64-v4 (AVX-512) vectorizes the bounds checks and the comparison.
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, typename Op, bool scale_left> void NO_INLINE
@@ -336,8 +318,10 @@ public:
 
         /// `common::mulOverflow` does not detect the overflow of big integers; `applyMixed` applies the scale exactly.
         if constexpr (is_big_int_v<CompareInt>)
+        {
             if (check_overflow && !shift.none())
                 return applyMixed<true>(col_left.column, col_right.column, shift);
+        }
 
         if constexpr (std::is_same_v<A, B>)
         {
