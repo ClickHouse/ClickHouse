@@ -649,6 +649,9 @@ Block MergeTreeDataWriter::mergeBlock(
                     header, 1, sort_description, merging_params.columns_to_sum,
                     required_columns, block_size + 1, /*block_size_bytes=*/0, /*max_dynamic_subcolumns=*/std::nullopt, "last_value", "last_value", false, true, merging_params.allow_tuple_element_aggregation);
             }
+            /// Insert-time merging cannot record the per-column versions, leave the block unmerged.
+            case MergeTreeData::MergingParams::VersionedCoalescing:
+                return nullptr;
         }
     };
 
@@ -809,7 +812,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     const bool optimize_on_insert = !isPatchPartitionId(partition_id)
         && global_settings[Setting::optimize_on_insert]
         && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    UInt32 new_part_level = optimize_on_insert ? 1 : 0;
+    /// A part of level > 0 must not contain duplicate sorting keys (merging algorithms rely on it),
+    /// so modes that skip the insert-time merging (see mergeBlock) must produce parts of level 0.
+    const bool merges_on_insert = optimize_on_insert && data.merging_params.mode != MergeTreeData::MergingParams::VersionedCoalescing;
+    UInt32 new_part_level = merges_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
     if (patch_part_index && !patch_part_index->empty())
