@@ -3491,6 +3491,7 @@ void MergeTreeData::startStatisticsCache()
 {
     const auto settings = getSettings();
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+    std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
     if (refresh_statistics_seconds)
@@ -3502,6 +3503,14 @@ void MergeTreeData::startStatisticsCache()
 
         refresh_stats_task->activateAndSchedule();
     }
+}
+
+void MergeTreeData::stopStatisticsCache()
+{
+    /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
+    std::lock_guard lock(refresh_stats_task_mutex);
+    if (refresh_stats_task)
+        refresh_stats_task->deactivate();
 }
 
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
@@ -3718,8 +3727,7 @@ MergeTreeData::~MergeTreeData()
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        if (refresh_stats_task)
-            refresh_stats_task->deactivate();
+        stopStatisticsCache();
     }
     catch (...)
     {
@@ -7966,7 +7974,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             empty_info,
             partition,
             empty_part_name,
-            source_part->getMetadataSnapshot(),
+            getMetadataSnapshotForEmptyPart(*source_part),
             NO_TRANSACTION_PTR,
             source_part->info.isPatch() ? std::optional(source_part->getPatchPartIndex().cloneEmpty()) : std::nullopt);
     }
@@ -14382,6 +14390,17 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
         }
     }
 
+    /** The synthetic metadata of a patch part describes the patch's own structure and knows nothing of
+      * the table's metadata version, which would leave the written part at version 0. A part at version
+      * 0 is behind every metadata mutation there has ever been, so a `RENAME COLUMN` whose
+      * materialization is still pending was applied on read to a patch that already stores the new
+      * name: the patch was then looked up under the old name, found nothing, and the update it carries
+      * was silently invisible. The patch is written against the table as it is now, so stamp that.
+      */
+    auto patch_metadata_with_version = std::make_shared<StorageInMemoryMetadata>(*patch_metadata.metadata);
+    patch_metadata_with_version->setMetadataVersion(metadata_snapshot->getMetadataVersion());
+    patch_metadata.metadata = std::move(patch_metadata_with_version);
+
     return {std::move(pipeline), std::move(patch_metadata)};
 }
 
@@ -14922,6 +14941,17 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
         default:
             break;
     }
+}
+
+StorageMetadataPtr MergeTreeData::getMetadataSnapshotForEmptyPart(const IMergeTreeDataPart & source_part)
+{
+    auto metadata_snapshot = source_part.getMetadataSnapshot();
+    if (!source_part.info.isPatch())
+        return metadata_snapshot;
+
+    auto metadata_with_version = std::make_shared<StorageInMemoryMetadata>(*metadata_snapshot);
+    metadata_with_version->setMetadataVersion(source_part.getMetadataVersion());
+    return metadata_with_version;
 }
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
