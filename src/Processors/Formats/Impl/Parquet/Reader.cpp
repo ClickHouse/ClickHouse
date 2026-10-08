@@ -2998,10 +2998,30 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (prev_count == 1)
     {
         const auto & output_idx = sample_block_to_output_columns_idx.at(column_info.idx_in_output_block);
+
+        /// The null map left on a top-level primitive column marks the values replaced with
+        /// defaults (`input_format_null_as_default`). They are reported in the block missing values
+        /// (only for the columns of the sample block, and only with `input_format_defaults_for_omitted_fields`),
+        /// which the columns cache does not keep, so such a column is not written to the cache.
+        bool has_substituted_defaults = false;
+        if (!row_group.columns_cache_writes.empty())
+        {
+            const OutputColumnInfo & output_info = output_columns.at(output_idx.value());
+            if (output_info.is_primitive)
+            {
+                const auto & null_map_column = row_subgroup.columns.at(output_info.primitive_start).null_map;
+                if (null_map_column)
+                {
+                    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+                    has_substituted_defaults = memchr(null_map.data(), 1, null_map.size()) != nullptr;
+                }
+            }
+        }
+
         state.column = formOutputColumn(row_subgroup, output_idx.value(), row_subgroup.filter.rows_pass);
 
         if (!row_group.columns_cache_writes.empty())
-            addToColumnsCacheWrite(row_group, row_subgroup, column_info.idx_in_output_block, *state.column);
+            addToColumnsCacheWrite(row_group, row_subgroup, column_info.idx_in_output_block, *state.column, has_substituted_defaults);
     }
 }
 
@@ -4026,7 +4046,8 @@ bool Reader::canWriteToColumnsCache() const
     return budget.bytes_written.load(std::memory_order_relaxed) < max_bytes;
 }
 
-void Reader::addToColumnsCacheWrite(RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, const IColumn & column)
+void Reader::addToColumnsCacheWrite(
+    RowGroup & row_group, const RowSubgroup & row_subgroup, size_t idx_in_output_block, const IColumn & column, bool has_substituted_defaults)
 {
     auto & write = row_group.columns_cache_writes.at(idx_in_output_block);
     if (!write.active)
@@ -4035,14 +4056,14 @@ void Reader::addToColumnsCacheWrite(RowGroup & row_group, const RowSubgroup & ro
     /// Only the whole column of a row group is written: every row subgroup has to read all its
     /// rows, and the subgroups come one after another. A subgroup filtered by PREWHERE before this
     /// column was decoded, or one skipped by the column index, ends the write.
-    /// The values replaced with defaults (`input_format_null_as_default`) are reported in the
-    /// block missing values, which the cache does not keep, so such a column is not written either.
+    /// A column with values replaced with defaults (`input_format_null_as_default`) is not written
+    /// either: the cache does not keep which values are replaced, which a later query may need for
+    /// the block missing values, even if this query does not (e.g. the column is `PREWHERE`-only).
     const size_t rows_before = write.column ? write.column->size() : 0;
     const bool complete = row_subgroup.filter.rows_pass == row_subgroup.filter.rows_total
         && row_subgroup.start_row_idx == rows_before
         && column.size() == row_subgroup.filter.rows_total
-        && !(idx_in_output_block < row_subgroup.block_missing_values.getNumColumns()
-             && row_subgroup.block_missing_values.hasDefaultBits(idx_in_output_block));
+        && !has_substituted_defaults;
 
     if (!complete || !canWriteToColumnsCache())
     {

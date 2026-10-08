@@ -103,6 +103,14 @@ $CLICKHOUSE_CLIENT --log_comment "${CLICKHOUSE_TEST_UNIQUE_NAME}_other_type" -q 
 events other_type
 cache_content
 
+echo "--- a column with nulls replaced with defaults is not written"
+$CLICKHOUSE_CLIENT -q "SYSTEM DROP COLUMNS CACHE"
+DEFAULTS_QUERY="SELECT sum(id), sum(n) FROM file('${FILE}', Parquet, 'id UInt64, n UInt64 DEFAULT 42')"
+$CLICKHOUSE_CLIENT -q "${DEFAULTS_QUERY} SETTINGS use_columns_cache = 0"
+$CLICKHOUSE_CLIENT -q "${DEFAULTS_QUERY} SETTINGS use_columns_cache = 1"
+$CLICKHOUSE_CLIENT -q "${DEFAULTS_QUERY} SETTINGS use_columns_cache = 1"
+cache_content
+
 echo "--- a rewritten file is read anew"
 write_file 2 "30 seconds ago"
 run rewritten "use_columns_cache = 1"
