@@ -129,6 +129,10 @@ void validateColumnarWireSupportedType(const DataTypePtr & type, bool is_nested)
     }
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
+        /// An empty tuple has no element to carry the row count, so it cannot be decoded.
+        if (tuple_type->getElements().empty())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: empty Tuple type is not supported: {}", type->getName());
         for (const auto & elem : tuple_type->getElements())
             validateColumnarWireSupportedType(elem, /* is_nested */ true);
         return;

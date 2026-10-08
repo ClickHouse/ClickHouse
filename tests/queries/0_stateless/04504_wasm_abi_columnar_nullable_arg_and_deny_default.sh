@@ -60,9 +60,24 @@ CREATE OR REPLACE FUNCTION array_of_len_json
     ARGUMENTS (s JSON) RETURNS Array(UInt64)" 2>&1 \
     | grep -q "type is not supported" && echo "type is not supported"
 
+# An empty Tuple has no element to decode the rows from, so it is rejected up front too,
+# at the top level and nested.
+${CLICKHOUSE_CLIENT} --query "
+CREATE OR REPLACE FUNCTION empty_tuple_result
+    LANGUAGE WASM ABI COLUMNAR_V1 FROM 'columnar_abi_nullable_arg' :: 'array_of_len_col'
+    ARGUMENTS (s String) RETURNS Tuple()" 2>&1 \
+    | grep -q "type is not supported" && echo "type is not supported"
+
+${CLICKHOUSE_CLIENT} --query "
+CREATE OR REPLACE FUNCTION empty_tuple_result
+    LANGUAGE WASM ABI COLUMNAR_V1 FROM 'columnar_abi_nullable_arg' :: 'array_of_len_col'
+    ARGUMENTS (s String) RETURNS Array(Tuple())" 2>&1 \
+    | grep -q "type is not supported" && echo "type is not supported"
+
 ${CLICKHOUSE_CLIENT} << 'EOF'
 DROP FUNCTION IF EXISTS array_of_len;
 DROP FUNCTION IF EXISTS bytes_equal_nullable;
+DROP FUNCTION IF EXISTS empty_tuple_result;
 DROP FUNCTION IF EXISTS array_of_len_dynamic;
 DROP FUNCTION IF EXISTS array_of_len_json;
 DELETE FROM system.webassembly_modules WHERE name = 'columnar_abi_nullable_arg';
