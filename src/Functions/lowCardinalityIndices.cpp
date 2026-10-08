@@ -13,7 +13,7 @@ namespace DB
 namespace
 {
 
-class FunctionLowCardinalityIndices final : public IFunction
+class FunctionLowCardinalityIndices: public IFunction
 {
 public:
     static constexpr auto name = "lowCardinalityIndices";
@@ -27,8 +27,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool isDeterministic() const override { return false; }
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -59,7 +57,7 @@ public:
 REGISTER_FUNCTION(LowCardinalityIndices)
 {
     FunctionDocumentation::Description description = R"(
-Returns the position of a value in the dictionary of a [LowCardinality](/reference/data-types/lowcardinality) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
+Returns the position of a value in the dictionary of a [LowCardinality](../data-types/lowcardinality.md) column. Positions start at 1. Since LowCardinality have per-part dictionaries, this function may return different positions for the same value in different parts.
     )";
     FunctionDocumentation::Syntax syntax = "lowCardinalityIndices(col)";
     FunctionDocumentation::Arguments arguments = {

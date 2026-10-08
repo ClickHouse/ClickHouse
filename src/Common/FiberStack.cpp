@@ -1,5 +1,4 @@
 #include <base/defines.h>
-#include <base/MemorySanitizer.h>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>

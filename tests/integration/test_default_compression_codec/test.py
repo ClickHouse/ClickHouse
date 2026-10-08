@@ -1,5 +1,7 @@
+import logging
 import random
 import string
+import time
 
 import pytest
 
@@ -423,7 +425,7 @@ def test_default_codec_for_compact_parts(start_cluster):
     node4.query("ALTER TABLE compact_parts_table DETACH PART 'all_1_1_0'")
 
     data_path = node4.query(
-        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='compact_parts_table'"
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='compact_parts_table'"
     ).strip()
     node4.exec_in_container(
         [

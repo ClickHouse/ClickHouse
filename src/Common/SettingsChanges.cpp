@@ -46,16 +46,6 @@ Field * SettingsChanges::tryGet(std::string_view name)
     return &change->value;
 }
 
-const SettingChange * SettingsChanges::tryGetChange(std::string_view name) const
-{
-    return find(*this, name);
-}
-
-SettingChange * SettingsChanges::tryGetChange(std::string_view name)
-{
-    return find(*this, name);
-}
-
 bool SettingsChanges::insertSetting(std::string_view name, const Field & value)
 {
     auto it = std::find_if(begin(), end(), [&name](const SettingChange & change) { return change.name == name; });
@@ -85,11 +75,11 @@ bool SettingsChanges::removeSetting(std::string_view name)
 String SettingsChanges::namesToString() const
 {
     String result;
-    for (const auto & change : *this)
+    for (const auto & [name, _] : *this)
     {
         if (!result.empty())
             result += ", ";
-        result += change.name;
+        result += name;
     }
     return result;
 }

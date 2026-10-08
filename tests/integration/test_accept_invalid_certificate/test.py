@@ -1,6 +1,5 @@
-import os
 import os.path
-import tempfile
+from os import remove
 
 import pytest
 
@@ -9,6 +8,7 @@ from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 MAX_RETRY = 5
+CA_CERT = f"{SCRIPT_DIR}/certs/ca-cert.pem"
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -29,6 +29,18 @@ node1 = cluster.add_instance(
         "configs/ssl_config_strict.xml",
         "certs/self-key.pem",
         "certs/self-cert.pem",
+        "certs/ca-cert.pem",
+    ],
+    with_zookeeper=False,
+)
+
+
+node2 = cluster.add_instance(
+    "node2",
+    main_configs=[
+        "configs/ssl_config_ca_signed.xml",
+        "certs/client-key.pem",
+        "certs/client-cert.pem",
         "certs/ca-cert.pem",
     ],
     with_zookeeper=False,
@@ -61,29 +73,59 @@ config_connection_accept = """<clickhouse>
     </connections_credentials>
 </clickhouse>"""
 
+# node2 presents a certificate this CA signs, so the chain is valid and only the name can fail.
+config_ca_signed = """<clickhouse>
+    <openSSL>
+        <client>
+            <caConfig>{caConfig}</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>"""
+
+config_ca_signed_sni_override = """<clickhouse>
+    <tls-sni-override>client</tls-sni-override>
+    <openSSL>
+        <client>
+            <caConfig>{caConfig}</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+        </client>
+    </openSSL>
+</clickhouse>"""
+
+config_ca_signed_no_extended_verification = """<clickhouse>
+    <openSSL>
+        <client>
+            <caConfig>{caConfig}</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <extendedVerification>false</extendedVerification>
+        </client>
+    </openSSL>
+</clickhouse>"""
+
 
 def execute_query_native(node, query, config):
-    fd, config_path = tempfile.mkstemp(
-        prefix="client_", suffix=".xml", dir=f"{SCRIPT_DIR}/configs"
+    config_path = f"{SCRIPT_DIR}/configs/client.xml"
+
+    file = open(config_path, "w")
+    file.write(config)
+    file.close()
+
+    client = Client(
+        node.ip_address,
+        9440,
+        command=cluster.client_bin_path,
+        secure=True,
+        config=config_path,
     )
+
     try:
-        with os.fdopen(fd, "w") as f:
-            f.write(config)
-
-        client = Client(
-            node.ip_address,
-            9440,
-            command=cluster.client_bin_path,
-            secure=True,
-            config=config_path,
-        )
-
-        return client.query(query)
-    finally:
-        try:
-            os.remove(config_path)
-        except FileNotFoundError:
-            pass
+        result = client.query(query)
+        remove(config_path)
+        return result
+    except:
+        remove(config_path)
+        raise
 
 
 def test_default():
@@ -132,3 +174,29 @@ def test_strict_connection_reject():
             config_connection_accept.format(ip_address=f"{instance.ip_address}"),
         )
     assert "certificate verify failed" in str(err.value)
+
+
+def test_hostname_mismatch_rejected_by_default():
+    with pytest.raises(Exception) as err:
+        execute_query_native(node2, "SELECT 1", config_ca_signed.format(caConfig=CA_CERT))
+    assert "Unacceptable certificate" in str(err.value)
+
+
+def test_hostname_match_accepted():
+    assert (
+        execute_query_native(
+            node2, "SELECT 1", config_ca_signed_sni_override.format(caConfig=CA_CERT)
+        )
+        == "1\n"
+    )
+
+
+def test_extended_verification_disabled():
+    assert (
+        execute_query_native(
+            node2,
+            "SELECT 1",
+            config_ca_signed_no_extended_verification.format(caConfig=CA_CERT),
+        )
+        == "1\n"
+    )

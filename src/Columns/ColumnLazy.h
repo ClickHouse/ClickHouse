@@ -4,6 +4,7 @@
 #include <Columns/IColumnImpl.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
@@ -32,7 +33,7 @@ class ColumnLazy final : public COWHelper<IColumn, ColumnLazy>
 private:
     friend class COWHelper<IColumn, ColumnLazy>;
 
-    using CapturedColumns = VectorWithMemoryTracking<WrappedPtr>;
+    using CapturedColumns = std::vector<WrappedPtr>;
     CapturedColumns captured_columns;
     size_t s = 0;
 
@@ -93,7 +94,7 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
     void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -108,7 +109,7 @@ public:
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
-    VectorWithMemoryTracking<MutableColumnPtr> scatter(size_t num_columns, const Selector & selector) const override;
+    MutableColumns scatter(size_t num_columns, const Selector & selector) const override;
     void gather(ColumnGathererStream & gatherer_stream) override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

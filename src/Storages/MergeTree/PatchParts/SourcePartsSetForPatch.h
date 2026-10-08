@@ -34,6 +34,9 @@ public:
     static SourcePartsSetForPatch merge(const DataPartsVector & source_parts);
 
     void writeBinary(WriteBuffer & out) const;
+    /// Consumes exactly the bytes of the index and nothing after them: the index is also
+    /// embedded in larger streams, so whether anything may follow it is for the caller to
+    /// decide (see `IMergeTreeDataPart::loadSourcePartsSet` for the file that holds nothing else).
     void readBinary(ReadBuffer & in);
 
 private:

@@ -1,0 +1,9 @@
+#cmakedefine01 HAVE_SSSE3
+#cmakedefine01 HAVE_SSE41
+#cmakedefine01 HAVE_SSE42
+#cmakedefine01 HAVE_AVX
+#cmakedefine01 HAVE_AVX2
+#cmakedefine01 HAVE_AVX512
+
+#cmakedefine01 HAVE_NEON32
+#cmakedefine01 HAVE_NEON64

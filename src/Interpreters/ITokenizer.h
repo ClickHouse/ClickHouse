@@ -1,16 +1,14 @@
 #pragma once
 
-#include "config.h"
-
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
-#include <Columns/IColumn_fwd.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
 #include <base/FnTraits.h>
 #include <base/types.h>
 #include <fmt/format.h>
+
+#include <absl/container/flat_hash_set.h>
 
 #if defined(__SSE2__)
 #  include <emmintrin.h>
@@ -33,21 +31,15 @@ public:
         SplitByString,
         Array,
         SparseGrams,
-        AsciiCJK,
-        Icu,
-#if USE_MECAB
-        Japanese,
-#endif
+        UnicodeWord,
     };
 
-    ITokenizer() = delete;
+    ITokenizer() = default;
     explicit ITokenizer(Type type_) : type(type_) {}
     ITokenizer(const ITokenizer &) = default;
+    ITokenizer & operator=(const ITokenizer &) = default;
 
     Type getType() const { return type; }
-
-    /// Mutable state across calls: callers must clone per thread rather than share.
-    virtual bool isStateful() const { return false; }
 
     virtual ~ITokenizer() = default;
     virtual std::unique_ptr<ITokenizer> clone() const = 0;
@@ -72,7 +64,7 @@ public:
 
     /// Filters out tokens excessive for search.
     /// This method is inefficient and should be used only for constants.
-    virtual VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const = 0;
+    virtual std::vector<String> compactTokens(const std::vector<String> & tokens) const = 0;
 
     /// Updates Bloom filter from substring-match string filter value.
     /// An `ITokenizer` implementation may decide to skip certain
@@ -87,7 +79,7 @@ public:
     virtual void stringLikeToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter) const = 0;
 
     /// Collects copy of tokens into vector. This method is inefficient and should be used only for constants.
-    virtual void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const = 0;
+    virtual void stringToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
 
     /// Collects copy of tokens into vector from substring-match string filter value.
     /// An `ITokenizer` implementation may decide to skip certain
@@ -96,15 +88,15 @@ public:
     virtual void substringToTokens(
         const char * data,
         size_t length,
-        VectorWithMemoryTracking<String> & tokens,
+        std::vector<String> & tokens,
         bool is_prefix,
         bool is_suffix) const = 0;
 
-    virtual void stringLikeToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const = 0;
+    virtual void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const = 0;
     virtual bool supportsStringLike() const = 0;
 
 private:
-    const Type type;
+    Type type;
 };
 
 using TokenizerPtr = const ITokenizer *;
@@ -142,7 +134,7 @@ protected:
             bloom_filter.add(token.c_str(), token.size());
     }
 
-    void stringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override
+    void stringToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
     {
         size_t cur = 0;
         size_t token_start = 0;
@@ -152,7 +144,7 @@ protected:
             tokens.push_back({data + token_start, token_len});
     }
 
-    void stringLikeToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens) const override
+    void stringLikeToTokens(const char * data, size_t length, std::vector<String> & tokens) const override
     {
         size_t cur = 0;
         String token;
@@ -161,10 +153,10 @@ protected:
             tokens.push_back(token);
     }
 
-    VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const override
+    std::vector<String> compactTokens(const std::vector<String> & tokens) const override
     {
         std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
-        return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
+        return std::vector<String>(unique_tokens.begin(), unique_tokens.end());
     }
 };
 
@@ -184,7 +176,7 @@ struct NgramsTokenizer final : public ITokenizerHelper<NgramsTokenizer>
 
     bool supportsStringLike() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
 private:
     size_t n;
@@ -202,7 +194,7 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
     bool nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const override;
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
 
@@ -323,7 +315,7 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
 
     bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     std::vector<String> separators;
 };
@@ -342,7 +334,7 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 
     bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
 /// Parser extracting sparse grams (the same as function sparseGrams).
@@ -357,13 +349,12 @@ struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer
 
     String getDescription() const override;
     bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
-    VectorWithMemoryTracking<String> compactTokens(const VectorWithMemoryTracking<String> & tokens) const override;
+    std::vector<String> compactTokens(const std::vector<String> & tokens) const override;
 
     bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
     bool supportsStringLike() const override { return true; }
-    bool isStateful() const override { return true; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 private:
     size_t min_gram_length;
     size_t max_gram_length;
@@ -383,20 +374,20 @@ private:
 ///   * `_a` -> token
 ///   * `__` -> ignored (no alphanumeric)
 ///
-/// 2. Connectors (ASCII only)
+/// 2. Connectors
 ///
-/// * ASCII `:` (U+003A) connects **letters only**, not digits.
-/// * ASCII `.` and `'` connect **letters-letters** or **digits-digits**.
+/// * `:` connects **letters only**, not digits.
+/// * `.` and `'` connect **letters-letters** or **digits-digits**.
 /// * If the connector cannot connect both sides, it is treated as a **token boundary**.
 ///
-/// 3. Unicode / CJK
+/// 3. Unicode / Chinese
 ///
-/// * Non-ASCII Unicode characters are **always single-character tokens** (including CJK).
+/// * Chinese characters are **always single-character tokens**.
+/// * Certain Unicode punctuation (Chinese punctuation) are **stop characters** and **break tokens**.
 ///
 /// 4. Token Validity
 ///
-/// * ASCII tokens must contain at least **one ASCII letter or digit** to be valid.
-/// * Non-ASCII Unicode characters are valid single-character tokens on their own.
+/// * Tokens must contain at least **one ASCII letter or digit** to be valid.
 /// * Connectors `_`, `:`, `.`, `'` cannot form a token by themselves.
 /// * `_` can start or end the token but must **not be the only character**.
 ///
@@ -417,14 +408,15 @@ private:
 /// | `a:b a:3 a: :a ::a:b:3:` | `['a:b','a','3','a','a','a:b','3']`   |
 /// | `a'b a'3 a' 'a ''a'b'3'` | `['a\'b','a','3','a','a','a\'b','3']` |
 /// | `a.b a.3 a. .a ..a.b.3.` | `['a.b','a','3','a','a','a.b','3']`   |
-struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
+struct UnicodeWordTokenizer final : public ITokenizerHelper<UnicodeWordTokenizer>
 {
-    explicit AsciiCJKTokenizer()
-        : ITokenizerHelper(Type::AsciiCJK)
+    explicit UnicodeWordTokenizer(const std::vector<String> & stop_words_)
+        : ITokenizerHelper(Type::UnicodeWord)
+        , stop_words(stop_words_.begin(), stop_words_.end())
     {
     }
 
-    static const char * getName() { return "asciiCJK"; }
+    static const char * getName() { return "unicode_word"; }
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
 
@@ -439,38 +431,13 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
 
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
 
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     bool supportsStringLike() const override { return true; }
-};
-
-/// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
-/// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
-/// split into meaningful word tokens rather than single characters.
-struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
-{
-    explicit IcuTokenizer(String locale_) : ITokenizerHelper(Type::Icu), locale(std::move(locale_)) {}
-
-    static const char * getName() { return "icu"; }
-    static const char * getExternalName() { return getName(); }
-    String getDescription() const override;
-
-    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
-
-    bool supportsStringLike() const override { return false; }
-    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
-
-    const String & getLocale() const { return locale; }
 
 private:
-    String locale;
+    absl::flat_hash_set<String> stop_words;
 };
-
-/// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
-/// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
-/// `nextInString` (see `Type::Japanese` below), so the concrete type is not needed here.
 
 namespace detail
 {
@@ -534,31 +501,15 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
             detail::forEachTokenImpl(sparse_grams_tokenizer, data, length, callback);
             return;
         }
-        case ITokenizer::Type::AsciiCJK:
+        case ITokenizer::Type::UnicodeWord:
         {
-            const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            const auto & unicode_word_tokenizer = assert_cast<const UnicodeWordTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(unicode_word_tokenizer, data, length, callback);
             return;
         }
-        case ITokenizer::Type::Icu:
-        {
-            const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
-            return;
-        }
-#if USE_MECAB
-        case ITokenizer::Type::Japanese:
-            /// Dispatch through the base virtual `nextInString` so this header needn't see the
-            /// MeCab-dependent `JapaneseTokenizer` definition.
-            detail::forEachTokenImpl(tokenizer, data, length, callback);
-            return;
-#endif
     }
 }
 
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
-
-/// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows);
 
 }

@@ -24,7 +24,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Line final : public IFunction
+class FunctionH3Line : public IFunction
 {
 public:
     static constexpr auto name = "h3Line";
@@ -108,13 +108,12 @@ public:
                 continue;
             }
 
-            int64_t size = 0;
-            H3Error err = gridPathCellsSize(start, end, &size);
-            if (err)
+            auto size = gridPathCellsSize(start, end);
+            if (size < 0)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
-                    start, end, err);
+                    "Line cannot be computed between start H3 index {} and end H3 index {}",
+                    start, end);
 
             current_offset += size;
             dst_offsets[row] = current_offset;
@@ -135,7 +134,15 @@ public:
             {
                 continue;
             }
-            gridPathCells(start, end, ptr + current_offset);
+            /// The sizing pass above validates only the two endpoints, so this call can still fail on
+            /// an intermediate cell in pentagon distortion, leaving the rest of the row's slots unwritten.
+            const int err = gridPathCells(start, end, ptr + current_offset);
+            if (err)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, err);
+
             current_offset += size;
         }
 

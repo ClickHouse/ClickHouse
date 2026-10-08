@@ -37,6 +37,7 @@ struct RowInputFormatParams
     OverflowMode timeout_overflow_mode = OverflowMode::THROW;
 };
 
+bool isParseError(int code);
 bool checkTimeLimit(const RowInputFormatParams & params, const Stopwatch & stopwatch);
 
 /// Row oriented input format: reads data row by row.

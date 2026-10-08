@@ -21,7 +21,7 @@ namespace
 /** Generate random string of specified length with printable ASCII characters, almost uniformly distributed.
   * First argument is length, other optional arguments are ignored and used to prevent common subexpression elimination to get different values.
   */
-class FunctionRandomPrintableASCII final : public IFunction
+class FunctionRandomPrintableASCII : public IFunction
 {
 public:
     static constexpr auto name = "randomPrintableASCII";

@@ -7,7 +7,7 @@ namespace DB
 
 class StorageWindowView;
 
-class WatermarkTransform final : public ISimpleTransform
+class WatermarkTransform : public ISimpleTransform
 {
 public:
     WatermarkTransform(

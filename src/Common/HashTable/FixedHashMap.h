@@ -99,12 +99,11 @@ template <
     typename Mapped,
     typename Cell = FixedHashMapCell<Key, Mapped>,
     typename Size = FixedHashTableStoredSize<Cell>,
-    typename Allocator = HashTableAllocator,
-    size_t size_bits = sizeof(Key) * 8>
-class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator, size_bits>
+    typename Allocator = HashTableAllocator>
+class FixedHashMap : public FixedHashTable<Key, Cell, Size, Allocator>
 {
 public:
-    using Base = FixedHashTable<Key, Cell, Size, Allocator, size_bits>;
+    using Base = FixedHashTable<Key, Cell, Size, Allocator>;
     using Self = FixedHashMap;
     using LookupResult = typename Base::LookupResult;
 
@@ -135,7 +134,7 @@ public:
             if (!this->buf[i].isZero(*this))
             {
                 typename Self::LookupResult res_it;
-                bool inserted = false;
+                bool inserted;
                 that.emplace(static_cast<Key>(i), res_it, inserted, i);
                 func(res_it->getMapped(), this->buf[i].getMapped(), inserted);
             }
@@ -148,7 +147,7 @@ public:
         for (auto it = this->begin(), end = this->end(); it != end; ++it)
         {
             typename Self::LookupResult res_it;
-            bool inserted = false;
+            bool inserted;
             that.emplace(it->getKey(), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
@@ -194,7 +193,7 @@ public:
     Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted);
         if (inserted)
             new (&it->getMapped()) Mapped();
@@ -219,12 +218,3 @@ using FixedImplicitZeroHashMapWithCalculatedSize = FixedHashMap<
     FixedHashMapImplicitZeroCell<Key, Mapped>,
     FixedHashTableCalculatedSize<FixedHashMapImplicitZeroCell<Key, Mapped>>,
     Allocator>;
-
-template <typename Key, typename Mapped, size_t size_bits>
-using FixedHashMapWithSizeBits = FixedHashMap<
-    Key,
-    Mapped,
-    FixedHashMapCell<Key, Mapped>,
-    FixedHashTableStoredSize<FixedHashMapCell<Key, Mapped>>,
-    HashTableAllocator,
-    size_bits>;

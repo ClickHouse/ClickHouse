@@ -20,7 +20,7 @@ namespace
 
 /** Transform a named tuple into names, which is a constant array of strings.
   */
-class ExecutableFunctionTupleNames final : public IExecutableFunction
+class ExecutableFunctionTupleNames : public IExecutableFunction
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -40,7 +40,7 @@ private:
     Array name_fields;
 };
 
-class FunctionBaseTupleNames final : public IFunctionBase
+class FunctionBaseTupleNames : public IFunctionBase
 {
 public:
     static constexpr auto name = "tupleNames";
@@ -71,7 +71,7 @@ private:
     Array name_fields;
 };
 
-class TupleNamesOverloadResolver final : public IFunctionOverloadResolver
+class TupleNamesOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "tupleNames";

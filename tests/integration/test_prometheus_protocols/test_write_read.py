@@ -2,15 +2,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from .prometheus_test_utils import (
-    convert_read_request_to_protobuf,
-    convert_time_series_to_protobuf,
-    execute_query_via_http_api,
-    get_response_to_remote_read,
-    get_response_to_remote_write,
-    receive_protobuf_from_remote_read,
-    send_protobuf_to_remote_write,
-)
+from .prometheus_test_utils import *
 import re
 import requests
 import time
@@ -62,19 +54,19 @@ def send_big_data(metric_name="big_data", start_time=1724112000, end_time=172411
 # Executes a query in the "prometheus_reader" service. This service uses the RemoteRead protocol to get data from ClickHouse.
 def execute_query_in_prometheus_reader(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_ip["reader"],
-        cluster.prometheus_port["reader"],
+        cluster.prometheus_reader_ip,
+        cluster.prometheus_reader_port,
         "/api/v1/query",
         query,
         timestamp,
     )
 
 
-# Executes a query in the "prometheus_writer" service. This service sends data to ClickHouse via the RemoteWrite protocol.
+# Executes a query in the "prometheus_receiver" service. We send data to this service via the RemoteWrite protocol.
 def execute_query_in_prometheus_writer(query, timestamp):
     return execute_query_via_http_api(
-        cluster.prometheus_ip["writer"],
-        cluster.prometheus_port["writer"],
+        cluster.prometheus_writer_ip,
+        cluster.prometheus_writer_port,
         "/api/v1/query",
         query,
         timestamp,
@@ -114,11 +106,11 @@ def test_handle_normal_scrape():
     evaluation_time = time.time()
     result = execute_query_in_prometheus(query, evaluation_time)
     print(f"result={result}")
-    pattern = '\\{"resultType": "vector", "result": \\[\\{"metric": \\{"__name__": "up", "instance": "localhost:9090", "job": "prometheus"}, "value": \\[[0-9]+(\\.[0-9]*)?, "1"]}]}'
+    pattern = '\{"resultType":\ "vector",\ "result":\ \[\{"metric":\ \{"__name__":\ "up",\ "instance":\ "localhost:9090",\ "job":\ "prometheus"},\ "value":\ \[[0-9]+(\.[0-9]*)?,\ "1"]}]}'
     assert re.match(pattern, result)
     chresult = execute_query_in_clickhouse(query, evaluation_time)
     print(f"chresult={chresult}")
-    chpattern = "\\[\\('__name__','up'\\),\\('instance','localhost:9090'\\),\\('job','prometheus'\\)]\t[^\t]*\t1\n"
+    chpattern = "\[\('__name__','up'\),\('instance','localhost:9090'\),\('job','prometheus'\)]\t[^\t]*\t1\n"
     assert re.match(chpattern, chresult)
 
 
@@ -162,48 +154,3 @@ def test_remote_read_big_data():
     assert len(read_response.results) == 1
     assert len(read_response.results[0].timeseries) == 1
     assert len(read_response.results[0].timeseries[0].samples) == 75000
-
-
-def test_remote_write_zstd():
-    start_time = 1724116000
-    count = 100
-    time_series = []
-    for i in range(0, count):
-        time_series.append(({"__name__": "zstd_data"}, {start_time + i: float(i)}))
-    protobuf = convert_time_series_to_protobuf(time_series)
-
-    send_protobuf_to_remote_write(
-        node.ip_address, 9093, "/write", protobuf, content_encoding="zstd"
-    )
-
-    read_request = convert_read_request_to_protobuf(
-        "^zstd_data$", start_time, start_time + count
-    )
-    read_response = receive_protobuf_from_remote_read(
-        node.ip_address, 9093, "read_auth_ok", read_request
-    )
-    assert len(read_response.results) == 1
-    assert len(read_response.results[0].timeseries) == 1
-    assert len(read_response.results[0].timeseries[0].samples) == count
-
-
-def test_remote_write_unsupported_content_encoding():
-    time_series = [({"__name__": "gzip_data"}, {1724117000: 1.0})]
-    protobuf = convert_time_series_to_protobuf(time_series)
-
-    response = get_response_to_remote_write(
-        node.ip_address, 9093, "/write", protobuf, content_encoding="gzip"
-    )
-    assert response.status_code == requests.codes.unsupported_media_type
-    assert "Content-Encoding" in response.text
-
-
-def test_remote_write_unsupported_content_type():
-    time_series = [({"__name__": "text_data"}, {1724117000: 1.0})]
-    protobuf = convert_time_series_to_protobuf(time_series)
-
-    response = get_response_to_remote_write(
-        node.ip_address, 9093, "/write", protobuf, content_type="text/plain"
-    )
-    assert response.status_code == requests.codes.unsupported_media_type
-    assert "Content-Type" in response.text

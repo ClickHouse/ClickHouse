@@ -545,46 +545,6 @@ TEST(AccessRights, Filter)
     root.revoke(AccessType::READ, "URL");
     res = root.getFilters("URL");
     ASSERT_EQ(res.size(), 0);
-
-    res = root.getFilters("NoSuchParam");
-    ASSERT_EQ(res.size(), 0);
-}
-
-TEST(AccessRights, FilterDoesNotMutate)
-{
-    AccessRights root;
-    root.grant(AccessType::READ, "S3", "s3://url1.*");
-
-    /// operator = is a deep copy, so `before` is an independent snapshot of the tree.
-    const AccessRights before = root;
-    const auto nodes_before = root.dumpNodes();
-
-    /// A parameter that is absent from the tree: "URL" shares no first character with
-    /// "S3", so the lookup misses and a mutating find-or-create would insert nodes.
-    root.getFilters("URL");
-    ASSERT_EQ(root, before);
-    ASSERT_EQ(root.dumpNodes(), nodes_before);
-
-    /// A parameter that is present must likewise leave the tree untouched.
-    root.getFilters("S3");
-    ASSERT_EQ(root, before);
-    ASSERT_EQ(root.dumpNodes(), nodes_before);
-}
-
-TEST(AccessRights, FilterDoesNotMutateOnPrefixSplit)
-{
-    AccessRights root;
-    root.grant(AccessType::READ, "S3", "s3://url1.*");
-
-    const AccessRights before = root;
-    const auto nodes_before = root.dumpNodes();
-
-    /// "SQLITE" shares its first character with the existing "S3" node but mismatches
-    /// after it, so a mutating find-or-create would rename "S3" in place and splice it
-    /// into a new "S" parent. Both are real source names.
-    root.getFilters("SQLITE");
-    ASSERT_EQ(root, before);
-    ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
 
 TEST(AccessRights, RevokeWithParameters)

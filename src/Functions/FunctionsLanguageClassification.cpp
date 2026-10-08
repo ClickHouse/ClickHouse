@@ -76,7 +76,7 @@ struct FunctionDetectLanguageImpl
         res_data.reserve(input_rows_count * 2);
         res_offsets.resize(input_rows_count);
 
-        bool is_reliable = false;
+        bool is_reliable;
         size_t res_offset = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -108,7 +108,7 @@ struct FunctionDetectLanguageImpl
     }
 };
 
-class FunctionDetectLanguageMixed final : public IFunction
+class FunctionDetectLanguageMixed : public IFunction
 {
 public:
     static constexpr auto name = "detectLanguageMixed";
@@ -171,7 +171,7 @@ public:
         values_data->reserve(total_elements);
         offsets->reserve(input_rows_count);
 
-        bool is_reliable = false;
+        bool is_reliable;
         CLD2::Language result_lang_top3[top_N];
         int32_t pc[top_N];
         int bytes[top_N];
@@ -237,11 +237,6 @@ Detects the language of the UTF8-encoded input string.
 The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
 
 The longer the input, the more precise the language detection will be.
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
 )";
     FunctionDocumentation::Syntax syntax_detect = "detectLanguage(s)";
     FunctionDocumentation::Arguments arguments_detect = {
@@ -259,11 +254,6 @@ Set `allow_experimental_nlp_functions = 1` to enable it.
 
     FunctionDocumentation::Description description_mixed = R"(
 Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
-
-:::warning
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
 )";
     FunctionDocumentation::Syntax syntax_mixed = "detectLanguageMixed(s)";
     FunctionDocumentation::Arguments arguments_mixed = {

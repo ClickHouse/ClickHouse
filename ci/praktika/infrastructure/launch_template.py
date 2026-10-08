@@ -15,10 +15,9 @@ class LaunchTemplate:
         praktika_resource_tag: str = (
             ""  # Praktika resource tag (e.g., "mac") - tagged as "praktika_resource_tag"
         )
-        # GitHub runner labels (e.g., ["arm_macos_small", "macos"]) - tagged as "github:runner-type"
-        # (comma-separated). Tag key is kept for compatibility with the legacy runner-init.py,
-        # which inlines this value into the runner's `--labels` list.
-        runner_labels: List[str] = field(default_factory=list)
+        runner_type: str = (
+            ""  # GitHub runner type (e.g., "arm_macos_small") - tagged as "github:runner-type"
+        )
 
         # High-level fields (optional). If `data` is provided, it is used as-is.
         image_id: str = ""
@@ -164,8 +163,8 @@ class LaunchTemplate:
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 instance_tags["praktika_resource_tag"] = self.praktika_resource_tag
-            if self.runner_labels:
-                instance_tags["github:runner-type"] = ",".join(self.runner_labels)
+            if self.runner_type:
+                instance_tags["github:runner-type"] = self.runner_type
 
             if instance_tags:
                 tag_specs.append(

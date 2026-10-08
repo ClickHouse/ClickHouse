@@ -3,7 +3,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/escapeForFileName.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -42,7 +41,7 @@ namespace Setting
 namespace
 {
 
-class FunctionSerial final : public IFunction
+class FunctionSerial : public IFunction
 {
 private:
     ContextPtr context;
@@ -52,16 +51,15 @@ private:
 public:
     static constexpr auto name = "generateSerialID";
 
-    explicit FunctionSerial(ContextPtr context_)
-        : context(context_)
+    explicit FunctionSerial(ContextPtr context_) : context(context_)
     {
-        keeper_path = context_->getServerSettings()[ServerSetting::series_keeper_path];
-        max_series = context_->getSettingsRef()[Setting::max_autoincrement_series];
+        keeper_path = context->getServerSettings()[ServerSetting::series_keeper_path];
+        max_series = context->getSettingsRef()[Setting::max_autoincrement_series];
     }
 
-    static FunctionPtr create(ContextPtr context_)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionSerial>(std::move(context_));
+        return std::make_shared<FunctionSerial>(std::move(context));
     }
 
     String getName() const override { return name; }
@@ -187,7 +185,7 @@ public:
                 UInt64 num_rows = 0;
                 UInt64 old_value = 0;
             };
-            UnorderedMapWithMemoryTracking<std::string_view, Series, StringViewHash> series;
+            std::unordered_map<std::string_view, Series, StringViewHash> series;
 
             /// Count the number of rows for each name:
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -214,7 +212,7 @@ REGISTER_FUNCTION(Serial)
 Generates and returns sequential numbers starting from the previous counter value.
 This function takes a string argument - a series identifier, and an optional starting value.
 The server should be configured with Keeper.
-The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/reference/settings/server-settings/settings/other#series_keeper_path) in the server configuration.
+The series are stored in Keeper nodes under the path, which can be configured in [`series_keeper_path`](/operations/server-configuration-parameters/settings#series_keeper_path) in the server configuration.
     )";
     FunctionDocumentation::Syntax syntax = "generateSerialID(series_identifier[, start_value])";
     FunctionDocumentation::Arguments arguments = {

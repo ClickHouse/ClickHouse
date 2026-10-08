@@ -372,14 +372,18 @@ struct integer<Bits, Signed>::_impl
 
         self.items[little(0)] = _impl::to_Integral(rhs);
 
-        /// Sign-extend with a value select instead of a branch: a data-dependent branch here
-        /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
-        base_type extension = 0;
         if constexpr (std::is_signed_v<Integral>)
-            extension = rhs < 0 ? base_type(-1) : base_type(0);
+        {
+            if (rhs < 0)
+            {
+                for (unsigned i = 1; i < item_count; ++i)
+                    self.items[little(i)] = -1;
+                return;
+            }
+        }
 
         for (unsigned i = 1; i < item_count; ++i)
-            self.items[little(i)] = extension;
+            self.items[little(i)] = 0;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -498,8 +502,7 @@ struct integer<Bits, Signed>::_impl
         /// The necessary check here is that FromDoubleIntermediateType has enough significant (mantissa) bits to store the
         /// int64_t max value precisely.
 
-        if (static_cast<FromDoubleIntermediateType>(rhs) > static_cast<FromDoubleIntermediateType>(min_int)
-            && static_cast<FromDoubleIntermediateType>(rhs) < static_cast<FromDoubleIntermediateType>(max_int))
+        if (rhs > static_cast<FromDoubleIntermediateType>(min_int) && rhs < static_cast<FromDoubleIntermediateType>(max_int))
         {
             self = static_cast<int64_t>(rhs);
             return;
@@ -507,7 +510,7 @@ struct integer<Bits, Signed>::_impl
 
         const FromDoubleIntermediateType rhs_long_double = (static_cast<FromDoubleIntermediateType>(rhs) < 0)
             ? -static_cast<FromDoubleIntermediateType>(rhs)
-            : static_cast<FromDoubleIntermediateType>(rhs);
+            : rhs;
 
         set_multiplier(self, rhs_long_double);
 
@@ -527,13 +530,18 @@ struct integer<Bits, Signed>::_impl
 
         if constexpr (Bits > Bits2)
         {
-            /// See the rationale in wide_integer_from_builtin.
-            base_type extension = 0;
             if constexpr (std::is_signed_v<Signed2>)
-                extension = rhs < 0 ? base_type(-1) : base_type(0);
+            {
+                if (rhs < 0)
+                {
+                    for (unsigned i = to_copy; i < item_count; ++i)
+                        self.items[little(i)] = -1;
+                    return;
+                }
+            }
 
             for (unsigned i = to_copy; i < item_count; ++i)
-                self.items[little(i)] = extension;
+                self.items[little(i)] = 0;
         }
     }
 
@@ -924,31 +932,19 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
+            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
+                return is_negative(rhs);
+
             integer<Bits, Signed> t = rhs;
-
-            /// Branchless lexicographic comparison from the most significant limb: no early-out, so the
-            /// columnar comparison kernels stay branchless and vectorize (e.g. to AVX-512 vpcmpq). The top
-            /// limb is compared as signed for signed types, which subsumes the sign check; lower limbs unsigned.
-            base_type lhs_top = lhs.items[big(0)];
-            base_type rhs_top = get_item(t, big(0));
-
-            bool greater;
-            if constexpr (std::is_same_v<Signed, signed>)
-                greater = static_cast<signed_base_type>(lhs_top) > static_cast<signed_base_type>(rhs_top);
-            else
-                greater = lhs_top > rhs_top;
-
-            bool equal = lhs_top == rhs_top;
-            for (unsigned i = 1; i < item_count; ++i)
+            for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type lhs_item = lhs.items[big(i)];
                 base_type rhs_item = get_item(t, big(i));
 
-                greater = greater | (equal & (lhs_item > rhs_item));
-                equal = equal & (lhs_item == rhs_item);
+                if (lhs.items[big(i)] != rhs_item)
+                    return lhs.items[big(i)] > rhs_item;
             }
 
-            return greater;
+            return false;
         }
         else
         {
@@ -962,29 +958,19 @@ public:
     {
         if constexpr (should_keep_size<T>())
         {
+            if (std::numeric_limits<T>::is_signed && (is_negative(lhs) != is_negative(rhs)))
+                return is_negative(lhs);
+
             integer<Bits, Signed> t = rhs;
-
-            /// See the rationale in operator_greater.
-            base_type lhs_top = lhs.items[big(0)];
-            base_type rhs_top = get_item(t, big(0));
-
-            bool less;
-            if constexpr (std::is_same_v<Signed, signed>)
-                less = static_cast<signed_base_type>(lhs_top) < static_cast<signed_base_type>(rhs_top);
-            else
-                less = lhs_top < rhs_top;
-
-            bool equal = lhs_top == rhs_top;
-            for (unsigned i = 1; i < item_count; ++i)
+            for (unsigned i = 0; i < item_count; ++i)
             {
-                base_type lhs_item = lhs.items[big(i)];
                 base_type rhs_item = get_item(t, big(i));
 
-                less = less | (equal & (lhs_item < rhs_item));
-                equal = equal & (lhs_item == rhs_item);
+                if (lhs.items[big(i)] != rhs_item)
+                    return lhs.items[big(i)] < rhs_item;
             }
 
-            return less;
+            return false;
         }
         else
         {

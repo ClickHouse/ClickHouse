@@ -1,5 +1,4 @@
 #include <Access/SettingsConstraintsAndProfileIDs.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -60,7 +59,3 @@ void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns,
 template class SystemMergeTreeSettings<false>;
 template class SystemMergeTreeSettings<true>;
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(SystemMergeTreeSettings<false>) }
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(SystemMergeTreeSettings<true>) }

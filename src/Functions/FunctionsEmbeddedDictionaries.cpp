@@ -250,7 +250,7 @@ Finds the highest continent in the hierarchy for the region.
     }
     {
         FunctionDocumentation::Description description = R"(
-Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](/reference/statements/create/dictionary/embedded).
+Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../dictionaries#embedded-dictionaries).
 If the population is not recorded for the region, it returns `0`. In the geobase, the population might be recorded for child regions, but not for parent regions.
         )";
         FunctionDocumentation::Syntax syntax = "regionToPopulation(id[, geobase])";

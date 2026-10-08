@@ -48,18 +48,6 @@ class DedicatedHost:
         # Extra fetched/derived properties
         ext: Dict[str, Any] = field(default_factory=dict)
 
-        def _resolved_region(self) -> str:
-            """Return the region, auto-derived from availability_zones if not set explicitly."""
-            if self.region:
-                return self.region
-            if self.availability_zones:
-                # AZ name is region name + one letter suffix, e.g. "us-east-1a" -> "us-east-1"
-                return self.availability_zones[0][:-1]
-            raise ValueError(
-                f"Cannot determine region for DedicatedHost '{self.name}': "
-                f"neither 'region' nor 'availability_zones' is set"
-            )
-
         def _resolved_availability_zones(self) -> List[str]:
             if self.availability_zones:
                 return self.availability_zones
@@ -70,10 +58,9 @@ class DedicatedHost:
 
             import boto3
 
-            region = self._resolved_region()
-            ec2 = boto3.client("ec2", region_name=region)
+            ec2 = boto3.client("ec2", region_name=self.region)
             resp = ec2.describe_availability_zones(
-                Filters=[{"Name": "region-name", "Values": [region]}]
+                Filters=[{"Name": "region-name", "Values": [self.region]}]
             )
             zones = [
                 z["ZoneName"]
@@ -81,7 +68,7 @@ class DedicatedHost:
                 if z.get("State") == "available" and z.get("ZoneName")
             ]
             if not zones:
-                raise Exception(f"No available AZs found for region '{region}'")
+                raise Exception(f"No available AZs found for region '{self.region}'")
             return zones
 
         def _host_filters(self, az: str) -> List[Dict[str, Any]]:
@@ -110,7 +97,7 @@ class DedicatedHost:
         def fetch(self):
             import boto3
 
-            ec2 = boto3.client("ec2", region_name=self._resolved_region())
+            ec2 = boto3.client("ec2", region_name=self.region)
 
             # self._ensure_host_resource_group()
 
@@ -168,7 +155,7 @@ class DedicatedHost:
                 "Query": json.dumps(query_obj),
             }
 
-            rg = boto3.client("resource-groups", region_name=self._resolved_region())
+            rg = boto3.client("resource-groups", region_name=self.region)
 
             exists = False
             try:
@@ -227,7 +214,7 @@ class DedicatedHost:
                     f"placed on these dedicated hosts. Currently set to: '{self.auto_placement}'"
                 )
 
-            ec2 = boto3.client("ec2", region_name=self._resolved_region())
+            ec2 = boto3.client("ec2", region_name=self.region)
 
             azs = self._resolved_availability_zones()
 
@@ -374,7 +361,7 @@ class DedicatedHost:
 
             _ = force  # Unused, kept for API consistency
 
-            ec2 = boto3.client("ec2", region_name=self._resolved_region())
+            ec2 = boto3.client("ec2", region_name=self.region)
 
             # Fetch existing hosts
             self.fetch()

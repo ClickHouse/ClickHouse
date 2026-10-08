@@ -59,6 +59,7 @@ namespace ProfileEvents
     extern const Event ThreadPoolReaderPageCacheMissElapsedMicroseconds;
     extern const Event AsynchronousReaderIgnoredBytes;
 
+    extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
@@ -101,7 +102,7 @@ ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
 std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request request)
 {
     /// If size is zero, then read() cannot be distinguished from EOF
-    chassert(request.size);
+    assert(request.size);
 
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
 

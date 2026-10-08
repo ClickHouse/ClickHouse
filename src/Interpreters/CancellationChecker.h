@@ -42,10 +42,6 @@ private:
     std::mutex m;
     std::condition_variable cond_var;
 
-    /// The deadline (ms since steady_clock epoch) the worker's wait is currently armed for;
-    /// 0 while the worker is not parked on a deadline. Lets tests synchronize with the wait state.
-    UInt64 armed_deadline = 0;
-
     static void cancelTask(CancellationChecker::QueryToTrack task);
 
     const LoggerPtr log;
@@ -68,8 +64,5 @@ public:
 
     // Worker thread function
     void workerFunction();
-
-    // The deadline the worker is currently sleeping toward, 0 when it is not. For tests.
-    UInt64 getArmedDeadline();
 };
 }

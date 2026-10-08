@@ -18,9 +18,9 @@
 struct LockMemoryExceptionInThread
 {
 private:
-    static thread_local constinit uint64_t counter;
-    static thread_local constinit VariableContext level;
-    static thread_local constinit bool block_fault_injections;
+    static thread_local uint64_t counter;
+    static thread_local VariableContext level;
+    static thread_local bool block_fault_injections;
 
     VariableContext previous_level;
     bool previous_block_fault_injections;

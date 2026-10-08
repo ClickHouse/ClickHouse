@@ -1,9 +1,0 @@
-IN (subquery) is rewritten to a JOIN
-rewritten to join
-distributed result matches single-node
-1000	6993000
-1000	6993000
-99000
-99000
-the query distributes
-distributes

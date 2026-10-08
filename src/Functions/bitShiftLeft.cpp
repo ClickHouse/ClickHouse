@@ -61,7 +61,7 @@ struct BitShiftLeftImpl
             const UInt8 * begin = pos;
 
             const size_t old_size = out_vec.size();
-            size_t length = 0;
+            size_t length;
             if (shift_left_bits)
                 length = end + shift_left_bytes - begin + 1; /// Moving to the left here will make a redundant byte to store the overflowing bits in the front
             else
@@ -79,7 +79,7 @@ struct BitShiftLeftImpl
                 if (shift_left_bits)
                 {
                     /// The left b bit of the right byte is moved to the right b bit of this byte
-                    *out = static_cast<UInt8>(static_cast<UInt8>(*op_pointer >> (8 - shift_left_bits)) | previous);
+                    *out = static_cast<UInt8>(static_cast<UInt8>(*(op_pointer) >> (8 - shift_left_bits)) | previous);
                     previous = static_cast<UInt8>(*op_pointer << shift_left_bits);
                 }
                 else

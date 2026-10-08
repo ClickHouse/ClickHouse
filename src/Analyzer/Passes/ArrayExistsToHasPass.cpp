@@ -2,17 +2,11 @@
 
 #include <Functions/array/has.h>
 
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>
 
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -48,20 +42,13 @@ public:
         if (!lambda_node)
             return;
 
-        const auto & lambda_argument_names = lambda_node->getArguments().getNames();
-        if (lambda_argument_names.size() != 1)
+        auto & lambda_arguments_nodes = lambda_node->getArguments().getNodes();
+        if (lambda_arguments_nodes.size() != 1)
             return;
 
-        const auto & lambda_argument_name = lambda_argument_names[0];
-        auto lambda_arguments_node = lambda_node->getArgumentsTyped();
-
-        /// The lambda parameter is referenced in the body as a column sourced from the lambda arguments node.
-        auto is_lambda_argument = [&](const QueryTreeNodePtr & argument_node)
-        {
-            const auto * column_node = argument_node->as<ColumnNode>();
-            return column_node && column_node->getColumnName() == lambda_argument_name
-                && column_node->getColumnSourceOrNull() == lambda_arguments_node;
-        };
+        const auto & lambda_argument_column_node = lambda_arguments_nodes[0];
+        if (lambda_argument_column_node->getNodeType() != QueryTreeNodeType::COLUMN)
+            return;
 
         auto * filter_node = lambda_node->getExpression()->as<FunctionNode>();
         if (!filter_node || filter_node->getFunctionName() != "equals")
@@ -81,14 +68,14 @@ public:
 
         if (filter_lhs_argument_node_type == QueryTreeNodeType::COLUMN &&
             filter_rhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
-            is_lambda_argument(filter_lhs_argument_node))
+            filter_lhs_argument_node->isEqual(*lambda_argument_column_node))
         {
             /// Rewrite arrayExists(x -> x = elem, arr) -> has(arr, elem)
             has_constant_element_argument = filter_rhs_argument_node;
         }
         else if (filter_lhs_argument_node_type == QueryTreeNodeType::CONSTANT &&
             filter_rhs_argument_node_type == QueryTreeNodeType::COLUMN &&
-            is_lambda_argument(filter_rhs_argument_node))
+            filter_rhs_argument_node->isEqual(*lambda_argument_column_node))
         {
             /// Rewrite arrayExists(x -> elem = x, arr) -> has(arr, elem)
             has_constant_element_argument = filter_lhs_argument_node;
@@ -97,37 +84,6 @@ public:
         {
             return;
         }
-
-        /// Check that the types are compatible for the `has` function.
-        /// The `has` function requires that the array element type and the search element type
-        /// have a common supertype. The `equals` function in the lambda is more permissive
-        /// (e.g. it can compare Date with String via implicit conversions), so we must verify
-        /// compatibility before rewriting.
-        const auto * array_type = typeid_cast<const DataTypeArray *>(array_exists_function_arguments_nodes[1]->getResultType().get());
-        if (!array_type)
-            return;
-
-        auto nested_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
-        auto constant_type = removeNullable(removeLowCardinality(has_constant_element_argument->getResultType()));
-
-        /// Skip rewrite when the constant is NULL (either untyped or typed).
-        /// arrayExists(x -> x = NULL, [NULL]) returns 0 because equals(NULL, NULL) is NULL,
-        /// and arrayExists treats non-true values as false.
-        /// But has([NULL], NULL) returns 1, so the rewrite would change semantics.
-        /// This also applies to typed NULLs like CAST(NULL AS Nullable(Int8)).
-        if (isNothing(constant_type))
-            return;
-
-        const auto * constant_node = has_constant_element_argument->as<ConstantNode>();
-        if (constant_node && constant_node->getValue().isNull())
-            return;
-
-        bool types_compatible = (isNativeNumber(nested_type) || isEnum(nested_type)) && isNativeNumber(constant_type);
-        if (!types_compatible)
-            types_compatible = tryGetLeastSupertype(DataTypes{nested_type, constant_type}) != nullptr;
-
-        if (!types_compatible)
-            return;
 
         auto has_function = createInternalFunctionHasOverloadResolver();
 

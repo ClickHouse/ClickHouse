@@ -76,7 +76,6 @@ private:
     FileStreams::iterator addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
 
     void readData(
-        size_t pos,
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         ColumnPtr & column,
@@ -91,7 +90,6 @@ private:
     /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetchForColumn(
         Priority priority,
-        size_t pos,
         const NameAndTypePair & name_and_type,
         const SerializationPtr & serialization,
         size_t from_mark,
@@ -112,16 +110,13 @@ private:
     void deserializePrefixForAllColumns(size_t num_columns, size_t from_mark, size_t current_task_last_mark);
     void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t from_mark, size_t current_task_last_mark, Priority priority);
 
-    using StreamCallbackGetter = std::function<ISerialization::StreamCallback(size_t, const NameAndTypePair &)>;
+    using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
     void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, size_t current_task_last_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     DeserializationPrefixesCache * deserialization_prefixes_cache;
-    /// Stream name -> position of the column that prefetched it. A prefetch positions the stream for
-    /// its own column only, so a stream shared by several requested columns (Nested offsets under
-    /// `share_nested_offsets`) must still be seeked by every other column that reads it.
-    std::unordered_map<std::string, size_t> prefetched_streams;
+    std::unordered_set<std::string> prefetched_streams;
     ssize_t prefetched_from_mark = -1;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;

@@ -4,14 +4,9 @@
 #include <IO/Operators.h>
 #include <Parsers/IAST_fwd.h>
 
-#include <array>
-
 
 namespace DB
 {
-
-class JSONObjectWriter;
-class JSONObjectReader;
 
 /** Query with output options
   * (supporting [INTO OUTFILE 'file_name'] [FORMAT format_name] [SETTINGS key1 = value1, key2 = value2, ...] suffix).
@@ -36,20 +31,6 @@ public:
     ASTPtr compression;
     ASTPtr compression_level;
 
-    /// The output-option members in their canonical order, which matches the order in
-    /// which `formatImpl` writes them: INTO OUTFILE (with COMPRESSION and LEVEL), then
-    /// FORMAT, then SETTINGS. The parser canonicalizes the output-option children into
-    /// this order, and `cloneOutputOptions` clones them in this order, so that a freshly
-    /// parsed AST, its clone, and a format+reparse roundtrip all share the same child
-    /// order (and therefore the same tree hash). Keep this in sync with `formatImpl`.
-    static constexpr std::array<ASTPtr ASTQueryWithOutput::*, 5> output_option_members{
-        &ASTQueryWithOutput::out_file,
-        &ASTQueryWithOutput::compression,
-        &ASTQueryWithOutput::compression_level,
-        &ASTQueryWithOutput::format_ast,
-        &ASTQueryWithOutput::settings_ast,
-    };
-
     /// Note that flags are initialized to zero (false) by default
     ASTQueryWithOutput() = default;
 
@@ -69,15 +50,6 @@ public:
 
     /// NOTE: call this helper at the end of the clone() method of descendant class.
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
-
-    /// Serialize / deserialize the shared output suffix (INTO OUTFILE / FORMAT / SETTINGS /
-    /// COMPRESSION and the APPEND / TRUNCATE / AND STDOUT flags) as part of `writeJSON` /
-    /// `readJSON`. Descendants that implement JSON serialization must call these so the
-    /// suffix survives the round-trip; otherwise `parseQueryToJSON` -> `formatQueryFromJSON`
-    /// silently drops it. Call `readOutputOptionsJSON` at the end of `readJSON`, after the
-    /// query-specific children have been appended, to match the parser's `children` order.
-    void writeOutputOptionsJSON(JSONObjectWriter & w) const;
-    void readOutputOptionsJSON(JSONObjectReader & r);
 
     /// Format only the query part of the AST (without output options).
     virtual void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;

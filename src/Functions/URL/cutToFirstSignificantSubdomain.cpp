@@ -16,9 +16,9 @@ struct CutToFirstSignificantSubdomain
         res_data = data;
         res_size = 0;
 
-        Pos tmp_data = nullptr;
-        size_t tmp_length = 0;
-        Pos domain_end = nullptr;
+        Pos tmp_data;
+        size_t tmp_length;
+        Pos domain_end;
         ExtractFirstSignificantSubdomain<without_www, conform_rfc>::execute(data, size, tmp_data, tmp_length, &domain_end);
 
         if (tmp_length == 0)

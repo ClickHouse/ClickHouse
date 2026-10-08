@@ -5,21 +5,19 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
-#include <Formats/ParseError.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 
-#include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
 
 #include <base/BFloat16.h>
 #include <base/types.h>
 
 #if USE_MULTITARGET_CODE
-#include <immintrin.h>
+#    include <immintrin.h>
 #endif
 
 
@@ -31,18 +29,6 @@ namespace ErrorCodes
 extern const int SERIALIZATION_ERROR;
 extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
 extern const int TOO_LARGE_ARRAY_SIZE;
-}
-
-
-UInt128 SerializationQBit::getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_)
-{
-    SipHash hash;
-    hash.update("QBit");
-    hash.update(nested_->getHash());
-    hash.update(element_size_);
-    hash.update(dimension_);
-    hash.update(stride_);
-    return hash.get128();
 }
 
 static const ColumnTuple & extractNestedColumn(const IColumn & column)
@@ -120,8 +106,6 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
@@ -130,7 +114,7 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
 size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = 0;
+    size_t size;
     readVarUInt(size, istr);
 
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
@@ -151,73 +135,50 @@ size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const Forma
 template <typename Func>
 void SerializationQBit::dispatchByElementSize(Func && func) const
 {
-    if (element_size == 8)
-        func.template operator()<Int8>();
-    else if (element_size == 16)
+    if (element_size == 16)
         func.template operator()<BFloat16>();
     else if (element_size == 32)
         func.template operator()<Float32>();
     else if (element_size == 64)
         func.template operator()<Float64>();
     else
-        throw Exception(
-            ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 8, 16, 32, and 64 are supported", element_size);
+        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Unsupported size for QBit: {}. Only 16, 32, and 64 are supported", element_size);
 }
 
 template <typename FloatType>
 void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteBuffer & ostr) const
 {
-    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
-    using Word = std::conditional_t<
-        sizeof(FloatType) == 1,
-        uint8_t,
-        std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
     constexpr size_t bits = sizeof(Word) * 8;
-    const auto untranspose = resolveUntransposeBitPlane<Word>();
-    const size_t num_strides = getNumStrides();
-    const size_t slice_size = DataTypeQBit::bitsToBytes(stride);
+    const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
+    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
-    /// One float per original dimension. Each stride group is untransposed independently into its own slice.
-    std::vector<FloatType> result(dimension, FloatType{});
-    std::vector<FloatType> dst(slice_size_bits);
-
-    for (size_t group = 0; group < num_strides; ++group)
+    for (size_t bit = 0; bit < bits; ++bit)
     {
-        std::fill(dst.begin(), dst.end(), FloatType{});
-        for (size_t bit = 0; bit < bits; ++bit)
-        {
-            const String & fixed_string = tuple[group * element_size + bit].safeGet<String>();
-            const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string.data());
-            const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
-            untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
-        }
-        /// Copy this group's `stride` real dims into the output. Trailing padded floats (when stride % 8 != 0) are dropped.
-        std::copy(dst.begin(), dst.begin() + stride, result.begin() + group * stride);
+        const String & fixed_string = tuple[bit].safeGet<String>();
+        const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string.data());
+        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
+        SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
-    writeVarUInt(result.size(), ostr);
-    for (const auto & element : result)
-        writeBinaryLittleEndian(element, ostr);
+    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
+    dst.resize(dimension);
+    writeVectorBinary(dst, ostr);
 }
 
 template <typename FloatType>
 Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
 {
-    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
-    using Word = std::conditional_t<
-        sizeof(FloatType) == 1,
-        uint8_t,
-        std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
-    const size_t num_planes = element_size * getNumStrides();
-    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(stride);
+    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
     const size_t total_bits = bytes_per_fixedstring * 8;
 
-    std::vector<std::string> planes(num_planes, std::string(bytes_per_fixedstring, '\0'));
-    std::vector<char *> plane_ptrs(num_planes);
-    for (size_t col_idx = 0; col_idx < num_planes; ++col_idx)
+    std::vector<std::string> planes(element_size, std::string(bytes_per_fixedstring, '\0'));
+    std::vector<char *> plane_ptrs(element_size);
+    for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
         plane_ptrs[col_idx] = reinterpret_cast<char *>(planes[col_idx].data());
 
     Word w;
@@ -225,18 +186,15 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
 
     for (size_t i = 0; i < dimension; i++)
     {
-        readBinaryLittleEndian(v, istr);
+        readFloatBinary(v, istr);
         std::memcpy(&w, &v, sizeof(Word));
-        /// Dimension `i` belongs to stride group `i / stride`; transpose it into that group's element_size bit planes.
-        const size_t group = i / stride;
-        const size_t local_i = i - group * stride;
-        transposeBits<Word>(w, local_i, total_bits, plane_ptrs.data() + group * element_size);
+        transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
     }
 
     Tuple tuple_elements;
-    tuple_elements.reserve(num_planes);
+    tuple_elements.reserve(element_size);
 
-    for (size_t col_idx = 0; col_idx < num_planes; ++col_idx)
+    for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
         tuple_elements.push_back(Field(std::move(planes[col_idx])));
 
     return tuple_elements;
@@ -245,55 +203,38 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
 template <typename FloatType, typename WriteFunc>
 void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t row_num, WriteFunc && write_func) const
 {
-    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
-    using Word = std::conditional_t<
-        sizeof(FloatType) == 1,
-        uint8_t,
-        std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
     constexpr size_t bits = sizeof(Word) * 8;
-    const auto untranspose = resolveUntransposeBitPlane<Word>();
-    const size_t num_strides = getNumStrides();
-    const size_t slice_size = DataTypeQBit::bitsToBytes(stride);
+    const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
     const size_t slice_size_bits = slice_size * 8;
 
-    /// One float per original dimension. Each stride group is untransposed independently into its own slice.
-    std::vector<FloatType> result(dimension, FloatType{});
-    std::vector<FloatType> dst(slice_size_bits);
+    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
-    for (size_t group = 0; group < num_strides; ++group)
+    for (size_t bit = 0; bit < bits; ++bit)
     {
-        std::fill(dst.begin(), dst.end(), FloatType{});
-        for (size_t bit = 0; bit < bits; ++bit)
-        {
-            const auto & fs = assert_cast<const ColumnFixedString &>(extractElementColumn(column, group * element_size + bit));
-            const UInt8 * src = reinterpret_cast<const UInt8 *>(fs.getChars().data()) + row_num * slice_size;
-            const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
-            untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
-        }
-        /// Copy this group's `stride` real dims into the output. Trailing padded floats (when stride % 8 != 0) are dropped.
-        std::copy(dst.begin(), dst.begin() + stride, result.begin() + group * stride);
+        const auto & fs = assert_cast<const ColumnFixedString &>(extractElementColumn(column, bit));
+        const UInt8 * src = reinterpret_cast<const UInt8 *>(fs.getChars().data()) + row_num * slice_size;
+        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
+        SerializationQBit::untransposeBitPlane(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
     }
 
-    write_func(result);
+    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
+    dst.resize(dimension);
+    write_func(dst);
 }
 
 template <typename FloatType, typename ReadFunc>
 void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc read_one) const
 {
-    /// Note: the 8-bit word is `uint8_t` (not ClickHouse's `UInt8`, which is `char8_t` and does not satisfy `std::countr_zero`).
-    using Word = std::conditional_t<
-        sizeof(FloatType) == 1,
-        uint8_t,
-        std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
+    using Word = std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>;
 
-    const size_t num_planes = element_size * getNumStrides();
-    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(stride);
+    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
     const size_t total_bits = bytes_per_fixedstring * 8;
 
     /// Insert 0 in each FixedString column and prepare pointers to the newly inserted rows to directly write into them during transposition
-    std::vector<char *> column_data_ptrs(num_planes);
-    for (size_t col_idx = 0; col_idx < num_planes; ++col_idx)
+    std::vector<char *> column_data_ptrs(element_size);
+    for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
     {
         auto & fixed_string_column = assert_cast<ColumnFixedString &>(extractElementColumn(column, col_idx));
         fixed_string_column.insertDefault();
@@ -309,10 +250,7 @@ void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc read_
         Word word_value;
         std::memcpy(&word_value, &value, sizeof(Word));
 
-        /// Dimension `i` belongs to stride group `i / stride`; transpose it into that group's element_size bit planes.
-        const size_t group = i / stride;
-        const size_t local_i = i - group * stride;
-        transposeBits<Word>(word_value, local_i, total_bits, column_data_ptrs.data() + group * element_size);
+        transposeBits<Word>(word_value, i, total_bits, column_data_ptrs.data());
     }
 }
 
@@ -321,13 +259,9 @@ void SerializationQBit::serializeBinary(const Field & field, WriteBuffer & ostr,
     /// Tuple<String, ..., String>
     const Tuple & tuple = field.safeGet<Tuple>();
 
-    const size_t num_planes = element_size * getNumStrides();
-    if (tuple.size() != num_planes)
+    if (tuple.size() != element_size)
         throw Exception(
-            ErrorCodes::SERIALIZATION_ERROR,
-            "QBit tuple size {} doesn't match expected number of bit planes {}",
-            tuple.size(),
-            num_planes);
+            ErrorCodes::SERIALIZATION_ERROR, "QBit tuple size {} doesn't match expected element_size {}", tuple.size(), element_size);
 
     dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBitTuple<FloatType>(tuple, ostr); });
 }
@@ -342,12 +276,7 @@ void SerializationQBit::deserializeBinary(Field & field, ReadBuffer & istr, cons
 void SerializationQBit::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     /// Lambda to write the vector of floats to the output buffer
-    auto write_binary = [&ostr](const auto & dst)
-    {
-        writeVarUInt(dst.size(), ostr);
-        for (const auto & element : dst)
-            writeBinaryLittleEndian(element, ostr);
-    };
+    auto write_binary = [&ostr](const auto & dst) { writeVectorBinary(dst, ostr); };
 
     dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBit<FloatType>(column, row_num, write_binary); });
 }
@@ -356,7 +285,7 @@ void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, c
 {
     validateAndReadQBitSize(istr, settings);
 
-    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinaryLittleEndian(v, istr); };
+    auto read_binary = [&]<typename FloatType>(FloatType & v, size_t) { readBinary(v, istr); };
 
     auto deserialize = [&]() -> bool
     {
@@ -364,7 +293,7 @@ void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, c
         return true;
     };
 
-    addElementSafe<void>(element_size * getNumStrides(), column, deserialize);
+    addElementSafe<void>(element_size, column, deserialize);
 }
 
 void SerializationQBit::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
@@ -415,7 +344,7 @@ void SerializationQBit::deserializeText(IColumn & column, ReadBuffer & istr, con
         return true;
     };
 
-    addElementSafe<void>(element_size * getNumStrides(), column, deserialize);
+    addElementSafe<void>(element_size, column, deserialize);
 }
 
 void SerializationQBit::enumerateStreams(
@@ -491,14 +420,34 @@ void SerializationQBit::transposeBits(Word src, const size_t row_i, const size_t
     }
 }
 
-/// clang-format can't deal with _Pragma and macros right now.
-// clang-format off
+/// CPU Dispatch for untransposeBitPlane
+DECLARE_DEFAULT_CODE(
+    template <typename T>
+    ALWAYS_INLINE inline void untransposeBitPlaneImpl(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
+    {
+        const size_t bytes_per_fs = stride_len / 8;
+        ssize_t row_base = stride_len - 1;
 
-/// CPU-dispatched kernels for untransposing a bit plane. Selected at runtime by resolveUntransposeBitPlane.
-/// The generic kernel lives in SerializationQBit.h so that call sites without a CPU-dispatched alternative can inline it.
-/// Target-specific implementations cannot be inlined as the call keeps AVX-512 instructions behind the runtime CPU check.
+        for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
+        {
+            const uint8_t v = src[b];
+
+            /// Fast out on common all-zeros case
+            if (!v)
+                continue;
+
+            for (int i = 0; i < 8; ++i)
+            {
+                /// Mask is 0...0 if current bit is 0, 1...1 if it is 1. Use it to avoid a branch
+                T mask = static_cast<T>(-T((v >> i) & 1));
+                dst[row_base - 7 + i] |= (mask & bit_mask);
+            }
+        }
+    })
+
+/// Do not inline target specific implementations to avoid code bloat on all targets
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    static void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
+    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -507,7 +456,8 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
 
         /// By default clang-21 with X86_64_V4 unrolls this loop (it didn't with AVX512F) and that makes it slower.
         /// Prevent unrolling to achieve better performance.
-        _Pragma("nounroll") for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
+        _Pragma("nounroll")
+        for (size_t b = 0; b < bytes_per_fs; ++b, row_base -= 8)
         {
             uint8_t v = src[b];
             if (!v)
@@ -524,7 +474,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
     })
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    static void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
+    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -585,7 +535,7 @@ namespace TargetSpecific::x86_64_v4
 {
     using namespace DB::TargetSpecific::x86_64_v4;
 
-    static void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
+    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         const __m512i bmask = _mm512_set1_epi16(bit_mask);
@@ -635,41 +585,34 @@ _Pragma("clang attribute pop")
 #endif
 
 template <typename T>
-SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntransposeBitPlane()
+void SerializationQBit::untransposeBitPlane(const UInt8 * __restrict src, T * __restrict dst, size_t stride_len, T bit_mask)
 {
 #if USE_MULTITARGET_CODE
-    if (isArchSupported(TargetArch::x86_64_v4))
+    if constexpr (std::is_same_v<T, UInt64>)
     {
-        if constexpr (std::is_same_v<T, UInt64>)
-            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat64Impl;
-        else if constexpr (std::is_same_v<T, UInt32>)
-            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat32Impl;
-        else if constexpr (std::is_same_v<T, UInt16>)
-            return TargetSpecific::x86_64_v4::untransposeBitPlaneBFloat16Impl;
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat64Impl(src, dst, stride_len, bit_mask);
+    }
+    else if constexpr (std::is_same_v<T, UInt32>)
+    {
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneFloat32Impl(src, dst, stride_len, bit_mask);
+    }
+    else if constexpr (std::is_same_v<T, UInt16>)
+    {
+        if (isArchSupported(TargetArch::x86_64_v4))
+            return TargetSpecific::x86_64_v4::untransposeBitPlaneBFloat16Impl(src, dst, stride_len, bit_mask);
     }
 #endif
-    return TargetSpecific::Default::untransposeBitPlaneImpl<T>;
-}
-// clang-format on
-
-SerializationPtr SerializationQBit::create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_)
-{
-    if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationQBit(nested_, element_size_, dimension_, stride_));
-    return ISerialization::pooled(
-        getHash(nested_, element_size_, dimension_, stride_),
-        [&] { return new SerializationQBit(nested_, element_size_, dimension_, stride_); });
+    return TargetSpecific::Default::untransposeBitPlaneImpl(src, dst, stride_len, bit_mask);
 }
 
 
-template void SerializationQBit::transposeBits(uint8_t src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt16 src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt32 src, const size_t row_i, const size_t total_bits, char * const * dst);
 template void SerializationQBit::transposeBits(UInt64 src, const size_t row_i, const size_t total_bits, char * const * dst);
 
-template SerializationQBit::UntransposeBitPlaneFn<UInt64> SerializationQBit::resolveUntransposeBitPlane<UInt64>();
-template SerializationQBit::UntransposeBitPlaneFn<UInt32> SerializationQBit::resolveUntransposeBitPlane<UInt32>();
-template SerializationQBit::UntransposeBitPlaneFn<UInt16> SerializationQBit::resolveUntransposeBitPlane<UInt16>();
-template SerializationQBit::UntransposeBitPlaneFn<uint8_t> SerializationQBit::resolveUntransposeBitPlane<uint8_t>();
-
+template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt64 * dst, size_t stride_len, UInt64 bit_mask);
+template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt32 * dst, size_t stride_len, UInt32 bit_mask);
+template void SerializationQBit::untransposeBitPlane(const UInt8 * src, UInt16 * dst, size_t stride_len, UInt16 bit_mask);
 }

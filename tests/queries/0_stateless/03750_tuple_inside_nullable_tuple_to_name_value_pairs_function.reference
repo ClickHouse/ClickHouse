@@ -22,13 +22,13 @@ SELECT
         CAST(NULL AS Nullable(Tuple(a Int32, b Int32)))
     ) AS res,
     toTypeName(res);
-[('a',NULL),('b',NULL)]	Array(Tuple(String, Nullable(Int32)))
+[('a',0),('b',0)]	Array(Tuple(String, Int32))
 SELECT
     tupleToNameValuePairs(
         CAST(NULL AS Nullable(Tuple(Int32, Int32)))
     ) AS res,
     toTypeName(res);
-[('1',NULL),('2',NULL)]	Array(Tuple(String, Nullable(Int32)))
+[('1',0),('2',0)]	Array(Tuple(String, Int32))
 SELECT
     tupleToNameValuePairs(
         CAST((NULL, tuple(1)) AS Nullable(Tuple(a Nullable(Tuple(Int32)), b Nullable(Tuple(Int32)))))

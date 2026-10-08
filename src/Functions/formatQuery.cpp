@@ -42,7 +42,7 @@ enum class ErrorHandling : uint8_t
     Null
 };
 
-class FunctionFormatQuery final : public IFunction
+class FunctionFormatQuery : public IFunction
 {
 public:
     FunctionFormatQuery(ContextPtr context, String name_, OutputFormatting output_formatting_, ErrorHandling error_handling_)
@@ -182,7 +182,7 @@ REGISTER_FUNCTION(formatQuery)
         FunctionDocumentation{
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuery(query)",
-            .arguments = {{"query", "The SQL query to be formatted. [String](/reference/data-types/string)"}},
+            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
             .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
@@ -204,7 +204,7 @@ REGISTER_FUNCTION(formatQueryOrNull)
         FunctionDocumentation{
             .description = "Returns a formatted, possibly multi-line, version of the given SQL query. Returns NULL in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQueryOrNull(query)",
-            .arguments = {{"query", "The SQL query to be formatted. [String](/reference/data-types/string)"}},
+            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
             .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",
@@ -226,7 +226,7 @@ REGISTER_FUNCTION(formatQuerySingleLine)
         FunctionDocumentation{
             .description = "Like formatQuery() but the returned formatted string contains no line breaks. Throws in case of a parsing error.\n[example:multiline]",
             .syntax = "formatQuerySingleLine(query)",
-            .arguments = {{"query", "The SQL query to be formatted. [String](/reference/data-types/string)"}},
+            .arguments = {{"query", "The SQL query to be formatted. [String](../../sql-reference/data-types/string.md)"}},
             .returned_value = {"The formatted query", {"String"}},
             .examples{
                 {"multiline",

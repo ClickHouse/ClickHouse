@@ -77,7 +77,6 @@ POW  : '^';
 AND    : 'and';
 OR     : 'or';
 UNLESS : 'unless';
-ATAN2  : 'atan2';
 
 // Comparison operators
 
@@ -120,7 +119,6 @@ AGGREGATION_OPERATOR:
     | 'bottomk'
     | 'topk'
     | 'quantile'
-    | 'limitk'
 ;
 
 FUNCTION options {

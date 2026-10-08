@@ -1,7 +1,6 @@
 #include <Parsers/ParserDataType.h>
 
-#include <string_view>
-#include <unordered_set>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTEnumDataType.h>
 #include <Parsers/ASTTupleDataType.h>
@@ -26,21 +25,6 @@ namespace
 bool isEnumType(const String & type_name_upper)
 {
     return type_name_upper == "ENUM" || type_name_upper == "ENUM8" || type_name_upper == "ENUM16";
-}
-
-/// Integer type names (and MySQL aliases) that accept the MySQL display-width modifier `(N)` and the
-/// SIGNED/UNSIGNED suffix. Matched by exact (uppercased) name: a loose substring test on "INT" also
-/// matched unrelated names like `quantileInterpolatedWeighted`, silently eating their first `(...)`
-/// group as a display width and breaking the parse round-trip.
-bool isIntegerTypeName(const String & type_name_upper)
-{
-    static const std::unordered_set<std::string_view> integer_type_names
-    {
-        "INT8", "INT16", "INT32", "INT64", "INT128", "INT256",
-        "UINT8", "UINT16", "UINT32", "UINT64", "UINT128", "UINT256",
-        "TINYINT", "SMALLINT", "MEDIUMINT", "INT", "INTEGER", "BIGINT", "INT1",
-    };
-    return integer_type_names.contains(type_name_upper);
 }
 
 /// Parse enum values directly into the vector without creating ASTLiteral nodes.
@@ -112,13 +96,6 @@ bool parseEnumValues(
         if (!tryReadIntText(abs_value, num_in) || num_in.count() != pos->size())
             return false;
         ++pos;
-
-        /// Values are stored as Int64. A magnitude above Int64 cannot be stored faithfully:
-        /// a plain cast would silently wrap (e.g. UInt64 18446744073709551615 to -1) and pass
-        /// the downstream range check. Such a value is out of range for any Enum anyway, so
-        /// fall back to the generic parser, which rejects it.
-        if (abs_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-            return false;
 
         Int64 elem_value = negative ? -static_cast<Int64>(abs_value) : static_cast<Int64>(abs_value);
         values.emplace_back(elem_name, elem_value);
@@ -247,11 +224,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// unquoted (e.g. UInt64). This introduces problems when the string in the quotes is garbage:
     ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
     ///  * `Null` -> Null -> parses as keyword instead of type name
-    ///  * `8` -> 8 -> parses as a numeric literal instead of a type name
     /// Here we check for these cases and reject.
-    if (type_name.empty()
-        || isNumericASCII(type_name[0])
-        || !std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
     {
         expected.add(pos, "type name");
         return false;
@@ -261,7 +235,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// column attribute rather than type name.
     {
         String n = type_name;
-        toUpperASCII(n);
+        boost::to_upper(n);
         if (n == "NOT" || n == "NULL" || n == "DEFAULT" || n == "MATERIALIZED" || n == "EPHEMERAL" || n == "ALIAS" || n == "AUTO" || n == "PRIMARY" || n == "TTL" || n == "COMMENT" || n == "CODEC")
         {
             expected.add(pos, "type name");
@@ -302,7 +276,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (ParserKeyword(Keyword::PRECISION).ignore(pos))
             type_name_suffix = toStringView(Keyword::PRECISION);
     }
-    else if (isIntegerTypeName(type_name_upper))
+    else if (type_name_upper.contains("INT"))
     {
         /// Support SIGNED and UNSIGNED integer type modifiers for compatibility with MySQL
         if (ParserKeyword(Keyword::SIGNED).ignore(pos, expected))
@@ -363,25 +337,9 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// Handle Tuple types specially - parse directly into ASTTupleDataType
     /// to avoid creating ASTNameTypePair nodes for each named element.
-    ///
-    /// `Tuple()` is the one form this fast path rejects and the generic argument parser below
-    /// accepts, so detect an empty argument list up front and leave it to the generic parser. For
-    /// every other argument list this fast path is authoritative: the generic parser applies exactly
-    /// the same element parsers (`ParserNameTypePair` is `ParserIdentifier` followed by
-    /// `ParserDataType`), so it stops at the same token and fails the same way. Falling through on
-    /// failure used to parse the argument list a second time, which doubled the work at every
-    /// nesting level - a malformed `Tuple(Tuple(...))` of depth N cost 2^N and exhausted
-    /// `max_parser_backtracks` instead of reporting a syntax error.
-    bool use_tuple_fast_path = type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket;
-    if (use_tuple_fast_path)
+    if (type_name == "Tuple" && pos->type == TokenType::OpeningRoundBracket)
     {
-        auto after_bracket = pos;
-        ++after_bracket;
-        use_tuple_fast_path = after_bracket->type != TokenType::ClosingRoundBracket;
-    }
-
-    if (use_tuple_fast_path)
-    {
+        auto saved_pos = pos;
         ++pos;
 
         auto tuple_node = make_intrusive<ASTTupleDataType>();
@@ -454,7 +412,8 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return true;
         }
 
-        return false;
+        /// Fall back to generic parser
+        pos = saved_pos;
     }
 
     auto data_type_node = make_intrusive<ASTDataType>();
@@ -498,7 +457,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             DynamicArgumentParser parser;
             parser.parse(pos, arg, expected);
         }
-        else if (equalsCaseInsensitive(type_name, "json"))
+        else if (boost::to_lower_copy(type_name) == "json")
         {
             ObjectArgumentParser parser;
             parser.parse(pos, arg, expected);
@@ -549,20 +508,7 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else
         {
             ParserDataType data_type_parser;
-            /// Only accept simple literals (numbers, strings, NULL, ...) as
-            /// data-type arguments. We deliberately do NOT accept collection
-            /// literals like `(1)`, `[1, 2]` or `{a: 1}` here: no real data
-            /// type takes a tuple/array/map literal as an argument, and
-            /// accepting them produces an `ASTLiteral` with `Field::Tuple`
-            /// (or `Field::Array`) inside the type's argument list. The
-            /// formatter then prints such a Tuple literal as `tuple(...)`
-            /// (the explicit function form -- see
-            /// `FieldVisitorToString::operator()(const Tuple &)`), and
-            /// re-parsing `tuple(...)` in this context yields an
-            /// `ASTDataType("tuple")` instead of an `ASTLiteral`, breaking
-            /// the AST round-trip check in `executeQuery` (DEBUG/sanitizer
-            /// builds). See STID 1941-1bfa.
-            ParserLiteral literal_parser;
+            ParserAllCollectionsOfLiterals literal_parser(false);
 
             const char * operators[] = {"=", "equals", nullptr};
             ParserLeftAssociativeBinaryOperatorList enum_parser(operators, std::make_unique<ParserLiteral>());

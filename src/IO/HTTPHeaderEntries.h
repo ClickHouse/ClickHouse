@@ -15,6 +15,6 @@ struct HTTPHeaderEntry
     bool operator==(const HTTPHeaderEntry & other) const { return name == other.name && value == other.value; }
 };
 
-using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>;
 
 }

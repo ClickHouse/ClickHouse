@@ -1,0 +1,11 @@
+<clickhouse>
+    <acme>
+        <email>test@clickhouse.com</email>
+        <terms_of_service_agreed>true</terms_of_service_agreed>
+        <domains>
+            <domain>never-issued.integration-tests.clickhouse.com</domain>
+        </domains>
+        <!-- Nothing is listening on this address, so the certificate is never issued. -->
+        <directory_url>https://127.0.0.1:14000/dir</directory_url>
+    </acme>
+</clickhouse>

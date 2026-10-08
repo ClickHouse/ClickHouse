@@ -2,7 +2,6 @@
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/traverseQueryTree.h>
-#include <Interpreters/MaterializedCTE.h>
 
 namespace DB
 {
@@ -36,14 +35,9 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
     {
         if (auto * table_node = current_node->as<TableNode>())
         {
-            const auto & cte = table_node->getMaterializedCTE();
-            /// Skip a subquery-less reference that is not plan-backed: it is the CTE's temp storage
-            /// resolved by name (e.g. a per-shard local plan reading the table the initiator shipped
-            /// as an external table). It has no subquery to materialize, so it is read directly and
-            /// must not be wrapped in a materializing step.
-            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()))
+            if (table_node->getMaterializedCTE())
             {
-                auto [it, _] = materialized_ctes.emplace(cte, MaterializedCteWithLevel{current_node, level});
+                auto [it, _] = materialized_ctes.emplace(table_node->getMaterializedCTE(), MaterializedCteWithLevel{current_node, level});
 
                 it->second.level = std::max(it->second.level, level);
                 max_level = std::max(max_level, level);
@@ -56,8 +50,7 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
     {
         if (auto * table_node = current_node->as<TableNode>())
         {
-            const auto & cte = table_node->getMaterializedCTE();
-            if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()))
+            if (table_node->getMaterializedCTE())
                 --level;
         }
     });

@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Core/NamesAndAliases.h>
 #include <Access/Common/AccessRightsElement.h>
@@ -62,6 +61,12 @@ public:
         load_database_without_tables = load_database_without_tables_;
     }
 
+    /// Only `loadMetadata` may set this: it is the sole caller that executes a definition this server wrote.
+    void setIsMetadataReplay(bool is_metadata_replay_)
+    {
+        is_metadata_replay = is_metadata_replay_;
+    }
+
     void setDontNeedDDLGuard()
     {
         need_ddl_guard = false;
@@ -76,10 +81,7 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    /// check_defaults_over_virtual_columns rejects DEFAULT/MATERIALIZED expressions over virtual columns;
-    /// pass false for objects that never evaluate their own column defaults over an insert block
-    /// (ordinary views and external-target materialized views).
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 
@@ -114,12 +116,8 @@ private:
     bool doCreateTable(ASTCreateQuery & create, const TableProperties & properties, DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
     BlockIO doCreateOrReplaceTemporaryTable(ASTCreateQuery & create, const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode);
-#if CLICKHOUSE_CLOUD
-    /// Converts the "*MergeTree" table engine to "Replicated*MergeTree" or "Shared*MergeTree" if the corresponding settings are enabled.
-    void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
-#endif
     /// Inserts data in created table if it's CREATE ... SELECT
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
@@ -131,13 +129,10 @@ private:
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
-    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
+    /// Remove transaction metadata files (txn_version.txt) from all parts for a table.
     static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
     void throwIfTooManyEntities(ASTCreateQuery & create) const;
-#if CLICKHOUSE_CLOUD
-    static bool allowPreserveEngine(ASTStorage & storage, ContextPtr context_);
-#endif
 
     ASTPtr query_ptr;
 
@@ -149,6 +144,7 @@ private:
     bool load_database_without_tables = false;
     bool need_ddl_guard = true;
     bool is_restore_from_backup = false;
+    bool is_metadata_replay = false;
 
     String as_database_saved;
     String as_table_saved;

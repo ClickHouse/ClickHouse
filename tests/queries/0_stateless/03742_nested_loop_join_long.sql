@@ -10,10 +10,9 @@ CREATE TABLE events
 )
 ENGINE = MergeTree
 ORDER BY Time
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+;
 
--- Keep this row count small: each left row multiplies the large `attributes` fan-out (800K/300K rows per key), so it drives the join's peak memory.
-INSERT INTO events SELECT number % 3 + 2, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(12);
+INSERT INTO events SELECT number % 3 + 2, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(100);
 INSERT INTO events SELECT NULL, concat('Payload_NULL', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(10);
 
 DROP TABLE IF EXISTS attributes;
@@ -24,7 +23,7 @@ CREATE TABLE attributes
     `Attribute` String
 )
 ENGINE = MergeTree ORDER BY EventId
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+;
 
 INSERT INTO attributes SELECT 1 AS EventId, 1 AS AnotherId, concat('A_', toString(number)) AS Attribute FROM numbers(100_000);
 INSERT INTO attributes SELECT 2 AS EventId, 2 AS AnotherId, concat('B_', toString(number)) AS Attribute FROM numbers(800_000);
@@ -41,7 +40,7 @@ CREATE TABLE events2
 )
 ENGINE = MergeTree
 ORDER BY Time
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+;
 
 INSERT INTO events2 SELECT number, concat('Payload_', toString(number)), toDateTime('2024-01-01 00:00:00') + INTERVAL number MINUTES FROM numbers(1_000_000);
 
@@ -53,8 +52,7 @@ CREATE TABLE attributes2
     `Attribute` String
 )
 ENGINE = MergeTree
-ORDER BY EventId
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+ORDER BY EventId;
 
 INSERT INTO attributes2 SELECT
     sipHash64(number, 1) % 10_000_000 AS EventId,

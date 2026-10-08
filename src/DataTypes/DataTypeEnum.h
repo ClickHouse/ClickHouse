@@ -1,10 +1,8 @@
 #pragma once
 
-#include <vector>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/EnumValues.h>
 #include <Columns/ColumnVector.h>
-#include <Parsers/IAST_fwd.h>
 
 
 namespace DB
@@ -27,7 +25,6 @@ public:
     bool isComparable() const override { return true; }
 
     virtual bool contains(const IDataType & rhs) const = 0;
-    virtual bool isAdd() const = 0;
 };
 
 
@@ -39,22 +36,15 @@ public:
     using ColumnType = ColumnVector<FieldType>;
     static constexpr auto type_id = sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16;
     using typename EnumValues<Type>::Values;
-    using RelativeFlags = std::vector<UInt8>;
 
     static constexpr bool is_parametric = true;
 
 private:
     std::string type_name;
     static std::string generateName(const Values & values);
-    bool is_add; // created by ALTER ... ADD ENUM VALUES
-    /// Aligned with temporary `ADD ENUM VALUES` elements in parser order.
-    /// Whenever this vector is populated, the base `EnumValues` must use
-    /// `ValidationMode::TemporaryAdd` so the element order stays unchanged.
-    /// `1` marks shorthand values remapped relative to the base enum.
-    RelativeFlags relative_flags;
 
 public:
-    explicit DataTypeEnum(const Values & values_, bool is_add_ = false, RelativeFlags relative_flags_ = {});
+    explicit DataTypeEnum(const Values & values_);
 
     std::string doGetName() const override { return type_name; }
     const char * getFamilyName() const override;
@@ -85,16 +75,8 @@ public:
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     void updateHashImpl(SipHash & hash) const override;
-
-    bool isAdd() const override  { return is_add; }
-    bool isRelativeAt(size_t index) const { return index < relative_flags.size() && relative_flags[index]; }
-    size_t getRelativeFlagsSize() const { return relative_flags.size(); }
 };
 
-template <typename TypeBase>
-DataTypePtr mergeEnumTypes(const DataTypeEnum<TypeBase> & base, const DataTypeEnum<TypeBase> & add);
-
-DataTypePtr createEnumAdd(const ASTPtr & arguments, bool is_enum16);
 
 using DataTypeEnum8 = DataTypeEnum<Int8>;
 using DataTypeEnum16 = DataTypeEnum<Int16>;

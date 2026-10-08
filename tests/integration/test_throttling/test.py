@@ -15,6 +15,7 @@
 # - max_remote_write_network_bandwidth_for_server
 # - and that max_backup_bandwidth from the query will override setting from the user profile
 
+import time
 import uuid
 
 import pytest
@@ -85,14 +86,14 @@ def revert_config():
         [
             "bash",
             "-c",
-            "echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/dynamic_overrides.xml",
+            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/config.d/dynamic_overrides.xml",
         ]
     )
     node.exec_in_container(
         [
             "bash",
             "-c",
-            "echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/users.d/users_overrides.xml",
+            f"echo '<clickhouse></clickhouse>' > /etc/clickhouse-server/users.d/users_overrides.xml",
         ]
     )
     node.restart_clickhouse()
@@ -395,21 +396,21 @@ def test_read_throttling(policy, mode, setting, value, should_take):
         insert into data select * from numbers(1e6);
     """
     )
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, f"select * from data")
     assert_took(took, should_take)
 
 
 def test_remote_read_throttling_reload():
     skip_if_sanitizer(node)
     node.query(
-        """
+        f"""
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
         insert into data select * from numbers(1e6);
     """
     )
     # without bandwidth limit
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, f"select * from data")
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
@@ -419,7 +420,7 @@ def test_remote_read_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, f"select * from data")
     assert_took(took, 3)
 
     # update bandwidth back to 0
@@ -428,20 +429,20 @@ def test_remote_read_throttling_reload():
     )
     node.query("SYSTEM RELOAD CONFIG")
 
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, f"select * from data")
     assert took < 3
 
 def test_local_read_throttling_reload():
     skip_if_sanitizer(node)
     node.query(
-        """
+        f"""
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='default';
         insert into data select * from numbers(1e6);
     """
     )
     # without bandwidth limit
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, f"select * from data")
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
@@ -451,7 +452,7 @@ def test_local_read_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, f"select * from data")
     assert_took(took, 3)
 
     # update bandwidth back to 0
@@ -460,7 +461,7 @@ def test_local_read_throttling_reload():
     )
     node.query("SYSTEM RELOAD CONFIG")
 
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, f"select * from data")
     assert took < 3
 
 @pytest.mark.parametrize(
@@ -521,21 +522,21 @@ def test_write_throttling(policy, mode, setting, value, should_take):
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='{policy}';
     """
     )
-    _, took = elapsed(node, "insert into data select * from numbers(1e6)")
+    _, took = elapsed(node, f"insert into data select * from numbers(1e6)")
     assert_took(took, should_take)
 
 
 def test_remote_write_throttling_reload():
     skip_if_sanitizer(node)
     node.query(
-        """
+        f"""
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='s3';
         insert into data select * from numbers(1e6);
     """
     )
     # without bandwidth limit
-    _, took = elapsed(node, "insert into data select * from numbers(1e6)")
+    _, took = elapsed(node, f"insert into data select * from numbers(1e6)")
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
@@ -545,7 +546,7 @@ def test_remote_write_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     # writing 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
-    _, took = elapsed(node, "insert into data select * from numbers(1e6)")
+    _, took = elapsed(node, f"insert into data select * from numbers(1e6)")
     assert_took(took, 3)
 
     # update bandwidth back to 0
@@ -554,20 +555,20 @@ def test_remote_write_throttling_reload():
     )
     node.query("SYSTEM RELOAD CONFIG")
 
-    _, took = elapsed(node, "insert into data select * from numbers(1e6)")
+    _, took = elapsed(node, f"insert into data select * from numbers(1e6)")
     assert took < 3
 
 def test_local_write_throttling_reload():
     skip_if_sanitizer(node)
     node.query(
-        """
+        f"""
         drop table if exists data;
         create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9, storage_policy='default';
         insert into data select * from numbers(1e6);
     """
     )
     # without bandwidth limit
-    _, took = elapsed(node, "insert into data select * from numbers(1e6)")
+    _, took = elapsed(node, f"insert into data select * from numbers(1e6)")
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
@@ -577,7 +578,7 @@ def test_local_write_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     # writing 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
-    _, took = elapsed(node, "insert into data select * from numbers(1e6)")
+    _, took = elapsed(node, f"insert into data select * from numbers(1e6)")
     assert_took(took, 3)
 
     # update bandwidth back to 0
@@ -586,7 +587,7 @@ def test_local_write_throttling_reload():
     )
     node.query("SYSTEM RELOAD CONFIG")
 
-    _, took = elapsed(node, "insert into data select * from numbers(1e6)")
+    _, took = elapsed(node, f"insert into data select * from numbers(1e6)")
     assert took < 3
 
 def test_max_mutations_bandwidth_for_server():

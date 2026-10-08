@@ -32,10 +32,10 @@ public:
       *
       * Throws exception if value cannot be converted to value data type.
       */
-    explicit ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_);
+    explicit ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_);
 
     /// Construct constant query tree node from column, data type will be derived from field value
-    explicit ConstantNode(ColumnConstPtr constant_column_);
+    explicit ConstantNode(ColumnPtr constant_column_);
 
     /** Construct constant query tree node from field and data type.
       *
@@ -47,7 +47,7 @@ public:
     explicit ConstantNode(Field value_);
 
     /// Get constant value
-    const ColumnConstPtr & getColumn() const
+    const ColumnPtr & getColumn() const
     {
         return constant_value.getColumn();
     }

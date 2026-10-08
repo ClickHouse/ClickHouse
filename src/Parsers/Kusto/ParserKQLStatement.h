@@ -42,12 +42,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// Parses a parenthesized KQL query, used internally by the KQL dialect
-/// for KQL subqueries (e.g. inside the `in` operator).
-class ParserKQLParenExpression : public IParserBase
+class ParserKQLTableFunction : public IParserBase
 {
 protected:
-    const char * getName() const override { return "KQL parenthesized expression"; }
+    const char * getName() const override { return "KQL function"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

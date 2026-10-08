@@ -23,20 +23,19 @@ namespace ErrorCodes
 }
 
 TableFunctionNode::TableFunctionNode(String table_function_name_)
-    : ITableExpressionNode(children_size)
+    : IQueryTreeNode(children_size)
     , table_function_name(table_function_name_)
     , storage_id("system", "one")
 {
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_)
+void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_)
 {
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);
     storage_id = storage->getStorageID();
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
-    storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
+    storage_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
     unresolved_arguments_indexes = std::move(unresolved_arguments_indexes_);
 }
 
@@ -121,7 +120,6 @@ void TableFunctionNode::updateTreeHashImpl(HashState & state, CompareOptions) co
     {
         state.update(change.name.size());
         state.update(change.name);
-        state.update(change.shorthand);
 
         const auto & value_dump = change.value.dump();
         state.update(value_dump.size());

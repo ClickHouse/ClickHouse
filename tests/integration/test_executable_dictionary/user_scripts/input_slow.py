@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+import os
+import signal
 import sys
 import time
 
