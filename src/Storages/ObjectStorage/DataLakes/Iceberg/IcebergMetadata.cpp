@@ -1375,14 +1375,11 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
 
-    if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
-    {
-        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-        return total_rows;
-    }
-
+    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
     const Int32 schema_id = actual_table_state_snapshot.schema_id;
 
+    /// Metadata-only counts must not bypass access or path restrictions enforced by a scan,
+    /// so the data file paths are checked even when the snapshot summary provides the count.
     UInt64 result = 0;
     bool exact = true;
     Iceberg::decodeManifestsInOrder(
@@ -1390,16 +1387,12 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
         getIcebergManifestDecodeThreadPool().get(),
         DB::ThreadName::ICEBERG_ITERATOR,
-        [this, &local_context, schema_id](const ManifestFileCacheKey & manifest_list_entry) -> std::optional<UInt64>
+        [this, &local_context, schema_id, use_summary = summary_total_rows.has_value()](
+            const ManifestFileCacheKey & manifest_list_entry) -> std::optional<UInt64>
         {
             auto manifest_file_ptr = getManifestFileEntriesHandle(
                 object_storage, persistent_components, local_context, log, manifest_list_entry, schema_id, *external_storages);
 
-            if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
-                || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
-                return std::nullopt;
-
-            /// Metadata-only counts must not bypass access or path restrictions enforced by a scan.
             for (const auto & processed : manifest_file_ptr.getFilesWithoutDeleted(FileContentType::DATA))
                 if (!isPathReadable(
                         persistent_components.table_location,
@@ -1407,6 +1400,13 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
                         object_storage,
                         local_context))
                     return std::nullopt;
+
+            if (use_summary)
+                return 0;
+
+            if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+                || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
+                return std::nullopt;
 
             return manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
         },
@@ -1425,7 +1425,7 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return {};
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-    return result;
+    return summary_total_rows.value_or(result);
 }
 
 std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) const
