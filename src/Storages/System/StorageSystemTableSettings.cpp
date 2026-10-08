@@ -244,7 +244,8 @@ void StorageSystemTableSettings::fillData(
         if (engine == storages.end() || !engine->second.features.enumerate_engine_settings_fn)
             continue;
 
-        /// The creator's order: the named collection, its overrides in the engine arguments, the `SETTINGS` clause.
+        /// The creator's order: the named collection and its overrides in the engine arguments, or else the settings
+        /// the engine arguments give, such as those of `Kafka`; then the `SETTINGS` clause.
         std::optional<NamedCollectionOfTable> named_collection;
         if (loadsSettingsFromNamedCollection(engine->first))
         {
@@ -252,7 +253,13 @@ void StorageSystemTableSettings::fillData(
             named_collection = namedCollectionOf(*create->storage->engine);
         }
 
-        SettingsChanges changes = named_collection ? named_collection->overrides : SettingsChanges{};
+        SettingsChanges changes;
+        const auto & engine_arguments = create->storage->engine->arguments;
+        if (named_collection)
+            changes = named_collection->overrides;
+        else if (const auto & from_arguments = engine->second.features.settings_from_engine_arguments_fn;
+                 from_arguments && engine_arguments)
+            changes = from_arguments(engine_arguments->children);
         if (create->storage->settings)
             for (const auto & change : withExpressionsAsText(create->storage->settings->changes, show_secrets))
                 changes.push_back(change);

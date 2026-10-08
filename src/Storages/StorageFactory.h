@@ -44,6 +44,10 @@ public:
     /// always are, see `isInheritedSetting`; this names the others.
     using IsInheritedSettingFn = bool(std::string_view);
 
+    /// The settings a table's engine arguments give, for an engine whose creator takes settings from them: the
+    /// changes the stored arguments make, which apply before the `SETTINGS` clause.
+    using SettingsFromEngineArgumentsFn = SettingsChanges(const ASTs & engine_args);
+
     struct Arguments
     {
         const String & engine_name;
@@ -94,6 +98,7 @@ public:
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
         EnumerateEngineSettingsFn * enumerate_engine_settings_fn = nullptr;
         IsInheritedSettingFn * is_inherited_setting_fn = nullptr;
+        SettingsFromEngineArgumentsFn * settings_from_engine_arguments_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -134,6 +139,7 @@ public:
         .has_builtin_setting_fn = nullptr,
         .enumerate_engine_settings_fn = nullptr,
         .is_inherited_setting_fn = nullptr,
+        .settings_from_engine_arguments_fn = nullptr,
     }, Documentation documentation = {});
 
     /// Whether a table of the engine takes the setting from elsewhere when its definition does not state it: a format

@@ -1,6 +1,13 @@
 kafka_no_secret	kafka_broker_list	localhost:9092
 kafka_secret	kafka_broker_list	localhost:9092
 kafka_secret	kafka_sasl_password	[HIDDEN]
+kafka_broker_list	localhost:9092	1
+kafka_format	JSONEachRow	1
+kafka_group_name	g	1
+kafka_max_block_size	100	1
+kafka_num_consumers	2	1
+kafka_schema		1
+kafka_topic_list	t	1
 after_processing_move_secret_access_key		0
 mode	unordered	1
 format_csv_delimiter	[HIDDEN]	1

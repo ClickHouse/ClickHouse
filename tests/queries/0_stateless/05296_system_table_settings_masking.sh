@@ -22,6 +22,14 @@ SELECT table, name, value FROM system.table_settings
 WHERE database = currentDatabase() AND name IN ('kafka_broker_list', 'kafka_sasl_password')
 ORDER BY table, name;
 
+-- Settings given as Kafka's positional engine arguments are applied, as the creator applies them; a setting the
+-- engine otherwise takes from elsewhere, kafka_max_block_size, is shown when an argument states it.
+CREATE TABLE kafka_positional (a Int) ENGINE = Kafka('localhost:9092', 't', 'g', 'JSONEachRow', '', '', 2, 100);
+SELECT name, value, changed FROM system.table_settings
+WHERE database = currentDatabase() AND table = 'kafka_positional' AND name IN ('kafka_broker_list', 'kafka_format',
+    'kafka_group_name', 'kafka_max_block_size', 'kafka_num_consumers', 'kafka_schema', 'kafka_topic_list')
+ORDER BY name;
+
 -- S3Queue accepts its settings with an s3queue_ prefix, which the engine strips. An unset secret is not reported as
 -- hidden.
 CREATE TABLE queue (a String) ENGINE = S3Queue('http://localhost:11111/test/05296/*.csv', NOSIGN, 'CSV')
@@ -46,6 +54,7 @@ ORDER BY name;
 DROP TABLE kafka_collection;
 DROP NAMED COLLECTION ${collection};
 DROP TABLE queue;
+DROP TABLE kafka_positional;
 DROP TABLE kafka_no_secret;
 DROP TABLE kafka_secret;
 "

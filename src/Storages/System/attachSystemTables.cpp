@@ -1245,7 +1245,7 @@ ORDER BY name
 .description
 Contains the engine-specific settings of tables, one row per table and setting, with their values, default values and descriptions.
 
-A row is the engine's row in [`system.engine_settings`](/reference/system-tables/engine_settings) with the table's own `SETTINGS` clause applied, as it is stored in the table's definition, plus a row for each setting that the definition, or its named collection, states and `system.engine_settings` leaves out (see below). [`ALTER TABLE ... MODIFY SETTING`](/reference/statements/alter/setting) changes the stored definition, so altered values are shown too. `changed` is 1 for a setting that the table's `SETTINGS` clause or the server configuration sets, even to its default value.
+A row is the engine's row in [`system.engine_settings`](/reference/system-tables/engine_settings) with the table's own `SETTINGS` clause applied, as it is stored in the table's definition, plus a row for each setting that the definition, or its named collection, states and `system.engine_settings` leaves out (see below). [`ALTER TABLE ... MODIFY SETTING`](/reference/statements/alter/setting) changes the stored definition, so altered values are shown too. Settings that the engine arguments give, such as the positional arguments of `Kafka`, are applied before the `SETTINGS` clause, as when the table is created. `changed` is 1 for a setting that the table's definition or the server configuration sets, even to its default value.
 
 A setting whose value is an expression, such as `disk = disk(...)`, is shown as the expression is written.
 
