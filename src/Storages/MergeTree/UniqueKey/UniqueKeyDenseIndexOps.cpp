@@ -252,8 +252,8 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         /// check-only bound in `encodeBlock`); the rebuild re-encodes rows the
         /// server already accepted at INSERT, so no cap applies here.
         storage.beginTransaction();
-        /// On failure the part is detached as broken, outside this transaction.
-        SCOPE_EXIT_SAFE(if (storage.hasActiveTransaction()) storage.commitTransaction(););
+        /// On failure nothing is committed, and the part is detached as broken outside this transaction.
+        SCOPE_EXIT_SAFE(if (storage.hasActiveTransaction()) storage.undoTransaction(););
 
         storage.removeFileIfExists(SSTIndexWriter::FILE_NAME);
         SSTIndexWriter::write(
