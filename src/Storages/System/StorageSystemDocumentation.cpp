@@ -31,7 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST.h>
-#include <Parsers/StatementFactory.h>
+#include <Parsers/ParserRegistry.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -1313,8 +1313,10 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 makeRepoRelative(value.source));
     }
 
-    /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
-    addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
+    /// SQL statement documentation is stored in the parsers which parse them
+    for (const auto & creator : ParserRegistry::instance().getCreators())
+        for (const auto & [name, documentation] : creator()->getDocumentation())
+            addRow(res_columns, EntityType::Statement, name, renderDoc(documentation), makeRepoRelative(documentation.source));
 
     /// System-table documentation is stored in each attached table's metadata comment. A structured comment uses
     /// section markers such as `.description` and `.examples`; an ordinary comment remains a concise fallback.

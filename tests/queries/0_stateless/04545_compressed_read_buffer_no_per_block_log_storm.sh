@@ -29,8 +29,10 @@ query_id="read_buffer_log_${CLICKHOUSE_DATABASE}_$$"
 # LogTest counter) regardless of the server's own log level.
 # use_uncompressed_cache=0: with the cache on, reads go through CachedCompressedReadBuffer
 # (a different class without the removed logs), which would make the test pass even unfixed.
+# enable_parallel_replicas=0: with parallel replicas another replica may do the read, and its
+# ProfileEvents never reach this query's query_log row.
 $CLICKHOUSE_CLIENT --send_logs_level=test --query_id="$query_id" -q "
-    SET enable_json_type = 1, use_uncompressed_cache = 0;
+    SET enable_json_type = 1, use_uncompressed_cache = 0, enable_parallel_replicas = 0;
     SELECT json.a FROM t_read_buffer_log FORMAT Null;
 " 2>/dev/null
 

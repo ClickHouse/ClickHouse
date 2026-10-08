@@ -4,6 +4,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -337,6 +338,14 @@ CompressionCodecFactory & CompressionCodecFactory::instance()
 {
     static CompressionCodecFactory ret;
     return ret;
+}
+
+size_t roundCompressBlockSizeToWholeValues(size_t block_size, const IDataType & type)
+{
+    if (!type.isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return block_size;
+    const size_t value_size = type.getSizeOfValueInMemory();
+    return std::max(value_size, block_size - block_size % value_size);
 }
 
 }
