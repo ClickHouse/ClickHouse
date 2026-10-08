@@ -848,7 +848,16 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         /// overridden context, normalized exactly like the read path normalizes it (`getViewContext`).
         /// Hashing the raw overridden context instead would fold in settings the view never runs with.
         auto effective_context = getViewContext(query_context, storage_snapshot, this);
-        auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context);
+
+        /// An `additional_table_filters` entry keyed by the view itself applies to the rows it returns: the
+        /// planner folds it into the `WHERE` of the query that reads the view. Under `SQL SECURITY DEFINER`
+        /// / `NONE` such an entry can come from the effective reader's profile rather than from the
+        /// caller's settings, so it is not covered by the caller's own cache key. Treat the view's own
+        /// names as matchable, so that both the entry and the tables its filter reads are hashed.
+        const auto & storage_id = getStorageID();
+        const NameSet own_names{storage_id.getTableName(), storage_id.getFullNameNotQuoted()};
+
+        auto referenced_tables_hash = computeQueryReferencedTablesModificationHash(inner_query, effective_context, &own_names);
         if (!referenced_tables_hash)
             return {};
 
@@ -869,8 +878,10 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         /// a definer's read limits), so a settings-profile update must invalidate consistency users.
         /// Purely operational settings are left out: a definer's profile carries them without
         /// changing a single row.
-        /// An `additional_table_filters` entry keyed by a table the view does not read is left out.
-        const auto additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(inner_query, effective_context);
+        /// An `additional_table_filters` entry keyed by neither the view nor a table it reads is left out.
+        auto additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(inner_query, effective_context);
+        if (additional_table_filters_matchable_names)
+            additional_table_filters_matchable_names->insert(own_names.begin(), own_names.end());
         updateHashWithRowAffectingSettings(
             hash,
             effective_context->getSettingsRef(),

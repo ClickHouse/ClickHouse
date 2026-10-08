@@ -54,7 +54,9 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCa
 /// so that a cached result is only reused while the data behind the query is unchanged.
 /// Returns nullopt if consistency cannot be guaranteed (the query uses a table function, references a table
 /// that cannot be resolved, or a referenced table cannot report whether its data changed).
-std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context);
+/// `extra_matchable_names` are added to the names an `additional_table_filters` key of `context` can match
+/// (see `collectNamesMatchableByAdditionalTableFilters`), e.g. the names of the view whose stored query `ast` is.
+std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context, const NameSet * extra_matchable_names = nullptr);
 
 /// Collects every name an `additional_table_filters` key can match while `ast` runs under `context`: the
 /// name and the qualified name of each table it reads, directly, through views and materialized views,
