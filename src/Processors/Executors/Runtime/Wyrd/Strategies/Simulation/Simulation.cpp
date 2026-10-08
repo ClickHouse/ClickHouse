@@ -100,7 +100,9 @@ void Simulation::traceEvent(std::string event, std::source_location location)
 {
     digest.update(running_thread->id);
     digest.update(location.line());
-    timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(event), .location = location});
+
+    if (params.collect_timeline)
+        timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(event), .location = location});
 }
 
 void Simulation::createThread(std::function<void()> user_body)
@@ -215,7 +217,8 @@ void Simulation::progressHint(std::source_location location)
 
 void Simulation::trace(std::string message)
 {
-    timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(message), .location = std::nullopt});
+    if (params.collect_timeline)
+        timeline.push_back(TraceRecord{.thread_id = running_thread->id, .event = std::move(message), .location = std::nullopt});
 }
 
 }

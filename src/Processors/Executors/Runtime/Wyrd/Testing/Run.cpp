@@ -86,6 +86,7 @@ void runTest(std::function<void()> body, TestParams params)
     const std::optional<UInt64> fixed_seed = params.seed ? params.seed : seedFromEnvironment();
     const size_t runs = fixed_seed ? 1 : params.runs;
     const size_t threads = fixed_seed ? 1 : std::max<size_t>(1, std::min(runs, threadsFromEnvironment()));
+    const bool timeline_requested = timelineRequested();
 
     std::atomic<bool> stop{false};
     std::vector<RunnerOutcome> outcomes(threads);
@@ -94,6 +95,7 @@ void runTest(std::function<void()> body, TestParams params)
     {
         SimulationParams simulation = params.simulation;
         simulation.seed = fixed_seed ? *fixed_seed : randomSeed();
+        simulation.collect_timeline = timeline_requested;
 
         testing::TestPartResultArray failures;
         SimulationResult first;
@@ -180,7 +182,7 @@ void runTest(std::function<void()> body, TestParams params)
         for (const auto & [file, line, message] : failure.failures)
             ADD_FAILURE_AT(file.c_str(), line) << message;
         fmt::print(stderr, "Wyrd simulation: run {} failed with seed {} after {} steps; replay with WYRD_SEED={}, add WYRD_TIMELINE=1 for the trace\n", failure.run, failure.seed, failure.steps, failure.seed);
-        if (timelineRequested())
+        if (timeline_requested)
             fmt::print(stderr, "Timeline:\n{}\n", failure.timeline);
     }
 

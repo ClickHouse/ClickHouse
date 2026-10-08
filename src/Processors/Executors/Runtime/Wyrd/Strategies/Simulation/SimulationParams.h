@@ -17,6 +17,7 @@ struct SimulationParams
     size_t resume_after_progress_hints = 4;
     size_t max_steps = 100'000;
     size_t fiber_stack_size = CoroutineStack::default_stack_size;
+    bool collect_timeline = false;
 };
 
 }
