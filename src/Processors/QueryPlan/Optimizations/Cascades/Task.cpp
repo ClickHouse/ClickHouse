@@ -3,7 +3,7 @@
 #include <memory>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
-#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/logger_useful.h>
 
@@ -11,11 +11,11 @@
 namespace DB
 {
 
-void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
+void OptimizeGroupTask::execute(CascadesOptimizer & optimizer)
 {
-    LOG_TEST(optimizer_context.log, "OptimizeGroupTask group #{}, required properties {}",
+    LOG_TEST(optimizer.log, "OptimizeGroupTask group #{}, required properties {}",
         group_id, required_properties.dump());
-    auto group = optimizer_context.getGroup(group_id);
+    auto group = optimizer.getGroup(group_id);
 
     /// Skip this group only if it is already fully processed (explored + implemented +
     /// enforced) for these properties and has a satisfying plan - re-running would be a no-op.
@@ -23,14 +23,14 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     /// the budget is an upper bound, not a lower bound, so such pruning is unsound for
     /// optimality, and it can return before stage-3 enforcers add the distributed alternatives.
     {
-        const auto & cost_config = optimizer_context.getMemo().getEnvironment().cost_config;
+        const auto & cost_config = optimizer.getMemo().getContext().cost_config;
         bool group_fully_processed = group->isExplored()
             && group->isOptimizedFor(required_properties)
             && group->isEnforcedFor(required_properties);
         if (group_fully_processed && group->getBestImplementation(required_properties, cost_config).expression)
         {
             group->setFullyDoneFor(required_properties);
-            LOG_TEST(optimizer_context.log, "OptimizeGroupTask group #{}: already fully processed", group_id);
+            LOG_TEST(optimizer.log, "OptimizeGroupTask group #{}: already fully processed", group_id);
             return;
         }
     }
@@ -38,15 +38,15 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     if (!group->isExplored())
     {
         /// Explore the group, then re-run `OptimizeGroupTask`
-        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties));
-        optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(group_id));
+        optimizer.pushTask(std::make_unique<OptimizeGroupTask>(group_id, required_properties));
+        optimizer.pushTask(std::make_unique<ExploreGroupTask>(group_id));
     }
     else if (!group->isOptimizedFor(required_properties))
     {
-        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties));
+        optimizer.pushTask(std::make_unique<OptimizeGroupTask>(group_id, required_properties));
 
         for (auto & expression : group->logical_expressions)
-            optimizer_context.pushTask(std::make_shared<OptimizeExpressionTask>(expression, required_properties));
+            optimizer.pushTask(std::make_unique<OptimizeExpressionTask>(expression, required_properties));
 
         group->setOptimizedFor(required_properties);
     }
@@ -67,18 +67,18 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
         group->setEnforcedFor(required_properties);
 
-        auto enforcer_expressions = runEnforcementStage(optimizer_context, group);
+        auto enforcer_expressions = runEnforcementStage(optimizer, group);
 
         if (!enforcer_expressions.empty())
         {
             /// Push the self-task first so it sits at the bottom of the stack (LIFO) and
             /// executes after all `OptimizeInputsTask` complete.  This re-run checks
             /// whether the newly created enforcer expressions need further composition.
-            optimizer_context.pushTask(
-                std::make_shared<OptimizeGroupTask>(group_id, required_properties));
+            optimizer.pushTask(
+                std::make_unique<OptimizeGroupTask>(group_id, required_properties));
 
             for (const auto & new_expression : enforcer_expressions)
-                optimizer_context.scheduleCosting(new_expression);
+                optimizer.scheduleCosting(new_expression);
         }
     }
     else
@@ -89,7 +89,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     }
 }
 
-std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(OptimizerContext & optimizer_context, const GroupPtr & group) const
+std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(CascadesOptimizer & optimizer, const GroupPtr & group) const
 {
     std::vector<GroupExpressionPtr> enforcer_expressions;
 
@@ -110,13 +110,13 @@ std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(Optimizer
 
             if (required_properties.isSatisfiedBy(expression->properties))
             {
-                optimizer_context.updateBestPlan(expression);
+                optimizer.updateBestPlan(expression);
                 continue;
             }
 
-            for (const auto & enforcer : optimizer_context.getEnforcerRules())
+            for (const auto & enforcer : optimizer.getEnforcerRules())
             {
-                if (!enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
+                if (!enforcer->checkPattern(expression, required_properties, optimizer.getMemo()))
                     continue;
 
                 /// No coarse pass-local dedup here: physically identical enforcer outputs are
@@ -126,13 +126,13 @@ std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(Optimizer
                 /// Enforcers return only the expressions they actually inserted (structural
                 /// duplicates are dropped), so duplicate enforcer outputs are neither scheduled
                 /// nor counted as progress - they cannot exhaust the task budget.
-                auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
+                auto new_expressions = enforcer->apply(expression, required_properties, optimizer.getMemo());
                 if (new_expressions.empty())
                     continue;
 
                 for (const auto & new_expression : new_expressions)
                 {
-                    LOG_TEST(optimizer_context.log, "Enforcer '{}' on group #{} expression '{}' -> '{}'",
+                    LOG_TEST(optimizer.log, "Enforcer '{}' on group #{} expression '{}' -> '{}'",
                         enforcer->getName(), group_id, expression->getDescription(), new_expression->getDescription());
                 }
                 enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
@@ -146,14 +146,14 @@ std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(Optimizer
 }
 
 
-void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
+void ExploreGroupTask::execute(CascadesOptimizer & optimizer)
 {
-    LOG_TEST(optimizer_context.log, "ExploreGroupTask group_id: {}", group_id);
-    auto group = optimizer_context.getGroup(group_id);
+    LOG_TEST(optimizer.log, "ExploreGroupTask group_id: {}", group_id);
+    auto group = optimizer.getGroup(group_id);
     group->setExplored();
 
     for (const auto & expression : group->logical_expressions)
-        optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(expression));
+        optimizer.pushTask(std::make_unique<ExploreExpressionTask>(expression));
 }
 
 
@@ -161,7 +161,7 @@ void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
 /// unexplored input group. Explore and optimize differ only in the rule set (transformation
 /// vs implementation) and the properties the rules match against.
 static void scheduleApplicableRules(
-    OptimizerContext & optimizer_context,
+    CascadesOptimizer & optimizer,
     const GroupExpressionPtr & expression,
     const ExpressionProperties & required_properties,
     const std::vector<OptimizationRulePtr> & rules)
@@ -169,7 +169,7 @@ static void scheduleApplicableRules(
     std::vector<std::pair<Promise, OptimizationRulePtr>> moves;
     for (const auto & rule : rules)
     {
-        if (!expression->isApplied(*rule, required_properties) && rule->checkPattern(expression, required_properties, optimizer_context.getMemo()))
+        if (!expression->isApplied(*rule, required_properties) && rule->checkPattern(expression, required_properties, optimizer.getMemo()))
             moves.push_back({rule->getPromise(), rule});
     }
 
@@ -177,77 +177,77 @@ static void scheduleApplicableRules(
     std::sort(moves.begin(), moves.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     for (const auto & move : moves)
-        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, move.second));
+        optimizer.pushTask(std::make_unique<ApplyRuleTask>(expression, required_properties, move.second));
 
     for (const auto & input : expression->inputs)
     {
-        if (!optimizer_context.getGroup(input.group_id)->isExplored())
-            optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(input.group_id));
+        if (!optimizer.getGroup(input.group_id)->isExplored())
+            optimizer.pushTask(std::make_unique<ExploreGroupTask>(input.group_id));
     }
 }
 
 
-void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
+void ExploreExpressionTask::execute(CascadesOptimizer & optimizer)
 {
-    LOG_TEST(optimizer_context.log, "ExploreExpressionTask group_id: {}, expression: {}",
+    LOG_TEST(optimizer.log, "ExploreExpressionTask group_id: {}, expression: {}",
         expression->group_id, expression->getName());
 
     /// Transformation rules produce logical alternatives, so they match against no required properties.
-    scheduleApplicableRules(optimizer_context, expression, ExpressionProperties{}, optimizer_context.getTransformationRules());
+    scheduleApplicableRules(optimizer, expression, ExpressionProperties{}, optimizer.getTransformationRules());
 }
 
 
-void OptimizeExpressionTask::execute(OptimizerContext & optimizer_context)
+void OptimizeExpressionTask::execute(CascadesOptimizer & optimizer)
 {
-    LOG_TEST(optimizer_context.log, "OptimizeExpressionTask group #{}, expression: {}, required properties {}",
+    LOG_TEST(optimizer.log, "OptimizeExpressionTask group #{}, expression: {}, required properties {}",
         expression->group_id, expression->getName(), required_properties.dump());
 
     /// Implementation rules produce physical alternatives that must satisfy the required properties.
-    scheduleApplicableRules(optimizer_context, expression, required_properties, optimizer_context.getImplementationRules());
+    scheduleApplicableRules(optimizer, expression, required_properties, optimizer.getImplementationRules());
 }
 
 
-void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
+void ApplyRuleTask::execute(CascadesOptimizer & optimizer)
 {
-    LOG_TEST(optimizer_context.log, "ApplyRuleTask rule: '{}', group #{} expression: {}, required properties {}",
+    LOG_TEST(optimizer.log, "ApplyRuleTask rule: '{}', group #{} expression: {}, required properties {}",
         rule->getName(), expression->group_id, expression->getName(), required_properties.dump());
 
     /// Ensure statistics are derived before applying rules (rules may need them for decisions)
-    optimizer_context.deriveStatistics(expression->group_id);
+    optimizer.deriveStatistics(expression->group_id);
 
-    auto new_expressions = rule->apply(expression, required_properties, optimizer_context.getMemo());
+    auto new_expressions = rule->apply(expression, required_properties, optimizer.getMemo());
 
     for (const auto & new_expression : new_expressions)
     {
         if (rule->isTransformation())
         {
-            optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(new_expression));
+            optimizer.pushTask(std::make_unique<ExploreExpressionTask>(new_expression));
         }
         else
         {
-            optimizer_context.scheduleCosting(new_expression);
+            optimizer.scheduleCosting(new_expression);
         }
     }
 }
 
-void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
+void OptimizeInputsTask::execute(CascadesOptimizer & optimizer)
 {
-    LOG_TEST(optimizer_context.log, "OptimizeInputsTask group #{} expression {}",
-        expression->group_id, expression->dump(optimizer_context.getMemo().getEnvironment().cost_config));
+    LOG_TEST(optimizer.log, "OptimizeInputsTask group #{} expression {}",
+        expression->group_id, expression->dump(optimizer.getMemo().getContext().cost_config));
 
     /// All inputs optimized: cost the expression.
     if (input_index_to_optimize == expression->inputs.size())
     {
-        const auto & cost_config = optimizer_context.getMemo().getEnvironment().cost_config;
+        const auto & cost_config = optimizer.getMemo().getContext().cost_config;
 
         /// If any input has no satisfying implementation, this expression is
         /// unsatisfiable - skip cost estimation.
         for (const auto & input : expression->inputs)
         {
-            if (!optimizer_context.getGroup(input.group_id)
+            if (!optimizer.getGroup(input.group_id)
                      ->getBestImplementation(input.required_properties, cost_config).expression)
             {
-                LOG_TEST(optimizer_context.log, "Skipping unsatisfiable expression '{}' in group #{}: "
+                LOG_TEST(optimizer.log, "Skipping unsatisfiable expression '{}' in group #{}: "
                     "input group #{} has no implementation for {}",
                     expression->getDescription(), expression->group_id,
                     input.group_id, input.required_properties.dump());
@@ -256,17 +256,17 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
         }
 
         /// Ensure statistics are derived before cost estimation
-        optimizer_context.deriveStatistics(expression->group_id);
+        optimizer.deriveStatistics(expression->group_id);
 
         /// Cost the expression and drop it if the group already holds a cheaper best for the
         /// same properties (same-group best-cost pruning, not a cost-bounded search).
-        optimizer_context.costAndUpdateBest(expression, /*prune_against_best=*/true);
+        optimizer.costAndUpdateBest(expression, /*prune_against_best=*/true);
         return;
     }
     else
     {
         const auto & input = expression->inputs[input_index_to_optimize];
-        auto child_group = optimizer_context.getGroup(input.group_id);
+        auto child_group = optimizer.getGroup(input.group_id);
 
         /// Skip pushing OptimizeGroupTask for this child only if it is already FULLY done
         /// (explored + implemented + enforced) for the required properties - matching
@@ -274,8 +274,8 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
         /// gain a cheaper enforcer-built alternative, so it must keep being optimized.
         bool child_already_done = child_group->isFullyDoneFor(input.required_properties);
 
-        optimizer_context.pushTask(
-            std::make_shared<OptimizeInputsTask>(expression, input_index_to_optimize + 1));
+        optimizer.pushTask(
+            std::make_unique<OptimizeInputsTask>(expression, input_index_to_optimize + 1));
 
         if (!child_already_done)
         {
@@ -284,8 +284,8 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
             /// bound, so it could prune a parent expression that would still become cheapest.
             /// Total work is bounded by the optimizer task budget, which fails closed
             /// (see CascadesOptimizer::optimize).
-            optimizer_context.pushTask(
-                std::make_shared<OptimizeGroupTask>(input.group_id, input.required_properties));
+            optimizer.pushTask(
+                std::make_unique<OptimizeGroupTask>(input.group_id, input.required_properties));
         }
     }
 }

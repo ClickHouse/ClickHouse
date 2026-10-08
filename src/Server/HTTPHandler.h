@@ -39,6 +39,10 @@ struct HTTPHandlerConnectionConfig
 {
     std::optional<AlwaysAllowCredentials> credentials;
 
+    /// If set, overrides the `default_session_user` server setting for requests
+    /// without credentials (composable protocols allow a per-endpoint default user).
+    std::optional<String> default_session_user;
+
     /// TODO:
     /// String quota;
     /// String default_database;
@@ -58,7 +62,7 @@ public:
     /// This method is called right before the query execution.
     virtual void customizeContext(HTTPServerRequest & /* request */, ContextMutablePtr /* context */, ReadBuffer & /* body */) {}
 
-    virtual bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) = 0;
+    virtual bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) = 0;
 
     /// Only the dynamic query handler interprets arbitrary request paths as query inputs. Configured
     /// and SQL-defined handlers own their matched path and must execute their stored query unchanged.
@@ -232,6 +236,7 @@ class DynamicQueryHandler : public HTTPHandler
 {
 private:
     std::string param_name;
+    bool parse_http_path;
 
 public:
     explicit DynamicQueryHandler(
@@ -240,13 +245,17 @@ public:
         const std::string & param_name_ = "query",
         const HTTPResponseHeaderSetup & http_response_headers_override_ = std::nullopt,
         const std::string & url_prefix_ = "",
-        HTTPPathHintsPtr path_hints_ = nullptr);
+        HTTPPathHintsPtr path_hints_ = nullptr,
+        bool parse_http_path_ = true);
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string &key, const std::string &value) override;
+    bool customizeQueryParam(NameToNameMap & query_parameters, const std::string &key, const std::string &value) override;
 
-    bool parsesHTTPPath() const override { return true; }
+    /// The catch-all query handler interprets the request path. A configured `dynamic_query_handler`
+    /// rule owns the path it is matched by, so it interprets only the part below its `url_prefix`,
+    /// and nothing at all when it has none.
+    bool parsesHTTPPath() const override { return parse_http_path; }
 };
 
 class PredefinedQueryHandler : public HTTPHandler
@@ -271,7 +280,7 @@ public:
 
     std::string getQuery(HTTPServerRequest & request, HTMLForm & params, ContextMutablePtr context, ReadBuffer & body) override;
 
-    bool customizeQueryParam(ContextMutablePtr context, const std::string & key, const std::string & value) override;
+    bool customizeQueryParam(NameToNameMap & query_parameters, const std::string & key, const std::string & value) override;
 };
 
 /// A handler defined from SQL via CREATE HANDLER. It executes a stored query, exactly like

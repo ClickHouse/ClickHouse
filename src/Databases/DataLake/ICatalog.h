@@ -11,7 +11,9 @@
 #include <Poco/JSON/Object.h>
 
 #include <functional>
+#include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace DB
 {
@@ -24,6 +26,7 @@ namespace DataLake
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 StorageType parseStorageTypeFromString(const std::string &type);
+std::optional<StorageType> tryParseStorageTypeFromString(const std::string & type);
 
 /// Registry of `ALTER DATABASE ... MODIFY SETTING` validators. Each catalog that
 /// supports altering settings registers its own validator; catalog types without
@@ -41,6 +44,14 @@ public:
 
 private:
     std::unordered_map<DB::DatabaseDataLakeCatalogType, Validator> validators;
+};
+
+enum class DataLakeTableFormat : uint8_t
+{
+    UNKNOWN,
+    DELTA,
+    ICEBERG,
+    PAIMON,
 };
 
 struct DataLakeSpecificProperties
@@ -85,6 +96,8 @@ public:
 
     void setTableUUID(const std::string & uuid_) { table_uuid = uuid_; }
     std::optional<std::string> getTableUUID() const { return table_uuid; }
+    void setTableFormat(DataLakeTableFormat format) { table_format = format; }
+    DataLakeTableFormat getTableFormat() const { return table_format; }
 
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
@@ -138,6 +151,7 @@ private:
     std::optional<std::string> table_uuid;
 
     bool is_default_readable_table = true;
+    DataLakeTableFormat table_format = DataLakeTableFormat::UNKNOWN;
 
     bool with_location = false;
     bool with_schema = false;
@@ -204,6 +218,9 @@ public:
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
     virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
+    virtual DataLakeTableFormat getTableFormat(const TableMetadata & table_metadata) const = 0;
+    std::string_view getTableEngineName(const TableMetadata & table_metadata) const;
+
     virtual ~ICatalog() = default;
 
     /// Does catalog have any tables?
@@ -245,13 +262,24 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
+    virtual std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const;
+
     /// Creates new table in catalog. Callers must ensure the namespace exists before
     /// writing any table files to storage: a catalog that shares its storage view with
     /// the data refuses to create a namespace over a plain directory those files create.
     virtual void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const;
 
     /// Creates the namespace unless it already exists.
-    virtual void createNamespaceIfNotExists(const String & namespace_name, const String & location) const;
+    virtual void createNamespaceIfNotExists(const String & namespace_name) const;
+
+    virtual bool managesTableLocation() const { return false; }
+
+    virtual bool assignsLocationToNewNamespaces() const { return false; }
+
+    /// True when the catalog writes the first metadata file itself on create. The client must not prewrite it.
+    virtual bool writesInitialMetadata() const { return false; }
 
     /// Updates metadata in catalog.
     virtual bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const;
@@ -270,6 +298,19 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const;
 
+    /// Commit the removal of the snapshots `snapshot_ids` and the snapshot references `ref_names` to a
+    /// transactional catalog, which writes the new metadata itself. The files of the removed snapshots are
+    /// not deleted, it is up to the caller. `base_metadata` is the table metadata the removal was decided on:
+    /// the commit is rejected if the table or any of its references has changed since.
+    /// Returns the committed table metadata, or `nullptr` on a recoverable conflict so the caller can retry,
+    /// throws otherwise.
+    virtual Poco::JSON::Object::Ptr removeSnapshots(
+        const String & namespace_name,
+        const String & table_name,
+        Poco::JSON::Object::Ptr base_metadata,
+        const std::vector<Int64> & snapshot_ids,
+        const std::vector<String> & ref_names) const;
+
     /// Drop table from catalog.
     virtual void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const;
 
@@ -279,7 +320,13 @@ public:
     /// The Glue catalog does not support such operation.
     virtual bool isTransactional() const { return false; }
 
-    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    virtual CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & /*storage_id*/, const TableMetadata & /*table_metadata*/)
+    {
+        return std::nullopt;
+    }
+
+    virtual CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
     {
         return std::nullopt;
     }

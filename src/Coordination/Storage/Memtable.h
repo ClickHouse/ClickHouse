@@ -20,7 +20,7 @@ struct ChildrenSet2
 {
     struct Entry
     {
-        const char * ptr = nullptr; // must be the first field, MemtableChildrenSet's union relies on it
+        const char * ptr = nullptr;
         uint32_t len = 0;
 
         /// Normally only Create and Remove actions are used in children sets, there's nothing to "Update".
@@ -61,18 +61,17 @@ struct ChildrenSet2
 };
 
 /// Like ChildrenSet2, but using less memory if the set has 0 or 1 elements.
+/// 16 bytes, same as ChildrenSet2::Entry: `mode` fits in what is tail padding in Entry.
 struct MemtableChildrenSet
 {
-    /// Stored in the upper 2 bits of the union (the other union members are pointers, so their
-    /// upper bits are unused).
-    enum class Mode : uint64_t
+    enum class Mode : uint8_t
     {
         /// The set is empty.
         Empty = 0,
-        /// The set has one element, stored in `entry`.
-        Inline = 0x4000000000000000,
+        /// The set has one element: {inline_name, inline_name_len, inline_action}.
+        Inline,
         /// The set is stored as hash set at `*set`.
-        Set = 0x8000000000000000,
+        Set,
     };
 
     MemtableChildrenSet() = default;
@@ -81,8 +80,11 @@ struct MemtableChildrenSet
     MemtableChildrenSet & operator=(const MemtableChildrenSet &) = delete;
 
     MemtableChildrenSet(MemtableChildrenSet && other) noexcept
+        : inline_name(other.inline_name)
+        , inline_name_len(other.inline_name_len)
+        , inline_action(other.inline_action)
+        , mode(other.mode)
     {
-        entry = other.entry; // copies the whole union; `mode` aliases the first 8 bytes of `entry`
         other.mode = Mode::Empty;
     }
 
@@ -91,7 +93,10 @@ struct MemtableChildrenSet
         if (this != &other)
         {
             destroy();
-            entry = other.entry;
+            inline_name = other.inline_name;
+            inline_name_len = other.inline_name_len;
+            inline_action = other.inline_action;
+            mode = other.mode;
             other.mode = Mode::Empty;
         }
         return *this;
@@ -124,58 +129,60 @@ struct MemtableChildrenSet
     ConstIterator iterate() const;
 
 private:
-    static constexpr uint64_t MODE_MASK = static_cast<uint64_t>(Mode::Inline) | static_cast<uint64_t>(Mode::Set);
-    static constexpr uint64_t PTR_MASK = ~MODE_MASK;
-
     union
     {
-        /// When reading these, mask off the upper 2 bits of the first 8-byte value. They're `mode`.
-        ChildrenSet2::Entry entry;
+        /// Inline mode: pointer to the name (in an arena managed separately, e.g. by Memtable).
+        const char * inline_name = nullptr;
+        /// Set mode: owned hash set. A plain untagged pointer, in particular so that LSan's
+        /// reachability scan can trace it (it doesn't see through tagged pointers and would
+        /// report the sets as leaked).
         ChildrenSet2 * set;
-
-        /// Lives in the upper 2 bits.
-        /// In all other elements of this union these bits are upper bits of a pointer, so we can
-        /// store things in them.
-        Mode mode = Mode::Empty;
     };
-
-    Mode getMode() const { return static_cast<Mode>(static_cast<uint64_t>(mode) & MODE_MASK); }
+    /// Inline mode: length of the name.
+    uint32_t inline_name_len = 0;
+    /// Inline mode: action of the single entry.
+    NodeAction inline_action = NodeAction::Remove;
+    Mode mode = Mode::Empty;
 
     ChildrenSet2 * getSet() const
     {
-        chassert(getMode() == Mode::Set);
-        return reinterpret_cast<ChildrenSet2 *>(static_cast<uint64_t>(mode) & PTR_MASK);
+        chassert(mode == Mode::Set);
+        return set;
     }
 
     ChildrenSet2::Entry getInlineEntry() const
     {
-        chassert(getMode() == Mode::Inline);
-        static_assert(offsetof(ChildrenSet2::Entry, ptr) == 0);
-        ChildrenSet2::Entry e = entry;
-        e.ptr = reinterpret_cast<const char *>(reinterpret_cast<uint64_t>(e.ptr) & PTR_MASK);
+        chassert(mode == Mode::Inline);
+        ChildrenSet2::Entry e;
+        e.ptr = inline_name;
+        e.len = inline_name_len;
+        e.action = inline_action;
         return e;
     }
 
     void setInlineEntry(ChildrenSet2::Entry e)
     {
-        chassert((reinterpret_cast<uint64_t>(e.ptr) & MODE_MASK) == 0);
-        entry = e;
-        mode = static_cast<Mode>(static_cast<uint64_t>(mode) | static_cast<uint64_t>(Mode::Inline));
+        inline_name = e.ptr;
+        inline_name_len = e.len;
+        inline_action = e.action;
+        mode = Mode::Inline;
     }
 
     void setSet(ChildrenSet2 * s)
     {
-        chassert((reinterpret_cast<uint64_t>(s) & MODE_MASK) == 0);
-        mode = static_cast<Mode>(static_cast<uint64_t>(Mode::Set) | reinterpret_cast<uint64_t>(s));
+        set = s;
+        mode = Mode::Set;
     }
 
     void destroy()
     {
-        if (getMode() == Mode::Set)
-            delete getSet();
+        if (mode == Mode::Set)
+            delete set;
         mode = Mode::Empty;
     }
 };
+
+static_assert(sizeof(MemtableChildrenSet) == sizeof(ChildrenSet2::Entry));
 
 struct Memtable;
 using MemtablePtr = std::shared_ptr<Memtable>;
@@ -196,6 +203,7 @@ struct Memtable
     ///          point to these blocks, and we rely on these weak ptrs not expiring.
     std::vector<BlockPtr> blocks;
     size_t total_bytes = 0; // sum of capacities of `blocks`
+    size_t num_entries = 0; // number of nodes/tombstones in all blocks
 
     /// Number of Create-d nodes minus number of Remove-d nodes.
     int64_t node_count_delta = 0;

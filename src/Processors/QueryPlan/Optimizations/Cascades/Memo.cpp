@@ -45,7 +45,7 @@ void Memo::dump(WriteBuffer & out) const
     {
         const auto & group = groups_by_id.at(group_id);
         out << "Group #" << group_id << "\n";
-        group->dump(out, environment.cost_config, "    ");
+        group->dump(out, context.cost_config, "    ");
         out << "\n";
     }
 }

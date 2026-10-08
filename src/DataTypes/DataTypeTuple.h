@@ -40,10 +40,10 @@ public:
     bool canBeInsideSparseColumns() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
+    bool isDefaultInsertTrivial() const override;
 
     bool equals(const IDataType & rhs) const override;
 
@@ -59,7 +59,8 @@ public:
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
-    SerializationInfoPtr getSerializationInfo(const IColumn & column) const override;
+    SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
+    using IDataType::getSerializationInfo;
 
     DataTypePtr getNormalizedType() const override;
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
@@ -74,10 +75,16 @@ public:
 
     void updateHashImpl(SipHash & hash) const override;
 
-    void forEachChild(const ChildCallback & callback) const override;
+    size_t getNumberOfChildren() const override { return elems.size(); }
+    const DataTypePtr & getChild(size_t index) const override
+    {
+        chassert(index < elems.size());
+        return elems[index];
+    }
 
 private:
-    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column) const;
+    DataTypePtr doCloneWithChildren(const DataTypes & new_children) const override;
+    SerializationInfoMutablePtr getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const;
 };
 
 }

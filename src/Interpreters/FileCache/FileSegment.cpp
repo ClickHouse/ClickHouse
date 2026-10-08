@@ -27,7 +27,6 @@ namespace ProfileEvents
     extern const Event FileSegmentWaitMicroseconds;
     extern const Event FileSegmentWaitTimeouts;
     extern const Event FileSegmentCompleteMicroseconds;
-    extern const Event FileSegmentLockMicroseconds;
     extern const Event FileSegmentWriteMicroseconds;
     extern const Event FileSegmentIncreasePriorityMicroseconds;
     extern const Event FileSegmentHolderCompleteMicroseconds;
@@ -35,6 +34,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheHoldFileSegments;
     extern const Event FilesystemCacheUnusedHoldFileSegments;
     extern const Event FilesystemCacheBackgroundDownloadQueuePush;
+    extern const Event FilesystemCacheReserveAheadRetries;
 }
 
 namespace CurrentMetrics
@@ -176,7 +176,6 @@ String FileSegment::tryGetPath() const
 
 FileSegmentGuard::Lock FileSegment::lock() const
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FileSegmentLockMicroseconds);
     return segment_guard.lock();
 }
 
@@ -601,6 +600,9 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
         chassert(!getDownloaderUnlocked(lk).empty());
         chassert(!isDownloaderUnlocked(lk));
 
+        std::unique_lock<std::mutex> cv_lk(*lk.mutex(), std::adopt_lock);
+        SCOPE_EXIT({ cv_lk.release(); });
+
         /// Wait for the download in short slices so that cancellation of the waiting query
         /// (KILL QUERY, max_execution_time, a dropped/stopped refreshable materialized view, ...)
         /// is observed promptly. The condition variable is only notified on download progress, so a
@@ -627,7 +629,7 @@ FileSegment::State FileSegment::wait(size_t offset, size_t timeout_ms)
                 break;
             }
             const auto slice = std::min<std::chrono::steady_clock::duration>(std::chrono::seconds(1), deadline - now);
-            if (cv.wait_for(lk, slice, downloaded))
+            if (cv.wait_for(cv_lk, slice, downloaded))
                 break;
         }
     }
@@ -667,7 +669,8 @@ bool FileSegment::reserve(
     size_t lock_wait_timeout_milliseconds,
     std::string & failure_reason,
     FileCacheReserveStat * reserve_stat,
-    size_t reserve_hint)
+    std::optional<size_t> reserve_hint,
+    FileCacheReserveAhead * reserve_ahead)
 {
     if (!size_to_reserve)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Zero space reservation is not allowed");
@@ -707,29 +710,18 @@ bool FileSegment::reserve(
 
     const size_t minimum_reserve_size = size_to_reserve;
 
-    if (!is_unbound)
+    if (!is_unbound && reserve_ahead)
     {
-        const auto reserve_granularity = cache->getReserveGranularity();
-        if (reserve_granularity && reserve_granularity > size_to_reserve)
+        /// Don't reserve ahead past the segment end or the end of the read.
+        size_t segment_reserve_limit = range().size() - reserved_size;
+        if (reserve_hint)
         {
-            size_to_reserve = reserved_size + reserve_granularity > range().size()
-                ? range().size() - reserved_size
-                : reserve_granularity;
-
-            /// `reserve_hint` is measured from the current download offset, so the read ends at
-            /// `read_horizon` in segment-relative terms. Don't reserve ahead past it.
-            const size_t read_horizon = current_downloaded_size + reserve_hint;
-            if (reserve_hint
-                && read_horizon > reserved_size
-                && read_horizon < reserved_size + size_to_reserve)
-                size_to_reserve = read_horizon - reserved_size;
+            const size_t read_horizon = current_downloaded_size + *reserve_hint;
+            segment_reserve_limit = std::min(segment_reserve_limit, read_horizon > reserved_size ? read_horizon - reserved_size : 0);
         }
-    }
 
-    /// The reserve-ahead caps above (segment range, read horizon) are only an upper bound; they
-    /// must never reserve less than the current write needs, otherwise the write would exceed the
-    /// reservation. A bare assert would not protect release builds, so clamp explicitly.
-    size_to_reserve = std::max(size_to_reserve, minimum_reserve_size);
+        size_to_reserve = reserve_ahead->getReserveSize(size_to_reserve, segment_reserve_limit, cache->getReserveGranularity());
+    }
 
     /// This (resizable file segments) is allowed only for single threaded use of file segment.
     /// Currently it is used only for temporary files through cache.
@@ -741,9 +733,22 @@ bool FileSegment::reserve(
     FileCacheReserveStat dummy_stat;
     if (!reserve_stat)
         reserve_stat = &dummy_stat;
+    reserve_stat->not_enough_space = false;
 
     bool reserved = cache->tryReserve(
         *this, size_to_reserve, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+
+    if (!reserved && reserve_ahead)
+        reserve_ahead->reset();
+
+    /// Reserve-ahead is best-effort: retry with the exact size if it did not fit.
+    if (!reserved && size_to_reserve > minimum_reserve_size && reserve_stat->not_enough_space)
+    {
+        ProfileEvents::increment(ProfileEvents::FilesystemCacheReserveAheadRetries);
+        *reserve_stat = FileCacheReserveStat{};
+        reserved = cache->tryReserve(
+            *this, minimum_reserve_size, *reserve_stat, *getKeyMetadata()->origin, lock_wait_timeout_milliseconds, failure_reason);
+    }
 
     if (!reserved)
         setDownloadFailedUnlocked(lock());

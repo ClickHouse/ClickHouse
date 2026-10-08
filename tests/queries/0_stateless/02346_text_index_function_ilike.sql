@@ -150,7 +150,7 @@ LIMIT 2, 3;
 SELECT '-- Text index for ILIKE function should choose all 4 parts and 40 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE message ILIKE '%clickhouse%'
+    SELECT count() FROM tab WHERE message ILIKE '%house%'
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 
@@ -273,7 +273,7 @@ LIMIT 2, 3;
 SELECT '-- Text index for ILIKE function with array tokenizer should choose all 4 parts and 40 granules';
 SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes=1
-    SELECT count() FROM tab WHERE tag ILIKE '%clickhouse%'
+    SELECT count() FROM tab WHERE tag ILIKE '%house%'
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
 LIMIT 2, 3;
 

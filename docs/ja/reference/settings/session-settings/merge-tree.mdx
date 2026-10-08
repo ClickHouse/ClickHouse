@@ -130,6 +130,26 @@ ClickHouse が 1 回のクエリで `merge_tree_max_rows_to_use_cache` 行を超
 
 * 任意の正の整数。
 
+<div id="merge_tree_min_bytes_per_read_stream">
+  ## merge_tree_min_bytes_per_read_stream
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="65536" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "65536"},{"label": "sqrt コストモデルを用いて、通常のローカル非順序 `MergeTree` における狭いカラムのスキャン時のストリーム数に上限を設ける新しい設定。コア数の多いマシンでストリームごとのオーバーヘッドを削減します。previous_value=0（無効）のため、26.8 より前のバージョンとの `compatibility` により、従来のストリーム数が復元されます。"}]}]} />
+
+バイト換算で表したストリームごとのオーバーヘッドコストです。通常のローカル非順序 `MergeTree` スキャンで作成される読み取りストリームの最大数を制御します。順序付き読み取り、`FINAL`、レイヤー化された読み取り、および並列レプリカ読み取りには影響しません。ボリュームベースの上限は `ceil(sqrt(estimated_read_bytes / this_setting))` です。ClickHouse では、少なくとも 16 ストリーム、およびこの上限を適用する前に要求されたストリーム数の少なくとも 4 分の 1 が維持されるため、実効ストリーム数は `min(requested_streams, max(volume_based_cap, 16, floor(requested_streams / 4)))` となります。これらの下限により、コストが `estimated_read_bytes` には反映されない、CPU 負荷の高い式や集計において下流の並列度が維持されます。
+
+`estimated_read_bytes` は、索引およびパーティションプルーニング後に残ったマーク範囲で読み取られるカラムの非圧縮サイズです。ストリームごとのオーバーヘッドは、圧縮率ではなく処理される値の数に比例するストリームごとの作業量とのトレードオフになるため、非圧縮サイズが使用されます。
+
+読み取りボリュームを保守的に見積もれない場合、この上限は適用されません。たとえば、古いパートで新しく追加された `DEFAULT` カラムを評価するために他の物理カラムを読む必要がある場合や、選択された範囲で可変幅カラムの一部のみを読み取る場合です。
+
+デフォルトの 64 KB は、`T(N) = W/N + F + V·N` というコストモデルから導出されています。ここで、`W` は有効な作業量、`F` は固定のパイプラインオーバーヘッド、`V` はストリームごとの可変コストです。最適なストリーム数は `sqrt(W/V)` です。スループットを介して `W` をバイトで表すと、`C = throughput · V ≈ 400 MB/s · 0.17 ms ≈ 64 KB` となります。この値を大きくするとストリーム数は減少し (より保守的になり) 、小さくするとより多くのストリームが許可されます。この最適化を無効にするには 0 に設定します。
+
+設定可能な値:
+
+* 非負の整数。
+
 <div id="merge_tree_min_bytes_per_task_for_remote_reading">
   ## merge_tree_min_bytes_per_task_for_remote_reading
 </div>

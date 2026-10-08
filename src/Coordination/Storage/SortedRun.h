@@ -2,6 +2,13 @@
 
 #include <Coordination/Storage/Common.h>
 
+#include <memory>
+
+namespace DB
+{
+class WriteBuffer;
+}
+
 namespace Coordination::Storage
 {
 
@@ -29,8 +36,10 @@ struct SortedRun
     uint32_t min_file_seqno = 0;
     uint32_t max_file_seqno = 0;
 
+    /// Sums across `files`. (No live merge shenanigans like in node_count_delta.)
     size_t total_block_size = 0;
     size_t total_file_size = 0;
+    size_t total_entries = 0;
 
     /// How many nodes (+1) and tombstones (-1) this run "contributes" to the total.
     /// For files not involved in a merge, this is just the sum of node_count_delta in `files`.
@@ -49,7 +58,7 @@ struct SortedRun
     /// Scan the nodes with range_start < path < range_end (both bounds exclusive) and report the
     /// last component of each path. The caller passes the range that selects exactly the direct
     /// children of some node.
-    void listChildrenNames(NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
+    void listChildrenNames(NodePath range_start, NodePath range_end, UInt128 parent_path_hash, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
 
     /// === Writing and merging ===
 
@@ -67,22 +76,29 @@ private:
 
 struct StorageState;
 
+/// WriteBuffer wrapper that just passes data through to a given other WriteBuffer, without calling
+/// destructor or finalize() on it. (Because for some reason compressing WriteBuffer implementations
+/// insist on calling finalize() on the target buffer even if it's passed by plain pointer.)
+class AppendWriteBuffer : public DB::WriteBuffer
+{
+public:
+    WriteBuffer * out = nullptr;
+
+    explicit AppendWriteBuffer(WriteBuffer * out_);
+    void nextImpl() override;
+
+    void flush() { out->position() = position(); }
+
+    void finalizeImpl() override;
+    ~AppendWriteBuffer() override;
+};
+
 /// Writes to a series of files and to block cache. Used by flushes and merges.
+/// Output files have `delete_when_destroyed = true`; the caller should set it to false when
+/// publishing a finished file.
 struct SortedRunWriter
 {
-    StorageState * storage = nullptr;
-    size_t target_block_size = 0;
-    size_t target_file_uncompressed_size = 0;
-    std::string file_path_prefix;
-
     SortedRunPtr sorted_run;
-
-    SortedFilePtr file; // not added to sorted_run yet
-
-    BlockPtr block; // not added to `file` yet
-    NodePath block_min_path;
-    NodePath block_max_path;
-    std::string block_max_path_buf;
 
     SortedRunWriter(SortedRunPtr sorted_run_, StorageState * storage_);
     ~SortedRunWriter();
@@ -104,8 +120,40 @@ struct SortedRunWriter
     SortedRunPtr finish();
 
 private:
+    StorageState * storage = nullptr;
+    size_t target_block_size = 0;
+    size_t target_block_group_compressed_size = 0;
+    size_t target_file_uncompressed_size = 0;
+
+    /// Current file, not added to sorted_run yet.
+    SortedFilePtr file;
+    /// Paths that have children added or removed in current `file`. For `parent_paths_filter`.
+    std::vector<UInt128> parent_paths;
+
+    /// Current block, not added to `file` yet.
+    BlockPtr block;
+    NodePath block_min_path;
+    NodePath block_max_path;
+    std::string block_max_path_buf;
+
+    /// If nonempty, this path was added to `parent_paths`.
+    std::string last_added_parent_path;
+
+    /// Current group of blocks. New `compressed_writer` is created for each group.
+    /// Its blocks were added to `file` and were written to `compressed_writer`, but
+    /// `group_compressed_size` is not known yet.
+    std::optional<AppendWriteBuffer> file_appender; // awful adapter to make ZstdDeflatingWriteBuffer work
+    std::unique_ptr<DB::WriteBuffer> compressed_writer;
+    size_t group_start_block_idx = 0;
+    size_t group_offset_in_file = 0;
+
+    std::unique_ptr<DB::WriteBuffer> file_writer; // writes to `file`; null in memory-only mode
+
     void finishBlock();
+    void finishGroup();
     void finishFile();
+
+    void buildParentPathsFilter();
 };
 
 }

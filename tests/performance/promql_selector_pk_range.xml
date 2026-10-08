@@ -27,7 +27,7 @@
          series, so a series spans 4 granules and the 5m instant lookback selects about one granule
          per series - index analysis dominates the query. -->
     <fill_query>
-        INSERT INTO promql_pk_range_ts (metric_name, tags, time_series)
+        INSERT INTO promql_pk_range_ts (metric_name, tags, samples)
         SELECT
             'pkr_metric',
             map('instance', toString(number), 'dc', toString(number % 8)),

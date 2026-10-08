@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "新しい設定"}]}]} />
 
-フィルタリング能力を高めるため、AND チェーン内の定数比較を補完します。演算子 `<`、`<=`、`>`、`>=`、`=` およびそれらの混在をサポートします。たとえば、`(a < b) AND (b < c) AND (c < 5)` は `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)` になります。
+フィルタリング能力を高めるため、AND チェーン内の定数比較を補完します。演算子 `<`、`<=`、`>`、`>=`、`=` およびそれらの混在をサポートします。たとえば、`(a < b) AND (b < c) AND (c < 5)` は `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)` になります。導出された比較は `indexHint` でラップされます。これらは索引解析 (主キー、パーティションキー、スキップ索引) に関与して読み取り対象を絞り込みますが、行ごとのコストは発生せず、PREWHERE にも影響しません。異なるテーブルにまたがる式を介して導出された比較も実行可能な状態を保ちます (`(t1.a < t2.b) AND (t2.b < 5)` から通常の `t1.a < 5` が導出されます) 。これは結合の下にプッシュダウンできる唯一の条件であり、元のチェーンでは到達できない結合入力をフィルタリングします。既存の条件と矛盾する導出比較も通常の条件として追加されるため、`AND` は `false` に畳み込まれます。
 
 <div id="optimize_and_compare_chain_max_hash_work">
   ## optimize_and_compare_chain_max_hash_work

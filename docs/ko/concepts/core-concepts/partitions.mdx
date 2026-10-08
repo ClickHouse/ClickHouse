@@ -162,9 +162,15 @@ ClickHouse는 관련 없는 데이터를 처리하지 않기 위해 일련의 �
 
 <br />
 
-① **파티션 프루닝**: [MinMax 인덱스](/ko/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)를 사용해 테이블의 파티션 키에 사용된 컬럼에 대한 쿼리 필터와 논리적으로 일치할 수 없는 전체 파티션(파트 집합)을 제외합니다.
+<Steps>
+  <Step title="파티션 프루닝">
+    [MinMax 인덱스](/ko/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)를 사용해 테이블의 파티션 키에 사용된 컬럼에 대한 쿼리 필터와 논리적으로 일치할 수 없는 전체 파티션(파트 집합)을 제외합니다.
+  </Step>
 
-② **그래뉼 프루닝**: ①단계 후 남아 있는 데이터 파트에 대해서는 [프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 사용해 테이블의 프라이머리 키에 사용된 컬럼에 대한 쿼리 필터와 논리적으로 일치할 수 없는 모든 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)(행 블록)을 제외합니다.
+  <Step title="그래뉼 프루닝">
+    파티션 프루닝 단계 후 남아 있는 데이터 파트에 대해서는 [프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 사용해 테이블의 프라이머리 키에 사용된 컬럼에 대한 쿼리 필터와 논리적으로 일치할 수 없는 모든 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)(행 블록)을 제외합니다.
+  </Step>
+</Steps>
 
 이러한 데이터 프루닝 단계는 앞서 살펴본 예시 쿼리의 물리적 쿼리 실행 계획을 [EXPLAIN](/ko/reference/statements/explain) 절로 [확인하면](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) 관찰할 수 있습니다:
 
@@ -208,16 +214,22 @@ WHERE date >= '2020-12-01'
 
 위 출력은 다음을 보여줍니다.
 
-① 파티션 프루닝: 위 EXPLAIN 출력의 7행부터 18행까지를 보면 ClickHouse가 먼저 `date` 필드의 [MinMax index](/ko/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)를 사용해, 기존 활성 데이터 파트 436개 중 1개에 저장된 기존 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) 3257개(행 블록) 중 11개를 식별하고, 이 그래뉼들에 쿼리의 `date` 필터와 일치하는 행이 포함되어 있음을 보여줍니다.
+<Steps>
+  <Step title="파티션 프루닝">
+    위 `EXPLAIN` 출력의 7행부터 18행까지를 보면 ClickHouse가 먼저 `date` 필드의 [MinMax 인덱스](/ko/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)를 사용해, 기존 활성 데이터 파트 436개 중 1개에 저장된 기존 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) 3257개(행 블록) 중 11개를 식별하고, 이 그래뉼들에 쿼리의 `date` 필터와 일치하는 행이 포함되어 있음을 보여줍니다.
+  </Step>
 
-② 그래뉼 프루닝: 위 EXPLAIN 출력의 19행부터 24행까지를 보면 ClickHouse가 이어서 ① 단계에서 식별된 데이터 파트의 [프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)(`town` 필드에 생성됨)를 사용해, 쿼리의 `town` 필터와도 일치할 가능성이 있는 행을 포함한 그래뉼 수를 11개에서 1개로 더 줄인다는 것을 알 수 있습니다. 이는 위에서 출력한 쿼리 실행 시의 ClickHouse-client 출력에도 반영되어 있습니다.
+  <Step title="그래뉼 프루닝">
+    위 `EXPLAIN` 출력의 19행부터 24행까지를 보면 ClickHouse가 이어서 파티션 프루닝 단계에서 식별된 데이터 파트의 [프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)(`town` 필드에 생성됨)를 사용해, 쿼리의 `town` 필터와도 일치할 가능성이 있는 행을 포함한 그래뉼 수를 11개에서 1개로 더 줄인다는 것을 알 수 있습니다. 이는 위에서 출력한 쿼리 실행 시의 ClickHouse-client 출력에도 반영되어 있습니다.
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
-이는 ClickHouse가 쿼리 결과를 계산하기 위해 6밀리초 동안 1개의 granule([8192](/ko/reference/settings/merge-tree-settings/index-granularity#index_granularity)행으로 이루어진 블록)을 스캔하고 처리했다는 의미입니다.
+이는 ClickHouse가 쿼리 결과를 계산하기 위해 6밀리초 동안 1개의 그래뉼([8192](/ko/reference/settings/merge-tree-settings/index-granularity#index_granularity)행으로 이루어진 블록)을 스캔하고 처리했다는 의미입니다.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### 파티셔닝은 주로 데이터 관리 기능입니다

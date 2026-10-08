@@ -200,7 +200,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-يمكنك استخدام معلمة URL ‏`default_format` أو ترويسة `X-ClickHouse-Format` لتحديد تنسيق افتراضي بدلاً من `TabSeparated`.
+يمكنك استخدام معلمة URL ‏`default_format` لتحديد تنسيق افتراضي بدلاً من `TabSeparated`. تحدد ترويسة `X-ClickHouse-Format` تنسيق الاستجابة صراحةً: فهي اسم مستعار للإعداد `output_format`، لذا تتجاوز أيضاً عبارة `FORMAT` في الاستعلام. ولا تغيّر مطلقاً كيفية تحليل نص طلب `INSERT` — استخدم `input_format` أو `format` لهذا الغرض.
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -211,13 +211,157 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-يمكنك استخدام طريقة POST مع الاستعلامات المُعلَّمة باستخدام المعاملات. تُحدَّد المعاملات باستخدام الأقواس المعقوفة مع اسم المعامل ونوعه، مثل `{name:Type}`. وتُمرَّر قيم المعاملات عبر `param_name`:
+يمكنك استخدام طريقة POST مع الاستعلامات المُعلَّمة باستخدام المعلمات. تُحدَّد المعلمات باستخدام الأقواس المعقوفة مع اسم المعلمة ونوعه، مثل `{name:Type}`. وتُمرَّر قيم المعلمات عبر `param_name`:
 
 ```bash
 $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "param_p2=4" 'http://localhost:8123/'
 
 7
 ```
+
+<div id="tables-as-files">
+  ## الوصول إلى الجداول عبر مسارات URL وإنشاء الاستعلامات
+</div>
+
+متاح في ClickHouse 26.8 والإصدارات الأحدث.
+
+يمكن لواجهة HTTP تفسير مسار URL باعتباره قاعدة بيانات أو جدولًا أو تنسيق إخراج أو طريقة ضغط. ويمكن لمعلمات URL بعد ذلك تحديد شكل النتيجة، بحيث لا تتطلب طلبات القراءة البسيطة استخدام SQL. تكون هذه الميزات معطّلة افتراضيًا ويجب تمكينها صراحةً.
+
+<div id="enabling-path-routing">
+  ### تفعيل التوجيه عبر المسارات
+</div>
+
+يُفعَّل تفسير المسارات على مستويين:
+
+1. فعِّل إعداد التكوين `http_allow_path_requests` على مستوى الخادم، الذي يتيح لواجهة HTTP توجيه الطلبات ذات نمط المسار إلى معالج الاستعلامات:
+
+```xml
+<clickhouse>
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>
+```
+
+2. فعّل الإعدادات المطلوبة لكل مستخدم:
+
+| الإعداد                                             | التأثير                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `http_allow_table_as_file`                          | يفسّر آخر مكوّن في المسار على أنه `table` أو `table.format` أو `table.format.compression`. |
+| `http_allow_database_as_path`                       | يفسّر مكوّن المسار البادئ `/database/` على أنه قاعدة البيانات الحالية.                     |
+| `http_allow_filters_as_path`                        | يفسّر مكوّنات المسار `/name=value/` بنمط Hive على أنها عوامل تصفية `WHERE`.                |
+| `http_allow_filters_as_unrecognized_url_parameters` | يفسّر معلمات URL غير المعروفة على أنها عوامل تصفية `WHERE`.                               |
+
+<Note>
+  يحدث التوجيه قبل المصادقة، لذا لا يمكن أن يعتمد على إعداد خاص بكل مستخدم. عند تعطيل `http_allow_path_requests`، يُرجع المسار غير المعروف رمز `404` قبل المصادقة. بعد التوجيه والمصادقة، تحدد الإعدادات الخاصة بكل مستخدم كيفية تفسير المسار، مما يتيح لك تمكين الميزة بشكل انتقائي لمستخدم أو دور أو ملف تعريف.
+</Note>
+
+<div id="table-as-file-examples">
+  ### الوصول إلى الجداول كملفات
+</div>
+
+عند تمكين `http_allow_table_as_file`، يُعالَج الطلب الموجّه إلى `/table.format.compression` على أنه `SELECT * FROM table`. فعّل `http_allow_database_as_path` لاستخدام `/database/table.format.compression`.
+
+```bash
+# SELECT * FROM my_db.hits, formatted as CSV
+curl 'http://localhost:8123/my_db/hits.csv'
+
+# The same result, compressed with gzip
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
+```
+
+يُتعرّف على امتدادات التنسيق والضغط دون تمييز بين حالة الأحرف، لذا فإن `hits.csv` و`hits.CSV` متكافئان.
+
+تتجاوز معلمة URL الصريحة `format` أو `output_format` التنسيق المحدد في المسار. أما `default_format` فلا يتجاوزه، إذ يوفّر التنسيق المستخدم فقط عندما لا يحدد أي شيء آخر تنسيقًا، ويكون امتداد المسار أكثر تحديدًا. يجب أن تتطابق معلمة `compression` الصريحة مع الضغط المحدد في المسار؛ وتؤدي القيم المتعارضة إلى استثناء.
+
+<div id="query-construction">
+  ### إنشاء استعلام
+</div>
+
+تُغلّف الإعدادات التالية الاستعلام الأساسي في صورة جدول مشتق. ويمكن استخدامها معًا أو مع استعلام موجود. يمكنك تمريرها كمعلمات URL عبر HTTP، أو ضمن عبارة `SETTINGS` في الاستعلام، أو عبر ملف تعريف المستخدم.
+
+| الإعداد                                                                                                                     | التأثير                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `select`                                                                                                                    | `SELECT <expression_list> FROM (…)`                                                                                                                                                |
+| `filter`                                                                                                                    | يضيف `WHERE <expression>`. وتُدمج معلمات URL المتعددة لـ `filter` باستخدام `AND`.                                                                                                  |
+| `order`                                                                                                                     | يضيف `ORDER BY <expression_list>`.                                                                                                                                                 |
+| `sort`                                                                                                                      | يضيف `ORDER BY` استنادًا إلى قائمة مفصولة بفواصل من المعرّفات أو مواضع الأعمدة، مع بادئة اختيارية `+` (تصاعدي) أو `-` (تنازلي) لكل منها، مثل `sort=a,-b`. لا يمكن دمجه مع `order`. |
+| [`limit`](/ar/reference/settings/session-settings/other#limit) و [`offset`](/ar/reference/settings/session-settings/other#offset) | يضيفان `LIMIT <n> OFFSET <m>`. يقبل كلاهما قيمًا سالبة لاختيار الذيل وقيمًا كسرية تمثل نسبة من الصفوف.                                                                             |
+| `page`                                                                                                                      | يضبط `offset = limit * (page - 1)`. يتطلب `limit` ولا يمكن دمجه مع `offset`.                                                                                                       |
+
+```bash
+# Filter my_db.hits, sort by a descending, and return the first 10 rows
+curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
+
+# Return the second page of 100 rows
+curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
+```
+
+<div id="modify-an-existing-query">
+  #### تعديل استعلام موجود
+</div>
+
+لا تقتصر إعدادات الإنشاء على طلبات المسار، بل تؤثر أيضًا في الاستعلام الذي تكتبه بنفسك. يصبح الاستعلام جدولًا مشتقًا، لذا تُطبَّق الإعدادات على نتيجته بدلًا من دمجها فيه. على سبيل المثال، يُنفَّذ `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` على النحو التالي:
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+يفيد ذلك في التنقّل بين صفحات النتائج أو فرزها أو تضييق نطاقها، عندما يكون الاستعلام محددًا في موضع آخر — كاستعلام محفوظ في لوحة معلومات، أو `predefined_query_handler`، أو عميل لا يتيح إلا إلحاق معلمات URL:
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+لأن الإعدادات تُغلّف الاستعلام بدلاً من إعادة صياغته، فإنها تتوافق مع عبارة `FORMAT` ومع `ORDER BY` داخل الاستعلام، ولا تغيّر مطلقًا الصفوف التي يكتبها `INSERT`: إذ يؤثر إعداد البناء الموضوع في تعليمة `INSERT ... SELECT` في نتيجة التعليمة نفسها (الفارغة)، وليس في `SELECT` المصدرية. وللتأثير في المصدر، ضع الإعداد في عبارة `SETTINGS` الخاصة بـ`SELECT` نفسها:
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
+<Warning>
+  لا يُعد `filter` آلية للتحكم بالوصول. فهو يضيف عبارة `WHERE` إلى استعلام فرعي مُغلِّف، مما يعني أنه يمكن قراءة البيانات الأساسية ومعالجتها قبل تطبيق عامل التصفية. ولتقييد الصفوف التي يمكن للمستخدم الوصول إليها، استخدم [سياسات الصفوف](/ar/concepts/features/security/access-rights#row-policy-management) أو [`additional_table_filters`](/ar/reference/settings/session-settings/additional#additional_table_filters).
+</Warning>
+
+<div id="format-and-compression-overrides">
+  ### تجاوز التنسيقات والضغط
+</div>
+
+| الإعداد          | التأثير                                                                                                                                                                     |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `output_format`  | يتجاوز تنسيق الإخراج. وتكون له أولوية على عبارة `FORMAT` في الاستعلام وامتداد المسار و`format` و`default_format`. ويمكن أيضًا ضبطه باستخدام الترويسة `X-ClickHouse-Format`. |
+| `input_format`   | يتجاوز تنسيق الإدخال لعملية `INSERT`. وتكون له أولوية على عبارة `FORMAT` في الاستعلام و`format`.                                                                            |
+| `format`         | يتجاوز التنسيق في كلا الاتجاهين، ما لم يُوفَّر إعداد خاص باتجاه محدد.                                                                                                       |
+| `default_format` | يحدد تنسيق الإخراج عندما لا يتضمن الاستعلام عبارة `FORMAT` أو امتداد مسار أو أي تجاوز آخر للتنسيق.                                                                          |
+| `compression`    | يضغط جسم الاستجابة، مثلًا باستخدام `compression=gz`. وهو مستقل عن `Content-Encoding` في HTTP وعن المعلَمة الأصلية `compress` في ClickHouse.                                 |
+
+تعمل إعدادات التنسيق أيضًا مع بروتوكولات أخرى، بما فيها العميل الأصلي و`clickhouse-local`. ويتوافق `input_format` و`output_format` مع الخيارين `--input-format` و`--output-format`. ويرتبط الخيار `--format` بإعداد `format` ثنائي الاتجاه في `clickhouse-local`، بينما يحتفظ في `clickhouse-client` بمعناه التاريخي المقتصر على الإخراج ويرتبط بـ `output_format`.
+
+يُستخدم `compression` خصيصًا لتشكيل استجابة HTTP، وتتم معالجته قبل تنفيذ الاستعلام. حدده عبر معلمة URL في HTTP، أو امتداد مسار، أو ملف تعريف مستخدم. ويُرفض ضمن عبارة `SETTINGS` داخل الاستعلام.
+
+تتضمن استجابات HTTP الثنائية والمضغوطة ترويسة `Content-Disposition: attachment; filename=…`. ويُشتق اسم الملف من مسار URL، أو يُستخدم `result.<format>.<compression>` إذا لم يوفر المسار اسمًا.
+
+<div id="implicit-table">
+  ### استخدام جدول مسار مع استعلام
+</div>
+
+عندما يشير المسار إلى جدول وتوفّر أيضًا المعلَمة `query`، يُتاح جدول المسار عبر [`implicit_table_at_top_level`](/ar/reference/settings/session-settings/implicit#implicit_table_at_top_level). تقرأ عبارة `SELECT` التي لا تحتوي على عبارة `FROM` من جدول المسار:
+
+```bash
+# Read columns a and b from my_db.hits without a FROM clause
+curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
+```
+
+إذا كان الاستعلام يتضمن بالفعل عبارة `FROM`، فلا يحدد مكوّن المسار سوى اسم ملف التنزيل.
 
 <div id="insert-queries">
   ## استعلامات `INSERT` عبر HTTP/HTTPS

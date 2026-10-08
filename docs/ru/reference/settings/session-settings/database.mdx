@@ -13,6 +13,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="database">
+  ## database
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Новая настройка, задающая текущую базу данных для запроса. Заменяет специальную обработку URL-параметра `database` HTTP-интерфейса и заголовка `X-ClickHouse-Database`."}]}]} />
+
+Задаёт текущую базу данных для запроса — базу данных, в которой разрешаются неквалифицированные имена таблиц; аналогично `USE <database>`. В отличие от оператора `USE`, это обычная настройка сеанса: как и любая другая настройка, она принимает значение без проверки, а неизвестная база данных будет указана при применении настройки (во время выполнения запроса), а не при выполнении `SET`. Она следует модели привилегий заданной клиентом базы данных по умолчанию, которую обобщает, а не модели `USE`: для выбора текущей базы данных не требуется привилегия `SHOW_DATABASES`, при этом доступ к таблицам в ней проверяется как обычно. Используется как пункт назначения для URL-параметра `database` HTTP-интерфейса и заголовка `X-ClickHouse-Database`.
+
 <div id="database_atomic_wait_for_drop_and_detach_synchronously">
   ## database_atomic_wait_for_drop_and_detach_synchronously
 </div>

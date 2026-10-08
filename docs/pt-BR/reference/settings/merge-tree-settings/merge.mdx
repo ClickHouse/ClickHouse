@@ -23,6 +23,23 @@ Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings
 
 Disponível apenas no ClickHouse Cloud. Tamanho máximo total das partes para pré-aquecer o cache durante a mesclagem.
 
+<div id="merge_use_batch_sorting_queue">
+  ## merge_use_batch_sorting_queue
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para usar a fila de ordenação em lote em mesclagens comuns de `MergeTree`."}]}]} />
+
+Use a fila de ordenação em lote para reduzir a sobrecarga da fila por linha ao mesclar fluxos ordenados.
+
+Aplica-se apenas a mesclagens que não alteram linhas, isto é, `MergeTree`
+simples (modo de mesclagem `Ordinary`). Não tem efeito em motores com semântica
+no momento da mesclagem, como `ReplacingMergeTree`, `CollapsingMergeTree`,
+`SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree`,
+`GraphiteMergeTree` e `VersionedCollapsingMergeTree`, que continuam usando a
+fila padrão independentemente dessa configuração.
+
 <div id="merge_workload">
   ## merge_workload
 </div>

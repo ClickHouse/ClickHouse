@@ -1,4 +1,4 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- Distributed FINAL skips the merge for non-intersecting primary-key ranges. Each table below has one
 -- level>0 (merged, deduplicated) part covering the whole key range plus a small overlapping level-0 part,
 -- so FINAL reads the non-overlapping tail without a merge (only the engine sign/is_deleted filter) and
@@ -10,7 +10,6 @@
 -- splits into the intersecting and non-intersecting lanes this test targets instead of being broadcast.
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_default_reader_bucket_count = 4,
     distributed_plan_max_rows_to_broadcast = 0, max_final_threads = 1;
-SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_ni_rep;
 CREATE TABLE t_ni_rep (k UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 64, merge_max_block_size = 8192;
@@ -21,7 +20,7 @@ SYSTEM STOP MERGES t_ni_rep;
 INSERT INTO t_ni_rep SELECT number, number + 5, 2 FROM numbers(800);
 
 SELECT 'rep local', count(), sum(v) FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'rep distributed', count(), sum(v) FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'rep distributed', count(), sum(v) FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT 'rep read distributes', countIf(explain LIKE '%ReadFromDistributedPlanSource%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, v FROM t_ni_rep FINAL SETTINGS make_distributed_plan = 1);
 DROP TABLE t_ni_rep;
@@ -35,7 +34,7 @@ SYSTEM STOP MERGES t_ni_del;
 INSERT INTO t_ni_del SELECT number, number + 5, 2, 0 FROM numbers(800);
 
 SELECT 'del local', count(), sum(v) FROM t_ni_del FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'del distributed', count(), sum(v) FROM t_ni_del FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'del distributed', count(), sum(v) FROM t_ni_del FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 DROP TABLE t_ni_del;
 
 DROP TABLE IF EXISTS t_ni_col;
@@ -47,5 +46,5 @@ SYSTEM STOP MERGES t_ni_col;
 INSERT INTO t_ni_col SELECT number, number, 1 FROM numbers(800);
 
 SELECT 'col local', count(), sum(v) FROM t_ni_col FINAL SETTINGS make_distributed_plan = 0;
-SELECT 'col distributed', count(), sum(v) FROM t_ni_col FINAL SETTINGS make_distributed_plan = 1;
+SELECT 'col distributed', count(), sum(v) FROM t_ni_col FINAL SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 DROP TABLE t_ni_col;

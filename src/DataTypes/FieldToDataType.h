@@ -46,6 +46,7 @@ public:
     DataTypePtr operator() (const Decimal256 & x, UInt32 scale) const;
     DataTypePtr operator() (const AggregateFunctionStateData & x) const;
     DataTypePtr operator() (const CustomType & x) const;
+    DataTypePtr operator() (const NumberLiteral & x) const;
     DataTypePtr operator() (const UInt256 & x) const;
     DataTypePtr operator() (const Int256 & x) const;
     DataTypePtr operator() (const bool & x) const;

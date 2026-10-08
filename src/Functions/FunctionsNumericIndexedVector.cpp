@@ -533,7 +533,7 @@ SELECT numericIndexedVectorCardinality(numericIndexedVectorBuild(mapFromArrays([
             )",
                 R"(
 ┌─res─┐
-│  3  │
+│   3 │
 └─────┘
             )"}};
         FunctionDocumentation::IntroducedIn introduced_in = {25, 7};

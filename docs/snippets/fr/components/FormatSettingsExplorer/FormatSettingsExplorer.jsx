@@ -1,6 +1,6 @@
 const FormatSettingsExplorer = ({ href: baseRoute }) => {
   // Le moteur de rendu de production de Mintlify évalue le composant exporté sans
-  // conserver les liaisons de portée du module. L'état paresseux (lazy) maintient les données générées
+  // conserver les liaisons au niveau du module. L'état lazy conserve les données générées
   // dans cette portée d'évaluation tout en ne les construisant qu'une seule fois par montage.
   const [entries] = useState(() => [
     {
@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 128,
+      count: 129,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -199,6 +199,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_json_infer_incomplete_types_as_strings", path: "/input-format#input_format_json_infer_incomplete_types_as_strings", default: "1" },
         { name: "input_format_json_map_as_array_of_tuples", path: "/input-format#input_format_json_map_as_array_of_tuples", default: "0" },
         { name: "input_format_json_max_depth", path: "/input-format#input_format_json_max_depth", default: "1000" },
+        { name: "input_format_json_max_object_size", path: "/input-format#input_format_json_max_object_size", default: "536870912" },
         { name: "input_format_json_max_string_column_growth_step", path: "/input-format#input_format_json_max_string_column_growth_step", default: "0" },
         { name: "input_format_json_named_tuples_as_objects", path: "/input-format#input_format_json_named_tuples_as_objects", default: "1" },
         { name: "input_format_json_read_arrays_as_strings", path: "/input-format#input_format_json_read_arrays_as_strings", default: "1" },
@@ -295,14 +296,17 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 106,
+      count: 110,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
         { name: "output_format_arrow_date_as_uint16", path: "/output-format#output_format_arrow_date_as_uint16", default: "0" },
         { name: "output_format_arrow_fixed_string_as_fixed_byte_array", path: "/output-format#output_format_arrow_fixed_string_as_fixed_byte_array", default: "1" },
         { name: "output_format_arrow_low_cardinality_as_dictionary", path: "/output-format#output_format_arrow_low_cardinality_as_dictionary", default: "0" },
+        { name: "output_format_arrow_record_batch_size", path: "/output-format#output_format_arrow_record_batch_size", default: "0" },
+        { name: "output_format_arrow_record_batch_size_bytes", path: "/output-format#output_format_arrow_record_batch_size_bytes", default: "0" },
         { name: "output_format_arrow_string_as_string", path: "/output-format#output_format_arrow_string_as_string", default: "1" },
+        { name: "output_format_arrow_unsupported_types", path: "/output-format#output_format_arrow_unsupported_types", default: "binary" },
         { name: "output_format_arrow_unsupported_types_as_binary", path: "/output-format#output_format_arrow_unsupported_types_as_binary", default: "1" },
         { name: "output_format_arrow_use_64_bit_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_64_bit_indexes_for_dictionary", default: "0" },
         { name: "output_format_arrow_use_signed_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_signed_indexes_for_dictionary", default: "1" },
@@ -365,6 +369,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_parquet_row_group_size", path: "/output-format#output_format_parquet_row_group_size", default: "1000000" },
         { name: "output_format_parquet_row_group_size_bytes", path: "/output-format#output_format_parquet_row_group_size_bytes", default: "536870912" },
         { name: "output_format_parquet_string_as_string", path: "/output-format#output_format_parquet_string_as_string", default: "1" },
+        { name: "output_format_parquet_wide_integer_as_decimal", path: "/output-format#output_format_parquet_wide_integer_as_decimal", default: "0" },
         { name: "output_format_parquet_write_bloom_filter", path: "/output-format#output_format_parquet_write_bloom_filter", default: "1" },
         { name: "output_format_parquet_write_checksums", path: "/output-format#output_format_parquet_write_checksums", default: "1" },
         { name: "output_format_parquet_write_page_index", path: "/output-format#output_format_parquet_write_page_index", default: "1" },
@@ -428,11 +433,12 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "type_json_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "type_json_allow_duplicated_key_with_literal_and_nested_object", path: "/type-json#type_json_allow_duplicated_key_with_literal_and_nested_object", default: "1" },
         { name: "type_json_skip_duplicated_paths", path: "/type-json#type_json_skip_duplicated_paths", default: "0" },
         { name: "type_json_skip_invalid_typed_paths", path: "/type-json#type_json_skip_invalid_typed_paths", default: "0" },
+        { name: "type_json_skip_null_typed_paths", path: "/type-json#type_json_skip_null_typed_paths", default: "0" },
         { name: "type_json_use_partial_match_to_skip_paths_by_regexp", path: "/type-json#type_json_use_partial_match_to_skip_paths_by_regexp", default: "1" }
       ],
       children: []

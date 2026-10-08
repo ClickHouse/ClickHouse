@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
@@ -23,11 +24,12 @@ namespace ErrorCodes
 ///   - Local: gather all data to one node, aggregate there (always applicable)
 ///   - Shuffle: input pre-distributed by group keys, each node aggregates its own key partition
 ///     (only applicable when node_count > 1 and there are `GROUP BY` keys)
-///   - Partial: a non-final aggregation stays where its input is (any node count)
+///   - Partial: a non-final aggregation stays where its input is (any node count), except that
+///     one promising bucket order to a consumer outside the plan runs on a single node
 ///
 /// The two-stage split (partial + merge) is handled separately by
 /// `TwoStageAggregationTransformation`, which splits a logical aggregation into a
-/// final-merge over a partial before implementations are assigned.
+/// merge over a partial before implementations are assigned.
 class AggregationImplementation : public IOptimizationRule
 {
 public:
@@ -95,7 +97,10 @@ private:
 /// The exchange between the two is inserted by the `DistributionEnforcer` based on the
 /// distribution requirements set by the implementation rules on FinalMergeAgg.
 ///
-/// This split is only attempted for aggregations that support it (`canUseProjection`).
+/// A non-final aggregation is split too when it promises bucket order to a consumer outside the
+/// plan: the merge then stays non-final and restores the bucket order over the gathered partials,
+/// which is the distributed alternative to the single-node partial `AggregationImplementation`
+/// leaves for such a step.
 class TwoStageAggregationTransformation : public IOptimizationRule
 {
 public:
@@ -158,7 +163,7 @@ void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t
 {
     DistributionDescription dist;
     dist.node_count = node_count;
-    addAlternative(std::make_shared<PartialAggregationStrategy>(), dist, dist);
+    addAlternative(strategySingleton<PartialAggregationStrategy>(), dist, dist);
 }
 
 /// Local - gather all input to one node, aggregate there.
@@ -166,7 +171,7 @@ void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t
 void AggregationImplementation::StrategyEnumerator::addLocalAggregation()
 {
     DistributionDescription single_node;    /// node_count=1 (default)
-    addAlternative(std::make_shared<LocalAggregationStrategy>(), single_node, single_node,
+    addAlternative(strategySingleton<LocalAggregationStrategy>(), single_node, single_node,
         fmt::format("Local {}", agg_step.getStepDescription()));
 }
 
@@ -186,7 +191,7 @@ void AggregationImplementation::StrategyEnumerator::addShuffleAggregation(size_t
     for (const auto & key : agg_step.getParams().keys)
         by_keys.columns.push_back({key});
 
-    addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_keys, by_keys,
+    addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_keys, by_keys,
         fmt::format("Shuffle {}", agg_step.getStepDescription()));
 }
 
@@ -204,7 +209,7 @@ void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregati
             by_single_key.node_count = candidate_node_count;
             by_single_key.columns.push_back({single_key});
 
-            addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_single_key, by_single_key,
+            addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_single_key, by_single_key,
                 fmt::format("Shuffle (by {}) {}", single_key, agg_step.getStepDescription()));
         }
     }
@@ -222,7 +227,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             "AggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
+    const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     std::vector<GroupExpressionPtr> result;
@@ -240,6 +245,20 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// are no multi-node candidates and no enforcer path to bridge the gap.
     if (!agg_step->getFinal())
     {
+        /// A non-final aggregation that promises bucket order to a consumer outside this plan - the
+        /// initiator's memory-efficient merge, which reads this shard as one stream - keeps the
+        /// promise only as a single instance. Several instances each order their own share, and
+        /// the gather that brings them to one node interleaves the sequences, so the consumer
+        /// receives a bucket twice and rejects the query. The partial half of a two-stage split is
+        /// exempt: its merge is in this plan and reads the gathered inputs one stream per node.
+        /// The distributed alternative for such a step is the split itself, see
+        /// `TwoStageAggregationTransformation`.
+        if (agg_step->shouldProduceResultsInBucketOrder() && !expression->is_partial_of_two_stage_aggregation)
+        {
+            strategies.addPartialAggregation(1);
+            return result;
+        }
+
         auto partial_candidates = candidate_node_counts;
         if (partial_candidates.empty())
             partial_candidates.push_back(1);
@@ -251,7 +270,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
     /// `distributed_plan_force_shuffle_aggregation` leaves shuffle as the only strategy
     /// on a multi-node cluster whenever it is applicable.
-    const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation
+    const bool only_shuffle = memo.getContext().distributed_plan_force_shuffle_aggregation
         && strategies.isShuffleApplicable() && !candidate_node_counts.empty();
 
     if (!only_shuffle)
@@ -279,16 +298,36 @@ OptimizationRulePtr createAggregationImplementation() { return std::make_shared<
 bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
-    return agg_step != nullptr &&
-        expression->strategy == nullptr &&
-        agg_step->getFinal() &&
-        !agg_step->isGroupingSets() &&           /// distributed merging of grouping-set states is not supported
-        !agg_step->getParams().overflow_row &&
-        agg_step->getParams().max_rows_to_group_by == 0 &&  /// global row limit must be enforced by one aggregator
-        !agg_step->getParams().only_merge &&     /// don't split a merge step that's already from a prior split
-        /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split
-        /// whenever the shuffle strategy is available (the aggregation has group keys).
-        !(memo.getEnvironment().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
+    if (agg_step == nullptr || expression->strategy != nullptr)
+        return false;
+
+    if (!agg_step->getFinal())
+    {
+        /// A non-final aggregation is split only when it promises bucket order to a consumer outside
+        /// this plan: `AggregationImplementation` restricts it to a single node then, and the split -
+        /// a partial on every node, gathered one stream per node into a merge that restores the bucket
+        /// order - is its distributed alternative. The partial half of a split is never split again.
+        /// An aggregation in order stays single-node: its consumer expects the stream sorted by the
+        /// keys as well, and the merge does not restore that, the same as in the rule-based planner.
+        const bool split_for_bucket_order = agg_step->shouldProduceResultsInBucketOrder()
+            && !expression->is_partial_of_two_stage_aggregation
+            && !agg_step->inOrder()
+            && !agg_step->explicitSortingRequired();
+        if (!split_for_bucket_order)
+            return false;
+    }
+
+    /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split whenever the
+    /// shuffle strategy is available: a final aggregation with group keys. A grouping-set
+    /// aggregation has no shuffle strategy (see `isShuffleApplicable`), and neither has a non-final
+    /// one, so the setting does not apply to them.
+    const bool shuffle_available = agg_step->getFinal() && !agg_step->getParams().keys.empty() && !agg_step->isGroupingSets();
+    if (shuffle_available && memo.getContext().distributed_plan_force_shuffle_aggregation)
+        return false;
+
+    return !agg_step->getParams().overflow_row
+        && agg_step->getParams().max_rows_to_group_by == 0  /// global row limit must be enforced by one aggregator
+        && !agg_step->getParams().only_merge;    /// don't split a merge step that's already from a prior split
 }
 
 std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
@@ -310,25 +349,28 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     /// The memory-efficient merge below expects every input to deliver two-level buckets in
     /// ascending order. Force the partial step to emit them that way; otherwise a parallel
     /// flush unites several bucket sequences into one exchange stream out of order and the
-    /// merge emits some groups twice.
-    if (memo.getEnvironment().distributed_aggregation_memory_efficient)
+    /// merge emits some groups twice. A promise the original step already made stays on the clone.
+    /// The memory-efficient merge does not support the per-set states of grouping sets, so for
+    /// them it stays off, the same as in the rule-based planner.
+    const bool memory_efficient_merge
+        = memo.getContext().distributed_aggregation_memory_efficient && !agg_step->isGroupingSets();
+    if (memory_efficient_merge)
         partial_step->setShouldProduceResultsInBucketOrder(true);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 
     /// Phase 2: merge aggregation - takes intermediate aggregate states from Phase 1, produces
-    /// final results. Uses MergingAggregatedStep which natively expects intermediate state types
+    /// the results of the original step: final ones, or merged states when the original step was
+    /// not final. Uses MergingAggregatedStep which natively expects intermediate state types
     /// (e.g. AggregateFunction(count)) in the input header, unlike AggregatingStep with
     /// requestOnlyMergeForAggregateProjection which adapts them to finalized types.
     auto merge_params = agg_step->getParams();
     merge_params.only_merge = true;
-    /// Grouping sets never reach this rule (see checkPattern), so the memory-efficient
-    /// mode needs no grouping-sets guard here, unlike the rule-based planner.
     auto merge_step_ptr = std::make_unique<MergingAggregatedStep>(
         partial_step->getOutputHeader(),
         std::move(merge_params),
         agg_step->getGroupingSetsParamsList(),
-        /*final_=*/true,
-        memo.getEnvironment().distributed_aggregation_memory_efficient,
+        agg_step->getFinal(),
+        memory_efficient_merge,
         agg_step->getTemporaryDataMergeThreads(),
         agg_step->shouldProduceResultsInBucketOrder(),
         agg_step->getMaxBlockSize(),
@@ -341,8 +383,11 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     /// distribution requirements (Local or Shuffle), causing the `DistributionEnforcer` to insert
     /// the appropriate exchange before the partial step.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));
+    partial_expr->is_partial_of_two_stage_aggregation = true;
     auto merge_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(merge_step_ptr), {});
 
+    if (!merge_expr)
+        return {};
     return {merge_expr};
 }
 
