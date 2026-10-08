@@ -50,6 +50,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
 
+#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
@@ -5364,12 +5365,42 @@ void ClientBase::recordParseErrorForAIContext(std::string_view query, const Stri
     if (!is_interactive || !ai_query_context)
         return;
 
-    /// The parse errors are formatted for the terminal (they highlight the position of the error),
-    /// but the recorded text goes into the prompt of a model, where the escape sequences are noise.
-    /// The query was not parsed, so only the masking rules apply to it, and the same to the message.
+    /// The query was not parsed, so the secret parts of a statement (the credentials of an external
+    /// engine or of a user, a presigned URL) cannot be found the way `formatForLogging` finds them.
+    /// They are always string literals, so every string literal is hidden, and everything after a
+    /// literal that is not closed. The structure of the query, where the syntax error is, survives.
+    bool hidden_parts = false;
+    String masked_query;
+    Lexer lexer(query.data(), query.data() + query.size());
+    for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+    {
+        if (token.isError())
+        {
+            masked_query += "[HIDDEN]";
+            hidden_parts = true;
+            break;
+        }
+
+        if (token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        {
+            masked_query += "'[HIDDEN]'";
+            hidden_parts = true;
+        }
+        else
+            masked_query.append(token.begin, token.end);
+    }
+
+    /// The message of a parse error quotes the text around the position of the error, literals
+    /// included, so it is not recorded when any were hidden. Otherwise it is formatted for the
+    /// terminal (it highlights the position of the error), but the recorded text goes into the
+    /// prompt of a model, where the escape sequences are noise.
+    String masked_message = hidden_parts
+        ? String("The query could not be parsed. The text of the error is not shown, because it can quote the string literals of the query, which are hidden.")
+        : stripTerminalEscapeSequences(message);
+
     ai_query_context->recordError(
-        queryTextForAIContext(query, nullptr),
-        wipeSensitiveDataAndCutToLength(stripTerminalEscapeSequences(message), /*max_length=*/ 0, /*wipe_sensitive=*/ true),
+        wipeSensitiveDataAndCutToLength(masked_query, /*max_length=*/ 0, /*wipe_sensitive=*/ true),
+        wipeSensitiveDataAndCutToLength(masked_message, /*max_length=*/ 0, /*wipe_sensitive=*/ true),
         /*from_ai=*/ ai_running_query);
 }
 #endif

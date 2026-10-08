@@ -328,6 +328,7 @@ protected:
     /// The same, for a query that failed to parse. In interactive mode the parse error is only
     /// printed - no exception is set and no query is ever started - so there is nothing for
     /// `recordErrorForAIContext` to pick up, and the agent would not see the failed query at all.
+    /// The string literals of the query are hidden, and with them the message, which may quote them.
     void recordParseErrorForAIContext(std::string_view query, const String & message);
 #endif
 
