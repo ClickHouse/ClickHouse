@@ -40,9 +40,10 @@ def dynamic_prefix(types):
     return struct.pack('<Q', 3) + bytes([len(types)]) + b''.join(s(t) for t in types)
 
 payloads = {
-    # V3 of both types is written only into MergeTree parts, it opens the whole shared data
-    # machinery (buckets, granules, marks) to a hand-built block.
+    # V3 of both types and Object V4 are written only into MergeTree parts, they open the whole
+    # shared data machinery (buckets, granules, marks, sparse typed paths) to a hand-built block.
     'object_v3': block(b'JSON', struct.pack('<Q', 4)),
+    'object_v4': block(b'JSON', struct.pack('<Q', 5)),
     'dynamic_v3': block(b'Dynamic', struct.pack('<Q', 4)),
     # Two equal types map onto one variant discriminator.
     'dynamic_duplicate_types': block(b'Dynamic', dynamic_prefix([b'Int64', b'Int64'])),
@@ -74,6 +75,7 @@ $CLICKHOUSE_CLIENT -q "
 # Inserted over HTTP: a clickhouse-local per block is what made this test time out under sanitizers.
 # Each block goes into the table whose type its header declares.
 for entry in "object_v3 t_json" \
+             "object_v4 t_json" \
              "dynamic_v3 t_dynamic" \
              "dynamic_duplicate_types t_dynamic" \
              "dynamic_nothing_type t_dynamic" \
