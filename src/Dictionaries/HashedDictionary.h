@@ -672,14 +672,20 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     {
         auto has_keys = [&]<bool sharded_>()
         {
-            for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+            /// See the comment on the loop below.
+            UInt8 * __restrict out_data = out.data();
+            const auto * __restrict containers_data = no_attributes_containers.data();
+            size_t found = 0;
+
+            extractor.forEachKey([&](size_t requested_key_index, auto key)
             {
-                auto key = extractor.extractCurrentKey();
-                const auto & container = no_attributes_containers[getShard<sharded_>(key)];
-                out[requested_key_index] = container.find(key) != container.end();
-                keys_found += out[requested_key_index];
-                extractor.rollbackCurrentKey();
-            }
+                const auto & container = containers_data[getShard<sharded_>(key)];
+                UInt8 has = container.find(key) != container.end();
+                out_data[requested_key_index] = has;
+                found += has;
+            });
+
+            keys_found += found;
         };
 
         if (sharded())
@@ -699,20 +705,32 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
     {
         auto has_keys = [&]<bool sharded_>()
         {
-            for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)
+            /// The loop is memory-bound, one random access into the hash table per key, so its throughput
+            /// is set by how many keys the out-of-order window keeps in flight, that is by the number of
+            /// instructions between two lookups. Everything captured by reference lives behind pointers,
+            /// and the compiler does not always prove that the stores into `out` and the key counters do
+            /// not clobber them: clang-23 with libc++ 23 reloads the key column, its data pointer and the
+            /// container vector, with their bounds checks, for every key (`hashed_dictionary_load_factor`,
+            /// +16% on AArch64). Hoist them by hand and read the keys through one pointer.
+            UInt8 * __restrict out_data = out.data();
+            const auto * __restrict containers_data = containers.data();
+            const bool nullable = is_attribute_nullable;
+            size_t found = 0;
+
+            extractor.forEachKey([&](size_t requested_key_index, auto key)
             {
-                auto key = extractor.extractCurrentKey();
                 auto shard = getShard<sharded_>(key);
-                const auto & container = containers[shard];
+                const auto & container = containers_data[shard];
 
-                out[requested_key_index] = container.find(key) != container.end();
-                if (is_attribute_nullable && !out[requested_key_index])
-                    out[requested_key_index] = (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
+                UInt8 has = container.find(key) != container.end();
+                if (nullable && !has)
+                    has = (*attribute.is_nullable_sets)[shard].find(key) != nullptr;
 
-                keys_found += out[requested_key_index];
+                out_data[requested_key_index] = has;
+                found += has;
+            });
 
-                extractor.rollbackCurrentKey();
-            }
+            keys_found += found;
         };
 
         if (sharded())
