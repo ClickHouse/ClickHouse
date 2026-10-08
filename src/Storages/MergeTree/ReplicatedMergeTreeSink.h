@@ -12,6 +12,8 @@
 #include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/MergeTree/InsertBlockInfo.h>
 
+#include <ctime>
+
 
 namespace Poco { class Logger; }
 
@@ -43,6 +45,8 @@ struct DelayedPartInPartition
     TemporaryPartPtr temp_part;
     UInt64 elapsed_ns;
     ProfileEvents::Counters part_counters;
+    /// Instant used to drop rows already expired by `TTL ... DELETE` for this insert.
+    time_t current_time = 0;
 };
 
 

@@ -317,9 +317,12 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
 
     bool apply_ttl_delete = (*storage.getSettings())[MergeTreeSetting::apply_ttl_delete_on_insert]
         && storage.merging_params.mode == MergeTreeData::MergingParams::Ordinary;
+    time_t current_time = 0;
+    if (apply_ttl_delete)
+        current_time = time(nullptr);
     IColumn::Selector partition_selector;
     BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(
-        std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector, apply_ttl_delete);
+        std::move(block), max_parts_per_block, metadata_snapshot, context, &partition_selector, apply_ttl_delete, current_time);
 
     decltype(delayed_parts) current_parts;
 
@@ -375,7 +378,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
                     && metadata_snapshot->hasRowsTTL()
                     && result.filtered_block
                     && result.filtered_block->rows())
-                    MergeTreeDataWriter::removeRowsExpiredByTTL(context, *metadata_snapshot, *result.filtered_block);
+                    MergeTreeDataWriter::removeRowsExpiredByTTL(context, *metadata_snapshot, *result.filtered_block, current_time);
 
                 current_block.block = result.filtered_block;
                 current_deduplication_info = result.deduplication_info;
@@ -435,6 +438,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
                 .temp_part = std::move(temp_part),
                 .elapsed_ns = elapsed_ns,
                 .part_counters = std::move(part_counters),
+                .current_time = current_time,
             });
 
         total_streams += current_streams;
@@ -546,7 +550,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                         && metadata_snapshot->hasRowsTTL()
                         && result.filtered_block
                         && result.filtered_block->rows())
-                        MergeTreeDataWriter::removeRowsExpiredByTTL(context, *metadata_snapshot, *result.filtered_block);
+                        MergeTreeDataWriter::removeRowsExpiredByTTL(context, *metadata_snapshot, *result.filtered_block, partition.current_time);
 
                     partition.block_with_partition.block = result.filtered_block;
                     partition.deduplication_info = std::move(result.deduplication_info);

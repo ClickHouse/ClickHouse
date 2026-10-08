@@ -496,7 +496,7 @@ void MergeTreeTemporaryPart::prewarmCaches()
 }
 
 IColumn::Filter MergeTreeDataWriter::removeRowsExpiredByTTL(
-    const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block)
+    const ContextPtr & context, const StorageInMemoryMetadata & metadata_snapshot, Block & block, time_t current_time)
 {
     const auto & ttl_entry = metadata_snapshot.getRowsTTL();
     auto expr_and_set = ttl_entry.buildExpression(context);
@@ -510,7 +510,6 @@ IColumn::Filter MergeTreeDataWriter::removeRowsExpiredByTTL(
     PaddedPODArray<Int64> timestamps;
     ITTLAlgorithm::extractTimestamps(ttl_column.get(), DateLUT::serverTimezoneInstance(), timestamps);
 
-    const time_t current_time = time(nullptr);
     IColumn::Filter kept_rows(num_rows);
     size_t num_kept = 0;
     for (size_t i = 0; i < num_rows; ++i)
@@ -529,7 +528,7 @@ IColumn::Filter MergeTreeDataWriter::removeRowsExpiredByTTL(
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector, bool apply_ttl_delete)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector, bool apply_ttl_delete, time_t current_time)
 {
     /// out_selector is left empty when the block is not split (a single resulting partition);
     /// the caller then knows every row belongs to the only partition.
@@ -549,7 +548,7 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     IColumn::Filter kept_rows;
     if (apply_ttl_delete && metadata_snapshot->hasRowsTTL())
     {
-        kept_rows = removeRowsExpiredByTTL(context, *metadata_snapshot, block);
+        kept_rows = removeRowsExpiredByTTL(context, *metadata_snapshot, block, current_time);
         if (block.rows() == 0)
             return result;
     }
