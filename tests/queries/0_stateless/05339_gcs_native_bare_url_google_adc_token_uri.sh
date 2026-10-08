@@ -25,7 +25,7 @@ classify() {
 
 explain_gcs() {
     ${CLICKHOUSE_CLIENT} --use_native_gcs=1 -q "
-        EXPLAIN SELECT * FROM gcs('https://storage.googleapis.com/test-bucket-05338/data.csv', 'CSV', 'x UInt8' $1)" 2>&1
+        EXPLAIN SELECT * FROM gcs('https://storage.googleapis.com/test-bucket-05339/data.csv', 'CSV', 'x UInt8' $1)" 2>&1
 }
 
 if [ "$native_gcs_available" = "1" ]; then
