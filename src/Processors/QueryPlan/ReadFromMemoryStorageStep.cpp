@@ -3,11 +3,14 @@
 #include <Analyzer/TableNode.h>
 
 #include <Common/Exception.h>
+#include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 
 #include <Core/Settings.h>
 
 #include <Columns/FilterDescription.h>
+#include <Formats/FormatFilterInfo.h>
+#include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
@@ -19,9 +22,11 @@
 #include <Storages/StorageMemory.h>
 #include <Storages/VirtualColumnUtils.h>
 
+#include <IO/Operators.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/NullSource.h>
 
 #include <atomic>
@@ -47,7 +52,7 @@ extern const int LOGICAL_ERROR;
 
 }
 
-/// In-source filtering for the row-level security filter and PREWHERE.
+/// In-source filtering for the TopN threshold, the row-level security filter and PREWHERE.
 /// The steps are applied to every stored block one after another, and each step reads its columns
 /// only for the rows that passed the previous steps. A conjunction in PREWHERE is split into several
 /// steps, like `MergeTreeSelectProcessor` does with `enable_multiple_prewhere_read_steps`, with the
@@ -423,13 +428,87 @@ void ReadFromMemoryStorageStep::updatePrewhereInfo(const PrewhereInfoPtr & prewh
         VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(query_info.prewhere_info->prewhere_actions, context);
 }
 
+bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    /// Virtual columns do not qualify.
+    if (std::ranges::find(columns_to_read, sort_column.name) == columns_to_read.end())
+        return false;
+
+    const auto column = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), sort_column.name);
+    if (!column)
+        return false;
+
+    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
+    /// after the block was inserted) with the defaults of the type. For a column without a default
+    /// expression these are exactly the values the query sees. For a column with a `DEFAULT` expression
+    /// the values agree only as long as nothing evaluates the expression above the source; do not rely
+    /// on that and exclude such columns and their subcolumns, the same way
+    /// `StorageMemory::supportedPrewhereColumns` does for `PREWHERE`.
+    return !storage_snapshot->metadata->getColumns().hasDefault(column->getNameInStorage());
+}
+
+void ReadFromMemoryStorageStep::setTopKFilter(FormatTopKFilterInfoPtr info)
+{
+    top_k_filter = std::move(info);
+}
+
+void ReadFromMemoryStorageStep::describeActions(FormatSettings & format_settings) const
+{
+    SourceStepWithFilter::describeActions(format_settings);
+    if (top_k_filter)
+        format_settings.out << format_settings.detail_prefix << "TopN filter column: " << top_k_filter->column_name << '\n';
+}
+
+void ReadFromMemoryStorageStep::describeActions(JSONBuilder::JSONMap & map) const
+{
+    SourceStepWithFilter::describeActions(map);
+    if (top_k_filter)
+        map.add("TopN Filter Column", top_k_filter->column_name);
+}
+
 MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAndTypesList & physical_columns) const
 {
-    if (!query_info.row_level_filter && !query_info.prewhere_info)
-        return nullptr;
+    /// The threshold filter runs first and shrinks the block before the other steps, which then see
+    /// a different set of rows. `tryOptimizeTopK` checks that the filters do not depend on that, but
+    /// `optimizePrewhere` may have moved such a condition into PREWHERE after it.
+    const bool use_top_k_filter = top_k_filter
+        && !(query_info.row_level_filter && query_info.row_level_filter->actions.hasNonDeterministicOrStatefulFunctions())
+        && !(query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
 
     auto result = std::make_shared<MemorySourceFilter>();
     ExpressionActionsSettings actions_settings(context);
+
+    /// Drop the rows that cannot enter the top-K heap of the query. The comparison is cheap and, once
+    /// the threshold is set, usually the most selective of the filters, so it goes first: the columns
+    /// of the later steps are then read only for the few remaining rows, and a block where no row is
+    /// within the threshold is skipped after reading only the sort column.
+    if (use_top_k_filter)
+    {
+        const auto sort_column = physical_columns.tryGetByName(top_k_filter->column_name);
+        if (!sort_column)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The sort column '{}' of the TopN filter is not read", top_k_filter->column_name);
+
+        ActionsDAG dag({*sort_column});
+        const auto * input_node = dag.getInputs().front();
+        const auto & filter_node = dag.addFunction(
+            createInternalFunctionTopKFilterResolver(top_k_filter->threshold_tracker), {input_node}, {});
+        dag.getOutputs() = {input_node, &filter_node};
+
+        /// The steps find columns in the block by name.
+        if (!physical_columns.contains(filter_node.result_name) && !output_header->has(filter_node.result_name))
+        {
+            String filter_column_name = filter_node.result_name;
+            result->steps.push_back({
+                .actions = std::make_shared<ExpressionActions>(std::move(dag), actions_settings),
+                .filter_column_name = std::move(filter_column_name),
+                .remove_filter_column = true,
+                .input_columns = {},
+            });
+        }
+    }
+
+    if (result->steps.empty() && !query_info.row_level_filter && !query_info.prewhere_info)
+        return nullptr;
 
     /// The row-level security filter runs first, so PREWHERE expressions are never evaluated
     /// on the rows the policy hides.
