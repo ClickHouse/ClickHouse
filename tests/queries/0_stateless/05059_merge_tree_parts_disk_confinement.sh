@@ -51,9 +51,15 @@ echo "-- the metadata of an object storage disk outside the base directory"
 read_empty "type = object_storage, object_storage_type = local, metadata_type = local, path = '${INSIDE_ROOT}', metadata_path = '${OUTSIDE_ROOT}'"
 check_outside
 
+# Without a `metadata_path`, `local` metadata would be kept in `disks/<disk name>/` under the data directory of the server.
+echo "-- an object storage disk with local metadata and without a metadata_path"
+read_empty "type = object_storage, object_storage_type = local, metadata_type = local, path = '${INSIDE_ROOT}object_default/'"
+read_empty "type = local_blob_storage, path = '${INSIDE_ROOT}blob_default/'"
+read_empty "type = object_storage, object_storage_type = local_plain, path = '${INSIDE_ROOT}plain_default/'"
+
 echo "-- inside the base directory, every local backend the factories register is readable"
 read_empty "type = local, path = '${INSIDE_ROOT}local/'"
-read_empty "type = local_blob_storage, path = '${INSIDE_ROOT}blob/'"
+read_empty "type = local_blob_storage, metadata_type = local, path = '${INSIDE_ROOT}blob/', metadata_path = '${INSIDE_ROOT}blob_metadata/'"
 read_empty "type = object_storage, object_storage_type = local, metadata_type = local, path = '${INSIDE_ROOT}object/', metadata_path = '${INSIDE_ROOT}metadata/'"
-read_empty "type = object_storage, object_storage_type = local_plain, path = '${INSIDE_ROOT}plain/'"
-read_empty "type = object_storage, object_storage_type = local_plain_rewritable, path = '${INSIDE_ROOT}plain_rewritable/'"
+read_empty "type = object_storage, object_storage_type = local_plain, metadata_type = plain, path = '${INSIDE_ROOT}plain/'"
+read_empty "type = object_storage, object_storage_type = local_plain_rewritable, metadata_type = plain_rewritable, path = '${INSIDE_ROOT}plain_rewritable/'"

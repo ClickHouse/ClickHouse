@@ -648,6 +648,10 @@ requested parts. `PREWHERE` is supported and is pushed down to the part readers.
 The function configures a disk from its arguments, so it is not allowed in readonly mode, and the
 restrictions on dynamically configured disks apply: a local disk must live under
 `custom_local_disks_base_directory`, and an S3 disk must not resolve the server's own credentials.
+An object storage disk with `local` metadata (the default for `type = s3`, `azure_blob_storage`, `hdfs`
+and `local_blob_storage` without a `metadata_type`) needs an explicit `metadata_path` under
+`custom_local_disks_base_directory`; to read the parts directly from the object storage, use
+`metadata_type = plain`.
 The `type` of the disk (and `object_storage_type` when `type = object_storage`) must be a literal
 value: it decides what kind of source the access of the query is checked for (`READ ON S3`,
 `READ ON FILE`, ...), and the disk is only created after that check passes. A filtered grant, such as
@@ -668,7 +672,7 @@ FROM mergeTreeParts(
                marks_count = 1954,
                ranges = [(0, 1953)],
                has_lightweight_delete = 0)),
-    disk(type = s3, endpoint = 'https://mybucket.s3.amazonaws.com/data/',
+    disk(type = s3, metadata_type = plain, endpoint = 'https://mybucket.s3.amazonaws.com/data/',
          access_key_id = '...', secret_access_key = '...'),
     table_settings(index_granularity_bytes = 10485760))
 ```

@@ -284,6 +284,37 @@ static void checkTransientDiskLocalPaths(const Poco::Util::AbstractConfiguration
 
     if (config.has("metadata_path"))
         checkCustomLocalDiskPath(config.getString("metadata_path"), context);
+
+    /// Without a `metadata_type`, an object storage disk picks it from its `type` and, failing that, from its
+    /// backend, the same way `registerDiskObjectStorage` and `MetadataStorageFactory::getCompatibilityMetadataTypeHint`
+    /// do. A `local` metadata storage without a `metadata_path` keeps its metadata in `disks/<disk name>/` under
+    /// the data directory of the server, which `MetadataStorageFactory` creates unchecked, and the name of a
+    /// query-local disk is a hash of its description - so every description would leave a directory behind
+    /// outside `custom_local_disks_base_directory`. A query-local disk with `local` metadata has to give its
+    /// `metadata_path` explicitly, and that is checked above.
+    auto type = config.getString("type", "local");
+    if (type == "local")
+        return;
+
+    auto metadata_type = config.getString("metadata_type", "");
+    if (metadata_type.empty())
+    {
+        if (type.contains("with_keeper"))
+            metadata_type = "keeper";
+        else if (type.contains("plain") && type.contains("rewritable"))
+            metadata_type = "plain_rewritable";
+        else if (type.contains("plain"))
+            metadata_type = "plain";
+        else if (!config.has("locations") && config.getString("object_storage_type", type) == "web")
+            metadata_type = "web";
+        else
+            metadata_type = "local";
+    }
+
+    if (metadata_type == "local" && !config.has("metadata_path"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A query-local object storage disk with `local` metadata requires an explicit `metadata_path` inside "
+            "`custom_local_disks_base_directory`; use another `metadata_type` (such as `plain`) to read without local metadata");
 }
 
 /// Resolve and validate the configuration of a query-local disk without creating it.
