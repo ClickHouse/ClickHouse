@@ -1,10 +1,12 @@
 #include <DataTypes/DataTypeExponentialTimeDecaying.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
@@ -21,6 +23,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
@@ -830,14 +833,23 @@ SerializationPtr DataTypeExponentialTimeDecaying::doGetSerialization(const Seria
 
 SerializationPtr DataTypeExponentialTimeDecaying::getSerialization(const SerializationInfo & info) const
 {
-    return std::make_shared<SerializationExponentialTimeDecaying>(
-        storage_type->getSerialization(info),
+    auto storage_info = info.clone();
+    auto storage_kinds = info.getKindStack();
+    std::erase(storage_kinds, ISerialization::Kind::DETACHED);
+    std::erase(storage_kinds, ISerialization::Kind::REPLICATED);
+    storage_info->setKindStack(storage_kinds);
+
+    /// Whole-column wrappers belong outside `SerializationExponentialTimeDecaying`.
+    /// Keep sparse storage and tuple-element metadata inside the decaying column.
+    auto serialization = std::make_shared<SerializationExponentialTimeDecaying>(
+        storage_type->getSerialization(*storage_info),
         logical_type->getDefaultSerialization(),
         storage_type,
         logical_type,
         decay_length,
         key_width,
         mode);
+    return wrapSerializationBasedOnKindStack(serialization, info.getKindStack(), info.getSettings());
 }
 
 MutableSerializationInfoPtr DataTypeExponentialTimeDecaying::createSerializationInfo(
@@ -851,6 +863,22 @@ SerializationInfoPtr DataTypeExponentialTimeDecaying::getSerializationInfo(
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
         return getSerializationInfo(column_const->getDataColumn(), settings);
+
+    auto get_wrapped_info = [&](const IColumn & nested_column, ISerialization::Kind kind)
+    {
+        auto nested_info = getSerializationInfo(nested_column, settings);
+        auto info = nested_info->clone();
+        auto kinds = nested_info->getKindStack();
+        kinds.push_back(kind);
+        info->setKindStack(kinds);
+        return info;
+    };
+
+    if (const auto * column_blob = checkAndGetColumn<ColumnBLOB>(&column))
+        return get_wrapped_info(*column_blob->getWrappedColumn(), ISerialization::Kind::DETACHED);
+
+    if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
+        return get_wrapped_info(*column_replicated->getNestedColumn(), ISerialization::Kind::REPLICATED);
 
     const auto & decaying_column = assert_cast<const ColumnExponentialTimeDecaying &>(column);
     return storage_type->getSerializationInfo(decaying_column.getStorageColumn(), settings);
