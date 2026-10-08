@@ -97,6 +97,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char storage_merge_tree_background_clear_old_parts_pause[];
+    extern const char storage_merge_tree_load_mutations_pause_before_read[];
     extern const char mt_merge_selecting_task_pause_when_scheduled[];
     extern const char mt_select_parts_to_mutate_no_free_threads[];
     extern const char mt_select_parts_to_mutate_max_part_size[];
@@ -109,6 +110,7 @@ namespace FailPoints
     extern const char mt_alter_settings_throw_before_metadata_commit[];
     extern const char mt_alter_settings_pause_before_metadata_commit[];
     extern const char mt_alter_readonly_pause_after_metadata_commit[];
+    extern const char mt_move_partition_pause_before_commit[];
     extern const char mt_alter_readonly_throw_in_start_background_workers[];
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
@@ -178,6 +180,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int FAULT_INJECTED;
     extern const int INVALID_TRANSACTION;
+    extern const int FILE_DOESNT_EXIST;
 }
 
 namespace ActionLocks
@@ -187,6 +190,9 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMove;
     extern const StorageActionBlockType Cleanup;
 }
+
+/// The directory with the log of the block numbers inserted into a non-replicated table, see `MergeTreeDeduplicationLog`.
+static constexpr auto DEDUPLICATION_LOGS_DIR_NAME = "deduplication_logs";
 
 static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutationEntry & mutation, LoggerPtr log = nullptr)
 {
@@ -334,8 +340,7 @@ void StorageMergeTree::shutdown(bool)
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
+    stopStatisticsCache();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 
@@ -464,6 +469,36 @@ void StorageMergeTree::drop()
 {
     shutdown(true);
     dropAllData();
+}
+
+void StorageMergeTree::removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk)
+{
+    /// Runs after the parts are removed (see `MergeTreeData::dropAllData`): a drop that fails while removing the parts
+    /// is retried, and `UNDROP TABLE` can restore the table until then, so the mutation entries and the deduplication
+    /// log have to outlive the parts they describe.
+    size_t removed_count = 0;
+    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+    {
+        if (startsWith(it->name(), "mutation_") || startsWith(it->name(), "tmp_mutation_"))
+        {
+            LOG_DEBUG(log, "Removing mutation file {} on drop", it->path());
+            disk->removeFile(it->path());
+            ++removed_count;
+        }
+    }
+
+    /// Otherwise the next table created on the same disk loads the block numbers of this one and deduplicates
+    /// (silently skips) its inserts.
+    const auto deduplication_logs_path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
+    if (disk->existsDirectory(deduplication_logs_path))
+    {
+        LOG_DEBUG(log, "Removing the deduplication log {} on drop", deduplication_logs_path.string());
+        disk->removeRecursive(deduplication_logs_path);
+        ++removed_count;
+    }
+
+    if (removed_count > 0)
+        LOG_INFO(log, "Removed {} entries of this table from the root of the disk {} on drop", removed_count, disk->getName());
 }
 
 void StorageMergeTree::alter(
@@ -1763,13 +1798,56 @@ void StorageMergeTree::loadDeduplicationLog()
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deduplication for non-replicated MergeTree in old syntax is not supported");
 
     auto disk = getDisks()[0];
-    std::string path = fs::path(relative_data_path) / "deduplication_logs";
+    std::string path = fs::path(relative_data_path) / DEDUPLICATION_LOGS_DIR_NAME;
 
     /// Deduplication log only matters on INSERTs.
     if (!disk->isReadOnly())
     {
         deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk);
         deduplication_log->load();
+    }
+}
+
+MergeTreeMutationEntry StorageMergeTree::loadMutationEntry(const DiskPtr & disk, const String & file_name) const
+{
+    try
+    {
+        return MergeTreeMutationEntry(disk, relative_data_path, file_name);
+    }
+    catch (const Exception & e)
+    {
+        /// A readonly table over the directory of a live table (`table_disk` on a shared `plain_rewritable` endpoint)
+        /// does not own the entries: the owner removes one at any moment (`KILL MUTATION`, `clearOldMutations`), also
+        /// between the listing and this read. The table cannot load without the entry - a part below its version
+        /// would miss the commands - so the load fails, but with the reason instead of a missing object: the error
+        /// is transient, and the caller can retry once the metadata of the disk, which still lists the entry, is reloaded.
+        /// Convert the error only when the probe proves that the metadata still lists the entry, but its object is
+        /// gone. If the probe itself fails, the original read failure is the more useful one.
+        if (!disk->isReadOnly())
+            throw;
+
+        bool object_exists = true;
+        try
+        {
+            object_exists = disk->checkUniqueId(disk->getUniqueId(fs::path(relative_data_path) / file_name));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("While checking whether the mutation entry {} still exists", file_name));
+        }
+
+        if (object_exists)
+            throw;
+
+        throw Exception(
+            ErrorCodes::FILE_DOESNT_EXIST,
+            "The mutation entry {} of the readonly table {} was removed by the table that owns the directory while this "
+            "table was loading it. Reload the metadata of the disk (SYSTEM DROP DISK METADATA CACHE {}) and retry the "
+            "attach. The read failed with: {}",
+            file_name,
+            getStorageID().getNameForLogs(),
+            backQuoteIfNeed(disk->getName()),
+            e.message());
     }
 }
 
@@ -1790,7 +1868,9 @@ void StorageMergeTree::loadMutations()
         {
             if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
+                FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_load_mutations_pause_before_read);
+
+                MergeTreeMutationEntry entry = loadMutationEntry(disk, it->name());
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
@@ -3298,7 +3378,7 @@ static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector &
         new_part.part_info.level += 1;
         new_part.partition = old_part->partition;
         new_part.part_name = old_part->getNewName(new_part.part_info);
-        new_part.metadata_snapshot = old_part->getMetadataSnapshot();
+        new_part.metadata_snapshot = MergeTreeData::getMetadataSnapshotForEmptyPart(*old_part);
 
         if (old_part->info.isPatch())
             new_part.patch_part_index = old_part->getPatchPartIndex().cloneEmpty();
@@ -3674,6 +3754,15 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
 
+    /// The parts are committed one by one, so check the size limits of a temporary table for all of them
+    /// beforehand: an `ATTACH PARTITION` that does not fit is rejected as a whole instead of being half attached.
+    /// The parts are not checked again one by one, because that could leave the partition half attached if the table
+    /// grows concurrently. The check is not atomic with concurrent writes, so they may exceed the limits slightly.
+    {
+        auto lock = lockParts();
+        throwIfTemporaryTableSizeLimitsExceededForReplacement(local_context, lock, loaded_parts, std::nullopt);
+    }
+
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
         LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_dir);
@@ -3741,6 +3830,13 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         partition_id = getPartitionIDFromQuery(partition, local_context);
         merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
+
+    /// `REPLACE` removes the parts of the destination partition, so it must not interleave with the other
+    /// operations that alter the set of parts, like `MOVE PARTITION` from this table. That one reads the
+    /// parts to move, and later covers them with empty parts. If `REPLACE` removed them in between, the
+    /// empty parts would be committed over the parts that are already outdated and would intersect the
+    /// empty part covering the drop range, so the table could not be loaded after a restart.
+    auto operation_data_parts_lock = lockOperationsWithParts();
 
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
     auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
@@ -3910,6 +4006,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// Check the limits for the operation as a whole instead.
             throwIfTableSizeLimitsExceededForReplacement(
                 data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
+            throwIfTemporaryTableSizeLimitsExceededForReplacement(
+                local_context, data_parts_lock, dst_parts, replace ? std::optional<MergeTreePartInfo>(drop_range) : std::nullopt);
 
             /// The new parts are committed before the replaced ones are removed, and that removal can be
             /// refused for a part whose creating transaction has not committed. Find that out now, while
@@ -4078,6 +4176,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     if (dst_parts.empty())
         return;
 
+    FailPointInjection::pauseFailPoint(FailPoints::mt_move_partition_pause_before_commit);
+
     /// Move new parts to the destination table. NOTE It doesn't look atomic.
     try
     {
@@ -4093,6 +4193,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             auto src_data_parts_lock = lockParts();
 
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
+
+            dest_table_storage->throwIfTemporaryTableSizeLimitsExceededForReplacement(
+                local_context, dest_data_parts_lock, dst_parts, std::nullopt);
 
             /// The destination is committed before the source parts are covered by the empty parts, and
             /// that removal can be refused for a part whose creating transaction has not committed. Find

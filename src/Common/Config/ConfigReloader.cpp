@@ -133,10 +133,10 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
                 loaded_config = config_processor.loadConfigWithZooKeeperIncludes(
                     zk_node_cache.get(), zk_changed_event, fallback_to_preprocessed, is_config_changed);
         }
-        catch (const Coordination::Exception & e)
+        catch (const Coordination::Exception &)
         {
-            if (Coordination::isHardwareError(e.code))
-                need_reload_from_zk = true;
+            // Always reload from ZK in case of an exception to ensure we don't miss any changes.
+            need_reload_from_zk = true;
 
             const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
             auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
@@ -149,6 +149,9 @@ std::optional<ConfigProcessor::LoadedConfig> ConfigReloader::reloadIfNewer(bool 
         }
         catch (...)
         {
+            // Always reload from ZK in case of an exception to ensure we don't miss any changes.
+            need_reload_from_zk = true;
+
             const auto message = getCurrentExceptionMessageAndPattern(/*with_stacktrace=*/true);
             auto exc = std::make_unique<Exception>(message, ErrorCodes::CANNOT_LOAD_CONFIG);
 

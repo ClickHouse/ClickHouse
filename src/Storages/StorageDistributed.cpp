@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Utils.h>
 
 #include <Disks/IVolume.h>
 
@@ -55,6 +56,8 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/parseQuery.h>
 
+#include <Analyzer/ArrayJoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -86,6 +89,7 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
@@ -104,6 +108,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -209,6 +214,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
     extern const int TYPE_MISMATCH;
+    extern const int INCOMPATIBLE_COLUMNS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
     extern const int INVALID_SHARD_ID;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
@@ -258,6 +264,127 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     }
 
     return res;
+}
+
+/// The columns of the table the storage is asked about that the shards evaluate a key over, on the
+/// analyzer path: the columns read by the sorting key expressions, and, when the shards finalize the
+/// query's reductions, by the GROUP BY and LIMIT BY keys and by a DISTINCT projection. Only those
+/// cross the cast below a shard's sort or reduction, so only their conversion can corrupt the result.
+/// A column of another table (a joined one, a subquery) or of another scope (a lambda's argument) is
+/// not cast by this storage, whatever its name is, so a mere name coincidence with a sloppily declared
+/// column of this table refuses nothing.
+struct KeyColumns
+{
+    /// The source columns of the keys could not be established, and every column of the table has
+    /// to be treated as a key column. Set when the query comes without a query tree (the old analyzer
+    /// cannot be enabled since 26.9, so this is a safeguard) and for a column whose origin cannot be
+    /// traced (see `getKeyColumns`).
+    bool unknown = false;
+    NameSet names;
+
+    /// The query relies neither on the shards' order nor on their reductions: it has none of the keys
+    /// above, or they read no column of this table (a constant such as `ORDER BY tuple()`, or a joined
+    /// table's column).
+    bool none() const { return !unknown && names.empty(); }
+};
+
+KeyColumns getKeyColumns(const SelectQueryInfo & query_info, bool shards_finalize_reductions)
+{
+    KeyColumns result;
+
+    if (!query_info.query_tree)
+    {
+        /// Internal reads (e.g. of external tables) come with an empty `SelectQueryInfo`, and the old
+        /// interpreter still fills only the AST. Without the keys nothing relies on the shards; with
+        /// them, their source columns cannot be traced from the AST, so check all of them.
+        const auto * select = query_info.query ? query_info.query->as<ASTSelectQuery>() : nullptr;
+        result.unknown = select
+            && (select->orderBy() || (shards_finalize_reductions && (select->groupBy() || select->limitBy() || select->distinct)));
+        return result;
+    }
+
+    const auto * query_node = query_info.query_tree->as<QueryNode>();
+    if (!query_node)
+        return result;
+
+    /// Positional arguments and `ORDER BY ALL` are already resolved to columns here.
+    auto collect = [&result, &query_info](const QueryTreeNodePtr & node, auto & self) -> void
+    {
+        /// A subquery sorts and returns its own columns; the ones inside it are not what this
+        /// stream is sorted by.
+        const auto node_type = node->getNodeType();
+        if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+            return;
+
+        if (const auto * column_node = node->as<ColumnNode>())
+        {
+            const auto source = column_node->getColumnSourceOrNull();
+            if (!source)
+            {
+                result.unknown = true;
+                return;
+            }
+
+            if (source.get() == query_info.table_expression.get())
+            {
+                result.names.insert(column_node->getColumnName());
+            }
+            else if (const auto * array_join_node = source->as<ArrayJoinNode>())
+            {
+                /// An ARRAY JOIN column is an element of an array expression, and the array is what
+                /// crosses the cast: `ORDER BY a` over `ARRAY JOIN arr AS a` sorts by the elements of
+                /// `arr`, so the columns of that expression are the ones to check. The resolved column
+                /// carries only the name, its expression is kept in the ARRAY JOIN node.
+                bool traced = false;
+                for (const auto & array_join_expression : array_join_node->getJoinExpressions().getNodes())
+                {
+                    const auto * array_join_column = array_join_expression->as<ColumnNode>();
+                    if (!array_join_column || array_join_column->getColumnName() != column_node->getColumnName())
+                        continue;
+
+                    traced = true;
+                    if (array_join_column->hasExpression())
+                        self(array_join_column->getExpression(), self);
+                    else
+                        result.unknown = true;
+                }
+                if (!traced)
+                    result.unknown = true;
+            }
+            else if (source->getNodeType() == QueryTreeNodeType::JOIN)
+            {
+                /// A `JOIN USING` key keeps the columns of both sides as a list in its expression (see
+                /// `CollectSourceColumnsVisitor`); they are collected below as the column's children.
+                /// Any other column of a JOIN itself cannot be attributed to a table.
+                if (!column_node->hasExpression() || !column_node->getExpression()->as<ListNode>())
+                    result.unknown = true;
+            }
+            /// A column of another table expression, or a lambda's argument, does not cross this
+            /// table's cast: nothing to check for it. An ALIAS column of this table keeps its
+            /// expression as a child and the columns it reads are collected below.
+        }
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                self(child, self);
+    };
+    if (query_node->hasOrderBy())
+        collect(query_node->getOrderByNode(), collect);
+
+    if (shards_finalize_reductions)
+    {
+        /// A shard groups and deduplicates by its own type, and the cast to the declared one comes after
+        /// it: `String` values '1' and '01' are distinct groups on the shard and both become `1` as `Int8`.
+        /// `DISTINCT ON` is already rewritten into LIMIT BY here.
+        if (query_node->hasGroupBy())
+            collect(query_node->getGroupByNode(), collect);
+        if (query_node->hasLimitBy())
+            collect(query_node->getLimitByNode(), collect);
+        if (query_node->isDistinct())
+            collect(query_node->getProjectionNode(), collect);
+    }
+
+    return result;
 }
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
@@ -550,6 +677,40 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         }
     }
 
+    const auto stage = chooseQueryProcessingStage(to_stage, settings, nodes, query_info);
+
+    /// The query was analyzed against the columns declared here, but a shard resolves the remote
+    /// table's own columns and sorts by those. `read` casts the shard's result to the declared types
+    /// only afterwards (`createLocalPlan`, `RemoteQueryExecutor::adaptBlockStructure`), so a cast that
+    /// does not preserve the order, say `String` to `Int8`, reorders the values after they were sorted,
+    /// while the initiator takes the shards' order on trust: it merges the streams as sorted, cuts them
+    /// with LIMIT and applies DISTINCT and LIMIT BY to them as sorted, and in a debug build
+    /// `DistinctSortedStreamTransform` throws `Equal values are not contiguous`. A shard sorts and
+    /// applies its preliminary LIMIT at every stage from `WithMergeableState` on, and `FetchColumns`
+    /// is not a stage this storage can be read at (the shard query is built from the whole query
+    /// tree), so there is no stage to fall back to: refuse the query instead of returning wrong rows.
+    /// `StorageMerge` refuses the same conversion for its children by dropping to `FetchColumns`.
+    /// Only the columns the query sorts by matter: without ORDER BY the shards' sort is not relied
+    /// upon at all, and a column that no sorting key expression reads is just carried along, so a
+    /// table with one sloppily declared column keeps working as long as nothing orders by it.
+    /// The same holds for GROUP BY, LIMIT BY and DISTINCT, but only while the initiator redoes them
+    /// over the converted values: at `Complete` and the stages above it (a single shard,
+    /// `distributed_group_by_no_merge`, a GROUP BY by the sharding key) a shard finalizes them by its
+    /// own type, and a conversion that merges distinct values leaves duplicate groups behind.
+    if (nodes > 0)
+    {
+        const auto key_columns = getKeyColumns(query_info, stage >= QueryProcessingStage::Complete);
+        if (!key_columns.none())
+            checkRemoteTableConversionPreservesOrder(
+                local_context, storage_snapshot, cluster, key_columns.unknown ? std::nullopt : std::make_optional(key_columns.names));
+    }
+
+    return stage;
+}
+
+QueryProcessingStage::Enum StorageDistributed::chooseQueryProcessingStage(
+    QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const
+{
     if (settings[Setting::distributed_group_by_no_merge])
     {
         if (settings[Setting::distributed_group_by_no_merge] == DISTRIBUTED_GROUP_BY_NO_MERGE_AFTER_AGGREGATION)
@@ -572,6 +733,14 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
 
+    if (nodes == 0)
+    {
+        /// In case of 0 shards, the query should be processed fully on the initiator,
+        /// since we need to apply aggregations.
+        /// That's why we need to return FetchColumns.
+        return QueryProcessingStage::FetchColumns;
+    }
+
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
     if (to_stage == QueryProcessingStage::WithMergeableState)
@@ -588,13 +757,6 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         /// relevant for Distributed over Distributed
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
-    if (nodes == 0)
-    {
-        /// In case of 0 shards, the query should be processed fully on the initiator,
-        /// since we need to apply aggregations.
-        /// That's why we need to return FetchColumns.
-        return QueryProcessingStage::FetchColumns;
-    }
 
     std::optional<QueryProcessingStage::Enum> optimized_stage = getOptimizedQueryProcessingStageAnalyzer(query_info, settings);
     if (optimized_stage)
@@ -605,6 +767,63 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     }
 
     return QueryProcessingStage::WithMergeableState;
+}
+
+void StorageDistributed::checkRemoteTableConversionPreservesOrder(
+    ContextPtr local_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ClusterPtr & cluster,
+    const std::optional<NameSet> & key_columns) const
+{
+    if (remote_table_function_ptr)
+        return;
+
+    /// A shard that is this server reads `remote_database.remote_table` from here, whatever
+    /// `prefer_localhost_replica` says, so that table's types are the ones a shard sorts by. Nothing
+    /// is known about the tables behind remote-only shards, and a local table that merely shares
+    /// their name would be unrelated to them.
+    if (cluster->getLocalShardCount() == 0)
+        return;
+
+    /// An empty remote database means the shard's default database, which for this server is the
+    /// query's current database (`createLocalPlan` runs the shard query in a copy of this context).
+    const String & remote_database_name = remote_database.empty() ? local_context->getCurrentDatabase() : remote_database;
+    StorageID remote_table_id{remote_database_name, remote_table};
+    auto remote_table_storage = DatabaseCatalog::instance().tryGetTable(remote_table_id, local_context);
+    if (!remote_table_storage)
+        return;
+
+    /// `ALIAS` columns cross the same cast, so they are compared too.
+    const GetColumnsOptions order_relevant_columns(GetColumnsOptions::AllPhysicalAndAliases);
+    const auto & declared_columns = storage_snapshot->metadata->getColumns();
+    const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
+    for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
+    {
+        /// A column no key reads is converted above the shards' sort and reductions like any other
+        /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
+        /// there is none of this check's business. `std::nullopt` means the key columns are unknown
+        /// and every column has to be checked.
+        if (key_columns && !key_columns->contains(remote_column.name))
+            continue;
+
+        auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
+        if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Column {} has type {} in the shard table {} and type {} in the Distributed table {}, and converting "
+                "between them does not preserve the order or the distinctness of values: the shards would sort, group or "
+                "deduplicate by {} and the initiator would treat their result as if it were done by {}, so the query "
+                "cannot be processed. Declare the column with "
+                "the shard table's type, or with a type it converts to without reordering, such as a wider integer or "
+                "a Nullable of it",
+                backQuoteIfNeed(remote_column.name),
+                remote_column.type->getName(),
+                remote_table_id.getNameForLogs(),
+                declared_column->type->getName(),
+                getStorageID().getNameForLogs(),
+                remote_column.type->getName(),
+                declared_column->type->getName());
+    }
 }
 
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
@@ -959,7 +1178,16 @@ void StorageDistributed::read(
 
         /// Return directly (with correct header) if no shard to query.
         if (modified_query_info.getCluster()->getShardsInfo().empty())
+        {
+            /// At `FetchColumns` the planner builds the empty source from the table columns itself.
+            if (processed_stage != QueryProcessingStage::FetchColumns)
+            {
+                auto read_nothing = std::make_unique<ReadNothingStep>(header);
+                read_nothing->setStepDescription("Read from NullSource (Distributed)");
+                query_plan.addStep(std::move(read_nothing));
+            }
             return;
+        }
     }
 
     ClusterProxy::SelectStreamFactory select_stream_factory =
