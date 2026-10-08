@@ -1516,6 +1516,19 @@ namespace
 
 }
 
+String InterpreterCreateQuery::getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context)
+{
+    if (!create.as_table.empty() || create.is_materialized_view)
+        return {};
+    if (create.storage && create.storage->engine)
+        return {};
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(local_context->resolveDatabase(create.getDatabase()));
+    if (!database)
+        return {};
+    return database->getDefaultTableEngineName(create.getTable());
+}
+
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
@@ -1582,6 +1595,18 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             return;
         }
+    }
+
+    if (auto engine_name = getDatabaseDefaultTableEngineName(create, getContext()); !engine_name.empty())
+    {
+        if (!create.storage)
+            create.set(create.storage, make_intrusive<ASTStorage>());
+
+        auto engine_ast = make_intrusive<ASTFunction>();
+        engine_ast->name = std::move(engine_name);
+        engine_ast->setNoEmptyArgs(true);
+        create.storage->set(create.storage->engine, engine_ast);
+        return;
     }
 
     /// We'll try to extract a storage definition from clause `AS`:
