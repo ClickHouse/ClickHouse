@@ -173,6 +173,13 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
     return std::make_pair(std::move(matched), reader->reader.file_metadata.row_groups.size());
 }
 
+bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
+{
+    /// The reader installs `__topKFilter` only for a file that stores the sort column.
+    return reader && reader->reader.format_filter_info && reader->reader.format_filter_info->top_k_filter
+        && reader->reader.top_k_column_is_read;
+}
+
 void ParquetV3BlockInputFormat::setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_)
 {
     if (reader)
