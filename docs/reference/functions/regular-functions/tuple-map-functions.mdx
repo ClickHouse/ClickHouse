@@ -588,6 +588,39 @@ SELECT mapContainsValueLike(a, 'a%') FROM tab;
 └───────────────────────────────┘
 ```
 
+## mapEntries {#mapEntries}
+
+Introduced in: v26.10.0
+
+Returns the key-value pairs of a map as an array of named tuples with fields `key` and `value`.
+Duplicate keys are preserved.
+
+**Syntax**
+
+```sql
+mapEntries(map)
+```
+
+**Arguments**
+
+- `map` — Map to extract entries from. [`Map(K, V)`](/reference/data-types/map)
+
+**Returned value**
+
+Returns an array containing the key-value pairs from the map. [`Array(Tuple(key K, value V))`](/reference/data-types/array)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT mapEntries(map('k1', 'v1', 'k2', 'v2'))
+```
+
+```response title=Response
+[('k1','v1'),('k2','v2')]
+```
+
 ## mapExists {#mapExists}
 
 Introduced in: v23.4.0
@@ -938,6 +971,41 @@ SELECT mapPopulateSeries([1, 2, 4], [11, 22, 44], 5)
 
 ```response title=Response
 ([1,2,3,4,5],[11,22,0,44,0])
+```
+
+## mapRemove {#mapRemove}
+
+Introduced in: v26.10.0
+
+Removes all entries from a map whose key equals the specified key. If several entries have the same key, all matching entries are removed.
+NULLs are compared as values: a NULL removal key does not match a non-NULL key, and NULL components in composite keys match other NULL components.
+For key types with a common supertype, NaN keys follow map lookup semantics, so a NaN removal key matches a NaN map key.
+
+**Syntax**
+
+```sql
+mapRemove(map, key)
+```
+
+**Arguments**
+
+- `map` — Map to remove matching entries from. [`Map(K, V)`](/reference/data-types/map)
+- `key` — Key whose matching entries are removed. Type must be comparable with the key type of the map. [`Any`](/reference/data-types/index)
+
+**Returned value**
+
+Returns the map with all entries whose key does not match the specified key. [`Map(K, V)`](/reference/data-types/map)
+
+**Examples**
+
+**Usage example**
+
+```sql title=Query
+SELECT mapRemove(map('k1', 1, 'k2', 2), 'k1')
+```
+
+```response title=Response
+{'k2':2}
 ```
 
 ## mapReverseSort {#mapReverseSort}
