@@ -3052,6 +3052,8 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     ProjectionNames result_projection_names;
     ProjectionNames node_projection_names;
 
+    auto * query_scope = scope.getNearestQueryScope();
+
     for (auto & [node, column_name] : matched_expression_nodes_with_names)
     {
         bool apply_transformer_was_used = false;
@@ -3066,6 +3068,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             result_projection_names.push_back(column_name);
 
         String apply_column_name_prefix;
+        bool projection_name_from_prefix = false;
         /// Prefix the projection name: it carries the qualifier (`f_t2.a`) that tells same-named columns apart.
         String apply_prefixed_projection_name = result_projection_names.back();
 
@@ -3241,6 +3244,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                             node_to_projection_name.emplace(node_list_nodes[i], element_projection_name);
 
+                            if (execute_apply_transformer && !apply_column_name_prefix.empty() && query_scope)
+                                query_scope->apply_prefixed_names.push_back({element_projection_name, node_list_nodes[i]});
+
                             /// Push all but the last element now; the last stays in `node` so
                             /// the loop tail pushes it, keeping the node/name counts in sync.
                             if (i + 1 < node_list_nodes_size)
@@ -3248,6 +3254,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                         }
                         node = node_list_nodes.back();
                         node_projection_names.clear();
+                        projection_name_from_prefix = false;
                         break;
                     }
 
@@ -3276,11 +3283,13 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     /// transformer, so chained prefixes accumulate: `q_` + `p_` + `a`.
                     apply_prefixed_projection_name = apply_column_name_prefix + apply_prefixed_projection_name;
                     result_projection_names.back() = apply_prefixed_projection_name;
+                    projection_name_from_prefix = true;
                 }
                 else
                 {
                     result_projection_names.back() = natural_projection_name;
                     apply_prefixed_projection_name = natural_projection_name;
+                    projection_name_from_prefix = false;
                 }
                 /// Whether the transformer resolved back to the very node it started from
                 /// (an identity lambda `x -> x`). A function/lambda that wraps the input is a
@@ -3325,7 +3334,11 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
 
         if (node)
+        {
             list->getNodes().push_back(node);
+            if (projection_name_from_prefix && query_scope)
+                query_scope->apply_prefixed_names.push_back({result_projection_names.back(), node});
+        }
         else
             result_projection_names.pop_back();
     }
@@ -3394,7 +3407,6 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     /// Apply REPLACE transformer mappings to WHERE and HAVING clauses of the current query
     if (!replace_transformer_mappings.empty())
     {
-        auto * query_scope = scope.getNearestQueryScope();
         if (query_scope && query_scope->scope_node)
         {
             auto * query_node = query_scope->scope_node->as<QueryNode>();
@@ -7444,11 +7456,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         /// after registration. Re-resolving in place would keep the subqueries, which resolveQuery skips as resolved.
         auto unresolved_projection = query_node_typed.getProjectionNode()->clone();
         auto saved_subquery_counter = subquery_counter;
+        const size_t saved_apply_prefixed_names_size = scope.apply_prefixed_names.size();
         resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
         expandGroupByAll(query_node_typed);
         query_node_typed.getProjectionNode() = std::move(unresolved_projection);
         /// The discarded resolution must not consume _subquery_N projection names.
         subquery_counter = saved_subquery_counter;
+        scope.apply_prefixed_names.resize(saved_apply_prefixed_names_size);
     }
 
     if (auto & prewhere_node = query_node_typed.getPrewhere())
@@ -7632,6 +7646,35 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// see the renaming of colliding projection columns below.
     bool has_unused_duplicated_aliases = false;
 
+    /// Resolving an alias clone below can re-enter `resolveMatcher`, so iterate a snapshot.
+    auto apply_prefixed_names = std::move(scope.apply_prefixed_names);
+    scope.apply_prefixed_names.clear();
+
+    /// A prefixed name names a result column when its node is a projection node under that name: then it is a projection alias.
+    std::vector<char> is_projection_column(apply_prefixed_names.size());
+    if (!apply_prefixed_names.empty())
+    {
+        std::unordered_map<std::string_view, std::vector<const IQueryTreeNode *>> projection_name_to_nodes;
+        const auto & projection_nodes = query_node_typed.getProjection().getNodes();
+        for (size_t i = 0; i < projection_nodes.size() && i < projection_columns.size(); ++i)
+            projection_name_to_nodes[projection_columns[i].name].push_back(projection_nodes[i].get());
+
+        for (size_t i = 0; i < apply_prefixed_names.size(); ++i)
+        {
+            const auto & prefixed = apply_prefixed_names[i];
+            auto it = projection_name_to_nodes.find(prefixed.name);
+            if (it == projection_name_to_nodes.end())
+                continue;
+
+            for (const auto * projection_node : it->second)
+                if (projection_node == prefixed.node.get())
+                    is_projection_column[i] = true;
+
+            if (is_projection_column[i])
+                projection_alias_names.insert(prefixed.name);
+        }
+    }
+
     for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
     {
         auto node = node_with_duplicated_alias;
@@ -7716,6 +7759,66 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
                 scope.scope_node->formatASTForErrorMessage());
 
         node->removeAlias();
+    }
+
+    /// An `APPLY (f, 'prefix')` name follows the rule above. A prefix inside an expression cannot be referenced
+    /// and names no result column, so like an unused alias it is allowed, and colliding result columns are renamed.
+    std::unordered_map<std::string_view, size_t> prefixed_name_count;
+    for (const auto & prefixed : apply_prefixed_names)
+        ++prefixed_name_count[prefixed.name];
+
+    auto is_same_expression = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        constexpr IQueryTreeNode::CompareOptions options{.compare_aliases = false};
+        if (lhs->isEqual(*rhs, options))
+            return true;
+
+        const auto * lhs_constant = lhs->as<ConstantNode>();
+        const auto * rhs_constant = rhs->as<ConstantNode>();
+        if (lhs_constant && lhs_constant->getSourceExpression() && lhs_constant->getSourceExpression()->isEqual(*rhs, options))
+            return true;
+        return rhs_constant && rhs_constant->getSourceExpression() && rhs_constant->getSourceExpression()->isEqual(*lhs, options);
+    };
+
+    std::unordered_map<std::string_view, QueryTreeNodePtr> projection_prefixed_name_to_node;
+    for (size_t i = 0; i < apply_prefixed_names.size(); ++i)
+    {
+        const auto & prefixed = apply_prefixed_names[i];
+        auto expression_alias_it = scope.aliases.alias_name_to_expression_node.find(prefixed.name);
+        auto lambda_alias_it = scope.aliases.alias_name_to_lambda_node.find(prefixed.name);
+        const bool has_explicit_alias = expression_alias_it != scope.aliases.alias_name_to_expression_node.end()
+            || lambda_alias_it != scope.aliases.alias_name_to_lambda_node.end();
+
+        if (!is_projection_column[i])
+        {
+            if (has_explicit_alias || prefixed_name_count[prefixed.name] > 1)
+                has_unused_duplicated_aliases = true;
+            continue;
+        }
+
+        QueryTreeNodePtr original_node;
+        if (has_explicit_alias)
+        {
+            /// An explicit alias definition is an unresolved clone (see QueryExpressionsAliasVisitor).
+            original_node = expression_alias_it != scope.aliases.alias_name_to_expression_node.end()
+                ? expression_alias_it->second
+                : lambda_alias_it->second;
+            resolveExpressionNode(original_node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
+        }
+        else if (auto [it, inserted] = projection_prefixed_name_to_node.emplace(prefixed.name, prefixed.node); !inserted)
+            original_node = it->second;
+        else
+            continue;
+
+        if (is_same_expression(original_node, prefixed.node))
+            continue;
+
+        throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+            "Multiple expressions {} and {} for alias {}. In scope {}",
+            prefixed.node->formatASTForErrorMessage(),
+            original_node->formatASTForErrorMessage(),
+            prefixed.name,
+            scope.scope_node->formatASTForErrorMessage());
     }
 
     const bool was_group_by_all = query_node_typed.isGroupByAll();
