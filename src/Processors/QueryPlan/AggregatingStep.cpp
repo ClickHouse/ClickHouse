@@ -1225,6 +1225,27 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+
+    /// Step version 1 appends the `GROUP BY` top-K parameters. Towards a peer that reads version 0
+    /// they are omitted, not rejected: the peer aggregates without the heap and returns partial states
+    /// for all its groups, which the initiator's merge, sort and limit handle correctly - the safe direction.
+    if (ctx.step_version < 1)
+        return;
+
+    writeBinary(params.top_k.has_value(), ctx.out);
+    if (params.top_k)
+    {
+        const auto & top_k = *params.top_k;
+        writeVarUInt(top_k.k, ctx.out);
+        writeVarUInt(top_k.key_columns, ctx.out);
+        writeVarUInt(top_k.observation_rows, ctx.out);
+        writeVarUInt(top_k.directions.size(), ctx.out);
+        for (size_t i = 0; i < top_k.directions.size(); ++i)
+        {
+            writeIntBinary(static_cast<Int8>(top_k.directions[i]), ctx.out);
+            writeIntBinary(static_cast<Int8>(top_k.nulls_directions[i]), ctx.out);
+        }
+    }
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
@@ -1304,6 +1325,46 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     if (has_stats_key)
         readIntBinary(stats_key, ctx.in);
 
+    bool has_top_k = false;
+    if (ctx.step_version >= 1)
+        readBinary(has_top_k, ctx.in);
+
+    std::optional<Aggregator::Params::TopKParams> top_k;
+    if (has_top_k)
+    {
+        auto & value = top_k.emplace();
+        readVarUInt(value.k, ctx.in);
+        readVarUInt(value.key_columns, ctx.in);
+        readVarUInt(value.observation_rows, ctx.in);
+
+        UInt64 num_directions = 0;
+        readVarUInt(num_directions, ctx.in);
+
+        if (value.k == 0 || value.k > Aggregator::Params::TopKParams::max_k
+            || value.key_columns == 0 || value.key_columns > num_keys
+            || num_directions != value.key_columns)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Invalid top-K parameters in a serialized query plan: k = {}, key_columns = {}, "
+                "directions = {}, keys = {}",
+                value.k, value.key_columns, num_directions, num_keys);
+
+        value.directions.resize(num_directions);
+        value.nulls_directions.resize(num_directions);
+        for (size_t i = 0; i < num_directions; ++i)
+        {
+            Int8 direction = 0;
+            Int8 nulls_direction = 0;
+            readIntBinary(direction, ctx.in);
+            readIntBinary(nulls_direction, ctx.in);
+            if ((direction != 1 && direction != -1) || (nulls_direction != 1 && nulls_direction != -1))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid top-K sort direction in a serialized query plan: {} (nulls: {})",
+                    direction, nulls_direction);
+            value.directions[i] = direction;
+            value.nulls_directions[i] = nulls_direction;
+        }
+    }
+
     StatsCollectingParams stats_collecting_params(
         stats_key,
         ctx.settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation],
@@ -1338,6 +1399,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
+
+    params.top_k = std::move(top_k);
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
@@ -1405,7 +1468,11 @@ void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Nam
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Aggregating", AggregatingStep::deserialize);
+    /// Version 1 carries the `GROUP BY` top-K parameters.
+    registry.registerStep(
+        "Aggregating",
+        AggregatingStep::deserialize,
+        {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K}});
 }
 
 
