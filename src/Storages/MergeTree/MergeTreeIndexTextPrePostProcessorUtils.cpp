@@ -1,12 +1,19 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPrePostProcessorUtils.h>
 
+#include <Columns/ColumnSet.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -40,6 +47,26 @@ ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList
     auto expression_name = expression_ast->getColumnName();
     actions_dag.project({{expression_name, expression_name}});
     actions_dag.removeUnusedActions();
+
+    /// ExpressionAnalyzer names every lambda `__lambda` and every literal set `__set`, unique only within one DAG,
+    /// and `ActionsDAG::mergeNodes` matches by name, so name them by content.
+    for (const auto & node : actions_dag.getNodes())
+    {
+        auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
+        if (const auto * function_capture = dynamic_cast<const FunctionCapture *>(node.function_base.get()))
+        {
+            const auto & capture = function_capture->getCapture();
+            Strings arguments;
+            for (const auto & argument : capture.lambda_arguments)
+                arguments.push_back(argument.name + ' ' + argument.type->getName());
+            mutable_node.result_name = fmt::format("__text_index_lambda({} -> {})", fmt::join(arguments, ", "), capture.return_name);
+        }
+        else if (node.type == ActionsDAG::ActionType::COLUMN && WhichDataType(node.result_type).isSet())
+        {
+            if (const auto * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get()))
+                mutable_node.result_name = PreparedSets::toString(column_set->getData()->getHash(), column_set->getData()->getTypes());
+        }
+    }
 
     return actions_dag;
 }
