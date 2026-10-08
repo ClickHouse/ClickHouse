@@ -54,6 +54,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/intExp10.h>
 #include <Common/randomSeed.h>
 
@@ -654,7 +655,7 @@ DynamicSchema buildDynamicSchema(UInt64 seed, size_t max_dynamic_types, bool arr
 MutableColumnPtr buildVariantColumn(
     const IDataType & variant_type,
     const std::vector<UInt8> & global_discriminator,
-    const std::vector<UInt8> & type_index,
+    const VectorWithMemoryTracking<UInt8> & type_index,
     MutableColumns && value_columns)
 {
     const size_t num_types = value_columns.size();
@@ -682,7 +683,7 @@ MutableColumnPtr buildVariantColumn(
 /// dedicated type becomes its variant as it is; the values of a shared type are encoded one by one,
 /// in row order, into the shared variant, the way `ColumnDynamic` stores the types it has no variant
 /// left for. Never silently promote a shared type to a real variant instead.
-ColumnPtr buildDynamicColumn(const DynamicSchema & schema, const std::vector<UInt8> & type_index, MutableColumns && value_columns)
+ColumnPtr buildDynamicColumn(const DynamicSchema & schema, const VectorWithMemoryTracking<UInt8> & type_index, MutableColumns && value_columns)
 {
     const size_t num_types = schema.types.size();
 
@@ -1144,8 +1145,8 @@ bool drawNull(pcg64 & rng, UInt32 threshold)
 /// is the order a `ColumnVariant` consumes its values in.
 struct RowTypes
 {
-    std::vector<UInt8> type_index;
-    std::vector<UInt64> counts;
+    VectorWithMemoryTracking<UInt8> type_index;
+    VectorWithMemoryTracking<UInt64> counts;
 };
 
 /// `pick_type` draws the alternative of a row that holds a value, and is called once for such a row.

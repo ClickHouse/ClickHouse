@@ -258,3 +258,30 @@ TEST(MergeSorter, ConstantSparseAndReplicatedColumns)
         EXPECT_EQ(readPayloads(sorter, 2), expected);
     }
 }
+
+TEST(MergeSorter, PreferredBytesRespectTheRowLimit)
+{
+    const auto header = makeHeader(std::make_shared<DataTypeUInt64>());
+    for (const size_t row_limit : {1, 64, 1024})
+    for (const size_t byte_target : {0, 1, 4096})
+    for (const auto mode : {MergeSorter::Mode::PreserveRows, MergeSorter::Mode::MergeUniqueChunks})
+    {
+        SCOPED_TRACE(::testing::Message() << "row_limit=" << row_limit << ", byte_target=" << byte_target);
+        Array keys;
+        for (UInt64 key = 0; key < 1024; ++key)
+            keys.emplace_back(key);
+        Chunks chunks;
+        chunks.push_back(makeChunk(*header, keys, 0));
+        MergeSorter sorter(header, std::move(chunks), ascending(), row_limit, 0, mode, byte_target);
+        EXPECT_LE(sorter.getMaxMergedBlockSize(), row_limit);
+        if (byte_target && row_limit > 128)
+            EXPECT_LT(sorter.getMaxMergedBlockSize(), row_limit);
+        const auto payloads = readPayloads(sorter, sorter.getMaxMergedBlockSize());
+        ASSERT_EQ(payloads.size(), keys.size());
+        for (size_t row = 0; row < payloads.size(); ++row)
+            EXPECT_EQ(payloads[row], row);
+    }
+
+    MergeSorter empty(header, {}, ascending(), 1024, 0, MergeSorter::Mode::PreserveRows, 4096);
+    EXPECT_FALSE(empty.read());
+}

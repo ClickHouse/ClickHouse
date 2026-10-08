@@ -66,10 +66,17 @@ struct ClusterConnectionParameters
 class Cluster
 {
 public:
+    /// 'treat_local_port_as_remote' - never treat a configured replica as local, even when its address
+    /// points to this host. Set for clickhouse-local, which listens on no port of its own: a replica of a
+    /// configured cluster always carries a port (explicit or inherited from `tcp_port`), so it is the
+    /// analogue of the `host:port` form of an address list, which is remote in the tool as well. This
+    /// differs from the constructor below, where a bare `localhost` (no port) of an address list keeps
+    /// resolving in the tool itself (see 01949_clickhouse_local_with_remote_localhost).
     Cluster(const Poco::Util::AbstractConfiguration & config,
             const Settings & settings,
             const String & config_prefix_,
-            const String & cluster_name);
+            const String & cluster_name,
+            bool treat_local_port_as_remote = false);
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
@@ -197,7 +204,8 @@ public:
             const String & cluster_,
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0);
+            UInt32 replica_index_ = 0,
+            bool treat_local_port_as_remote = false);
 
         Address(
             const DatabaseReplicaInfo & info,
@@ -215,13 +223,13 @@ public:
 
         static std::pair<String, UInt16> fromString(const String & host_port_string);
 
-        /// Returns escaped shard{shard_index}_replica{replica_index} or escaped
-        /// user:password@resolved_host_address:resolved_host_port#default_database
-        /// depending on use_compact_format flag
-        String toFullString(bool use_compact_format) const;
+        /// Returns shard{shard_index}_replica{replica_index}
+        String toFullString() const;
 
-        /// Returns address with only shard index and replica index or full address without shard index and replica index
-        static Address fromFullString(std::string_view full_string);
+        /// Parses a queue directory name into a shard index and a replica index
+        /// (replica_index == 0 means all the replicas of the shard), nullopt if it is not a name
+        /// that is written, see toFullString()
+        static std::optional<Address> tryParseFullString(std::string_view full_string);
 
         /// Returns resolved address if it does resolve.
         std::optional<Poco::Net::SocketAddress> getResolvedAddress() const;
@@ -236,25 +244,6 @@ public:
     using Addresses = std::vector<Address>;
     using AddressesWithFailover = std::vector<Addresses>;
 
-    /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-    ///
-    /// Contains different path for permutations of:
-    /// - prefer_localhost_replica
-    ///   Notes with prefer_localhost_replica==0 will contains local nodes.
-    /// - use_compact_format_in_distributed_parts_names
-    ///   See toFullString()
-    ///
-    /// This is cached to avoid looping by replicas in insertPathForInternalReplication().
-    struct ShardInfoInsertPathForInternalReplication
-    {
-        /// prefer_localhost_replica == 1 && use_compact_format_in_distributed_parts_names=0
-        std::string prefer_localhost_replica;
-        /// prefer_localhost_replica == 0 && use_compact_format_in_distributed_parts_names=0
-        std::string no_prefer_localhost_replica;
-        /// use_compact_format_in_distributed_parts_names=1
-        std::string compact;
-    };
-
     struct ShardInfo
     {
     public:
@@ -265,9 +254,9 @@ public:
         size_t getAllNodeCount() const { return per_replica_pools.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
-        const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;
+        const std::string & insertPathForInternalReplication() const;
 
-        ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
+        std::string insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
         String name;
@@ -322,6 +311,15 @@ public:
     /// Get a new Cluster that contains all servers (all shards with all replicas) from existing cluster as independent shards.
     std::unique_ptr<Cluster> getClusterWithReplicasAsShards(const Settings & settings, size_t max_replicas_from_shard = 0) const;
 
+    /// Get a new Cluster with the replicas that point to this server stripped from their shards, while
+    /// every other replica keeps its per-replica settings (credentials, secure connections, compression,
+    /// the inter-server secret, ...). Used by the `Remote` and `Cluster` database engines as the
+    /// metadata-lookup fallback when the local replica does not have the database or a table. Returns
+    /// nullptr when the cluster has no local replicas (there is nothing to strip, so the fallback is
+    /// never needed) or when some shard consists of local replicas only (there is nothing to fall back
+    /// to for that shard, and dropping it would silently serve only a subset of the shards).
+    std::unique_ptr<Cluster> tryGetClusterWithoutLocalReplicas(const Settings & settings) const;
+
     /// Returns false if cluster configuration doesn't allow to use it for cross-replication.
     /// NOTE: true does not mean, that it's actually a cross-replication cluster.
     bool maybeCrossReplication() const;
@@ -371,6 +369,10 @@ private:
     /// For getClusterWithReplicasAsShards implementation
     struct ReplicasAsShardsTag {};
     Cluster(ReplicasAsShardsTag, const Cluster & from, const Settings & settings, size_t max_replicas_from_shard);
+
+    /// For tryGetClusterWithoutLocalReplicas implementation
+    struct RemoteReplicasTag {};
+    Cluster(RemoteReplicasTag, const Cluster & from, const Settings & settings);
 
     void addShard(
         const Settings & settings,

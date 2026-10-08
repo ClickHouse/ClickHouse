@@ -60,13 +60,16 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool filter_push_down_below_limit_by;
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
+    bool legacy_array_join_function_nondeterministic_evaluation;
     bool enable_lazy_columns_replication;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
+    bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
@@ -88,7 +91,9 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
+    bool top_k_optimization_shared_boundary = true;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -168,6 +173,8 @@ struct QueryPlanOptimizationSettings
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
+    /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them
+    bool skip_forced_projection_check = false;
     String force_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate

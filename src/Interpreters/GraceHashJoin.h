@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
