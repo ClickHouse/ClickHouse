@@ -385,7 +385,8 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"kafka", allow_kafka},
            {"backup", allow_backup},
            {"clusterdatabase", allow_cluster_database},
-           {"remotedatabase", allow_remote_database}};
+           {"remotedatabase", allow_remote_database},
+           {"overlay", allow_overlay_database}};
 
     const SettingEntries configEntries = {
         {"client_file_path", [&](const JSONObjectType & value) { client_file_path = std::filesystem::path(String(value.getString())); }},

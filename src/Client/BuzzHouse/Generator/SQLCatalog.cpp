@@ -68,9 +68,14 @@ bool SQLDatabase::isRemoteDatabase() const
     return deng == DatabaseEngineValues::DRemote || deng == DatabaseEngineValues::DRemoteSecure;
 }
 
+bool SQLDatabase::isOverlayDatabase() const
+{
+    return deng == DatabaseEngineValues::DOverlay;
+}
+
 bool SQLDatabase::isProxyDatabase() const
 {
-    return isClusterDatabase() || isRemoteDatabase();
+    return isClusterDatabase() || isRemoteDatabase() || isOverlayDatabase();
 }
 
 bool SQLDatabase::isReplicatedOrSharedDatabase() const

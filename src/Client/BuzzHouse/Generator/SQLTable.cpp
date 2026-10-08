@@ -3346,6 +3346,10 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(rg.nextSmallNumber() < 4 ? DRemoteSecure : DRemote);
     }
+    if ((fc.engine_mask & allow_overlay_database) != 0)
+    {
+        this->ids.emplace_back(DOverlay);
+    }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomly(this->ids));
     this->ids.clear();
     return res;
@@ -3401,22 +3405,34 @@ void StatementGenerator::generateDatabaseEngineDetails(RandomGenerator & rg, SQL
     else if (d.isProxyDatabase())
     {
         /// Proxy another database, sometimes another proxy one (a chain)
-        const uint32_t noption = rg.nextMediumNumber();
+        const auto next_proxy_target = [&]() -> String
+        {
+            const uint32_t noption = rg.nextMediumNumber();
 
-        if (noption < 6)
+            if (noption < 6)
+            {
+                /// A missing database, or the new database itself, which the server rejects as a cycle
+                return rg.nextBool() ? d.getName() : "nonexistent";
+            }
+            if (noption < 61 && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases))
+            {
+                return rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)).get()->getName();
+            }
+            return rg.nextSmallNumber() < 9 ? "default" : "system";
+        };
+
+        d.proxy_target = next_proxy_target();
+        if (d.isOverlayDatabase())
         {
-            /// A missing database, or the new database itself, which the server rejects as a cycle
-            d.proxy_target = rg.nextBool() ? d.getName() : "nonexistent";
+            const uint32_t nsources = rg.randomInt<uint32_t>(1, 3);
+
+            de->add_params()->set_svalue(d.proxy_target);
+            for (uint32_t i = 1; i < nsources; i++)
+            {
+                de->add_params()->set_svalue(next_proxy_target());
+            }
         }
-        else if (noption < 61 && collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases))
-        {
-            d.proxy_target = rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)).get()->getName();
-        }
-        else
-        {
-            d.proxy_target = rg.nextSmallNumber() < 9 ? "default" : "system";
-        }
-        if (d.isClusterDatabase())
+        else if (d.isClusterDatabase())
         {
             /// Cluster('cluster_name', 'database')
             de->add_params()->set_svalue(rg.pickRandomly(fc.clusters));
@@ -3473,7 +3489,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     {
         cd->set_comment(nextComment(rg));
     }
-    /// The Cluster and Remote engines take no settings
+    /// The Cluster, Remote and Overlay engines take no settings
     if (!next.isProxyDatabase() && rg.nextSmallNumber() < 4)
     {
         /// Add general database settings

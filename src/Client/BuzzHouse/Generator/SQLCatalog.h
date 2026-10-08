@@ -167,7 +167,7 @@ public:
     LakeCatalog catalog = LakeCatalog::None;
     LakeStorage storage = LakeStorage::All;
     LakeFormat format = LakeFormat::All;
-    /// For Cluster and Remote, the database they proxy
+    /// For Cluster and Remote, the database they proxy (for Overlay, its first source)
     String proxy_target;
 
     static void setRandomDatabase(RandomGenerator & rg, SQLDatabase & d);
@@ -192,7 +192,9 @@ public:
 
     bool isRemoteDatabase() const;
 
-    /// Cluster, Remote or RemoteSecure: a read-through view of a database elsewhere
+    bool isOverlayDatabase() const;
+
+    /// Cluster, Remote, RemoteSecure or Overlay: a read-through view of databases elsewhere
     bool isProxyDatabase() const;
 
     bool isReplicatedOrSharedDatabase() const;

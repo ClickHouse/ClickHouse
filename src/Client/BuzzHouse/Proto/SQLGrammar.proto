@@ -1239,6 +1239,7 @@ enum DatabaseEngineValues {
     DCluster = 12;
     DRemote = 13;
     DRemoteSecure = 14;
+    DOverlay = 15;
 }
 
 message BackupParam {

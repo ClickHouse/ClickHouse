@@ -1864,7 +1864,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// Avoid touching Replicated (needs ZooKeeper), Lazy (needs arg), or external
         /// engines (MySQL/PostgreSQL need connection params).
         static const std::unordered_set<String> safe_database_engines = {"Atomic", "Memory", "Dictionary"};
-        static const std::unordered_set<String> proxy_database_engines = {"Cluster", "Remote", "RemoteSecure"};
+        static const std::unordered_set<String> proxy_database_engines = {"Cluster", "Remote", "RemoteSecure", "Overlay"};
         auto & engine_name = create.storage->engine->name;
         if (safe_database_engines.contains(engine_name) && fuzz_rand() % 10 == 0)
         {
@@ -3524,27 +3524,45 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
 /// `Cluster('cluster_name', 'database')` or `Remote[Secure]('addresses_expr', 'database'[, 'user'[, 'password']])`.
 void QueryFuzzer::fuzzProxyDatabaseEngine(ASTStorage & storage)
 {
-    static const std::vector<String> proxy_engines = {"Cluster", "Remote", "RemoteSecure"};
+    static const std::vector<String> proxy_engines = {"Cluster", "Remote", "RemoteSecure", "Overlay"};
     static const std::vector<String> proxied_databases = {"default", "system", "information_schema", "nonexistent"};
 
     const String engine_name = pickRandomly(fuzz_rand, proxy_engines);
     auto arguments = make_intrusive<ASTExpressionList>();
-    if (engine_name == "Cluster")
-        arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names))));
-    else
-        arguments->children.push_back(make_intrusive<ASTLiteral>(makeRemoteHostDescriptor(engine_name == "RemoteSecure")));
-    if (fuzz_rand() % 2 == 0)
-        arguments->children.push_back(makeASTFunction("currentDatabase"));
-    else
-        arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
-    /// Optional user and password, which only Remote accepts
-    if (engine_name != "Cluster" || fuzz_rand() % 20 == 0)
+    if (engine_name == "Overlay")
     {
-        const size_t credentials = fuzz_rand() % 3;
-        if (credentials > 0)
-            arguments->children.push_back(make_intrusive<ASTLiteral>(String("default")));
-        if (credentials > 1)
-            arguments->children.push_back(make_intrusive<ASTLiteral>(String("")));
+        /// Overlay(db1[, db2, ...]), each source a name, an identifier or `currentDatabase()`. `Overlay()` does not parse
+        const size_t nsources = (fuzz_rand() % 3) + 1;
+        for (size_t i = 0; i < nsources; i++)
+        {
+            const size_t nopt = fuzz_rand() % 3;
+            if (nopt == 0)
+                arguments->children.push_back(makeASTFunction("currentDatabase"));
+            else if (nopt == 1)
+                arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, proxied_databases)));
+            else
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
+        }
+    }
+    else
+    {
+        if (engine_name == "Cluster")
+            arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names))));
+        else
+            arguments->children.push_back(make_intrusive<ASTLiteral>(makeRemoteHostDescriptor(engine_name == "RemoteSecure")));
+        if (fuzz_rand() % 2 == 0)
+            arguments->children.push_back(makeASTFunction("currentDatabase"));
+        else
+            arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
+        /// Optional user and password, which only Remote accepts
+        if (engine_name != "Cluster" || fuzz_rand() % 20 == 0)
+        {
+            const size_t credentials = fuzz_rand() % 3;
+            if (credentials > 0)
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("default")));
+            if (credentials > 1)
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("")));
+        }
     }
 
     auto * engine = storage.engine;
