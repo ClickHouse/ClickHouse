@@ -1,0 +1,14 @@
+token_first	2500
+token_repeat	2500
+like_first	2500
+like_repeat	2500
+index	[]
+index_repeat	[]
+skip_indexes_off	['a b']
+ignore_index	['a b']
+token_first	0	3
+token_repeat	1	1
+like_first	0	3
+like_repeat	1	1
+index	0	1
+index_repeat	1	0

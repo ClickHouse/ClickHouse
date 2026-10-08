@@ -65,9 +65,26 @@ public:
     /// so its result must not be built before the build side has published the filters.
     bool hasRuntimeFilters() const;
 
+    /// Key of the query condition cache entries which receive the granules excluded by `skip_indexes`.
+    struct QueryConditionCacheKey
+    {
+        /// The skip-index-profiled condition hash (see `MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash`)
+        /// that `MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache` consults before the next read.
+        UInt64 hash;
+        String condition; /// For introspection only.
+    };
+
+    /// Record the granules excluded by `skip_indexes` in the query condition cache, the same way index analysis
+    /// does when skip indexes are not applied at data read time. Otherwise the next query with the same condition
+    /// evaluates the skip indexes on all granules again.
+    void setQueryConditionCacheKey(QueryConditionCacheKey key) { query_condition_cache_key = std::move(key); }
+
     void cancel() noexcept { is_cancelled = true; }
 
 private:
+    void writeExclusionsToQueryConditionCache(
+        const MergeTreeDataPartInfoForReaderPtr & part_info, const MarkRanges & input_ranges, const MarkRanges & selected_ranges) const;
+
     UsefulSkipIndexes skip_indexes;
     ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template;
     bool use_for_disjunctions;
@@ -82,6 +99,8 @@ private:
     DynamicSkipIndexFilter dynamic_skip_index_filter;
     ContextPtr context;
     LoggerPtr log;
+
+    std::optional<QueryConditionCacheKey> query_condition_cache_key;
 
     std::atomic_bool is_cancelled = false;
 };

@@ -1,0 +1,33 @@
+<test>
+    <!-- Repeated text index searches with the query condition cache. Skip indexes are applied at data read time by
+         default (use_skip_indexes_on_data_read = 1), and the granules they exclude are recorded in the query
+         condition cache, so a repeated search reads only the parts that can match instead of evaluating the text
+         index on every part again (for LIKE and ILIKE: scanning the dictionary of every part). The table has 20
+         parts, and the searched token occurs only in the last one. The CI performance profile disables the query
+         condition cache, so every query sets it; the queries with the cache disabled are the reference. Merges are
+         stopped so that the part names, and with them the cache keys, stay stable. -->
+
+    <create_query>
+        CREATE TABLE text_index_qcc (id UInt64, text String, INDEX idx(text) TYPE text(tokenizer = 'splitByNonAlpha'))
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES text_index_qcc</fill_query>
+
+    <fill_query>
+        INSERT INTO text_index_qcc
+        SELECT number,
+               concat(arrayStringConcat(arrayMap(i -> concat('w', toString(cityHash64(number, i) % 1000000)), range(4)), ' '),
+                      if(number >= 9500000 AND number % 100 = 0, ' needle', ''))
+        FROM numbers(10000000)
+        SETTINGS max_insert_threads = 1, max_block_size = 500000, max_insert_block_size = 500000,
+                 min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT sum(id) FROM text_index_qcc WHERE text LIKE '%needl%' SETTINGS use_query_condition_cache = 1</query>
+    <query>SELECT sum(id) FROM text_index_qcc WHERE text LIKE '%needl%' SETTINGS use_query_condition_cache = 0</query>
+    <query>SELECT sum(id) FROM text_index_qcc WHERE text ILIKE '%NEEDL%' SETTINGS use_query_condition_cache = 1</query>
+    <query>SELECT sum(id) FROM text_index_qcc WHERE text ILIKE '%NEEDL%' SETTINGS use_query_condition_cache = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_qcc</drop_query>
+</test>
