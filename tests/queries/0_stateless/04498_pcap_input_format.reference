@@ -82,6 +82,8 @@ UDP	4	1
 11	11
 6	11
 1	11
+7	11
+8	11	110
 --- truncated capture (snaplen 34: original_length > capture_length) ---
 1	34	76	['ETHERNET_II','IP']	TCP	34
 2	34	42	['ETHERNET_II','IP']	UDP	34

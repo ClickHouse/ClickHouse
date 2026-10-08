@@ -470,8 +470,10 @@ Chunk PCAPBlockInputFormat::read()
     const int dlt = sniffer->link_type();
 
     /// A row carries the whole packet in `raw` (and most of it again in `payload`), so the
-    /// block is bounded by the captured bytes as well as by the number of rows. The row budget of
-    /// the query (`max_block_size`) caps the `PCAP`-specific one.
+    /// block is bounded by the packet bytes it stores as well as by the number of rows. The byte
+    /// budget counts the captured bytes of every packet plus, when `payload` is materialized, the
+    /// payload bytes copied into it. The row budget of the query (`max_block_size`) caps the
+    /// `PCAP`-specific one.
     size_t max_rows = format_settings.pcap.max_block_size;
     if (max_block_size_rows != 0)
         max_rows = std::min(max_rows, max_block_size_rows);
@@ -479,8 +481,9 @@ Chunk PCAPBlockInputFormat::read()
 
     size_t num_rows = 0;
     size_t bytes_read = 0;
+    size_t block_bytes = 0;
 
-    while (num_rows < max_rows && (max_bytes == 0 || bytes_read < max_bytes))
+    while (num_rows < max_rows && (max_bytes == 0 || block_bytes < max_bytes))
     {
         if (is_stopped)
             break;
@@ -514,6 +517,7 @@ Chunk PCAPBlockInputFormat::read()
         ++packet_number;
 
         bytes_read += caplen;
+        block_bytes += caplen;
 
         if (need[COL_NUMBER])
             col_number->insertValue(packet_number);
@@ -722,7 +726,10 @@ Chunk PCAPBlockInputFormat::read()
             if (need[COL_PAYLOAD_LENGTH])
                 col_payload_length->insertValue(static_cast<UInt32>(payload.size()));
             if (need[COL_PAYLOAD])
+            {
                 col_payload->insertData(payload.data(), payload.size());
+                block_bytes += payload.size();
+            }
         }
 
         if (need[COL_RAW])
@@ -869,7 +876,7 @@ The `PCAP` format produces the following columns:
 | `capture_length` | `UInt32` | Number of bytes saved in the file for this packet; equals `length(raw)` |
 | `original_length` | `UInt32` | Size of the packet on the wire; `>= capture_length` |
 | `link_type` | `LowCardinality(String)` | Link-layer type of the outermost layer, for example `ETHERNET_II` |
-| `protocols` | `Array(LowCardinality(String))` | Ordered list of protocols in the packet, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6` |
+| `protocols` | `Array(LowCardinality(String))` | Ordered list of the protocol headers dissected from the captured bytes, from the link layer inwards, for example `['ETHERNET_II', 'IP', 'TCP']`. IPv6 extension headers are listed right after `IPv6` by their IANA keywords: `HOPOPT`, `IPv6-Route`, `IPv6-Frag`, `AH`, `IPv6-Opts`, `Mobility Header`, `HIP` and `Shim6`. The list stops at the last header that could be decoded: when the transport header was cut off by the snapshot length or is not decodable, it ends with `IP` / `IPv6` (or `RAW`) even though `ip_protocol` names the transport. Use `ip_protocol` rather than `has(protocols, 'TCP')` to select packets by transport protocol |
 | `eth_src` | `Nullable(String)` | Source MAC address of the outermost Ethernet header, or `NULL` when the link layer is not Ethernet |
 | `eth_dst` | `Nullable(String)` | Destination MAC address of the outermost Ethernet header |
 | `eth_type` | `LowCardinality(String)` | Protocol carried by the outermost Ethernet frame, for example `IP`; empty when the link layer is not Ethernet. 802.1Q tags are unwrapped, so a VLAN-tagged frame reports the encapsulated protocol and not `DOT1Q`; the tag itself is exposed as `vlan_id` |
@@ -1039,7 +1046,7 @@ you need them in the key.
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `input_format_pcap_max_block_size` | The maximum number of packets (rows) in one block. | `65409` |
-| `input_format_pcap_prefer_block_bytes` | A block is finished once the captured bytes of its packets reach this amount, even if it has fewer rows than `input_format_pcap_max_block_size`. Since `raw` and `payload` hold the packet bytes, this bounds the memory of one block for captures with large packets. `0` disables the byte limit. | `16744704` |
+| `input_format_pcap_prefer_block_bytes` | A block is finished once the packet bytes it stores reach this amount, even if it has fewer rows than `input_format_pcap_max_block_size`. The count includes the captured bytes of every packet and, when the `payload` column is read, the payload bytes copied into it, so it bounds the string data of one block for captures with large packets. `0` disables the byte limit. | `16744704` |
 )DOCS_MD"});
 }
 
