@@ -84,8 +84,12 @@ public:
     const std::vector<Condition> & getConditions() const { return conditions; }
 
 private:
-    /// After this many values are checked, the filter is disabled if less than half of them were replaced.
-    static constexpr size_t MIN_VALUES_TO_EVALUATE_SELECTIVITY = 65536;
+    /// After this many values are checked, the filter is disabled if less than half of them were replaced,
+    /// or if the replaced values are too short on average for skipping their data to pay off.
+    static constexpr size_t MIN_VALUES_TO_EVALUATE_SELECTIVITY = 8192;
+    /// The minimum average number of skipped bytes per checked value to keep the filter enabled.
+    /// Checking a value costs more than copying a few bytes, so replacing short values only slows the reading down.
+    static constexpr size_t MIN_AVG_BYTES_SKIPPED_PER_VALUE = 16;
 
     bool matchImpl(const char * data, size_t size, size_t skip_condition) const;
 
@@ -99,6 +103,7 @@ private:
 
     mutable std::atomic<size_t> values_checked{0};
     mutable std::atomic<size_t> values_replaced{0};
+    mutable std::atomic<size_t> bytes_skipped{0};
     mutable std::atomic<bool> disabled{false};
 };
 

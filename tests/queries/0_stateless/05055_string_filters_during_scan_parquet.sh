@@ -140,11 +140,12 @@ GROUP BY log_comment ORDER BY log_comment;
 # dictionary entry matches `%needle%`, while most of the rows do not, and the optimization must stay on.
 # The pruning condition is an equality on the same column: it is itself one of the extracted
 # conditions, so it does not count as another reader of the column that would disable the filter.
+# The non-matching values are long enough for the filter not to be disabled for skipping too few bytes.
 FILE_PRUNE="${CLICKHOUSE_DATABASE}/t_string_filter_prune.parquet"
 
 $CLICKHOUSE_CLIENT -q "
 INSERT INTO FUNCTION file('$FILE_PRUNE', Parquet, 'id UInt32, s String')
-SELECT number, if(number % 3 = 0, 'needle ' || toString(number), 'an ordinary value')
+SELECT number, if(number % 3 = 0, 'needle ' || toString(number), 'an ordinary value which is long enough')
 FROM numbers(210000)
 SETTINGS engine_file_truncate_on_insert = 1, output_format_parquet_max_dictionary_size = 16777216;
 "

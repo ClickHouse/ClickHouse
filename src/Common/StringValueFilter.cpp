@@ -155,11 +155,15 @@ void StringValueFilter::updateStats(size_t checked, size_t replaced, size_t repl
 
     size_t total_checked = values_checked.fetch_add(checked, std::memory_order_relaxed) + checked;
     size_t total_replaced = values_replaced.fetch_add(replaced, std::memory_order_relaxed) + replaced;
+    size_t total_bytes_skipped = bytes_skipped.fetch_add(replaced_bytes, std::memory_order_relaxed) + replaced_bytes;
 
     /// If most of the values match the filter, checking them does not pay off:
     /// the query will process almost all values anyway, and we would only add
     /// the cost of an extra search per value.
-    if (total_checked >= MIN_VALUES_TO_EVALUATE_SELECTIVITY && total_replaced * 2 < total_checked)
+    /// The same is true when the replaced values are short (e.g. `l_returnflag = 'R'`):
+    /// skipping the copy of a few bytes does not compensate for the check of every value.
+    if (total_checked >= MIN_VALUES_TO_EVALUATE_SELECTIVITY
+        && (total_replaced * 2 < total_checked || total_bytes_skipped < total_checked * MIN_AVG_BYTES_SKIPPED_PER_VALUE))
         disabled.store(true, std::memory_order_relaxed);
 }
 
