@@ -1,0 +1,15 @@
+single column key
+39	71854
+39	71854
+485
+Granules: 485/39
+single column key with primary key condition
+20	17615
+20	17615
+253
+Granules: 253/19
+composite key
+2	54	10
+2	54	10
+540
+Granules: 540/63

@@ -1,116 +1,158 @@
 #include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/BitpackingBlockCodec.h>
+#include <Storages/MergeTree/PostingListBlockCodec.h>
+#include <Common/PODArray.h>
 
 #include <roaring/roaring.hh>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
-/// Normalize the requested block size to a multiple of BLOCK_SIZE.
-/// We encode/decode posting lists in fixed-size blocks, and the SIMD bit-packing
-/// implementation expects block-aligned sizes for efficient processing.
-PostingListCodecBitpackingImpl::PostingListCodecBitpackingImpl(size_t postings_list_block_size)
-    : max_rowids_in_segment((postings_list_block_size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1))
+static_assert(IPostingListEncoder::append_granularity % IPostingListBlockCodec::BLOCK_SIZE == 0,
+    "append_granularity must be a multiple of the physical block size of the segmented posting list codec");
+
+/// Returns `num_bytes` contiguous bytes read from `in` and advances it past them.
+/// Points into the buffer of `in` if the data is already there, into `buffer` otherwise.
+static const char * readContiguousBytes(ReadBuffer & in, size_t num_bytes, PaddedPODArray<char> & buffer)
+{
+    if (in.position() && static_cast<size_t>(in.buffer().end() - in.position()) >= num_bytes)
+    {
+        const char * data = in.position();
+        in.position() += num_bytes;
+        return data;
+    }
+
+    buffer.resize(num_bytes);
+    in.readStrict(buffer.data(), num_bytes);
+    return buffer.data();
+}
+
+SegmentedPostingListCodec::SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_)
+    : segment_size((segment_size_ + BLOCK_SIZE - 1) / BLOCK_SIZE * BLOCK_SIZE)
+    , block_codec(createPostingListBlockCodec(block_codec_type_))
 {
     compressed_data.reserve(BLOCK_SIZE);
-    current_segment.reserve(BLOCK_SIZE);
+    block_values.reserve(BLOCK_SIZE);
 }
 
-void PostingListCodecBitpackingImpl::insert(uint32_t row_id)
+/// Previous appends must not have left a partial block in the open segment.
+/// (see the contract in `IPostingListEncoder::append_granularity`).
+void SegmentedPostingListCodec::append(std::span<const UInt32> row_ids)
 {
-    if (row_ids_in_current_segment == 0)
+    chassert(!row_ids.empty());
+    chassert(segment_size != 0);
+    chassert(row_ids_in_current_segment % BLOCK_SIZE == 0);
+
+    total_row_ids += row_ids.size();
+
+    /// Split the input into segments of `segment_size` row ids, and each segment into blocks of BLOCK_SIZE.
+    for (size_t pos = 0; pos < row_ids.size();)
     {
-        segment_descriptors.emplace_back();
-        segment_descriptors.back().row_id_begin = row_id;
-        segment_descriptors.back().compressed_data_offset = compressed_data.size();
-        segment_block_metas.emplace_back();
+        if (row_ids_in_current_segment == 0)
+        {
+            auto & descriptor = segment_descriptors.emplace_back();
+            descriptor.row_id_begin = row_ids[pos];
+            descriptor.compressed_data_offset = compressed_data.size();
+            segment_block_metas.emplace_back();
+            prev_row_id = row_ids[pos];
+        }
 
-        prev_row_id = row_id;
-        current_segment.emplace_back(row_id - prev_row_id);
-        ++row_ids_in_current_segment;
-        ++total_row_ids;
-        return;
+        const size_t rows_in_chunk = std::min(segment_size - row_ids_in_current_segment, row_ids.size() - pos);
+
+        for (size_t offset = 0; offset < rows_in_chunk; offset += BLOCK_SIZE)
+        {
+            const size_t block_size = std::min(BLOCK_SIZE, rows_in_chunk - offset);
+            encodeBlock(row_ids.subspan(pos + offset, block_size));
+        }
+
+        pos += rows_in_chunk;
+        row_ids_in_current_segment += rows_in_chunk;
+
+        /// Seal the full segment: the next chunk (or the next call) starts a new one.
+        if (row_ids_in_current_segment == segment_size)
+            row_ids_in_current_segment = 0;
     }
-
-    current_segment.emplace_back(row_id - prev_row_id);
-    prev_row_id = row_id;
-    ++row_ids_in_current_segment;
-    ++total_row_ids;
-
-    if (current_segment.size() == BLOCK_SIZE)
-    {
-        encodeBlock(current_segment);
-        current_segment.clear();
-    }
-
-    if (row_ids_in_current_segment == max_rowids_in_segment)
-        flushCurrentSegment();
 }
 
-void PostingListCodecBitpackingImpl::insert(std::span<uint32_t> row_ids)
+SegmentedPostingListCodec::SegmentData SegmentedPostingListCodec::readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer)
 {
-    chassert(row_ids.size() == BLOCK_SIZE && row_ids_in_current_segment % BLOCK_SIZE == 0);
-
-    if (row_ids_in_current_segment == 0)
-    {
-        segment_descriptors.emplace_back();
-        segment_descriptors.back().row_id_begin = row_ids.front();
-        segment_descriptors.back().compressed_data_offset = compressed_data.size();
-        segment_block_metas.emplace_back();
-
-        prev_row_id = row_ids.front();
-    }
-    row_ids_in_current_segment += BLOCK_SIZE;
-    total_row_ids += BLOCK_SIZE;
-
-    auto last_row = row_ids.back();
-    std::adjacent_difference(row_ids.begin(), row_ids.end(), row_ids.begin());
-    row_ids[0] -= prev_row_id;
-    prev_row_id = last_row;
-
-    encodeBlock(row_ids);
-
-    if (row_ids_in_current_segment == max_rowids_in_segment)
-        flushCurrentSegment();
-}
-
-void PostingListCodecBitpackingImpl::decode(ReadBuffer & in, PostingList & postings)
-{
-    Header header;
+    SegmentData segment_data;
+    auto & header = segment_data.header;
     header.read(in);
 
+    /// The segment header is self-describing: create the block codec it was written with.
+    block_codec = createPostingListBlockCodec(header.codec_type);
     prev_row_id = header.first_row_id;
 
-    const size_t num_blocks = header.cardinality / BLOCK_SIZE;
-    const size_t tail_size = header.cardinality % BLOCK_SIZE;
+    /// The header comes from disk: bound the sizes it claims before growing any buffer to them.
+    if (header.cardinality == 0 || header.cardinality > max_cardinality)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: cardinality {} is not in the range [1, {}] allowed by the token metadata",
+            header.cardinality, max_cardinality);
+    }
 
-    current_segment.reserve(BLOCK_SIZE);
-    if (header.payload_bytes > (compressed_data.capacity() - compressed_data.size()))
-        compressed_data.reserve(compressed_data.size() + header.payload_bytes);
-    compressed_data.resize(header.payload_bytes);
+    const UInt64 max_blocks = (header.cardinality + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const UInt64 max_payload_bytes = max_blocks * block_codec->maxBlockBytes();
 
-    in.readStrict(compressed_data.data(), header.payload_bytes);
+    if (header.payload_bytes > max_payload_bytes)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: payload of {} bytes exceeds the upper bound of {} bytes for {} row ids",
+            header.payload_bytes, max_payload_bytes, header.cardinality);
+    }
 
-    std::span<const std::byte> compressed_data_span(reinterpret_cast<const std::byte*>(compressed_data.data()), compressed_data.size());
+    const char * payload_data = readContiguousBytes(in, header.payload_bytes, buffer);
+    segment_data.payload = std::span(reinterpret_cast<const std::byte *>(payload_data), header.payload_bytes);
+    return segment_data;
+}
+
+void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer)
+{
+    auto segment_data = readSegmentData(in, max_cardinality, buffer);
+
+    const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
+    const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
+
+    block_values.resize(BLOCK_SIZE);
+
     for (size_t i = 0; i < num_blocks; i++)
     {
-        decodeBlock(compressed_data_span, BLOCK_SIZE, prev_row_id, current_segment);
-        postings.addMany(current_segment.size(), current_segment.data());
+        decodeBlock(segment_data.payload, std::span(block_values.data(), BLOCK_SIZE));
+        postings.addMany(BLOCK_SIZE, block_values.data());
     }
     if (tail_size)
     {
-        decodeBlock(compressed_data_span, tail_size, prev_row_id, current_segment);
-        postings.addMany(current_segment.size(), current_segment.data());
+        decodeBlock(segment_data.payload, std::span(block_values.data(), tail_size));
+        postings.addMany(tail_size, block_values.data());
     }
 }
 
-void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
+void SegmentedPostingListCodec::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer)
+{
+    auto segment_data = readSegmentData(in, max_cardinality, buffer);
+
+    const size_t num_blocks = segment_data.header.cardinality / BLOCK_SIZE;
+    const size_t tail_size = segment_data.header.cardinality % BLOCK_SIZE;
+
+    size_t out_pos = row_ids.size();
+    row_ids.resize(out_pos + segment_data.header.cardinality);
+
+    for (size_t i = 0; i < num_blocks; i++)
+    {
+        decodeBlock(segment_data.payload, std::span(row_ids.data() + out_pos, BLOCK_SIZE));
+        out_pos += BLOCK_SIZE;
+    }
+    if (tail_size)
+        decodeBlock(segment_data.payload, std::span(row_ids.data() + out_pos, tail_size));
+}
+
+void SegmentedPostingListCodec::serializeTo(WriteBuffer & out, TokenPostingsInfo & info) const
 {
     info.offsets.reserve(segment_descriptors.size());
     info.ranges.reserve(segment_descriptors.size());
@@ -121,15 +163,15 @@ void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPosting
         info.offsets.emplace_back(out.count());
         info.ranges.emplace_back(descriptor.row_id_begin, descriptor.row_id_end);
 
+        const auto & block_metas = segment_block_metas[seg_idx].metas;
         Header header(descriptor.compressed_data_size, descriptor.cardinality, descriptor.row_id_begin);
-        header.write(out);
+
+        header.write(out, block_codec->type());
         out.write(compressed_data.data() + descriptor.compressed_data_offset, descriptor.compressed_data_size);
 
         /// Index Section: append per-block metadata after segment payload.
-        /// This allows PostingListCursor to binary-search for blocks without
-        /// decoding the entire segment. The cursor reads header + payload + Index Section
-        /// sequentially, so no offset storage is needed in the dictionary.
-        const auto & block_metas = segment_block_metas[seg_idx].metas;
+        /// This allows PostingListCursor to binary-search for blocks without decoding the entire segment.
+        /// The cursor reads header + payload + Index Section sequentially, so no offset storage is needed in the dictionary.
         writeVarUInt(block_metas.size(), out);
 
         for (const auto & meta : block_metas)
@@ -140,127 +182,180 @@ void PostingListCodecBitpackingImpl::serializeTo(WriteBuffer & out, TokenPosting
     }
 }
 
-namespace
+void SegmentedPostingListCodec::encodeBlock(std::span<const UInt32> block_row_ids)
 {
-void writeByte(uint8_t x, std::span<char> & out)
-{
-    out[0] = static_cast<char>(x);
-    out = out.subspan(1);
-}
+    chassert(block_codec);
+    chassert(!block_row_ids.empty() && block_row_ids.size() <= BLOCK_SIZE);
 
-uint8_t readByte(std::span<const std::byte> & in)
-{
-    auto v = static_cast<uint8_t>(in[0]);
-    in = in.subspan(1);
-    return v;
-}
-}
+    /// Compute the deltas into the scratch buffer.
+    /// The first element written by `adjacent_difference` is the value itself,
+    /// so adjust it to the delta from the last row id of the previous block.
+    block_values.resize(block_row_ids.size());
+    std::adjacent_difference(block_row_ids.begin(), block_row_ids.end(), block_values.begin());
+    block_values[0] = block_row_ids.front() - prev_row_id;
+    prev_row_id = block_row_ids.back();
 
-void PostingListCodecBitpackingImpl::encodeBlock(std::span<uint32_t> segment)
-{
     auto & segment_descriptor = segment_descriptors.back();
-    segment_descriptor.cardinality += segment.size();
-    segment_descriptor.row_id_end = prev_row_id;
+    segment_descriptor.cardinality += block_row_ids.size();
+    segment_descriptor.row_id_end = block_row_ids.back();
 
     /// Record packed block metadata for V2 Index Section.
-    /// relative_offset is relative to the segment's compressed_data_offset.
-    auto & block_metas = segment_block_metas.back().metas;
-    block_metas.push_back(
-    {
-        prev_row_id,
-        compressed_data.size() - segment_descriptor.compressed_data_offset
-    });
+    auto & block_meta = segment_block_metas.back().metas.emplace_back();
+    block_meta.last_row_id = block_row_ids.back();
+    block_meta.relative_offset = compressed_data.size() - segment_descriptor.compressed_data_offset;
 
-    auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(segment);
-    size_t remaining_memory = compressed_data.capacity() - compressed_data.size();
-    size_t needed_bytes_with_header = needed_bytes_without_header + 1;
-    if (remaining_memory < needed_bytes_with_header)
-    {
-        size_t min_need = needed_bytes_with_header - remaining_memory;
-        compressed_data.reserve(compressed_data.size() + 2 * min_need);
-    }
-    /// Block Layout: [1byte(max_bits)][payload]
-    size_t offset = compressed_data.size();
-    compressed_data.resize(compressed_data.size() + needed_bytes_with_header);
-    std::span<char> compressed_data_span(compressed_data.data() + offset, needed_bytes_with_header);
-    writeByte(static_cast<uint8_t>(max_bits), compressed_data_span);
-    auto used_memory = BitpackingBlockCodec::encode(segment, max_bits, compressed_data_span);
-
-    if (used_memory != needed_bytes_without_header || !compressed_data_span.empty())
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-        "Bitpacking encode size mismatch: expected {} bytes payload with {} bits encoding for {} integers, "
-        "but actually used {} bytes with {} bytes remaining in buffer",
-        needed_bytes_without_header,
-        max_bits,
-        segment.size(),
-        used_memory,
-        compressed_data_span.size());
-    }
+    block_codec->encodeBlock(block_values, compressed_data);
 
     segment_descriptor.compressed_data_size = compressed_data.size() - segment_descriptor.compressed_data_offset;
 }
 
-void PostingListCodecBitpackingImpl::decodeBlock(
-        std::span<const std::byte> & in, size_t count, uint32_t & prev_row_id, std::vector<uint32_t> & current_segment)
+void SegmentedPostingListCodec::decodeBlock(std::span<const std::byte> & in, std::span<uint32_t> out)
 {
-    chassert(count <= BLOCK_SIZE);
-    if (in.empty())
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
+    chassert(!out.empty() && out.size() <= BLOCK_SIZE);
+    chassert(block_codec);
 
-    uint8_t bits = readByte(in);
-    if (bits > 32)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
-    current_segment.resize(count);
-
-    size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
-    if (in.size() < required_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
-
-    /// Decode postings to buffer named temp.
-    std::span<uint32_t> current_span(current_segment.data(), current_segment.size());
-    size_t consumed_size = BitpackingBlockCodec::decode(in, count, bits, current_span);
-    if (required_size != consumed_size)
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-        "Bitpacking decode size mismatch: expected to consume {} bytes for {} integers with {} bits, but actually consumed {} bytes",
-        required_size,
-        count,
-        bits,
-        consumed_size);
+    /// `in` is the remaining segment payload: a full block self-delimits, and the final tail block sees exactly
+    /// its own bytes remaining (the Index Section is not part of this buffer). We only need `in` advanced past it.
+    block_codec->decodeBlock(in, out.size(), out);
 
     /// Restore the original array from the decompressed delta values.
-    std::inclusive_scan(current_segment.begin(), current_segment.end(), current_segment.begin(), std::plus<uint32_t>{}, prev_row_id);
-    prev_row_id = current_segment.empty() ? prev_row_id : current_segment.back();
+    std::inclusive_scan(out.begin(), out.end(), out.begin(), std::plus<uint32_t>{}, prev_row_id);
+    prev_row_id = out.back();
 }
 
-void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings) const
+void SegmentedPostingListEncoder::finalize(WriteBuffer & out, TokenPostingsInfo & info)
 {
-    PostingListCodecBitpackingImpl impl;
-    impl.decode(in, postings);
+    using enum PostingsSerialization::Flags;
+
+    impl.serializeTo(out, info);
+
+    info.header |= IsCompressed;
+    info.header |= HasBlockIndex;
+
+    if (info.offsets.size() == 1)
+        info.header |= SingleBlock;
 }
 
-void PostingListCodecBitpacking::encode(
-        const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
+void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
-    PostingListCodecBitpackingImpl impl(max_rowids_in_segment);
-    std::vector<uint32_t> rowids;
-    rowids.resize(postings.cardinality());
-    postings.toUint32Array(rowids.data());
+    SegmentedPostingListCodec impl;
+    impl.decode(in, max_cardinality, postings, buffer);
+}
 
-    std::span<uint32_t> rowids_view(rowids.data(), rowids.size());
-    while (rowids_view.size() >= BLOCK_SIZE)
+void SegmentedPostingListCodecBase::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
+{
+    SegmentedPostingListCodec impl;
+    impl.decode(in, max_cardinality, row_ids, buffer);
+}
+
+std::unique_ptr<IPostingListEncoder> SegmentedPostingListCodecBase::createEncoder(size_t segment_size) const
+{
+    return std::make_unique<SegmentedPostingListEncoder>(getType(), segment_size);
+}
+
+void PostingListEncoderNone::append(std::span<const UInt32> row_ids)
+{
+    chassert(!row_ids.empty());
+    total_row_ids += row_ids.size();
+
+    while (!row_ids.empty())
     {
-        auto front = rowids_view.first(BLOCK_SIZE);
-        impl.insert(front);
-        rowids_view = rowids_view.subspan(BLOCK_SIZE);
+        auto chunk = row_ids.first(std::min(segment_size - rows_in_current_segment, row_ids.size()));
+        row_ids = row_ids.subspan(chunk.size());
+
+        current_segment.addMany(chunk.size(), chunk.data());
+        rows_in_current_segment += chunk.size();
+
+        if (rows_in_current_segment == segment_size)
+            finishSegment();
+    }
+}
+
+void PostingListEncoderNone::finishSegment()
+{
+    /// Reduces the in-memory and serialized size of the bitmap by using run containers.
+    current_segment.runOptimize();
+    segments.push_back(std::move(current_segment));
+    current_segment = PostingList{};
+    rows_in_current_segment = 0;
+}
+
+void PostingListEncoderNone::finalize(WriteBuffer & out, TokenPostingsInfo & info)
+{
+    using enum PostingsSerialization::Flags;
+
+    if (rows_in_current_segment != 0)
+        finishSegment();
+
+    /// Local buffer freed after this call: a per-accumulator member would keep one buffer
+    /// alive per token until the whole granule is serialized, inflating peak memory.
+    std::vector<char> serialize_buffer;
+
+    for (const auto & segment : segments)
+    {
+        info.offsets.emplace_back(out.count());
+        info.ranges.emplace_back(segment.minimum(), segment.maximum());
+
+        size_t num_bytes = roaring::api::roaring_bitmap_portable_size_in_bytes(&segment.roaring);
+        writeVarUInt(num_bytes, out);
+
+        serialize_buffer.resize(num_bytes);
+        roaring::api::roaring_bitmap_portable_serialize(&segment.roaring, serialize_buffer.data());
+        out.write(serialize_buffer.data(), num_bytes);
     }
 
-    if (!rowids_view.empty())
-    {
-        for (auto rowid: rowids_view)
-            impl.insert(rowid);
-    }
-    impl.encode(out, info);
+    if (info.offsets.size() == 1)
+        info.header |= SingleBlock;
 }
+
+std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder(size_t segment_size) const
+{
+    return std::make_unique<PostingListEncoderNone>(segment_size);
+}
+
+/// Upper bound of the portable serialization of a Roaring bitmap with at most `max_cardinality` values.
+/// Every container takes at most 2 bytes per value: arrays hold up to 4096 values of 2 bytes, bitsets take 8192 bytes
+/// for more values, and `runOptimize` turns them into runs only when the runs are smaller (see `finishSegment`).
+/// The header takes 8 bytes plus at most 9 bytes per container, and every container holds at least one value.
+static UInt64 getMaxPortableBitmapBytes(UInt64 max_cardinality)
+{
+    return 8 + 11 * max_cardinality;
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const
+{
+    size_t num_bytes = 0;
+    readVarUInt(num_bytes, in);
+
+    /// The size prefix comes from disk: bound it before growing any buffer to it.
+    const UInt64 max_bytes = getMaxPortableBitmapBytes(max_cardinality);
+    if (num_bytes > max_bytes)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: bitmap of {} bytes exceeds the upper bound of {} bytes for {} row ids",
+            num_bytes, max_bytes, max_cardinality);
+    }
+
+    postings = PostingList::readSafe(readContiguousBytes(in, num_bytes, buffer), num_bytes);
+
+    /// The bitmap is bounded by its size prefix; its row ids are bounded by the token metadata.
+    if (postings.cardinality() > max_cardinality)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: cardinality {} exceeds the upper bound {} allowed by the token metadata",
+            postings.cardinality(), max_cardinality);
+    }
+}
+
+void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const
+{
+    PostingList postings;
+    decode(in, max_cardinality, postings, buffer);
+
+    size_t old_size = row_ids.size();
+    row_ids.resize(old_size + postings.cardinality());
+    postings.toUint32Array(row_ids.data() + old_size);
+}
+
 }
 

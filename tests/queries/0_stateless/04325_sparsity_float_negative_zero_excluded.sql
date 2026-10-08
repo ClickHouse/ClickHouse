@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: Not supported
-
 SET optimize_trivial_count_query = 1;
 
 DROP TABLE IF EXISTS t_sparse_neg_zero;

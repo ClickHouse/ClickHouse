@@ -10,6 +10,7 @@
 #include <Interpreters/ProcessList.h>
 #include <fmt/format.h>
 #include <Common/Base58.h>
+#include <Common/CurrentThread.h>
 
 #include <functional>
 
@@ -300,8 +301,8 @@ class FunctionBaseXXConversion final : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    FunctionBaseXXConversion(QueryStatusPtr query_status_, size_t max_input_size_)
-        : query_status(std::move(query_status_)), max_input_size(max_input_size_) {}
+    explicit FunctionBaseXXConversion(size_t max_input_size_)
+        : max_input_size(max_input_size_) {}
 
     static FunctionPtr create(ContextPtr context)
     {
@@ -310,7 +311,7 @@ public:
         size_t max_input_size = Func::default_max_input_size;
         if (max_input_size != 0)
             max_input_size = context->getSettingsRef()[Setting::function_base58_max_input_size];
-        return std::make_shared<FunctionBaseXXConversion>(context->getProcessListElementSafe(), max_input_size);
+        return std::make_shared<FunctionBaseXXConversion>(max_input_size);
     }
     String getName() const override { return Func::name; }
     bool isVariadic() const override { return has_size_optimization; }
@@ -354,9 +355,15 @@ public:
         /// `checkTimeLimit` throws for `KILL QUERY` and for the `throw` overflow mode; for the `break` overflow
         /// mode it returns `false` instead. There is no meaningful partial result for a single scalar value, so
         /// a `break` request is turned into a hard stop here as well.
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
         std::function<void()> check_cancellation;
         if (query_status)
-            check_cancellation = [this]
+            check_cancellation = [&query_status]
             {
                 if (!query_status->checkTimeLimit())
                     throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: elapsed time limit reached in function {}", name);
@@ -416,7 +423,6 @@ public:
     }
 
 private:
-    QueryStatusPtr query_status;
     size_t max_input_size;
 };
 

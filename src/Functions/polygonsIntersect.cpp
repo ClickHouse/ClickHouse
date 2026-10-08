@@ -121,12 +121,12 @@ REGISTER_FUNCTION(polygonsIntersect)
         .syntax = "polygonsIntersectCartesian(polygon1, polygon2)",
         .arguments
         = {{"polygon1",
-            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
-            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+            "A value of type [`Polygon`](/reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/reference/data-types/geo#multipolygon)."},
            {"polygon2",
-            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
-            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
-        .returned_value = {"Returns true (1) if the two polygons intersect. [`Bool`](/sql-reference/data-types/boolean)."},
+            "A value of type [`Polygon`](/reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/reference/data-types/geo#multipolygon)."}},
+        .returned_value = {"Returns true (1) if the two polygons intersect. [`Bool`](/reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
@@ -134,9 +134,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-┌─polygonsIntersectCartesian()─┐
-│                            1 │
-└──────────────────────────────┘
+┌─polygonsIntersectCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])─┐
+│                                                                                                                                1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});
@@ -148,13 +148,13 @@ REGISTER_FUNCTION(polygonsIntersect)
         .syntax = "polygonsIntersectSpherical(polygon1, polygon2)",
         .arguments
         = {{"polygon1",
-            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
-            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."},
+            "A value of type [`Polygon`](/reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/reference/data-types/geo#multipolygon)."},
            {"polygon2",
-            "A value of type [`Polygon`](/sql-reference/data-types/geo#polygon) or "
-            "[`MultiPolygon`](/sql-reference/data-types/geo#multipolygon)."}},
+            "A value of type [`Polygon`](/reference/data-types/geo#polygon) or "
+            "[`MultiPolygon`](/reference/data-types/geo#multipolygon)."}},
         .returned_value = {"Returns true (1) if the two polygons intersect (share any common area or boundary). "
-                           "[`Bool`](/sql-reference/data-types/boolean)."},
+                           "[`Bool`](/reference/data-types/boolean)."},
         .examples
         = {{"Usage example",
             R"(
@@ -162,9 +162,9 @@ REGISTER_FUNCTION(polygonsIntersect)
 
         )",
             R"(
-┌─polygonsIntersectSpherical()─┐
-│                            1 │
-└──────────────────────────────┘
+┌─polygonsIntersectSpherical([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])─┐
+│                                                                                                                                1 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"}},
         .introduced_in = {25, 7},
         .category = FunctionDocumentation::Category::Geo});

@@ -231,7 +231,8 @@ public:
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+    /// Not injective: parsing is case-insensitive, so '61F0C404-...' and '61f0c404-...' give the same result.
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool isVariadic() const override { return true; }
 
@@ -629,7 +630,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
         )",
         R"(
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 15:30:29.048 │
+│                                          2024-04-22 12:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
         )"
     },

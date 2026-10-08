@@ -89,15 +89,33 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
+    /// No local-only column classification is needed here: an `XDBC` storage is an `IStorageURLBase`, which
+    /// rejects `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns at `CREATE TABLE` time, so every column of the
+    /// storage is an ordinary remote column and every predicate over it is pushdown-eligible. The columns are
+    /// taken from the read's `columns_description`, i.e. from the snapshot the rest of the query plan uses.
     String query = transformQueryForExternalDatabase(
         query_info,
         column_names,
         columns_description.getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
+        /// The bridge protocol only reports the identifier quoting style, not the literal
+        /// escaping dialect of the remote database, so string literals keep the historical
+        /// `Regular` (backslash-escaping) serialization here. That serialization is only what
+        /// MySQL reads back: a standard-conforming database behind the bridge (PostgreSQL,
+        /// SQLite) reads the backslash literally and ends the string at the quote, so it would
+        /// compare against different bytes and drop the matching rows before ClickHouse can
+        /// filter them itself. Until the bridge exposes the escaping dialect, such a literal is
+        /// therefore not pushed down at all (`require_dialect_neutral_literals`); a predicate
+        /// over it is evaluated by ClickHouse, and rejected under `external_table_strict_query`.
         LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
-        local_context);
+        getStorageID(),
+        local_context,
+        /*limit=*/ {},
+        /*unsupported_functions=*/ {},
+        /*local_only_columns=*/ {},
+        /*require_dialect_neutral_literals=*/ true);
     LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;
@@ -192,10 +210,10 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-:::note
+<Note>
 clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk.
 ClickHouse recommend using built-in table functions in ClickHouse which provide a better alternative for ad-hoc querying scenarios (Postgres, MySQL, MongoDB, etc).
-:::
+</Note>
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
@@ -313,12 +331,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(datasource, external_database, external_table)
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](/reference/statements/create/table) query.
 
 The table structure can differ from the source table structure:
 
 - Column names should be the same as in the source table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the source table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#CAST) values to the ClickHouse data types.
+- Column types may differ from those in the source table. ClickHouse tries to [cast](/reference/functions/regular-functions/type-conversion-functions#CAST) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](/reference/settings/session-settings/external-table#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
@@ -420,7 +438,7 @@ SELECT * FROM odbc_t
 
 ## See also {#see-also}
 
-- [ODBC dictionaries](/sql-reference/statements/create/dictionary/sources/odbc)
+- [ODBC dictionaries](/reference/statements/create/dictionary/sources/odbc)
 - [ODBC table function](/reference/functions/table-functions/odbc)
 )DOCS_MD",
                 .syntax = "ENGINE = ODBC('connection_settings', 'external_database', 'external_table')",

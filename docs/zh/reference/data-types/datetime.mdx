@@ -33,19 +33,19 @@ DateTime([timezone])
   ## 使用说明
 </div>
 
-时间点会保存为 [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time)，与时区或夏令时无关。时区会影响 `DateTime` 类型的值以文本格式显示的方式，以及以字符串形式指定的值 (`'2020-01-01 05:00:01'`) 的解析方式。
+时间点会保存为 [Unix 时间戳](https://en.wikipedia.org/wiki/Unix_time)，与时区或夏令时无关。时区会影响 `DateTime` 类型的值以文本格式显示的方式，以及以字符串形式指定的值 (`'2020-01-01 05:00:01'`) 的解析方式。
 
-表中存储的是与时区无关的 Unix timestamp，而时区用于在数据导入/导出期间将其转换为文本格式或从文本格式转换回来，或者用于对这些值执行日历计算 (例如 `toDate`、`toHour` 等函数) 。时区不会存储在表的行中 (或结果集中) ，而是存储在列元数据中。
+表中存储的是与时区无关的 Unix 时间戳，而时区用于在数据导入/导出期间将其转换为文本格式或从文本格式转换回来，或者用于对这些值执行日历计算 (例如 `toDate`、`toHour` 等函数) 。时区不会存储在表的行中 (或结果集中) ，而是存储在列元数据中。
 
 支持的时区列表可在 [IANA Time Zone Database](https://www.iana.org/time-zones) 中找到，也可以通过 `SELECT * FROM system.time_zones` 查询。[该列表](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 在 Wikipedia 上也可以查看。
 
-创建表时，您可以为 `DateTime` 类型的列显式设置时区。例如：`DateTime('UTC')`。如果未设置时区，ClickHouse 会使用 ClickHouse server 启动时服务器设置中的 [timezone](/zh/reference/settings/server-settings/settings#timezone) 参数值，或者使用操作系统设置中的值。
+创建表时，您可以为 `DateTime` 类型的列显式设置时区。例如：`DateTime('UTC')`。如果未设置时区，ClickHouse 会使用 ClickHouse server 启动时服务器设置中的 [timezone](/zh/reference/settings/server-settings/settings/other#timezone) 参数值，或者使用操作系统设置中的值。
 
 如果在初始化数据类型时未显式设置时区，[clickhouse-client](/zh/concepts/features/interfaces/client) 默认会使用服务器时区。要使用客户端时区，请在运行 `clickhouse-client` 时添加 `--use_client_time_zone` 参数。
 
-ClickHouse 会根据 [date&#95;time&#95;output&#95;format](/zh/reference/settings/formats#date_time_output_format) 设置的值输出结果。默认的文本格式为 `YYYY-MM-DD hh:mm:ss`。此外，您还可以使用 [formatDateTime](/zh/reference/functions/regular-functions/date-time-functions#formatDateTime) 函数更改输出格式。
+ClickHouse 会根据 [date&#95;time&#95;output&#95;format](/zh/reference/settings/formats/date-time#date_time_output_format) 设置的值输出结果。默认的文本格式为 `YYYY-MM-DD hh:mm:ss`。此外，您还可以使用 [formatDateTime](/zh/reference/functions/regular-functions/date-time-functions#formatDateTime) 函数更改输出格式。
 
-向 ClickHouse 插入数据时，您可以根据 [date&#95;time&#95;input&#95;format](/zh/reference/settings/formats#date_time_input_format) 设置的值，使用不同格式的日期时间字符串。
+向 ClickHouse 插入数据时，您可以根据 [date&#95;time&#95;input&#95;format](/zh/reference/settings/formats/date-time#date_time_input_format) 设置的值，使用不同格式的日期时间字符串。
 
 <div id="examples">
   ## 示例
@@ -63,9 +63,9 @@ ENGINE = TinyLog;
 ```
 
 ```sql
--- 解析 DateTime
--- - 从字符串，
--- - 从整数（解释为自 1970-01-01 起的秒数）。
+-- Parse DateTime
+-- - from a string,
+-- - from a number interpreted as the number of seconds since 1970-01-01 (a fractional part is truncated to whole seconds).
 INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
 
 SELECT * FROM dt;
@@ -78,7 +78,7 @@ SELECT * FROM dt;
 └─────────────────────┴──────────┘
 ```
 
-* 当以整数形式插入 datetime 时，它会被视为 Unix 时间戳 (UTC) 。`1546300800` 表示 UTC 时间 `'2019-01-01 00:00:00'`。不过，由于 `timestamp` 列指定了 `Asia/Istanbul` (UTC+3) 时区，因此在以字符串形式输出时，该值会显示为 `'2019-01-01 03:00:00'`
+* 当以数值形式插入 datetime 时，它会被视为以秒为单位的 Unix 时间戳 (UTC)。`1546300800` 表示 UTC 时间 `'2019-01-01 00:00:00'`。不过，由于 `timestamp` 列指定了 `Asia/Istanbul` (UTC+3) 时区，因此在以字符串形式输出时，该值会显示为 `'2019-01-01 03:00:00'`。也接受带小数部分或指数部分的数值，并将其截断为整秒，这与 `CAST`、`toDateTime` 和 `Values` 格式的行为一致。 (在 26.8 版本之前，`JSON` 和 `Values`/`Quoted` 输入路径中的此类小数或指数数值 (后者涵盖所有使用 `Quoted` 转义规则解析字段的格式：`Values`、`MySQLDump`，以及配置了 `Quoted` 字段转义的 `Template`/`CustomSeparated`/`Regexp`) 不被流式解析器接受；请设置 `input_format_read_datetime_number_as_raw_value = 1` 以恢复该行为。在 `Values` 格式本身中，此类字面量仍可通过 SQL 表达式回退机制生效——并且在兼容模式下仍然有效——该机制会将其读取为秒数。在 `JSONExtract` 和 `JSON` 数据类型中，小数值会通过 `Float64` 解析，因此接近整秒边界的值可能会舍入到相邻的秒，这与会精确截断原始文本的行输入格式不同。制表符分隔、CSV 和其他转义文本格式不受此设置控制。)
 * 当以字符串形式插入 datetime 值时，它会被视为采用列时区。`'2019-01-01 00:00:00'` 会被视为 `Asia/Istanbul` 时区的时间，并保存为 `1546290000`。
 
 **2.** 按 `DateTime` 值过滤
@@ -157,7 +157,7 @@ FROM dt
 
 ClickHouse 的带时区 DateTime 类型在夏令时 (DST) 切换期间可能会出现异常行为，尤其是在以下情况下：
 
-* [`date_time_output_format`](/zh/reference/settings/formats#date_time_output_format) 设置为 `simple`。
+* [`date_time_output_format`](/zh/reference/settings/formats/date-time#date_time_output_format) 设置为 `simple`。
 * 时钟向后拨 (“秋季回拨”) ，导致一小时重叠。
 * 时钟向前拨 (“春季前拨”) ，导致一小时空缺。
 
@@ -201,10 +201,10 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 * [类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)
 * [用于处理日期和时间的函数](/zh/reference/functions/regular-functions/date-time-functions)
 * [用于处理数组的函数](/zh/reference/functions/regular-functions/array-functions)
-* [`date_time_input_format` 设置](/zh/reference/settings/formats#date_time_input_format)
-* [`date_time_output_format` 设置](/zh/reference/settings/formats#date_time_output_format)
-* [`timezone` 服务器配置参数](/zh/reference/settings/server-settings/settings#timezone)
-* [`session_timezone` 设置](/zh/reference/settings/session-settings#session_timezone)
+* [`date_time_input_format` 设置](/zh/reference/settings/formats/date-time#date_time_input_format)
+* [`date_time_output_format` 设置](/zh/reference/settings/formats/date-time#date_time_output_format)
+* [`timezone` 服务器配置参数](/zh/reference/settings/server-settings/settings/other#timezone)
+* [`session_timezone` 设置](/zh/reference/settings/session-settings/other#session_timezone)
 * [用于处理日期和时间的运算符](/zh/reference/operators/index#operators-for-working-with-dates-and-times)
 * [`Date` 数据类型](/zh/reference/data-types/date)
 

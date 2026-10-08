@@ -3,6 +3,8 @@
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_push_limit_by_into_sort = 1;
 SET max_threads = 12;
+-- This test inspects the pipeline shape of the LIMIT BY into sort optimization, so pin the unrelated virtual row optimization off.
+SET read_in_order_use_virtual_row = 0;
 -- `LIMIT BY` keys are not a prefix of the sort keys, so the optimization is not applied.
 -- The pipeline keeps only the final `LimitByTransform` above the sort.
 EXPLAIN PIPELINE
@@ -327,8 +329,9 @@ ExpressionTransform
                                             ExpressionTransform × 2
                                               (ReadFromMergeTree)
                                               MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 2 0 → 1
--- With `full_sorting_merge`, the optimization applies to the final `ORDER BY` sort above
--- the `JOIN`, not to the input sorts used by the join algorithm.
+-- With `full_sorting_merge`, the join emits its result in join-key order, so the final `ORDER BY k, v`
+-- above it only finishes the sort by `v` within each `k` (a `FinishSorting`): there is no full sort to
+-- push the `LIMIT BY` into, and neither the input sorts used by the join algorithm are touched.
 EXPLAIN PIPELINE
 SELECT a.k AS k, a.v AS v
 FROM test_join_a a JOIN test_join_b b ON a.k = b.k
@@ -341,35 +344,33 @@ ExpressionTransform
     (Expression)
     ExpressionTransform
       (Sorting)
-      MergingSortedTransform 12 → 1
-        LimitBySortedStreamTransform × 12
-          MergeSortingTransform × 12
-            LimitsCheckingTransform × 12
-              PartialSortingTransform × 12
-                (Expression)
-                ExpressionTransform × 12
-                  (Expression)
-                  ExpressionTransform × 12
-                    (Join)
-                    MergeJoinTransform 2 → 1
-                      (Sorting)
-                      MergingSortedTransform 2 → 1
-                        BufferChunks × 2
-                          (Expression)
-                          ExpressionTransform × 2
-                            (Expression)
-                            ExpressionTransform × 2
-                              (ReadFromMergeTree)
-                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
-                      (Sorting)
-                      MergingSortedTransform 2 → 1
-                        BufferChunks × 2
-                          (Expression)
-                          ExpressionTransform × 2
-                            (Expression)
-                            ExpressionTransform × 2
-                              (ReadFromMergeTree)
-                              MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+      FinishSortingTransform
+        PartialSortingTransform
+          MergingSortedTransform 12 → 1
+            (Expression)
+            ExpressionTransform × 12
+              (Expression)
+              ExpressionTransform × 12
+                (Join)
+                MergeJoinTransform 2 → 1
+                  (Sorting)
+                  MergingSortedTransform 2 → 1
+                    BufferChunks × 2
+                      (Expression)
+                      ExpressionTransform × 2
+                        (Expression)
+                        ExpressionTransform × 2
+                          (ReadFromMergeTree)
+                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
+                  (Sorting)
+                  MergingSortedTransform 2 → 1
+                    BufferChunks × 2
+                      (Expression)
+                      ExpressionTransform × 2
+                        (Expression)
+                        ExpressionTransform × 2
+                          (ReadFromMergeTree)
+                          MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 2 0 → 1
 DROP TABLE test_join_a;
 DROP TABLE test_join_b;
 -- The optimization is not applied when a `WindowStep` separates `LimitByStep` from

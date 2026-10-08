@@ -3,6 +3,7 @@
 #include <Backups/BackupIO_Disk.h>
 #include <Backups/BackupIO_File.h>
 #include <Backups/BackupImpl.h>
+#include <Backups/BackupSourceAccess.h>
 #include <Core/Settings.h>
 #include <Disks/IDisk.h>
 #include <IO/Archives/ArchiveUtils.h>
@@ -235,8 +236,26 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         return std::make_unique<BackupImpl>(params, archive_params, writer);
     };
 
-    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity);
-    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity);
+    /// `FILE` has no path-filter semantics, so the empty URI demands the whole-source grant. Path
+    /// containment is the operator's `backups.allowed_path`, not a grant.
+    auto file_source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode open_mode)
+        -> std::optional<BackupFactory::SourceAccessTarget>
+    {
+        return BackupFactory::SourceAccessTarget{
+            AccessTypeObjects::Source::FILE, "", backupSourceAccessFlagsForWriterUnlock(open_mode)};
+    };
+
+    /// A `Disk(...)` locator names an operator-allowlisted backup disk, which is a capability of its
+    /// own: the disk may be backed by local or object storage, and its name is not a URI.
+    auto disk_source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode open_mode)
+        -> std::optional<BackupFactory::SourceAccessTarget>
+    {
+        return BackupFactory::SourceAccessTarget{
+            AccessTypeObjects::Source::DISK, "", backupSourceAccessFlagsForWriterUnlock(open_mode)};
+    };
+
+    factory.registerBackupEngine("File", creator_fn, getLocalDestinationIdentity, file_source_access_fn);
+    factory.registerBackupEngine("Disk", creator_fn, getLocalDestinationIdentity, disk_source_access_fn);
 }
 
 }

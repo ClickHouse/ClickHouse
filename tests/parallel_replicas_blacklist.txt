@@ -12,11 +12,6 @@
     Cannot find column in source stream
 01358_mutation_delete_null_rows
 
-    Storage Join/Set
-    https://github.com/ClickHouse/ClickHouse/issues/74362
-    Unsupported JOIN keys of type keys128 in StorageJoin: While executing Join. (UNSUPPORTED_JOIN_KEYS) (query: SELECT id FROM t ANY LEFT JOIN joint ON t.id = joint.id;)
-01594_storage_join_uuid
-
     GLOBAL IN engine set not supported (Method read is not supported by storage Set. (NOT_IMPLEMENTED) (version 25.1.1.1927 (official build)) (from [::1]:42612) (comment: 01231_operator_null_in.sql) (in query: SELECT count() == 1 FROM null_in WHERE i global in test_set)
 01231_operator_null_in
 

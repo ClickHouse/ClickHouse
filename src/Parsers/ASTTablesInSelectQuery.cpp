@@ -60,6 +60,7 @@ void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(strictness);
     hash_state.update(kind);
     hash_state.update(is_natural);
+    hash_state.update(lateral);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -196,7 +197,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
     switch (locality)
     {
         case JoinLocality::Unspecified:
+            break;
         case JoinLocality::Local:
+            ostr << "LOCAL ";
             break;
         case JoinLocality::Global:
             ostr << "GLOBAL ";
@@ -257,6 +260,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
             ostr << "PASTE JOIN";
             break;
     }
+
+    if (lateral)
+        ostr << " LATERAL";
 }
 
 
@@ -374,6 +380,8 @@ void ASTTableJoin::writeJSON(WriteBuffer & out) const
     w.writeString("kind", toString(kind));
     if (is_natural)
         w.writeBool("is_natural", true);
+    if (lateral)
+        w.writeBool("lateral", true);
     w.writeChild("using_expression_list", using_expression_list);
     w.writeChild("on_expression", on_expression);
 }
@@ -463,6 +471,11 @@ void ASTTablesInSelectQueryElement::readJSON(const Poco::JSON::Object & json)
     if (table_join && !table_expression)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTTablesInSelectQueryElement has 'table_join' without 'table_expression' during AST JSON deserialization");
+    /// The parser treats `LATERAL` as a keyword only before a parenthesized subquery, so `JOIN LATERAL` with
+    /// a table or a table function would not round-trip through the formatter.
+    if (table_join && table_join->as<ASTTableJoin &>().lateral && !table_expression->as<ASTTableExpression &>().subquery)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LATERAL is only supported with a subquery during AST JSON deserialization");
 }
 
 void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
@@ -483,7 +496,7 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
     /// `table_function` is parser-owned as an `ASTFunction`; `formatImpl` downcasts it with
     /// `table_function->as<ASTFunction>()->preferSubqueryToFunctionFormatting()`, so a wrong
     /// node type from malformed `clickhouse_json` must be rejected here.
-    child = r.readChildOfType<ASTFunction>("table_function");
+    child = r.readScreenedChildOfType<ASTFunction>("table_function");
     if (child)
     {
         table_function = child;
@@ -570,6 +583,7 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
 
     kind = parseJoinKind(r.getString("kind"));
     is_natural = r.getBool("is_natural");
+    lateral = r.getBool("lateral");
 
     /// `using_expression_list` is parser-produced as an `ASTExpressionList`; `TranslateQualifiedNamesVisitor`
     /// and `QueryTreeBuilder::buildExpressionList` downcast it, so reject any other node type here.
@@ -622,6 +636,15 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
     if (is_natural && (kind == JoinKind::Cross || kind == JoinKind::Paste))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "NATURAL JOIN cannot be used with CROSS or PASTE join during AST JSON deserialization");
+    /// `LATERAL` is rejected by the parser for `CROSS` and comma joins.
+    if (lateral && (kind == JoinKind::Cross || kind == JoinKind::Comma))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LATERAL is not supported with CROSS and comma joins during AST JSON deserialization");
+    /// The parser requires `ON` or `USING` for a non-`NATURAL`, non-`PASTE` `JOIN LATERAL` (`ON true` is mandatory),
+    /// so a predicate-less one would be formatted as SQL that does not parse back.
+    if (lateral && !has_predicate && !is_natural && kind != JoinKind::Paste)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LATERAL join requires an 'on_expression' or 'using_expression_list' during AST JSON deserialization");
 }
 
 void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)

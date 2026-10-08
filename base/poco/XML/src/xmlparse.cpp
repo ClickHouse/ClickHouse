@@ -1600,6 +1600,24 @@ moveEntityList(OPEN_INTERNAL_ENTITY **dst, OPEN_INTERNAL_ENTITY **src) {
   }
 }
 
+#if defined(EXPAT_POCO)
+/* Poco extension, not present in upstream expat. This vendored copy is compiled as C++ and its
+   handlers (Poco's DOM/SAX builders) may throw: a C++ exception unwinding out of XML_Parse skips
+   the afterHandler() calls, leaving m_handlerCallDepth permanently positive. Every subsequent
+   XML_ParserFree / XML_ParserReset / XML_Parse then silently refuses to run (they see
+   isCalledFromInsideHandler() == true forever), so the whole parser - DTD, pools, hash tables -
+   leaks. Upstream C expat cannot hit this: longjmp-free C handlers always return.
+
+   Poco::XML::ParserEngine calls this after catching an exception from a parse, when no handler
+   frame of this parser can still be on the stack, to rebalance the counter so the parser can be
+   freed. */
+void XMLCALL
+XML_ResetHandlerCallDepth(XML_Parser parser) {
+  if (parser != NULL)
+    parser->m_handlerCallDepth = 0;
+}
+#endif /* defined(EXPAT_POCO) */
+
 XML_Bool XMLCALL
 XML_ParserReset(XML_Parser parser, const XML_Char *encodingName) {
   TAG *tStk;

@@ -547,7 +547,7 @@ private:
 REGISTER_FUNCTION(MultiIf)
 {
     FunctionDocumentation::Description description = R"(
-Allows writing the [`CASE`](/sql-reference/operators#conditional-expression) operator more compactly in the query.
+Allows writing the [`CASE`](/reference/operators#conditional-expression) operator more compactly in the query.
 Evaluates each condition in order. For the first condition that is true (non-zero and not `NULL`), returns the corresponding branch value.
 If none of the conditions are true, returns the `else` value.
 

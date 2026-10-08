@@ -42,7 +42,6 @@ public:
             if (!disk.getDisk()->existsDirectory(target_location))
             {
                 LOG_INFO(log, "Moving directory from '{}' to '{}' at disk '{}'", path_from, target_location, disk.getDisk()->getName());
-                disk.getDisk()->createDirectory(target_location);
                 disk.getDisk()->moveDirectory(path_from, target_location);
             }
             else

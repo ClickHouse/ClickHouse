@@ -1,12 +1,56 @@
 import os
 import signal
+import subprocess
+import sys
+import threading
 
 import pyspark
+import pyspark.java_gateway
+import pytest
 from pyspark.context import SparkContext
 from pyspark.sql import SparkSession
 
 from helpers import spark_tools
 from helpers.spark_tools import ResilientSparkSession
+
+
+# The deadlock this pins happens inside the Popen constructor, before any call
+# with a timeout of its own, so the test carries its own bound: a regression
+# fails here in seconds instead of stalling the worker for the global 900 s.
+@pytest.mark.timeout(120)
+def test_gateway_launch_does_not_run_python_in_the_forked_child():
+    """A gateway launch must not run Python in the forked child.
+
+    ``preexec_fn`` rules out both ``posix_spawn`` and ``vfork``, so the child
+    runs Python and blocks on any lock a sibling thread held at fork time; the
+    parent then hangs in ``os.read(errpipe_read)`` until the test times out. The
+    launch below goes through the same ``Popen`` name ``launch_gateway`` uses and
+    blocks on such a lock, so without the fix it deadlocks rather than fails.
+    """
+    held = threading.Lock()
+    held.acquire()
+    threading.Thread(target=held.acquire, daemon=True).start()
+
+    def preexec_func():
+        signal.signal(signal.SIGINT, signal.SIG_IGN)  # pyspark's own
+        held.acquire()  # stands in for state locked at fork time
+
+    # The child reports the identity Spark's signal isolation depends on, so
+    # dropping preexec_fn without setting start_new_session fails here too.
+    reporter = "import os; print(os.getpid() == os.getsid(0))"
+    proc = pyspark.java_gateway.Popen(
+        [sys.executable, "-c", reporter],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        env=dict(os.environ),
+        preexec_fn=preexec_func,
+    )
+    out, _ = proc.communicate(timeout=60)
+    assert proc.returncode == 0
+    assert out.strip() == b"True", "child must lead its own session"
+
+    # Only the launch is rebound; nothing else spawns processes differently.
+    assert subprocess.Popen is not pyspark.java_gateway.Popen
 
 
 def _jvm_proc():

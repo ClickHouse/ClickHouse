@@ -366,11 +366,11 @@ SELECT
     formatReadableTimeDelta(elapsed) AS time_delta
         )",
         R"(
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                        │
-│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
-│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
-└────────────┴────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta──────────────────────────────────────────────────────┐
+│       100 │ 1 minute and 40 seconds                                         │
+│     12345 │ 3 hours, 25 minutes and 45 seconds                              │
+│ 432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds │
+└───────────┴─────────────────────────────────────────────────────────────────┘
         )"
     },
     {

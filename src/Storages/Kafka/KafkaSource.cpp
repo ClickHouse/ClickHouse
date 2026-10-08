@@ -11,6 +11,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -79,7 +80,8 @@ bool KafkaSource::checkTimeLimit() const
     {
         auto elapsed_ns = total_stopwatch.elapsed();
 
-        if (elapsed_ns > static_cast<UInt64>(max_execution_time.totalMicroseconds()) * 1000)
+        /// Compare in whole microseconds: converting the timeout to nanoseconds overflows for huge values.
+        if (elapsed_ns / 1000 > static_cast<UInt64>(max_execution_time.totalMicroseconds()))
             return false;
     }
 
@@ -90,7 +92,7 @@ Chunk KafkaSource::generateImpl()
 {
     if (!consumer)
     {
-        auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
+        auto timeout = saturatedMilliseconds(context->getSettingsRef()[Setting::kafka_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
 
         if (!consumer)

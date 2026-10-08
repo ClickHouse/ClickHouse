@@ -1,6 +1,23 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
+
+# The extraction needs `mapfile` (bash 4) and NUL-separated grep output (GNU
+# grep -z); stock macOS ships bash 3.2 and BSD grep. Check both up front, so an
+# unsupported environment fails here rather than emitting a short dictionary
+# whose gaps only surface later as a coverage failure.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]
+then
+    echo "error: bash 4 or newer is required (found $BASH_VERSION)." \
+         "On macOS, install a newer bash and put it ahead of /bin/bash in PATH." >&2
+    exit 1
+fi
+if ! printf 'x' | grep -qzE 'x' 2>/dev/null
+then
+    echo "error: GNU grep is required (for its -z option)." \
+         "On macOS, install GNU grep and put it ahead of BSD grep in PATH." >&2
+    exit 1
+fi
 
 # Generate a libFuzzer dictionary from the ClickHouse *sources*, without running
 # a binary.
@@ -37,7 +54,8 @@ TMP_FILE=$(mktemp)
 LABEL_FRAGMENTS_FILE=$(mktemp)
 DEAD_CODE_NAMES_FILE=$(mktemp)
 INTERNAL_REGISTERED_FILE=$(mktemp)
-trap 'rm -f "$TMP_FILE" "$LABEL_FRAGMENTS_FILE" "$DEAD_CODE_NAMES_FILE" "$INTERNAL_REGISTERED_FILE"' EXIT
+LOOP_REGISTERED_FILE=$(mktemp)
+trap 'rm -f "$TMP_FILE" "$LABEL_FRAGMENTS_FILE" "$DEAD_CODE_NAMES_FILE" "$INTERNAL_REGISTERED_FILE" "$LOOP_REGISTERED_FILE"' EXIT
 
 # The trees holding the registration code: every pass below scans a subset of
 # them.
@@ -50,6 +68,32 @@ SCANNED_TREES=(
     "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp"
     "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h"
 )
+
+# A missing path is a nonzero grep just like an empty match set is, and the
+# extractors below have to tell those apart, so require the scanned paths here
+# rather than letting a broken checkout reach them.
+for scanned_path in "${SCANNED_TREES[@]}" \
+    "$SOURCE_ROOT/src/Parsers/CommonParsers.h" \
+    "$SOURCE_ROOT/src/AggregateFunctions/Combinators" \
+    "$SOURCE_ROOT/tests/fuzz/dictionaries/old.dict"
+do
+    if [ ! -e "$scanned_path" ]
+    then
+        echo "error: $scanned_path does not exist." \
+             "Pass the root of a ClickHouse source tree." >&2
+        exit 1
+    fi
+done
+
+# Every pass below is optional: a pattern with no carrier in the tree is an empty
+# contribution, not a failure. grep reports that as exit 1, which `set -e` would
+# otherwise turn into an abort of the whole generator. Absorb exactly that
+# status, so a real error (exit 2 and up: an unreadable path, a bad pattern)
+# still fails the generator instead of silently shortening the dictionary.
+optional_grep()
+{
+    grep "$@" || [ "$?" = 1 ]
+}
 
 # Names carried by code compiled out with #if 0 are not registered by any
 # build: src/Functions/trap.cpp - the whole file, including its
@@ -96,7 +140,7 @@ fi
 # have exactly the shape of a registered carrier, so they are told apart by the
 # registration site: keep an internal name only if some file naming it also
 # registers something.
-grep -rlE '"__[A-Za-z_0-9]+"' "${SCANNED_TREES[@]}" \
+optional_grep -rlE '"__[A-Za-z_0-9]+"' "${SCANNED_TREES[@]}" \
     | while IFS= read -r internal_name_file
 do
     if grep -qE 'REGISTER_FUNCTION|factory\.register' "$internal_name_file"
@@ -205,15 +249,15 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # optional_argument_names of makeDate* ("year", "month", "fraction", ...)
     # in src/Functions/makeDate.cpp, or the tuple element labels element_names
     # ("min_x", "max_lat", ...) in src/Functions/MVTBoundingBox.cpp.
-    grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ames?(\[\])?[[:space:]]*[={][^;]*;' \
+    optional_grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ames?(\[\])?[[:space:]]*[={][^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/Formats" \
         "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h" \
         | { grep -zvE '\+|map<|string_view' || true; } \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' \
-        | identifiers_only | grep -Fxvf "$LABEL_FRAGMENTS_FILE"
+        | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"' \
+        | identifiers_only | optional_grep -Fxvf "$LABEL_FRAGMENTS_FILE"
 
     # Names carried by a local String variable instead of a literal argument,
     # e.g. the in/notIn/globalIn/nullIn family (src/Functions/in.cpp):
@@ -224,7 +268,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # column label
     #     String column_name = "c";
     # in src/Functions/FunctionGenerateRandomStructure.cpp.
-    grep -rlE '\bString [A-Za-z_]*[Nn]ame[A-Za-z_]*[[:space:]]*=[[:space:]]*"[^"]+"' \
+    optional_grep -rlE '\bString [A-Za-z_]*[Nn]ame[A-Za-z_]*[[:space:]]*=[[:space:]]*"[^"]+"' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
@@ -245,11 +289,11 @@ done >> "$LABEL_FRAGMENTS_FILE"
     #     static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat", "string_agg"};
     # looped over factory.registerAlias(aliases.at(i), ...) in
     # src/AggregateFunctions/AggregateFunctionGroupConcat.cpp.
-    grep -rhozE '[Aa]lias(es)?[[:space:]]*=[[:space:]]*\{[^;]*"[^;]*;' \
+    optional_grep -rhozE '[Aa]lias(es)?[[:space:]]*=[[:space:]]*\{[^;]*"[^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
+        | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
 
     # Names returned by a *Name/getName helper whose body yields string
     # literals, e.g. an accessor
@@ -275,11 +319,11 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # FunctionName): a helper naming another entity kind returns a name from a
     # different namespace, e.g. getDatabaseName of ITableFunction returns the
     # internal pseudo-database "_table_function".
-    grep -rhozE '\bget[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}|\b[A-Za-z_]*[Ff]unction[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}' \
+    optional_grep -rhozE '\bget[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}|\b[A-Za-z_]*[Ff]unction[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
+        | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
 
     # Functions, aliases and data type families registered with a string
     # literal, e.g. factory.registerAlias("SUBSTRING", ...), including calls
@@ -287,13 +331,31 @@ done >> "$LABEL_FRAGMENTS_FILE"
     #     "Date32", ...). Window functions and their aliases (rank, denseRank,
     # row_number, lag, lead, ...) live outside the four directories above, in
     # src/Processors/Transforms/WindowTransform.cpp, so it is scanned too.
-    grep -rhozE '(registerFunction|registerAlias|factory\.register[A-Za-z]+)[[:space:]]*\([[:space:]]*"[^"]+"' \
+    optional_grep -rhozE '(registerFunction|registerAlias|factory\.register[A-Za-z]+)[[:space:]]*\([[:space:]]*"[^"]+"' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
         "$SOURCE_ROOT/src/DataTypes" \
         "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+        | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"'
+
+    # The same registration with the name arriving through a loop variable
+    # instead of a literal argument, e.g. the grouping specializations
+    # (src/Functions/grouping.cpp):
+    #     for (const auto & [name, variant] : std::initializer_list<...>{
+    #             {"__groupingOrdinary", GroupingVariant::Ordinary}, ...})
+    #         factory.registerFunction(name, ...);
+    # What ties the literals to a registration is the register* call reached
+    # from the loop header, so both are required in one match; a name-shaped
+    # loop variable alone also names sets of columns, files and settings.
+    optional_grep -rhozE 'for[[:space:]]*\([^;]*\b[A-Za-z_]*[Nn]ame[A-Za-z_]*\b[^;]*:[^;]*\{[^;]*"[^;]*\}[^;]*\)[^;]*register[A-Za-z]*[[:space:]]*\(' \
+        "$SOURCE_ROOT/src/Functions" \
+        "$SOURCE_ROOT/src/AggregateFunctions" \
+        "$SOURCE_ROOT/src/TableFunctions" \
+        "$SOURCE_ROOT/src/DataTypes" \
+        "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp" \
+        | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only \
+        | tee "$LOOP_REGISTERED_FILE"
 
     # Combinator-expanded aggregate function names, e.g. sumIf, avgIf,
     # groupArrayArray, uniqState. The authoritative binary path generates these
@@ -308,11 +370,11 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # OrNull, OrDefault, Resample, ...).
     combinator_suffixes=$(
         {
-            grep -rhoE 'String getName\(\) const override[[:space:]]*\{[[:space:]]*return[[:space:]]*"[^"]+"' \
+            optional_grep -rhoE 'String getName\(\) const override[[:space:]]*\{[[:space:]]*return[[:space:]]*"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions/Combinators"
-            grep -rhoE 'getName\(\)[[:space:]]*\+[[:space:]]*"[^"]+"' \
+            optional_grep -rhoE 'getName\(\)[[:space:]]*\+[[:space:]]*"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions/Combinators"
-        } | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only | LC_ALL=C sort -u
+        } | optional_grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only | LC_ALL=C sort -u
     )
     # Base aggregate function names and their aliases (the combinators apply to
     # both), taken from src/AggregateFunctions with the same passes used above
@@ -326,22 +388,22 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # themselves are not treated as base names.
     aggregate_names=$(
         {
-            grep -rhozE --exclude-dir=Combinators \
+            optional_grep -rhozE --exclude-dir=Combinators \
                 '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ame(\[\])?[[:space:]]*[={][^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions" \
                 | { grep -zvE '\+|map<|string_view' || true; }
-            grep -rhozE --exclude-dir=Combinators \
+            optional_grep -rhozE --exclude-dir=Combinators \
                 'getName\(\)[[:space:]]*\{[[:space:]]*return[[:space:]]+"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
-            grep -rhozE --exclude-dir=Combinators \
+            optional_grep -rhozE --exclude-dir=Combinators \
                 '(registerFunction|registerAlias[A-Za-z]*)[[:space:]]*\([[:space:]]*"[^"]+"' \
                 "$SOURCE_ROOT/src/AggregateFunctions" \
                 "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp"
-            grep -rhozE --exclude-dir=Combinators \
+            optional_grep -rhozE --exclude-dir=Combinators \
                 '[Aa]lias(es)?[[:space:]]*=[[:space:]]*\{[^;]*"[^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions"
-        } | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' \
-            | identifiers_only | grep -Fxvf "$LABEL_FRAGMENTS_FILE" | LC_ALL=C sort -u
+        } | tr '\0' '\n' | optional_grep -aoE '"[^"]+"' | tr -d '"' \
+            | identifiers_only | optional_grep -Fxvf "$LABEL_FRAGMENTS_FILE" | LC_ALL=C sort -u
     )
     if [ -n "$combinator_suffixes" ] && [ -n "$aggregate_names" ]; then
         while IFS= read -r agg_name; do
@@ -359,12 +421,44 @@ done >> "$LABEL_FRAGMENTS_FILE"
 # code compiled out with #if 0, and the internal __ names without a
 # registration site), merge with the curated dictionary, and deduplicate.
 {
-    grep -vE '[*?\["\\]' "$TMP_FILE" \
+    optional_grep -vE '[*?\["\\]' "$TMP_FILE" \
         | { grep -Fxvf "$DEAD_CODE_NAMES_FILE" || true; } \
-        | awk 'NR == FNR { registered[$0]; next } !(/^__/ && !($0 in registered))' \
-            "$INTERNAL_REGISTERED_FILE" - \
+        | awk -v registered_file="$INTERNAL_REGISTERED_FILE" '
+            BEGIN { while ((getline name < registered_file) > 0) registered[name] }
+            !(/^__/ && !($0 in registered))' \
         | sed 's/.*/"&"/'
     cat "$SOURCE_ROOT/tests/fuzz/dictionaries/old.dict"
 } | LC_ALL=C sort -u > "$OUTPUT_FILE"
+
+# update_dict.sh verifies the whole output against a binary, but only the nightly
+# libFuzzer job has one. These two checks need no binary, so they also run in the
+# fuzzers build, where a non-zero exit here is a FATAL_ERROR (CMakeLists.txt). They
+# cover the loop-registration pass, whose pattern is the one that has to match two
+# things at once - a range-for header and the register* call reached from it - and
+# whose names are internal, so the __ filter above can drop them again.
+if [ ! -s "$LOOP_REGISTERED_FILE" ]
+then
+    echo "error: no name was extracted from a loop registration." \
+         "The pattern no longer matches the form it was written for" \
+         "(the specializations in src/Functions/grouping.cpp): fix it," \
+         "or drop the pass if no registration of that form is left." >&2
+    exit 1
+fi
+while IFS= read -r loop_registered_name
+do
+    # A name whose only carrier is an #if 0 region is not registered by any build,
+    # so the dead code filter above drops it and the output is right without it.
+    if grep -Fxq "$loop_registered_name" "$DEAD_CODE_NAMES_FILE"
+    then
+        continue
+    fi
+    if ! grep -Fxq "\"$loop_registered_name\"" "$OUTPUT_FILE"
+    then
+        echo "error: $loop_registered_name is registered through a loop variable and was" \
+             "extracted, but it is missing from $OUTPUT_FILE, so a filter between the two" \
+             "dropped it. That is the state the nightly libFuzzer job failed in." >&2
+        exit 1
+    fi
+done < "$LOOP_REGISTERED_FILE"
 
 echo "Generated $OUTPUT_FILE: $(wc -l < "$OUTPUT_FILE") tokens"

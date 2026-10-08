@@ -23,6 +23,7 @@ struct WriteOptions
 {
     bool output_string_as_string = false;
     bool output_fixed_string_as_fixed_byte_array = true;
+    bool output_wide_integer_as_decimal = false;
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
@@ -88,6 +89,12 @@ struct IcebergOptionality
     bool isOptional(const String & path) const;
 };
 
+/// The unfolded bloom filter is sized for all values of the column chunk and its blocks are touched
+/// in random order, so it is allocated through the zero-initializing allocator: `calloc` of a big
+/// buffer is served by pages that the kernel already zeroed, instead of `memset`-ing the whole
+/// region upfront.
+using BloomFilterData = PODArray<UInt32, 4096, Allocator<true>>;
+
 struct ColumnChunkIndexes
 {
     parq::ColumnIndex column_index; // if write_page_index
@@ -96,7 +103,7 @@ struct ColumnChunkIndexes
     /// When false, the column index must not be written because it would contain invalid bounds.
     bool column_index_valid = true;
     parq::BloomFilterHeader bloom_filter_header;
-    PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
+    BloomFilterData bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
 
 /// Information about a primitive column (leaf of the schema tree) to write to Parquet file.

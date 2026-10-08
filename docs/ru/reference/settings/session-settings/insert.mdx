@@ -26,16 +26,18 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Включает или отключает дедупликацию блоков при `вставке` (для таблиц Replicated*).
+Включает или отключает дедупликацию блоков при вставке (для таблиц Replicated*).
+
+Этот параметр действует только при значении `backward_compatible_choice` для [`deduplicate_insert`](/ru/reference/settings/session-settings/deduplicate-insert#deduplicate_insert).
 
 Возможные значения:
 
 * 0 — Отключено.
 * 1 — Включено.
 
-По умолчанию блоки, вставленные в реплицируемые таблицы оператором `вставки`, дедуплицируются (см. [Репликация данных](/ru/reference/engines/table-engines/mergetree-family/replication)).
-Для реплицируемых таблиц по умолчанию дедуплицируются только 100 последних блоков для каждой партиции (см. [replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-Для нереплицируемых таблиц см. [non&#95;replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+По умолчанию блоки, вставленные в реплицируемые таблицы оператором вставки, дедуплицируются (см. [Репликация данных](/ru/reference/engines/table-engines/mergetree-family/replication)).
+Для реплицируемых таблиц по умолчанию дедуплицируются только 100 последних блоков для каждой партиции (см. [replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+Для нереплицируемых таблиц см. [non&#95;replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <div id="insert_deduplication_token">
   ## insert_deduplication_token
@@ -51,8 +53,8 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 `insert_deduplication_token` используется для дедупликации *только* если он не пуст.
 
-Для реплицируемых таблиц по умолчанию дедуплицируются только 100 самых последних вставок для каждой партиции (см. [replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-Для нереплицируемых таблиц см. [non&#95;replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+Для реплицируемых таблиц по умолчанию дедуплицируются только 100 самых последних вставок для каждой партиции (см. [replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ru/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+Для нереплицируемых таблиц см. [non&#95;replicated&#95;deduplication&#95;window](/ru/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <Note>
   `insert_deduplication_token` отслеживается отдельно для каждой партиции, поэтому несколько партиций, записанных одной вставкой, могут иметь один и тот же токен. Без токена контрольная сумма содержимого по умолчанию вычисляется для всего вставляемого блока, поэтому вставка дедуплицируется только тогда, когда все её данные совпадают с данными предыдущей вставки (повторной попытки), а не когда строки одной партиции случайно совпадают со строками из другой вставки.

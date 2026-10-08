@@ -28,6 +28,21 @@ extern const int BAD_ARGUMENTS;
 namespace Paimon
 {
 using namespace DB;
+
+/// Mirrors Paimon's `Timestamp`: a value is the pair (millisecond, nanoOfMillisecond), where
+/// `nano_of_millisecond` is always in [0, 999999], also for a negative `millisecond`. The number of
+/// nanoseconds since the epoch is therefore `millisecond * 1000000 + nano_of_millisecond`.
+///
+/// The pair is kept instead of a single `DateTime64` because the two consumers of a partition
+/// timestamp need different conversions: the partition directory name is derived from the value as
+/// it was stored, while the value fed to the partition pruner has to match the declared precision
+/// of the column. See `Utils.cpp`.
+struct Timestamp
+{
+    Int64 millisecond = 0;
+    Int32 nano_of_millisecond = 0;
+};
+
 class BinaryRow
 {
 public:
@@ -140,7 +155,9 @@ public:
         }
     }
 
-    DateTime64 getTimestamp(Int32 pos, Int32 scale);
+    /// `precision` is the declared precision of the Paimon `TIMESTAMP` type; it selects the encoding
+    /// rather than scaling the result.
+    Timestamp getTimestamp(Int32 pos, Int32 precision);
 
 private:
     ReadBufferFromOwnString reader;
@@ -168,6 +185,10 @@ private:
     static bool isLittleEndian();
     template <typename T>
     T getFixedSizeData(Int32 pos);
+    /// Same, but at an offset into the row rather than at the slot of a field. The variable-length
+    /// part of a row is addressed this way.
+    template <typename T>
+    T getFixedSizeDataAt(Int32 absolute_offset);
     String copyBytes(Int32 offset, Int32 num_bytes);
 };
 

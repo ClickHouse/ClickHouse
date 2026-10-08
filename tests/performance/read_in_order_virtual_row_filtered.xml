@@ -1,0 +1,45 @@
+<test>
+    <!--
+        Focused performance guard for the read-ahead window used by
+        `read_in_order_use_virtual_row`. A source deferred behind a virtual row holds a
+        read-ahead slot; when such a source is reached but is entirely filtered out
+        upstream it finishes without delivering a real chunk. If that slot is not released
+        (see `MergingSortedAlgorithm::onSourceExhausted`) the window stops refilling after
+        `max_threads` such sources and the merge degrades to reading one part at a time.
+
+        The table below has 64 parts with disjoint, increasing key ranges. Only the last
+        part matches `b = 1`, so `ORDER BY a LIMIT N` has to walk through 63 fully
+        filtered-out leading parts in part order. With the slot released the parts are read
+        ahead concurrently; without it they are read serially, which is the regression this
+        test makes measurable. The stateless test `04339_virtual_row_prefetch_filtered_out`
+        guards the same path for correctness under sanitizers.
+    -->
+    <settings>
+        <max_threads>8</max_threads>
+        <read_in_order_use_virtual_row>1</read_in_order_use_virtual_row>
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
+    </settings>
+
+    <create_query>
+        CREATE TABLE vrow_filtered (a UInt64, b UInt8)
+        ENGINE = MergeTree ORDER BY a
+        SETTINGS parts_to_throw_insert = 100000, parts_to_delay_insert = 100000
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES vrow_filtered</fill_query>
+    <!--
+        64 parts of 1M rows each, in increasing key order (`numbers` is ordered and each
+        1M-row block is written as its own part). Only rows in the last part have `b = 1`.
+    -->
+    <fill_query>
+        INSERT INTO vrow_filtered
+        SELECT number, number >= 63000000 FROM numbers(64000000)
+        SETTINGS max_block_size = 1000000, max_insert_block_size = 1000000,
+                 min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT a FROM vrow_filtered WHERE b = 1 ORDER BY a LIMIT 10 FORMAT Null</query>
+    <query>SELECT a FROM vrow_filtered WHERE b = 1 ORDER BY a LIMIT 100 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS vrow_filtered</drop_query>
+</test>

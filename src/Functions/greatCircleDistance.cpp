@@ -2,10 +2,12 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/PerformanceAdaptors.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Common/TargetSpecific.h>
 #include <cmath>
+#include <memory>
 #include <numbers>
 
 
@@ -331,25 +333,28 @@ private:
 
 ) // DECLARE_MULTITARGET_CODE
 
+/// The implementation is picked once, from what the CPU supports. Everything except execution comes from
+/// the default implementation, which this class derives from.
 template <Method method>
 class FunctionGeoDistance : public TargetSpecific::Default::FunctionGeoDistance<method>
 {
 public:
     explicit FunctionGeoDistance(ContextPtr context)
-        : TargetSpecific::Default::FunctionGeoDistance<method>(context), selector(context)
+        : TargetSpecific::Default::FunctionGeoDistance<method>(context)
     {
-        selector.registerImplementation<TargetArch::Default,
-            TargetSpecific::Default::FunctionGeoDistance<method>>(context);
-
-    #if USE_MULTITARGET_CODE
-        selector.registerImplementation<TargetArch::x86_64_v4,
-            TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
-    #endif
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            impl = std::make_unique<TargetSpecific::x86_64_v4::FunctionGeoDistance<method>>(context);
+            return;
+        }
+#endif
+        impl = std::make_unique<TargetSpecific::Default::FunctionGeoDistance<method>>(context);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+        return impl->executeImpl(arguments, result_type, input_rows_count);
     }
 
     static FunctionPtr create(ContextPtr context)
@@ -358,7 +363,7 @@ public:
     }
 
 private:
-    ImplementationSelector<IFunction> selector;
+    std::unique_ptr<IFunction> impl;
 };
 
 }
@@ -383,9 +388,9 @@ This function returns the angle in degrees between two points on a sphere.
                 "Basic usage",
                 "SELECT greatCircleAngle(0, 0, 45, 0) AS angle",
                 R"(
-┌─angle─┐
-│    45 │
-└───────┘
+┌────angle─┐
+│ 44.99998 │
+└──────────┘
                 )"
             }
         };
@@ -412,7 +417,7 @@ Calculates the distance between two points on the Earth's surface using [the gre
                 "SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance",
                 R"(
 ┌─greatCircleDistance─┐
-│            14128352 │
+│  14128352.575065022 │
 └─────────────────────┘
                 )"
             }
@@ -442,9 +447,9 @@ Technical note: for close enough points it calculates the distance using planar 
                 "Basic usage",
                 "SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance",
                 R"(
-┌─geoDistance─┐
-│   212458.73 │
-└─────────────┘
+┌────────geoDistance─┐
+│ 212458.82819586992 │
+└────────────────────┘
                 )"
             }
         };

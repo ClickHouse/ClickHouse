@@ -1,0 +1,270 @@
+---
+slug: /use-cases/data-lake/seaweedfs-catalog
+sidebarTitle: 'SeaweedFS カタログ'
+title: 'SeaweedFS カタログ'
+description: 'このガイドでは、ClickHouse と SeaweedFS Iceberg カタログを使用してデータをクエリする手順を解説します。'
+keywords: ['SeaweedFS', 'Table Buckets', 'REST', 'Data Lake', 'Iceberg']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  SeaweedFS カタログとのインテグレーションは、Iceberg テーブルでのみ利用できます。
+</Note>
+
+ClickHouse は、複数のカタログ (Unity、Glue、REST、Polaris など) とのインテグレーションをサポートしています。このガイドでは、ClickHouse と [SeaweedFS](https://github.com/seaweedfs/seaweedfs) カタログを使用してデータをクエリする手順を説明します。
+
+SeaweedFS は、S3 互換ゲートウェイを備えたオープンソースの分散ファイル／オブジェクトストアです。S3 Table Buckets は、Iceberg デプロイメントを構成する両方の要素を提供します。埋め込みの Iceberg REST カタログがテーブルのメタデータを提供し、テーブルバケットが同じ S3 エンドポイントを介してテーブルデータを Parquet ファイルとして保存します。
+
+* **単一サービス** - カタログのメタデータと Parquet データを単一のプロセスで提供し、別途メタデータデータベースは必要ありません
+* Iceberg REST カタログ仕様に準拠した **REST API**
+* **サーバー側のメンテナンス** - 外部のメンテナンスサービスを使用せずに、Parquet の自動コンパクションとスナップショットの期限切れ処理を行います
+
+<Note>
+  この機能は実験的であるため、次の設定で有効にする必要があります。
+  `SET allow_experimental_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## ローカル開発環境のセットアップ
+</div>
+
+ローカルでの開発・テストには、Docker Compose を使用して SeaweedFS と ClickHouse を実行できます。この方法は、学習、プロトタイピング、開発環境に適しています。
+
+<div id="local-prerequisites">
+  ### 前提条件
+</div>
+
+1. **Docker および Docker Compose**: Docker がインストールされ、起動していることを確認します
+2. **バージョン**: SeaweedFS 4.42 以降、ClickHouse 26.8 以降 (25.8 以降のバージョンでも読み取りと挿入は可能ですが、カタログを介したテーブルの作成には 26.8 が必要です) 
+3. **PyIceberg を含む Python** (任意) : 以下でサンプルデータをシードするために使用します
+
+<div id="setting-up-local-seaweedfs-catalog">
+  ### ローカル SeaweedFS カタログのセットアップ
+</div>
+
+**ステップ 1:** この例を実行するための新しいフォルダを作成し、S3 ゲートウェイとカタログの認証情報を記載した `s3config.json` ファイルを作成します。
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "tutorialkey",
+          "secretKey": "tutorialsecret"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+**ステップ 2:** 次の設定で `docker-compose.yml` ファイルを作成します。
+
+```yaml
+services:
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
+    ports:
+      - "8333:8333"   # S3 endpoint
+      - "8181:8181"   # Iceberg REST catalog
+    volumes:
+      - ./s3config.json:/etc/seaweedfs/s3config.json
+      - seaweedfs_data:/data
+    networks:
+      - iceberg_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: seaweedfs-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    depends_on:
+      - seaweedfs
+    networks:
+      - iceberg_net
+
+volumes:
+  seaweedfs_data:
+
+networks:
+  iceberg_net:
+    driver: bridge
+```
+
+`mini` コマンドは、SeaweedFS スタック全体を単一のコンテナー内で起動します。`-tableBucket=analytics` フラグは、Iceberg のwarehouseとして使用する、`analytics` という名前の S3 Tables バケットを事前に作成します。`-admin.port=12646` により、SeaweedFS がそこから導出する管理用 gRPC ポートを Linux のエフェメラルポート範囲より下に保ち、起動時の接続によって先に確保される可能性を回避します。
+
+**ステップ 3:** 次のコマンドを実行してサービスを起動します。
+
+```bash
+docker compose up -d
+```
+
+<div id="seeding-sample-data">
+  ### サンプルデータの投入
+</div>
+
+カタログは最初は空です。PyIceberg (`pip install pyiceberg pyarrow`) を使用してテーブルを作成し、数行を追加します。
+
+```python
+import pyarrow as pa
+from pyiceberg.catalog.rest import RestCatalog
+
+catalog = RestCatalog(
+    "seaweedfs",
+    uri="http://localhost:8181",
+    warehouse="s3://analytics",
+    credential="tutorialkey:tutorialsecret",
+    **{
+        "s3.endpoint": "http://localhost:8333",
+        "s3.access-key-id": "tutorialkey",
+        "s3.secret-access-key": "tutorialsecret",
+        "s3.region": "us-east-1",
+        "s3.path-style-access": "true",
+    },
+)
+
+rows = pa.table({
+    "id": pa.array([1, 2, 3, 4, 5, 6], pa.int64()),
+    "region": ["NA", "EU", "EU", "APAC", "NA", "EU"],
+    "amount": pa.array([12.5, 40.0, 7.25, 99.9, 3.5, 61.0], pa.float64()),
+})
+
+catalog.create_namespace("sales")
+table = catalog.create_table("sales.orders", schema=rows.schema)
+table.append(rows)
+```
+
+<div id="connecting-to-local-seaweedfs-catalog">
+  ### ローカルの SeaweedFS カタログへの接続
+</div>
+
+ClickHouse コンテナーに接続します。
+
+```bash
+docker exec -it seaweedfs-clickhouse clickhouse-client
+```
+
+次に、SeaweedFS カタログへのデータベース接続を作成します。
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE lake
+ENGINE = DataLakeCatalog('http://seaweedfs:8181/v1', 'tutorialkey', 'tutorialsecret')
+SETTINGS catalog_type = 'rest',
+    warehouse = 's3://analytics',
+    storage_endpoint = 'http://seaweedfs:8333/analytics',
+    catalog_credential = 'tutorialkey:tutorialsecret',
+    oauth_server_uri = 'http://seaweedfs:8181/v1/oauth/tokens'
+```
+
+エンジン引数には、ClickHouse がテーブルデータの読み取りに使用する S3 認証情報を指定します。一方、`catalog_credential` と `oauth_server_uri` は、OAuth2 のクライアント認証情報フローを通じてカタログ自体への認証に使用します。SeaweedFS では、どちらにも同じアクセスキーとシークレットキーを使用できます。
+
+<div id="querying-seaweedfs-catalog-tables-using-clickhouse">
+  ## ClickHouse を使用して SeaweedFS カタログテーブルをクエリする
+</div>
+
+接続が確立されたら、SeaweedFS カタログ経由でクエリを実行できます。例:
+
+```sql
+USE lake;
+
+SHOW TABLES;
+```
+
+```response
+┌─name─────────┐
+│ sales.orders │
+└──────────────┘
+```
+
+<Info>
+  **バッククォートが必要です**
+
+  ClickHouse は複数のネームスペースをサポートしていないため、バッククォートが必要です。
+</Info>
+
+テーブルをクエリするには:
+
+```sql
+SELECT region, sum(amount) AS total
+FROM `sales.orders`
+GROUP BY region
+ORDER BY total DESC;
+```
+
+```response
+┌─region─┬──total─┐
+│ EU     │ 108.25 │
+│ APAC   │   99.9 │
+│ NA     │     16 │
+└────────┴────────┘
+```
+
+<div id="creating-tables-and-writing-data-from-clickhouse">
+  ## ClickHouse からテーブルを作成し、データを書き込む
+</div>
+
+SeaweedFS カタログ内にテーブルを作成し、ClickHouse から直接データを書き込むこともできます。
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+SET allow_experimental_insert_into_iceberg = 1;
+SET write_full_path_in_iceberg_metadata = 1;
+
+CREATE TABLE lake.`sales.returns` (id Int64, reason String)
+ENGINE = IcebergS3('http://seaweedfs:8333/analytics/sales/returns/', 'tutorialkey', 'tutorialsecret');
+
+INSERT INTO lake.`sales.returns` VALUES (1, 'damaged'), (2, 'wrong size');
+
+SELECT * FROM lake.`sales.returns` ORDER BY id;
+```
+
+```response
+┌─id─┬─reason─────┐
+│  1 │ damaged    │
+│  2 │ wrong size │
+└────┴────────────┘
+```
+
+`IcebergS3` エンジン句では新しいテーブルのストレージパスを指定し、`write_full_path_in_iceberg_metadata` により、ClickHouse はテーブルの完全な場所をカタログに登録します。
+
+<Note>
+  カタログを介したテーブルの作成には、ClickHouse 26.8 以降が必要です。バージョン 26.4～26.7 では、ネームスペースを登録する前にテーブルファイルが書き込まれますが、ネームスペースがすでにカタログに存在しない限り、SeaweedFS はこれを拒否します。26.4 より前のバージョンでは成功したように見えますが、テーブルファイルはカタログに登録されないままオブジェクトストレージに書き込まれます。
+</Note>
+
+ClickHouse が insert をコミットすると、SeaweedFS カタログは、実験的な writer がまだ生成しないメタデータを修復します。具体的には、manifest 内で欠落しているフィールド ID を補完し、bucket 相対のファイルパスを絶対ロケーションに書き換え、テーブルにデフォルトの名前マッピングを設定します。その後、PyIceberg や Spark などの厳密な reader は、ClickHouse が書き込んだ行を読み取れるようになります。これには SeaweedFS 4.42 以降が必要です。
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## データレイクから ClickHouse へのデータの読み込み
+</div>
+
+SeaweedFS カタログから ClickHouse にデータを読み込むには、まずローカルの ClickHouse テーブルを作成します。
+
+```sql
+CREATE TABLE default.orders
+(
+    `id` Int64,
+    `region` String,
+    `amount` Float64
+)
+ENGINE = MergeTree()
+ORDER BY (region, id);
+```
+
+次に、`INSERT INTO SELECT` を使用して、SeaweedFS カタログテーブルからデータを読み込みます。
+
+```sql
+INSERT INTO default.orders
+SELECT * FROM lake.`sales.orders`;
+```

@@ -17,14 +17,14 @@ $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED)"
 
 # And executing it must be rejected instead of silently running with `false`.
 CRAFTED_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED FORMAT TSVRaw")
-$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --enable_json_ast_dialect 1 -q "$CRAFTED_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
 # The same for a value of another type smuggled in under the flag: rejected for carrying a value,
 # before the type of the setting is even considered.
 CRAFTED_STR="replaceAll(parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere = false\$\$), '\"value\":{\"field_type\":\"Bool\",\"value\":false}', '\"shorthand\":true,\"value\":{\"field_type\":\"String\",\"value\":\"x\"}')"
 $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON($CRAFTED_STR)"
 CRAFTED_STR_JSON=$($CLICKHOUSE_CLIENT -q "SELECT $CRAFTED_STR FORMAT TSVRaw")
-$CLICKHOUSE_CLIENT --dialect clickhouse_json --allow_experimental_json_ast_dialect 1 -q "$CRAFTED_STR_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
+$CLICKHOUSE_CLIENT --dialect clickhouse_json --enable_json_ast_dialect 1 -q "$CRAFTED_STR_JSON" 2>&1 | grep -o "BAD_ARGUMENTS" | head -n 1
 
 # The genuine valueless form is untouched: it still formats without a value and still executes.
 $CLICKHOUSE_CLIENT -q "SELECT formatQueryFromJSON(parseQueryToJSON(\$\$SELECT 1 SETTINGS optimize_move_to_prewhere\$\$))"

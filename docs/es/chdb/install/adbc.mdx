@@ -1,0 +1,239 @@
+---
+title: 'chDB como driver ADBC'
+sidebarTitle: 'ADBC'
+slug: /chdb/install/adbc
+description: 'Cómo usar chDB mediante Arrow Database Connectivity (ADBC)'
+keywords: ['chdb', 'adbc', 'arrow', 'driver', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Warning>
+  El driver ADBC es experimental. Su comportamiento y sus opciones pueden cambiar entre versiones.
+</Warning>
+
+[ADBC](https://arrow.apache.org/adbc/) es una API independiente del proveedor para transferir datos de Arrow entre una aplicación y una base de datos. El driver ADBC de chDB se distribuye a través de ADBC Driver Foundry y puede cargarlo cualquier administrador de drivers ADBC.
+
+Los resultados se transfieren como lotes de registros de Arrow, sin conversión fila por fila. Las aplicaciones pueden usar el mismo driver desde Python o cualquier otro lenguaje con un administrador de drivers ADBC.
+
+<div id="installation">
+  ## Instalación
+</div>
+
+Instale el controlador desde ADBC Driver Foundry mediante [`dbc`](https://docs.columnar.tech/dbc/):
+
+```bash
+dbc install chdb
+```
+
+El primer paquete `dbc` publicado para chDB corresponde a la versión 26.7.0. Para consultar las versiones disponibles, ejecute:
+
+```bash
+dbc search -v chdb
+```
+
+El driver instalado se puede cargar con el nombre `chdb` desde un administrador de drivers ADBC.
+
+Linux y macOS son compatibles con las arquitecturas x86-64 y arm64.
+
+<div id="connecting-from-python">
+  ## Conexión desde Python
+</div>
+
+Instale el gestor de controladores ADBC para Python:
+
+```bash
+pip install adbc-driver-manager pyarrow
+```
+
+A continuación, cargue por nombre el driver chDB instalado mediante `dbc`:
+
+```python
+from adbc_driver_manager import dbapi
+
+with dbapi.connect(
+    driver="chdb",
+    db_kwargs={"uri": "chdb://"},
+    autocommit=True,
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT number FROM numbers(3)")
+        print(cur.fetch_arrow_table())
+```
+
+| `uri`                   | Base de datos                                      |
+| ----------------------- | -------------------------------------------------- |
+| `chdb://`               | En memoria                                         |
+| `chdb:///absolute/path` | En disco, persistida en el directorio especificado |
+
+<div id="connection-lifecycle">
+  ## Ciclo de vida de las conexiones
+</div>
+
+chDB ejecuta un engine embedded en cada proceso mientras haya conexiones abiertas. Tenga en cuenta las siguientes reglas:
+
+* Todas las conexiones ADBC abiertas simultáneamente en un proceso deben usar la misma ruta de almacenamiento.
+* Se admiten varias conexiones a esa ruta, incluidas las utilizadas de forma concurrente desde distintos threads. Para queries concurrentes, asigne a cada worker su propia conexión en lugar de ejecutar operaciones simultáneas en una única conexión.
+* Al cerrar la última conexión, se apaga el engine embedded. Una conexión posterior puede volver a iniciarlo, incluso con una ruta de almacenamiento diferente, pero los apagados y arranques repetidos consumen tiempo y memoria. Mantenga al menos una conexión abierta para tareas repetitivas.
+* Solo un proceso del sistema operativo puede abrir un directorio en disco determinado a la vez. Asigne a cada proceso su propio directorio o utilice una database en memoria.
+
+<div id="using-python-chdb-package">
+  ### Uso de ADBC con el paquete chDB para Python
+</div>
+
+El paquete `dbc` instala un driver ADBC nativo independiente. Es distinto de la biblioteca nativa que carga el paquete `chdb` para Python.
+
+En un proceso de Python, no espere que una conexión ADBC cargada por `dbc` y una conexión `chdb` normal compartan tablas en memoria ni el estado del engine. Para una ruta de base de datos determinada, use el driver ADBC o la API de `chdb` para Python, pero no ambos a la vez; no mantenga ambos abiertos en la misma ruta en disco. Para mover datos entre las dos API, cierre todas las conexiones de una antes de abrir las de la otra, o transfiera los datos explícitamente mediante Arrow o archivos.
+
+<div id="implemented-functionality">
+  ## Funcionalidad implementada
+</div>
+
+`Not yet` indica una capacidad del controlador ADBC que se podrá añadir más adelante. `Not applicable` indica una funcionalidad que no se ajusta al modelo de ejecución actual de chDB o ClickHouse.
+
+<div id="database">
+  ### Base de datos
+</div>
+
+| Función                                | Estado     | Notas                                        |
+| -------------------------------------- | ---------- | -------------------------------------------- |
+| `AdbcDatabaseNew` / `Init` / `Release` | Compatible |                                              |
+| `AdbcDatabaseSetOption`                | Compatible | Opciones del engine `uri`, `path` y `chdb.*` |
+
+<div id="connection">
+  ### Conexión
+</div>
+
+| Función                                  | Estado       | Notas                                                                                                              |
+| ---------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `AdbcConnectionNew` / `Init` / `Release` | Compatible   |                                                                                                                    |
+| `AdbcConnectionGetInfo`                  | Compatible   |                                                                                                                    |
+| `AdbcConnectionGetObjects`               | Compatible   | Todas las profundidades                                                                                            |
+| `AdbcConnectionGetTableSchema`           | Compatible   |                                                                                                                    |
+| `AdbcConnectionGetTableTypes`            | Compatible   |                                                                                                                    |
+| `AdbcConnectionGetOption`                | Compatible   | Incluye el `db_schema` actual                                                                                      |
+| `AdbcConnectionSetOption`                | Parcial      | El autocommit debe permanecer habilitado; no se permite cambiar `db_schema`                                        |
+| `AdbcConnectionCommit` / `Rollback`      | No aplicable | Las sentencias de ClickHouse se confirman automáticamente; no hay una transacción clásica que confirmar o revertir |
+| `AdbcConnectionGetStatistics`            | Aún no       | Las estadísticas de las tablas no se exponen a través del driver                                                   |
+| `AdbcConnectionReadPartition`            | No aplicable | El driver no produce particiones de resultados distribuidas                                                        |
+| `AdbcConnectionCancel`                   | Aún no       | La cancelación de consultas de chDB aún no se expone a través de ADBC                                              |
+
+<div id="statement">
+  ### Sentencia
+</div>
+
+| Función                            | Estado       | Notas                                                                  |
+| ---------------------------------- | ------------ | ---------------------------------------------------------------------- |
+| `AdbcStatementNew` / `Release`     | Compatible   |                                                                        |
+| `AdbcStatementSetSqlQuery`         | Compatible   | ClickHouse SQL                                                         |
+| `AdbcStatementPrepare`             | Compatible   |                                                                        |
+| `AdbcStatementBind` / `BindStream` | Compatible   | Parámetros posicionales `?`                                            |
+| `AdbcStatementGetParameterSchema`  | Compatible   |                                                                        |
+| `AdbcStatementExecuteQuery`        | Compatible   | Transmite batches de registros Arrow                                   |
+| `AdbcStatementSetOption`           | Compatible   | Ingestión masiva; consulte a continuación                              |
+| `AdbcStatementExecuteSchema`       | Aún no       | El esquema de resultados está disponible actualmente tras la ejecución |
+| `AdbcStatementExecutePartitions`   | No aplicable | Los resultados se devuelven como un flujo Arrow en el mismo proceso    |
+| `AdbcStatementSetSubstraitPlan`    | No aplicable | chDB acepta ClickHouse SQL, no planes Substrait                        |
+| `AdbcStatementCancel`              | Aún no       | La cancelación de consultas de chDB aún no se expone mediante ADBC     |
+
+La ingestión masiva admite los modos `create`, `append`, `create_append` y `replace` en la base de datos predeterminada o en una base de datos con nombre.
+
+<div id="clickhouse-sql-and-type-behavior">
+  ## ClickHouse SQL y comportamiento de los tipos
+</div>
+
+chDB utiliza ClickHouse SQL y su sistema de tipos. La siguiente semántica de ClickHouse también se aplica al acceder a chDB mediante ADBC:
+
+* Las columnas no admiten valores NULL, salvo que se declaren como `Nullable(...)`. Un NULL tipado vinculado a una columna `String` sin `Nullable` se almacena como una cadena vacía, no como NULL.
+* Use las comillas para identificadores de ClickHouse; los ejemplos usan comillas invertidas.
+* Las bases de datos de ClickHouse se asignan a `db_schema` de ADBC. No existe una capa de catálogo por encima de ellas, por lo que las operaciones con ámbito de catálogo no son aplicables.
+* `Decimal` no acepta escalas negativas y `Date32` abarca desde 1900-01-01 hasta 2299-12-31.
+* Un `DateTime64` sin zona horaria se interpreta en la zona horaria del motor.
+* La salida Arrow actual de ClickHouse no representa el tipo `Time`, por lo que no se puede volver a leer mediante ADBC.
+
+Algunos tipos de Arrow conservan sus valores, pero se vuelven a leer como un tipo de Arrow distinto:
+
+| Tipo de Arrow                                           | Almacenado como  | Se vuelve a leer como |
+| ------------------------------------------------------- | ---------------- | --------------------- |
+| `binary`, `large_binary`, `binary_view`                 | `String`         | `string`              |
+| `fixed_size_binary` (ingesta masiva en una tabla nueva) | `FixedString(n)` | `fixed_size_binary`   |
+| `large_string`, `string_view`                           | `String`         | `string`              |
+| `float16`                                               | `Float32`        | `float`               |
+| `time32` / `time64` / `timestamp`                       | `DateTime64(n)`  | `timestamp`           |
+
+Los datos binarios se almacenan como `String` y se vuelven a leer como UTF-8. Por tanto, las cargas útiles que no son UTF-8 válidas no son compatibles como valores `binary` de ida y vuelta.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+<div id="bulk-ingestion">
+  ### Ingestión masiva desde Arrow
+</div>
+
+```python
+import pyarrow as pa
+from adbc_driver_manager import dbapi
+
+table = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+
+with dbapi.connect(
+    driver="chdb",
+    db_kwargs={"uri": "chdb://"},
+    autocommit=True,
+) as conn:
+    with conn.cursor() as cur:
+        cur.adbc_ingest("events", table, mode="create")
+        cur.execute("SELECT count() FROM events")
+        print(cur.fetchone())
+```
+
+<div id="parameters">
+  ### Parámetros
+</div>
+
+```python
+from adbc_driver_manager import dbapi
+
+with dbapi.connect(
+    driver="chdb",
+    db_kwargs={"uri": "chdb://"},
+    autocommit=True,
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT number FROM numbers(10) WHERE number > ?", (7,))
+        print(cur.fetch_arrow_table())
+```
+
+<div id="c-example">
+  ### C
+</div>
+
+Después de ejecutar `dbc install chdb`, el administrador de controladores de C puede resolver el controlador por nombre:
+
+```c
+#include <arrow-adbc/adbc.h>
+#include <arrow-adbc/adbc_driver_manager.h>
+
+struct AdbcDatabase database = {0};
+struct AdbcError error = {0};
+
+AdbcDatabaseNew(&database, &error);
+AdbcDatabaseSetOption(&database, "driver", "chdb", &error);
+AdbcDatabaseSetOption(&database, "uri", "chdb://", &error);
+AdbcDatabaseInit(&database, &error);
+```
+
+<div id="verification">
+  ## Cómo se verifica el driver
+</div>
+
+Las compilaciones de lanzamiento de chDB ADBC ejecutan dos suites externas con el driver nativo en Linux x86-64 y arm64, y macOS x86-64 y arm64:
+
+* la suite de conformidad de Apache Arrow ADBC, que verifica el contrato de C
+* la suite de validación de ADBC Driver Foundry, que verifica el comportamiento a nivel de SQL, los recorridos de ida y vuelta de tipos, los metadatos y la ingestión masiva
+
+Las tablas de compatibilidad de esta página se basan en los resultados de esas ejecuciones. Las suites se encuentran en [el repositorio chdb-core](https://github.com/chdb-io/chdb-core/tree/main/programs/local/adbc/validation).

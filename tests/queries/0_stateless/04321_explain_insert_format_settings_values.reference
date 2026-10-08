@@ -1,14 +1,9 @@
 --- SETTINGS before FORMAT ---
-{"explain":"INSERT INTO FUNCTION `null`('x UInt64')"}
-{"explain":"SETTINGS max_threads = 1"}
-{"explain":"SELECT 1"}
-{"explain":"SETTINGS max_threads = 1"}
+{"explain":"INSERT INTO FUNCTION `null`('x UInt64')\nSETTINGS max_threads = 1\nSELECT 1\nSETTINGS max_threads = 1"}
 --- FORMAT Values ---
 ('INSERT INTO FUNCTION `null`(\'x UInt64\') SELECT 1')
 --- SETTINGS after FORMAT ---
-{"explain":"INSERT INTO FUNCTION `null`('x UInt64')"}
-{"explain":"SETTINGS max_threads = 1"}
-{"explain":"SELECT 1"}
+{"explain":"INSERT INTO FUNCTION `null`('x UInt64')\nSETTINGS max_threads = 1\nSELECT 1"}
 --- double FORMAT ---
 {"explain":"INSERT INTO FUNCTION `null`('x UInt64') SELECT 1 FORMAT Values"}
 --- trailing semicolon ---

@@ -30,7 +30,7 @@ urlCluster(cluster_name, URL, format, structure)
 | `format`       | [Formato](/pt-BR/reference/formats/index) dos dados. Tipo: [String](/pt-BR/reference/data-types/string).                                                            |
 | `structure`    | Estrutura da tabela no formato `'UserID UInt64, Name String'`. Determina os nomes e os tipos das colunas. Tipo: [String](/pt-BR/reference/data-types/string). |
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor retornado
 </div>
 
@@ -69,7 +69,7 @@ SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column
 </div>
 
 Os padrões em `{ }` são usados para gerar um conjunto de shards ou para especificar endereços de failover. Para ver os tipos de padrão compatíveis e exemplos, consulte a descrição da função [remote](/pt-BR/reference/functions/table-functions/remote#globs-in-addresses).
-O caractere `|` dentro dos padrões é usado para especificar endereços de failover. Eles são percorridos na mesma ordem em que são listados no padrão. O número de endereços gerados é limitado pela configuração [glob&#95;expansion&#95;max&#95;elements](/pt-BR/reference/settings/session-settings#glob_expansion_max_elements).
+O caractere `|` dentro dos padrões é usado para especificar endereços de failover. Eles são percorridos na mesma ordem em que são listados no padrão. O número de endereços gerados é limitado pela configuração [glob&#95;expansion&#95;max&#95;elements](/pt-BR/reference/settings/session-settings/other#glob_expansion_max_elements).
 
 <div id="related">
   ## Relacionados

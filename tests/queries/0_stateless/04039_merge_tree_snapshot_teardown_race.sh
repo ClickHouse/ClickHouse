@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: long, no-flaky-check
-#  - no-flaky-check: near the 600s cap on amd_msan/WasmEdge; the rerun count
+#  - no-flaky-check: near the 600s cap on amd_msan; the rerun count
 #    does not affect the snapshot-teardown race this test exercises.
 
 set -e

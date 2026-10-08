@@ -248,10 +248,10 @@ Este [exemplo funcional de minmax](/pt-BR/concepts/best-practices/using-data-ski
   ## Ignorar temporariamente ou forçar índices
 </div>
 
-Desative índices específicos pelo nome em consultas individuais durante testes e solução de problemas. Também há configurações para forçar o uso de índices quando necessário. Consulte [`ignore_data_skipping_indices`](/pt-BR/reference/settings/session-settings#ignore_data_skipping_indices).
+Desative índices específicos pelo nome em consultas individuais durante testes e solução de problemas. Também há configurações para forçar o uso de índices quando necessário. Consulte [`ignore_data_skipping_indices`](/pt-BR/reference/settings/session-settings/ignore#ignore_data_skipping_indices).
 
 ```sql
--- Ignorar um índice pelo nome
+-- Ignore an index by name
 SELECT * FROM logs
 WHERE hasToken(lower(msg), 'exception')
 SETTINGS ignore_data_skipping_indices = 'msg_token';

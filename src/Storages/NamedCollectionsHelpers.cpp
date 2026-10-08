@@ -1,11 +1,11 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Access/ContextAccess.h>
-#include <Core/Settings.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -13,13 +13,10 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <algorithm>
+
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool allow_named_collection_override_by_default;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -82,6 +79,182 @@ namespace
 
         return std::pair{key, Field(value)};
     }
+
+    /// `XMLConfiguration` accepts indexes, escapes and redundant dots in paths. Compare the
+    /// underlying key names so these spellings cannot disguise an override as a new key.
+    String normalizeKey(std::string_view key)
+    {
+        String normalized;
+        for (size_t i = 0; i < key.size(); ++i)
+        {
+            if (key[i] == '[')
+            {
+                auto end = key.find(']', i);
+                if (end == std::string_view::npos)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid named collection key '{}'", key);
+                i = end;
+            }
+            else if (key[i] == '\\' && i + 1 < key.size())
+                normalized += key[++i];
+            else if (key[i] != '.' || (!normalized.empty() && normalized.back() != '.'))
+                normalized += key[i];
+        }
+        if (!normalized.empty() && normalized.back() == '.')
+            normalized.pop_back();
+        return normalized;
+    }
+
+    /// The librdkafka property that a `Kafka` key sets, and whether the key is a flat `kafka_*` table setting.
+    /// `KafkaConfigLoader` sets the properties from nested collection keys (`kafka.<property>`, `kafka.consumer.<property>`
+    /// and `kafka.producer.<property>`, with `_` converted to `.`), and the non-empty flat settings overwrite them afterwards.
+    struct KafkaProperty
+    {
+        String name;
+        bool is_flat_setting;
+    };
+
+    std::optional<KafkaProperty> getKafkaProperty(std::string_view key)
+    {
+        static constexpr auto flat_settings = std::to_array<std::pair<std::string_view, std::string_view>>({
+            {"kafka_security_protocol", "security.protocol"},
+            {"kafka_sasl_mechanism", "sasl.mechanism"},
+            {"kafka_sasl_username", "sasl.username"},
+            {"kafka_sasl_password", "sasl.password"},
+            {"kafka_compression_codec", "compression.codec"},
+            {"kafka_compression_level", "compression.level"},
+            {"kafka_autodetect_client_rack", "client.rack"},
+        });
+
+        for (const auto & [setting, property] : flat_settings)
+        {
+            if (key == setting)
+                return KafkaProperty{String(property), true};
+        }
+
+        for (const std::string_view prefix : {"kafka.consumer.", "kafka.producer.", "kafka."})
+        {
+            if (!key.starts_with(prefix))
+                continue;
+
+            KafkaProperty property{String(key.substr(prefix.size())), false};
+            /// `log_level` is the only librdkafka property with an underscore.
+            if (property.name != "log_level")
+                std::ranges::replace(property.name, '_', '.');
+            return property;
+        }
+        return std::nullopt;
+    }
+
+    bool areEquivalentKeys(std::string_view key, std::string_view other)
+    {
+        if (NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet>{key} == NamedCollectionValidateKey<ExternalDatabaseEqualKeysSet>{other}
+            || NamedCollectionValidateKey<MongoDBEqualKeysSet>{key} == NamedCollectionValidateKey<MongoDBEqualKeysSet>{other})
+            return true;
+
+        static constexpr auto equal_keys = std::to_array<std::pair<std::string_view, std::string_view>>({
+            {"ssl_ca_pem", "ssl_ca"},
+            {"ssl_cert_pem", "ssl_cert"},
+            {"ssl_key_pem", "ssl_key"},
+            {"sslrootcert_pem", "sslrootcert"},
+            {"sslcert_pem", "sslcert"},
+            {"sslkey_pem", "sslkey"},
+            {"nats_credentials", "nats_credential_file"},
+            {"nats_url", "nats_server_list"},
+            {"rabbitmq_host_port", "rabbitmq_address"},
+            {"http_method", "method"},
+            {"compression_method", "compression"},
+            {"storage_account_url", "connection_string"},
+            {"user", "credentials.user"},
+            {"password", "credentials.password"},
+        });
+
+        for (const auto & [first, second] : equal_keys)
+        {
+            if ((key == first && other == second) || (key == second && other == first))
+                return true;
+        }
+
+        /// A flat `Kafka` setting and a nested collection key that set the same librdkafka property replace each other.
+        const auto kafka_property = getKafkaProperty(key);
+        const auto other_kafka_property = getKafkaProperty(other);
+        if (kafka_property && other_kafka_property && kafka_property->name == other_kafka_property->name
+            && (kafka_property->is_flat_setting || other_kafka_property->is_flat_setting))
+            return true;
+
+        /// Configuration values include the text of their descendants. Replacing a subtree,
+        /// or adding a child of an alias, can therefore replace a stored value as well.
+        const auto key_root = key.substr(0, key.find('.'));
+        const auto other_root = other.substr(0, other.find('.'));
+        if (key_root != key || other_root != other)
+            return areEquivalentKeys(key_root, other_root);
+        return false;
+    }
+
+    /// Throws if `key` replaces a stored key that is `NOT OVERRIDABLE`, unless a replayed definition replaces a stored `'auto'`.
+    /// Returns whether `key` replaces a stored key that requires the privilege `SHOW NAMED COLLECTIONS SECRETS`.
+    bool checkOverrideLockAndFindStoredKey(const NamedCollection & collection, const std::string & key, bool is_replayed_definition)
+    {
+        bool overrides_stored_key = false;
+        const auto normalized_key = normalizeKey(key);
+        for (const auto & stored_key : collection.getKeys())
+        {
+            if (!areEquivalentKeys(normalized_key, normalizeKey(stored_key)))
+                continue;
+
+            /// ClickHouse appends the inferred `format` and `structure` to the arguments and parses them again.
+            /// Replacing the stored value `'auto'` neither hides a stored value nor redirects credentials, so it is not an override.
+            const bool replaces_auto = (stored_key == "format" || stored_key == "structure")
+                && collection.getOrDefault<String>(stored_key, "") == "auto";
+
+            if (!collection.isOverridable(stored_key, /* default_value= */ true) && !(replaces_auto && is_replayed_definition))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", stored_key);
+
+            if (replaces_auto)
+                continue;
+
+            overrides_stored_key = true;
+        }
+        return overrides_stored_key;
+    }
+}
+
+void checkNamedCollectionOverrideLock(const NamedCollection & collection, const std::string & key)
+{
+    checkOverrideLockAndFindStoredKey(collection, key, /* is_replayed_definition= */ false);
+}
+
+void checkNamedCollectionOverride(const NamedCollection & collection, const std::string & key, ContextPtr context, bool is_replayed_definition)
+{
+    if (!context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Checking an override of named collection key '{}' requires a context", key);
+    if (checkOverrideLockAndFindStoredKey(collection, key, is_replayed_definition))
+        context->checkAccess(AccessType::SHOW_NAMED_COLLECTIONS_SECRETS, collection.getName());
+}
+
+void checkNamedCollectionOverridesInDictionarySource(
+    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context)
+{
+    auto collection_name = config.getString(config_prefix + ".name", "");
+    if (collection_name.empty())
+        return;
+
+    NamedCollectionFactory::instance().loadIfNot();
+
+    /// A missing collection is reported when the dictionary source is created.
+    auto collection = NamedCollectionFactory::instance().tryGet(collection_name);
+    if (!collection)
+        return;
+
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    for (const auto & key : keys)
+    {
+        /// The 'name' key identifies the named collection itself and is not a data key to override.
+        if (key == "name")
+            continue;
+
+        checkNamedCollectionOverride(*collection, key, context);
+    }
 }
 
 std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
@@ -113,7 +286,9 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ContextPtr context,
     bool throw_unknown_collection,
     VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
-    const StorageID * dependent_table_id)
+    const StorageID * dependent_table_id,
+    const ASTSetQuery * settings,
+    bool is_replayed_definition)
 {
     if (asts.empty())
         return nullptr;
@@ -135,6 +310,12 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     if (!collection)
         return nullptr;
 
+    if (settings)
+    {
+        for (const auto & change : settings->changes)
+            checkNamedCollectionOverride(*collection, change.name, context);
+    }
+
     auto collection_copy = collection->duplicate();
 
     if (asts.size() == 1)
@@ -144,23 +325,19 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         return collection_copy;
     }
 
-    const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
-
     for (auto it = std::next(asts.begin()); it != asts.end(); ++it)
     {
         auto value_override = getKeyValueFromASTImpl(*it, /* fallback_to_ast_value */ complex_args != nullptr, context);
 
         if (!value_override)
         {
-            if (!(*it)->as<ASTFunction>())
+            const auto * function = (*it)->as<ASTFunction>();
+            if (!function)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value argument or function");
-            if (allow_override_by_default)
-                continue;
-            // if allow_override_by_default is false we don't allow extra arguments
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed because setting allow_override_by_default is disabled");
+            checkNamedCollectionOverride(*collection, function->name, context);
+            continue;
         }
-        if (!collection_copy->isOverridable(value_override->first, allow_override_by_default))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", value_override->first);
+        checkNamedCollectionOverride(*collection, value_override->first, context, is_replayed_definition);
 
         if (const ASTPtr * value = std::get_if<ASTPtr>(&value_override->second))
         {
@@ -169,8 +346,11 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        /// Marked before the value is written: the mark remembers the stored value the override
+        /// replaces, so consumers can tell an override that drops a collection-provided value
+        /// from one that never had anything to drop (see `StorageMySQL::getSSLParams`).
         collection_copy->markQueryOverridden(key);
+        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
     }
 
     if (dependent_table_id)
@@ -193,17 +373,20 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
     for (const auto & key : keys)
     {
         /// The 'name' key identifies the named collection itself and is not a data key to override.
         if (key == "name")
             continue;
 
-        if (collection_copy->isOverridable(key, allow_override_by_default))
-            collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
+        checkNamedCollectionOverrideLock(*collection, key);
+
+        /// The keys of a dictionary created with a DDL query come from the query, so mark them the
+        /// same way as the AST-based overload above: `StorageMySQL::getSSLParams` distinguishes a
+        /// credential supplied at the point of use from one defined in the collection itself.
+        /// Marked before the value is written so the mark remembers the replaced stored value.
+        collection_copy->markQueryOverridden(key);
+        collection_copy->setOrUpdate<String>(key, config.getString(config_prefix + '.' + key), {});
     }
 
     /// Register the dictionary that uses this named collection as a dependency,

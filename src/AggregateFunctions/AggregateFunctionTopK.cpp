@@ -101,6 +101,9 @@ public:
         return is_weighted ? "topKWeighted" : "topK";
     }
 
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
+
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool include_counts_)
     {
         if (include_counts_)
@@ -342,6 +345,9 @@ public:
             return  is_weighted ? "approx_top_sum" : "approx_top_k";
         return is_weighted ? "topKWeighted" : "topK";
     }
+
+    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
+    bool shouldPrintParametersWithTypes() const override { return true; }
 
     void ensureCapacity(AggregateFunctionTopKGenericData::Set & set) const
     {
@@ -661,7 +667,7 @@ topK(N, load_factor, 'counts')(column)
         "Usage example",
         R"(
 SELECT topK(3)(AirlineID) AS res
-FROM ontime;
+FROM VALUES('AirlineID UInt32', (19393), (19393), (19393), (19393), (19790), (19790), (19790), (19805), (19805), (20304));
         )",
         R"(
 ┌─res─────────────────┐
@@ -710,9 +716,9 @@ SELECT topKWeighted(2)(k, w) FROM
 VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10));
         )",
         R"(
-┌─topKWeighted(2)(k, w)──┐
-│ ['z','x']              │
-└────────────────────────┘
+┌─topKWeighted(2)(k, w)─┐
+│ ['z','x']             │
+└───────────────────────┘
         )"
     },
     {
@@ -761,7 +767,7 @@ FROM VALUES('k Char, w UInt64', ('y', 1), ('y', 1), ('x', 5), ('y', 1), ('z', 10
         )",
         R"(
 ┌─approx_top_k(2)(k)────┐
-│ [('y',3,0),('x',1,0)] │
+│ [('y',3,0),('z',1,0)] │
 └───────────────────────┘
         )"
     }

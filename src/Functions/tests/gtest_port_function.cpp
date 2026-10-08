@@ -126,6 +126,14 @@ TEST(PortFunction, NoUserinfo)
     EXPECT_EQ(evaluateFunction("port", {"https://example.com:443"}), UInt64(443));
 }
 
+TEST(PortFunction, QueryAndFragment)
+{
+    EXPECT_EQ(evaluateFunction("port", {"https://example.com:8443?x=1"}), UInt64(8443));
+    EXPECT_EQ(evaluateFunction("port", {"https://example.com:8443#fragment"}), UInt64(8443));
+    EXPECT_EQ(evaluateFunction("portRFC", {"https://example.com:8443?x=1"}), UInt64(8443));
+    EXPECT_EQ(evaluateFunction("portRFC", {"https://example.com:8443#fragment"}), UInt64(8443));
+}
+
 TEST(PortFunction, EdgeCases)
 {
     // Empty URL - should return 0

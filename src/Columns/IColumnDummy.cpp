@@ -55,11 +55,6 @@ void IColumnDummy::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     in.ignore(1);
 }
 
-void IColumnDummy::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(1);
-}
-
 ColumnPtr IColumnDummy::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
 {
     size_t bytes = countBytesInFilter(filt);
