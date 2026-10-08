@@ -7,42 +7,42 @@
       "versionId": "ae00ec2598472ccb8856e4f1f4020869cb1221d8279c1e05e1753221f38f987b",
       "translations": {
         "ar": {
-          "updatedAt": "2026-10-08T04:03:40.151Z",
+          "updatedAt": "2026-10-08T10:22:55.393Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         },
         "fr": {
-          "updatedAt": "2026-10-08T04:03:40.330Z",
+          "updatedAt": "2026-10-08T10:22:55.584Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         },
         "ja": {
-          "updatedAt": "2026-10-08T04:03:39.297Z",
+          "updatedAt": "2026-10-08T10:22:54.422Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         },
         "es": {
-          "updatedAt": "2026-10-08T04:03:39.078Z",
+          "updatedAt": "2026-10-08T10:22:54.239Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         },
         "zh": {
-          "updatedAt": "2026-10-08T04:03:39.985Z",
+          "updatedAt": "2026-10-08T10:22:55.190Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-08T04:03:39.653Z",
+          "updatedAt": "2026-10-08T10:22:54.798Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         },
         "ko": {
-          "updatedAt": "2026-10-08T04:03:39.477Z",
+          "updatedAt": "2026-10-08T10:22:54.598Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         },
         "ru": {
-          "updatedAt": "2026-10-08T04:03:39.821Z",
+          "updatedAt": "2026-10-08T10:22:55.009Z",
           "fileName": "docs.json",
           "postProcessHash": "426b4bf5cc21c6cbdf8ddc4763714cfc924e9b4d7aebb989a86733e6f9425b47"
         }
@@ -36659,51 +36659,50 @@
     },
     {
       "fileId": "0ca94b39e11fb10acb0e71e75f9ba62fc3eed8a2e70bf89625659f6687b62151",
-      "versionId": "23b4489477807021d4691cab0285e946ef9be944a4ad238bba23e2da9e0e9912",
+      "versionId": "f4015102a3b6a5801606ae22afcc5d8834b90de4ab9dabb0d9254eedc31877af",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.507Z",
-          "fileName": "es/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "773562ac054b974479175cc62af1a74b98eabc440cf5e2782f59485c3c508de4"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.508Z",
-          "fileName": "ja/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "ac57cfa71d9415b64a2724a4e4743defc2176ef7f9ea20d21ed42213871c8183"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.508Z",
-          "fileName": "ko/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "7db3a57dd7d6e75a2e4cd4a9c6df326a0a79f39f922fb710c6802e63d956a79e"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.508Z",
-          "fileName": "pt-BR/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "5cfcfcf3ec08a00ceebcd0afd84e1baad8a66f84bf8a86ef13da70157874f005"
+        "zh": {
+          "updatedAt": "2026-10-08T10:22:59.863Z",
+          "fileName": "zh/integrations/clickpipes/kafka/faq.mdx",
+          "postProcessHash": "3afaa5b5c716aa8a06239efb9a2b66a935e0b29761f603bdf782f9c873ab3bc0"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.508Z",
+          "updatedAt": "2026-10-08T10:22:59.863Z",
           "fileName": "ru/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "7f263c3c8cca0f4ff4cd7623a6f2c5d0410322d6004f3abe120c8a83002014cd"
+          "postProcessHash": "780797cbef0f4514146df4a776f28cedd8ea0d45b0c25cbdc6a0677a0b6eba60"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.508Z",
-          "fileName": "zh/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "5edde8f31ea9b4d7fbf0db759978f368d3ef5c097569ec498dee130890b053bb"
+        "es": {
+          "updatedAt": "2026-10-08T10:22:59.865Z",
+          "fileName": "es/integrations/clickpipes/kafka/faq.mdx",
+          "postProcessHash": "d0f1491bb2772a417fbdc701fca4fc849fcb5794300dafc1805931d4b3f8049d"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:06.508Z",
-          "fileName": "ar/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "b78cafcd916cbc3fceffb8515938ef22f8208a38788a2bc456efa8fed13b6ace"
+        "pt-BR": {
+          "updatedAt": "2026-10-08T10:22:59.865Z",
+          "fileName": "pt-BR/integrations/clickpipes/kafka/faq.mdx",
+          "postProcessHash": "10b8262714ef5da222e8b1448af2b9ec20488d8fa1fff3aac3912d4cd2908944"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.508Z",
+          "updatedAt": "2026-10-08T10:22:59.866Z",
           "fileName": "fr/integrations/clickpipes/kafka/faq.mdx",
-          "postProcessHash": "a7e847a09ca2a4909c5d0f9a55578917d30b8c85dd770860e203f566c3590872"
+          "postProcessHash": "3d32182b5bcca39cca2797ab5b6943a6f1b50b378aa6f34f13d4244bb09c2ace"
+        },
+        "ja": {
+          "updatedAt": "2026-10-08T10:22:59.866Z",
+          "fileName": "ja/integrations/clickpipes/kafka/faq.mdx",
+          "postProcessHash": "8402a812796cf7bf04c137ea5f193e83274f1137d4f216573776fd6d2747310d"
+        },
+        "ko": {
+          "updatedAt": "2026-10-08T10:22:59.867Z",
+          "fileName": "ko/integrations/clickpipes/kafka/faq.mdx",
+          "postProcessHash": "b7cc551ccb96ca343d188df5b245182bfce1093d3ef58e27d310e1b6f09a562b"
+        },
+        "ar": {
+          "updatedAt": "2026-10-08T10:22:59.868Z",
+          "fileName": "ar/integrations/clickpipes/kafka/faq.mdx",
+          "postProcessHash": "4e8a210eb69a1ffd1f654688eab87abe250b444a89bfdd6b6b7acecafa5a98f8"
         }
       },
-      "fileName": "integrations/clickpipes/kafka/faq.mdx",
-      "staged": false
+      "fileName": "integrations/clickpipes/kafka/faq.mdx"
     },
     {
       "fileId": "846f710171d8161cb4a979c2251033ee1eefd6627a6f64d4964e843e7f878462",
@@ -133189,47 +133188,47 @@
     },
     {
       "fileId": "be65d164b57999adeef6bd2d813d6f90e231a8bba4a7f7751208755b14f5e700",
-      "versionId": "ca46e5e5d0c2fb7d1481bf5b0f2b39acf6858176f2401f9e21902766895bd5ad",
+      "versionId": "40bf9c26b08511d1efa12b3d43c2f52254523e61ea0b33ad00c2f6e6992d73ee",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-28T21:03:17.341Z",
-          "fileName": "es/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "efd447f53388866073c5457177ba88335a068f390447db14176533a67ae440af"
-        },
-        "ar": {
-          "updatedAt": "2026-08-28T21:03:17.348Z",
-          "fileName": "ar/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "24e0b8b7f7170e1eb3e4249f2cc895e2da456d55df2371d31886275e6a8bfe23"
+        "pt-BR": {
+          "updatedAt": "2026-10-08T10:22:59.858Z",
+          "fileName": "pt-BR/integrations/clickpipes/networking/aws-privatelink.mdx",
+          "postProcessHash": "245c753d5d29f9b5ceeef56a9046902cf2056f5c040db29bb9063e060ebde04d"
         },
         "zh": {
-          "updatedAt": "2026-08-28T21:03:17.353Z",
+          "updatedAt": "2026-10-08T10:22:59.859Z",
           "fileName": "zh/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "67ef780b5b8688badee0053abe6cae240975aa9435eccfc11d53049b7a8c6144"
+          "postProcessHash": "b9356faa4675503517b6729007c3f08704d7211d2793ff5fb63618c73c7177d0"
         },
         "ru": {
-          "updatedAt": "2026-08-28T21:03:17.355Z",
+          "updatedAt": "2026-10-08T10:22:59.860Z",
           "fileName": "ru/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "2f329b3f5904d64031216b942260658bcb28cfad102957d8fa39c70784b7f4e6"
+          "postProcessHash": "67f8ebb95668b4c0b78fa37288c4d3db3530aeeaf7393f101e7004708b9f281f"
         },
-        "pt-BR": {
-          "updatedAt": "2026-08-28T21:03:17.356Z",
-          "fileName": "pt-BR/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "dcc70006e5d8c4929b3e8e2d40f09f5e5e34839c951aa78121c39975b5e8b691"
+        "es": {
+          "updatedAt": "2026-10-08T10:22:59.861Z",
+          "fileName": "es/integrations/clickpipes/networking/aws-privatelink.mdx",
+          "postProcessHash": "94caefeb4c3e8e447e64af5f916ad297588310fcce1252cd8dc26be2de1d9f65"
         },
-        "ja": {
-          "updatedAt": "2026-08-28T21:03:17.364Z",
-          "fileName": "ja/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "9bb4d72e340273ec712a942ec231fb83ab38a79893678182bf8564d28058ae81"
-        },
-        "ko": {
-          "updatedAt": "2026-08-28T21:03:18.089Z",
-          "fileName": "ko/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "9824a677138cae46b0ec6a266f09c80e9a5a18b490042cb300341571be074717"
+        "ar": {
+          "updatedAt": "2026-10-08T10:22:59.861Z",
+          "fileName": "ar/integrations/clickpipes/networking/aws-privatelink.mdx",
+          "postProcessHash": "7d69213114d1226097f688054862bebecab95b7c6120e108fac4da59aaba26b3"
         },
         "fr": {
-          "updatedAt": "2026-08-28T21:03:18.090Z",
+          "updatedAt": "2026-10-08T10:22:59.862Z",
           "fileName": "fr/integrations/clickpipes/networking/aws-privatelink.mdx",
-          "postProcessHash": "5d7bce63dd571ee54a8f6e3612233e7b4be311c328a83904eade2368e73dcbd8"
+          "postProcessHash": "2e0eb46a17b2211d3ab24fec9d88e8356974a363477af96f956d018ecf45e457"
+        },
+        "ja": {
+          "updatedAt": "2026-10-08T10:22:59.864Z",
+          "fileName": "ja/integrations/clickpipes/networking/aws-privatelink.mdx",
+          "postProcessHash": "8720c7e240bc9cd8f0db8710044245d0fd16685d6e5a4d5351e81f412a7bbb54"
+        },
+        "ko": {
+          "updatedAt": "2026-10-08T10:22:59.867Z",
+          "fileName": "ko/integrations/clickpipes/networking/aws-privatelink.mdx",
+          "postProcessHash": "a4d02682cabcc6ef307508d66f9f9f1d57b858c0979d0a124de1b11eff002bd3"
         }
       },
       "fileName": "integrations/clickpipes/networking/aws-privatelink.mdx"
