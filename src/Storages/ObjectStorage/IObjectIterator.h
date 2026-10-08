@@ -8,6 +8,11 @@
 #include <Common/Logger.h>
 #include <Common/Macros.h>
 #include <Formats/FormatSettings.h>
+#include <Common/threadPoolCallbackRunner.h>
+
+#include <deque>
+#include <future>
+#include <mutex>
 
 namespace DB
 {
@@ -40,6 +45,10 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
+    /// Polymorphic copy: derived classes carry per-file metadata (e.g. Iceberg delete files) that a
+    /// plain copy of the base class would slice off.
+    virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
+
     virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
     virtual std::string getPath() const { return relative_path_with_metadata.relative_path; }
     virtual bool isArchive() const { return false; }
@@ -49,6 +58,9 @@ struct ObjectInfo
     virtual std::optional<std::string> getFileFormat() const { return std::nullopt; }
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
+
+    /// Start offsets of the row groups (Parquet) of the file, when the table metadata records them.
+    virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
@@ -117,6 +129,13 @@ private:
     LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
 };
 
+/// Cuts every file of the nested iterator into buckets (Parquet row groups) that can be read
+/// independently, so that a cluster query distributes pieces of a file across the nodes.
+///
+/// A file whose size is known from the table metadata (data lakes) is cut by byte ranges without
+/// reading it; the reader on the node then picks the row groups that fall into its range. Other files
+/// are cut by their footer, which is read here. Files are processed ahead of time in a thread pool,
+/// so a slow object storage does not stall the task distribution.
 class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 {
 public:
@@ -128,21 +147,39 @@ public:
         const StorageID & storage_id_ = StorageID::createEmpty(),
         FormatFilterInfoPtr format_filter_info_ = nullptr);
 
+    ~ObjectIteratorSplitByBuckets() override;
+
     ObjectInfoPtr next(size_t) override;
     size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
     std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
 
-private:
-    const ObjectIterator iterator;
-    String format;
-    ObjectStoragePtr object_storage;
-    FormatSettings format_settings;
-    StorageID storage_id;
-    FormatFilterInfoPtr format_filter_info;
-    QueryConditionCachePtr query_condition_cache;
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
 
-    std::queue<ObjectInfoPtr> pending_objects_info;
-    const LoggerPtr log = getLogger("GlobIterator");
+private:
+    std::vector<ObjectInfoPtr> split(const ObjectInfoPtr & object_info) const;
+    void scheduleSplits(size_t id) TSA_REQUIRES(mutex);
+
+    const ObjectIterator iterator;
+    const String format;
+    const ObjectStoragePtr object_storage;
+    const FormatSettings format_settings;
+    const StorageID storage_id;
+    const FormatFilterInfoPtr format_filter_info;
+    QueryConditionCachePtr query_condition_cache;
+    const size_t bucket_size;
+    const size_t max_in_flight;
+    ThreadPoolCallbackRunnerUnsafe<std::vector<ObjectInfoPtr>> runner;
+
+    std::mutex mutex;
+    std::deque<std::future<std::vector<ObjectInfoPtr>>> in_flight TSA_GUARDED_BY(mutex);
+    std::deque<ObjectInfoPtr> pending_objects_info TSA_GUARDED_BY(mutex);
+    bool iterator_exhausted TSA_GUARDED_BY(mutex) = false;
+
+    const LoggerPtr log = getLogger("ObjectIteratorSplitByBuckets");
 };
 
 

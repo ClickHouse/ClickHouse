@@ -9,6 +9,7 @@
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <IO/SharedThreadPools.h>
 #include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -1642,7 +1643,18 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
         }
 
-        configuration->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, context_);
+        configuration->addDeleteTransformers(
+            object_info,
+            builder,
+            format_settings,
+            parser_shared_resources,
+            context_,
+            [weak_input_format = std::weak_ptr<IInputFormat>(input_format)]() -> std::optional<std::pair<size_t, size_t>>
+            {
+                if (auto format = weak_input_format.lock())
+                    return format->getRowRangeToRead();
+                return std::nullopt;
+            });
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows
@@ -2405,6 +2417,7 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     , callback(callback_)
     , is_archive(is_archive_)
     , object_storage(object_storage_)
+    , prefetch_runner(threadPoolCallbackRunnerUnsafe<ClusterFunctionReadTaskResponsePtr>(getIOThreadPool().get(), ThreadName::READ_TASK_ITERATOR))
 {
     ThreadPool pool(
         CurrentMetrics::StorageObjectStorageThreads,
@@ -2446,6 +2459,13 @@ static size_t getKnownArchiveSize(const ObjectInfoPtr & object_info)
     return object_metadata->size_bytes;
 }
 
+StorageObjectStorageSource::ReadTaskIterator::~ReadTaskIterator()
+{
+    std::lock_guard lock(prefetch_mutex);
+    for (auto & future : prefetched_tasks)
+        future.wait();
+}
+
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
@@ -2453,13 +2473,31 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     ObjectInfoPtr object_info;
     if (current_index >= buffer.size())
     {
-        auto task = callback();
+        /// Each request for a task is a round trip to the initiator. Keep one request in flight per
+        /// reading thread, so that the next task is already known when the current one is finished.
+        std::future<ClusterFunctionReadTaskResponsePtr> future;
+        {
+            std::lock_guard lock(prefetch_mutex);
+            if (exhausted)
+                return nullptr;
+            if (prefetched_tasks.empty())
+                prefetched_tasks.push_back(prefetch_runner([callback = callback] { return callback(); }, Priority{}));
+            future = std::move(prefetched_tasks.front());
+            prefetched_tasks.pop_front();
+            prefetched_tasks.push_back(prefetch_runner([callback = callback] { return callback(); }, Priority{}));
+        }
+
+        auto task = future.get();
 
         if (auto query_status = getContext()->getProcessListElement())
             query_status->checkTimeLimit();
 
         if (!task || task->isEmpty())
+        {
+            std::lock_guard lock(prefetch_mutex);
+            exhausted = true;
             return nullptr;
+        }
         object_info = task->getObjectInfo();
     }
     else

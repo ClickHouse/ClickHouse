@@ -1,4 +1,5 @@
 #pragma once
+#include <Processors/Formats/RowRangeToReadGetter.h>
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
@@ -172,7 +173,7 @@ public:
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr) const { }
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr, RowRangeToReadGetter) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/) const { throwNotImplemented("alterPartition"); }
     virtual void alter(

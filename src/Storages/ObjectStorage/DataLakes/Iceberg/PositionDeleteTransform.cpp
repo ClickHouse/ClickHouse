@@ -59,14 +59,49 @@ Poco::JSON::Array::Ptr IcebergPositionDeleteTransform::getSchemaFields()
     return pos_delete_schema;
 }
 
+void IcebergPositionDeleteTransform::ensureInitialized()
+{
+    if (initialized)
+        return;
+    initialized = true;
+
+    if (row_range_getter)
+        row_range = row_range_getter();
+
+    initializeDeleteSources();
+    initializeDeletes();
+}
+
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
+    /// The data file reader is going to output nothing, so no deletes can apply.
+    if (row_range.has_value() && row_range->first >= row_range->second)
+        return;
+
     /// Create filter on the data object to get interested rows
     auto iceberg_data_path = iceberg_object_info->info.data_object_file_path_key.serialize();
     ASTPtr where_ast = makeASTFunction(
         "equals",
         make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
+
+    /// The position delete files are sorted by (file_path, pos), so the range of positions of the
+    /// data file this reader outputs lets the Parquet reader skip the row groups and pages of the
+    /// delete files that belong to other parts of the data file.
+    if (row_range.has_value())
+    {
+        where_ast = makeASTFunction(
+            "and",
+            where_ast,
+            makeASTFunction(
+                "greaterOrEquals",
+                make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::positions_column_name),
+                make_intrusive<ASTLiteral>(Field(UInt64(row_range->first)))),
+            makeASTFunction(
+                "less",
+                make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::positions_column_name),
+                make_intrusive<ASTLiteral>(Field(UInt64(row_range->second)))));
+    }
 
     for (const auto & position_deletes_object : iceberg_object_info->info.position_deletes_objects)
     {
@@ -196,11 +231,15 @@ size_t IcebergPositionDeleteTransform::filterChunkToCurrentDataFile(Chunk & chun
 
 void IcebergBitmapPositionDeleteTransform::transform(Chunk & chunk)
 {
+    ensureInitialized();
     DeletionVectorTransform::transform(chunk, bitmap);
 }
 
-void IcebergBitmapPositionDeleteTransform::initialize()
+void IcebergBitmapPositionDeleteTransform::initializeDeletes()
 {
+    if (row_range.has_value() && row_range->first >= row_range->second)
+        return;
+
     if (const auto & deletion_vector_object = iceberg_object_info->info.deletion_vector)
     {
         auto deletion_vector = readIcebergDeletionVector(
@@ -211,7 +250,8 @@ void IcebergBitmapPositionDeleteTransform::initialize()
             context,
             log);
         for (const auto position : *deletion_vector)
-            bitmap.add(position);
+            if (isPositionInRange(position))
+                bitmap.add(position);
     }
 
     for (auto & position_delete_file : position_delete_files)
@@ -226,13 +266,17 @@ void IcebergBitmapPositionDeleteTransform::initialize()
 
             const auto & position_column = *delete_chunk.getColumns()[position_index];
             for (size_t i = 0; i < delete_chunk.getNumRows(); ++i)
-                bitmap.add(position_column.get64(i));
+            {
+                const UInt64 position = position_column.get64(i);
+                if (isPositionInRange(position))
+                    bitmap.add(position);
+            }
         }
     }
 }
 
 
-void IcebergStreamingPositionDeleteTransform::initialize()
+void IcebergStreamingPositionDeleteTransform::initializeDeletes()
 {
     if (iceberg_object_info->info.deletion_vector.has_value())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Deletion vectors must be applied by IcebergBitmapPositionDeleteTransform");
@@ -286,6 +330,8 @@ void IcebergStreamingPositionDeleteTransform::fetchNewChunkFromSource(size_t pos
 
 void IcebergStreamingPositionDeleteTransform::transform(Chunk & chunk)
 {
+    ensureInitialized();
+
     size_t num_rows = chunk.getNumRows();
     IColumn::Filter filter(num_rows, true);
     size_t num_rows_after_filtration = chunk.getNumRows();

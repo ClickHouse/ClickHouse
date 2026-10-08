@@ -9843,15 +9843,19 @@ Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
 
 This setting defines the granularity of work distribution across the cluster:
 - `file` — each task processes an entire file.
-- `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups).
+- `bucket` — tasks are created per internal data block within a file (for example, Parquet row groups). Files smaller than `cluster_table_function_buckets_batch_size` are not split.
+- `auto` — `bucket` when the number of files is smaller than the number of nodes multiplied by `max_threads`, so that every node gets work; `file` otherwise.
 
 Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
 For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
 )", 0, \
         {"25.11", "file", "file", "New setting."}) \
-    DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
+    DECLARE(UInt64, cluster_table_function_buckets_batch_size, 128 * 1024 * 1024, R"(
 Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
+
+Files whose size is known from the table metadata (for example, Iceberg) are cut by byte ranges without reading them, using the row group offsets recorded in the metadata when available. With `0`, a task is created for every row group, which requires reading the footer of every file on the initiator.
 )", 0, \
+        {"26.10", 0, 128 * 1024 * 1024, "A task per row group was too fine: every task pays for a HEAD request, a footer read and a round trip to the initiator. Files are now cut into byte ranges of this size without reading them."}, \
         {"25.11", 0, 0, "New setting."}) \
     DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
 When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.

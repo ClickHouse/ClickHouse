@@ -40,6 +40,7 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
+    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -461,16 +462,6 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         /*ignore_archive_globs=*/false,
         /*skip_object_metadata=*/true);
 
-    if (local_context->getSettingsRef()[Setting::cluster_table_function_split_granularity] == ObjectStorageGranularityLevel::BUCKET)
-    {
-        iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
-            std::move(iterator),
-            configuration->format,
-            object_storage,
-            local_context
-        );
-    }
-
     std::vector<std::string> ids_of_hosts;
     for (const auto & shard : cluster->getShardsInfo())
     {
@@ -482,6 +473,42 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cluster {}, shard {} with empty node", cluster->getName(), shard.shard_num);
             ids_of_hosts.push_back(replica->getAddress());
         }
+    }
+
+    const auto & settings = local_context->getSettingsRef();
+    bool split_by_buckets = false;
+    switch (settings[Setting::cluster_table_function_split_granularity])
+    {
+        case ObjectStorageGranularityLevel::FILE:
+            break;
+        case ObjectStorageGranularityLevel::BUCKET:
+            split_by_buckets = true;
+            break;
+        case ObjectStorageGranularityLevel::AUTO:
+        {
+            /// Whole files already give every reading thread of the cluster something to do when there
+            /// are enough of them; cutting them further only adds per-task costs.
+            const size_t estimated_files = iterator->estimatedKeysCount();
+            const size_t cluster_threads = ids_of_hosts.size() * std::max<size_t>(1, settings[Setting::max_threads]);
+            split_by_buckets = estimated_files < cluster_threads;
+            LOG_DEBUG(
+                getLogger("StorageObjectStorageCluster"),
+                "Estimated {} files for {} reading threads in the cluster, {} files into buckets",
+                estimated_files,
+                cluster_threads,
+                split_by_buckets ? "splitting" : "not splitting");
+            break;
+        }
+    }
+
+    if (split_by_buckets)
+    {
+        iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
+            std::move(iterator),
+            configuration->format,
+            object_storage,
+            local_context
+        );
     }
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(

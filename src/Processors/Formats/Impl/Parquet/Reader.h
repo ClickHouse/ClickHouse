@@ -106,6 +106,21 @@ namespace DB::Parquet
 ///  * ReadManager drives the Reader. Responsible for scheduling work to threads, thread safety,
 ///    limiting memory usage, and delivering output.
 
+/// Which row groups of the file a reader should process. Both restrictions are optional and are
+/// combined with AND. A row group falls into `byte_range` when the midpoint of its compressed data
+/// does, so adjacent ranges partition the row groups of a file without overlap.
+struct RowGroupSelection
+{
+    std::optional<std::unordered_set<UInt64>> row_group_ids;
+    std::optional<std::pair<UInt64, UInt64>> byte_range; /// [offset, offset + length)
+
+    bool empty() const { return !row_group_ids.has_value() && !byte_range.has_value(); }
+    bool contains(size_t row_group_idx, const parq::RowGroup & meta) const;
+
+    static UInt64 rowGroupStartOffset(const parq::RowGroup & meta);
+    static UInt64 rowGroupCompressedSize(const parq::RowGroup & meta);
+};
+
 struct Reader
 {
     /// Every parquet primitive column can be thought of as wrapped in zero or more levels of
@@ -594,7 +609,7 @@ struct Reader
 
     /// `footer_read_size` overrides the initial footer read size; 0 sizes it adaptively to the file.
     static parq::FileMetaData readFileMetaData(Prefetcher & prefetcher, size_t footer_read_size);
-    void prefilterAndInitRowGroups(const std::optional<std::unordered_set<UInt64>> & row_groups_to_read);
+    void prefilterAndInitRowGroups(const RowGroupSelection & row_groups_to_read);
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.

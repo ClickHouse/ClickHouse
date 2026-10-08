@@ -1,0 +1,34 @@
+<test>
+    <settings>
+        <iceberg_metadata_log_level>none</iceberg_metadata_log_level>
+    </settings>
+    <!-- Cluster reads of the local tpch_ice10 lineitem files through the single-node `default` cluster.
+         The comparison between granularities measures the cost of cutting files into buckets: the
+         initiator-side splitting and the per-task overhead on the worker. -->
+    <substitutions>
+        <substitution>
+            <name>table_function</name>
+            <values><value>icebergLocalCluster('default', (SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/tpch_ice_sf10/lineitem/', 'Parquet')</value></values>
+        </substitution>
+        <substitution>
+            <name>granularity</name>
+            <values>
+                <value>file</value>
+                <value>bucket</value>
+                <value>auto</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- full_scan: every row group of every file is read, the number of tasks is the only difference. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {table_function} SETTINGS cluster_table_function_split_granularity = '{granularity}'</query>
+
+    <!-- filtered_scan: row group pruning on the workers happens after the tasks were cut on the initiator. -->
+    <query><![CDATA[SELECT sum(l_extendedprice * (1 - l_discount)) FROM {table_function} WHERE l_shipdate >= toDate('1995-01-01') AND l_shipdate < toDate('1996-01-01') SETTINGS cluster_table_function_split_granularity = '{granularity}']]></query>
+
+    <!-- small_buckets: many byte ranges per file. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {table_function} SETTINGS cluster_table_function_split_granularity = 'bucket', cluster_table_function_buckets_batch_size = 16777216</query>
+
+    <!-- per_row_group: the footer of every file is read on the initiator. -->
+    <query>SELECT count(), sum(l_extendedprice) FROM {table_function} SETTINGS cluster_table_function_split_granularity = 'bucket', cluster_table_function_buckets_batch_size = 0</query>
+</test>

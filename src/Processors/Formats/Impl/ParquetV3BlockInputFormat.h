@@ -14,12 +14,17 @@ namespace DB
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
+    /// Row groups to read; empty means no restriction by index.
     std::vector<size_t> row_group_ids;
+    /// Byte range [offset, offset + length) of the file; a row group belongs to it when the midpoint
+    /// of its compressed data does. Nullopt means no restriction by position.
+    std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
     explicit ParquetFileBucketInfo(const std::vector<size_t> & row_group_ids_);
-    void serialize(WriteBuffer & buffer) override;
-    void deserialize(ReadBuffer & buffer) override;
+    ParquetFileBucketInfo(UInt64 offset, UInt64 length);
+    void serialize(WriteBuffer & buffer, size_t protocol_version) const override;
+    void deserialize(ReadBuffer & buffer, size_t protocol_version) override;
     String getIdentifier() const override;
     String getFormatName() const override
     {
@@ -33,6 +38,7 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets) override;
 };
 
 class ParquetV3BlockInputFormat final : public IInputFormat
@@ -64,6 +70,7 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
+    std::optional<std::pair<size_t, size_t>> getRowRangeToRead() const override;
     bool isTopKFilterApplied() const override;
 
 private:

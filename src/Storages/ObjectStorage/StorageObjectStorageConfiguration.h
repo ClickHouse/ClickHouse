@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Formats/RowRangeToReadGetter.h>
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -179,7 +180,8 @@ public:
         QueryPipelineBuilder & builder,
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
-        ContextPtr local_context) const;
+        ContextPtr local_context,
+        RowRangeToReadGetter row_range_getter) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,

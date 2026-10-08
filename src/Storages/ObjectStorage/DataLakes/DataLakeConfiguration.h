@@ -447,9 +447,15 @@ public:
         return getMetadata()->optimize(metadata_snapshot, context, format_settings, catalog);
     }
 
-    void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override
+    void addDeleteTransformers(
+        ObjectInfoPtr object_info,
+        QueryPipelineBuilder & builder,
+        const std::optional<FormatSettings> & format_settings,
+        FormatParserSharedResourcesPtr parser_shared_resources,
+        ContextPtr local_context,
+        RowRangeToReadGetter row_range_getter) const override
     {
-        getMetadata()->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context);
+        getMetadata()->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context, std::move(row_range_getter));
     }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override
