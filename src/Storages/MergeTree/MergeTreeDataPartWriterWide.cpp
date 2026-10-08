@@ -4,8 +4,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/Serializations/SerializationMapWithKeyColumns.h>
-#include <DataTypes/TypeTree.h>
-#include <Disks/WriteMode.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -40,7 +38,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_FILE_NAME;
     extern const int FAULT_INJECTED;
-    extern const int NOT_IMPLEMENTED;
     extern const int LIMIT_EXCEEDED;
 }
 
@@ -253,8 +250,7 @@ void MergeTreeDataPartWriterWide::initStreamsToOpenCount()
 void MergeTreeDataPartWriterWide::addStreamForPath(
     const NameAndTypePair & name_and_type,
     const ASTPtr & effective_codec_desc,
-    const ISerialization::SubstreamPath & substream_path,
-    WriteMode write_mode)
+    const ISerialization::SubstreamPath & substream_path)
 {
     chassert(!substream_path.empty());
 
@@ -353,9 +349,7 @@ void MergeTreeDataPartWriterWide::addStreamForPath(
         max_compress_block_size,
         marks_compression_codec,
         settings.marks_compress_block_size,
-        query_write_settings,
-        SizeAdaptivePacking{},
-        write_mode));
+        query_write_settings));
 
     if (columns_to_load_marks.contains(name_and_type.name))
         cached_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
@@ -373,15 +367,14 @@ void MergeTreeDataPartWriterWide::addStreams(
 {
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
-        addStreamForPath(name_and_type, effective_codec_desc, substream_path, WriteMode::Rewrite);
+        addStreamForPath(name_and_type, effective_codec_desc, substream_path);
     };
 
     auto serialization = getSerialization(name_and_type.name);
     auto data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     auto enumerate_settings = getEnumerateSettings(settings);
     /// Key files are created when the key is registered (`ensureMapKeyColumnsStreams`), not from the
-    /// sample column. Opening them here would leave a `Rewrite` handle that a later template copy
-    /// cannot retarget.
+    /// sample column.
     if (const auto * per_key = typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()))
     {
         per_key->enumerateTemplateStreams(enumerate_settings, callback, data);
@@ -466,7 +459,7 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
             enumerate_settings,
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                addStreamForPath(name_and_type, effective_codec_desc, substream_path, WriteMode::Rewrite);
+                addStreamForPath(name_and_type, effective_codec_desc, substream_path);
             },
             data);
         map_key_columns_has_history[name_and_type.name] = false;
@@ -479,7 +472,7 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
 
     /// Before the part has history, a merge-stamped statistics key set is the full union and must
     /// be registered now, so every key is written from row 0. Inserts do not stamp that set; they
-    /// still discover keys from the block, and keys that appear after history copy the template.
+    /// still discover keys from the block, and keys that appear after history get it written as absent rows.
     std::vector<Field> new_keys;
     std::set<Field> seen;
     for (const auto & existing : per_key->getRegisteredKeys(*state))
@@ -526,87 +519,21 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
                 max_keys);
     }
 
-    if (has_history && data_part_storage->isStoredOnRemoteDisk())
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Copying a with_key_columns Map template stream is not supported on object storage");
-    }
-
-    /// A late key copies both templates as its history prefix, but the value template is written
-    /// with the value type's default serialization. A value type that contains LowCardinality has
-    /// a shared dictionary the copy would not reproduce, so refuse it (matching the reference).
-    const bool value_contains_low_cardinality
-        = anyInTypeTree(*per_key->getValueType(), [](const IDataType & node) { return node.lowCardinality(); });
-    if (has_history && value_contains_low_cardinality)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Creating a new LowCardinality key in Map column {} after the first written block is not supported "
-            "when map_serialization_version = 'with_key_columns'",
-            backQuoteIfNeed(name_and_type.name));
-    }
-
-    std::vector<ISerialization::SubstreamPath> template_paths;
-    per_key->enumerateTemplateStreams(
-        enumerate_settings,
-        [&](const ISerialization::SubstreamPath & substream_path)
-        {
-            if (!ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                template_paths.push_back(substream_path);
-        },
-        data);
-
-    if (has_history)
-    {
-        for (const auto & template_path : template_paths)
-        {
-            auto template_full = ISerialization::getFileNameForStream(
-                name_and_type, template_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            String template_stream = replaceFileNameToHashIfNeeded(template_full, *storage_settings, data_part_storage.get());
-            column_streams.at(template_stream)->sync();
-        }
-    }
-
-    /// Map the template substream path to this key's path: the front element becomes
-    /// the per-key value or exists substream, keeping the rest of the path.
-    auto keyPathFromTemplate = [&](const ISerialization::SubstreamPath & template_path, const Field & key)
-    {
-        auto key_path = template_path;
-        if (key_path.front().type == ISerialization::Substream::MapKeyValueTemplate)
-            key_path.front().type = ISerialization::Substream::MapKey;
-        else
-            key_path.front().type = ISerialization::Substream::MapKeyExists;
-        key_path.front().name_of_substream = per_key->getKeySubcolumnName(key);
-        return key_path;
-    };
-
     /// Publish the widened total before opening handles. addStreamForPath reads it for the adaptive
     /// write buffer, and the next initStreamsAndSubstreamsIfNeeded asserts it matches column_streams.
     {
         NameSet incoming;
         for (const auto & key : new_keys)
         {
-            if (has_history)
-            {
-                for (const auto & template_path : template_paths)
+            per_key->enumerateKeyStreams(
+                enumerate_settings,
+                [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    if (auto stream_name = newStreamNameForPath(name_and_type, keyPathFromTemplate(template_path, key)))
+                    if (auto stream_name = newStreamNameForPath(name_and_type, substream_path))
                         incoming.insert(std::move(*stream_name));
-                }
-            }
-            else
-            {
-                per_key->enumerateKeyStreams(
-                    enumerate_settings,
-                    [&](const ISerialization::SubstreamPath & substream_path)
-                    {
-                        if (auto stream_name = newStreamNameForPath(name_and_type, substream_path))
-                            incoming.insert(std::move(*stream_name));
-                    },
-                    data,
-                    key);
-            }
+                },
+                data,
+                key);
         }
         chassert(streams_to_open_in_part.has_value());
         chassert(column_streams.size() == *streams_to_open_in_part);
@@ -615,60 +542,100 @@ void MergeTreeDataPartWriterWide::ensureMapKeyColumnsStreams(
 
     for (const auto & key : new_keys)
     {
-        if (has_history)
-        {
-            for (const auto & template_path : template_paths)
+        per_key->enumerateKeyStreams(
+            enumerate_settings,
+            [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto key_path = keyPathFromTemplate(template_path, key);
-
-                auto template_full = ISerialization::getFileNameForStream(
-                    name_and_type, template_path, ISerialization::StreamFileNameSettings(*storage_settings));
-                auto key_full = ISerialization::getFileNameForStream(
-                    name_and_type, key_path, ISerialization::StreamFileNameSettings(*storage_settings));
-                String template_stream = replaceFileNameToHashIfNeeded(template_full, *storage_settings, data_part_storage.get());
-                String key_stream = replaceFileNameToHashIfNeeded(key_full, *storage_settings, data_part_storage.get());
-
-                data_part_storage->copyFileFrom(*data_part_storage, template_stream + DATA_FILE_EXTENSION, key_stream + DATA_FILE_EXTENSION);
-                data_part_storage->copyFileFrom(*data_part_storage, template_stream + marks_file_extension, key_stream + marks_file_extension);
-
-                addStreamForPath(name_and_type, effective_codec_desc, key_path, WriteMode::Append);
-                column_streams.at(template_stream)->deepCopyTo(*column_streams.at(key_stream));
-
-                if (auto cached = cached_marks.find(template_stream); cached != cached_marks.end())
-                    cached_marks.at(key_stream)->assign(*cached->second);
-
-                if (auto pending = last_non_written_marks.find(name_and_type.name); pending != last_non_written_marks.end())
-                {
-                    auto & marks = pending->second;
-                    auto template_mark = std::ranges::find(marks, template_stream, &StreamNameAndMark::stream_name);
-                    if (template_mark == marks.end())
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending mark for Map template stream {}", template_stream);
-
-                    /// The copied data starts at the same granule boundary as the template, not at the current write position.
-                    StreamNameAndMark key_mark{key_stream, template_mark->mark};
-                    marks.push_back(std::move(key_mark));
-                }
-            }
-        }
-        else
-        {
-            per_key->enumerateKeyStreams(
-                enumerate_settings,
-                [&](const ISerialization::SubstreamPath & substream_path)
-                {
-                    addStreamForPath(name_and_type, effective_codec_desc, substream_path, WriteMode::Rewrite);
-                },
-                data,
-                key);
-        }
+                addStreamForPath(name_and_type, effective_codec_desc, substream_path);
+            },
+            data,
+            key);
     }
 
     chassert(column_streams.size() == *streams_to_open_in_part);
 
     per_key->addKeys(state, new_keys);
     if (has_history)
-        per_key->markKeysCopiedFromTemplate(state, new_keys);
+        writeMapKeyColumnsHistory(name_and_type, *per_key, new_keys, state);
     updateMapKeyColumnsSampleColumn(name_and_type, per_key->getRegisteredKeys(*state));
+}
+
+void MergeTreeDataPartWriterWide::writeMapKeyColumnsHistory(
+    const NameAndTypePair & name_and_type,
+    const SerializationMapWithKeyColumns & per_key,
+    const std::vector<Field> & keys,
+    ISerialization::SerializeBinaryBulkStatePtr & state)
+{
+    /// Every row written before `keys` appeared lacks them. Write that history into their new
+    /// streams with the same granules and marks as the other streams of the column, through the
+    /// keys' own serialization states, so it works for any value type and any disk.
+    WrittenOffsetSubstreams no_offset_substreams;
+    auto serialize_settings = getSerializationSettings();
+    serialize_settings.getter = createStreamGetter(name_and_type, no_offset_substreams);
+    const UInt64 min_compress_block_size = getEffectiveMinCompressBlockSize(name_and_type);
+    serialize_settings.min_compress_block_size = min_compress_block_size;
+
+    /// Key prefixes must precede marks, otherwise a `LowCardinality` dictionary mark points at its version header.
+    per_key.initializeKeyPrefixes(serialize_settings, state);
+
+    auto data = ISerialization::SubstreamData(getSerialization(name_and_type.name))
+        .withType(name_and_type.type)
+        .withColumn(block_sample.getByName(name_and_type.name).column);
+    auto enumerate_settings = getEnumerateSettings(settings);
+    std::vector<String> stream_names;
+    for (const auto & key : keys)
+    {
+        per_key.enumerateKeyStreams(
+            enumerate_settings,
+            [&](const ISerialization::SubstreamPath & substream_path)
+            {
+                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                    return;
+                if (const auto & stream_name = getStreamName(name_and_type, substream_path); !stream_name.empty())
+                    stream_names.push_back(stream_name);
+            },
+            data,
+            key);
+    }
+
+    auto get_current_marks = [&]
+    {
+        StreamsWithMarks marks;
+        for (const auto & stream_name : stream_names)
+        {
+            auto & stream = *column_streams.at(stream_name);
+            if (stream.compressed_hashing.offset() >= min_compress_block_size)
+                stream.compressed_hashing.next();
+            marks.push_back({stream_name, {stream.plain_hashing.count(), stream.compressed_hashing.offset()}});
+        }
+        return marks;
+    };
+
+    auto write_absent_rows = [&](size_t rows)
+    {
+        for (const auto & key : keys)
+            per_key.writeAbsentKeyRows(key, rows, serialize_settings, state);
+        for (const auto & stream_name : stream_names)
+            column_streams.at(stream_name)->compressed_hashing.nextIfAtEnd();
+    };
+
+    for (size_t mark = 0; mark < getCurrentMark(); ++mark)
+    {
+        const size_t rows = index_granularity->getMarkRows(mark);
+        for (const auto & mark_of_stream : get_current_marks())
+            flushMarkToFile(mark_of_stream, rows);
+        write_absent_rows(rows);
+    }
+
+    /// The granule that the previous block left incomplete: its marks are flushed when it is completed.
+    if (rows_written_in_last_mark)
+    {
+        auto pending = last_non_written_marks.find(name_and_type.name);
+        if (pending == last_non_written_marks.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "No pending mark for incomplete granule of column {}", backQuoteIfNeed(name_and_type.name));
+        std::ranges::move(get_current_marks(), std::back_inserter(pending->second));
+        write_absent_rows(rows_written_in_last_mark);
+    }
 }
 
 const String & MergeTreeDataPartWriterWide::getStreamName(
@@ -1344,6 +1311,8 @@ void MergeTreeDataPartWriterWide::fillDataChecksums(MergeTreeDataPartChecksums &
             for (const auto & key : per_key->getRegisteredKeys(*state_it->second))
                 manifest.keys.push_back(MapKeyManifestEntry{.key = key, .presence_kind = MapKeyPresenceKind::Tracked});
         }
+        /// Keys are registered in the order they first appear; a full map is read in manifest order.
+        std::sort(manifest.keys.begin(), manifest.keys.end(), [](const auto & lhs, const auto & rhs) { return lhs.key < rhs.key; });
 
         key_columns_files.push_back(writeMapKeyColumnsFile(
             *data_part_storage,

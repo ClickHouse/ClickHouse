@@ -244,7 +244,9 @@ std::vector<Field> SerializationMapWithKeyColumns::collectNewKeys(const IColumn 
 
 std::vector<Field> SerializationMapWithKeyColumns::collectAllKeys(const IColumn & column) const
 {
-    return collectFirstSeenKeys(column, {});
+    auto keys = collectFirstSeenKeys(column, {});
+    std::sort(keys.begin(), keys.end());
+    return keys;
 }
 
 void SerializationMapWithKeyColumns::addKeys(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const
@@ -261,11 +263,29 @@ void SerializationMapWithKeyColumns::addKeys(SerializeBinaryBulkStatePtr & state
     }
 }
 
-void SerializationMapWithKeyColumns::markKeysCopiedFromTemplate(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const
+void SerializationMapWithKeyColumns::writeAbsentKeyRows(
+    const Field & key,
+    size_t rows,
+    SerializeBinaryBulkSettings & settings,
+    SerializeBinaryBulkStatePtr & state) const
 {
     auto * map_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
-    for (const auto & key : keys)
-        map_state->copied_from_template.insert(key);
+    auto it = map_state->key_index.find(key);
+    if (it == map_state->key_index.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Map key {} is not registered", applyVisitor(FieldVisitorToString(), key));
+    auto & key_state = map_state->keys[it->second];
+
+    auto values = value_type->createColumn();
+    values->insertManyDefaults(rows);
+    addMapKeyPath(settings, key);
+    value_serialization->serializeBinaryBulkWithMultipleStreams(*values, 0, rows, settings, key_state.value_state);
+    settings.path.pop_back();
+
+    auto exists = ColumnUInt8::create();
+    exists->getData().resize_fill(rows, 0);
+    addMapExistsPath(settings, key);
+    exists_serialization->serializeBinaryBulkWithMultipleStreams(*exists, 0, rows, settings, key_state.exists_state);
+    settings.path.pop_back();
 }
 
 std::vector<Field> SerializationMapWithKeyColumns::getRegisteredKeys(const SerializeBinaryBulkState & state) const
@@ -510,8 +530,8 @@ void SerializationMapWithKeyColumns::serializeBinaryBulkStatePrefix(
         return;
     }
 
-    /// Wide path: keys are discovered block by block. Open the two template streams; late keys
-    /// copy the templates' all-absent history when they first appear.
+    /// Wide path: keys are discovered block by block. Open the two template streams; they are the
+    /// data files of a column that never sees a key.
     {
         settings.path.push_back(Substream::MapKeyValueTemplate);
         auto empty_values = value_type->createColumn();
@@ -534,7 +554,7 @@ void SerializationMapWithKeyColumns::initializeKeyPrefixes(
     auto * map_state = checkAndGetState<SerializeBinaryBulkStateMapWithKeyColumns>(state);
     for (auto & key_state : map_state->keys)
     {
-        if (key_state.value_state || map_state->copied_from_template.contains(key_state.key))
+        if (key_state.value_state)
             continue;
 
         addMapKeyPath(settings, key_state.key);

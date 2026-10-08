@@ -140,14 +140,11 @@ public:
         /// the Compact path.
         std::vector<KeyWriteState> keys;
         std::map<Field, size_t> key_index;
-        /// Keys that were seeded from the templates (a late key on the Wide path). Their prefixes
-        /// were already written by copying the template, so `initializeKeyPrefixes` skips them.
-        std::set<Field> copied_from_template;
         /// Value/exists template streams' serialize state (Wide path only; null when frozen).
         SerializeBinaryBulkStatePtr template_value_state;
         SerializeBinaryBulkStatePtr template_exists_state;
         /// Exact number of rows written so far for the part. New late keys are absent from every
-        /// one of these rows, which is what the copied template history encodes.
+        /// one of these rows.
         size_t num_rows_written = 0;
         /// Frozen mode: keys were frozen before the first granule, there are no template streams,
         /// and the manifest is written once by the Compact writer (not from the suffix here).
@@ -163,24 +160,37 @@ public:
 
         DeserializeBinaryBulkStatePtr clone() const override
         {
-            return std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumns>(*this);
+            auto new_state = std::make_shared<DeserializeBinaryBulkStateMapWithKeyColumns>(*this);
+            for (auto & value_state : new_state->value_states)
+                value_state = value_state ? value_state->clone() : nullptr;
+            for (auto & exists_state : new_state->exists_states)
+                exists_state = exists_state ? exists_state->clone() : nullptr;
+            return new_state;
         }
     };
 
     /// Keys from `column` that are not yet registered in `state`, in first-seen order.
     std::vector<Field> collectNewKeys(const IColumn & column, const SerializeBinaryBulkState & state) const;
-    /// All distinct keys present in `column`, first-seen order. Used by the Compact writer to
+    /// All distinct keys present in `column`, in key order. Used by the Compact writer to
     /// freeze the part-wide key set from the buffered block before writing the first granule.
     std::vector<Field> collectAllKeys(const IColumn & column) const;
     /// Register `keys` in `state`, opening their per-key value/exists streams lazily.
     void addKeys(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const;
-    void markKeysCopiedFromTemplate(SerializeBinaryBulkStatePtr & state, const std::vector<Field> & keys) const;
     std::vector<Field> getRegisteredKeys(const SerializeBinaryBulkState & state) const;
     size_t getRegisteredKeyCount(const SerializeBinaryBulkState & state) const;
 
     /// Initialize newly registered key streams (value + exists prefixes) before the writer
-    /// records their first marks. Keys seeded from templates are skipped.
+    /// records their first marks.
     void initializeKeyPrefixes(SerializeBinaryBulkSettings & settings, SerializeBinaryBulkStatePtr & state) const;
+
+    /// Append `rows` rows where the registered `key` is absent: default values to its value
+    /// stream and zeros to its presence stream. A key that first appears after some granules
+    /// were written gets this history granule by granule.
+    void writeAbsentKeyRows(
+        const Field & key,
+        size_t rows,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state) const;
 
     /// Streams of one key's `.key_<name>` value + `.exists_<name>` presence.
     void enumerateKeyStreams(

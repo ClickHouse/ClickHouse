@@ -99,21 +99,27 @@ private:
         const ASTPtr & effective_codec_desc) override;
 
     /// Create one stream for a resolved substream path. Split out of addStreams so that
-    /// late per-key Map streams can be opened mid-part (with WriteMode::Append) when a key
-    /// first appears in a later block.
+    /// late per-key Map streams can be opened mid-part when a key first appears in a later block.
     void addStreamForPath(
         const NameAndTypePair & name_and_type,
         const ASTPtr & effective_codec_desc,
-        const ISerialization::SubstreamPath & substream_path,
-        WriteMode write_mode);
+        const ISerialization::SubstreamPath & substream_path);
 
     /// For a `with_key_columns` Map: discover keys of `column` not yet registered in `state`,
-    /// create their `.key_<name>`/`.exists_<name>` streams (copying the two templates when the
-    /// part already has written history), register them, and refresh the sample column. A no-op
-    /// for any other serialization.
+    /// create their `.key_<name>`/`.exists_<name>` streams (writing the rows they are absent from
+    /// when the part already has written history), register them, and refresh the sample column.
+    /// A no-op for any other serialization.
     void ensureMapKeyColumnsStreams(
         const NameAndTypePair & name_and_type,
         const IColumn & column,
+        ISerialization::SerializeBinaryBulkStatePtr & state);
+
+    /// Write the granules and marks already written for the column into the new streams of
+    /// `keys`, with every row absent.
+    void writeMapKeyColumnsHistory(
+        const NameAndTypePair & name_and_type,
+        const SerializationMapWithKeyColumns & per_key,
+        const std::vector<Field> & keys,
         ISerialization::SerializeBinaryBulkStatePtr & state);
 
     void updateMapKeyColumnsSampleColumn(const NameAndTypePair & name_and_type, const std::vector<Field> & keys);
@@ -201,13 +207,13 @@ private:
     String already_written_stream_holder;
 
     /// Names of the two `with_key_columns` Map template streams (`.key_template`,
-    /// `.exists_template`). They exist only to seed late keys and are removed before checksums.
+    /// `.exists_template`). They are removed before checksums unless the column saw no key.
     NameSet per_key_template_stream_names;
     /// Template streams of Map columns that never saw a key. They stay in the part so
     /// `columns_substreams.txt` names a file that exists. Columns that did see keys drop theirs.
     NameSet kept_map_key_columns_template_streams;
     /// Per per-key Map column: whether any granule has been written yet. A late key that appears
-    /// after this is true must copy the templates' all-absent history.
+    /// after this is true gets the rows written so far as absent rows (`writeMapKeyColumnsHistory`).
     std::unordered_map<String, bool> map_key_columns_has_history;
 };
 

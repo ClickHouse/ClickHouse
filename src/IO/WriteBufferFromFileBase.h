@@ -15,11 +15,6 @@ public:
 
     void sync() override = 0;
     virtual std::string getFileName() const = 0;
-
-    void deepCopyOwnMemoryTo(WriteBufferFromFileBase & target) const
-    {
-        BufferWithOwnMemory<WriteBuffer>::deepCopyOwnMemoryTo(target);
-    }
 };
 
 }

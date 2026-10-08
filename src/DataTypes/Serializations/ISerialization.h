@@ -533,7 +533,7 @@ public:
         /// it registers exactly these keys in the prefix, writes no template streams (rows missing
         /// a key are serialized as default/absent in place). The part writer records the key list
         /// in `<column>.key_columns.txt`, not in a data stream. Null selects the Wide path, which
-        /// discovers keys block by block and copies an all-absent template for late keys.
+        /// discovers keys block by block and writes the rows a late key is absent from when it appears.
         const std::vector<Field> * map_key_columns_frozen_keys = nullptr;
     };
 

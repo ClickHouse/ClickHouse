@@ -77,8 +77,8 @@ TEST(MapWithKeyColumnsManifest, RoundTrip)
 
     auto manifest = deserializeManifest(serialization, serializeManifest(serialization, *column));
     ASSERT_EQ(manifest.keys.size(), 3u);
-    EXPECT_EQ(manifest.keys[0].key, Field("b"));
-    EXPECT_EQ(manifest.keys[1].key, Field("a"));
+    EXPECT_EQ(manifest.keys[0].key, Field("a"));
+    EXPECT_EQ(manifest.keys[1].key, Field("b"));
     EXPECT_EQ(manifest.keys[2].key, Field("c"));
     for (const auto & entry : manifest.keys)
         EXPECT_EQ(entry.presence_kind, MapKeyPresenceKind::Tracked);

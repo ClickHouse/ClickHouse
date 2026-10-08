@@ -436,7 +436,7 @@ Possible values:
 - with_key_columns — Store each key as an independent value stream plus its own presence stream. Reading a single key opens only that key's files.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
-`m['key']` reads that key's value stream. A constant `mapContains`, `mapContainsKey`, `has`, or `notHas` reads that key's presence stream. `mapKeys` reads the presence streams. A full map comes back in key comparison order, and a repeated key in a row is stored once. [map_max_key_columns](#map_max_key_columns) bounds the number of independent key streams.
+`m['key']` reads that key's value stream. A constant `mapContains`, `mapContainsKey`, `has`, or `notHas` reads that key's presence stream. `mapKeys` reads the presence streams. A full map comes back in key comparison order, and a repeated key in a row is stored once with its first value, so functions over the pairs of the map, such as `mapContainsKeyValue`, do not see the other values. [map_max_key_columns](#map_max_key_columns) bounds the number of independent key streams.
 )", 0, \
         {"26.3", "basic", "basic", "Add a setting to control Map serialization version"}) \
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version_for_zero_level_parts, "basic", R"(

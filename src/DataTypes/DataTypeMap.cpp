@@ -659,7 +659,7 @@ SETTINGS
     min_rows_for_wide_part = 0;
 ```
 
-The format is implemented for both Wide and Compact parts. A key that first appears after the first written granule (for example from a mutation or a horizontal merge) still gets its own dedicated streams: the writer keeps a per-key template stream and copies it as the new key's all-absent history prefix.
+The format is implemented for both Wide and Compact parts. A key that first appears after the first written granule (for example from a mutation or a horizontal merge) still gets its own dedicated streams: the writer fills them with the type default and a zero presence flag for every row written before the key appeared. This works for any value type, including `LowCardinality`, and on any disk, including object storage.
 
 `map_serialization_version_for_zero_level_parts` can stay `basic` for inserts. Merged parts then use `with_key_columns`. Those merged parts still have to be Wide.
 
@@ -673,6 +673,8 @@ Reading the whole map differs in two ways:
 - A repeated key in one row is stored once, keeping the first value. `length` and `m.size0` count the distinct keys present in the row. `basic` and `with_buckets` keep every pair, so `length` counts repeated keys.
 
 `map('k', 1, 'k', 2, 'x', 3)` is read back as `{'k':1,'x':3}` with `length` equal to 2. Under `basic` and `with_buckets` the same value is `{'k':1,'k':2,'x':3}` with `length` equal to 3. `m['k']` is `1` in all three.
+
+The dropped pairs are gone for every function that looks at the pairs of a map, not only for `length`. For the row above, `mapContainsKeyValue(m, 'k', 2)` returns `0` under `with_key_columns` and `1` under `basic` and `with_buckets`. `mapValues`, `mapFilter`, `mapApply`, `ARRAY JOIN` over the map, and comparisons of whole maps also see only `{'k':1,'x':3}`. Deduplicate repeated keys before inserting if the result must not depend on the serialization.
 
 `mapKeys` and `mapValues` follow this same key order. Compare full maps with `mapSort` when the order itself is not significant.
 
