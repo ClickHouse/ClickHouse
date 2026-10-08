@@ -566,6 +566,8 @@ void SortingStep::fullSort(QueryPipelineBuilder & pipeline, const SortDescriptio
             SortingQueueStrategy::Batch,
             limit_,
             always_read_till_end);
+        if (threshold_tracker && limit_)
+            transform->setTopKThresholdTracker(threshold_tracker, result_sort_desc.front().column_name, limit_);
 
         pipeline.addTransform(std::move(transform));
         merge_streams = collector.detachProcessors(static_cast<size_t>(SortingStage::MergeStreams));

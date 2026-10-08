@@ -2813,11 +2813,16 @@ void Planner::buildPlanForQueryNode()
         const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped(), true, true);
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it->as<TableNode>();
-            if (!table_node)
+            const std::optional<TableExpressionModifiers> * modifiers_ptr = nullptr;
+            if (const auto * table_node = it->as<TableNode>())
+                modifiers_ptr = &table_node->getTableExpressionModifiers();
+            else if (const auto * table_function_node = it->as<TableFunctionNode>())
+                modifiers_ptr = &table_function_node->getTableExpressionModifiers();
+
+            if (!modifiers_ptr)
                 continue;
 
-            const auto & modifiers = table_node->getTableExpressionModifiers();
+            const auto & modifiers = *modifiers_ptr;
             /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
             if (modifiers.has_value()
                 && (modifiers->hasFinal()
@@ -2856,9 +2861,12 @@ void Planner::buildPlanForQueryNode()
     /// applied later as a plan transformation (QueryPlanOptimizations::applyParallelReplicas). So skip the
     /// old parallel-replicas planning path here (it would emit ReadFromLocalReplica /
     /// ReadFromRemoteParallelReplicas, e.g. inside a view/union inner query) and use the normal plan.
+    /// Same for a plan that is shipped to a shard: those steps are local to the server that planned
+    /// them and have no serialized form, and the shard decides on parallel replicas on its own.
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
         && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
-        && !settings[Setting::parallel_replicas_plan_based])
+        && !settings[Setting::parallel_replicas_plan_based]
+        && !select_query_options.build_logical_plan)
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }
