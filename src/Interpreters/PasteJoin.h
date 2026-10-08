@@ -31,6 +31,9 @@ public:
     std::string getAlgorithm() const override { return "PASTE"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
+
     /// The left and right blocks are concatenated side by side by row position.
     bool preservesLeftBlockOrder() const override { return true; }
 

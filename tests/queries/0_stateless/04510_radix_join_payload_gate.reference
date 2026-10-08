@@ -1,0 +1,6 @@
+accept_fixed_u64	1
+accept_fixed_multi	1
+fallback_right_string	1
+fallback_left_string	1
+fallback_right_array	1
+fallback_right_nullable	1

@@ -29,3 +29,15 @@ clickhouse_add_microbenchmark(benchmark_stack_trace
 clickhouse_add_microbenchmark(benchmark_sched_getcpu
     SOURCES sched_getcpu.cpp
     LIBRARIES ${CMAKE_DL_LIBS})
+
+# A standalone model (not a Google Benchmark binary), so it is built only with ENABLE_BENCHMARKS.
+if (ENABLE_BENCHMARKS)
+    clickhouse_add_executable(hash_join_bandwidth_model
+        hash_join_bandwidth_model.cpp
+        hash_join_bench.cpp
+        concurrent_hash_join_bench.cpp
+        radix_hash_join_bench.cpp)
+    target_link_libraries (hash_join_bandwidth_model PRIVATE
+        dbms
+        boost::program_options)
+endif ()

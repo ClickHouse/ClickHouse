@@ -36,6 +36,8 @@ public:
     std::string getAlgorithm() const override { return toString(JoinAlgorithm::FULL_SORTING_MERGE); }
 
     const TableJoin & getTableJoin() const override { return *table_join; }
+    using IJoin::addBlockToJoin;
+    using IJoin::joinBlock;
 
     bool isCloneSupported() const override
     {
