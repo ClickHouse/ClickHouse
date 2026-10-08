@@ -34,7 +34,7 @@ namespace
 /// Therefore, release-acquire is required.
 std::atomic<bool> fiber_scheduler_initialized = false;
 
-constinit FiberLocal<bool, FiberLocalSlot::INSIDE_SILK_FIBER> inside_silk_fiber;
+constinit FiberLocal<bool, FiberLocalSlot::INSIDE_SILK_FIBER> inside_clickhouse_fiber;
 
 constexpr uint8_t CLICKHOUSE_FIBER_CATEGORY = 1;
 
@@ -53,7 +53,7 @@ struct FiberContext
 #if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
         silk_thread_local_storage_sanitizer_fiber_init_hook();
 #endif
-        inside_silk_fiber = true;
+        inside_clickhouse_fiber = true;
         try
         {
             DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
@@ -145,9 +145,14 @@ bool isFiberSchedulerInitialized()
     return fiber_scheduler_initialized.load(std::memory_order_acquire);
 }
 
+bool isInsideClickHouseFiber()
+{
+    return inside_clickhouse_fiber.get();
+}
+
 bool isInsideFiber()
 {
-    return inside_silk_fiber.get();
+    return silk::FiberScheduler::getCurrentFiberId().raw != 0;
 }
 
 RuntimeCounters getRuntimeCounters()

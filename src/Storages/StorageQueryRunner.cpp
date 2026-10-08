@@ -82,9 +82,8 @@ namespace Setting
 namespace QueryRunnerSetting
 {
     extern const QueryRunnerSettingsString cluster;
-    extern const QueryRunnerSettingsUInt64 max_concurrent_remote_queries;
     extern const QueryRunnerSettingsUInt64 max_concurrent_remote_queries_per_replica;
-    extern const QueryRunnerSettingsUInt64 max_queue_size;
+    extern const QueryRunnerSettingsUInt64 max_pending_queries;
     extern const QueryRunnerSettingsQueryRunnerMode mode;
     extern const QueryRunnerSettingsQueryRunnerScheduler scheduler;
     extern const QueryRunnerSettingsString shard;
@@ -387,7 +386,10 @@ protected:
     void runJob(const QueryRunnerJob & job)
     {
         if (shutdown_called)
+        {
+            LOG_WARNING(log, "The table is shutting down, discarding the query");
             return;
+        }
 
         try
         {
@@ -668,18 +670,19 @@ public:
         const String & cluster_name_,
         ShardSelector shard_selector_,
         UInt64 num_threads_,
-        UInt64 max_queue_size_,
+        UInt64 max_pending_queries_,
+        UInt64 max_concurrent_remote_queries_per_replica_,
         LoggerPtr log_)
         : QueryRunnerDispatcher(global_context_, cluster_name_, shard_selector_, log_)
-        , num_threads(num_threads_)
-        , max_queue_size(max_queue_size_)
+        , max_pending_queries(max_pending_queries_)
+        , max_concurrent_remote_queries_per_replica(max_concurrent_remote_queries_per_replica_)
         , pool(
               CurrentMetrics::QueryRunnerThreads,
               CurrentMetrics::QueryRunnerThreadsActive,
               CurrentMetrics::QueryRunnerThreadsScheduled,
               num_threads_,
               0,
-              num_threads_ + max_queue_size_)
+              max_pending_queries_)
     {
     }
 
@@ -695,7 +698,7 @@ public:
         if (shutdown_called)
             LOG_WARNING(log, "The table is shutting down, discarding the query");
         else
-            LOG_ERROR(LogFrequencyLimiter(log, 5), "Cannot schedule the query (max_queue_size = {}), discarding it", max_queue_size);
+            LOG_ERROR(LogFrequencyLimiter(log, 5), "Too many pending queries (max_pending_queries = {}), discarding the query", max_pending_queries);
     }
 
 private:
@@ -708,7 +711,7 @@ private:
     ConnectionPoolPtr createConnectionPool(const Cluster::Address & address, const String & database) override
     {
         return ConnectionPoolFactory::instance().get(
-            static_cast<unsigned>(num_threads),
+            static_cast<unsigned>(max_concurrent_remote_queries_per_replica),
             address.host_name,
             address.port,
             database.empty() ? address.default_database : database,
@@ -726,8 +729,8 @@ private:
             address.priority);
     }
 
-    const size_t num_threads;
-    const size_t max_queue_size;
+    const size_t max_pending_queries;
+    const size_t max_concurrent_remote_queries_per_replica;
     ThreadPool pool;
 };
 
@@ -740,11 +743,11 @@ public:
         ContextPtr global_context_,
         const String & cluster_name_,
         ShardSelector shard_selector_,
-        UInt64 max_concurrent_remote_queries_,
+        UInt64 max_pending_queries_,
         UInt64 max_concurrent_remote_queries_per_replica_,
         LoggerPtr log_)
         : QueryRunnerDispatcher(global_context_, cluster_name_, shard_selector_, log_)
-        , max_concurrent_remote_queries(max_concurrent_remote_queries_)
+        , max_pending_queries(max_pending_queries_)
         , max_concurrent_remote_queries_per_replica(max_concurrent_remote_queries_per_replica_)
     {
     }
@@ -775,9 +778,9 @@ public:
             }
         }
 
-        if (max_concurrent_remote_queries && futures.size() >= max_concurrent_remote_queries)
+        if (max_pending_queries && futures.size() >= max_pending_queries)
         {
-            LOG_ERROR(LogFrequencyLimiter(log, 5), "Too many concurrent queries (max_concurrent_remote_queries = {}), discarding the query", max_concurrent_remote_queries);
+            LOG_ERROR(LogFrequencyLimiter(log, 5), "Too many pending queries (max_pending_queries = {}), discarding the query", max_pending_queries);
             return;
         }
 
@@ -833,7 +836,7 @@ private:
             Silk::streamSocketFactory());
     }
 
-    const UInt64 max_concurrent_remote_queries;
+    const UInt64 max_pending_queries;
     const UInt64 max_concurrent_remote_queries_per_replica;
 
     std::mutex futures_mutex;
@@ -980,7 +983,7 @@ StorageQueryRunner::StorageQueryRunner(
             getContext(),
             cluster_name,
             parseShardSelector(settings[QueryRunnerSetting::shard]),
-            settings[QueryRunnerSetting::max_concurrent_remote_queries],
+            settings[QueryRunnerSetting::max_pending_queries],
             settings[QueryRunnerSetting::max_concurrent_remote_queries_per_replica],
             log);
 #else
@@ -993,7 +996,8 @@ StorageQueryRunner::StorageQueryRunner(
             cluster_name,
             parseShardSelector(settings[QueryRunnerSetting::shard]),
             settings[QueryRunnerSetting::threads],
-            settings[QueryRunnerSetting::max_queue_size],
+            settings[QueryRunnerSetting::max_pending_queries],
+            settings[QueryRunnerSetting::max_concurrent_remote_queries_per_replica],
             log);
 }
 
@@ -1145,10 +1149,6 @@ void registerStorageQueryRunner(StorageFactory & factory)
         if (num_threads > 1024)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine must be in the range [1, 1024], got {}", num_threads);
 
-        const UInt64 max_queue_size = settings[QueryRunnerSetting::max_queue_size];
-        if (max_queue_size < 1)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'max_queue_size' setting of the QueryRunner engine must be at least 1");
-
         const String & cluster_name = settings[QueryRunnerSetting::cluster];
         const ShardSelector shard_selector = parseShardSelector(settings[QueryRunnerSetting::shard]);
 
@@ -1172,26 +1172,8 @@ void registerStorageQueryRunner(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "The 'max_concurrent_remote_queries_per_replica' setting of the QueryRunner engine must be at least 1");
 
-        if (settings[QueryRunnerSetting::scheduler] == QueryRunnerScheduler::FIBERS)
-        {
-            if (settings[QueryRunnerSetting::threads].changed)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine does not apply to the 'fibers' scheduler");
-
-            if (settings[QueryRunnerSetting::max_queue_size].changed)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'max_queue_size' setting of the QueryRunner engine does not apply to the 'fibers' scheduler");
-        }
-        else
-        {
-            if (settings[QueryRunnerSetting::max_concurrent_remote_queries].changed)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The 'max_concurrent_remote_queries' setting of the QueryRunner engine applies only to the 'fibers' scheduler");
-
-            if (settings[QueryRunnerSetting::max_concurrent_remote_queries_per_replica].changed)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The 'max_concurrent_remote_queries_per_replica' setting of the QueryRunner engine applies only to the 'fibers' scheduler");
-        }
+        if (settings[QueryRunnerSetting::scheduler] == QueryRunnerScheduler::FIBERS && settings[QueryRunnerSetting::threads].changed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'threads' setting of the QueryRunner engine does not apply to the 'fibers' scheduler");
 
         validateColumns(args.columns);
 

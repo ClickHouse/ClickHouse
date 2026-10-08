@@ -4,17 +4,13 @@
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/SilkFiberScheduler.h>
 #include <Common/StackfulCoroutine.h>
 #include <sys/resource.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <cstdint>
 
-#include "config.h"
-
-#if USE_SILK
-#include <silk/fibers/fiber.h>
-#endif
 
 #if defined(OS_FREEBSD)
 #   include <pthread_np.h>
@@ -138,10 +134,11 @@ static NO_INLINE size_t getStackSize(void ** out_address)
 
 void checkStackSize()
 {
-#if USE_SILK
-    if (silk::FiberScheduler::getCurrentFiberId().raw)
+    /// We should check Silk::isInsideFiber() before checking StackfulCoroutine::getCurrentCoroutine().
+    /// The latter reads a raw thread_local, which triggers the Silk TLS sanitizer failure as the same fiber
+    /// accesses the same TLS variable via different addresses (as fibers can migrate between the underlying worker threads).
+    if (Silk::isInsideFiber())
         return;
-#endif
 
     /// Not implemented for coroutines.
     if (StackfulCoroutine::getCurrentCoroutine())

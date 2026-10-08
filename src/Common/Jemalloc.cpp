@@ -1,4 +1,5 @@
 #include <Common/Jemalloc.h>
+#include <Common/SilkFiberScheduler.h>
 
 #if USE_JEMALLOC
 
@@ -123,7 +124,7 @@ thread_local bool collect_local_profiles_in_trace_log = false;
 void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtrace, unsigned backtrace_length, size_t usize)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    if (!collect_local_profiles_in_trace_log && !collect_global_profiles_in_trace_log)
+    if (!collect_global_profiles_in_trace_log && (Silk::isInsideFiber() || !collect_local_profiles_in_trace_log))
         return;
 
     try
@@ -149,7 +150,7 @@ void jemallocAllocationTracker(const void * ptr, size_t /*size*/, void ** backtr
 void jemallocDeallocationTracker(const void * ptr, unsigned usize)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
-    if (!collect_local_profiles_in_trace_log && !collect_global_profiles_in_trace_log)
+    if (!collect_global_profiles_in_trace_log && (Silk::isInsideFiber() || !collect_local_profiles_in_trace_log))
         return;
 
     try

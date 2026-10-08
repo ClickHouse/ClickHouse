@@ -9,7 +9,6 @@ CREATE TABLE bad (query String, database String ALIAS query) ENGINE = QueryRunne
 CREATE TABLE bad (query String) ENGINE = QueryRunner('arg'); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS mode = 'sometimes'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS threads = 0; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS max_queue_size = 0; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'no_such_cluster'; -- { serverError CLUSTER_DOESNT_EXIST }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS unknown_setting = 1; -- { serverError UNKNOWN_SETTING }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost' SQL SECURITY NONE; -- { serverError BAD_ARGUMENTS }
@@ -22,8 +21,6 @@ CREATE TABLE bad (query LowCardinality(String)) ENGINE = QueryRunner; -- { serve
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'non-existent-value'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS scheduler = 'fibers'; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', scheduler = 'fibers', threads = 2; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', scheduler = 'fibers', max_queue_size = 10; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS max_concurrent_remote_queries = 8; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad (query String) ENGINE = QueryRunner SETTINGS max_concurrent_remote_queries_per_replica = 0; -- { serverError BAD_ARGUMENTS }
 
 SELECT * FROM runner; -- { serverError NOT_IMPLEMENTED }
@@ -33,6 +30,7 @@ ALTER TABLE runner MODIFY SQL SECURITY INVOKER; -- { serverError NOT_IMPLEMENTED
 
 CREATE TABLE runner2 (query String) ENGINE = QueryRunner SETTINGS mode = 'synchronous', threads = 2, max_queue_size = 100 SQL SECURITY INVOKER;
 SHOW CREATE TABLE runner2;
+CREATE TABLE runner_unlimited (query String) ENGINE = QueryRunner SETTINGS max_pending_queries = 0;
 
 CREATE TABLE runner_random (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'random';
 CREATE TABLE runner_all (query String) ENGINE = QueryRunner SETTINGS cluster = 'test_shard_localhost', shard = 'all';

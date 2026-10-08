@@ -26,7 +26,7 @@ SETTINGS
     shard = '1',
     mode = 'asynchronous',
     threads = 4,
-    max_queue_size = 1000
+    max_pending_queries = 1000
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }];
 ```
 
@@ -48,9 +48,8 @@ The column `query` is mandatory, and the other columns are optional.
 | `mode` | `'asynchronous'` | In the `synchronous` mode, INSERT returns after all queries of the inserted batch have finished. In the `asynchronous` mode, INSERT returns as soon as the queries are queued. |
 | `scheduler` | `'threads'` | With `'threads'`, the queries run on a thread pool. With `'fibers'`, the queries run on [Silk](https://github.com/ClickHouse/silk) fibers — see [Fibers](#fibers). |
 | `threads` | `4` | Number of background threads executing the queries. Works in the `scheduler = 'threads'` mode only. |
-| `max_concurrent_remote_queries` | `1000` | Maximum number of concurrently executing queries, `0` means unlimited. When it is exceeded, newly inserted queries are discarded, and an error is logged. Works in the `scheduler = 'fibers'` mode only. |
-| `max_concurrent_remote_queries_per_replica` | `100` | Maximum number of queries executing concurrently on each replica. It is the size of the connection pool of each replica. Works in the `scheduler = 'fibers'` mode only. |
-| `max_queue_size` | `1000` | Maximum number of queued queries. When the queue is full, newly inserted queries are discarded, and an error is logged. Works in the `scheduler = 'threads'` mode only. |
+| `max_concurrent_remote_queries_per_replica` | `100` | Maximum number of queries executing concurrently on each replica. It is the size of the connection pool of each replica. |
+| `max_pending_queries` | `1000` | Maximum number of queries submitted but not yet finished, `0` means unlimited. When it is exceeded, newly inserted queries are discarded, and an error is logged. |
 
 ## Details {#details}
 
@@ -108,9 +107,8 @@ Because the engine discards query results, it always runs the dispatched queries
 In the cluster mode, dispatching a query mostly means waiting for the remote server, so occupying an
 operating-system thread for the lifetime of each query limits concurrency unnecessarily. With
 `scheduler = 'fibers'`, the engine runs each query on a lightweight
-[Silk](https://github.com/ClickHouse/silk) fiber instead: up to `max_concurrent_remote_queries` queries
-can be in flight at once (`0` means unlimited, throttled only by the per-replica connection pools), and
-queries inserted beyond that are discarded, like with a full queue in the thread pool.
+[Silk](https://github.com/ClickHouse/silk) fiber instead: up to `max_pending_queries` queries can be in
+flight at once, using up to `max_concurrent_remote_queries_per_replica` connections to each replica.
 
 The `'fibers'` scheduler requires the cluster mode, a build with silk, and the experimental silk runtime
 enabled on the server (the `enable_silk_runtime` server setting); otherwise both `CREATE` and

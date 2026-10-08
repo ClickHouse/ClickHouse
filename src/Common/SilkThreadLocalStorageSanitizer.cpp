@@ -10,6 +10,7 @@
 
 #    include <Common/Exception.h>
 #    include <Common/FiberLocal.h>
+#    include <Common/MemoryTracker.h>
 #    include <Common/SilkFiberScheduler.h>
 
 namespace
@@ -53,7 +54,7 @@ extern "C" void silk_thread_local_storage_sanitizer_fiber_init_hook() noexcept
 extern "C" void silk_thread_local_storage_sanitizer_access_hook([[maybe_unused]] void * address, [[maybe_unused]] const char * name) noexcept
 {
 #if defined(SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-    if (!Silk::isInsideFiber())
+    if (!Silk::isInsideClickHouseFiber())
         return;
 
     /// The failure path below logs and aborts, which touches instrumented thread-locals; guard against recursion.
@@ -62,10 +63,19 @@ extern "C" void silk_thread_local_storage_sanitizer_access_hook([[maybe_unused]]
     inside_access_hook = true;
 
     if (const void * first = first_seen->find(name))
-        chassert(first == address, fmt::format(
-            "Fiber accessed thread_local '{}' at two different addresses: the fiber migrated between OS threads, "
-            "and raw thread_local is not fiber-safe. Consider wrapping it in FiberLocal.",
-            name));
+    {
+        if (first != address)
+        {
+            ALLOW_ALLOCATIONS_IN_SCOPE;
+            DB::abortOnFailedAssertion(fmt::format(
+                "Fiber accessed thread_local '{}' at two different addresses as the fiber migrated between OS threads. "
+                "This could be a bug. "
+                "Either avoid accessing the thread_local variable from fibers, "
+                "or annotate the variable with SILK_THREAD_LOCAL_STORAGE_SANITIZER_BENIGN (if the access is benign by construction),"
+                "or wrap it in FiberLocal.",
+                name));
+        }
+    }
     else
         first_seen->insert(name, address);
 
