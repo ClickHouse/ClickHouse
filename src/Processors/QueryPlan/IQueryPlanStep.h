@@ -5,7 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <span>
 #include <string_view>
 #include <variant>
@@ -111,8 +111,7 @@ public:
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
     /// Get child plans contained inside some steps (e.g ReadFromMerge) so that they are visible when doing EXPLAIN.
-    /// EXPLAIN sets `for_explain`: a step whose plan runs with privileges the current user does not hold may hide it there.
-    virtual QueryPlanRawPtrs getChildPlans(bool /*for_explain*/) { return {}; }
+    virtual QueryPlanRawPtrs getChildPlans() { return {}; }
 
     /// Append extra processors for this step.
     void appendExtraProcessors(const Processors & extra_processors);
@@ -134,11 +133,6 @@ public:
     /// `buildOrderedSetInplace`, and trigger `Trying to execute PLACEHOLDER action`.
     virtual bool hasCorrelatedExpressions() const;
 
-    /// `considerEnablingParallelReplicas` gates on the whole plan: one step returning false rejects it
-    /// and no statistics are collected. A step that returns true must also attach a
-    /// `RuntimeDataflowStatisticsCollector` in `transformPipeline` when `dataflow_cache_updater` is set,
-    /// otherwise, should it end up at the replica-output boundary, the cached `output_bytes` stays 0 and
-    /// the transfer to the initiator is priced at zero.
     virtual bool supportsDataflowStatisticsCollection() const { return false; }
 
     void setRuntimeDataflowStatisticsCacheUpdater(RuntimeDataflowStatisticsCacheUpdaterPtr updater);

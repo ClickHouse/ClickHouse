@@ -6,7 +6,9 @@ title: 'H3 インデックス を操作する関数'
 doc_type: 'reference'
 ---
 
-## H3 Index {#h3-index}
+<div id="h3-index">
+  ## H3 Index
+</div>
 
 [H3](https://h3geo.org/) は地理空間インデックスシステムで、地球表面を均一な六角形セルのグリッドに分割します。このシステムは階層構造になっており、つまり最上位レベルの各六角形 (「親」) は、同じく均一でより小さい 7 つの六角形 (「子」) に分割でき、これがさらに繰り返されます。
 
@@ -18,7 +20,9 @@ H3 インデックスは主に位置情報のグループ化や、そのほか�
 
 H3 システムの完全な説明は、[Uber Engineering のサイト](https://www.uber.com/blog/h3/)で参照できます。
 
-## h3IsValid {#h3isvalid}
+<div id="h3isvalid">
+  ## h3IsValid
+</div>
 
 数値が有効な [H3](#h3-index) インデックスかどうかを検証します。
 
@@ -49,7 +53,9 @@ SELECT h3IsValid(630814730351855103) AS h3IsValid;
 └───────────┘
 ```
 
-## h3GetResolution {#h3getresolution}
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
 
 指定された [H3](#h3-index) H3 インデックスの解像度を返します。
 
@@ -80,7 +86,9 @@ SELECT h3GetResolution(639821929606596015) AS resolution;
 └────────────┘
 ```
 
-## h3EdgeAngle {#h3edgeangle}
+<div id="h3edgeangle">
+  ## h3EdgeAngle
+</div>
 
 [H3](#h3-index) の六角形セルの辺の平均長をグラード単位で計算します。
 
@@ -110,7 +118,9 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 └───────────────────────┘
 ```
 
-## h3EdgeLengthM {#h3edgelengthm}
+<div id="h3edgelengthm">
+  ## h3EdgeLengthM
+</div>
 
 [H3](#h3-index) の六角形の辺の平均の長さをメートル単位で計算します。
 
@@ -140,7 +150,9 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 └─────────────┘
 ```
 
-## h3EdgeLengthKm {#h3edgelengthkm}
+<div id="h3edgelengthkm">
+  ## h3EdgeLengthKm
+</div>
 
 [H3](#h3-index) の六角形セルの辺の平均の長さをキロメートル単位で計算します。
 
@@ -170,7 +182,9 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 └──────────────┘
 ```
 
-## geoToH3 {#geotoh3}
+<div id="geotoh3">
+  ## geoToH3
+</div>
 
 指定した解像度で、点 `(lat, lon)` に対応する [H3](#h3-index) H3 インデックスを返します。
 
@@ -205,7 +219,9 @@ SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
 └────────────────────┘
 ```
 
-## h3ToGeo {#h3togeo}
+<div id="h3togeo">
+  ## h3ToGeo
+</div>
 
 指定された[H3](#h3-index)H3 インデックスに対応する重心の緯度と経度を返します。
 
@@ -237,7 +253,9 @@ SELECT h3ToGeo(644325524701193974) AS coordinates;
 └───────────────────────────────────────┘
 ```
 
-## h3ToGeoBoundary {#h3togeoboundary}
+<div id="h3togeoboundary">
+  ## h3ToGeoBoundary
+</div>
 
 指定されたH3 インデックスの境界に対応する `(lat, lon)` のペアからなる配列を返します。
 
@@ -267,7 +285,9 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3kRing {#h3kring}
+<div id="h3kring">
+  ## h3kRing
+</div>
 
 指定された hexagon を中心とする半径 `k` 以内のすべての [H3](#h3-index) hexagons を、ランダムな順序で一覧表示します。
 
@@ -304,11 +324,11 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
 └────────────────────┘
 ```
 
-## h3PolygonToCells {#h3polygontocells}
+<div id="h3polygontocells">
+  ## h3PolygonToCells
+</div>
 
-指定したジオメトリ (ring または (multi-)polygon) に含まれる、指定した解像度の六角形を返します。ジオメトリが六角形の中心を含む場合、その六角形は含まれると見なされます。これは [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment) の包含モード `0` です。
-
-ジオメトリのすべての頂点は球面上に存在する必要があります。経度は `[-180, 180]`、緯度は `[-90, 90]` 度の範囲内でなければなりません。返されるセルの順序は保証されないため、順序が重要な場合は Array をソートしてください。
+指定したジオメトリ (ring または (multi-)polygon) に含まれる、指定した resolution の六角形を返します。
 
 **構文**
 
@@ -336,21 +356,21 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
+│ 608692970769612799 │
+│ 608692971927240703 │
 │ 608692970585063423 │
+│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
-│ 608692970769612799 │
-│ 608692970819944447 │
-│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
 
-## h3PolygonToCellsWithContainment {#h3polygontocellswithcontainment}
+<div id="h3polygontocellswithcontainment">
+  ## h3PolygonToCellsWithContainment
+</div>
 
 指定したジオメトリ (`Ring` または `(multi-)Polygon`) を、H3 の実験的な包含モードを使用して、指定した解像度の六角形セルでカバーして返します。
-
-ジオメトリのすべての頂点は球面上になければなりません。経度は `[-180, 180]`、緯度は `[-90, 90]` 度の範囲です。返されるセルの順序は保証されないため、順序が重要な場合は Array をソートしてください。
 
 この関数では、`flags` を H3 の包含モードにマッピングします。
 
@@ -392,7 +412,9 @@ SELECT
    └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetBaseCell {#h3getbasecell}
+<div id="h3getbasecell">
+  ## h3GetBaseCell
+</div>
 
 [H3](#h3-index) インデックスのベースセル番号を返します。
 
@@ -422,7 +444,9 @@ SELECT h3GetBaseCell(612916788725809151) AS basecell;
 └──────────┘
 ```
 
-## h3HexAreaM2 {#h3hexaream2}
+<div id="h3hexaream2">
+  ## h3HexAreaM2
+</div>
 
 指定した解像度における六角形の平均面積を平方メートル単位で返します。
 
@@ -452,7 +476,9 @@ SELECT h3HexAreaM2(13) AS area;
 └──────┘
 ```
 
-## h3HexAreaKm2 {#h3hexareakm2}
+<div id="h3hexareakm2">
+  ## h3HexAreaKm2
+</div>
 
 指定した解像度における六角形の平均面積を平方キロメートル単位で返します。
 
@@ -482,7 +508,9 @@ SELECT h3HexAreaKm2(13) AS area;
 └───────────┘
 ```
 
-## h3IndexesAreNeighbors {#h3indexesareneighbors}
+<div id="h3indexesareneighbors">
+  ## h3IndexesAreNeighbors
+</div>
 
 指定された [H3](#h3-index) 索引同士が隣接しているかどうかを返します。
 
@@ -514,7 +542,9 @@ SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
 └───┘
 ```
 
-## h3ToChildren {#h3tochildren}
+<div id="h3tochildren">
+  ## h3ToChildren
+</div>
 
 指定された [H3](#h3-index) 索引の子索引の配列を返します。
 
@@ -545,7 +575,9 @@ SELECT h3ToChildren(599405990164561919, 6) AS children;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3ToParent {#h3toparent}
+<div id="h3toparent">
+  ## h3ToParent
+</div>
 
 指定された [H3](#h3-index) インデックスを含む親 (より粗い粒度の) インデックスを返します。
 
@@ -576,7 +608,9 @@ SELECT h3ToParent(599405990164561919, 3) AS parent;
 └────────────────────┘
 ```
 
-## h3ToString {#h3tostring}
+<div id="h3tostring">
+  ## h3ToString
+</div>
 
 インデックスの `H3Index` 表現を文字列表現に変換します。
 
@@ -604,7 +638,9 @@ SELECT h3ToString(617420388352917503) AS h3_string;
 └─────────────────┘
 ```
 
-## stringToH3 {#stringtoh3}
+<div id="stringtoh3">
+  ## stringToH3
+</div>
 
 文字列表現を `H3Index` (UInt64) 形式に変換します。
 
@@ -634,7 +670,9 @@ SELECT stringToH3('89184926cc3ffff') AS index;
 └────────────────────┘
 ```
 
-## h3GetResolution {#h3getresolution-1}
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
 
 [H3](#h3-index) インデックスの解像度を返します。
 
@@ -664,7 +702,9 @@ SELECT h3GetResolution(617420388352917503) AS res;
 └─────┘
 ```
 
-## h3IsResClassIII {#h3isresclassiii}
+<div id="h3isresclassiii">
+  ## h3IsResClassIII
+</div>
 
 [H3](#h3-index) インデックスが Class III 向きの解像度かどうかを返します。
 
@@ -695,7 +735,9 @@ SELECT h3IsResClassIII(617420388352917503) AS res;
 └─────┘
 ```
 
-## h3IsPentagon {#h3ispentagon}
+<div id="h3ispentagon">
+  ## h3IsPentagon
+</div>
 
 この [H3](#h3-index) インデックスが五角形セルを表しているかどうかを返します。
 
@@ -726,7 +768,9 @@ SELECT h3IsPentagon(644721767722457330) AS pentagon;
 └──────────┘
 ```
 
-## h3GetFaces {#h3getfaces}
+<div id="h3getfaces">
+  ## h3GetFaces
+</div>
 
 指定された [H3](#h3-index) インデックスが交差する正二十面体の面を返します。
 
@@ -756,7 +800,9 @@ SELECT h3GetFaces(599686042433355775) AS faces;
 └───────┘
 ```
 
-## h3CellAreaM2 {#h3cellaream2}
+<div id="h3cellaream2">
+  ## h3CellAreaM2
+</div>
 
 指定された H3 インデックスに対応する特定のセルの正確な面積を、平方メートル単位で返します。
 
@@ -786,7 +832,9 @@ SELECT h3CellAreaM2(579205133326352383) AS area;
 └────────────────────┘
 ```
 
-## h3CellAreaRads2 {#h3cellarearads2}
+<div id="h3cellarearads2">
+  ## h3CellAreaRads2
+</div>
 
 指定された入力H3 インデックスに対応する特定のセルの面積を、平方ラジアン単位で正確に返します。
 
@@ -816,7 +864,9 @@ SELECT h3CellAreaRads2(579205133326352383) AS area;
 └─────────────────────┘
 ```
 
-## h3ToCenterChild {#h3tocenterchild}
+<div id="h3tocenterchild">
+  ## h3ToCenterChild
+</div>
 
 指定した解像度で、指定した [H3](#h3-index) に含まれる中央の子 (より細かい) [H3](#h3-index) インデックスを返します。
 
@@ -847,7 +897,9 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
 └────────────────────┘
 ```
 
-## h3ExactEdgeLengthM {#h3exactedgelengthm}
+<div id="h3exactedgelengthm">
+  ## h3ExactEdgeLengthM
+</div>
 
 入力されたH3 インデックスが表す単方向エッジの正確な辺の長さを、メートル単位で返します。
 
@@ -877,7 +929,9 @@ SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 └──────────────────┘
 ```
 
-## h3ExactEdgeLengthKm {#h3exactedgelengthkm}
+<div id="h3exactedgelengthkm">
+  ## h3ExactEdgeLengthKm
+</div>
 
 入力された h3 index が表す単方向エッジの正確な辺の長さを、キロメートル単位で返します。
 
@@ -907,7 +961,9 @@ SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 └───────────────────┘
 ```
 
-## h3ExactEdgeLengthRads {#h3exactedgelengthrads}
+<div id="h3exactedgelengthrads">
+  ## h3ExactEdgeLengthRads
+</div>
 
 入力された H3 インデックス が表す単方向エッジの正確な辺の長さを、ラジアン単位で返します。
 
@@ -937,7 +993,9 @@ SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthR
 └─────────────────────┘
 ```
 
-## h3NumHexagons {#h3numhexagons}
+<div id="h3numhexagons">
+  ## h3NumHexagons
+</div>
 
 指定された分解能における一意の H3 インデックス数を返します。
 
@@ -967,7 +1025,9 @@ SELECT h3NumHexagons(3) AS numHexagons;
 └─────────────┘
 ```
 
-## h3PointDistM {#h3pointdistm}
+<div id="h3pointdistm">
+  ## h3PointDistM
+</div>
 
 GeoCoord 点 (緯度/経度) のペア間の「大円距離」または「ハバーサイン距離」をメートル単位で返します。
 
@@ -998,7 +1058,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 └────────────────────┘
 ```
 
-## h3PointDistKm {#h3pointdistkm}
+<div id="h3pointdistkm">
+  ## h3PointDistKm
+</div>
 
 GeoCoord 点 (緯度/経度) のペア間の「大円距離」または「ハバーサイン距離」を、キロメートル単位で返します。
 
@@ -1029,7 +1091,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 └────────────────────┘
 ```
 
-## h3PointDistRads {#h3pointdistrads}
+<div id="h3pointdistrads">
+  ## h3PointDistRads
+</div>
 
 GeoCoord 点のペア (緯度/経度) 間の「大円距離」または「ハバーサイン距離」をラジアン単位で返します。
 
@@ -1060,7 +1124,9 @@ SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
 └────────────────────┘
 ```
 
-## h3GetRes0Indexes {#h3getres0indexes}
+<div id="h3getres0indexes">
+  ## h3GetRes0Indexes
+</div>
 
 解像度0のすべてのH3インデックスを含む配列を返します。
 
@@ -1086,7 +1152,9 @@ SELECT h3GetRes0Indexes AS indexes ;
 └─────────────────────────────────────────────┘
 ```
 
-## h3GetPentagonIndexes {#h3getpentagonindexes}
+<div id="h3getpentagonindexes">
+  ## h3GetPentagonIndexes
+</div>
 
 指定した解像度における、すべての五角形の H3 インデックスを返します。
 
@@ -1116,7 +1184,9 @@ SELECT h3GetPentagonIndexes(3) AS indexes;
 └────────────────────────────────────────────────────────────────┘
 ```
 
-## h3Line {#h3line}
+<div id="h3line">
+  ## h3Line
+</div>
 
 指定された2つのインデックス間を結ぶインデックスのラインを返します。
 
@@ -1147,7 +1217,9 @@ h3Line(start,end)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3Distance {#h3distance}
+<div id="h3distance">
+  ## h3Distance
+</div>
 
 指定された2つのインデックス間の距離を、グリッドセル単位で返します。
 
@@ -1180,7 +1252,9 @@ h3Distance(start,end)
 └──────────┘
 ```
 
-## h3HexRing {#h3hexring}
+<div id="h3hexring">
+  ## h3HexRing
+</div>
 
 指定された始点 h3Index を中心とする距離 k の六角形リングの索引を返します。
 
@@ -1213,7 +1287,9 @@ h3HexRing(index, k)
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
+<div id="h3getunidirectionaledge">
+  ## h3GetUnidirectionalEdge
+</div>
 
 隣接する 2 つの H3 セルインデックス (始点と宛先) の単方向エッジ H3 インデックスを返します。いずれかの入力が有効な H3 セルでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。隣接していない有効なセル (同じセルを 2 回指定した場合を含む) の場合は、`0` を返します。
 
@@ -1244,7 +1320,9 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 └─────────────────────┘
 ```
 
-## h3UnidirectionalEdgeIsValid {#h3unidirectionaledgeisvalid}
+<div id="h3unidirectionaledgeisvalid">
+  ## h3UnidirectionalEdgeIsValid
+</div>
 
 指定された H3Index が有効な単方向エッジのインデックスかどうかを判定します。単方向エッジであれば 1、そうでなければ 0 を返します。
 
@@ -1275,7 +1353,9 @@ h3UnidirectionalEdgeIsValid(index)
 └────────────┘
 ```
 
-## h3GetOriginIndexFromUnidirectionalEdge {#h3getoriginindexfromunidirectionaledge}
+<div id="h3getoriginindexfromunidirectionaledge">
+  ## h3GetOriginIndexFromUnidirectionalEdge
+</div>
 
 単方向エッジ H3Index から始点の六角形インデックスを返します。入力が有効な有向エッジでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。この設定が有効な場合にのみ `0` を返します。
 
@@ -1306,7 +1386,9 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-## h3GetDestinationIndexFromUnidirectionalEdge {#h3getdestinationindexfromunidirectionaledge}
+<div id="h3getdestinationindexfromunidirectionaledge">
+  ## h3GetDestinationIndexFromUnidirectionalEdge
+</div>
 
 単方向エッジの H3Index から、宛先の六角形インデックスを返します。入力が有効な有向エッジでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。この設定が有効な場合にのみ `0` を返します。
 
@@ -1337,7 +1419,9 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-## h3GetIndexesFromUnidirectionalEdge {#h3getindexesfromunidirectionaledge}
+<div id="h3getindexesfromunidirectionaledge">
+  ## h3GetIndexesFromUnidirectionalEdge
+</div>
 
 指定された単方向エッジ H3Index から、始点と宛先の六角形の索引を返します。
 
@@ -1372,7 +1456,9 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 └─────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdgesFromHexagon {#h3getunidirectionaledgesfromhexagon}
+<div id="h3getunidirectionaledgesfromhexagon">
+  ## h3GetUnidirectionalEdgesFromHexagon
+</div>
 
 指定された H3Index から伸びるすべての単方向エッジを返します。入力が H3 セルでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御) 。この設定が有効な場合にのみ、空の Array を返します。
 
@@ -1403,7 +1489,9 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdgeBoundary {#h3getunidirectionaledgeboundary}
+<div id="h3getunidirectionaledgeboundary">
+  ## h3GetUnidirectionalEdgeBoundary
+</div>
 
 単方向エッジを構成する座標を返します。入力が有効な有向エッジでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。空の Array を返すのは、その設定が有効な場合のみです。
 

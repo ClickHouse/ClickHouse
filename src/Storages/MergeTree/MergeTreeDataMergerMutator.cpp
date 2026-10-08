@@ -176,19 +176,6 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
 {
 }
 
-namespace
-{
-
-std::optional<time_t> getTTLMergeTime(const PartitionIdToTTLs & times, const String & partition_id)
-{
-    auto it = times.find(partition_id);
-    if (it == times.end())
-        return {};
-    return it->second;
-}
-
-}
-
 void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices & choices, const MergeTreeSettingsPtr & settings, time_t current_time)
 {
     for (const auto & choice : choices)
@@ -206,10 +193,7 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
             }
             case MergeType::TTLDelete:
             {
-                const time_t next_time = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
-                last_delete_ttl_merge_time_advance[partition_id]
-                    = {.installed = next_time, .previous = getTTLMergeTime(next_delete_ttl_merge_times_by_partition, partition_id)};
-                next_delete_ttl_merge_times_by_partition[partition_id] = next_time;
+                next_delete_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_ttl_timeout];
 
                 const auto & storage = data.getStorageID();
                 LOG_TRACE(log, "For table {} under database {}, the next scheduled execution time of TTLDelete task "
@@ -222,47 +206,10 @@ void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoices 
             }
             case MergeType::TTLRecompress:
             {
-                const time_t next_time = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
-                last_recompress_ttl_merge_time_advance[partition_id]
-                    = {.installed = next_time, .previous = getTTLMergeTime(next_recompress_ttl_merge_times_by_partition, partition_id)};
-                next_recompress_ttl_merge_times_by_partition[partition_id] = next_time;
+                next_recompress_ttl_merge_times_by_partition[partition_id] = current_time + (*settings)[MergeTreeSetting::merge_with_recompression_ttl_timeout];
                 break;
             }
         }
-    }
-}
-
-void MergeTreeDataMergerMutator::rollbackTTLMergeTime(const String & partition_id, MergeType merge_type)
-{
-    const auto restore = [&partition_id](PartitionIdToTTLs & times, std::unordered_map<String, TTLMergeTimeAdvance> & advances)
-    {
-        auto advance = advances.find(partition_id);
-        if (advance == advances.end())
-            return;
-
-        /// A later selection of the same partition advanced the due time further; it owns the value now.
-        if (getTTLMergeTime(times, partition_id) != std::optional<time_t>(advance->second.installed))
-            return;
-
-        if (advance->second.previous.has_value())
-            times[partition_id] = *advance->second.previous;
-        else
-            times.erase(partition_id);
-
-        advances.erase(advance);
-    };
-
-    switch (merge_type)
-    {
-        case MergeType::Regular:
-        case MergeType::TTLDrop:
-            break;
-        case MergeType::TTLDelete:
-            restore(next_delete_ttl_merge_times_by_partition, last_delete_ttl_merge_time_advance);
-            break;
-        case MergeType::TTLRecompress:
-            restore(next_recompress_ttl_merge_times_by_partition, last_recompress_ttl_merge_time_advance);
-            break;
     }
 }
 
@@ -585,7 +532,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
         throw Exception(ErrorCodes::ABORTED,
-            "Cancelling merge, because it was done without starting transaction, "
+            "Cancelling merge, because it was done without starting transaction,"
             "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.

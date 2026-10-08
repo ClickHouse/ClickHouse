@@ -19,7 +19,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Interpreters/TableJoin.h>
 
 namespace Poco { class Logger; }

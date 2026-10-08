@@ -29,7 +29,9 @@ SharedMergeTree의 중요한 개선점 중 하나는 ReplicatedMergeTree에 비�
 
 ReplicatedMergeTree와 달리 SharedMergeTree는 레플리카끼리 통신할 필요가 없습니다. 대신 모든 통신은 공유 스토리지와 clickhouse-keeper를 통해 이루어집니다. SharedMergeTree는 비동기 리더리스 복제를 구현하며, coordination 및 메타데이터 저장을 위해 clickhouse-keeper를 사용합니다. 즉, 서비스가 확장 또는 축소될 때 메타데이터를 복제할 필요가 없습니다. 그 결과 복제, 뮤테이션, 머지, 확장 작업이 더 빨라집니다. SharedMergeTree는 각 테이블에 대해 수백 개의 레플리카를 지원하므로, 세그먼트 없이도 동적으로 확장할 수 있습니다. ClickHouse Cloud에서는 하나의 쿼리에 더 많은 컴퓨트 리소스를 활용하기 위해 분산 쿼리 실행 방식을 사용합니다.
 
-## 내부 검사 {#introspection}
+<div id="introspection">
+  ## 내부 검사
+</div>
 
 ReplicatedMergeTree의 내부 검사에 사용되는 대부분의 시스템 테이블은 SharedMergeTree에도 존재합니다. 다만 데이터와 메타데이터 복제가 수행되지 않으므로 `system.replication_queue`와 `system.replicated_fetches`는 예외입니다. 하지만 SharedMergeTree에는 이 두 테이블에 대응하는 대체 테이블이 있습니다.
 
@@ -41,7 +43,9 @@ ReplicatedMergeTree의 내부 검사에 사용되는 대부분의 시스템 테�
 
 이 테이블은 SharedMergeTree에서 `system.replicated_fetches`를 대체합니다. 메모리로 프라이머리 키와 체크섬을 가져오는 현재 진행 중인 fetch에 대한 정보를 포함합니다.
 
-## SharedMergeTree 활성화 {#enabling-sharedmergetree}
+<div id="enabling-sharedmergetree">
+  ## SharedMergeTree 활성화
+</div>
 
 `SharedMergeTree`는 기본적으로 활성화되어 있습니다.
 
@@ -94,7 +98,9 @@ ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica
 ORDER BY key
 ```
 
-## 설정 {#settings}
+<div id="settings">
+  ## 설정
+</div>
 
 일부 설정의 동작이 크게 달라졌습니다:
 
@@ -102,7 +108,9 @@ ORDER BY key
 * `insert_quorum_parallel` -- SharedMergeTree에 대한 모든 삽입은 quorum 삽입(공유 스토리지에 기록됨)이므로 SharedMergeTree 테이블 엔진을 사용할 때는 이 설정이 필요하지 않습니다.
 * `select_sequential_consistency` -- quorum 삽입이 필요하지 않지만, `SELECT` 쿼리 시 clickhouse-keeper에 추가 부하를 발생시킵니다
 
-## 일관성 {#consistency}
+<div id="consistency">
+  ## 일관성
+</div>
 
 SharedMergeTree는 ReplicatedMergeTree보다 더 나은 경량 일관성을 제공합니다. SharedMergeTree에 삽입할 때는 `insert_quorum` 또는 `insert_quorum_parallel` 같은 설정을 지정할 필요가 없습니다. 삽입은 quorum 삽입으로 처리되며, 즉 메타데이터가 ClickHouse-Keeper에 저장되고 해당 메타데이터가 최소 quorum 수의 ClickHouse-keepers에 복제됩니다. 클러스터의 각 레플리카는 ClickHouse-Keeper에서 새 정보를 비동기적으로 가져옵니다.
 
@@ -113,11 +121,3 @@ SharedMergeTree는 ReplicatedMergeTree보다 더 나은 경량 일관성을 제�
 2. 한 레플리카에 쓰고 다른 레플리카에서 읽는 경우, `SYSTEM SYNC REPLICA LIGHTWEIGHT`를 사용해 해당 레플리카가 ClickHouse-Keeper에서 메타데이터를 가져오도록 강제할 수 있습니다.
 
 3. 쿼리 설정의 일부로 `select_sequential_consistency`를 사용합니다.
-
-## `ALTER` 및 뮤테이션 가시성 {#alter-and-mutation-visibility}
-
-`SharedMergeTree`는 ClickHouse Keeper를 통해 메타데이터 변경을 조정합니다. 레플리카는 변경된 메타데이터를 비동기적으로 가져오므로, 메타데이터 변경 사항이 모든 레플리카에 즉시 반영되지 않을 수 있습니다. 같은 노드의 같은 세션에서 수행하는 읽기에는 이미 최신 메타데이터가 적용됩니다. 메타데이터를 변경한 직후 다른 레플리카에서 읽기를 실행해야 한다면 `SYSTEM SYNC REPLICA LIGHTWEIGHT`를 사용하여 해당 레플리카가 ClickHouse Keeper에서 메타데이터를 가져오도록 하십시오.
-
-뮤테이션을 발생시키는 `ALTER` 작업은 공유 스토리지에 새 파트를 생성하는 백그라운드 작업을 수행하며, 이 파트의 가시성은 ClickHouse Keeper를 통해 조정됩니다. 이는 `ReplicatedMergeTree`처럼 레플리카마다 재작성이나 데이터 전송이 이루어지는 방식이 아닙니다.
-
-ClickHouse Cloud에서 [`alter_sync`](/ko/reference/settings/session-settings/alter#alter_sync)의 기본값은 `0`입니다. 클라이언트가 메타데이터 작업이나 메타데이터 외 `MODIFY COLUMN` 재작성이 완료될 때까지 기다려야 한다면 이 설정을 지정하십시오. `UPDATE`, `DELETE`, `MATERIALIZE ...` 작업은 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)로 대기 여부를 제어하고, [`system.mutations`](/ko/reference/system-tables/mutations)에서 진행 상황을 모니터링하십시오.

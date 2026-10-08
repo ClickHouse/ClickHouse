@@ -1,7 +1,7 @@
 #include <Storages/StorageMergeTreeCodecBlockCounts.h>
 
 #include <Access/Common/AccessFlags.h>
-#include <Storages/getEffectiveRowPolicyFilter.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -21,7 +21,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -213,7 +212,7 @@ private:
             UInt32 size_compressed = 0;
             UInt32 size_decompressed = 0;
             auto codec = getCompressionCodecForFile(*read_buffer, size_compressed, size_decompressed, true);
-            ++counts[codec->getCodecDescription()->formatForLogging()];
+            ++counts[codec->getCodecDesc()->formatForLogging()];
         }
         return codecCountsToField(counts);
     }
@@ -314,7 +313,7 @@ void StorageMergeTreeCodecBlockCounts::checkSourceTableAccess(const StoragePtr &
     context->checkAccess(AccessType::SELECT, source_table->getStorageID(), source_metadata->getColumns().getNamesOfPhysical());
 }
 
-std::shared_ptr<MergeTreeData> StorageMergeTreeCodecBlockCounts::resolveSourceTable(const StorageID & source_table_id, const ContextPtr & context)
+StoragePtr StorageMergeTreeCodecBlockCounts::resolveSourceTable(const StorageID & source_table_id, const ContextPtr & context)
 {
     /// `SHOW TABLES` is the privilege that governs whether the table's existence may be learned, and it is implied
     /// by a grant on any single column of it, so this only adds a tier below the `SELECT` check on every column
@@ -325,13 +324,11 @@ std::shared_ptr<MergeTreeData> StorageMergeTreeCodecBlockCounts::resolveSourceTa
     auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     checkSourceTableAccess(source_table, context);
 
-    /// Reading the parts is what the function is for, so a not yet loaded source table is loaded here.
-    auto merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load);
-    if (!merge_tree)
+    if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeCodecBlockCounts expected MergeTree table, got: {}", source_table->getName());
 
-    return merge_tree;
+    return source_table;
 }
 
 void StorageMergeTreeCodecBlockCounts::read(
@@ -347,11 +344,15 @@ void StorageMergeTreeCodecBlockCounts::read(
     storage_snapshot->check(column_names);
 
     /// Under the reader's context, see the constructor.
-    auto merge_tree = resolveSourceTable(source_table_id, context);
-    const auto source_storage_id = merge_tree->getStorageID();
+    auto source_table = resolveSourceTable(source_table_id, context);
+    const auto source_storage_id = source_table->getStorageID();
+
+    /// A cast to a base class, so not `assert_cast`, which asserts the exact type and would reject every
+    /// `MergeTree` table. `resolveSourceTable` has already rejected a source table that is not a `MergeTree`.
+    const auto & merge_tree = dynamic_cast<const MergeTreeData &>(*source_table);
 
     /// `system.parts_columns` lists patch parts, so this function does too.
-    auto data_parts = merge_tree->getDataPartsVectorForInternalUsage(
+    auto data_parts = merge_tree.getDataPartsVectorForInternalUsage(
         {MergeTreeData::DataPartState::Active}, {MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch});
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
@@ -361,7 +362,9 @@ void StorageMergeTreeCodecBlockCounts::read(
     /// The other columns are metadata that `system.parts_columns` reports regardless of row policies.
     if (sample_block->has(CODEC_BLOCK_COUNTS_COLUMN))
     {
-        if (getEffectiveRowPolicyFilter(*merge_tree, context))
+        auto row_policy_filter = context->getRowPolicyFilter(
+            source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "Cannot read column `{}` from `mergeTreeCodecBlockCounts` because a row policy is applied on table {}. "
@@ -371,7 +374,7 @@ void StorageMergeTreeCodecBlockCounts::read(
     }
 
     /// The parts reference the source table's MergeTreeData without owning it.
-    query_plan.addStorageHolder(merge_tree);
+    query_plan.addStorageHolder(source_table);
 
     query_plan.addStep(
         std::make_unique<ReadFromMergeTreeCodecBlockCounts>(

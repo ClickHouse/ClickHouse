@@ -2,9 +2,9 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-
-#include <bit>
-
+#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
+#include <immintrin.h>
+#endif
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #    include <arm_neon.h>
 #endif
@@ -20,10 +20,17 @@ namespace DB
 /// Transform 64-byte mask to 64-bit mask
 inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
 {
-#if defined(__aarch64__) && defined(__ARM_NEON)
-    /// NEON has no instruction that extracts a bit per lane, so the mask is built by hand: each
-    /// lane keeps its own bit of the result, and a pairwise-add tree folds the four groups into
-    /// one register, leaving a single move out of the vector unit.
+#if defined(__AVX512F__) && defined(__AVX512BW__)
+    const __m512i vbytes = _mm512_loadu_si512(reinterpret_cast<const void *>(bytes64));
+    UInt64 res = _mm512_testn_epi8_mask(vbytes, vbytes);
+#elif defined(__AVX__) && defined(__AVX2__)
+    const __m256i zero32 = _mm256_setzero_si256();
+    UInt64 res =
+        (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
+        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64)), zero32))) & 0xffffffff)
+        | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(
+        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64+32)), zero32))) << 32);
+#elif defined(__aarch64__) && defined(__ARM_NEON)
     const uint8x16_t bitmask = {0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80};
     const auto * src = reinterpret_cast<const unsigned char *>(bytes64);
     const uint8x16_t p0 = vceqzq_u8(vld1q_u8(src));
@@ -38,36 +45,13 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
     uint8x16_t sum1 = vpaddq_u8(t2, t3);
     sum0 = vpaddq_u8(sum0, sum1);
     sum0 = vpaddq_u8(sum0, sum0);
-    return ~vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
+    UInt64 res = vgetq_lane_u64(vreinterpretq_u64_u8(sum0), 0);
 #else
-    if constexpr (std::endian::native == std::endian::little)
-    {
-        /// Compiles to `vpcmpeqb` plus `vpmovmskb` at `x86-64-v3`, and to a single `vptestmb`
-        /// plus `kmovq` at `x86-64-v4`.
-        using ByteVector = UInt8 __attribute__((ext_vector_type(64)));
-        using BitMask = bool __attribute__((ext_vector_type(64)));
-        static_assert(sizeof(BitMask) == sizeof(UInt64), "A lane of `BitMask` must be one bit");
-
-        ByteVector bytes;
-        __builtin_memcpy(&bytes, bytes64, sizeof(bytes));
-
-        /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
-        const BitMask mask = __builtin_convertvector(bytes, BitMask);
-
-        UInt64 res;
-        __builtin_memcpy(&res, &mask, sizeof(res));
-        return res;
-    }
-    else
-    {
-        /// A bitcast of a vector of bits to an integer follows the endianness of the target, so on
-        /// a big-endian machine the branch above puts the first byte in the most significant bit.
-        UInt64 res = 0;
-        for (size_t i = 0; i < 64; ++i)
-            res |= static_cast<UInt64>(0 == bytes64[i]) << i;
-        return ~res;
-    }
+    UInt64 res = 0;
+    for (size_t i = 0; i < 64; ++i)
+        res |= static_cast<UInt64>(0 == bytes64[i]) << i;
 #endif
+    return ~res;
 }
 
 /// Counts how many bytes of `filt` are greater than zero.
