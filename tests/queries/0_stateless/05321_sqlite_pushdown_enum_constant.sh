@@ -6,6 +6,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Keep DDL out of the stress AST fuzzer: a replayed `CREATE` can leave a table whose scalar `CHECK` subquery
+# reads `t_05321`, which then cannot be dropped, and that table cannot load once cleanup deletes the SQLite file.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --ast_fuzzer_any_query=0"
+
 # A string column is compared with an `Enum` constant by the Enum's name, a numeric column by its value. The
 # filter pushed to the external database must select the rows the local filter selects, so the constant must
 # reach it in that form, also inside a tuple, an `IN` list, a `Nullable`, a `Variant` or a `Dynamic`.
