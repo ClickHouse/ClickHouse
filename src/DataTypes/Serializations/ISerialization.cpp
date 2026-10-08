@@ -97,7 +97,7 @@ ISerialization::KindStack ISerialization::getKindStack(const IColumn & column)
     return {Kind::DEFAULT};
 }
 
-static String kindToString(ISerialization::Kind kind)
+String ISerialization::kindToString(ISerialization::Kind kind)
 {
     switch (kind)
     {
@@ -176,10 +176,6 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedVariantDiscriminators,
     QuantizedCodes,
     ProductQuantizationCodebook,
-    MapKeyValue,
-    ObjectDistinctPaths,
-    ObjectSubObject,
-    ObjectCombinedPath,
 };
 
 String ISerialization::Substream::toString() const

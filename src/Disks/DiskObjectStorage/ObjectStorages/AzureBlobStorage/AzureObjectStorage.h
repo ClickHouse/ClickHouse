@@ -85,15 +85,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    void tagObjects( /// NOLINT
-        const StoredObjects & objects,
-        const std::string & tag_key,
-        const std::string & tag_value,
-        StoredObjects * successful_objects = nullptr) override;
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -136,18 +130,22 @@ public:
     }
 
 private:
+    /// The properties of `object` as they are now, checked against the generation the caller has
+    /// seen: throws `AZURE_OBJECT_CHANGED_DURING_READ` when `object.etag` is set and names another
+    /// generation. Used for an object whose size is known to be zero, which is read without a
+    /// single `Download` request, so that no `If-Match` condition pins it.
+    ObjectMetadata getObjectMetadataOfListedGeneration(const StoredObject & object) const;
+
     void removeObjectImpl(
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
         bool if_exists,
-        BlobStorageLogWriterPtr blob_storage_log,
-        StoredObjects * successful_objects = nullptr);
+        BlobStorageLogWriterPtr blob_storage_log);
 
     void removeObjectsBatchIfExists(
         const StoredObjects & objects,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-        BlobStorageLogWriterPtr blob_storage_log,
-        StoredObjects * successful_objects = nullptr);
+        BlobStorageLogWriterPtr blob_storage_log);
 
     std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
 

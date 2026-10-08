@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: shard, no-old-analyzer
 
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;

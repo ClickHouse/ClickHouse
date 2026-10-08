@@ -8,10 +8,8 @@
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
-#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
@@ -111,13 +109,11 @@ UInt64 computeCountForPart(
     /// A single-token count is answered directly from the dictionary cardinality, so posting list is never read.
     const bool single_token = resolved.query->getTokens().size() == 1;
 
-    LoadedMergeTreeDataPartInfoForReader part_info(data_part, std::make_shared<AlterConversions>());
-
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
         .condition = resolved.condition.get(),
-        .part_info = part_info,
+        .part = *data_part,
         .index = *index.index,
         .readable_ranges = nullptr,
         .skip_postings_deserialization = single_token,

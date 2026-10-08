@@ -190,7 +190,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-You can use the `default_format` URL parameter to specify a default format other than `TabSeparated`. The `X-ClickHouse-Format` header selects the format of the response explicitly: it is an alias for the `output_format` setting, so it also overrides a `FORMAT` clause in the query. It never changes how the request body of an `INSERT` is parsed — use `input_format` or `format` for that.
+You can use the `default_format` URL parameter to specify a default format other than `TabSeparated`. The `X-ClickHouse-Format` header selects the format of the response explicitly: it is an alias for the `output_format` setting, so it also overrides a `FORMAT` clause in the query. It never changes how the request body of an `INSERT` is parsed — use `input_format` or `format` for that. To restore the behavior of versions before 26.8, where the header was an alias for `default_format` and did not override a `FORMAT` clause, disable the `http_x_clickhouse_format_overrides_output_format` setting (in a user profile or as a URL parameter; like the format settings themselves, it can be changed in read-only mode).
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -316,7 +316,7 @@ INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
 
 | Setting | Effect |
 |---------|--------|
-| `output_format` | Overrides the output format. It takes precedence over the query's `FORMAT` clause, the path extension, `format`, and `default_format`. It can also be set using the `X-ClickHouse-Format` header. |
+| `output_format` | Overrides the output format. It takes precedence over the query's `FORMAT` clause, the path extension, `format`, and `default_format`. It can also be set using the `X-ClickHouse-Format` header. With `http_x_clickhouse_format_overrides_output_format = 0`, the header sets `default_format` instead, as in versions before 26.8. |
 | `input_format` | Overrides the input format for `INSERT`. It takes precedence over the query's `FORMAT` clause and `format`. |
 | `format` | Overrides the format in both directions unless a direction-specific setting is provided. |
 | `default_format` | Sets the output format when the query has no `FORMAT` clause, no path extension, and no other format override. |
