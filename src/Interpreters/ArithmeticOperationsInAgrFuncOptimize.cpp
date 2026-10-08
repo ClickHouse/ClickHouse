@@ -33,23 +33,24 @@ namespace
   * The types of expressions are not known at this stage, so the operation is hoisted only when its other
   * operand is a column of the source tables whose type is known not to be `Decimal`.
   */
-bool isNonDecimalColumn(const ASTPtr & ast, const TablesWithColumns & tables)
+DataTypePtr getNonDecimalColumnType(const ASTPtr & ast, const TablesWithColumns & tables)
 {
     const auto * identifier = ast->as<ASTIdentifier>();
     if (!identifier)
-        return false;
+        return {};
 
     auto pos = IdentifierSemantic::getMembership(*identifier);
     if (!pos)
         pos = IdentifierSemantic::chooseTableColumnMatch(*identifier, tables, true);
     if (!pos || *pos >= tables.size())
-        return false;
+        return {};
 
     auto column = tables[*pos].columns.tryGetByName(identifier->shortName());
     if (!column || !column->type)
-        return false;
+        return {};
 
-    return !isDecimal(removeNullable(removeLowCardinality(column->type)));
+    auto type = removeNullable(removeLowCardinality(column->type));
+    return isDecimal(type) ? nullptr : type;
 }
 
 const ASTFunction * getInternalFunction(const ASTFunction & func)
@@ -125,10 +126,6 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
         || !supported.find(lower_name)->second.contains(child_func->name))
         return {};
 
-    /// Operand types are not resolved here; preserve per-row truncation and overflow checks.
-    if (exact_division_for_integers && child_func->name == "divide")
-        return {};
-
     auto original_alias = func.tryGetAlias();
     const auto & child_func_args = child_func->arguments->children;
     const auto * first_literal = child_func_args[0]->as<ASTLiteral>();
@@ -157,7 +154,7 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
         if (child_func->name == "divide")
             return {};
 
-        if (!isNonDecimalColumn(child_func_args[1], tables))
+        if (!getNonDecimalColumnType(child_func_args[1], tables))
             return {};
 
         bool need_reverse
@@ -169,7 +166,13 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
     }
     else if (second_literal) /// second or both are consts
     {
-        if (!isNonDecimalColumn(child_func_args[0], tables))
+        auto column_type = getNonDecimalColumnType(child_func_args[0], tables);
+        if (!column_type)
+            return {};
+
+        /// Preserve per-row truncation and overflow checks only for integer division.
+        if (exact_division_for_integers && child_func->name == "divide" && isInteger(column_type)
+            && second_literal->value.getType() != Field::Types::Float64)
             return {};
 
         bool need_reverse
