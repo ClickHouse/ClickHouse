@@ -239,6 +239,8 @@ static std::string_view getNamePart(const String & engine_name)
 /// Extracts zookeeper path and replica name from the table engine's arguments.
 /// The function can modify those arguments (that's why they're passed separately in `engine_args`) and also determines RenamingRestrictions.
 /// The function assumes the table engine is Replicated.
+/// `validate_substitutions` judges a path the definition's own arguments supplied;
+/// `validate_injected_defaults` judges one minted here from `default_replica_path`.
 static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     const ASTCreateQuery & query,
     const StorageID & table_id,
@@ -246,7 +248,8 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
     ASTs & engine_args,
     LoadingStrictnessLevel mode,
     const ContextPtr & local_context,
-    bool validate_substitutions)
+    bool validate_substitutions,
+    bool validate_injected_defaults)
 {
     chassert(isReplicated(engine_name));
 
@@ -259,9 +262,9 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         evaluateEngineArgs(engine_args, local_context);
     }
 
-    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name) -> TableZnodeInfo
+    auto expand_macro = [&] (ASTLiteral * ast_zk_path, ASTLiteral * ast_replica_name, String zookeeper_path, String replica_name, bool validate) -> TableZnodeInfo
     {
-        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate_substitutions);
+        TableZnodeInfo res = TableZnodeInfo::resolve(zookeeper_path, replica_name, table_id, query, mode, local_context, validate);
         ast_zk_path->value = res.full_path_for_metadata;
         ast_replica_name->value = res.replica_name_for_metadata;
         return res;
@@ -321,7 +324,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
             ast_replica_name->value = server_settings[ServerSetting::default_replica_name];
         }
 
-        return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>());
+        return expand_macro(ast_zk_path, ast_replica_name, ast_zk_path->value.safeGet<String>(), ast_replica_name->value.safeGet<String>(), validate_substitutions);
     }
     if (is_extended_storage_def
         && (arg_cnt == 0
@@ -341,7 +344,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         auto * ast_zk_path = path_arg.get();
         auto * ast_replica_name = name_arg.get();
 
-        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name]);
+        auto res = expand_macro(ast_zk_path, ast_replica_name, server_settings[ServerSetting::default_replica_path], server_settings[ServerSetting::default_replica_name], validate_injected_defaults);
 
         engine_args.emplace_back(std::move(path_arg));
         engine_args.emplace_back(std::move(name_arg));
@@ -377,7 +380,7 @@ std::optional<String> extractZooKeeperPathFromReplicatedTableDef(const ASTCreate
         /// the `catch` below turns a rejection into `nullopt`, which silently drops the table from a backup.
         auto res = extractZooKeeperPathAndReplicaNameFromEngineArgs(
             query, table_id, engine_name, engine_args, LoadingStrictnessLevel::CREATE, local_context,
-            /*validate_substitutions=*/ false);
+            /*validate_substitutions=*/ false, /*validate_injected_defaults=*/ false);
         return res.full_path;
     }
     catch (Exception & e)
@@ -578,6 +581,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                                                    "See also `allow_deprecated_syntax_for_merge_tree` setting.");
     }
 
+    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
+    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    const bool is_ddl_replay = isSecondaryDDLReplay(args.getLocalContext());
+
     /// Extract zookeeper path and replica name from engine arguments.
     TableZnodeInfo zookeeper_info;
 
@@ -592,7 +600,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             && !args.getLocalContext()->isRecoveryFromStoredMetadata();
         zookeeper_info = extractZooKeeperPathAndReplicaNameFromEngineArgs(
             args.query, args.table_id, args.engine_name, args.engine_args, args.mode, args.getLocalContext(),
-            validate_substitutions);
+            validate_substitutions,
+            /*validate_injected_defaults=*/ validate_substitutions || (args.is_restore_from_backup && !is_ddl_replay));
 
         if (zookeeper_info.replica_name.empty())
             throw Exception(ErrorCodes::NO_REPLICA_NAME_GIVEN, "No replica name in config{}", verbose_help_message);
@@ -696,30 +705,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
     const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
 
-    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
-    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
-    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
-    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-
     /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
     const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
 
-    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
-    /// they are told apart by the client info instead (the same marker `AlterCommands` and
-    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
-        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
     /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
     {
         for (const auto & column : columns)
         {
@@ -1184,7 +1177,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
     DataTypes data_types = metadata.partition_key.data_types;
@@ -1236,7 +1229,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
           * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
           * is the way out of that state.
           */
-        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition
             && (*storage_settings)[MergeTreeSetting::table_readonly])
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
 
