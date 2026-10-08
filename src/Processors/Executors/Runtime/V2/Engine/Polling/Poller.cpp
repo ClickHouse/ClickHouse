@@ -1,6 +1,5 @@
 #include <Processors/Executors/Runtime/V2/Engine/Polling/Poller.h>
 #include <Common/Exception.h>
-#include <base/scope_guard.h>
 
 #include <algorithm>
 #include <chrono>
@@ -136,11 +135,6 @@ void Poller::add(const PollRequest & request)
 
 std::vector<Task> Poller::poll(int timeout_ms)
 {
-    if (polling.exchange(true))
-        return {};
-
-    SCOPE_EXIT(polling = false);
-
     std::vector<Task> fired;
 
     {

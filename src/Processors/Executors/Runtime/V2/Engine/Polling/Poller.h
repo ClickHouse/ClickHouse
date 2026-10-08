@@ -51,8 +51,6 @@ private:
     std::unique_ptr<Deadlines> deadlines;
     TimerDescriptor timer_signal;
 
-    /// One waiter at a time; a second poll returns nothing instead of waiting
-    Wyrd::Atomic<bool> polling = false;
     WakeupFd wakeup_signal;
 };
 
