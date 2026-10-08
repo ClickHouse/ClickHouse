@@ -14,6 +14,7 @@ SET optimize_rewrite_has_to_in = 0;
 CREATE TABLE set_mapping_transform (x UInt32) ENGINE = MergeTree
 ORDER BY (cityHash64(cityHash64(x + 1)), x)
 SETTINGS index_granularity = 1, index_granularity_bytes = 0,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
     primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0,
     add_minmax_index_for_numeric_columns = 0;
 INSERT INTO set_mapping_transform SELECT number FROM numbers(64);
