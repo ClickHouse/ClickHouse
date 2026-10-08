@@ -96,6 +96,14 @@ SELECT 'nested tuple named as the table', groupArray(id) FROM nest_05227 SETTING
 SELECT count() FROM nest_05227 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1, additional_table_filters = {'nest_05227': 'greatest(nest_05227.a.*) > 0'}; -- { serverError BAD_ARGUMENTS }
 DROP TABLE nest_05227;
 
+-- When the table has the name of its database, a qualifier is looked up without the table name first, and only then
+-- without the database and the table, like the analyzer does: here db.tup is not a Tuple, so db.db.tup.* is rejected.
+CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE} (id UInt32, tup Tuple(x UInt8, y UInt8), ${CLICKHOUSE_DATABASE} Tuple(tup UInt8)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE} VALUES (1, (1, 2), (0)), (2, (0, 0), (0)), (3, (0, 3), (0));
+SELECT count() FROM ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE} SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE}': 'greatest(${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE}.tup.*) > 0'}; -- { serverError BAD_ARGUMENTS }
+CREATE ROW POLICY OR REPLACE p_05227 ON ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE} USING greatest(${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE}.tup.*) > 0 TO ALL; -- { serverError BAD_ARGUMENTS }
+DROP TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE};
+
 -- An unaliased parameterized view has a name of its own, a Tuple column can be qualified with it.
 CREATE VIEW pv_05227 AS SELECT * FROM tup_05227 WHERE id > {min_id:UInt32};
 SELECT 'view-qualified tuple matcher on a parameterized view', groupArray(id) FROM pv_05227(min_id = 0) SETTINGS additional_table_filters = {'pv_05227': 'greatest(pv_05227.tup.*) > 0'};
