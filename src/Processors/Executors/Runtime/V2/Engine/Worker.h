@@ -49,8 +49,6 @@ private:
     LocalTasks local_tasks;
     std::array<Task, LocalTasks::capacity / 2> offload_buffer{};
 
-    size_t picks_count = 0;
-
     Wyrd::Atomic<bool> wake_up = false;
 };
 

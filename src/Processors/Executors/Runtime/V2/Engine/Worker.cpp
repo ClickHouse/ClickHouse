@@ -14,13 +14,6 @@ namespace DB
 namespace Runtime::V2
 {
 
-namespace
-{
-
-constexpr size_t max_sequential_full_rounds = 61;
-
-}
-
 Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     : pool(pool_)
     , worker_id(worker_id_)
@@ -48,12 +41,6 @@ std::optional<Task> Worker::pickTask()
 
 std::optional<Task> Worker::tryPickTask()
 {
-    const size_t picks_streak = ++picks_count;
-
-    if (picks_streak % max_sequential_full_rounds == 0)
-        if (auto task = takeFromGlobal())
-            return task;
-
     if (auto task = takeFromLocal())
         return task;
 
