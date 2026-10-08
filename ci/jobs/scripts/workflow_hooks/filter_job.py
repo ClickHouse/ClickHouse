@@ -160,8 +160,13 @@ _COVERAGE_PIPELINE_PATHS = (
 # The part of `_COVERAGE_PIPELINE_PATHS` used only by the LLVM coverage jobs: collecting,
 # merging and reporting the coverage. The `arm_binary` replacement jobs do not run this code,
 # so a pull request changing it runs the LLVM coverage jobs as if it had the `ci-coverage` label.
+# The test runners are shared with the replacement jobs, but they also contain the LLVM-only
+# branches (collecting and merging the `*.profraw` files), which only the coverage jobs exercise.
 _LLVM_COVERAGE_ONLY_PATHS = (
     "ci/jobs/llvm_coverage_job.py",
+    "ci/jobs/functional_tests.py",
+    "ci/jobs/integration_test_job.py",
+    "ci/jobs/unit_tests_job.py",
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
     "ci/jobs/scripts/print_uncovered_code.py",
