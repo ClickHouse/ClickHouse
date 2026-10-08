@@ -92,6 +92,9 @@ struct ConvertToASTOptions
 
     /// Set CTE name in ASTSubquery field.
     bool set_subquery_cte_name = true;
+
+    /// Write a number literal not typed by its context with its original text, for a consumer that analyzes the AST again.
+    bool keep_number_literal_text = false;
 };
 
 class IQueryTreeNode : public TypePromotion<IQueryTreeNode>

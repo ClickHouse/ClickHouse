@@ -44,6 +44,7 @@
 
 #include <Core/Settings.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -5365,6 +5366,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
     auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments.size();
+    std::vector<size_t> skipped_result_argument_indexes;
 
     for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
     {
@@ -5375,6 +5377,7 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
             table_function_argument_index);
         if (skip_argument_index_it != skip_analysis_arguments_indexes.end())
         {
+            skipped_result_argument_indexes.push_back(result_table_function_arguments.size());
             result_table_function_arguments.push_back(table_function_argument);
             continue;
         }
@@ -5504,6 +5507,12 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     table_function_node_typed.getArguments().getNodes() = std::move(result_table_function_arguments);
 
     auto table_function_ast = table_function_node_typed.toAST();
+
+    /// Arguments not analyzed here are analyzed by the table function, which types their literals itself.
+    auto & table_function_ast_arguments = table_function_ast->as<ASTFunction &>().arguments->children;
+    for (size_t index : skipped_result_argument_indexes)
+        table_function_ast_arguments[index] = table_function_node_typed.getArguments().getNodes()[index]->toAST({.keep_number_literal_text = true});
+
     table_function_ptr->parseArguments(table_function_ast, scope_context);
 
     uint64_t use_structure_from_insertion_table_in_table_functions

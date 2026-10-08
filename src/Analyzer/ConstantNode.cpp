@@ -220,6 +220,10 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 
     const auto & constant_value_type = constant_value.getType();
 
+    if (options.keep_number_literal_text && hasNumberLiteralText() && !source_expression
+        && constant_value_type->equals(*applyVisitor(FieldToDataType(), Field(NumberLiteral(number_literal_text)))))
+        return make_intrusive<ASTLiteral>(NumberLiteral(number_literal_text));
+
     /// `Decimal` constants (including decimals nested in `Array`/`Tuple`/`Map`/`Variant`/`Dynamic`) have no
     /// exact literal syntax: a bare numeric literal is re-parsed as `Float64` on the receiving side and
     /// rounds. A `Variant` value has none either: its literal does not keep the active member type, which
