@@ -1180,7 +1180,7 @@ even when they use all queried columns (normally that is pointless, but with thi
 Equality with a constant string is not moved for this reason: it is still applied during the scan when it is already in `PREWHERE`.
 
 Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
-the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, and dictionary encodings; pages with the `DELTA_BYTE_ARRAY` encoding are read without it.
+the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
 
 Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
 (`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
