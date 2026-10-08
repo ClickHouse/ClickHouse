@@ -64,7 +64,7 @@ namespace
 constexpr size_t ROW_BLOCK = 6;
 constexpr size_t COL_BLOCK = 16;
 
-DECLARE_MULTITARGET_CODE(
+DECLARE_X86_64_MULTITARGET_CODE(
 
 /// Score every row against one tile of centroids, keeping the running best score and id per row.
 /// See `build` and `assignBlock` for how the tile is prepared.
@@ -139,7 +139,7 @@ void scoreTile(
     }
 }
 
-) // DECLARE_MULTITARGET_CODE
+) // DECLARE_X86_64_MULTITARGET_CODE
 
 /// Runtime dispatch to the widest ISA the CPU supports. Where multitarget code is off (ARM, or
 /// ENABLE_MULTITARGET_CODE=OFF) only Default exists, hence the plain loops above that auto-vectorize.

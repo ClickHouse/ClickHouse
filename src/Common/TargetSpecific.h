@@ -63,7 +63,7 @@
  * }
  *
  * Sometimes code may benefit from compiling with different options.
- * For these purposes use DECLARE_MULTITARGET_CODE macros. It will create a copy
+ * For these purposes use DECLARE_X86_64_MULTITARGET_CODE macro. It will create a copy
  * of the code for every supported target and compile it with different options.
  * These copies are available via TargetSpecific namespaces described above.
  *
@@ -72,17 +72,17 @@
  *
  * Example:
  *
- * DECLARE_MULTITARGET_CODE(
+ * DECLARE_X86_64_MULTITARGET_CODE(
  * int funcImpl(int size, ...) {
  *     int iteration_size = 1;
- *     if constexpr (BuildArch == TargetArch::x86_64_v2)
- *         iteration_size = 2
- *     else if constexpr (BuildArch == TargetArch::AVX || BuildArch == TargetArch::x86_64_v3)
- *         iteration_size = 4;
+ *     if constexpr (BuildArch == TargetArch::x86_64_v4)
+ *         iteration_size = 16;
+ *     else if constexpr (BuildArch == TargetArch::x86_64_v3)
+ *         iteration_size = 8;
  *     for (int i = 0; i < size; i += iteration_size)
  *     ...
  * }
- * ) // DECLARE_MULTITARGET_CODE
+ * ) // DECLARE_X86_64_MULTITARGET_CODE
  *
  * // All target-specific and default implementations are available here via
  * TargetSpecific::<Arch>::funcImpl. Use runtime detection to choose one.
@@ -290,10 +290,13 @@ namespace TargetSpecific::Default { \
 }
 
 
-/// Only enable extra v3 and v4 by default
-#define DECLARE_MULTITARGET_CODE(...) \
-DECLARE_DEFAULT_CODE         (__VA_ARGS__) \
-DECLARE_X86_64_V3_SPECIFIC_CODE    (__VA_ARGS__) \
+/* x86_64 multi-target code, targeting x86_64_v3 and x86_64_v4.
+ * On AArch64, the default copy is used, because SVE kernels were no faster than NEON,
+ * except some hash functions in src/Functions/FunctionsHashing.h.
+ */
+#define DECLARE_X86_64_MULTITARGET_CODE(...) \
+DECLARE_DEFAULT_CODE              (__VA_ARGS__) \
+DECLARE_X86_64_V3_SPECIFIC_CODE   (__VA_ARGS__) \
 DECLARE_X86_64_V4_SPECIFIC_CODE   (__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(

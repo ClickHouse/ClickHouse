@@ -98,7 +98,7 @@ UInt32 getSupportedArchs()
         result |= static_cast<UInt32>(TargetArch::GenuineIntel);
 
     // ARM SVE support detection
-    if (CPU::CPUFlagsCache::have_SVE)
+    if (CPU::haveSVE())
         result |= static_cast<UInt32>(TargetArch::ARM_SVE);
 
     return result;
