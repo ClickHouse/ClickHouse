@@ -7736,14 +7736,15 @@ Use lazy materialization optimization for reading local Parquet files with the `
 )", 0, \
         {"26.8", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."}) \
     DECLARE(Bool, query_plan_lazy_materialization_for_join, true, R"(
-Use lazy materialization for `ORDER BY ... LIMIT n` queries over joins: the columns of every table that
-supports a second, row-addressed read are read only for the `n` rows that survive the `LIMIT`, rather
-than for every row the joins produce. The decision is made on one merged `ActionsDAG` for the whole
-subtree below the `LIMIT`, so a value that a filter needs and the result needs again is computed twice,
-cheaply, above the `LIMIT`, instead of becoming a column carried through every join in between. Takes
-effect only if `query_plan_optimize_lazy_materialization` is enabled.
+Use lazy materialization for `LIMIT n` queries over joins, with or without `ORDER BY`: the columns of the
+`MergeTree` tables, and of the object storage tables if
+`query_plan_optimize_lazy_materialization_for_object_storage` is enabled, are read only for the `n` rows that
+survive the `LIMIT`, rather than for every row the joins produce. The decision is made on one merged
+`ActionsDAG` for the whole subtree below the `LIMIT`, so a value that a filter needs and the result needs
+again is computed twice, cheaply, above the `LIMIT`, instead of becoming a column carried through every join
+in between. Takes effect only if `query_plan_optimize_lazy_materialization` is enabled.
 )", 0, \
-        {"26.10", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries over joins."}) \
+        {"26.10", false, true, "New setting to use lazy materialization for `LIMIT n` queries over joins."}) \
     DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
 )", 0, \
         {"25.12", 100, 10000, "Increase the limit after performance improvement"}, \
