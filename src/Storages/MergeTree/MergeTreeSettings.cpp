@@ -834,7 +834,9 @@ Obsolete, use `text_index_dictionary_block_encoding` instead. Used only if `text
 )", 0, \
         {"26.6", true, true, "New setting"}) \
     DECLARE(TextIndexDictionaryBlockEncoding, text_index_dictionary_block_encoding, TextIndexDictionaryBlockEncoding::FrontCodingV1, R"(
-Default token layout of text index dictionary blocks. One of `none`, `frontcoding_v1`.
+Default token layout of text index dictionary blocks. One of `none`, `frontcoding_v1`, `frontcoding_v2`.
+`frontcoding_v2` stores the prefix and suffix lengths as bit-packed columns, which is smaller and faster to decode,
+but parts written with it cannot be read by versions before 26.10.
 Can be overridden by explicit `dictionary_block_encoding` index argument.
 )", 0, \
         {"26.10", "frontcoding_v1", "frontcoding_v1", "New setting"}) \

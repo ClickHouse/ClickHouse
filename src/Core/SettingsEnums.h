@@ -578,6 +578,7 @@ enum class TextIndexDictionaryBlockEncoding : uint8_t
 {
     None = 0,
     FrontCodingV1 = 1,
+    FrontCodingV2 = 2,
 };
 
 DECLARE_SETTING_ENUM(TextIndexDictionaryBlockEncoding)

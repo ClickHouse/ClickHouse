@@ -531,7 +531,8 @@ IMPLEMENT_SETTING_ENUM(
     TextIndexDictionaryBlockEncoding,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexDictionaryBlockEncoding::None},
-     {"frontcoding_v1", TextIndexDictionaryBlockEncoding::FrontCodingV1}})
+     {"frontcoding_v1", TextIndexDictionaryBlockEncoding::FrontCodingV1},
+     {"frontcoding_v2", TextIndexDictionaryBlockEncoding::FrontCodingV2}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,
