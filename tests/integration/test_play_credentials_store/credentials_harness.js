@@ -292,11 +292,18 @@ scenario('stored-implicit-entry-keeps-its-account', async js => {
     assertEqual(sameAsLive(second, entry), false, 'an entry recorded for alice is not the implicit bob');
     assertEqual(sameAsLive(second, { server: 'http://host:8123/', user: '', implicitUser: '' }), false,
         'an unstamped implicit entry is not the implicit bob');
+    /// Before a visit learns the name, the live implicit connection is only its own marker: an entry
+    /// stamped with no name, or with a marker of an earlier visit (possibly for another account), is
+    /// not proven to be it.
     const third = boot(js);
     third.url_elem.value = 'http://host:8123/';
     third.user_elem.value = '';
-    assertEqual(sameAsLive(third, { server: 'http://host:8123/', user: '', implicitUser: '' }), true,
-        'two unstamped implicit connections are the same');
+    const current = stampConnection(third);
+    assertEqual(sameAsLive(third, current), true, 'an entry recorded earlier in this visit before the name is learned');
+    assertEqual(sameAsLive(third, { server: 'http://host:8123/', user: '', implicitUser: '' }), false,
+        'an unstamped implicit entry before the name is learned');
+    assertEqual(sameAsLive(third, { server: 'http://host:8123/', user: '', implicitUser: '\u0000pending:earlier' }), false,
+        'a marker of an earlier visit before the name is learned');
 });
 
 /// `localStorage` that throws or holds a malformed `implicit_users` must not break the page: nothing

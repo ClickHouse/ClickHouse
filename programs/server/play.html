@@ -16798,21 +16798,26 @@ function resolvedImplicitUser(serverAddress, stamp) {
 
 /// Do two connections on the same server (compared separately by `sameServerAddress`) use the same
 /// account? Equal explicit effective users (`effectiveConnectionUser`) always do. Two implicit ones do
-/// when their stamps (`implicitUserStamp`) are equal: both name the same user, or neither names any.
+/// when their stamps (`implicitUserStamp`) denote the same user, or, while neither denotes a known
+/// name, when the stamps themselves are equal: only the same marker of this visit (or two entries both
+/// stamped with no name) match then, so an entry stamped by an earlier visit, possibly for another
+/// account, is never taken for the live implicit connection before this visit has learned its name.
 /// An implicit user is additionally the same as an explicit name when its stamp names it, so a login
 /// refilled by the password manager under that name (`storeCredentials`) is the same connection as the
 /// implicit one it was saved from, and does not reset the selected database or count as a diverged
 /// run. A stored connection carries its own stamp, taken when it was recorded, never the current
 /// `learnedImplicitUser`: an entry stamped with no name (or written before the stamp existed, or by an
-/// earlier visit before the name was known) matches only an implicit live user whose name is not known
-/// either, failing closed. Only a marker stamped earlier in this visit takes the name learned since
-/// (`resolvedImplicitUser`).
+/// earlier visit before the name was known) never matches the live implicit user, failing closed. Only
+/// a marker stamped earlier in this visit takes the name learned since (`resolvedImplicitUser`).
 function sameConnectionUser(a_server, a_user, a_implicit_user, b_server, b_user, b_implicit_user) {
     const a = effectiveConnectionUser(a_server, a_user);
     const b = effectiveConnectionUser(b_server, b_user);
     const a_implicit = resolvedImplicitUser(a_server, a_implicit_user);
     const b_implicit = resolvedImplicitUser(b_server, b_implicit_user);
-    if (a === '' && b === '') return a_implicit === b_implicit;
+    if (a === '' && b === '')
+        return (a_implicit !== '' || b_implicit !== '')
+            ? a_implicit === b_implicit
+            : (a_implicit_user || '') === (b_implicit_user || '');
     if (a === b) return true;
     const a_account = a || a_implicit;
     const b_account = b || b_implicit;
