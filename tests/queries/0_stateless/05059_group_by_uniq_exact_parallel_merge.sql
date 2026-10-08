@@ -162,3 +162,34 @@ SELECT k, uniqExact(n) AS u
 FROM (SELECT toLowCardinality(if(number < 200000, NULL, toString(number % 4))) AS k, number AS n FROM numbers_mt(240000))
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 4, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_parallel_single_level_merge = 0;
+
+-- ArgMin / ArgMax forward the deferred merge to the nested uniqExact, restricted to the states with the extremal key.
+-- With `n % 2` every thread has the same maximal key, with `intDiv(n, 50000)` the threads have different minimal keys.
+SELECT k, uniqExactArgMax(n, n % 2) AS mx, uniqExactArgMin(n, intDiv(n, 50000)) AS mn
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8;
+
+SELECT k, uniqExactArgMax(n, n % 2) AS mx, uniqExactArgMin(n, intDiv(n, 50000)) AS mn
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 0, group_by_two_level_threshold_bytes = 0, enable_parallel_single_level_merge = 0;
+
+SELECT k, uniqExactArgMax(n, n % 2) AS mx, uniqExactArgMin(n, intDiv(n, 50000)) AS mn
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, group_by_two_level_threshold = 8, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;
+
+SELECT k, uniqExactArgMax(n, n % 2) AS mx, uniqExactArgMin(n, intDiv(n, 50000)) AS mn
+FROM remote('127.0.0.{1,2}', view(SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000)))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 4, distributed_aggregation_memory_efficient = 0;
+
+SELECT uniqExactArgMax(n, n % 2) AS mx, uniqExactArgMin(n, intDiv(n, 50000)) AS mn
+FROM (SELECT number AS n FROM numbers_mt(240000))
+SETTINGS max_threads = 4;
+
+SELECT k, uniqExactArgMax(n, n % 2) AS mx, uniqExactArgMin(n, intDiv(n, 50000)) AS mn
+FROM (SELECT if(number < 200000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(240000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 1;
