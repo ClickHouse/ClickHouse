@@ -77,6 +77,8 @@ public:
     /// not evaluate the threshold against it. `column_name` in the info is that column's name.
     virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
     virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
+    /// True only if the source honors `FormatTopKFilterInfo::filter_rows = false` (no per-row filter).
+    virtual bool supportsTopKStatisticsOnlyFilter() const { return false; }
 
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
