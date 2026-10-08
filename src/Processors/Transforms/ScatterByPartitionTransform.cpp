@@ -162,6 +162,15 @@ void ScatterByPartitionTransform::generateOutputChunks()
         return;
     }
 
+    /// A rowless chunk with a `ChunkInfo` is a marker for the consumer (e.g. a watermark of a streaming read),
+    /// which applies to every partition. The scatter below would lose it, so it is sent to all outputs.
+    if (num_rows == 0 && !chunk.getChunkInfos().empty())
+    {
+        for (auto & output_chunk : output_chunks)
+            output_chunk = chunk.clone();
+        return;
+    }
+
     /// Special case for 0 key columns. It is an unlikely but still valid case.
     if (key_columns.empty())
     {
