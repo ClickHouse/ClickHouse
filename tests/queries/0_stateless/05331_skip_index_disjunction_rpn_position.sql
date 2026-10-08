@@ -103,10 +103,11 @@ SELECT count() FROM t_rpn_sfc WHERE (x = 5 AND y = 7) AND (z = 9 OR w = 11)
 SETTINGS use_skip_indexes = 1, use_skip_indexes_for_disjunctions = 1, ignore_data_skipping_indices = 'imz,ihz';
 SELECT count() FROM t_rpn_sfc WHERE (x >= 5 AND x <= 5 AND y >= 7 AND y <= 7) AND (z = 9 OR w = 11)
 SETTINGS use_skip_indexes = 1, use_skip_indexes_for_disjunctions = 1, ignore_data_skipping_indices = 'ihz,isz';
--- The combined analysis still prunes with the curve index: only the matching granule is read.
-SELECT count() FROM t_rpn_sfc WHERE (x = 5 AND y = 7) AND (z = 9 OR w = 11)
+-- No single index prunes this `OR`: only the combined analysis drops granule 1, through the curve index's
+-- verdict on `x = 5 AND y = 7`.
+SELECT count() FROM t_rpn_sfc WHERE (x = 5 AND y = 7) OR (z = 9 AND w = 11)
 SETTINGS use_skip_indexes = 1, use_skip_indexes_for_disjunctions = 1, use_skip_indexes_on_data_read = 0,
-         use_query_condition_cache = 0, ignore_data_skipping_indices = 'ihz,isz', max_rows_to_read = 1;
+         use_query_condition_cache = 0, ignore_data_skipping_indices = 'ihz,isz', max_rows_to_read = 3;
 DROP TABLE t_rpn_sfc;
 
 -- The repro from issue #124452: a curve index on the bare `mortonEncode(x, y)`, the collapsed span first.
