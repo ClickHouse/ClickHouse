@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Poco/Util/MapConfiguration.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -53,6 +54,9 @@ protected:
     void SetUp() override
     {
         context = Context::createCopy(getContext().context);
+        /// Key analysis initializes SQL functions from the global configuration, including when
+        /// this test runs alone without a server application or another test initializing it.
+        context->setConfig(Poco::AutoPtr<Poco::Util::MapConfiguration>(new Poco::Util::MapConfiguration));
         context->setSetting("compile_expressions", Field(false));
         context->setSetting("compile_aggregate_expressions", Field(false));
         context->setSetting("use_query_condition_cache", Field(false));
@@ -64,6 +68,7 @@ protected:
         getOutdatedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
         getUnexpectedPartsLoadingThreadPool().initializeWithDefaultSettingsIfNotInitialized();
         getPartsCleaningThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+        getMergeTreePrefixesDeserializationThreadPool().initializeWithDefaultSettingsIfNotInitialized();
 
         StorageInMemoryMetadata metadata;
         ColumnsDescription columns;
