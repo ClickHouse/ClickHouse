@@ -93,6 +93,7 @@ struct QueryPlanOptimizationSettings
     bool enable_group_by_top_k_optimization;
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
+    bool top_k_optimization_shared_boundary = true;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -138,6 +139,7 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
+    bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
@@ -172,6 +174,8 @@ struct QueryPlanOptimizationSettings
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
+    /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them
+    bool skip_forced_projection_check = false;
     String force_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
