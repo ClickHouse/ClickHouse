@@ -70,16 +70,12 @@ WHERE database = currentDatabase() AND table = 't_codec_case_args' ORDER BY name
 INSERT INTO t_codec_case_args SELECT number / 8, number / 4, number, (number, number) FROM numbers(1000);
 SELECT count(), sum(a), sum(b), sum(c), sum(d.2) FROM t_codec_case_args;
 
--- The part's default codec also compresses the packed statistics file, which a type-dependent codec such as
--- `ALP` cannot do, so automatic statistics are turned off here; that is a pre-existing limitation of
--- type-dependent codecs in `default_compression_codec`, not a property of the spelling.
+-- A type-dependent codec such as `ALP` cannot compress the untyped files of a part, so it is rejected in
+-- `default_compression_codec`. The lower-case variant still parses: the error is about the column type,
+-- not about an unknown `ALP` variant.
 CREATE TABLE t_codec_case_default_alp (f Float64)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'ALP(std)', auto_statistics_types = '';
-
-INSERT INTO t_codec_case_default_alp SELECT number / 8 FROM numbers(1000);
-SELECT count(), sum(f) FROM t_codec_case_default_alp;
-SELECT default_compression_codec FROM system.parts WHERE database = currentDatabase() AND table = 't_codec_case_default_alp' AND active;
+SETTINGS default_compression_codec = 'ALP(std)'; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- another path that takes a codec as a string';
 
@@ -113,4 +109,3 @@ DROP TABLE t_codec_case;
 DROP TABLE t_codec_case_settings;
 DROP TABLE t_codec_case_marks;
 DROP TABLE t_codec_case_args;
-DROP TABLE t_codec_case_default_alp;

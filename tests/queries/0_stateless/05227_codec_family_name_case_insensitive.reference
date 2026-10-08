@@ -18,8 +18,6 @@ b	CODEC(ALP(AUTO))
 c	CODEC(T64(\'bit\'))
 d	CODEC(Delta, default)
 1000	62437.5	124875	499500	499500
-1000	62437.5
-ALP(STD)
 -- another path that takes a codec as a string
 1
 -- `Multiple` is still not nameable directly, in any spelling
