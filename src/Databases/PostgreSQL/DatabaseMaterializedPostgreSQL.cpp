@@ -1384,6 +1384,22 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
 }
 
 
+std::vector<LightWeightTableDetails> DatabaseMaterializedPostgreSQL::getLightweightTablesIterator(
+    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    auto result = DatabaseAtomic::getLightweightTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
+
+    /// The full iterator keeps exposing the nested tables for `system.tables`, `system.parts` and backups (see
+    /// `getTablesIterator`), but the name-only listing is what users see as "the table exists". Hide a coordinated
+    /// table there until this replica has caught up, by the same rule as `tryGetTable`. The availability check takes
+    /// `tables_mutex`, so it runs after the base class has released its own mutex.
+    if (isCoordinated() && !local_context->isInternalQuery())
+        std::erase_if(result, [this](const LightWeightTableDetails & details) { return !isCoordinatedTableAvailable(details.name); });
+
+    return result;
+}
+
+
 bool DatabaseMaterializedPostgreSQL::isCoordinatedTableAvailable(const String & table_name) const
 {
     std::lock_guard lock(tables_mutex);

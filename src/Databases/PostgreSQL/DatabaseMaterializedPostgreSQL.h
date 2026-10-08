@@ -49,6 +49,12 @@ public:
     DatabaseTablesIteratorPtr
     getTablesIterator(ContextPtr context, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    /// Name-only listing (`SHOW TABLES`). In coordinated mode it hides the tables that user-facing lookups do not
+    /// expose yet (see `isCoordinatedTableAvailable`), so a table appears in the listing only once this replica
+    /// has caught up with the initial snapshot.
+    std::vector<LightWeightTableDetails>
+    getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
     /// The iterator above exposes the nested ReplacingMergeTree tables; reading them requires the
     /// `StorageMaterializedPostgreSQL` wrapper. See `IDatabase::getTableForRead`.
     StoragePtr getTableForRead(const String & table_name, const StoragePtr & table, ContextPtr local_context) const override;

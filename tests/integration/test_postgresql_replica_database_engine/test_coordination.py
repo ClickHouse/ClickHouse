@@ -4147,6 +4147,11 @@ def test_standby_exposes_table_only_after_initial_snapshot(started_cluster):
             assert "is not available yet" in instance2.query_and_get_error(
                 "SELECT count() FROM merge('test_database', '^test_table$')"
             )
+            # The table is not listed either, on the standby as well as on the parked worker.
+            for node in (instance, instance2):
+                assert "test_table" not in node.query(
+                    "SHOW TABLES FROM test_database"
+                ).split()
             time.sleep(1)
         assert not marker_znode_exists(instance)
 
@@ -4161,6 +4166,7 @@ def test_standby_exposes_table_only_after_initial_snapshot(started_cluster):
 
     check_tables_are_synchronized(instance2, "test_table")
     assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 100
+    assert "test_table" in instance2.query("SHOW TABLES FROM test_database").split()
     assert (
         int(
             instance2.query(
