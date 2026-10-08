@@ -4,9 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -17,7 +15,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <base/Decimal.h>
 #include <base/types.h>
@@ -117,26 +114,14 @@ public:
         }
         else if (which.isUUID() || which.isUUID2())
         {
-            /// `UUID2` shares the physical `ColumnVector<UUID>` storage with `UUID`, but stores the two 64-bit halves
-            /// swapped (the canonical big-endian layout). Swap them back into the `UUID` layout and relabel the argument
-            /// as `UUID`, so it takes the exact same conversion and hashing path below. This makes `icebergHash`
-            /// byte-identical for a `UUID` and a `UUID2` holding the same textual value, preserving function parity.
-            ColumnsWithTypeAndName uuid_arguments = arguments;
-            if (which.isUUID2())
-            {
-                auto uuid_column = IColumn::mutate(arguments[0].column->convertToFullColumnIfConst());
-                auto & uuid_data = assert_cast<ColumnVector<UUID> &>(*uuid_column).getData();
-                for (auto & value : uuid_data)
-                    value = UUIDHelpers::swapHalves(value);
-                uuid_arguments[0].column = std::move(uuid_column);
-                uuid_arguments[0].type = std::make_shared<DataTypeUUID>();
-            }
-
+            /// `toUInt128` maps a `UUID` and a `UUID2` holding the same textual value to the same `UInt128` (for `UUID2` it is
+            /// a bit-for-bit identity, for `UUID` it swaps the 64-bit halves). So both types take the exact same hashing path
+            /// below, and `icebergHash` is byte-identical for them, preserving function parity.
             // Function toUnderType: UUID => toUInt128 doesn't work for some reason so we need to use toUInt128 clickhouse implementation
             ColumnPtr intermediate_representation = FunctionFactory::instance()
                                                         .get("toUInt128", context)
-                                                        ->build(uuid_arguments)
-                                                        ->execute(uuid_arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
+                                                        ->build(arguments)
+                                                        ->execute(arguments, std::make_shared<DataTypeUInt128>(), input_rows_count, false);
             const IColumn * wrapper_column = intermediate_representation.get();
             size_t idx_mask = ~size_t(0);
             if (const ColumnConst * const_column = checkAndGetColumn<ColumnConst>(intermediate_representation.get()))

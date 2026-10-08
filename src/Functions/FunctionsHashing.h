@@ -1076,9 +1076,11 @@ private:
                 column->getName(), getName());
     }
 
-    template <typename FromType, bool first>
+    /// `swap_uuid_halves` is used for `UUID2`, see `executeUUID2`.
+    template <typename FromType, bool first, bool swap_uuid_halves = false>
     void executeBigIntType(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
+        static_assert(!swap_uuid_halves || std::is_same_v<FromType, UUID>);
         using ColVecType = ColumnVectorOrDecimal<FromType>;
         KeyType key{};
         if constexpr (Keyed)
@@ -1104,11 +1106,13 @@ private:
                 if constexpr (Keyed)
                     if (!key_cols.is_const && i != 0)
                         key = Impl::getKey(key_cols, i);
-                if constexpr (std::endian::native == std::endian::little)
+                if constexpr (std::endian::native == std::endian::little && !swap_uuid_halves)
                     hash = apply(key, reinterpret_cast<const char *>(&vec_from[i]), sizeof(vec_from[i]));
                 else
                 {
                     auto value = vec_from[i];
+                    if constexpr (swap_uuid_halves)
+                        value = UUIDHelpers::swapHalves(value);
                     to_little_endian(value);
 
                     hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
@@ -1126,10 +1130,12 @@ private:
                 if (!key_cols.is_const)
                 {
                     ColumnPtr full_column = col_from_const->convertToFullColumn();
-                    return executeBigIntType<FromType, first>(key_cols, full_column.get(), vec_to);
+                    return executeBigIntType<FromType, first, swap_uuid_halves>(key_cols, full_column.get(), vec_to);
                 }
             }
             auto value = col_from_const->template getValue<FromType>();
+            if constexpr (swap_uuid_halves)
+                value = UUIDHelpers::swapHalves(value);
             to_little_endian(value);
 
             const auto hash = apply(key, reinterpret_cast<const char *>(&value), sizeof(value));
@@ -1156,15 +1162,11 @@ private:
     /// correctly-sorting layout, which differs from the `UUID` layout only by swapping the two 64-bit halves
     /// (see `UUIDHelpers::swapHalves`). Swap the halves back to the `UUID` layout before hashing so that
     /// `hash(x::UUID2)` equals `hash(x::UUID)` for the same logical value, matching the parity the other `UUID2`
-    /// functions provide.
+    /// functions provide. The halves are swapped on the fly for each value, without materializing a temporary column.
     template <bool first>
     void executeUUID2(const KeyColumnsType & key_cols, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        auto swapped = IColumn::mutate(column->convertToFullColumnIfConst());
-        auto & data = assert_cast<ColumnUUID &>(*swapped).getData();
-        for (auto & value : data)
-            value = UUIDHelpers::swapHalves(value);
-        executeBigIntType<UUID, first>(key_cols, swapped.get(), vec_to);
+        executeBigIntType<UUID, first, /*swap_uuid_halves=*/true>(key_cols, column, vec_to);
     }
 
     template <bool first>
