@@ -146,3 +146,47 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+
+SELECT 'size';
+
+-- Sorted n-grams share long prefixes and have short suffixes, which is where front coding helps most.
+CREATE TABLE tab_none
+(
+    s String,
+    INDEX idx(s) TYPE text(tokenizer = ngrams(4), dictionary_block_encoding = 'none')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE tab_v1
+(
+    s String,
+    INDEX idx(s) TYPE text(tokenizer = ngrams(4), dictionary_block_encoding = 'frontcoding_v1')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE tab_v2
+(
+    s String,
+    INDEX idx(s) TYPE text(tokenizer = ngrams(4), dictionary_block_encoding = 'frontcoding_v2')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO tab_none SELECT hex(cityHash64(number)) FROM numbers(10000);
+INSERT INTO tab_v1 SELECT s FROM tab_none;
+INSERT INTO tab_v2 SELECT s FROM tab_none;
+
+SELECT 'uncompressed size: none > frontcoding_v1 > frontcoding_v2';
+WITH
+    (SELECT data_uncompressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_none') AS size_none,
+    (SELECT data_uncompressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_v1') AS size_v1,
+    (SELECT data_uncompressed_bytes FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'tab_v2') AS size_v2
+SELECT
+    size_v1 < 0.95 * size_none,
+    size_v2 < 0.95 * size_v1;
+
+DROP TABLE tab_none;
+DROP TABLE tab_v1;
+DROP TABLE tab_v2;

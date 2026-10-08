@@ -48,3 +48,6 @@ table settings precedence
 front_coded_v2
 raw
 errors
+size
+uncompressed size: none > frontcoding_v1 > frontcoding_v2
+1	1
