@@ -36,16 +36,16 @@ INSERT INTO t_pre_array VALUES (1, ['Hello'], ['World']);
 SELECT count() FROM t_pre_array WHERE hasAnyTokens(a, 'HELLO') AND hasAnyTokens(b, 'world')
 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 
--- A literal set in a preprocessor.
+-- A literal set in a preprocessor; the needle differs from the row, so only the preprocessor makes them match.
 CREATE TABLE t_pre_set (id UInt32, a String, b String,
-    INDEX ia a TYPE text(tokenizer = splitByNonAlpha, preprocessor = if(a IN ('Hello'), 'yes', 'no')),
-    INDEX ib b TYPE text(tokenizer = splitByNonAlpha, preprocessor = if(b IN ('Other'), 'yes', 'no')))
+    INDEX ia a TYPE text(tokenizer = splitByNonAlpha, preprocessor = if(a IN ('Hello', 'HELLO'), 'yes', 'no')),
+    INDEX ib b TYPE text(tokenizer = splitByNonAlpha, preprocessor = if(b IN ('Other', 'OTHER'), 'yes', 'no')))
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO t_pre_set VALUES (1, 'Hello', 'Other');
 
-SELECT count() FROM t_pre_set WHERE hasToken(a, 'Hello') AND hasToken(b, 'Other')
+SELECT count() FROM t_pre_set WHERE hasToken(a, 'HELLO') AND hasToken(b, 'OTHER')
 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
-SELECT count() FROM t_pre_set WHERE hasToken(b, 'Other') AND hasToken(a, 'Hello')
+SELECT count() FROM t_pre_set WHERE hasToken(b, 'OTHER') AND hasToken(a, 'HELLO')
 SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
 
 -- A postprocessor next to an Array preprocessor.
