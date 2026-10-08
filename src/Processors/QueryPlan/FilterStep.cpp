@@ -323,6 +323,7 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
 
     /// A heavy atom is evaluated only on the rows that passed the atoms split before it. If a cheap atom follows it,
     /// split the cheap one first. The atoms that are not moved keep their relative order.
+    /// This is decided once per pipeline, not per block, so the profile event `ShortCircuitArgumentsReordered` is not incremented here.
     if (reorder)
     {
         for (const auto * atom : atoms)
