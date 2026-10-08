@@ -721,7 +721,11 @@ InterpreterAlterQuery::RowExistsColumnKind InterpreterAlterQuery::getRowExistsCo
     /// is a registered virtual and not shadowed by a real column, which precisely identifies the marker.
     if (!storage)
         return RowExistsColumnKind::Unknown;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
+    /// A lazy-load stand-in that has not been materialized yet answers from the columns of the
+    /// `CREATE TABLE` query alone, without the virtual columns of the engine, so it would hide the
+    /// marker and turn `_row_exists = 0` into a regular update. Every caller is about to mutate the
+    /// table or a mutation of it, so ask the real storage.
+    const auto metadata_snapshot = resolveStorageProxyLoading(storage)->getInMemoryMetadataPtr(context_, false);
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name)
         ? RowExistsColumnKind::LightweightDeleteMarker
         : RowExistsColumnKind::Regular;
