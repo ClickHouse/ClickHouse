@@ -18,6 +18,7 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
+#include <Storages/StorageTimeSeries.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -36,6 +37,7 @@
 
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#   include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
 
 namespace DB
@@ -159,21 +161,32 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
 /// Loads the lazy stand-ins of the tables whose row count `table->totalRows` delegates to. Loading
 /// a `StorageTableProxy` keeps the same object in the catalog, which then forwards `totalRows` to
 /// the loaded storage, so the delegating storage sees the count when it looks up its target again.
-/// The bound only guards against a cycle.
-static void loadRowCountTargets(StoragePtr table)
+/// The depth bound only guards against a cycle.
+static void loadRowCountTargets(const StoragePtr & table, const ContextPtr & context, size_t depth = 0)
 {
-    for (size_t depth = 0; table && depth < max_storage_proxy_depth; ++depth)
+    if (!table || depth >= max_storage_proxy_depth)
+        return;
+
+    std::vector<StoragePtr> targets;
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+        targets.push_back(alias->tryGetTargetTable());
+    else if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
+             materialized_view && materialized_view->hasInnerTable())
+        targets.push_back(materialized_view->tryGetTargetTable());
+    else if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(table.get()))
     {
-        if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
-            table = alias->tryGetTargetTable();
-        else if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
-                 materialized_view && materialized_view->hasInnerTable())
-            table = materialized_view->tryGetTargetTable();
-        else
-            return;
-        if (table)
-            table = resolveStorageProxyLoading(table);
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->isInnerTable(target_kind))
+                targets.push_back(time_series->tryGetTargetTable(target_kind, context));
     }
+#if USE_LIBPQXX
+    else if (const auto * materialized_postgresql = dynamic_cast<const StorageMaterializedPostgreSQL *>(table.get()))
+        targets.push_back(materialized_postgresql->tryGetNested());
+#endif
+
+    for (const auto & target : targets)
+        if (target)
+            loadRowCountTargets(resolveStorageProxyLoading(target), context, depth + 1);
 }
 
 /// `IF EMPTY` must not drop a table whose contents it cannot vouch for. The row count a storage
@@ -191,8 +204,9 @@ static void loadRowCountTargets(StoragePtr table)
 /// removes the wrapper, not the rows of its source tables. A `lazy_load_tables` database hands out a `StorageTableProxy`, which
 /// reports no row count until it is loaded, so the stand-in is loaded first: otherwise `IF EMPTY`
 /// would refuse to drop an empty table that nobody has touched since the database was attached.
-/// An `Alias` and a materialized view with an inner table report the row count of their target,
-/// which they look up in the catalog themselves, so the stand-ins along that chain are loaded too.
+/// An `Alias`, a materialized view with an inner table, a `TimeSeries` table and a
+/// `MaterializedPostgreSQL` table report the row count of their targets, which they look up in the
+/// catalog themselves, so the stand-ins of those targets are loaded too.
 bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDropQuery::Kind kind) const
 {
     const StoragePtr table = resolveStorageProxyLoading(table_or_proxy);
@@ -205,7 +219,7 @@ bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDr
         if (!materialized_view || !materialized_view->hasInnerTable())
             return true;
     }
-    loadRowCountTargets(table);
+    loadRowCountTargets(table, getContext());
     auto rows = table->totalRows(getContext());
     return rows && *rows == 0;
 }
