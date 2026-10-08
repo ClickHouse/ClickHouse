@@ -31,7 +31,15 @@ check_if_not_detached "SELECT count() FROM t_reattach_own_disk" "t_reattach_own_
 # the check above cannot pass just because the hook did nothing at all.
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_server_disk (a UInt64) ENGINE = MergeTree ORDER BY a"
 
-check_if_detached "SELECT count() FROM t_reattach_server_disk" "t_reattach_server_disk"
+# The hook skips a table whose exclusive lock it cannot take within a short probe, and on a loaded runner
+# a background task of the fresh table can hold its lock for that long. The
+# query is read-only, so retry it until the hook gets the table idle.
+for _ in {1..10}
+do
+    result=$(check_if_detached "SELECT count() FROM t_reattach_server_disk" "t_reattach_server_disk")
+    [ "$result" = "OK" ] && break
+done
+echo "$result"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_own_disk"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_server_disk"
