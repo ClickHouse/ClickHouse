@@ -1090,15 +1090,16 @@ size_t MergeTreeRangeReader::Stream::ceilRowsToCompleteGranules(size_t rows_num)
 /// closest to `rows_num`, but at most twice as far; `rows_num` if the range has no such stripe end.
 /// A block that is a whole stripe is served from the cache and written to it without a copy.
 /// A stripe that is served from the cache, or written to it, is read whole even if `rows_num` is
-/// much less: the block shares the columns of the cache, so its size costs no memory.
-size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(size_t rows_num, size_t stripe_marks) const
+/// much less: the block shares the columns of the cache, so its size costs no memory. But not beyond
+/// twice `max_block_size_rows`, which a `LIMIT` lowers to read no more than it needs.
+size_t MergeTreeRangeReader::Stream::alignRowsToColumnsCacheStripes(size_t rows_num, size_t stripe_marks, size_t max_block_size_rows) const
 {
     const size_t rows = alignRowsToColumnsCacheStripesImpl(rows_num, stripe_marks);
     const size_t stripe_end = (current_mark / stripe_marks + 1) * stripe_marks;
     if (offset_after_current_mark != 0 || current_mark % stripe_marks != 0 || stripe_end > last_mark)
         return rows;
     const size_t stripe_rows = index_granularity->getRowsCountInRange(current_mark, stripe_end);
-    if (rows >= stripe_rows || !merge_tree_reader->canReadWholeColumnsCacheStripe(current_mark))
+    if (rows >= stripe_rows || stripe_rows > 2 * max_block_size_rows || !merge_tree_reader->canReadWholeColumnsCacheStripe(current_mark))
         return rows;
     return stripe_rows;
 }
@@ -1169,7 +1170,7 @@ static size_t getTotalBytesInColumns(const Columns & columns)
     return total_bytes;
 }
 
-MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges)
+MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t max_rows, MarkRanges & ranges, size_t max_block_size_rows)
 {
     ReadResult result(log);
     /// Read into uniquely-owned mutable columns; move them into the shared result.columns once reading is finished.
@@ -1232,7 +1233,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
 
             if (!aligned_to_stripes)
             {
-                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks);
+                space_left = stream.alignRowsToColumnsCacheStripes(space_left, stripe_marks, max_block_size_rows);
                 aligned_to_stripes = true;
             }
 
