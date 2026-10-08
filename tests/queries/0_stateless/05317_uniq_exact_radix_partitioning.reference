@@ -14,6 +14,10 @@ Int128	400000
 Nullable(Int64)	300000
 Nullable(String)	300000
 count distinct	400000
+constant	1
+constant Nullable	1
+constant String	1
+constant for empty	0
 repeated UInt64	70000
 repeated UInt32	140000
 repeated String	40000
@@ -39,6 +43,7 @@ single thread	400000
 used	1
 used with null for empty	1
 used with a single thread	1
+used for a constant	1
 used for Nullable	1
 disabled	0
 LowCardinality	0

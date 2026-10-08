@@ -1,5 +1,6 @@
 #include <Processors/Transforms/RadixUniqExactTransform.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
@@ -1058,6 +1059,9 @@ void RadixUniqExactRouteTransform::work()
     }
 
     ColumnPtr column = current_chunk.getColumns()[key_position];
+    /// A constant is routed once. An empty chunk of it routes nothing, so that the rows stay at zero.
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        column = column_const->empty() ? column_const->getDataColumnPtr()->cloneEmpty() : column_const->getDataColumnPtr();
     /// Only the values of a sparse column are routed: the default value is at position 0, followed by the other ones.
     if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(column.get()))
     {

@@ -21,6 +21,11 @@ SELECT 'Int128', uniqExact(bitShiftLeft(toInt128(number), 64)) FROM numbers_mt(4
 SELECT 'Nullable(Int64)', uniqExact(if(number % 4 = 0, NULL, toInt64(number))) FROM numbers_mt(400000);
 SELECT 'Nullable(String)', uniqExact(if(number % 4 = 0, NULL, toString(number))) FROM numbers_mt(400000);
 SELECT 'count distinct', count(DISTINCT number) FROM numbers_mt(400000);
+-- A constant is routed once per block, and not at all for an empty block.
+SELECT 'constant', uniqExact(42) FROM numbers_mt(400000);
+SELECT 'constant Nullable', uniqExact(toNullable(42)) FROM numbers_mt(400000);
+SELECT 'constant String', uniqExact('abc') FROM numbers_mt(400000);
+SELECT 'constant for empty', uniqExact(42) FROM numbers_mt(400000) WHERE number < 0;
 
 -- Most values are repeated, so the threads go back to inserting into their own sets.
 SELECT 'repeated UInt64', uniqExact(toUInt64(number % 70000)) FROM numbers_mt(2000000);
@@ -64,6 +69,7 @@ SET enable_parallel_replicas = 0, count_distinct_optimization = 0;
 SELECT 'used', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used with null for empty', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS aggregate_functions_null_for_empty = 1) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used with a single thread', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS max_threads = 1) WHERE explain LIKE '%RadixUniqExact%';
+SELECT 'used for a constant', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(42) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used for Nullable', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toNullable(toString(number))) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'disabled', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS optimize_uniq_exact_radix_partitioning = 0) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'LowCardinality', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toLowCardinality(toString(number))) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
