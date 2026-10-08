@@ -7650,7 +7650,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     auto apply_prefixed_names = std::move(scope.apply_prefixed_names);
     scope.apply_prefixed_names.clear();
 
-    /// A prefixed name names a result column when its node is a projection node under that name: then it is a projection alias.
+    /// A prefixed name is a projection alias when its node is the projection node under that name.
     std::vector<char> is_projection_column(apply_prefixed_names.size());
     if (!apply_prefixed_names.empty())
     {
@@ -7761,8 +7761,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
-    /// An `APPLY (f, 'prefix')` name follows the rule above. A prefix inside an expression cannot be referenced
-    /// and names no result column, so like an unused alias it is allowed, and colliding result columns are renamed.
+    /// A prefixed name inside an expression names no result column: like an unused duplicated alias, it is allowed.
     std::unordered_map<std::string_view, size_t> prefixed_name_count;
     for (const auto & prefixed : apply_prefixed_names)
         ++prefixed_name_count[prefixed.name];
