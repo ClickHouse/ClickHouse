@@ -77,6 +77,11 @@ SYSTEM FLUSH LOGS query_log;
 -- is several times more bytes than any real cluster transfers. `serialize_query_plan` moves the estimate
 -- by less than 0.4%, so one set of values covers both the query-based and the plan-based implementation.
 --
+-- The transfer runs with the default `network_compression_method` (`ZSTD`, level 3), which is what the
+-- estimate prices with as well - `getDefaultCodec` is `ZSTD(3)` whatever the server config says, and the
+-- harness never randomizes the network method. Re-measuring against a cluster that sets `LZ4` records
+-- 1.04x to 1.66x more (`query_43` 54328834 instead of 32658851) and is not comparable to these values.
+--
 -- `parallel_replicas_local_plan` has to be 0 for the measurement: with the local plan on, the local
 -- replica wins the race for the ranges on a warm single-machine cluster and almost nothing crosses the
 -- wire at all - `query_12` measures 5358127 bytes with it off and 4675 with it on, and `query_15` swings
