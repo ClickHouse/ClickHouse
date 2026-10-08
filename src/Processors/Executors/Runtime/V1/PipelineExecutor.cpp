@@ -43,7 +43,6 @@ namespace Setting
     extern const SettingsBool opentelemetry_trace_processors;
     extern const SettingsBool opentelemetry_trace_cpu_scheduling;
     extern const SettingsSeconds max_execution_time;
-    extern const SettingsString workload;
 }
 
 namespace ErrorCodes
@@ -572,7 +571,7 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
                             .on_preempt = [this](size_t slot_id) { tasks.preempt(slot_id); },
                             .on_resume = [this](size_t slot_id) { tasks.resume(slot_id); },
-                            .workload = query_context->getSettingsRef()[Setting::workload],
+                            .workload = query_context->getWorkloadClassifier()->getWorkloadName(),
                             .trace_cpu_scheduling = trace_cpu_scheduling,
                         },
                         initial_max);

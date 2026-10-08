@@ -663,11 +663,10 @@ protected:
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
 
-    /// When set, getWorkloadClassifier() hands out a classifier that maps every resource to an empty
-    /// link, exempting the query from all workload scheduling (query-slot and memory-reservation
-    /// admission, CPU and IO). Set for DDL when the `use_ddl_workload` server setting is disabled.
-    /// Copied to child contexts so sub-operations of the same query stay exempt.
-    bool workload_exempt = false;
+    /// The query is a DDL or administrative statement, scheduled according to the `use_ddl_workload`
+    /// server setting (see getWorkloadClassifier). Copied to child contexts, so the sub-queries a DDL
+    /// runs are scheduled the same way.
+    bool is_ddl_query = false;
 
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
@@ -1028,9 +1027,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
-    /// Exempt this query from all workload scheduling (see getWorkloadClassifier and workload_exempt).
+    /// Marks the query as a DDL or administrative statement (see `is_ddl_query`).
     /// Must be called before the workload classifier is first acquired.
-    void setWorkloadExempt();
+    void setDDLQuery();
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.

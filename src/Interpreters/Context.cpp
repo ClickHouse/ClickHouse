@@ -307,6 +307,7 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsString ddl_workload;
     extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
@@ -656,7 +657,7 @@ struct ContextSharedPart : boost::noncopyable
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
-    bool use_ddl_workload TSA_GUARDED_BY(mutex) = false;      /// Route DDL queries through the `ddl_workload` setting instead of `workload`
+    std::atomic<bool> use_ddl_workload = false;      /// Route DDL queries through the `ddl_workload` setting instead of `workload`
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
@@ -1529,7 +1530,7 @@ ContextData::ContextData(const ContextData &o) :
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
-    workload_exempt(o.workload_exempt),
+    is_ddl_query(o.is_ddl_query),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
@@ -2743,6 +2744,11 @@ namespace
         bool has(const String &) override { return false; }
         ResourceLink get(const String &) override { return {}; }
         WorkloadSettings getWorkloadSettings(const String &) const override { return {}; }
+        const String & getWorkloadName() const override
+        {
+            static const String none;
+            return none;
+        }
     };
 }
 
@@ -2761,25 +2767,36 @@ ClassifierPtr Context::getWorkloadClassifier() const
         .weight_lowering_io_bytes = query_settings[Setting::weight_lowering_io_bytes],
         .priority = Priority{query_settings[Setting::workload_priority]},
     };
+    // The classifier is cached, so a DDL query keeps the mode in effect when it first asks for it,
+    // even if `use_ddl_workload` is reloaded while it runs.
+    const bool use_ddl_workload = getUseDDLWorkload();
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
-    if (workload_exempt)
-    {
-        /// Takes precedence over a normal classifier without acquiring or resetting it.
-        static const ClassifierPtr exempt_classifier = std::make_shared<ExemptClassifier>();
-        return exempt_classifier;
-    }
     if (!classifier)
-        classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+    {
+        if (!is_ddl_query)
+            classifier = getResourceManager()->acquire(query_settings[Setting::workload], settings);
+        else if (use_ddl_workload)
+        {
+            /// `ddl_workload` has its own constraints and is not validated against those of `workload`.
+            const String & ddl_workload = query_settings[Setting::ddl_workload];
+            classifier = getResourceManager()->acquire(ddl_workload.empty() ? String("default") : ddl_workload, settings);
+        }
+        else
+        {
+            /// Exempt from workload scheduling. `workload` is left as is, so the `max_concurrent_queries*`
+            /// limits still apply and the sub-queries sent to other servers are scheduled there as usual.
+            static const ClassifierPtr exempt_classifier = std::make_shared<ExemptClassifier>();
+            classifier = exempt_classifier;
+        }
+    }
     return classifier;
 }
 
-void Context::setWorkloadExempt()
+void Context::setDDLQuery()
 {
     std::lock_guard lock(mutex);
-    /// Set once, before the classifier is acquired in ProcessList::insert; getWorkloadClassifier()
-    /// then hands out the exempt classifier in preference to (and without acquiring) a normal one.
-    workload_exempt = true;
+    is_ddl_query = true;
 }
 
 void Context::releaseQuerySlot() const
@@ -2877,14 +2894,12 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
 
 bool Context::getUseDDLWorkload() const
 {
-    SharedLockGuard lock(shared->mutex);
-    return shared->use_ddl_workload;
+    return shared->use_ddl_workload.load(std::memory_order_relaxed);
 }
 
 void Context::setUseDDLWorkload(bool use_ddl_workload)
 {
-    std::lock_guard lock(shared->mutex);
-    shared->use_ddl_workload = use_ddl_workload;
+    shared->use_ddl_workload.store(use_ddl_workload, std::memory_order_relaxed);
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -4369,14 +4384,14 @@ void Context::makeQueryContext()
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
-    workload_exempt = false; // The source may be an exempt DDL context (OPTIMIZE ... DRY RUN); a merge always uses the merge workload
+    is_ddl_query = false; // The source may be a DDL context (OPTIMIZE ... DRY RUN); a merge always uses the merge workload
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
     makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
-    workload_exempt = false; // Likewise, a mutation always uses the mutation workload, even if copied from an exempt DDL context
+    is_ddl_query = false; // Likewise, a mutation always uses the mutation workload, even if copied from a DDL context
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 

@@ -49,8 +49,7 @@ using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
 
 /// True for DDL / administrative statements (schema DDL, access control, SYSTEM), by query kind.
-/// Used by executeQuery to schedule DDL under the `ddl_workload` setting, or to exempt it from all
-/// workload scheduling, depending on the `use_ddl_workload` server setting.
+/// Such queries are scheduled according to the `use_ddl_workload` server setting.
 bool isDDLQuery(const IAST * ast);
 
 /// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
