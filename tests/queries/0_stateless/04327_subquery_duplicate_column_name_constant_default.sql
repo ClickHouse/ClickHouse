@@ -187,3 +187,9 @@ SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) 
 SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT materialize(1) AS q) AS rr USING (q);
 SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT arrayJoin([4, 5]) AS q_1) AS x ON 1 NATURAL JOIN (SELECT materialize(4) AS q_1) AS rr ORDER BY ALL;
 SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) AS l JOIN (SELECT arrayJoin([4, 5]) AS q_1) AS x ON 1 JOIN (SELECT materialize(4) AS q_1) AS rr USING (q_1) ORDER BY ALL;
+
+-- Column qualification is decided on the display name, so a disambiguated duplicate gets the same
+-- label it has without disambiguation.
+DESCRIBE (SELECT * FROM (SELECT 1 AS q) AS t JOIN (SELECT materialize(1) AS q, * FROM (SELECT materialize(9) AS q)) AS s ON 1);
+SELECT * FROM (SELECT 1 AS q) AS t JOIN (SELECT materialize(1) AS q, * FROM (SELECT materialize(9) AS q)) AS s ON 1;
+DESCRIBE (SELECT *, 5 AS q_1 FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(9) AS q)) AS s);

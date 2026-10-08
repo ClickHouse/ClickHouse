@@ -2014,6 +2014,12 @@ static std::unordered_map<String, String> buildSubqueryInternalToDisplayNameMap(
     return internal_name_to_display_name;
 }
 
+static String getDisplayName(const std::unordered_map<String, String> & internal_to_display, const String & internal_name)
+{
+    auto it = internal_to_display.find(internal_name);
+    return it == internal_to_display.end() ? internal_name : it->second;
+}
+
 /** Qualify column nodes with projection names.
   *
   * Example: SELECT * FROM test_table AS t1, test_table AS t2;
@@ -2022,6 +2028,8 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
     const TableExpressionNodePtr & table_expression_node,
     const IdentifierResolveScope & scope)
 {
+    const auto internal_to_display = buildSubqueryInternalToDisplayNameMap(*table_expression_node);
+
     /// Build additional column qualification parts array
     std::vector<std::string> additional_column_qualification_parts;
 
@@ -2095,7 +2103,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
 
         for (const auto & column_node : column_nodes)
         {
-            const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
+            const String column_name = getDisplayName(internal_to_display, column_node->as<ColumnNode &>().getColumnName());
             if (forced_qualifier.empty())
                 node_to_projection_name.emplace(column_node, column_name);
             else
@@ -2112,7 +2120,7 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
 
     for (const auto & column_node : column_nodes)
     {
-        const auto & column_name = column_node->as<ColumnNode &>().getColumnName();
+        const String column_name = getDisplayName(internal_to_display, column_node->as<ColumnNode &>().getColumnName());
         column_qualified_identifier_parts = Identifier(column_name).getParts();
 
         /// Iterate over additional column qualifications and apply them if needed
@@ -2198,17 +2206,6 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     /// column identifier, and the user-visible header is restored afterwards.
     std::unordered_map<String, String> internal_name_to_display_name = buildSubqueryInternalToDisplayNameMap(*table_expression_node);
 
-    auto display_name_of = [&](const std::string & internal_name) -> String
-    {
-        if (!internal_name_to_display_name.empty())
-        {
-            auto it = internal_name_to_display_name.find(internal_name);
-            if (it != internal_name_to_display_name.end())
-                return it->second;
-        }
-        return internal_name;
-    };
-
     QueryTreeNodes matched_column_nodes;
 
     for (const auto & column : matched_columns)
@@ -2217,7 +2214,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         /// Match the user-written matcher (`*`, `COLUMNS('...')`, `COLUMNS(a, b)`) against the
         /// display name: a column internally renamed for disambiguation must still match (and be
         /// addressable) under its original name, not its generated internal name.
-        if (!matcher_node_typed.isMatchingColumn(display_name_of(column_name)))
+        if (!matcher_node_typed.isMatchingColumn(getDisplayName(internal_name_to_display_name, column_name)))
             continue;
 
         if (table_expression_data)
@@ -2242,32 +2239,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 
     for (auto && matched_column_node : matched_column_nodes)
     {
-        auto column_name = matched_column_node->as<ColumnNode &>().getColumnName();
-
-        if (!internal_name_to_display_name.empty())
-        {
-            auto display_name_it = internal_name_to_display_name.find(column_name);
-            if (display_name_it != internal_name_to_display_name.end())
-            {
-                std::string display_name(display_name_it->second);
-                /// Override the projection (display) name set by `qualifyColumnNodesWithProjectionNames`,
-                /// keeping any table qualifier it prefixed and replacing only the column-name component,
-                /// so a disambiguated duplicate is qualified exactly like its non-duplicate siblings.
-                std::string projection_name = display_name;
-                auto projection_name_it = node_to_projection_name.find(matched_column_node);
-                if (projection_name_it != node_to_projection_name.end())
-                {
-                    const auto & qualified_internal_name = projection_name_it->second;
-                    if (qualified_internal_name.size() > column_name.size()
-                        && qualified_internal_name.ends_with(column_name))
-                        projection_name = qualified_internal_name.substr(
-                            0, qualified_internal_name.size() - column_name.size()) + display_name;
-                }
-                node_to_projection_name.insert_or_assign(matched_column_node, std::move(projection_name));
-                column_name = std::move(display_name);
-            }
-        }
-
+        auto column_name = getDisplayName(internal_name_to_display_name, matched_column_node->as<ColumnNode &>().getColumnName());
         matched_column_nodes_with_names.emplace_back(std::move(matched_column_node), std::move(column_name));
     }
 
