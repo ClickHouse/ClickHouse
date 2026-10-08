@@ -5154,11 +5154,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                         /// A `FixedString` key is compared with a value of another string-like type, such as
                         /// an `Enum`, zero-padded, while the cast of the key to `String` keeps its padding.
-                        /// A range over the cast key would prune matching granules. For equality, the value
-                        /// padded to the key width is the one key value that can match, so use it instead.
+                        /// A range over the cast key would prune matching granules. A value that fits into
+                        /// the key width compares with the key as the value padded to the key width does,
+                        /// both for equality and for the order, so use the padded value instead, as for a
+                        /// `String` constant above. The functions that use the constant as a pattern or
+                        /// prefix are declined: padding would change the pattern.
                         if (isFixedString(key_expr_type_not_null) && isString(common_type))
                         {
-                            if (func_name != "equals" && func_name != "notEquals")
+                            if (func_name == "like" || func_name == "notLike" || func_name == "startsWith"
+                                || func_name == "startsWithUTF8" || func_name == "match")
                                 return false;
 
                             Field as_string = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
