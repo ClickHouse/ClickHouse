@@ -22,8 +22,8 @@ are incomparable to master's (observed on a no-op PR as an apparent -73%
 binary size and -39% link time):
 
   * `Build (arm_release_pr_cache_warmup)` - the master sccache-warmup build,
-    compiled with exactly the PR flags but never linked. Baseline for object
-    file sizes and per-TU compile times.
+    compiled with exactly the PR flags, profiled for its object files only.
+    Baseline for object file sizes and per-TU compile times.
   * `Build (arm_release)` - the official master build. Baseline for the
     artifacts that do not depend on debug info: the stripped binary size and
     the per-symbol sizes of the linked binaries, plus per-function ThinLTO
@@ -776,7 +776,7 @@ def find_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: s
 def find_warmup_baseline(db: Db, master_shas: List[str], pr_sha: str, date_condition: str, repo: str) -> Optional[str]:
     """The most recent master commit with uploaded warmup-build profile data.
 
-    The warmup build compiles with the PR flags but does not link, so its
+    The warmup build (PR flags) is profiled for its objects only, so its
     canonical data is the object files, not MAIN_BINARY. May legitimately be
     absent while master catches up with profiling the warmup build.
 
