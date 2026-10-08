@@ -846,8 +846,9 @@ namespace
 
         /// Extra query infos read ahead by `readAheadQueryInfo` and not consumed by `readQueryInfo` yet,
         /// in the order they were received. They precede `next_query_info_while_reading`.
+        /// `read_ahead_bytes` is the total size of those messages, see `readAheadCost`.
         std::deque<GRPCQueryInfo> read_ahead_query_infos;
-        size_t read_ahead_input_bytes = 0;
+        size_t read_ahead_bytes = 0;
 
         Stopwatch query_time;
         UInt64 waited_for_client_reading = 0;
@@ -1652,6 +1653,14 @@ namespace
         });
     }
 
+    /// The memory held by a query info buffered by `readAheadQueryInfo`. Not only `input_data` counts:
+    /// extra query infos can also carry arbitrarily large `external_tables`, so charge the whole message.
+    /// The fixed per-message part bounds the number of buffered messages even if they are empty.
+    size_t readAheadCost(const GRPCQueryInfo & query_info)
+    {
+        return query_info.ByteSizeLong() + sizeof(GRPCQueryInfo);
+    }
+
     void Call::readQueryInfo()
     {
         if (!read_ahead_query_infos.empty())
@@ -1660,7 +1669,7 @@ namespace
             /// is in flight or finished, so it must not be started here.
             query_info = std::move(read_ahead_query_infos.front());
             read_ahead_query_infos.pop_front();
-            read_ahead_input_bytes -= query_info.input_data().size();
+            read_ahead_bytes -= readAheadCost(query_info);
             return;
         }
 
@@ -1700,8 +1709,8 @@ namespace
         /// nothing consumes the extra query infos of a streaming input, so only a single speculative read
         /// is in flight. If that read brings input data, a later query info with the `cancel` field would
         /// stay unread until the query starts. To notice such cancellation, keep reading the stream ahead,
-        /// but buffer a limited amount of input data, because a queued query must not hold unbounded memory.
-        static constexpr size_t max_read_ahead_input_bytes = 1024 * 1024;
+        /// but buffer a limited amount of data, because a queued query must not hold unbounded memory.
+        static constexpr size_t max_read_ahead_bytes = 1024 * 1024;
 
         if (!isInputStreaming(call_type) || !initial_query_info_read || want_to_cancel || failed_to_read_query_info)
             return;
@@ -1709,10 +1718,10 @@ namespace
             return;
         if (!next_query_info_while_reading.next_query_info())
             return; /// The client is not going to send more.
-        if (read_ahead_input_bytes >= max_read_ahead_input_bytes)
+        if (read_ahead_bytes >= max_read_ahead_bytes)
             return;
 
-        read_ahead_input_bytes += next_query_info_while_reading.input_data().size();
+        read_ahead_bytes += readAheadCost(next_query_info_while_reading);
         read_ahead_query_infos.push_back(std::move(next_query_info_while_reading));
         next_query_info_while_reading.Clear();
         startReadingQueryInfo();

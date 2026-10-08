@@ -832,6 +832,100 @@ def test_grpc_streaming_cancel_after_input_data_while_waiting_in_queue(started_c
     assert started == "0", f"The cancelled gRPC waiter was admitted, QueryStart count: {started}"
 
 
+def test_grpc_streaming_read_ahead_is_bounded_while_waiting_in_queue(started_cluster):
+    """
+    While a streaming gRPC query waits in the admission queue, the server reads its extra
+    `QueryInfo` messages ahead to notice an in-band `cancel`, but must buffer only a bounded
+    amount of them. Extra messages can carry `external_tables` instead of `input_data`, and
+    those must be charged against the limit too: otherwise a queued query could make the
+    server accumulate an unbounded amount of external table data before it is admitted.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"grpc_read_ahead_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_id = f"grpc_read_ahead_waiter_{prefix}"
+
+    chunk = b"1\n" * (128 * 1024)
+    num_chunks = 256  # 64 MiB in total, far above the read-ahead limit and HTTP/2 flow control windows.
+    sent_chunks = 0
+
+    pool = Pool(4)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    stop_sending = threading.Event()
+
+    def query_infos():
+        nonlocal sent_chunks
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="INSERT INTO FUNCTION null('x UInt8') FORMAT TSV",
+            query_id=waiter_id,
+            settings={"queue_max_wait_ms": "30000"},
+            input_data=b"1\n",
+            next_query_info=True,
+        )
+        for _ in range(num_chunks):
+            if stop_sending.is_set():
+                break
+            yield clickhouse_grpc_pb2.QueryInfo(
+                external_tables=[
+                    clickhouse_grpc_pb2.ExternalTable(
+                        name="ext",
+                        columns=[clickhouse_grpc_pb2.NameAndType(name="x", type="UInt8")],
+                        data=chunk,
+                        format="TSV",
+                    )
+                ],
+                next_query_info=True,
+            )
+            sent_chunks += 1
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+
+    channel = grpc.insecure_channel(f"{node.ip_address}:{GRPC_PORT}")
+    try:
+        grpc.channel_ready_future(channel).result(timeout=10)
+        stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
+
+        for qid in blocker_ids:
+            pool.apply_async(run_blocker, (qid,))
+
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        call = stub.ExecuteQueryWithStreamInput.future(query_infos())
+
+        wait_for_queue_length(node, 1)
+
+        # The server must stop reading the stream while the query is queued, so the client
+        # can never push all the chunks. Without the limit they are read within a second.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            assert sent_chunks < num_chunks, (
+                "The server read all the external table data of a queued query"
+            )
+            time.sleep(0.1)
+    finally:
+        stop_sending.set()
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+        pool.close()
+        pool.join()
+
+    try:
+        call.result(timeout=30)
+    except grpc.RpcError:
+        pass
+    channel.close()
+
+
 def check_client_disconnect_while_replacing_query(target):
     """
     Verify that a replacement query whose HTTP client disconnects while the old
