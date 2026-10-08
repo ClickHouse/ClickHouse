@@ -528,6 +528,12 @@ IMPLEMENT_SETTING_ENUM(
      {"pfor", TextIndexPostingListCodec::PFor}})
 
 IMPLEMENT_SETTING_ENUM(
+    TextIndexDictionaryBlockEncoding,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"none", TextIndexDictionaryBlockEncoding::None},
+     {"frontcoding_v1", TextIndexDictionaryBlockEncoding::FrontCodingV1}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"v0_initial", MergeTreeTextIndexSerializationVersion::V0_Initial},

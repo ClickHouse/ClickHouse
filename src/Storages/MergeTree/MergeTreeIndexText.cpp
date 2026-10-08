@@ -88,6 +88,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsNonZeroUInt64 text_index_dictionary_block_size;
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
+    extern const MergeTreeSettingsTextIndexDictionaryBlockEncoding text_index_dictionary_block_encoding;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
     extern const MergeTreeSettingsMergeTreeTextIndexSerializationVersion text_index_serialization_version;
@@ -1207,6 +1208,17 @@ void TextIndexSerialization::checkTokenSize(size_t token_size)
         throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size: {}. The maximum is: {}.", token_size, SerializationString::MAX_STRING_SIZE);
 }
 
+TextIndexSerialization::TokensFormat TextIndexSerialization::getTokensFormat(TextIndexDictionaryBlockEncoding encoding)
+{
+    switch (encoding)
+    {
+        case TextIndexDictionaryBlockEncoding::None:
+            return TokensFormat::RawStrings;
+        case TextIndexDictionaryBlockEncoding::FrontCodingV1:
+            return TokensFormat::FrontCodedStrings;
+    }
+}
+
 void TextIndexSerialization::serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format)
 {
     serializeTokensImpl(
@@ -1553,9 +1565,7 @@ DictionarySparseIndex serializeTokensAndPostings(
     auto & sparse_index_offsets_data = sparse_index_offsets->getData();
     sparse_index_offsets_data.reserve(num_blocks);
 
-    auto tokens_format = params.dictionary_block_frontcoding_compression
-        ? TextIndexSerialization::TokensFormat::FrontCodedStrings
-        : TextIndexSerialization::TokensFormat::RawStrings;
+    auto tokens_format = TextIndexSerialization::getTokensFormat(params.dictionary_block_encoding);
 
     for (size_t block_idx = 0; block_idx < num_blocks; ++block_idx)
     {
@@ -2339,6 +2349,7 @@ static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
+static const String ARGUMENT_DICTIONARY_BLOCK_ENCODING = "dictionary_block_encoding";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
@@ -2407,6 +2418,31 @@ std::pair<String, ASTPtr> parseNamedArgument(const ASTFunction * ast_equal_funct
     return {key_identifier->name(), arguments->children[1]};
 }
 
+TextIndexDictionaryBlockEncoding extractDictionaryBlockEncoding(std::unordered_map<String, ASTPtr> & options, const MergeTreeSettings & settings)
+{
+    auto encoding = extractFieldOption<String>(options, ARGUMENT_DICTIONARY_BLOCK_ENCODING);
+    auto frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION);
+
+    if (encoding && frontcoding_compression)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index arguments '{}' and '{}' cannot be specified together",
+            ARGUMENT_DICTIONARY_BLOCK_ENCODING, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION);
+
+    if (encoding)
+        return SettingFieldTextIndexDictionaryBlockEncodingTraits::fromString(*encoding);
+
+    if (!frontcoding_compression)
+    {
+        if (settings[MergeTreeSetting::text_index_dictionary_block_encoding].changed)
+            return settings[MergeTreeSetting::text_index_dictionary_block_encoding];
+        frontcoding_compression = settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression];
+    }
+
+    if (*frontcoding_compression > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, *frontcoding_compression);
+
+    return *frontcoding_compression ? TextIndexDictionaryBlockEncoding::FrontCodingV1 : TextIndexDictionaryBlockEncoding::None;
+}
+
 std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & arguments)
 {
     std::unordered_map<String, ASTPtr> options;
@@ -2440,8 +2476,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
 
-    UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
-        .value_or(settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression]);
+    auto dictionary_block_encoding = extractDictionaryBlockEncoding(options, settings);
 
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
@@ -2471,7 +2506,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
-        dictionary_block_frontcoding_compression,
+        dictionary_block_encoding,
         posting_list_block_size,
         positions,
         static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
@@ -2500,11 +2535,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (dictionary_block_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be greater than 0, but got {}", ARGUMENT_DICTIONARY_BLOCK_SIZE, dictionary_block_size);
 
-    UInt64 dictionary_block_use_fc_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
-        .value_or(settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression]);
-
-    if (dictionary_block_use_fc_compression > 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, dictionary_block_use_fc_compression);
+    extractDictionaryBlockEncoding(options, settings);
 
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);

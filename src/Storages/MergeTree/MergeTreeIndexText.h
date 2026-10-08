@@ -87,7 +87,7 @@ using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1;
+    TextIndexDictionaryBlockEncoding dictionary_block_encoding = TextIndexDictionaryBlockEncoding::FrontCodingV1;
     size_t posting_list_block_size = 1024 * 1024;
     size_t positions = 0;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
@@ -340,6 +340,8 @@ struct TextIndexSerialization
         RawStrings = 0,
         FrontCodedStrings = 1
     };
+
+    static TokensFormat getTokensFormat(TextIndexDictionaryBlockEncoding encoding);
 
     static void serializePostingsAndTokenInfo(
         PostingListBuilder && postings,
