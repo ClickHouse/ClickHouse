@@ -42,12 +42,17 @@ SELECT count(), sum(c) FROM (SELECT toRelativeDayNum(dt, 'America/New_York') AS 
 SELECT groupArray(d) FROM (SELECT toRelativeDayNum(dt, 'America/New_York') AS d FROM (SELECT dt FROM t_rel_day_utc ORDER BY dt) ORDER BY d LIMIT 3)
     SETTINGS optimize_sorting_by_input_stream_properties = 1, optimize_read_in_order = 0, query_plan_remove_redundant_sorting = 0;
 DROP TABLE t_rel_day_utc;
+DROP TABLE IF EXISTS t_rel_day_utc_key;
+CREATE TABLE t_rel_day_utc_key (dt DateTime('UTC')) ENGINE = MergeTree ORDER BY toRelativeDayNum(dt, 'America/New_York') SETTINGS index_granularity = 8;
+INSERT INTO t_rel_day_utc_key SELECT toDateTime(number * 3600) FROM numbers(2000);
+SELECT count() FROM t_rel_day_utc_key WHERE dt < toDateTime(6 * 3600, 'UTC');
+DROP TABLE t_rel_day_utc_key;
 
 -- East of UTC the functions stay monotonic everywhere, so a filter on dt still uses a key over them.
 DROP TABLE IF EXISTS t_rel_day_east;
 CREATE TABLE t_rel_day_east (dt DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY toRelativeDayNum(dt) SETTINGS index_granularity = 8;
 INSERT INTO t_rel_day_east SELECT toDateTime(number * 3600) FROM numbers(2000);
-SELECT count() FROM t_rel_day_east WHERE dt = toDateTime(100 * 3600, 'Asia/Tokyo') SETTINGS force_primary_key = 1;
+SELECT count() FROM t_rel_day_east WHERE dt < toDateTime(100 * 3600, 'Asia/Tokyo') SETTINGS force_primary_key = 1;
 DROP TABLE t_rel_day_east;
 
 -- IN, also in the shape the AST fuzzer found: a Nullable key and NULL in the set.

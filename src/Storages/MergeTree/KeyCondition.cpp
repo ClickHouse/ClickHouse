@@ -52,6 +52,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -4156,10 +4157,11 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     if (!next_node)
                         is_valid_chain = false;
 
-                    /// next_node is the non-constant child of cur_node, so next_node->result_type
-                    /// is the child's output type, which is the input type to cur_node's function.
                     if (is_valid_chain)
-                        is_valid_chain = always_monotonic(*cur_node->function_base, *next_node->result_type);
+                    {
+                        size_t next_pos = cur_node->children.front() == next_node ? 0 : 1;
+                        is_valid_chain = always_monotonic(*cur_node->function_base, *getArgumentTypeForMonotonicity(*cur_node, next_pos));
+                    }
 
                     cur_node = next_node;
                 }

@@ -26,8 +26,7 @@ extern const int LOGICAL_ERROR;
 namespace DB
 {
 
-/// A date or time function with a constant time zone argument executes in that time zone.
-static DataTypePtr getArgumentTypeForMonotonicity(const ActionsDAG::Node & node, size_t pos)
+DataTypePtr getArgumentTypeForMonotonicity(const ActionsDAG::Node & node, size_t pos)
 {
     const auto & type = node.children[pos]->result_type;
     if (pos == 0 && node.children.size() == 2 && node.children[1]->column)
