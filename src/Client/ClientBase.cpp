@@ -1858,7 +1858,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                         range.second);
             }
 
-            if (fs::exists(out_file))
+            if (fs::exists(pathFromString(out_file)))
             {
                 if (!query_with_output->isOutfileAppend() && !query_with_output->isOutfileTruncate())
                 {
