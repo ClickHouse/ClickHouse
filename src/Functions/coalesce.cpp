@@ -61,7 +61,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    bool isShortCircuit(ShortCircuitSettings & settings, size_t /*number_of_arguments*/) const override
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
     {
         /// The first argument is always needed. Every other argument is needed only for the rows
         /// where all the preceding arguments are NULL, so it is evaluated lazily.
@@ -73,7 +73,9 @@ public:
         /// The cost is that such a node can be evaluated more than once for the same rows, e.g. in
         /// `coalesce(NULL, f(x), g(x))`, where the leading constant NULL is removed only in `executeImpl`
         /// and `f(x)` is evaluated for all the rows.
-        settings.enable_lazy_execution_for_common_descendants_of_arguments = true;
+        /// With two arguments `coalesce` is the same as `ifNull`, there is only one lazy argument, and nothing
+        /// is gained, so keep the same settings as in `ifNull` (as `multiIf` does for its `if` form).
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = (number_of_arguments > 2);
         settings.force_enable_lazy_execution = false;
         return true;
     }
