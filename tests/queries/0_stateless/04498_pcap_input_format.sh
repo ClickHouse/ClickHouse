@@ -102,20 +102,28 @@ $CLICKHOUSE_LOCAL -q "
 SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP)
 SETTINGS max_block_size = 4 FORMAT TSV"
 $CLICKHOUSE_LOCAL -q "
-SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP)
+SELECT uniqExact(blockNumber()), count(), sum(length(raw)) FROM file('$DATA_DIR/packets.pcap', PCAP)
 SETTINGS input_format_pcap_prefer_block_bytes = 1 FORMAT TSV"
 $CLICKHOUSE_LOCAL -q "
-SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP)
+SELECT uniqExact(blockNumber()), count(), sum(length(raw)) FROM file('$DATA_DIR/packets.pcap', PCAP)
 SETTINGS input_format_pcap_prefer_block_bytes = 100 FORMAT TSV"
 $CLICKHOUSE_LOCAL -q "
-SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP) FORMAT TSV"
+SELECT uniqExact(blockNumber()), count(), sum(length(raw)) FROM file('$DATA_DIR/packets.pcap', PCAP) FORMAT TSV"
 # The copied `payload` bytes count towards the byte budget too, so reading `payload` makes more blocks.
 $CLICKHOUSE_LOCAL -q "
-SELECT uniqExact(blockNumber()), count() FROM file('$DATA_DIR/packets.pcap', PCAP)
+SELECT uniqExact(blockNumber()), count(), sum(length(raw)) FROM file('$DATA_DIR/packets.pcap', PCAP)
 SETTINGS input_format_pcap_prefer_block_bytes = 80 FORMAT TSV"
+$CLICKHOUSE_LOCAL -q "
+SELECT uniqExact(blockNumber()), count(), sum(length(raw)), sum(length(payload)) FROM file('$DATA_DIR/packets.pcap', PCAP)
+SETTINGS input_format_pcap_prefer_block_bytes = 80 FORMAT TSV"
+# Only the stored packet bytes count: without `raw` only the `payload` bytes are charged, and metadata-only
+# reads are not split by bytes at all.
 $CLICKHOUSE_LOCAL -q "
 SELECT uniqExact(blockNumber()), count(), sum(length(payload)) FROM file('$DATA_DIR/packets.pcap', PCAP)
 SETTINGS input_format_pcap_prefer_block_bytes = 80 FORMAT TSV"
+$CLICKHOUSE_LOCAL -q "
+SELECT uniqExact(blockNumber()), count(), sum(capture_length) FROM file('$DATA_DIR/packets.pcap', PCAP)
+SETTINGS input_format_pcap_prefer_block_bytes = 1 FORMAT TSV"
 
 echo "--- truncated capture (snaplen 34: original_length > capture_length) ---"
 $CLICKHOUSE_LOCAL -q "

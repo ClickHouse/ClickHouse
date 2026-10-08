@@ -469,10 +469,11 @@ Chunk PCAPBlockInputFormat::read()
     pcap_t * handle = sniffer->get_pcap_handle();
     const int dlt = sniffer->link_type();
 
-    /// A row carries the whole packet in `raw` (and most of it again in `payload`), so the
+    /// A row can carry the whole packet in `raw` (and most of it again in `payload`), so the
     /// block is bounded by the packet bytes it stores as well as by the number of rows. The byte
-    /// budget counts the captured bytes of every packet plus, when `payload` is materialized, the
-    /// payload bytes copied into it. The row budget of the query (`max_block_size`) caps the
+    /// budget counts the captured bytes of every packet when `raw` is materialized, plus the
+    /// payload bytes copied into `payload` when it is materialized. Reads of metadata columns only
+    /// are bounded by rows alone. The row budget of the query (`max_block_size`) caps the
     /// `PCAP`-specific one.
     size_t max_rows = format_settings.pcap.max_block_size;
     if (max_block_size_rows != 0)
@@ -517,7 +518,6 @@ Chunk PCAPBlockInputFormat::read()
         ++packet_number;
 
         bytes_read += caplen;
-        block_bytes += caplen;
 
         if (need[COL_NUMBER])
             col_number->insertValue(packet_number);
@@ -733,7 +733,10 @@ Chunk PCAPBlockInputFormat::read()
         }
 
         if (need[COL_RAW])
+        {
             col_raw->insertData(reinterpret_cast<const char *>(data), caplen);
+            block_bytes += caplen;
+        }
     }
 
     approx_bytes_read_for_chunk = bytes_read;
@@ -1046,7 +1049,7 @@ you need them in the key.
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `input_format_pcap_max_block_size` | The maximum number of packets (rows) in one block. | `65409` |
-| `input_format_pcap_prefer_block_bytes` | A block is finished once the packet bytes it stores reach this amount, even if it has fewer rows than `input_format_pcap_max_block_size`. The count includes the captured bytes of every packet and, when the `payload` column is read, the payload bytes copied into it, so it bounds the string data of one block for captures with large packets. `0` disables the byte limit. | `16744704` |
+| `input_format_pcap_prefer_block_bytes` | A block is finished once the packet bytes it stores reach this amount, even if it has fewer rows than `input_format_pcap_max_block_size`. The count includes the captured bytes of every packet when the `raw` column is read and the payload bytes copied into the `payload` column when it is read, so it bounds the string data of one block for captures with large packets. Reads of other columns only are not limited by bytes. `0` disables the byte limit. | `16744704` |
 )DOCS_MD"});
 }
 
