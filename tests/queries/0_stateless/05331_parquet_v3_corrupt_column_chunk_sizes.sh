@@ -77,6 +77,7 @@ rewrite("i64_neg", "i64", [(M(0, 5), -312904)])
 rewrite("i64_size_neg", "i64", [(M(0, 6), -1)])
 rewrite("str_bytes_neg", "str", [(M(0, 16, 1), -1)])
 rewrite("nul_neg", "nul", [(M(0, 5), -5), (M(0, 12, 3), -5)])
+rewrite("nul_huge", "nul", [(M(0, 5), 2 ** 62), (M(0, 12, 3), 2 ** 62)])
 rewrite("i64_huge", "i64", [(M(0, 5), 2 ** 62)])
 rewrite("str_bytes_huge", "str", [(M(0, 16, 1), 2 ** 63 - 1)])
 rewrite("arr_huge", "arr", [(M(0, 5), 2 ** 60)])
@@ -89,8 +90,9 @@ negative() {
     echo "$1: $(grep -o -m1 'has a negative value count or size' <<< "$out") $(grep -o -m1 'INCORRECT_DATA' <<< "$out")"
 }
 for f in i64_neg i64_size_neg str_bytes_neg; do negative $f ""; done
-# Without the check, the corrupt null_count would silently prune the row group.
+# Without the checks, a corrupt num_values = null_count would silently prune the row group.
 negative nul_neg "WHERE x = 5"
+for f in nul nul_huge; do echo "$f: $(read_file $f "WHERE x = 5")"; done
 
 for f in i64 i64_huge str str_bytes_huge arr arr_huge; do echo "$f: $(read_file $f)"; done
 # With this low watermark, the capped per-column estimates still add up past the signed range.
