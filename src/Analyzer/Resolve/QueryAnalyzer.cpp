@@ -3289,7 +3289,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 {
                     result_projection_names.back() = natural_projection_name;
                     apply_prefixed_projection_name = natural_projection_name;
-                    projection_name_from_prefix = false;
+                    projection_name_from_prefix = projection_name_from_prefix && natural_projection_name == projection_name_before_transformer;
                 }
                 /// Whether the transformer resolved back to the very node it started from
                 /// (an identity lambda `x -> x`). A function/lambda that wraps the input is a

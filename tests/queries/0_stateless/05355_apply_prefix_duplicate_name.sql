@@ -13,8 +13,10 @@ SELECT tuple(* APPLY (toString, 'p_')) AS f_a, * APPLY (toTypeName, 'f_') FROM (
 SELECT * APPLY (toString, 'f_'), tuple(toString(a) AS f_a), tuple(toTypeName(a) AS f_a) FROM (SELECT 1 AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 WITH x -> * APPLY (toTypeName, 'f_') AS l1, x -> * APPLY (toString, 'f_') AS l2 SELECT l1(1), l2(1) FROM (SELECT 1 AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 WITH x -> * APPLY (toString, 'f_') AS l1 SELECT l1(1), toTypeName(a) AS f_a FROM (SELECT 1 AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT * APPLY (x -> x, 'f_') APPLY (x -> x), * APPLY (toTypeName, 'f_') FROM (SELECT 1 AS a); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
 SELECT * APPLY (toString, 'f_'), * APPLY (toString, 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> x, 'f_') APPLY (x -> x), * APPLY (x -> x, 'f_') FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (toTypeName, 'f_'), toTypeName(a) AS f_a FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> (SELECT 1), 'f_'), (SELECT 1) AS f_a FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 
