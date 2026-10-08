@@ -3798,12 +3798,13 @@ static DataTypePtr narrowVariantToOccupiedAlternatives(
     return std::make_shared<DataTypeVariant>(occupied_types);
 }
 
-/// Under the default `optimize_rewrite_has_to_in = 1`, `has(const_array, x)` is rewritten into
-/// `x IN ...` by the analyzer, so this path only serves queries with that rewrite disabled.
+/// With `optimize_rewrite_has_to_in = 1`, the analyzer rewrites eligible `has(const_array, x)` calls
+/// into `x IN ...`. This path also handles calls whose types prevent that rewrite, such as a
+/// `Tuple` element or a `Nullable` needle.
 /// A negated `has` over a constant haystack is folded into the complement leaf `notHas` (see
 /// `canFoldToInverseRelation`), for which additional wrapped-set atoms must be exact, just as for
-/// `notIn`. A negated `has` over a non-constant haystack stays a `NOT` operator over the positive
-/// atoms built here.
+/// `notIn`. A negated `has` over a non-constant haystack keeps its `NOT` operator, but cannot produce
+/// set atoms because this analysis requires a constant haystack.
 void KeyCondition::prepareSetAtomsForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,

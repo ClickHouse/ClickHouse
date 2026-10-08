@@ -991,8 +991,9 @@ private:
     /// Holds the value of the `analyze_index_with_multiple_key_columns_per_condition` setting.
     /// When false, atom extraction keeps at most one atom per predicate leaf: the candidate
     /// sources of `extractComparisonAtomsForKeyArgument` are consulted in priority order until one
-    /// of them matches, and the set analysis builds only the direct set atom. Multi-atom groups
-    /// then never form, but a single tuple-set atom can still constrain several key columns.
+    /// of them matches, and set analysis keeps one set atom, whose mapping may include deterministic
+    /// transforms. Multi-atom groups then never form, but a single tuple-set atom can still constrain
+    /// several key columns.
     bool multiple_key_columns_per_condition = true;
 
     /// Holds whether the key columns are sorted in reverse (ORDER BY ... DESC) or not.

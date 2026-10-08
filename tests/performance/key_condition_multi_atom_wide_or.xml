@@ -11,8 +11,8 @@
     <fill_query>INSERT INTO test_kc_wide_or SELECT toDateTime('2024-01-01 00:00:00', 'UTC') + number FROM numbers(10000000)</fill_query>
     <fill_query>OPTIMIZE TABLE test_kc_wide_or FINAL</fill_query>
 
-    <!-- Each OR branch expands to atoms for all three key columns: a long RPN is
-         evaluated per granule range during index analysis. -->
+    <!-- Each comparison in the `OR` branches forms an atom group for all three key columns.
+         The groups are evaluated per granule range during index analysis. -->
     <query>
         SELECT count() FROM test_kc_wide_or WHERE
                (ts >= toDateTime('2024-01-02 00:00:00', 'UTC') AND ts &lt; toDateTime('2024-01-02 01:00:00', 'UTC'))

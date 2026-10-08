@@ -30,14 +30,14 @@ INSERT INTO test_det_multi SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INT
 {{ check('test_det_multi', "ts = toDateTime('2026-03-02 06:00:00', 'UTC')", condition = true) }}
 {{ check('test_det_multi', "ts != toDateTime('2026-03-02 06:00:00', 'UTC')") }}
 
--- Injective transform: negated equality stays exact and can prune. It selects every granule on
--- this data, so the condition shows that the negated equality still builds its atom.
-CREATE TABLE test_det_injective (s String) ENGINE = MergeTree ORDER BY concat(s, '_x')
+-- Appending a constant suffix is mathematically injective, but `concat` does not declare itself
+-- injective. Equality can use its relaxed atom, while negated equality reads every granule.
+CREATE TABLE test_det_concat (s String) ENGINE = MergeTree ORDER BY concat(s, '_x')
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
-INSERT INTO test_det_injective VALUES ('a'), ('b'), ('c');
+INSERT INTO test_det_concat VALUES ('a'), ('b'), ('c');
 
-{{ check('test_det_injective', "s = 'a'") }}
-{{ check('test_det_injective', "s != 'a'", condition = true) }}
+{{ check('test_det_concat', "s = 'a'") }}
+{{ check('test_det_concat', "s != 'a'", condition = true) }}
 
 -- The key transform throws for the constant: no atom, full scan, no exception.
 CREATE TABLE test_det_throwing (s String) ENGINE = MergeTree ORDER BY toUUID(s)
