@@ -27,15 +27,16 @@ SETTINGS s3queue_mode = 'unordered';
 SELECT name, value, changed FROM system.table_settings WHERE database = currentDatabase() AND table = 'queue' AND name = 'mode';
 
 -- A value a named collection supplies is hidden unless the server lets the reader see the collection's secrets, which
--- it does not here; a literal override in the engine arguments and the SETTINGS clause are shown.
+-- it does not here; a literal override in the engine arguments and the SETTINGS clause are shown. A format setting
+-- the collection supplies has a row, hidden too, although the engine's rows leave the format settings out.
 DROP NAMED COLLECTION IF EXISTS ${collection};
 CREATE NAMED COLLECTION ${collection} AS kafka_broker_list = 'localhost:9092', kafka_topic_list = 't', kafka_group_name = 'g',
-    kafka_format = 'JSONEachRow', kafka_max_block_size = '777';
+    kafka_format = 'JSONEachRow', kafka_max_block_size = '777', format_csv_delimiter = ';';
 CREATE TABLE kafka_collection (a Int) ENGINE = Kafka(${collection}, kafka_group_name = 'g_override')
 SETTINGS kafka_poll_timeout_ms = 1234;
 SELECT name, value, changed FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'kafka_collection'
-    AND name IN ('kafka_broker_list', 'kafka_group_name', 'kafka_max_block_size', 'kafka_poll_timeout_ms')
+    AND name IN ('format_csv_delimiter', 'kafka_broker_list', 'kafka_group_name', 'kafka_max_block_size', 'kafka_poll_timeout_ms')
 ORDER BY name;
 
 DROP TABLE kafka_collection;

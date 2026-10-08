@@ -3,6 +3,7 @@ kafka_no_secret	kafka_sasl_password
 kafka_secret	kafka_broker_list	localhost:9092
 kafka_secret	kafka_sasl_password	[HIDDEN]
 mode	unordered	1
+format_csv_delimiter	[HIDDEN]	1
 kafka_broker_list	[HIDDEN]	1
 kafka_group_name	g_override	1
 kafka_max_block_size	[HIDDEN]	1
