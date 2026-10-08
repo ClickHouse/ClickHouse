@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 #include <mutex>
 
@@ -46,17 +47,78 @@ std::string getDefaultBlobKey(const std::string & directory_remote_path, const s
 
 class BlobLinkCounts;
 
+/// Blob object keys to read instead of the given ones, by the given ones.
+using BlobObjectKeyRemap = std::unordered_map<std::string, std::string>;
+
 struct FsNode : public std::enable_shared_from_this<FsNode>
 {
     std::optional<DirectoryRemoteInfo> info = {};
     FsDirectoryEntries subdirectories;
 };
 
+/// A write applied to a snapshot, in the form that can be replayed on top of a different snapshot.
+namespace FsEdits
+{
+    struct RecordDirectory
+    {
+        std::string path;
+        DirectoryRemoteInfo info;
+    };
+
+    struct MoveDirectory
+    {
+        std::string from;
+        std::string to;
+    };
+
+    struct RemoveDirectory
+    {
+        std::string path;
+    };
+
+    struct RecordFile
+    {
+        std::string path;
+        FileRemoteInfo info;
+    };
+
+    struct RemoveFile
+    {
+        std::string path;
+    };
+
+    struct MarkDirectoryExplicit
+    {
+        std::string path;
+    };
+
+    struct AddBlobLink
+    {
+        std::string blob_key;
+    };
+
+    struct RemoveBlobLink
+    {
+        std::string blob_key;
+    };
+}
+
+using FsEdit = std::variant<
+    FsEdits::RecordDirectory,
+    FsEdits::MoveDirectory,
+    FsEdits::RemoveDirectory,
+    FsEdits::RecordFile,
+    FsEdits::RemoveFile,
+    FsEdits::MarkDirectoryExplicit,
+    FsEdits::AddBlobLink,
+    FsEdits::RemoveBlobLink>;
+using FsJournal = std::vector<FsEdit>;
+
 /// Mutable snapshot of the virtual file system tree.
 ///
 /// The tree itself is immutable and shared between snapshots (copy-on-write), so a snapshot can be discarded at any point.
 /// The numbers of links to the blobs are shared with the committed metadata (`BlobLinkCounts`), and the snapshot records
-/// its changes to them as deltas, which are applied to the committed state together with the tree in `FsMetadata::applySnapshot`.
+/// its changes to them as deltas, which are applied to the committed state together with the tree in `FsMetadata::applyJournal`.
 class FsSnapshot
 {
 public:
@@ -98,21 +160,36 @@ public:
     /// Snapshot Methods
 
     std::shared_ptr<FsNode> getRoot() const;
-    /// Also forgets all the deltas accumulated by the snapshot.
-    void setRoot(std::shared_ptr<FsNode> new_root);
+    /// Replaces the tree, forgets all the deltas accumulated by the snapshot and starts recording the subsequent writes into the journal.
+    void resetToRoot(std::shared_ptr<FsNode> new_root);
     std::pair<int64_t, int64_t> getRemoteLayoutDeltas() const;
     std::unordered_map<std::string, int64_t> getBlobLinkDeltas() const;
+    /// On a read-only disk: the object keys of the backups of the targets of pending replacements, by the object keys of the targets.
+    /// It is a part of the snapshot, so that a reader never combines the files of one load with the remap of another.
+    std::shared_ptr<const BlobObjectKeyRemap> getBackupsOfPendingReplaceTargets() const;
+    void setBackupsOfPendingReplaceTargets(std::shared_ptr<const BlobObjectKeyRemap> backups);
     /// Forgets the accumulated deltas without changing the tree. Called after the deltas have been folded
     /// into the committed state, so a snapshot promoted to the committed one does not double-count them.
     void resetDeltas();
 
+    /// Journal Methods
+
+    /// The writes applied since `resetToRoot`, in order. Empty for snapshots that were never reset.
+    FsJournal getJournal() const;
+    /// Applies the writes recorded by another snapshot on top of this one.
+    void replay(const FsJournal & journal);
+
 private:
+    void record(FsEdit edit) TSA_REQUIRES(mutex);
+
     mutable std::mutex mutex;
     std::shared_ptr<FsNode> root TSA_GUARDED_BY(mutex);
     const std::shared_ptr<BlobLinkCounts> blob_link_counts;
     std::unordered_map<std::string, int64_t> blob_link_deltas TSA_GUARDED_BY(mutex);
     mutable int64_t remote_layout_directories_delta TSA_GUARDED_BY(mutex) = 0;
     mutable int64_t remote_layout_files_delta TSA_GUARDED_BY(mutex) = 0;
+    std::optional<FsJournal> journal TSA_GUARDED_BY(mutex);
+    std::shared_ptr<const BlobObjectKeyRemap> backups_of_pending_replace_targets TSA_GUARDED_BY(mutex);
 };
 
 }
