@@ -463,7 +463,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             auto variant_type = std::make_shared<DataTypeVariant>(variants);
 
             /// Read statistics.
-            if (settings.object_and_dynamic_read_statistics)
+            if (settings.read_statistics)
             {
                 bool has_statistics = true;
                 /// In V3 version we have additional flag that indicates if we have statistics or not.
@@ -973,6 +973,9 @@ static void serializeTextImpl(
     NestedSerialize nested_serialize,
     SerializeNull serialize_null)
 {
+    /// See the comment in deserializeBinary: the same data-driven nesting is walked here, one level per nested value.
+    checkStackSize();
+
     const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
     const auto & variant_column = dynamic_column.getVariantColumn();
     auto global_discr = variant_column.globalDiscriminatorAt(row_num);

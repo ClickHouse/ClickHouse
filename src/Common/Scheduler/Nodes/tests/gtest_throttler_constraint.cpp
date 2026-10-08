@@ -17,7 +17,7 @@ TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 20.0);
-    t.add<FifoQueue>("/A");
+    t.add<RequestQueue>("/A");
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10, 10, 10});
 
@@ -47,7 +47,7 @@ TEST(SchedulerThrottlerConstraint, Unlimited)
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/");
-    t.add<FifoQueue>("/A");
+    t.add<RequestQueue>("/A");
 
     for (int i = 0; i < 10; i++)
     {
@@ -66,7 +66,7 @@ TEST(SchedulerThrottlerConstraint, Pacing)
     // Zero burst allows you to send one request of any `size` and than throttle for `size/max_speed` seconds.
     // Useful if outgoing traffic should be "paced", i.e. have the least possible burstiness.
     t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 1.0, /*max_burst=*/ 0.0);
-    t.add<FifoQueue>("/A");
+    t.add<RequestQueue>("/A");
 
     t.enqueue("/A", {1, 2, 3, 1, 2, 1});
     int output[] = {1, 2, 0, 3, 0, 0, 1, 2, 0, 1, 0};
@@ -84,7 +84,7 @@ TEST(SchedulerThrottlerConstraint, BucketFilling)
     t.process(start, 0);
 
     t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 100.0);
-    t.add<FifoQueue>("/A");
+    t.add<RequestQueue>("/A");
 
     t.enqueue("/A", {100});
 
@@ -122,7 +122,7 @@ TEST(SchedulerThrottlerConstraint, PeekAndAvgLimits)
     // Avg speed = 10 tokens/s afterwards
     t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 50.0, /*max_burst=*/ 100.0);
     t.add<ThrottlerConstraint>("/avg", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 5000.0);
-    t.add<FifoQueue>("/avg/A");
+    t.add<RequestQueue>("/avg/A");
 
     ResourceCost req_cost = 1;
     ResourceCost total_cost = 10000;
@@ -147,8 +147,8 @@ TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
 
     t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, /*max_speed=*/ 10.0, /*max_burst=*/ 100.0);
     t.add<FairPolicy>("/fair");
-    t.add<FifoQueue>("/fair/A", SchedulerNodeInfo(10.0));
-    t.add<FifoQueue>("/fair/B", SchedulerNodeInfo(90.0));
+    t.add<RequestQueue>("/fair/A", SchedulerNodeInfo(10.0));
+    t.add<RequestQueue>("/fair/B", SchedulerNodeInfo(90.0));
 
     ResourceCost req_cost = 1;
     ResourceCost total_cost = 2000;

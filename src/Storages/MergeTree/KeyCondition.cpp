@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
@@ -39,6 +40,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/transformTypesRecursively.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnArray.h>
@@ -76,8 +78,15 @@ namespace Setting
 
 namespace ErrorCodes
 {
+extern const int ABORTED;
 extern const int BAD_ARGUMENTS;
+extern const int CANNOT_ALLOCATE_MEMORY;
 extern const int LOGICAL_ERROR;
+extern const int MEMORY_LIMIT_EXCEEDED;
+extern const int QUERY_WAS_CANCELLED;
+extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
+extern const int TIMEOUT_EXCEEDED;
+extern const int TOO_SLOW;
 }
 
 const KeyCondition::AtomMap KeyCondition::atom_map
@@ -1246,6 +1255,32 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
         case ActionsDAG::ActionType::FUNCTION:
         {
             auto name = node.function_base->getName();
+
+            /// Rewrites that are valid only for a non-inverted condition in a boolean context.
+            /// They are tried in order and lazily, since each of them may add nodes to `inverted_dag`.
+            auto try_rewrite_boolean_condition = [&]() -> const ActionsDAG::Node *
+            {
+                if (need_inversion || !boolean_context)
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                if (!context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite])
+                    return nullptr;
+
+                if (const auto * rewritten = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+                if (const auto * rewritten = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context))
+                    return rewritten;
+
+                return nullptr;
+            };
+
             /// A `not` that receives an inversion cancels against it and substitutes its argument for
             /// the result. That is only truthiness-preserving: `not(not(x))` is `x != 0` (a `UInt8`),
             /// not `x`. Where the value is merely truth-tested (`boolean_context`) that is exactly what
@@ -1334,20 +1369,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(function_builder, children, "");
                 handled_inversion = true;
             }
-            else if (!need_inversion
-                && boolean_context
-                && ((res = tryRewriteIsTrueCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteInTruthyCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
+            else if (const auto * rewritten = try_rewrite_boolean_condition())
             {
-                handled_inversion = true;
-            }
-            else if (!need_inversion
-                && boolean_context
-                && context->getSettingsRef()[Setting::allow_key_condition_coalesce_rewrite]
-                && ((res = tryRewriteCoalesceComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteCoalesceCondition(node, name, inverted_dag, inputs_mapping, context)) != nullptr
-                    || (res = tryRewriteNullIfComparison(node, name, inverted_dag, inputs_mapping, context)) != nullptr))
-            {
+                res = rewritten;
                 handled_inversion = true;
             }
             else
@@ -1788,6 +1812,39 @@ bool KeyCondition::addCondition(const String & column, const Range & range)
     return true;
 }
 
+bool KeyCondition::hasUnknownAtoms() const
+{
+    return std::ranges::any_of(rpn, [](const RPNElement & element)
+    {
+        return element.function == RPNElement::FUNCTION_UNKNOWN;
+    });
+}
+
+KeyCondition KeyCondition::createWithUnknownAtomsAssumedTrue() const
+{
+    KeyCondition result = *this;
+
+    /// The reversed RPN lists every operator before its operands, so the stack holds the polarities of the pending operands.
+    std::vector<bool> positive_stack = {true};
+    for (auto it = result.rpn.rbegin(); it != result.rpn.rend(); ++it)
+    {
+        RPNElement & element = *it;
+        chassert(!positive_stack.empty());
+        bool positive = positive_stack.back();
+        positive_stack.pop_back();
+
+        if (element.function == RPNElement::FUNCTION_NOT)
+            positive_stack.push_back(!positive);
+        else if (element.function == RPNElement::FUNCTION_AND || element.function == RPNElement::FUNCTION_OR)
+            positive_stack.insert(positive_stack.end(), {positive, positive});
+        else if (element.function == RPNElement::FUNCTION_UNKNOWN)
+            element = RPNElement(positive ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE);
+    }
+
+    chassert(positive_stack.empty());
+    return result;
+}
+
 bool KeyCondition::hasOnlyConjunctions() const
 {
     return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
@@ -1811,12 +1868,16 @@ static Field applyFunctionForField(
 }
 
 /// applyFunction will execute the function with one `field` or the column which `field` refers to.
-static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+///
+/// Returns `std::nullopt` when an earlier call already failed to evaluate the same (function, column)
+/// pair: the cache remembers the failure, so the caller can answer "unknown" for the range at once
+/// instead of re-running the throwing expression over the whole column.
+static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
     chassert(func != nullptr);
     /// Fallback for fields without block reference.
     if (field.isExplicit())
-        return applyFunctionForField(func, current_type, field);
+        return FieldRef(applyFunctionForField(func, current_type, field));
 
     /// We will cache the function result inside `field.columns`, because this function will call many times
     /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
@@ -1835,7 +1896,15 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
             result_idx = i;
     }
 
-    if (result_idx == columns->size())
+    if (result_idx < columns->size())
+    {
+        /// The entry is a failure sentinel: a previous evaluation of this pair threw, and the cache is
+        /// shared by every range of the part, so every later range asking about it gets the same
+        /// "unknown" without paying for the whole-column execution and the exception again.
+        if (!(*columns)[result_idx].column)
+            return std::nullopt;
+    }
+    else
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
@@ -1849,12 +1918,27 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
         }
         /// Invariant: every function receives the argument type it was built for, so the cached result
         /// keeps this function's own result type and representation.
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, func->getResultType(), result_name});
-        (*columns)[result_idx].column
-            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false);
+        ///
+        /// Compute before publishing the cache entry. The function is evaluated on values the analysis
+        /// substitutes, so it can fail for one of them - `intDiv(1, a - 1)` divides by zero at `a = 1`.
+        /// A throw publishes a sentinel entry with a null column instead of the result, so that the
+        /// lookup above short-circuits every later call for the same (function, column) pair. The
+        /// caller decides which exceptions it may swallow; the ones it rethrows abort the query, and
+        /// the sentinel they leave behind is never consulted.
+        ColumnPtr result_column;
+        try
+        {
+            result_column = func->execute(args, func->getResultType(), args.front().column->size(), /* dry_run = */ false);
+        }
+        catch (...)
+        {
+            field.columns->emplace_back(ColumnWithTypeAndName{nullptr, func->getResultType(), result_name});
+            throw;
+        }
+        field.columns->emplace_back(ColumnWithTypeAndName{result_column, func->getResultType(), result_name});
     }
 
-    return {field.columns, field.row_idx, result_idx};
+    return FieldRef(field.columns, field.row_idx, result_idx);
 }
 
 /// Sequentially applies functions to the column, returns `true`
@@ -2361,6 +2445,29 @@ bool KeyCondition::extractDeterministicFunctionsDagFromKey(
 }
 
 
+/// Returns a copy of `elem_type` with every `DateTime`/`DateTime64` leaf replaced by the corresponding
+/// leaf of `dag_type`, or nullptr if the two do not describe the same shape. Keeps `elem_type`'s own
+/// structure, so only what `equals` ignores moves: the DAG reads those off the type it is handed.
+static DataTypePtr adoptDateTimeLeafTimezones(const DataTypePtr & elem_type, const DataTypePtr & dag_type)
+{
+    return replaceNestedTypesInPair(elem_type, dag_type, [](const DataTypePtr & elem_leaf, const DataTypePtr & dag_leaf) -> DataTypePtr
+    {
+        /// Adopting is unconditional here: two `DateTime` types can both report the bare name `DateTime` and
+        /// still have captured different zones, so the name cannot say whether the leaf needs to move.
+        if (WhichDataType(elem_leaf).isDateTimeOrDateTime64())
+            return dag_leaf->equals(*elem_leaf) ? dag_leaf : nullptr;
+
+        /// A custom name on a leaf changes what the transform computes on it (`Bool` renders every nonzero
+        /// `UInt8` as `true`), so a pair whose names disagree is not interchangeable.
+        if ((elem_leaf->hasCustomName() || dag_leaf->hasCustomName()) && elem_leaf->getName() != dag_leaf->getName())
+            return nullptr;
+
+        /// Every other leaf carries no timezone, so there is nothing to adopt.
+        return elem_leaf->equals(*dag_leaf) ? elem_leaf : nullptr;
+    });
+}
+
+
 /// Materializes a transformed column and rejects a transformation that produced NULLs:
 /// - materialize output column (Const/LowCardinality)
 /// - reject if any NULLs were created as a result of transformation
@@ -2460,6 +2567,15 @@ static bool convertColumnForDeterministicDag(
 
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
+
+    /// Hand the DAG the timezone it was built against; `equals` cannot see it, so the pair is
+    /// interchangeable everywhere except inside the transform. Relabel, never convert.
+    if (auto adopted = adoptDateTimeLeafTimezones(input_type, dag.input_type))
+        input_type = std::move(adopted);
+    /// A refusal on an otherwise equal pair means it is not interchangeable, so the DAG cannot be
+    /// given either type. A refusal on an unequal pair leaves the casts below to reconcile it.
+    else if (input_type->equals(*dag.input_type))
+        return false;
 
     if (!input_type->equals(*dag.input_type))
     {
@@ -2758,16 +2874,7 @@ bool typeContainsFloat(const DataTypePtr & type)
     if (!type)
         return false;
 
-    if (isFloat(removeLowCardinalityAndNullable(type)))
-        return true;
-
-    bool has_float = false;
-    type->forEachChild([&](const IDataType & child)
-    {
-        if (!has_float && WhichDataType(child).isFloat())
-            has_float = true;
-    });
-    return has_float;
+    return anyInTypeTree(*type, [](const IDataType & subtype) { return isFloat(subtype); });
 }
 
 }
@@ -3658,16 +3765,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     /// the predicate.
     auto contains_float = [](const DataTypePtr & type)
     {
-        bool found = WhichDataType(*type).isFloat();
-        if (!found)
-        {
-            type->forEachChild([&found](const IDataType & child)
-            {
-                if (!found && WhichDataType(child).isFloat())
-                    found = true;
-            });
-        }
-        return found;
+        return anyInTypeTree(*type, [](const IDataType & node) { return WhichDataType(node).isFloat(); });
     };
 
     /// `Variant` and `Dynamic` elements are judged by the alternatives the constant column actually
@@ -6187,6 +6285,36 @@ static bool functionIsIntegerCastPreservingFieldRepresentation(
     return to_type->getSizeOfValueInMemory() >= from_type->getSizeOfValueInMemory();
 }
 
+namespace
+{
+
+thread_local size_t num_unevaluable_chain_applications = 0;
+
+/// A broken invariant, a memory limit, a deadline or a cancellation is not something the index analysis
+/// may decide to ignore: these are the outer guards of the query, and `applyFunction` runs the function on
+/// a whole boundary column, so a conversion with a cancellation budget can hit `max_execution_time` there.
+/// Swallowing that would let the query proceed to a full scan instead of aborting.
+/// The cancellation exception stored by `checkTimeLimit` may carry `QUERY_WAS_CANCELLED_BY_CLIENT`,
+/// and an allocation failure below the memory tracker surfaces as `CANNOT_ALLOCATE_MEMORY`.
+bool isQueryOuterGuardError(int code)
+{
+    return code == ErrorCodes::LOGICAL_ERROR
+        || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
+        || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY
+        || code == ErrorCodes::QUERY_WAS_CANCELLED
+        || code == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+        || code == ErrorCodes::TIMEOUT_EXCEEDED
+        || code == ErrorCodes::TOO_SLOW
+        || code == ErrorCodes::ABORTED;
+}
+
+}
+
+size_t KeyCondition::getNumUnevaluableChainApplications()
+{
+    return num_unevaluable_chain_applications;
+}
+
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
@@ -6200,62 +6328,97 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     /// stripped type here rather than in each caller: several of them pass the key column's raw type.
     current_type = recursiveRemoveLowCardinality(current_type);
 
-    for (const auto & func : functions)
+    /// The functions are evaluated on the endpoints of a key range, which are values the analysis
+    /// substitutes rather than values the query asked about, so they can fail for an endpoint the
+    /// predicate itself excludes: `intDiv(1, p - 1)` divides by zero on the boundary `p = 1`
+    /// even under `WHERE p != 1`. This applies both to the application of a function and to its
+    /// monotonicity probe: some `getMonotonicityForRange` implementations execute the function on the
+    /// endpoints themselves (e.g. `plus` and `minus` in `FunctionBinaryArithmetic`), so an overflow
+    /// checked with `decimal_check_overflow` or `date_time_overflow_behavior = 'throw'` can throw there.
+    /// Index analysis is an approximation, and its answer for a range it cannot evaluate is "unknown" -
+    /// the same answer it already gives for a function that is not monotonic on the range - which
+    /// leaves the range unpruned. Letting the error escape instead turns a valid query into an
+    /// exception, or makes it depend on whether another index happened to prune the range first.
+    try
     {
-        /// We check the monotonicity of each function on a specific range.
-        /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-        IFunction::Monotonicity monotonicity = single_point
-            ? IFunction::Monotonicity{true}
-            : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
-
-        if (!monotonicity.is_monotonic)
+        for (const auto & func : functions)
         {
-            return {};
-        }
+            /// We check the monotonicity of each function on a specific range.
+            /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
+            IFunction::Monotonicity monotonicity = single_point
+                ? IFunction::Monotonicity{true}
+                : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
 
-        auto result_type = func->getResultType();
-
-        /// For functions like CAST between integer types that share the same Field representation
-        /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
-        /// on the given range, the Field values are guaranteed to be unchanged.
-        /// We can skip the expensive function application that creates columns and executes the function.
-        /// The monotonicity check already verified that the values fit in the target type.
-        bool skip_apply = functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
-
-        if (!skip_apply)
-        {
-            /// If we apply function to open interval, we can get empty intervals in result.
-            /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
-            /// To avoid this we make range left and right included.
-            /// Any function that treats NULL specially is not monotonic.
-            /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
-            if (!key_range.left.isNull())
+            if (!monotonicity.is_monotonic)
             {
-                key_range.left = applyFunction(func, current_type, key_range.left);
-                key_range.left_included = true;
+                return {};
             }
 
-            if (!key_range.right.isNull())
+            auto result_type = func->getResultType();
+
+            /// For functions like CAST between integer types that share the same Field representation
+            /// (e.g., UInt16 and UInt64 both use UInt64 in Field), when the function is monotonic
+            /// on the given range, the Field values are guaranteed to be unchanged.
+            /// We can skip the expensive function application that creates columns and executes the function.
+            /// The monotonicity check already verified that the values fit in the target type.
+            bool skip_apply = functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
+
+            if (!skip_apply)
             {
-                key_range.right = applyFunction(func, current_type, key_range.right);
-                key_range.right_included = true;
+                /// If we apply function to open interval, we can get empty intervals in result.
+                /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
+                /// To avoid this we make range left and right included.
+                /// Any function that treats NULL specially is not monotonic.
+                /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
+                if (!key_range.left.isNull())
+                {
+                    auto transformed = applyFunction(func, current_type, key_range.left);
+                    if (!transformed)
+                    {
+                        ++num_unevaluable_chain_applications;
+                        return {};
+                    }
+                    key_range.left = std::move(*transformed);
+                    key_range.left_included = true;
+                }
+
+                if (!key_range.right.isNull())
+                {
+                    auto transformed = applyFunction(func, current_type, key_range.right);
+                    if (!transformed)
+                    {
+                        ++num_unevaluable_chain_applications;
+                        return {};
+                    }
+                    key_range.right = std::move(*transformed);
+                    key_range.right_included = true;
+                }
             }
-        }
-        else
-        {
-            /// Even though we skip the function application, we still need to make bounds included
-            /// (the function could map open bounds to the same point).
-            if (!key_range.left.isNull())
-                key_range.left_included = true;
-            if (!key_range.right.isNull())
-                key_range.right_included = true;
-        }
+            else
+            {
+                /// Even though we skip the function application, we still need to make bounds included
+                /// (the function could map open bounds to the same point).
+                if (!key_range.left.isNull())
+                    key_range.left_included = true;
+                if (!key_range.right.isNull())
+                    key_range.right_included = true;
+            }
 
-        current_type = result_type;
+            current_type = result_type;
 
-        if (!monotonicity.is_positive)
-            key_range.invert();
+            if (!monotonicity.is_positive)
+                key_range.invert();
+        }
     }
+    catch (const Exception & e)
+    {
+        if (isQueryOuterGuardError(e.code()))
+            throw;
+
+        ++num_unevaluable_chain_applications;
+        return {};
+    }
+
     return key_range;
 }
 
@@ -6800,9 +6963,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t element_idx = 0;
-    for (const auto & element : rpn)
+    /// The reported position is the element's index in `rpn`: the disjunction bitset is read positionally
+    /// against the template RPN. A position that is never reported keeps the bitset's all-true default.
+    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
     {
+        const auto & element = rpn[element_idx];
+
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
@@ -7221,10 +7387,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
         if (update_partial_disjunction_result_fn)
-        {
             update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            ++element_idx;
-        }
     }
 
     if (rpn_stack.size() != 1)

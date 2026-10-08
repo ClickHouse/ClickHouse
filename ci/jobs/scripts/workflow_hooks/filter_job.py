@@ -1,7 +1,7 @@
 import re
 from pathlib import PurePosixPath
 
-from ci.defs.defs import JobNames
+from ci.defs.defs import BuildTypes, JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
@@ -36,14 +36,6 @@ DO_NOT_TEST_JOBS = [
 PRELIMINARY_JOBS = [
     JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
-]
-
-# The `arm_binary` jobs that run in pull requests instead of the LLVM coverage jobs
-# (see `ci/workflows/pull_request.py`).
-COVERAGE_REPLACEMENT_JOBS = [
-    j.name
-    for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
-    + JobConfigs.integration_test_arm_binary_coverage_replacement_pr_jobs
 ]
 
 BUILDS_FOR_TESTS = [
@@ -111,8 +103,7 @@ def _has_build_digest_changes(changed_files):
 # or edit a test case. `_has_build_digest_changes` only tracks whether the
 # *compiled binary* can change, so a PR that only touches one of these would
 # otherwise be auto-skipped as "tests-only" and could never exercise the
-# coverage-specific code it just modified. The `arm_binary` jobs that replace the
-# coverage jobs in pull requests (`COVERAGE_REPLACEMENT_JOBS`) use the same rule.
+# coverage-specific code it just modified.
 _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/llvm_coverage_job.py",
     "ci/jobs/functional_tests.py",
@@ -137,8 +128,6 @@ _COVERAGE_PIPELINE_PATHS = (
     "tests/integration/helpers/cluster.py",
     "ci/defs/job_configs.py",
     "ci/defs/defs.py",
-    # Schedules the coverage jobs and their `arm_binary` replacements in pull requests.
-    "ci/workflows/pull_request.py",
     "tests/clickhouse-test",
     "tests/config/",
 )
@@ -312,6 +301,80 @@ def _has_uncounted_build_changes(changed_files):
     return False
 
 
+# Pull requests run each sanitizer of the stress test on one architecture only: the TSan,
+# MSan and debug stress tests on amd, the ASan one on arm (next to its `s3` variant and the
+# `arm_release` one, so both architectures stay covered). Master and the release and backport
+# workflows keep running all of them. Over 2026-08-20 to 2026-10-02 the amd and arm runs of the
+# same sanitizer failed together on 9 to 59 PR commits per sanitizer, and alone on 135 to 344,
+# evenly split between the architectures; of the 109 distinct failure reasons (stack ids
+# stripped) in PRs and on master, 71 occurred on both, and the ones seen on arm only made up 31
+# of 1491 failing arm runs. The second architecture is a second random sample of the same
+# nondeterministic failures, not coverage of its own.
+PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS = (
+    f"{JobNames.STRESS} (amd_asan_ubsan)",
+    f"{JobNames.STRESS} (arm_debug)",
+    f"{JobNames.STRESS} (arm_tsan)",
+    f"{JobNames.STRESS} (arm_msan)",
+)
+
+# The builds whose binaries only the skipped stress tests use, skipped with them.
+# `ci/workflows/pull_request.py` asserts that no other job of the PR workflow requires their
+# artifacts.
+PR_SINGLE_ARCH_SKIPPED_BUILDS = (
+    f"{JobNames.BUILD} (arm_debug)",
+    f"{JobNames.BUILD} (arm_tsan)",
+    f"{JobNames.BUILD} (arm_msan)",
+)
+
+PR_SINGLE_ARCH_SKIPPED_JOBS = PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS + PR_SINGLE_ARCH_SKIPPED_BUILDS
+
+assert set(PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS) <= {
+    j.name for j in JobConfigs.stress_test_jobs
+}, "PR_SINGLE_ARCH_SKIPPED_STRESS_JOBS names a job that does not exist"
+assert set(PR_SINGLE_ARCH_SKIPPED_BUILDS) <= {
+    j.name for j in JobConfigs.build_jobs
+}, "PR_SINGLE_ARCH_SKIPPED_BUILDS names a job that does not exist"
+
+# Changes that can behave differently per architecture, so a PR touching them runs the stress
+# tests on both, and is never treated as small: the build configuration (toolchains, CPU
+# features, sanitizer flags) and the per-architecture glibc compatibility layer. `contrib/` and the build scripts are covered by
+# `_has_uncounted_build_changes`.
+_ARCH_SENSITIVE_PATHS = (
+    "cmake/",
+    "base/glibc-compatibility/",
+)
+
+
+def _has_arch_sensitive_changes(changed_files):
+    return any(
+        _matches_digest_path(f.removeprefix("./"), _ARCH_SENSITIVE_PATHS)
+        for f in changed_files
+    )
+
+
+# `Build (arm_fuzzers)` builds the libFuzzer targets. No job of the PR workflow uses its output
+# (the targets run in `NightlyFuzzers`), so in a PR it only checks that they still compile. A PR
+# below `SMALL_PR_CHANGED_LINES` skips it with the stress tests, unless it touches the fuzz
+# targets or their build: over 2026-08-20 to 2026-10-02 the build failed alone (all other builds
+# green) in 13 PRs, and the two of them below the threshold failed on infrastructure (`Bus error`
+# in the linker). Master builds it on every commit. `Build (wasm64)` has no consumer either, but
+# keeps running: it compiles with the Emscripten clang, and in the same period it alone found
+# compile errors in 4 PRs below the threshold.
+SMALL_PR_SKIPPED_BUILDS = (f"{JobNames.BUILD} ({BuildTypes.ARM_FUZZERS})",)
+
+assert set(SMALL_PR_SKIPPED_BUILDS) <= {
+    j.name for j in JobConfigs.special_build_jobs
+}, "SMALL_PR_SKIPPED_BUILDS names a job that does not exist"
+
+def _has_fuzzer_target_changes(changed_files):
+    """The fuzz targets live in `fuzzers/` directories next to the code they fuzz, and
+    `tests/fuzz/` holds the scripts that stage their dictionaries and corpora."""
+    return any(
+        "/fuzzers/" in f or f.removeprefix("./").startswith("tests/fuzz/")
+        for f in changed_files
+    )
+
+
 def _is_small_pr(info):
     """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
     code. False when the count is unknown (the pre-hook failed to fetch it), so an
@@ -409,9 +472,6 @@ _PIPELINE_NOTES = {
     ),
     Labels.CI_NO_COVERAGE: (
         "Label `ci-no-coverage` skips coverage jobs and the `LLVM Coverage` merge job."
-    ),
-    Labels.CI_COVERAGE: (
-        "Label `ci-coverage` runs the LLVM coverage jobs and the `LLVM Coverage` merge job."
     ),
 }
 
@@ -525,16 +585,47 @@ def should_skip_job(job_name):
     # of this size introduces;
     # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
     # master once more. Bypass: the `ci-force-all` label.
+    # The builds that only the skipped stress tests use go with them, except with the
+    # `ci-build` label, which asks for the whole build matrix. A change under `cmake/` or
+    # `base/glibc-compatibility/` is never small: like the uncounted build inputs, one line
+    # there (a compiler or sanitizer flag) can change the whole binary.
+    builds_requested = Labels.CI_BUILD in _info_cache.pr_labels
     if (
-        _is_stress_or_fuzzer_job(job_name)
+        (
+            _is_stress_or_fuzzer_job(job_name)
+            or (job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS and not builds_requested)
+            or (
+                job_name in SMALL_PR_SKIPPED_BUILDS
+                and not builds_requested
+                and not _has_fuzzer_target_changes(changed_files)
+            )
+        )
         and _is_small_pr(_info_cache)
         and not _has_uncounted_build_changes(changed_files)
         and not _has_stress_or_fuzzer_changes(changed_files)
+        and not _has_arch_sensitive_changes(changed_files)
     ):
         return (
             True,
             f"Skipped, fewer than {SMALL_PR_CHANGED_LINES} lines of product code changed "
             f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
+        )
+
+    # One architecture per sanitizer for the stress tests, see `PR_SINGLE_ARCH_SKIPPED_JOBS`.
+    # The same exemptions as for small PRs.
+    if (
+        job_name in PR_SINGLE_ARCH_SKIPPED_JOBS
+        and not (job_name in PR_SINGLE_ARCH_SKIPPED_BUILDS and builds_requested)
+        and _info_cache.pr_number > 0
+        and _info_cache.workflow_name == SMALL_PR_WORKFLOW
+        and not _has_uncounted_build_changes(changed_files)
+        and not _has_stress_or_fuzzer_changes(changed_files)
+        and not _has_arch_sensitive_changes(changed_files)
+    ):
+        return (
+            True,
+            "Skipped in pull requests: the same sanitizer is stress-tested on the other "
+            f"architecture, and master runs both (add the '{Labels.CI_FORCE_ALL}' label to run)",
         )
 
     if (
@@ -634,43 +725,31 @@ def should_skip_job(job_name):
     # Skip the whole coverage family together: the coverage build, the amd_llvm_coverage test shards, the excluded_from_llvm jobs
     # (they only run the tests the coverage shards skip, so they are pointless without them), and the final "LLVM Coverage" merge job.
     #
-    # Pull requests run the family only with the `ci-coverage` label; by default they run the same
-    # test configurations on the `arm_binary` build instead (`COVERAGE_REPLACEMENT_JOBS`), which
-    # finds the same failures several times cheaper. Master itself is unaffected (pr_number gate):
+    # This also fires automatically, without the label, whenever a PR has no build-digest-affecting
+    # changes (i.e. it only touches tests/docs/CI scripts) AND does not touch the coverage pipeline's
+    # own code (`_has_coverage_pipeline_changes`) - a PR fixing a bug in llvm_coverage_job.py, this
+    # hook, or the coverage-relevant parts of functional_tests.py/integration_test_job.py must still
+    # be able to run the jobs it changed, even though it changes no compiled-binary path. Coverage
+    # numbers only move when the compiled binary changes, so an ordinary tests-only PR would produce
+    # coverage identical to master - running any part of the family just burns CI time on profdata that
+    # the (also-skipped) merge job would never consume. Master itself is unaffected (pr_number gate):
     # its coverage runs must always publish a complete llvm_coverage.info for later PRs to compare against.
     if (
         "llvm_coverage" in job_name
         or "excluded_from_llvm" in job_name
         or job_name == JobNames.LLVM_COVERAGE
+    ) and (
+        Labels.CI_NO_COVERAGE in _info_cache.pr_labels
+        or (
+            _info_cache.pr_number > 0
+            and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
+            and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
+        )
     ):
         if Labels.CI_NO_COVERAGE in _info_cache.pr_labels:
             _add_pipeline_note(Labels.CI_NO_COVERAGE)
             return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
-        if _info_cache.pr_number > 0:
-            if Labels.CI_COVERAGE not in _info_cache.pr_labels:
-                return True, f"Skipped: pull requests run LLVM coverage only with the '{Labels.CI_COVERAGE}' label"
-            _add_pipeline_note(Labels.CI_COVERAGE)
-
-    # With `ci-coverage` the coverage jobs run these configurations themselves.
-    if (
-        job_name in COVERAGE_REPLACEMENT_JOBS
-        and _info_cache.pr_number > 0
-        and Labels.CI_COVERAGE in _info_cache.pr_labels
-    ):
-        return True, f"Skipped, labeled with '{Labels.CI_COVERAGE}' - the LLVM coverage jobs run this configuration"
-
-    # The replacement jobs keep the rule the coverage jobs had before they became opt-in: this also
-    # fires whenever a PR has no build-digest-affecting changes (i.e. it only touches tests/docs/CI
-    # scripts) AND does not touch the test pipeline's own code (`_has_coverage_pipeline_changes`).
-    # The changed tests themselves run in the targeted and flaky-check jobs, and rerunning the whole
-    # suite on a binary identical to master's would find nothing new.
-    if (
-        job_name in COVERAGE_REPLACEMENT_JOBS
-        and _info_cache.pr_number > 0
-        and not _has_build_digest_changes(_info_cache.get_changed_files() or [])
-        and not _has_coverage_pipeline_changes(_info_cache.get_changed_files() or [])
-    ):
-        return True, "Skipped: no build-affecting changes; the full suite would run on a binary identical to master"
+        return True, "Skipped: no build-affecting changes; coverage would be identical to master"
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
         # Don't skip if the corresponding test job file was changed
@@ -757,8 +836,8 @@ def should_skip_job(job_name):
 
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
-    # The coverage family and its `arm_binary` replacements are already handled above,
-    # so this only narrows down the other plain (non-coverage) test jobs.
+    # The whole coverage family is already skipped above whenever the build is
+    # unaffected, so this only narrows down the plain (non-coverage) test jobs.
     if changed_files and all(
         f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):

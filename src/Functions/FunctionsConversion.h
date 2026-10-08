@@ -48,6 +48,7 @@
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
@@ -135,6 +136,9 @@ struct FunctionConvertSettings
     const bool cast_keep_nullable;
     const FormatSettings::DateTimeInputFormat cast_string_to_date_time_mode;
     const FormatSettings format_settings;
+    /// `format_settings` has too many members to hash one by one; this hashes the session settings it
+    /// was derived from instead (see `getFormatSettingsHash`).
+    const UInt64 format_settings_hash;
 
     /// Note: context may be nullptr (i.e. via castColumn())
     explicit FunctionConvertSettings(const ContextPtr & context, FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior_)
@@ -151,7 +155,33 @@ struct FunctionConvertSettings
         , cast_keep_nullable(context && context->getSettingsRef()[Setting::cast_keep_nullable])
         , cast_string_to_date_time_mode(context ? context->getSettingsRef()[Setting::cast_string_to_date_time_mode] : FormatSettings::DateTimeInputFormat::Basic)
         , format_settings(context ? getFormatSettings(context) : FormatSettings{})
+        , format_settings_hash(context ? getFormatSettingsHash(context->getSettingsRef()) : 0)
     {
+    }
+
+    /** The settings a conversion captured decide the values it produces, while its name and the
+      * types it was resolved for do not mention them, so whatever keys an expression by a hash has
+      * to see them: without this, two sessions that differ only in `precise_float_parsing` build the
+      * same key and one serves the other its granule-skip verdicts.
+      *
+      * Every member is hashed: the captured settings one by one, and `format_settings` through the hash
+      * of the session settings it was derived from, which covers each member the text (de)serialization
+      * of a converted value can read. A setting added to this struct has to be added here too.
+      */
+    void updateHash(SipHash & hash) const
+    {
+        hash.update(date_time_overflow_behavior);
+        hash.update(precise_float_parsing);
+        hash.update(cast_ipv4_ipv6_default_on_conversion_error);
+        hash.update(cast_string_to_variant_use_inference);
+        hash.update(cast_string_to_dynamic_use_inference);
+        hash.update(input_format_ipv4_default_on_conversion_error);
+        hash.update(input_format_ipv6_default_on_conversion_error);
+        hash.update(check_conversion_from_numbers_to_enum);
+        hash.update(date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands);
+        hash.update(cast_keep_nullable);
+        hash.update(cast_string_to_date_time_mode);
+        hash.update(format_settings_hash);
     }
 };
 
@@ -2692,7 +2722,7 @@ struct ConvertImpl
                 /// For argument of Date or DateTime type, second argument with time zone could be specified.
                 if constexpr (std::is_same_v<FromDataType, DataTypeDateTime> || std::is_same_v<FromDataType, DataTypeDateTime64>)
                 {
-                    if ((time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get())))
+                    if (time_zone_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()); time_zone_column)
                     {
                         auto non_null_args = createBlockWithNestedColumns(arguments);
                         time_zone = &extractTimeZoneFromFunctionArguments(non_null_args, 1, 0);
@@ -3379,6 +3409,41 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type);
 #endif
 
+/// Whether rendering a value of this type as text maps distinct values onto the same string:
+///
+/// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
+///   instants have the same local wall-clock representation;
+/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
+///   tables compare floating-point keys bitwise and keep distinct payloads apart;
+/// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
+///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
+/// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
+///   common text space: `toString(1::Variant(Int64, String))` equals `toString('1'::Variant(Int64, String))`;
+/// - a `Bool` when `bool_true_representation` and `bool_false_representation` coincide in `format_settings`.
+///
+/// An unknown type is assumed to collapse, so that an undecidable case is never claimed to be injective.
+inline bool renderingCollapsesDistinctValues(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    if (!type)
+        return true;
+
+    bool collapses = false;
+    auto check = [&](const IDataType & nested)
+    {
+        if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(&nested))
+            collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
+        else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
+            collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
+        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+            collapses = true;
+        else if (isUInt8(nested) && nested.getName() == "Bool")
+            collapses = collapses || format_settings.bool_true_representation == format_settings.bool_false_representation;
+    };
+
+    forEachInTypeTree(*type, check);
+    return collapses;
+}
+
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert final : public IFunction
 {
@@ -3415,11 +3480,25 @@ public:
         return name;
     }
 
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
+
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
     {
-        return std::is_same_v<Name, NameToString> && arguments.size() <= 1;
+        if constexpr (std::is_same_v<Name, NameToString>)
+        {
+            /// Only the single-argument form is claimed. A caller that passes no arguments gets no
+            /// claim, because the answer depends on them, and the multi-argument forms are rendered
+            /// in the time zone given by the second argument - `toString(dt, 'Europe/Amsterdam')`
+            /// folds even for a fixed-offset `dt`, and `toString(x, NULL)` maps every row to `NULL`.
+            if (sample_columns.size() != 1)
+                return false;
+
+            return !renderingCollapsesDistinctValues(sample_columns.front().type, settings.format_settings);
+        }
+        else
+            return false;
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
@@ -4058,6 +4137,8 @@ public:
     {
         return name;
     }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
@@ -5395,6 +5476,8 @@ public:
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*sample_columns*/) const override;
 
     String getName() const override { return cast_name; }
+
+    void updateHash(SipHash & hash) const override { settings.updateHash(hash); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

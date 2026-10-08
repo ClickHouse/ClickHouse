@@ -4,11 +4,14 @@
 
 #include <Interpreters/WindowDescription.h>
 
+#include <Processors/Transforms/Window/Partition.h>
 #include <Processors/Transforms/Window/SlidingBlocks.h>
+#include <Processors/Transforms/Window/SlidingIndexes.h>
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
 
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/Block.h>
 
 #include <optional>
@@ -68,8 +71,6 @@ public:
 
     /* Implementation details.
      */
-    void advancePartitionEnd();
-
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
 
     void advanceFrameStartRowsOffset();
@@ -91,11 +92,14 @@ public:
     // last row already proven to be a peer of `start`, so a retry after more input arrives continues
     // from there instead of rescanning the group from its first row (which would make a peer group
     // spanning many blocks quadratic).
-    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const;
+    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data);
 
     // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
     // `target_group`-th peer group (1-based) or the partition end.
-    bool advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
+    bool advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group);
+
+    // The end of the run of rows equal to `begin` across all ORDER BY columns within [begin, end) of `block`.
+    Int64 findPeerRunEnd(Int64 block, Int64 begin, Int64 end);
 
     void updateAggregationState();
     void writeOutCurrentRow();
@@ -120,31 +124,19 @@ public:
     std::unique_ptr<Arena> arena;
 
     SlidingBlocks blocks;
+    SlidingIndexes indexes;
     // The next block we are going to pass to the consumer.
     Int64 next_output_block_number = 0;
 
-    // Boundaries of the current partition.
-    // partition_start doesn't point to a valid block, because we want to drop
-    // the blocks early to save memory. We still have to track it so that we can
-    // cut off a PRECEDING frame at the partition start.
-    // The `partition_end` is past-the-end, as usual. When
-    // partition_ended = false, it still haven't ended, and partition_end is the
-    // next row to check.
-    RowNumber partition_start;
-    RowNumber partition_end;
-    bool partition_ended = false;
+    // The current partition. Its start doesn't point to a valid block, because
+    // we want to drop the blocks early to save memory. We still have to track it
+    // so that we can cut off a PRECEDING frame at the partition start.
+    Partition partition;
 
     // The row for which we are now computing the window functions.
-    RowNumber current_row;
-    // The start of current peer group, needed for CURRENT ROW frame start.
-    // For ROWS frame, always equal to the current row, and for RANGE and GROUP
-    // frames may be earlier.
-    RowNumber peer_group_start;
-
-    // Row and group numbers in partition for calculating rank() and friends.
-    Int64 current_row_number = 1;
-    Int64 peer_group_start_row_number = 1;
-    Int64 peer_group_number = 1;
+    RowPoint current;
+    // The start of current peer group.
+    RowPoint peer_group_start;
 
     // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
     // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
@@ -158,6 +150,11 @@ public:
     // row of a peer group.
     RowNumber frame_start_group_scan_frontier;
     RowNumber frame_end_group_scan_frontier;
+
+    // Runs of the ORDER BY key prefixes found by `findPeerRunEnd` in `peer_runs_block` within `peer_runs_end`.
+    SortedKeyRuns peer_runs;
+    Int64 peer_runs_block = -1;
+    Int64 peer_runs_end = -1;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the
