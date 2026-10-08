@@ -14,7 +14,7 @@ namespace DB
 namespace
 {
 
-/// NULL, TRUE and FALSE are bare words to the lexer, but always values
+/// NULL, TRUE and FALSE are bare words to the lexer, but values to the parser, apart from the Null engine and format
 bool isValueKeyword(const Token & token)
 {
     if (token.type != TokenType::BareWord)
