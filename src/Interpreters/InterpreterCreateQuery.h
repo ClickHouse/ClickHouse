@@ -96,6 +96,8 @@ public:
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 
+    static String getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context);
+
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
 
     /// Check access right, validate definer statement and replace `CURRENT USER` with actual name.

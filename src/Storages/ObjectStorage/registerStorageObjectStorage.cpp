@@ -50,6 +50,7 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+    configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
