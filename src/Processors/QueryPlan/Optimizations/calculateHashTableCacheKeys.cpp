@@ -539,7 +539,7 @@ void setAggregationHashTableCacheKeys(const QueryPlanOptimizationSettings & opti
                 aggregating
                 && (!aggregating->getParams().keys.empty()
                     || (optimization_settings.optimize_uniq_exact_radix_partitioning
-                        && aggregating->canUseRadixUniqExact(optimization_settings.max_threads)))
+                        && aggregating->canUseRadixUniqExact()))
                 && aggregating->getParams().stats_collecting_params.max_entries_for_hash_table_stats != 0)
                 aggregating_nodes.push_back(node);
             for (auto * child : node->children)

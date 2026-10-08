@@ -80,7 +80,7 @@ public:
 
     /// Whether the radix partitioned `uniqExact` (see `RadixUniqExactTransform.h`) may compute this aggregation.
     /// Shared by the plan optimization that stamps the statistics key and by `transformPipeline`.
-    bool canUseRadixUniqExact(size_t max_threads) const;
+    bool canUseRadixUniqExact() const;
 
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
     void enableBucketTopK(size_t n, bool ascending, size_t count_index)

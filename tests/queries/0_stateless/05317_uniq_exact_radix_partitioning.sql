@@ -55,6 +55,7 @@ SELECT 'null for empty, empty', uniqExact(number), count(DISTINCT number), toTyp
 SELECT 'null for empty', uniqExact(number) FROM numbers_mt(400000) SETTINGS aggregate_functions_null_for_empty = 1;
 SELECT 'totals', uniqExact(number) FROM numbers_mt(400000) WITH TOTALS;
 SELECT 'distributed', uniqExact(number) FROM remote('127.0.0.{1,2}', numbers_mt(400000));
+SELECT 'single thread', uniqExact(number) FROM numbers_mt(400000) SETTINGS max_threads = 1;
 
 -- The radix partitioned aggregation is used only for a single `uniqExact` of a supported type without keys.
 -- It is not used where the aggregation is not finalized, such as on parallel replicas, or where `uniqExact` is rewritten to `GROUP BY`.
@@ -62,13 +63,13 @@ SET enable_parallel_replicas = 0, count_distinct_optimization = 0;
 
 SELECT 'used', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used with null for empty', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS aggregate_functions_null_for_empty = 1) WHERE explain LIKE '%RadixUniqExact%';
+SELECT 'used with a single thread', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS max_threads = 1) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'used for Nullable', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toNullable(toString(number))) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'disabled', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS optimize_uniq_exact_radix_partitioning = 0) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'LowCardinality', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(toLowCardinality(toString(number))) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'two aggregates', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number), uniqExact(number % 7) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'GROUP BY', count() > 0 FROM (EXPLAIN PIPELINE SELECT number % 10 AS k, uniqExact(number) FROM numbers_mt(400000) GROUP BY k) WHERE explain LIKE '%RadixUniqExact%';
 SELECT 'two arguments', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number, toString(number)) FROM numbers_mt(400000)) WHERE explain LIKE '%RadixUniqExact%';
-SELECT 'single thread', count() > 0 FROM (EXPLAIN PIPELINE SELECT uniqExact(number) FROM numbers_mt(400000) SETTINGS max_threads = 1) WHERE explain LIKE '%RadixUniqExact%';
 
 -- The aggregation that only merges the states of an aggregate projection is left as is.
 DROP TABLE IF EXISTS t_radix_uniq_projection;

@@ -429,10 +429,10 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     return nullptr;
 }
 
-bool AggregatingStep::canUseRadixUniqExact(size_t max_threads) const
+bool AggregatingStep::canUseRadixUniqExact() const
 {
     if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging || params.only_merge
-        || params.overflow_row || max_threads <= 1 || !params.keys.empty() || params.aggregates.size() != 1)
+        || params.overflow_row || !params.keys.empty() || params.aggregates.size() != 1)
         return false;
 
     const auto & aggregate = params.aggregates[0];
@@ -554,8 +554,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (params.shared_kept_keys_for_overflow_any)
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
-    const bool use_radix_uniq_exact = settings.optimize_uniq_exact_radix_partitioning && pipeline.getNumStreams() > 1
-        && canUseRadixUniqExact(max_threads);
+    const bool use_radix_uniq_exact = settings.optimize_uniq_exact_radix_partitioning && canUseRadixUniqExact();
 
     /// Of the aggregations without keys, only the radix partitioned `uniqExact` uses the statistics.
     const StatsCollectingParams radix_uniq_exact_stats_params = params.stats_collecting_params;
