@@ -7958,11 +7958,18 @@ void Context::releaseCustomDisk(const String & name) const
         if (disk)
             const_cast<DiskSelector *>(disk_selector.get())->removeFromDiskMap(name);
 
-        /// The single-disk storage policy implicitly created for this disk in getStoragePolicyFromDisk.
-        if (shared->merge_tree_storage_policy_selector)
+        /// The single-disk storage policy implicitly created for this disk in `getStoragePolicyFromDisk`.
+        /// A policy from the configuration may have the same name, so remove only a policy consisting of this disk alone.
+        if (disk && shared->merge_tree_storage_policy_selector)
         {
             const auto policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + name;
-            const_cast<StoragePolicySelector *>(shared->merge_tree_storage_policy_selector.get())->remove(policy_name);
+            auto * policy_selector = const_cast<StoragePolicySelector *>(shared->merge_tree_storage_policy_selector.get());
+            if (auto policy = policy_selector->tryGet(policy_name))
+            {
+                const auto policy_disks = policy->getDisks();
+                if (policy_disks.size() == 1 && policy_disks.front() == disk)
+                    policy_selector->remove(policy_name);
+            }
         }
 
         if (disk)
