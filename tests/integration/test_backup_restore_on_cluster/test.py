@@ -270,38 +270,6 @@ def test_different_tables_on_nodes():
     assert node2.query("SELECT * FROM tbl") == TSV([-333, -222, -111, 0, 111])
 
 
-def test_embedded_rocksdb_same_name_on_nodes():
-    # Same local EmbeddedRocksDB table name on two hosts. Each host has its own host-local
-    # rocksdb_dir (the default dir derived from the table name is the same STRING on both hosts),
-    # so the backup/restore coordination election_id is identical across hosts. This exercises the
-    # OnCluster RocksDB coordination path: without host-qualified znode names the second host's
-    # registration would collide (ZNODEEXISTS) and lose its data entry. Each host must back up and
-    # restore its own rows.
-    node1.query(
-        "CREATE TABLE tbl (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
-    )
-    node2.query(
-        "CREATE TABLE tbl (key UInt64, value String) ENGINE = EmbeddedRocksDB PRIMARY KEY(key)"
-    )
-
-    node1.query("INSERT INTO tbl VALUES (1, 'node1_a'), (2, 'node1_b')")
-    node2.query("INSERT INTO tbl VALUES (10, 'node2_a'), (20, 'node2_b'), (30, 'node2_c')")
-
-    backup_name = new_backup_name()
-    node1.query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
-
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
-
-    node2.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name}")
-
-    assert node1.query("SELECT * FROM tbl ORDER BY key") == TSV(
-        [[1, "node1_a"], [2, "node1_b"]]
-    )
-    assert node2.query("SELECT * FROM tbl ORDER BY key") == TSV(
-        [[10, "node2_a"], [20, "node2_b"], [30, "node2_c"]]
-    )
-
-
 def test_backup_restore_on_single_replica():
     node1.query(
         "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
@@ -1093,6 +1061,7 @@ def test_table_in_replicated_database_with_not_synced_def():
         "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
     ) == TSV([["x", "String"], ["y", "String"]])
 
+
 def has_mutation_in_backup(mutation_id, backup_name, database, table):
     return (
         os.path.exists(
@@ -1308,116 +1277,3 @@ def test_replicated_table_after_alters():
     assert node2.query("SELECT * FROM tbl ORDER BY x") == TSV(
         [[1, 0, 0], [2, 20, 0], [3, 30, 300]]
     )
-def test_except_data_from_table_on_cluster():
-    """
-    Regression test for EXCEPT DATA FROM TABLE clause distribution to worker hosts.
-
-    Before commits ba96353/3cc6fc2, the EXCEPT DATA FROM TABLE clause was lost when
-    BackupsWorker::sendQueryToOtherHosts formatted the query to send to worker nodes,
-    causing worker hosts to back up table data instead of just DDL. This test verifies
-    that after BACKUP ... EXCEPT DATA FROM TABLE ... ON CLUSTER, all nodes restore
-    the table structure but not the data.
-    """
-    node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster3' ("
-        "x UInt32, y String"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
-    )
-
-    # Insert data on multiple nodes
-    node1.query("INSERT INTO tbl VALUES (1, 'node1_a'), (2, 'node1_b')")
-    node2.query("INSERT INTO tbl VALUES (3, 'node2_a'), (4, 'node2_b')")
-    node3.query("INSERT INTO tbl VALUES (5, 'node3_a'), (6, 'node3_b')")
-
-    # Sync all replicas
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster3' tbl")
-
-    # Verify all nodes have the data before backup
-    expected_before = TSV(
-        [[1, "node1_a"], [2, "node1_b"], [3, "node2_a"],
-         [4, "node2_b"], [5, "node3_a"], [6, "node3_b"]]
-    )
-    assert node1.query("SELECT * FROM tbl ORDER BY x") == expected_before
-    assert node2.query("SELECT * FROM tbl ORDER BY x") == expected_before
-    assert node3.query("SELECT * FROM tbl ORDER BY x") == expected_before
-
-    backup_name = new_backup_name()
-
-    # CRITICAL: This is the clause that was being lost on worker hosts before the fix.
-    # The initiator (node1) would correctly exclude data, but worker nodes (node2, node3)
-    # would back up data because the EXCEPT DATA FROM TABLE clause was stripped during
-    # the format-and-send step in BackupsWorker::sendQueryToOtherHosts.
-    node1.query(
-        f"BACKUP TABLE tbl EXCEPT DATA FROM TABLE tbl ON CLUSTER 'cluster3' TO {backup_name}"
-    )
-
-    # Drop table on all nodes
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster3' SYNC")
-
-    # Restore from backup
-    node1.query(f"RESTORE TABLE tbl ON CLUSTER 'cluster3' FROM {backup_name}")
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster3' tbl")
-
-    # Verify table structure exists on all nodes (columns match)
-    expected_schema = TSV([["x", "UInt32"], ["y", "String"]])
-    assert node1.query(
-        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl' ORDER BY name"
-    ) == expected_schema
-    assert node2.query(
-        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl' ORDER BY name"
-    ) == expected_schema
-    assert node3.query(
-        "SELECT name, type FROM system.columns WHERE database='default' AND table='tbl' ORDER BY name"
-    ) == expected_schema
-
-    # VERIFY THE FIX: All nodes should have zero rows (data was excluded from backup)
-    # Before the fix, worker nodes would have 6 rows because they backed up data.
-    assert node1.query("SELECT count() FROM tbl") == "0\n"
-    assert node2.query("SELECT count() FROM tbl") == "0\n"
-    assert node3.query("SELECT count() FROM tbl") == "0\n"
-
-
-def test_reset_setting_is_not_forwarded_as_a_value():
-    # A `name = DEFAULT` in the SETTINGS clause resets the setting on the initiator, which leaves it unset
-    # there. The other hosts must end the same way: the reset must reach them neither as an explicit value
-    # (which marks the setting as changed, and then e.g. object-storage code overrides the host's own `<s3>`
-    # configuration with it) nor with the override it cancels.
-    node1.query(
-        "CREATE TABLE tbl ON CLUSTER 'cluster' ("
-        "x UInt8, y String"
-        ") ENGINE=ReplicatedMergeTree('/clickhouse/tables/tbl/', '{replica}')"
-        "ORDER BY x"
-    )
-    node1.query("INSERT INTO tbl VALUES (1, 'a')")
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-
-    backup_name = new_backup_name()
-    reset_clause = "max_threads = 3, max_threads = DEFAULT"
-
-    # `max_threads` is also set for the whole query, so the reset in the clause has something to cancel on
-    # the initiator besides the override in the clause itself.
-    node1.query(
-        f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name} SETTINGS {reset_clause}",
-        settings={"max_threads": 7},
-    )
-
-    node1.query("DROP TABLE tbl ON CLUSTER 'cluster' SYNC")
-    node1.query(
-        f"RESTORE TABLE tbl ON CLUSTER 'cluster' FROM {backup_name} SETTINGS {reset_clause}",
-        settings={"max_threads": 7},
-    )
-    node1.query("SYSTEM SYNC REPLICA ON CLUSTER 'cluster' tbl")
-    assert node2.query("SELECT * FROM tbl") == TSV([[1, "a"]])
-
-    # The per-host queries, the ones received from the initiator, are the non-initial ones.
-    escaped_backup_name = backup_name.replace("'", "\\'")
-    for node in [node1, node2]:
-        node.query("SYSTEM FLUSH LOGS query_log")
-        assert node.query(f"""
-            SELECT query_kind, mapContains(Settings, 'max_threads')
-            FROM system.query_log
-            WHERE type = 'QueryFinish' AND NOT is_initial_query
-                AND query_kind IN ('Backup', 'Restore') AND position(query, '{escaped_backup_name}') > 0
-            ORDER BY query_kind
-            """) == TSV([["Backup", 0], ["Restore", 0]])

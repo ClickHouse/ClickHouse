@@ -24,9 +24,8 @@ S3_URL="s3://my-bucket/my-key.csv"
 
 # Attaching a full definition into an Atomic database (the default) requires an explicit UUID. Each
 # one is derived from the test's unique name plus a per-table suffix: two tables may never share a
-# UUID, and concurrent copies of this test must not collide with each other. `sipHash128` rather
-# than `MD5`: `MD5` throws `SUPPORT_IS_DISABLED` in OpenSSL FIPS builds.
-attach_uuid() { ${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID(sipHash128('${CLICKHOUSE_TEST_UNIQUE_NAME}_$1'))"; }
+# UUID, and concurrent copies of this test must not collide with each other.
+attach_uuid() { ${CLICKHOUSE_CLIENT} -q "SELECT reinterpretAsUUID(MD5('${CLICKHOUSE_TEST_UNIQUE_NAME}_$1'))"; }
 
 # The denial assertions match the privilege sentence, not just the engine name: the client echoes the
 # failing query back, and that echo contains both the engine name and the word "grant" (it is in this

@@ -16,7 +16,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
-#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 #include <QueryPipeline/BlockIO.h>
@@ -294,7 +293,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = named_collection->getOrDefault<String>("update_field", ""),
                 .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
+                .is_local = isLocalAddress({host, port}, default_port),
                 .secure = secure,
             });
         }
@@ -320,7 +319,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                 .update_field = config.getString(settings_config_prefix + ".update_field", ""),
                 .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
                 .port = port,
-                .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
+                .is_local = isLocalAddress({host, port}, default_port),
                 .secure = secure,
             });
         }
@@ -346,11 +345,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");
 
-        /// A dictionary must not read itself - it would recurse. That can only happen when the source is
-        /// this very server, so the name comparison is meaningful only for a local source: a table on
-        /// another server that merely happens to share the dictionary's database and table name is a
-        /// different object, and reading it is exactly what the dictionary is for.
-        if (configuration->is_local && dictionary_name == configuration->table && dictionary_database == configuration->db)
+        if (dictionary_name == configuration->table && dictionary_database == configuration->db)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouseDictionarySource table cannot be dictionary table");
 
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
@@ -369,8 +364,8 @@ Example of settings:
 SOURCE(CLICKHOUSE(
     host 'example01-01-1'
     port 9000
-    user 'dict_reader'
-    password 'dict_reader_password'
+    user 'default'
+    password ''
     db 'default'
     table 'ids'
     where 'id=10'
@@ -387,8 +382,8 @@ SOURCE(CLICKHOUSE(
     <clickhouse>
         <host>example01-01-1</host>
         <port>9000</port>
-        <user>dict_reader</user>
-        <password>dict_reader_password</password>
+        <user>default</user>
+        <password></password>
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
@@ -420,12 +415,8 @@ Setting fields:
 <Note>
 The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 </Note>
-
-<Note>
-In ClickHouse Cloud, when a user other than `default` creates the dictionary, the source must specify both `user` and `password`, and `user` cannot be `default`. Otherwise `CREATE DICTIONARY` fails with a `BAD_ARGUMENTS` error. Use a dedicated user that has `SELECT` on the source table.
-</Note>
 )DOCS_MD",
-        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'user' password 'password' db 'db' table 'table'))",
+        .syntax = "SOURCE(CLICKHOUSE(host 'host' port 9000 user 'default' password '' db 'db' table 'table'))",
         .related = {"mysql", "postgresql"}});
 }
 

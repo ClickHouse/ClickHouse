@@ -20,8 +20,6 @@ protected:
 
 public:
     explicit ParserSelectQuery(bool implicit_select_ = false) : implicit_select(implicit_select_) {}
-
-    std::map<String, Documentation> getDocumentation() const override;
 };
 
 /// Parses the body of an ORDER BY clause (everything after the ORDER BY keyword itself):
