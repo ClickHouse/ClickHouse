@@ -5,6 +5,7 @@
 #include <Access/Common/AccessType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -158,10 +159,10 @@ ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextP
 {
     /// Otherwise `DESCRIBE` and the errors below would reveal the existence, the engine and the key of a table the user cannot see.
     context->checkAccess(AccessType::SHOW_TABLES, source_table_id);
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
@@ -213,7 +214,7 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     bool is_insert_query) const
 {
     auto columns = getActualTableStructure(context, is_insert_query);
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
 
     StorageID storage_id(getDatabaseName(), table_name);
     auto res = std::make_shared<StorageMergeTreeIndex>(

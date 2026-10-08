@@ -27,6 +27,7 @@ public:
                                                          IParser::Pos & pos,
                                                          Expected & expected,
                                                          bool enable_shorthand_syntax);
+    std::map<String, Documentation> getDocumentation() const override;
 
 protected:
     const char * getName() const override { return "SET query"; }

@@ -6,6 +6,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
@@ -44,21 +46,11 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
-/// Whether the definition is replayed (attach, DDL replay, Keeper recovery, Shared Catalog replay)
-/// rather than written by the user now. Refusing a replayed definition would block loading or retry forever.
-static bool isReplayedTableDefinition(
+bool isReplayedTableDefinition(
     LoadingStrictnessLevel mode, const ASTCreateQuery & query, const ContextPtr & local_context)
 {
-    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay
-        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-    return !isFreshTableDefinition(mode, query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay;
+    return !isFreshTableDefinition(mode, query.attach_short_syntax) || isSecondaryDDLReplay(local_context)
+        || local_context->isRecoveryFromStoredMetadata();
 }
 
 
@@ -289,7 +281,13 @@ StoragePtr StorageFactory::get(
 
     chassert(arguments.getContext() == arguments.getContext()->getGlobalContext());
 
-    auto res = storages.at(name).creator_fn(arguments);
+    /// The storage object and its metadata outlive the query, so route them to the table-lifetime arena instead
+    /// of fragmenting the per-CPU query arenas. Settled on query end, see `MemoryTracker::settleDriftOnQueryEnd`.
+    StoragePtr res;
+    {
+        ScopedJemallocThreadArena table_metadata_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        res = storages.at(name).creator_fn(arguments);
+    }
     if (!empty_engine_args.empty())
     {
         /// Storage creator modified empty arguments list, so we should modify the query

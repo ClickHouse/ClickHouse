@@ -63,6 +63,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace DB::Setting
@@ -102,6 +103,7 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 /// A token without a known expiration is reported to consumers as expiring this soon,
 /// so that they ask for a fresh one on the next request.
 static constexpr auto UNKNOWN_EXPIRATION_TOKEN_LIFETIME = std::chrono::minutes(1);
+static constexpr auto ONELAKE_DFS_HOST_SUFFIX = ".dfs.fabric.microsoft.com";
 
 DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
 {
@@ -117,6 +119,30 @@ DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
 
 namespace
 {
+
+/// The container (or bucket) and the object path of a location URI, which is all that
+/// identifies the object across the scheme and authority spellings the same storage has:
+/// ClickHouse writes `azure://container/path`, OneLake reports it back as
+/// `abfss://container@account.dfs.fabric.microsoft.com/path`.
+std::pair<std::string_view, std::string_view> splitLocationURI(std::string_view uri)
+{
+    const auto scheme_end = uri.find("://");
+    if (scheme_end != std::string_view::npos)
+        uri.remove_prefix(scheme_end + std::string_view("://").size());
+
+    const auto authority_end = uri.find('/');
+    auto authority = uri.substr(0, authority_end);
+    auto path = authority_end == std::string_view::npos ? std::string_view{} : uri.substr(authority_end + 1);
+
+    const auto account_start = authority.find('@');
+    if (account_start != std::string_view::npos)
+        authority = authority.substr(0, account_start);
+
+    while (!path.empty() && path.back() == '/')
+        path.remove_suffix(1);
+
+    return {authority, path};
+}
 
 std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
 {
@@ -525,6 +551,37 @@ void RestCatalog::applySettingsChangesToState(
         new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
         new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
     }
+}
+
+/// OneLake can report a namespace location without a scheme, as `<workspace>/<path>`. The workspace is the
+/// container, and the account is the first label of the catalog host (`onelake` for `onelake.table.fabric.microsoft.com`).
+std::optional<std::string> OneLakeCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    auto location = RestCatalog::getDefaultTableLocation(namespace_name, table_name);
+    if (!location || location->contains("://"))
+        return location;
+
+    std::string_view relative_location = *location;
+    while (relative_location.starts_with('/'))
+        relative_location.remove_prefix(1);
+
+    const auto container_end = relative_location.find('/');
+    if (container_end == std::string_view::npos)
+        return std::nullopt;
+
+    const auto catalog_host = Poco::URI(base_url.string()).getHost();
+    const auto account = catalog_host.substr(0, catalog_host.find('.'));
+    if (account.empty())
+        return std::nullopt;
+
+    return fmt::format(
+        "abfss://{}@{}{}/{}",
+        relative_location.substr(0, container_end),
+        account,
+        ONELAKE_DFS_HOST_SUFFIX,
+        relative_location.substr(container_end + 1));
 }
 
 DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
@@ -1752,7 +1809,7 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+String RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1798,9 +1855,10 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
         readJSONObjectPossiblyInvalid(response_str, *wb);
     else
         wb->ignoreAll();
+    return response_str;
 }
 
-void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
+void RestCatalog::createNamespaceIfNotExists(const String & namespace_name) const
 {
     const auto state_snapshot = state.get();
 
@@ -1821,16 +1879,18 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
+    /// The request body takes the namespace as a list of levels, unlike the URL form above.
+    /// No `location` property is sent. The catalog applies its warehouse default instead.
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     {
+        std::vector<String> levels;
+        /// TODO: a level that contains a dot cannot be expressed. The levels are joined with a dot
+        /// in `parseNamespaces`, so this split mirrors that join and `encodeNamespaceForURI`.
+        splitInto<'.'>(levels, namespace_name);
         Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
+        for (const auto & level : levels)
+            namespaces->add(level);
         request_body->set("namespace", namespaces);
-    }
-    {
-        Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
-        properties->set("location", location);
-        request_body->set("properties", properties);
     }
 
     try
@@ -1845,7 +1905,51 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     }
 }
 
-void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
+std::optional<std::string> RestCatalog::getNamespaceLocation(const std::string & namespace_name) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name);
+
+    String json_str;
+    try
+    {
+        auto buf = createReadBuffer(
+            *state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, /* headers */ {}, /* auth_headers */ std::nullopt);
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Namespace {} does not exist: {}", namespace_name, ex.displayText());
+            return std::nullopt;
+        }
+        throw;
+    }
+
+    Poco::JSON::Parser parser;
+    Poco::Dynamic::Var json = parser.parse(json_str);
+    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+
+    auto properties = object->getObject("properties");
+    if (!properties || properties->isNull("location"))
+        return std::nullopt;
+
+    return properties->getValue<String>("location");
+}
+
+std::optional<std::string> RestCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    auto namespace_location = getNamespaceLocation(namespace_name);
+    if (!namespace_location)
+        return std::nullopt;
+
+    return std::string(std::filesystem::path(*namespace_location) / table_name);
+}
+
+void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
@@ -1862,18 +1966,21 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
 
-    {
-        Poco::JSON::Object::Ptr write_order = new Poco::JSON::Object;
-        write_order->set("order-id", 0);
-        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
-        write_order->set("fields", fields);
-        request_body->set("write-order", write_order);
-    }
+    /// The local metadata serializes ORDER BY into sort-orders[0].
+    request_body->set("write-order", metadata_content->getArray("sort-orders")->get(0));
     request_body->set("stage-create", false);
     Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
 
     if (metadata_content->has("format-version"))
         properties->set("format-version", std::to_string(metadata_content->getValue<int>("format-version")));
+
+    /// Forward the table properties, such as the metadata compression codec.
+    if (metadata_content->has("properties"))
+    {
+        Poco::JSON::Object::Ptr table_properties = metadata_content->getObject("properties");
+        for (const auto & [key, value] : *table_properties)
+            properties->set(key, value);
+    }
 
     request_body->set("properties", properties);
 
@@ -1883,6 +1990,32 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     catch (const DB::HTTPException & ex)
     {
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT
+            && getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+        {
+            TableMetadata existing_table;
+            existing_table.withDataLakeSpecificProperties();
+            const bool exists = tryGetTableMetadata(namespace_name, table_name, existing_table);
+            const auto existing_properties = existing_table.getDataLakeSpecificProperties();
+            const std::string registered_metadata_path
+                = existing_properties ? existing_properties->iceberg_metadata_file_location : std::string{};
+
+            if (!exists || splitLocationURI(registered_metadata_path) != splitLocationURI(new_metadata_path))
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exists in the catalog and points at {}, not at the metadata file {} "
+                    "written for this table: {}",
+                    namespace_name, table_name,
+                    registered_metadata_path.empty() ? std::string("an unknown metadata file") : registered_metadata_path,
+                    new_metadata_path, ex.displayText());
+            }
+
+            LOG_DEBUG(
+                log, "Table {}.{} is already registered in the catalog with the metadata file {}: {}",
+                namespace_name, table_name, registered_metadata_path, ex.displayText());
+            return;
+        }
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
     }
 }
@@ -1967,6 +2100,125 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     return true;
 }
 
+Poco::JSON::Object::Ptr RestCatalog::removeSnapshots(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr base_metadata,
+    const std::vector<Int64> & snapshot_ids,
+    const std::vector<String> & ref_names) const
+{
+    const auto state_snapshot = state.get();
+    const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    {
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+
+        if (base_metadata->has("table-uuid"))
+        {
+            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+            requirement->set("type", "assert-table-uuid");
+            requirement->set("uuid", base_metadata->getValue<String>("table-uuid"));
+            requirements->add(requirement);
+        }
+
+        /// The snapshots to remove are chosen by the references: a concurrent commit that moves one, e.g. an insert
+        /// that advances `main` or a new tag on a snapshot being removed, must make the removal be decided again.
+        /// A metadata without `refs` has only `main`, at the current snapshot.
+        auto add_ref_requirement = [&](const String & ref_name, Int64 snapshot_id)
+        {
+            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+            requirement->set("type", "assert-ref-snapshot-id");
+            requirement->set("ref", ref_name);
+            requirement->set("snapshot-id", snapshot_id);
+            requirements->add(requirement);
+        };
+        if (base_metadata->has("refs"))
+        {
+            auto refs = base_metadata->getObject("refs");
+            for (const auto & ref_name : refs->getNames())
+                add_ref_requirement(ref_name, refs->getObject(ref_name)->getValue<Int64>("snapshot-id"));
+        }
+        else if (base_metadata->has("current-snapshot-id"))
+        {
+            Int64 current_snapshot_id = base_metadata->getValue<Int64>("current-snapshot-id");
+            if (current_snapshot_id >= 0)
+                add_ref_requirement("main", current_snapshot_id);
+        }
+
+        request_body->set("requirements", requirements);
+    }
+
+    {
+        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+
+        for (const auto & ref_name : ref_names)
+        {
+            Poco::JSON::Object::Ptr remove_ref = new Poco::JSON::Object;
+            remove_ref->set("action", "remove-snapshot-ref");
+            remove_ref->set("ref-name", ref_name);
+            updates->add(remove_ref);
+        }
+
+        /// One snapshot per update, as the Java client does: catalogs built on older Iceberg versions reject
+        /// `remove-snapshots` with more than one id.
+        for (Int64 snapshot_id : snapshot_ids)
+        {
+            Poco::JSON::Object::Ptr remove_snapshots = new Poco::JSON::Object;
+            remove_snapshots->set("action", "remove-snapshots");
+            Poco::JSON::Array::Ptr ids = new Poco::JSON::Array;
+            ids->add(snapshot_id);
+            remove_snapshots->set("snapshot-ids", ids);
+            updates->add(remove_snapshots);
+        }
+
+        request_body->set("updates", updates);
+    }
+
+    String response;
+    try
+    {
+        response = sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+    }
+    catch (const DB::HTTPException & ex)
+    {
+        /// 409 Conflict: a requirement failed, the caller retries after re-reading the latest metadata.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(log, "removeSnapshots conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            return nullptr;
+        }
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Iceberg catalog commit of the snapshot removal failed for table {}.{}: {}",
+            namespace_name,
+            table_name,
+            ex.displayText());
+    }
+
+    /// `CommitTableResponse`: the metadata the catalog has committed. The caller needs it to tell the files
+    /// still referenced by the table from the files that only the removed snapshots referenced.
+    Poco::JSON::Parser parser;
+    auto response_object = parser.parse(response).extract<Poco::JSON::Object::Ptr>();
+    if (!response_object || !response_object->has("metadata"))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Iceberg catalog response to the snapshot removal for table {}.{} has no metadata",
+            namespace_name,
+            table_name);
+    return response_object->getObject("metadata");
+}
+
 bool RestCatalog::updateSchema(
     const String & namespace_name,
     const String & table_name,
@@ -2033,7 +2285,9 @@ bool RestCatalog::updateSchema(
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
 {
     const auto state_snapshot = state.get();
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+    const std::string endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string()
+        + "?purgeRequested=False";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
