@@ -377,6 +377,18 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     return read_result;
 }
 
+Block MergeTreeReadersChain::getPreviousStepsColumns(const Block & previous_header, const ReadResult & result)
+{
+    Block columns;
+    if (!previous_header.empty())
+        columns = previous_header.cloneWithColumns(result.columns);
+
+    for (const auto & col : result.additional_columns)
+        columns.insert(col);
+
+    return columns;
+}
+
 void MergeTreeReadersChain::executeActionsBeforePrewhere(
     ReadResult & result,
     Columns & read_columns,
@@ -477,7 +489,11 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     /// columns; keep them out of the skip set so the conversion still runs.
     if (!prewhere_info || prewhere_info->perform_alter_conversions)
     {
-        merge_tree_reader->performRequiredConversions(read_columns);
+        Block previous_steps_columns;
+        if (merge_tree_reader->convertsNullsToDefaults())
+            previous_steps_columns = getPreviousStepsColumns(previous_header, result);
+
+        merge_tree_reader->performRequiredConversions(read_columns, &previous_steps_columns);
     }
     else
     {
@@ -527,13 +543,7 @@ void MergeTreeReadersChain::evaluateMissingDefaults(
     const Block & previous_header,
     Columns & columns) const
 {
-    Block additional_columns;
-    if (!previous_header.empty())
-        additional_columns = previous_header.cloneWithColumns(result.columns);
-
-    for (const auto & col : result.additional_columns)
-        additional_columns.insert(col);
-
+    Block additional_columns = getPreviousStepsColumns(previous_header, result);
     addDummyColumnWithRowCount(additional_columns, result.num_rows);
     range_reader.getReader()->evaluateMissingDefaults(additional_columns, columns);
 }

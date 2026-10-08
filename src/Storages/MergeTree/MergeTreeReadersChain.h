@@ -69,6 +69,9 @@ private:
         const Block & previous_header,
         size_t num_read_rows) const;
 
+    /// The columns of the rows being read produced by the previous steps of the chain.
+    static Block getPreviousStepsColumns(const Block & previous_header, const ReadResult & result);
+
     /// Evaluates default expressions for columns that are absent in part.
     void evaluateMissingDefaults(
         MergeTreeRangeReader & range_reader,
