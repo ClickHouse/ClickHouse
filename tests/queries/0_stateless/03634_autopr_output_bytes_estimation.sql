@@ -69,7 +69,7 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
 SYSTEM FLUSH LOGS query_log;
 
--- Check the output estimate against what the replicas actually send (ratio within 3x).
+-- Check the output estimate against what the replicas actually send (ratio within 2.5x).
 -- The expected values are `NetworkReceiveBytes` on the initiator, measured per query with
 -- `parallel_replicas_local_plan = 0`, `prefer_localhost_replica = 0` and compression forced on every
 -- replica of the cluster. Forcing it is what makes the measurement meaningful: every replica address of
@@ -96,11 +96,13 @@ SYSTEM FLUSH LOGS query_log;
 -- past the slack. (Suppressing the progress and profile-event packets with `send_profile_events = 0` and
 -- a large `interactive_delay` only takes 1-6 KB off those transfers, and nothing off the large ones.)
 --
--- Both bounds are set off the estimate's measured spread over 35 runs. The widest difference the slack
--- has to absorb is 51922 bytes on `query_22`, hence 64 KB. The widest ratio outside the slack is 2.48x on
--- `query_10`, whose estimate swings between 145883 and 204903 because `uniqExact` states are sampled from
--- the hash table, hence 3x rather than 2.5x - at 2.5x that query alone would flake. The rest sit well
--- inside: `query_28` 1.08x, `query_43` 1.18x, `query_34` 1.69x, `query_15` 1.82x and `query_12` 1.84x.
+-- Both bounds are set off the estimate's measured spread. The widest difference the slack has to absorb
+-- is 49676 bytes on `query_23`, hence 64 KB. Outside the slack the widest ratio is 2.02x on `query_12`,
+-- which varies with the thread count - with one thread the sample reaches a block's worth of rows, with
+-- more the bucket Top-K conversion hands over a bounded sample of each bucket and it does not - hence
+-- 2.5x. The rest sit well inside: `query_28` 1.02x, `query_43` 1.12x, `query_34` 1.17x, `query_15` 1.52x
+-- and `query_10` 1.82x, and each repeats within 2%.
+--
 -- Aggregate states are the residual: they are sampled from the hash table and so priced in hash-table
 -- order, while the replicas send them in key order.
 WITH
@@ -117,5 +119,5 @@ FROM
       ORDER BY event_time_microseconds
     )
 )
-WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 3
+WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 2.5
   AND (greatest(res.2, res.3) - least(res.2, res.3)) > 65536;
