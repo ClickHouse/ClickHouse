@@ -198,9 +198,16 @@ void StorageExecutable::readImpl(
     QueryPlanResourceHolder resources;
     inputs.reserve(input_queries.size());
 
+    /// The input queries are planned in the same process as the plan that reads this table. Keep the
+    /// "this fragment stays in-process" fact of a local fragment of a distributed query, like
+    /// `StorageView` does for the view body, so that the subqueries of the input queries keep the
+    /// query result cache reads that are safe in this process (see `shouldReadFromQueryCacheForSubquery`).
+    SelectQueryOptions input_query_options;
+    input_query_options.inside_local_plan_for_distributed_query = query_info.inside_local_plan_for_distributed_query;
+
     for (auto & input_query : input_queries)
     {
-        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(input_query, context, {}).buildQueryPipeline();
+        QueryPipelineBuilder builder = InterpreterSelectQueryAnalyzer(input_query, context, input_query_options).buildQueryPipeline();
         inputs.emplace_back(QueryPipelineBuilder::getPipe(std::move(builder), resources));
     }
 
