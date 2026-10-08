@@ -10,8 +10,9 @@ active	Bool
 radius	Float32
 generation	UInt32
 generation_size	UInt32
+split_from	UInt32
 Centroids dictionary
-['level','cid']	['UInt8','UInt32']	['parent','vec','active','generation','generation_size']	['UInt32','Array(Float32)','Bool','UInt32','UInt32']
+['level','cid']	['UInt8','UInt32']	['parent','vec','active','generation','generation_size','split_from']	['UInt32','Array(Float32)','Bool','UInt32','UInt32','UInt32']
 Objects keep their names after RENAME
 2
 Objects are dropped with the table

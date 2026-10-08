@@ -28,6 +28,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <utility>
 
 /// assignCentroid(vec, centroids) -> UInt32 cluster id: the index of the nearest (L2) centroid to vec.
@@ -512,6 +513,15 @@ private:
         const bool has_levels = std::ranges::find(keys, "level") != keys.end() || structure.hasAttribute("level");
         if (has_levels)
             columns.push_back("level");
+        /// Retired centroids (e.g. split clusters of an IVF index) still hold their rows, but get no new ones.
+        const bool has_active = structure.hasAttribute("active");
+        if (has_active)
+            columns.push_back("active");
+        /// A centroid which another one was split from is retired as well.
+        const bool has_split_from = structure.hasAttribute("split_from");
+        if (has_split_from)
+            columns.push_back("split_from");
+        std::unordered_set<UInt64> split_centroids;
         MapWithMemoryTracking<UInt64, std::pair<UInt64, UInt64>> generations; /// generation -> (rows, expected rows)
 
         /// Full-read the dictionary (same mechanism the dictionary() table function uses).
@@ -546,9 +556,17 @@ private:
             const auto & vec_vals = assert_cast<const ColumnFloat32 &>(vec_arr.getData()).getData();
             const auto & vec_off = vec_arr.getOffsets();
             const IColumn * level_col = has_levels ? block.getByName("level").column.get() : nullptr;
+            const IColumn * active_col = has_active ? block.getByName("active").column.get() : nullptr;
+            if (has_split_from)
+            {
+                const auto & split_from_col = block.getByName("split_from").column;
+                for (size_t row = 0; row < split_from_col->size(); ++row)
+                    if (UInt64 split_from = split_from_col->getUInt(row))
+                        split_centroids.insert(split_from);
+            }
             for (size_t row = 0; row < cid_col->size(); ++row)
             {
-                if (level_col && level_col->getUInt(row) != 0)
+                if ((level_col && level_col->getUInt(row) != 0) || (active_col && !active_col->getBool(row)))
                     continue;
                 size_t start = row ? vec_off[row - 1] : 0;
                 size_t length = vec_off[row] - start;
@@ -573,6 +591,9 @@ private:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "assignCentroid: dictionary {} has {} centroids of generation {}, expected {}, the centroids are incomplete",
                     dict_name, counts.first, generation, counts.second);
+
+        if (!split_centroids.empty())
+            std::erase_if(centroids, [&](const auto & centroid) { return split_centroids.contains(centroid.first); });
 
         if (centroids.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} produced no centroids", dict_name);

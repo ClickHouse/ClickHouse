@@ -27,6 +27,8 @@ struct IvfIndexArguments
     Array clustering_parameters;
     /// Option to enable advanced vector math
     bool cluster_statistics = false;
+    /// If not 0, clusters with more than twice this number of rows are split in the background into clusters of about this size.
+    UInt64 target_cluster_size = 0;
 };
 
 /// Parses and checks the arguments of an IVF index (not the specific parameters of the clustering function).
@@ -111,10 +113,13 @@ void checkVectorSimilarityIvfIndexForTable(
     const String & current_database,
     ContextPtr context);
 
-/// Internal objects of an IVF table : the centroids table (level, cid, parent, vec, active, radius, generation, generation_size)
-/// and a dictionary over it. Level 0 holds the leaves; each write (training, split) is a generation with its expected size.
+/// Internal objects of an IVF table : the centroids table (level, cid, parent, vec, active, radius, generation, generation_size,
+/// split_from) and a dictionary over it. Level 0 holds the leaves; each write (training, split) is a generation with its expected
+/// size. A leaf is retired if it is not active or another leaf has it as split_from.
 StorageID getVectorSimilarityIvfCentroidsTableID(const StorageID & table_id, const String & index_name);
 StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id, const String & index_name);
+/// Starts (once per server) the background task which splits overgrown clusters of IVF indexes.
+void startVectorSimilarityIvfMaintenance();
 
 /// If the name refers to a table with an IVF index or to the centroids dictionary of an IVF index, returns the qualified name
 /// of the dictionary and the table. The dictionary is found through the table UUID in its name, so it does not depend on the

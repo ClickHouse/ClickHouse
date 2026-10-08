@@ -26,6 +26,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/executeQuery.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIndexDeclaration.h>
@@ -76,6 +80,7 @@ constexpr size_t NUM_POSITIONAL_ARGUMENTS = 3;
 constexpr auto ARG_SAMPLES = "samples";
 constexpr auto ARG_CLUSTERING = "clustering";
 constexpr auto ARG_CLUSTER_STATISTICS = "cluster_statistics";
+constexpr auto ARG_TARGET_CLUSTER_SIZE = "target_cluster_size";
 
 const std::set<String> ivf_distance_functions = {"L2Distance", "cosineDistance"};
 
@@ -164,6 +169,7 @@ IvfIndexArguments parseVectorSimilarityIvfIndexArguments(const ASTPtr & argument
     bool has_samples = false;
     bool has_clustering = false;
     bool has_cluster_statistics = false;
+    bool has_target_cluster_size = false;
     for (size_t i = NUM_POSITIONAL_ARGUMENTS; i < children.size(); ++i)
     {
         const auto * equals = children[i]->as<ASTFunction>();
@@ -200,10 +206,20 @@ IvfIndexArguments parseVectorSimilarityIvfIndexArguments(const ASTPtr & argument
             result.cluster_statistics = literal->value.safeGet<UInt64>() == 1;
             has_cluster_statistics = true;
         }
+        else if (key == ARG_TARGET_CLUSTER_SIZE)
+        {
+            if (has_target_cluster_size)
+                throw Exception(ErrorCodes::INCORRECT_QUERY, "Argument '{}' of IVF vector similarity index is specified more than once", key);
+            const auto * literal = value->as<ASTLiteral>();
+            if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.safeGet<UInt64>() == 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Argument '{}' of IVF vector similarity index must be a positive integer", key);
+            result.target_cluster_size = literal->value.safeGet<UInt64>();
+            has_target_cluster_size = true;
+        }
         else
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Unknown argument '{}' of IVF vector similarity index. Supported named arguments are: {}, {}, {}",
-                key, ARG_SAMPLES, ARG_CLUSTERING, ARG_CLUSTER_STATISTICS);
+                "Unknown argument '{}' of IVF vector similarity index. Supported named arguments are: {}, {}, {}, {}",
+                key, ARG_SAMPLES, ARG_CLUSTERING, ARG_CLUSTER_STATISTICS, ARG_TARGET_CLUSTER_SIZE);
     }
 
     if (!has_samples)
@@ -368,6 +384,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarityIvf::createIndexConditi
 
 MergeTreeIndexPtr vectorSimilarityIvfIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
+    startVectorSimilarityIvfMaintenance();
     return std::make_shared<MergeTreeIndexVectorSimilarityIvf>(
         std::move(metadata_snapshot), index, parseVectorSimilarityIvfIndexArguments(index.arguments));
 }
@@ -560,6 +577,10 @@ void executeInternalQuery(const String & query, ContextPtr context)
     auto query_context = Context::createCopy(context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId({});
+    /// The thread runs the query in a thread group of its query context, since parts of the execution find the query
+    /// context through the thread (e.g. runtime filters of joins).
+    auto thread_group = ThreadGroup::createForQuery(query_context);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY, /*allow_existing_group=*/ true);
     auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
     executeTrivialBlockIO(io, query_context);
 }
@@ -670,17 +691,24 @@ void createVectorSimilarityIvfInnerObjects(
         executeInternalQuery(fmt::format(
             "CREATE TABLE {} "
             "(level UInt8, cid UInt32, parent UInt32, vec Array(Float32), active Bool, radius Float32, "
-            "generation UInt32, generation_size UInt32{}) "
+            "generation UInt32, generation_size UInt32, split_from UInt32{}) "
             "ENGINE = {} PARTITION BY level ORDER BY (level, parent, cid) SETTINGS index_granularity = 256",
             centroids_table_id.getFullTableName(), hnsw_index, centroids_engine), internal_context);
 
+        /// Writes of the centroids reload the dictionary explicitly. In addition, every minute or two the dictionary checks a
+        /// cheap summary of the table and reloads only if it changed: this catches up after a failed reload and on other replicas.
+        const String invalidate_query = fmt::format(
+            "SELECT max(generation), count(), countIf(active) FROM {}", centroids_table_id.getFullTableName());
         executeInternalQuery(fmt::format(
             "CREATE DICTIONARY {} "
-            "(level UInt8, cid UInt32, parent UInt32, vec Array(Float32), active Bool, generation UInt32, generation_size UInt32) "
+            "(level UInt8, cid UInt32, parent UInt32, vec Array(Float32), active Bool, generation UInt32, generation_size UInt32, "
+            "split_from UInt32) "
             "PRIMARY KEY level, cid "
-            "SOURCE(CLICKHOUSE(DB {} TABLE {})) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(0)",
+            "SOURCE(CLICKHOUSE(DB {} TABLE {} INVALIDATE_QUERY {})) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(MIN 60 MAX 120)",
             centroids_dictionary_id.getFullTableName(),
-            quoteString(centroids_table_id.getDatabaseName()), quoteString(centroids_table_id.getTableName())), internal_context);
+            quoteString(centroids_table_id.getDatabaseName()), quoteString(centroids_table_id.getTableName()),
+            quoteString(invalidate_query)), internal_context);
+
     }
 }
 
@@ -855,6 +883,206 @@ bool rewriteVectorSimilarityIvfSelfReferences(const StorageID & table_id, const 
     for (const auto & [name, expression] : rewritten)
         columns.modify(name, [&](ColumnDescription & description) { description.default_desc.expression = expression; });
     return !rewritten.empty();
+}
+
+namespace
+{
+
+/// A cluster is split when it has more than this many times the target cluster size of its index, into round(rows / target)
+/// children, at least 2 and at most IVF_SPLIT_MAX_CHILDREN; a cluster much larger than that is split again in later rounds.
+constexpr UInt64 IVF_SPLIT_FACTOR = 2;
+constexpr UInt64 IVF_SPLIT_MAX_CHILDREN = 16;
+/// At most this many clusters are split per round, all in one generation.
+constexpr UInt64 IVF_SPLITS_PER_ROUND = 64;
+/// The children of a cluster are trained on a random sample of at most this many of its rows per child, which bounds the
+/// memory of a split independently of the clustering function.
+constexpr UInt64 IVF_SPLIT_SAMPLE_ROWS_PER_CHILD = 10000;
+
+/// Runs an internal query and returns its result as one block (for small results).
+Block executeInternalSelect(const String & query, ContextPtr context)
+{
+    auto query_context = Context::createCopy(context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId({});
+    auto thread_group = ThreadGroup::createForQuery(query_context);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY, /*allow_existing_group=*/ true);
+    auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
+    PullingPipelineExecutor executor(io.pipeline);
+    Blocks blocks;
+    Block block;
+    while (executor.pull(block))
+        if (block.rows() != 0)
+            blocks.push_back(std::move(block));
+    io.onFinish();
+    return blocks.empty() ? Block{} : concatenateBlocks(blocks);
+}
+
+/// Splits the active clusters of an IVF index with more than IVF_SPLIT_FACTOR times its target cluster size (at most
+/// IVF_SPLITS_PER_ROUND, the largest first): trains round(rows / target) centroids for each on a sample of its rows, written as
+/// one new generation with split_from = the cluster, which retires the cluster, and reloads the dictionary. All children are
+/// written by one insert, so a round of splits happens completely or not at all. The rows of a retired cluster keep its id and
+/// are still found by the search, which ranks retired clusters too; new rows are assigned to the active ones.
+void trySplitLargeClusters(const StorageID & table_id, const StorageInMemoryMetadata & metadata, const IndexDescription & index, ContextPtr context)
+{
+    const IvfIndexArguments arguments = parseVectorSimilarityIvfIndexArguments(index.arguments);
+    if (arguments.target_cluster_size == 0)
+        return;
+
+    const StorageID centroids_table_id = getVectorSimilarityIvfCentroidsTableID(table_id, index.name);
+    if (!DatabaseCatalog::instance().isTableExist(centroids_table_id, context))
+        return;
+    const String centroids = centroids_table_id.getFullTableName();
+    const String table = table_id.getFullTableName();
+
+    /// The rows per cluster are counted from the table itself, so the counts are exact (deletes and partition operations
+    /// included). Only the cluster id column is read, which is sorted and therefore compresses very well. A leaf is retired if
+    /// it is not active or another leaf was split from it.
+    const String cluster_id_column = backQuoteIfNeed(index.column_names[1]);
+    const Block large = executeInternalSelect(fmt::format(
+        "WITH active_leaves AS (SELECT cid, parent FROM {0} WHERE level = 0 AND active "
+        "AND cid NOT IN (SELECT split_from FROM {0} WHERE split_from != 0)) "
+        "SELECT s.cid, s.n, c.parent "
+        "FROM (SELECT {2} AS cid, count() AS n FROM {1} GROUP BY cid) AS s "
+        "INNER JOIN active_leaves AS c ON s.cid = c.cid "
+        "WHERE s.n > {3} "
+        "ORDER BY s.n DESC, s.cid LIMIT {4}",
+        centroids, table, cluster_id_column, IVF_SPLIT_FACTOR * arguments.target_cluster_size, IVF_SPLITS_PER_ROUND), context);
+    if (large.rows() == 0)
+        return;
+
+    /// The number of children differs between clusters, while the number of clusters is a parameter of the clustering function,
+    /// so the clusters are trained in one subquery per number of children.
+    struct Split
+    {
+        Strings clusters;
+        Strings sample_rates;
+    };
+    std::map<UInt64, Split> splits_by_children;
+    Strings all_clusters;
+    Strings all_parents;
+    for (size_t row = 0; row < large.rows(); ++row)
+    {
+        const UInt64 cluster = large.getByPosition(0).column->getUInt(row);
+        const UInt64 rows = large.getByPosition(1).column->getUInt(row);
+        const UInt64 children = std::clamp<UInt64>(
+            static_cast<UInt64>(std::llround(static_cast<Float64>(rows) / static_cast<Float64>(arguments.target_cluster_size))),
+            2, IVF_SPLIT_MAX_CHILDREN);
+        auto & split = splits_by_children[children];
+        split.clusters.push_back(toString(cluster));
+        split.sample_rates.push_back(toString(std::min(1.0, static_cast<Float64>(IVF_SPLIT_SAMPLE_ROWS_PER_CHILD * children) / static_cast<Float64>(rows))));
+        all_clusters.push_back(toString(cluster));
+        all_parents.push_back(toString(large.getByPosition(2).column->getUInt(row)));
+    }
+
+    const String & vector_column = index.column_names[0];
+    const auto vector_type = metadata.getColumns().getPhysical(vector_column).type;
+    Strings subqueries;
+    for (const auto & [children, split] : splits_by_children)
+    {
+        /// The clustering function of the index, with the number of children as the number of clusters. Only plain centroids.
+        Array parameters = arguments.clustering_parameters;
+        parameters[0] = children;
+        AggregateFunctionProperties properties;
+        const auto clustering = AggregateFunctionFactory::instance().get(
+            arguments.clustering_function, NullsAction::EMPTY, {vector_type}, parameters, properties);
+        if (checkClusteringResultType(clustering->getResultType(), arguments.clustering_function, index.name).is_tree)
+            return;
+        Strings parameter_strings;
+        for (const auto & parameter : parameters)
+            parameter_strings.push_back(applyVisitor(FieldVisitorToString(), parameter));
+
+        /// Clusters whose sample does not give the centroids (e.g. identical vectors) are skipped.
+        const String clusters = fmt::format("[{}]", fmt::join(split.clusters, ", "));
+        subqueries.push_back(fmt::format(
+            "SELECT {0} AS cluster, {1}({2})({3}) AS result FROM {4} "
+            "WHERE {0} IN {5} AND rand() / 4294967295. < transform({0}, {5}, [{6}], 0.) GROUP BY cluster "
+            "HAVING length(result) = {7} AND arrayAll(c -> length(c) = {8}, result)",
+            cluster_id_column, backQuoteIfNeed(arguments.clustering_function), fmt::join(parameter_strings, ", "),
+            backQuoteIfNeed(vector_column), table, clusters, fmt::join(split.sample_rates, ", "), children, arguments.dimensions));
+    }
+
+    auto log = getLogger("VectorSimilarityIvfMaintenance");
+    LOG_INFO(log, "Splitting clusters [{}] of IVF index {} of table {} (target size {})",
+        fmt::join(all_clusters, ", "), index.name, table_id.getNameForLogs(), arguments.target_cluster_size);
+
+    /// One insert writes all children as one generation, whose size is the number of rows actually written.
+    const String centroid = arguments.distance_function == "cosineDistance" ? "L2Normalize(centroid)" : "centroid";
+    executeInternalQuery(fmt::format(
+        "INSERT INTO {0} (level, cid, parent, vec, active, radius, generation, generation_size, split_from) "
+        "SELECT 0, toUInt32((SELECT max(cid) FROM {0}) + row_number() OVER (ORDER BY cluster, position)), "
+        "transform(cluster, [{1}], [{2}], 0), {3}, true, 0, (SELECT max(generation) FROM {0}) + 1, count() OVER (), cluster "
+        "FROM ({4}) ARRAY JOIN result AS centroid, arrayEnumerate(result) AS position",
+        centroids, fmt::join(all_clusters, ", "), fmt::join(all_parents, ", "), centroid, fmt::join(subqueries, " UNION ALL ")),
+        context);
+
+    executeInternalQuery(fmt::format("SYSTEM RELOAD DICTIONARY {}",
+        getVectorSimilarityIvfCentroidsDictionaryID(table_id, index.name).getFullTableName()), context);
+
+    LOG_INFO(log, "Split clusters [{}] of IVF index {} of table {}", fmt::join(all_clusters, ", "), index.name, table_id.getNameForLogs());
+}
+
+void runVectorSimilarityIvfMaintenance(ContextPtr global_context)
+{
+    auto context = Context::createCopy(global_context);
+    auto thread_group = ThreadGroup::createForQuery(context);
+    ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
+
+    for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    {
+        for (auto iterator = database->getTablesIterator(context, {}, /*skip_not_loaded=*/ true); iterator->isValid(); iterator->next())
+        {
+            const auto table = iterator->table();
+            if (!castStorage<MergeTreeData>(table, DeferredTable::Skip))
+                continue;
+            const auto metadata = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            for (const auto & index : metadata->getSecondaryIndices())
+            {
+                if (!isVectorSimilarityIvfIndex(index))
+                    continue;
+                try
+                {
+                    trySplitLargeClusters(table->getStorageID(), *metadata, index, context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("VectorSimilarityIvfMaintenance"),
+                        fmt::format("Failed to maintain IVF index {} of table {}", index.name, table->getStorageID().getNameForLogs()));
+                }
+            }
+        }
+    }
+}
+
+}
+
+void startVectorSimilarityIvfMaintenance()
+{
+    static std::once_flag started;
+    std::call_once(started, []
+    {
+        auto global_context = Context::getGlobalContextInstance();
+        if (!global_context || global_context->getApplicationType() != Context::ApplicationType::SERVER)
+            return;
+
+        const UInt64 interval_ms = global_context->getConfigRef().getUInt64("ivf_maintenance_interval_ms", 3600000);
+        /// Never destroyed: the task lives as long as the schedule pool of the server.
+        auto * task = new BackgroundSchedulePoolTaskHolder; /// NOLINT
+        *task = global_context->getSchedulePool()->createTask(StorageID::createEmpty(), "VectorSimilarityIvfMaintenance",
+            [task, interval_ms, global_context]
+            {
+                try
+                {
+                    runVectorSimilarityIvfMaintenance(global_context);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("VectorSimilarityIvfMaintenance"));
+                }
+                (*task)->scheduleAfter(interval_ms);
+            });
+        (*task)->activate();
+        (*task)->scheduleAfter(interval_ms);
+    });
 }
 
 }

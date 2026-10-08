@@ -27,6 +27,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageProxy.h>
 
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/typeid_cast.h>
 
 
@@ -300,6 +302,9 @@ public:
         subquery_node->setIsSubquery(false);
         Array cluster_ids;
         {
+            /// Executed in a thread group of its own query context, which parts of the execution find through the thread.
+            auto thread_group = ThreadGroup::createForQuery(internal_context);
+            ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY, /*allow_existing_group=*/ true);
             auto io = executeQuery(subquery_node->toAST()->formatWithSecretsOneLine(), internal_context, QueryFlags{.internal = true}).second;
             PullingPipelineExecutor executor(io.pipeline);
             Block block;
