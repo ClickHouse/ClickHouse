@@ -46,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "GRANT SELECT(k) ON $CLICKHOUSE_DATABASE.join_t TO $user; 
 
 echo "-- a grant on one column makes the table visible, and the column-level check applies as before"
 run_as_user "SELECT joinGet('$CLICKHOUSE_DATABASE.join_t', 'v', 1::UInt64)"
-run_as_user "SELECT k FROM mergeTreeIndex('$CLICKHOUSE_DATABASE', 'mt')"
+run_as_user "SELECT DISTINCT k FROM mergeTreeIndex('$CLICKHOUSE_DATABASE', 'mt')"
 run_as_user "SELECT \`secret.mark\` FROM mergeTreeIndex('$CLICKHOUSE_DATABASE', 'mt', with_marks = true)"
 
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(v) ON $CLICKHOUSE_DATABASE.join_t TO $user;"
