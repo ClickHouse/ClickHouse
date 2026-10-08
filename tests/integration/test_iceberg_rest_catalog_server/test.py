@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 import requests
+import urllib3
 
 from helpers.cluster import ClickHouseCluster
 
@@ -13,7 +14,13 @@ cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/iceberg_rest_catalog.xml"],
+    main_configs=[
+        "configs/iceberg_rest_catalog.xml",
+        "configs/ssl_conf.xml",
+        "configs/server.crt",
+        "configs/server.key",
+        "configs/dhparam.pem",
+    ],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
     stay_alive=True,
@@ -31,6 +38,7 @@ node_aux = cluster.add_instance(
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
+CATALOG_SECURE_PORT = 8183
 KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
 FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
 
@@ -452,3 +460,24 @@ def test_auxiliary_keeper(started_cluster):
     zk = get_keeper()
     assert zk.exists(f"/aux_root{KEEPER_ROOT}/namespaces/aux_ns")
     assert not zk.exists(f"{KEEPER_ROOT}/namespaces/aux_ns")
+
+
+def test_secure_port(started_cluster):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    path = "/v1/config?warehouse=my_warehouse"
+    secure_url = f"https://{node.ip_address}:{CATALOG_SECURE_PORT}{path}"
+
+    response = requests.get(secure_url, auth=DEFAULT_AUTH, verify=False)
+    assert response.status_code == 200
+    assert response.json() == catalog_request("GET", path).json()
+
+    # Authentication runs on the TLS listener too.
+    response = requests.get(secure_url, auth=("default", "wrong"), verify=False)
+    assert response.status_code == 401
+    assert_error_shape(response, "NotAuthorizedException")
+
+    # Plain HTTP to the TLS port is refused.
+    with pytest.raises(requests.exceptions.ConnectionError):
+        requests.get(
+            f"http://{node.ip_address}:{CATALOG_SECURE_PORT}{path}", auth=DEFAULT_AUTH
+        )
