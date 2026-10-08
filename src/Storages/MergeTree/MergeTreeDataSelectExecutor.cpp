@@ -1138,9 +1138,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     parts_with_ranges.size(), std::vector<MergeTreeIndexBulkGranulesMinMax::MinMaxGranule>());
 
     /// Perform top-K optimization during index analysis itself?
+    bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering && !top_k_filter_info->where_clause;
     /// TODO(unique-key): support top-k filtering by skip index.
-    const bool perform_top_k_optimization = top_k_filter_info && skip_indexes.skip_index_for_top_k_filtering
-        && !top_k_filter_info->where_clause && !metadata_snapshot->hasUniqueKey();
+    perform_top_k_optimization &= !metadata_snapshot->hasUniqueKey();
     const bool top_k_handle_ties = perform_top_k_optimization && (top_k_filter_info->num_sort_columns > 1 || skip_indexes.skip_index_for_top_k_filtering->index.granularity > 1);
 
     size_t num_threads = std::min<size_t>(num_streams, parts_with_ranges.size());
