@@ -2103,6 +2103,11 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
     if (!hasIndexForMapElementValue(index_column_node))
         return false;
 
+    /// The plan applies the index tokenizer and postprocessor to these only when the index takes them.
+    const auto function_name = function_node.getFunctionName();
+    if (function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase")
+        return true;
+
     /// A map element reads the value type's default for a key the map does not hold, while the index
     /// stores terms only for the elements it does hold.
     const auto * function_dag_node = function_node.getDAGNode();
