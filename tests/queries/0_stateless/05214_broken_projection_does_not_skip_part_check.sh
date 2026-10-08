@@ -36,12 +36,17 @@ TABLES="
     wide_dynamic_no_substreams_no_checksums
     wide_torn_dynamic_no_substreams_no_checksums
     wide_missing_dynamic_no_substreams_no_checksums
+    wide_empty_checksums
+    wide_torn_first_column_empty_checksums
+    wide_missing_second_column_empty_checksums
+    compact_torn_empty_checksums
+    wide_missing_dynamic_no_substreams_empty_checksums
 "
 
 table_settings()
 {
     case "$1" in
-        wide_no_checksums) echo "${WIDE}" ;;
+        wide_no_checksums|wide_empty_checksums) echo "${WIDE}" ;;
         wide_*) echo "${WIDE}, ${SMALL_MARKS}" ;;
         compact_*) echo "${COMPACT}, ${SMALL_MARKS}" ;;
         *) echo "${COMPACT}" ;;
@@ -150,6 +155,12 @@ truncate_to_first_block "$(part_path wide_torn_dynamic_no_substreams_no_checksum
 # A marks file of a dynamic stream that is gone altogether is not listed by the regenerated checksums,
 # but its data file is.
 rm "$(part_path wide_missing_dynamic_no_substreams_no_checksums)/$(column_file wide_missing_dynamic_no_substreams_no_checksums d.UInt64).cmrk2"
+
+# `checksums.txt` of the oldest format lists no files at all, so it cannot vouch for the marks either.
+truncate_to_first_block "$(part_path wide_torn_first_column_empty_checksums)/$(column_file wide_torn_first_column_empty_checksums id).cmrk2"
+rm "$(part_path wide_missing_second_column_empty_checksums)/$(column_file wide_missing_second_column_empty_checksums v).cmrk2"
+truncate_to_first_block "$(part_path compact_torn_empty_checksums)/data.cmrk4"
+rm "$(part_path wide_missing_dynamic_no_substreams_empty_checksums)/$(column_file wide_missing_dynamic_no_substreams_empty_checksums d.UInt64).cmrk2"
 for table in ${TABLES}
 do
     if [[ ${table} == *_no_substreams_* ]]
@@ -165,6 +176,9 @@ do
     if [[ ${table} == *_no_checksums ]]
     then
         rm "$(part_path "${table}")/checksums.txt"
+    elif [[ ${table} == *_empty_checksums ]]
+    then
+        echo "checksums format version: 1" > "$(part_path "${table}")/checksums.txt"
     fi
 done
 

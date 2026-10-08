@@ -1557,12 +1557,12 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
             loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
 
-            /// Checksums regenerated from the files on disk by `loadChecksums` cannot vouch for a marks file
-            /// torn by a crash: if it was cut at a compressed block boundary, it still decompresses, only to
-            /// fewer marks, and the rows past them would become unreadable. Such marks cover fewer rows than
-            /// the part has. This runs before `fixFromRowsCount`, so constant granularity counts every mark as
-            /// a full granule here, and intact marks always cover all rows.
-            if (check_consistency && checksums_were_regenerated && index_granularity->getTotalRows() < rows_count)
+            /// Missing checksums, or checksums regenerated from the files on disk by `loadChecksums`, cannot
+            /// vouch for a marks file torn by a crash: if it was cut at a compressed block boundary, it still
+            /// decompresses, only to fewer marks, and the rows past them would become unreadable. Such marks
+            /// cover fewer rows than the part has. This runs before `fixFromRowsCount`, so constant granularity
+            /// counts every mark as a full granule here, and intact marks always cover all rows.
+            if (check_consistency && !hasTrustworthyChecksums() && index_granularity->getTotalRows() < rows_count)
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Part {} is broken: its marks cover {} rows, but it has {} rows",
                     getDataPartStorage().getFullPath(), index_granularity->getTotalRows(), rows_count);

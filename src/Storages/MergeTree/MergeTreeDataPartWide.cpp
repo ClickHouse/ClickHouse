@@ -505,8 +505,8 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
 
     /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
     /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
-    /// in that case too.
-    if (checksums.empty() || checksums_were_regenerated)
+    /// in that case too, as when there are no checksums at all.
+    if (!hasTrustworthyChecksums())
     {
         if (!cols_substreams.empty())
         {
@@ -520,18 +520,16 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     auto stream_name = getStreamNameOrHash(substream, marks_file_extension, getDataPartStorage());
                     if (!stream_name)
                     {
-                        /// Regenerated checksums only list the files left on disk, so they cannot tell that
-                        /// a marks file is gone. But `columns_substreams.txt` names every substream the part
-                        /// was written with, and each of them must have its marks.
-                        if (checksums_were_regenerated)
-                            throw Exception(
-                                ErrorCodes::NO_FILE_IN_DATA_PART,
-                                "Part {} is broken: no marks file ({}{}) for column {}",
-                                getDataPartStorage().getFullPath(),
-                                substream,
-                                marks_file_extension,
-                                getColumns().getNames()[col_idx]);
-                        continue;
+                        /// Missing or regenerated checksums cannot tell that a marks file is gone. But
+                        /// `columns_substreams.txt` names every substream the part was written with, and
+                        /// each of them must have its marks.
+                        throw Exception(
+                            ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "Part {} is broken: no marks file ({}{}) for column {}",
+                            getDataPartStorage().getFullPath(),
+                            substream,
+                            marks_file_extension,
+                            getColumns().getNames()[col_idx]);
                     }
 
                     auto file_path = *stream_name + marks_file_extension;
@@ -609,28 +607,28 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             }
 
             /// Dynamic streams (`JSON`, `Dynamic`) cannot be enumerated without the deserialization state,
-            /// but regenerated checksums list every file of the part, so check the marks of every stream
-            /// that has a data file. Start from the data files: a marks file that is gone entirely is absent
-            /// from the regenerated checksums, but its `.bin` peer is still listed. Only column streams have
-            /// `.bin` files, so marks of skip indices are left out.
-            if (checksums_were_regenerated)
+            /// so check the marks of every stream that has a data file in the part directory. Start from the
+            /// data files: a marks file that is gone entirely leaves its `.bin` peer behind. Only column
+            /// streams have `.bin` files, so marks of skip indices are left out.
+            NameSet file_names;
+            for (auto it = getDataPartStorage().iterate(); it->isValid(); it->next())
+                file_names.insert(it->name());
+
+            for (const auto & file_name : file_names)
             {
-                for (const auto & [file_name, _] : checksums.files)
-                {
-                    if (!file_name.ends_with(DATA_FILE_EXTENSION))
-                        continue;
+                if (!file_name.ends_with(DATA_FILE_EXTENSION))
+                    continue;
 
-                    String marks_file_name = file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION)) + marks_file_extension;
-                    if (!checksums.files.contains(marks_file_name))
-                        throw Exception(
-                            ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "Part {} is broken: no marks file {} for data file {}",
-                            getDataPartStorage().getFullPath(),
-                            marks_file_name,
-                            file_name);
+                String marks_file_name = file_name.substr(0, file_name.size() - strlen(DATA_FILE_EXTENSION)) + marks_file_extension;
+                if (!file_names.contains(marks_file_name))
+                    throw Exception(
+                        ErrorCodes::NO_FILE_IN_DATA_PART,
+                        "Part {} is broken: no marks file {} for data file {}",
+                        getDataPartStorage().getFullPath(),
+                        marks_file_name,
+                        file_name);
 
-                    check_marks_file(marks_file_name);
-                }
+                check_marks_file(marks_file_name);
             }
         }
     }

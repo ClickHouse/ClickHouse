@@ -294,8 +294,8 @@ void MergeTreeDataPartCompact::doCheckConsistency(bool require_part_metadata) co
 
     /// Checksums regenerated from the files on disk by `loadChecksums` describe those files as they are,
     /// so they cannot vouch for a marks file torn by a crash: check the shape of the marks files directly
-    /// in that case too.
-    if (checksums.empty() || checksums_were_regenerated)
+    /// in that case too, as when there are no checksums at all.
+    if (!hasTrustworthyChecksums())
     {
         {
             /// count.txt should be present even in non custom-partitioned parts

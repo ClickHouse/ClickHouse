@@ -516,6 +516,11 @@ public:
     /// as a part with no `checksums.txt` at all.
     bool checksums_were_regenerated = false;
 
+    /// Whether `checksums` can vouch for the files of the part. They cannot when there are none (parts
+    /// of very old formats) or when `loadChecksums` regenerated them from the files as they are on disk:
+    /// then a marks file torn or lost in a crash has to be detected from the shape of the files instead.
+    bool hasTrustworthyChecksums() const { return !checksums.empty() && !checksums_were_regenerated; }
+
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
