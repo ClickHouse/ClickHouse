@@ -181,6 +181,8 @@ protected:
 
     void findOrdinaryFunctionSecretArguments();
     void findMongoDBSecretArguments();
+    /// The secret options of a MongoDB connection string or option list, after `findMongoDBSecretArguments`.
+    void findMongoDBConnectionStringSecretArguments();
     void findXDBCSecretArguments();
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);

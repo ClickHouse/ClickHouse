@@ -215,6 +215,13 @@ public:
     /// Returns whether there is such a column in the key.
     bool addCondition(const String & column, const Range & range);
 
+    /// Checks if the condition has unknown atoms.
+    bool hasUnknownAtoms() const;
+
+    /// A copy where every atom that cannot be evaluated is replaced with the constant that maximizes the condition.
+    /// It has the same `can_be_true` on every range, but `can_be_false` is not exact, so it must not be used for exact ranges.
+    KeyCondition createWithUnknownAtomsAssumedTrue() const;
+
     String toString() const;
 
     size_t getNumKeyColumns() const { return num_key_columns; }
@@ -248,6 +255,11 @@ public:
         const ASTPtr & query,
         const TreeRewriterResultPtr & syntax_analyzer_result,
         ContextPtr context);
+
+    /// Whether a real NULL is nested somewhere in `field`. A `Tuple`, `Array` or `Map` key value holds its
+    /// NULLs inside, where `Field::isNull` does not see them - and where it would answer true for the
+    /// `-inf`/`+inf` stand-ins of a nullable key range, which are not NULLs.
+    static bool fieldHasNullInside(const Field & field);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,

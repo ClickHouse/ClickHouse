@@ -15,6 +15,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageSet.h>
@@ -149,7 +150,7 @@ void checkNoRowPolicyForSetOperands(
                         DDLLogEntry::INITIATOR_USER_VERSION);
 
                 auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
-                if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
+                if (auto * storage_set = table_node ? castStorage<StorageSet>(table_node->getStorage(), DeferredTable::Load).get() : nullptr)
                     storage_set->checkNoRowPolicy(context);
             }
         }
@@ -362,8 +363,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ASTPtr partition_predicate_as_ast_func;
     if (alter && alter->partitions)
     {
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
 
         auto func = makeASTFunction("in");
         func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
@@ -386,8 +388,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     {
         String partition_id;
 
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
         if (storage_merge_tree)
             partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else if (storage_from_merge_tree_data_part)
@@ -415,7 +418,9 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     return predicate_ast;
 }
 
-MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
+/// A mutation reads and rewrites parts, so it needs the real storage rather than the proxy a lazily
+/// loaded table is reached through.
+MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(resolveStorageProxyLoading(storage_))
 {
 }
 
@@ -457,7 +462,7 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     if (data)
         return data;
 
-    return dynamic_cast<const MergeTreeData *>(storage.get());
+    return castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
 }
 
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
@@ -538,7 +543,7 @@ MutationsInterpreter::MutationsInterpreter(
         std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
-    if (settings.can_execute && !settings.return_mutated_rows && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
+    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), DeferredTable::Load))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -639,6 +644,7 @@ static void validateUpdateColumns(
 {
     auto storage_snapshot = source.getStorageSnapshot(metadata_snapshot, context, false);
     NameSet key_columns = getKeyColumns(source, metadata_snapshot);
+    NameSet key_storage_columns = source.getMergeTreeData() ? metadata_snapshot->getStorageColumnsRequiredForKeys() : NameSet{};
 
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
@@ -655,7 +661,7 @@ static void validateUpdateColumns(
         {
             for (const auto & materialized : materialized_it->second)
             {
-                if (key_columns.contains(materialized))
+                if (key_columns.contains(materialized) || key_storage_columns.contains(materialized))
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
                                     "Updated column {} affects MATERIALIZED column {}, which is a key column. "
