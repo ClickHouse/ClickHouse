@@ -34,6 +34,8 @@ namespace Setting
     extern const SettingsBool input_format_parquet_page_filter_push_down;
     extern const SettingsBool input_format_parquet_spatial_filter_push_down;
     extern const SettingsBool input_format_orc_filter_push_down;
+    extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
+    extern const SettingsBool input_format_orc_case_insensitive_column_matching;
 }
 
 namespace
@@ -42,7 +44,8 @@ namespace
 /// The entries for files are written from the row groups the reader pruned, not from evaluating the
 /// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
 /// still has rows the query returns when it is not pruned, so a read with another set of enabled
-/// pruning methods must not consult the entries of this one.
+/// pruning methods must not consult the entries of this one. The column matching settings decide
+/// which physical column a predicate is evaluated against, so they are part of the key as well.
 UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
 {
     SipHash hash;
@@ -52,6 +55,8 @@ UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::input_format_parquet_page_filter_push_down].value);
     hash.update(settings[Setting::input_format_parquet_spatial_filter_push_down].value);
     hash.update(settings[Setting::input_format_orc_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_orc_case_insensitive_column_matching].value);
     return hash.get64();
 }
 
