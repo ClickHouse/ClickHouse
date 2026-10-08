@@ -643,9 +643,14 @@ def refresh_after_start(cluster, instance):
     server): the existing `_sender` table and `_watcher` view still have the
     header of the old structure and send to the destination table of the old
     hash. The other tables keep exporting through what was set up before.
+
+    It also retries the tables that are not exported yet, including all of
+    them when the setup at the first start ended with nothing exported (e.g.
+    the existence of every destination table was unknown after a transient
+    error of the CI Logs cluster, or the local DDL failed): a table without
+    export state counts as changed, so a restart redoes the full setup instead
+    of leaving the logs of the server unexported for the rest of the suite.
     Best effort: never raises."""
-    if not getattr(instance, "ci_logs_export_tables", None):
-        return
     try:
         _refresh_after_start(cluster, instance)
     except Exception:
@@ -666,7 +671,7 @@ def _refresh_after_start(cluster, instance):
     # table with a changed structure rename the old table away and create the
     # new one, so the hashes below are those of the tables the server writes to.
     tables = _discover_log_tables(instance)
-    known = instance.ci_logs_export_hashes
+    known = getattr(instance, "ci_logs_export_hashes", {})
     changed = [entry for entry in tables if known.get(entry[0]) != entry[1]]
     if not changed:
         return
@@ -686,7 +691,8 @@ def _refresh_after_start(cluster, instance):
             for table in stale
         )
         instance.query(statements, timeout=300)
-    active = [table for table in instance.ci_logs_export_tables if table not in stale]
+    exported = getattr(instance, "ci_logs_export_tables", [])
+    active = [table for table in exported if table not in stale]
     hashes = {table: known[table] for table in active}
     instance.ci_logs_export_tables = active
     instance.ci_logs_export_hashes = hashes

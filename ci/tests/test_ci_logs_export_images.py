@@ -457,6 +457,47 @@ def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
     assert created == []
 
 
+def test_a_restart_retries_a_setup_that_exported_nothing(monkeypatch):
+    """The setup at the first start may end with no table exported without
+    disabling the export (e.g. the existence of every destination table was
+    unknown after a transient error): a restart must retry all the tables
+    instead of leaving the server unexported for the rest of the suite."""
+
+    class Instance:
+        name = "node"
+
+        def query(self, sql, timeout=None):
+            raise AssertionError(f"unexpected query: {sql}")
+
+    class Cluster:
+        client_bin_path = "clickhouse"
+        base_dir = "/tests/test_storage_s3"
+        base_path = "/tests/test_storage_s3/test.py"
+
+    tables = [
+        ("metric_log", "m", "CREATE metric_log"),
+        ("query_log", "q", "CREATE query_log"),
+    ]
+    monkeypatch.setattr(HELPER, "_disabled_reason", lambda cache_dir: None)
+    monkeypatch.setattr(HELPER, "_discover_log_tables", lambda instance: tables)
+    monkeypatch.setattr(
+        HELPER,
+        "_ensure_remote_tables",
+        lambda client_bin_path, tables: {table for table, _, _ in tables},
+    )
+    monkeypatch.setattr(
+        HELPER,
+        "_create_senders_and_watchers",
+        lambda instance, tables, exportable, expression: [t for t, _, _ in tables],
+    )
+
+    instance = Instance()
+    HELPER.refresh_after_start(Cluster(), instance)
+
+    assert instance.ci_logs_export_tables == ["metric_log", "query_log"]
+    assert instance.ci_logs_export_hashes == {"metric_log": "m", "query_log": "q"}
+
+
 def test_a_started_server_refreshes_the_export():
     """`start_clickhouse` (and `restart_clickhouse`, which delegates to it)
     must rewire the export once the server is up, see `refresh_after_start`."""
