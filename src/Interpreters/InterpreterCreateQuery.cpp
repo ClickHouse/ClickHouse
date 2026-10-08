@@ -887,13 +887,15 @@ void forceReverse(ASTPtr & node)
 
 void applyForceReverseOrder(ASTStorage * storage)
 {
-    if (!storage)
+    /// Only the `MergeTree` family supports reverse sorting keys. Other engines with an `ORDER BY` clause
+    /// (e.g. `MaterializedPostgreSQL` or `IcebergLocal`) are left as is.
+    if (!storage || !storage->engine || !storage->engine->name.ends_with("MergeTree"))
         return;
 
     /// `MergeTree` treats `PRIMARY KEY` without `ORDER BY` as the sorting key. Materialize it as `ORDER BY`,
     /// so that such tables get a reversed sorting key too. `PRIMARY KEY` stays as is, because it inherits
     /// the directions from the sorting key.
-    if (!storage->order_by && storage->primary_key && storage->engine && storage->engine->name.ends_with("MergeTree"))
+    if (!storage->order_by && storage->primary_key)
         storage->set(storage->order_by, storage->primary_key->clone());
 
     /// The deprecated `MergeTree` syntax keeps the sorting key in the engine arguments, e.g. `MergeTree(date, key, 8192)`.
