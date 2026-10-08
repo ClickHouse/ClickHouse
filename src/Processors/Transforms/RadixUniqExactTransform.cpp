@@ -420,7 +420,7 @@ public:
                 stream.num_buffered += buffer.size;
                 sampled_distinct += buffer.size;
             }
-            stream.estimated_distinct = sampled_distinct * num_buckets / num_sampled;
+            stream.estimated_distinct = sampled_distinct * num_buckets / std::max<size_t>(num_sampled, 1);
         }
 
         /// The build reads only the buffers, so the set must not hold memory while the bucket sets are built.
