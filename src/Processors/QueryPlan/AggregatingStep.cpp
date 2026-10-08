@@ -429,9 +429,10 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     return nullptr;
 }
 
-bool AggregatingStep::isSingleUniqExactWithoutKeys() const
+bool AggregatingStep::canUseRadixUniqExact(size_t max_threads) const
 {
-    if (!params.keys.empty() || params.aggregates.size() != 1)
+    if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging || params.only_merge
+        || params.overflow_row || max_threads <= 1 || !params.keys.empty() || params.aggregates.size() != 1)
         return false;
 
     const auto & aggregate = params.aggregates[0];
@@ -445,11 +446,6 @@ bool AggregatingStep::tryBuildRadixUniqExact(
     const StatsCollectingParams & stats_collecting_params) const
 {
     const auto & aggregator_params = transform_params->params;
-    if (!final || !grouping_sets_params.empty() || !sort_description_for_merging.empty() || skip_merging
-        || aggregator_params.only_merge || aggregator_params.overflow_row || !isSingleUniqExactWithoutKeys()
-        || pipeline.getNumStreams() <= 1 || max_threads <= 1)
-        return false;
-
     const auto & aggregate = aggregator_params.aggregates[0];
 
     const auto & output_header = transform_params->getHeader();
@@ -558,6 +554,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     if (params.shared_kept_keys_for_overflow_any)
         params.shared_kept_keys_control = std::make_shared<Aggregator::Params::SharedKeptKeysControl>();
 
+    const bool use_radix_uniq_exact = settings.optimize_uniq_exact_radix_partitioning && pipeline.getNumStreams() > 1
+        && canUseRadixUniqExact(max_threads);
+
     /// Of the aggregations without keys, only the radix partitioned `uniqExact` uses the statistics.
     const StatsCollectingParams radix_uniq_exact_stats_params = params.stats_collecting_params;
     if (params.keys.empty())
@@ -566,7 +565,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     const auto & src_header = pipeline.getSharedHeader();
     auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
-    if (settings.optimize_uniq_exact_radix_partitioning
+    if (use_radix_uniq_exact
         && tryBuildRadixUniqExact(pipeline, transform_params, max_threads, radix_uniq_exact_stats_params))
     {
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
