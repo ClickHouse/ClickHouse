@@ -102,6 +102,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 
     while (!stack.empty())
@@ -232,6 +233,7 @@ void optimizeTreeSecondPass(
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 
     Stack stack;
@@ -307,6 +309,11 @@ void optimizeTreeSecondPass(
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
+        /// The re-run passes default `ExtraSettings`, except for the `LIMIT BY` gate: this pass also pushes
+        /// filters below `LIMIT BY`, so it must follow `query_plan_filter_push_down_below_limit_by` too.
+        Optimization::ExtraSettings push_down_settings{};
+        push_down_settings.filter_push_down_below_limit_by = optimization_settings.filter_push_down_below_limit_by;
+
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
@@ -316,7 +323,7 @@ void optimizeTreeSecondPass(
                     size_t changed_nodes = 0;
                     changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
                     changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+                    changed_nodes += tryPushDownFilter(&frame_node, nodes, push_down_settings);
 
                     if (!changed_nodes)
                         break;
