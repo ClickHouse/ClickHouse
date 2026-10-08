@@ -19,10 +19,10 @@ CREATE TABLE t_recompress_new_sibling
     `n.b` Array(String) CODEC(NONE)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 10485760;
 
 INSERT INTO t_recompress_new_sibling
-SELECT number, range(number % 5), arrayMap(x -> repeat('x', 50), range(number % 5)) FROM numbers(100000);
+SELECT number, range(number % 5), arrayMap(x -> repeat('x', 50), range(number % 5)) FROM numbers(30000);
 
 -- Give `n.b` a compressible codec. This changes only the metadata; the stored data keeps its old
 -- uncompressed representation until it is recompressed.
@@ -66,10 +66,10 @@ CREATE TABLE t_recompress_new_sibling
     `n.b` Array(String) CODEC(NONE)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 10485760;
 
 INSERT INTO t_recompress_new_sibling
-SELECT number, range(number % 5), arrayMap(x -> repeat('x', 50), range(number % 5)) FROM numbers(100000);
+SELECT number, range(number % 5), arrayMap(x -> repeat('x', 50), range(number % 5)) FROM numbers(30000);
 
 ALTER TABLE t_recompress_new_sibling MODIFY COLUMN `n.b` Array(String) CODEC(ZSTD);
 ALTER TABLE t_recompress_new_sibling ADD COLUMN `n.c` Array(UInt64) DEFAULT arrayMap(x -> x + 1, range(id % 5)) CODEC(ZSTD);
