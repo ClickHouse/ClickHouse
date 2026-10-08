@@ -12,9 +12,10 @@ FROM (EXPLAIN ANALYZE SELECT number % 1000 AS k, uniqExact(number) FROM numbers_
 
 -- Scalar aggregation has no hash table, but its states are still tracked.
 -- count_distinct_optimization would rewrite it into count() over GROUP BY number and add a second Aggregating step.
+-- optimize_uniq_exact_radix_partitioning would replace the aggregation by transforms that have no tracked states.
 SELECT 'scalar', countIf(match(explain, 'Memory: bytes [1-9]')) = 1
 FROM (EXPLAIN ANALYZE SELECT uniqExact(number) FROM numbers_mt(100000)
-    SETTINGS count_distinct_optimization = 0);
+    SETTINGS count_distinct_optimization = 0, optimize_uniq_exact_radix_partitioning = 0);
 
 -- Parts that predate the projection are aggregated from scratch, so the projection step tracks them.
 DROP TABLE IF EXISTS t_agg_proj;
