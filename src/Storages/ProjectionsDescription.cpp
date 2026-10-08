@@ -761,6 +761,8 @@ Block ProjectionDescription::calculateByQuery(
     if (block.has(RowExistsColumn::name))
     {
         FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
+        if (row_exists_filter.countBytesInFilter() == 0)
+            return sample_block.cloneEmpty();
         for (auto & column : source_block)
             column.column = row_exists_filter.filter(*column.column, -1);
     }

@@ -1803,8 +1803,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             { return stage.affects_all_columns || stage.column_to_updated.contains(RowExistsColumn::name); });
     if (!materialized_projections.empty() && source_part && source_part->hasLightweightDelete() && !projections_see_deleted_mask)
     {
-        if (stages.empty())
-            stages.emplace_back(context);
         auto & stage = stages.emplace_back(context);
         stage.is_readonly = true;
         stage.column_to_updated.emplace(RowExistsColumn::name, make_intrusive<ASTIdentifier>(RowExistsColumn::name));
