@@ -38,4 +38,21 @@ TEST(IOTestS3URI, PathStyleWithKey)
     ASSERT_EQ(uri_with_no_key_and_with_slash.key, "key/key/key/key");
 }
 
+TEST(IOTestS3URI, AddRegionUpdatesAuthority)
+{
+    using namespace DB;
+
+    auto uri = S3::URI("https://bucket.s3.amazonaws.com/key");
+    uri.addRegionToURI("eu-west-1");
+
+    ASSERT_EQ(uri.endpoint, "https://s3.eu-west-1.amazonaws.com");
+    ASSERT_EQ(uri.uri.getAuthority(), "bucket.s3.eu-west-1.amazonaws.com");
+
+    auto http_uri = S3::URI("http://bucket.s3.amazonaws.com/key");
+    http_uri.addRegionToURI("eu-west-1");
+
+    ASSERT_EQ(http_uri.endpoint, "http://s3.eu-west-1.amazonaws.com");
+    ASSERT_EQ(http_uri.uri.getAuthority(), "bucket.s3.eu-west-1.amazonaws.com");
+}
+
 #endif
