@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 77
+    version: int = 78
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -68,6 +68,7 @@ class RunnerConfig:
 
     free_blocks_threshold: int = 3_000_000
     free_blocks_threshold_percent: int = 5
+    macos_min_free_gib: int = 15
 
     RUNNER_VERSION_LABEL = "runner-init version"
 
@@ -451,6 +452,10 @@ class Runner:
     @staticmethod
     def check_post_run() -> None:
         if config.init_environment == Environment.MACOS:
+            # Swap shares the APFS container with `/`, and only a reboot frees it.
+            free_gib = shutil.disk_usage("/").free / 2**30
+            if free_gib < config.macos_min_free_gib:
+                raise RuntimeError(f"Out of disk space: {free_gib:.1f} GiB free on rootfs")
             return
         result = subprocess.run(["df", "/"], capture_output=True, text=True, check=True)
         if config.verbose:
