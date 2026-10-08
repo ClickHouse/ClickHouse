@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+-- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-replicated-database, no-parallel-replicas
+-- Tag no-parallel-replicas: with parallel replicas the data may be read by the queries of other replicas, so the `ColumnsCache` hit and miss events are missing from the `query_log` entry of the initiator.
 -- Test cache metrics, ProfileEvents, and system commands
 
 SET max_threads = 1;
