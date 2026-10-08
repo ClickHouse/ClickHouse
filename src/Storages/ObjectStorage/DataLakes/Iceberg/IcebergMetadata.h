@@ -15,6 +15,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
+#include <atomic>
 #include <optional>
 #include <base/defines.h>
 
@@ -32,6 +33,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
 
 namespace DB
@@ -204,6 +206,7 @@ public:
         StorageMetadataPtr storage_metadata,
         ContextPtr local_context) const override;
 
+    void checkCanBeDropped(ContextPtr query_context) const override;
     void drop(ContextPtr context) override;
 
     static DataLakeMetadataPtr createWithDeserialization(
@@ -246,9 +249,14 @@ private:
     /// scoped to the queried path reaches beyond this table there.
     void checkTableRootIsQueriedPath(std::string_view operation) const;
 
+    /// Files outside the table directory that `iceberg_delete_data_on_drop` deletes.
+    std::vector<Iceberg::ExternalFile> collectExternalFilesToDeleteOnDrop(ContextPtr context) const;
+
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     mutable std::shared_ptr<ExternalStorageCache> external_storages;
+    /// Set by `checkCanBeDropped` once the dropping user is allowed to delete the external files.
+    mutable std::atomic<bool> external_files_drop_authorized = false;
     DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     MultiVersion<String> explicit_metadata_file_path;

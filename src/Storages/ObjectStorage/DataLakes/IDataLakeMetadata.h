@@ -200,6 +200,8 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
+    /// Checks with the `DROP` query context what `drop` will do in the background with the global context.
+    virtual void checkCanBeDropped(ContextPtr /*query_context*/) const { }
     virtual void drop(ContextPtr) { }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }

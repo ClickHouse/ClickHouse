@@ -346,6 +346,7 @@ public:
         return false;
     }
 
+    virtual void checkCanBeDropped(ContextPtr /*query_context*/) const {}
     virtual void drop(ContextPtr) {}
 
     virtual bool isBackgroundExecutable() const

@@ -307,7 +307,7 @@ ReachableFilesResult collectReachableFiles(
         persistent_table_components.table_uuid);
 
     std::unordered_set<String> reachable;
-    std::vector<std::pair<ObjectStoragePtr, String>> external_files;
+    std::vector<ExternalFile> external_files;
     std::set<std::pair<const IObjectStorage *, String>> seen_external;
     const auto & resolver = persistent_table_components.path_resolver;
 
@@ -321,7 +321,7 @@ ReachableFilesResult collectReachableFiles(
         if (isObjectInTableDirectory(storage, key, object_storage, persistent_table_components.table_path))
             reachable.insert(std::move(key));
         else if (seen_external.emplace(storage.get(), key).second)
-            external_files.emplace_back(std::move(storage), std::move(key));
+            external_files.push_back({std::move(storage), std::move(key), path});
     };
 
     collectMetadataRootFiles(
@@ -352,7 +352,7 @@ ReachableFilesResult collectReachableFiles(
             }
 
             seen_external.insert(external_id);
-            external_files.emplace_back(std::move(storage), std::move(key));
+            external_files.push_back({std::move(storage), std::move(key), path});
         };
         collectHistoricalReferences(
             metadata, object_storage, persistent_table_components, context, log, external_storages,

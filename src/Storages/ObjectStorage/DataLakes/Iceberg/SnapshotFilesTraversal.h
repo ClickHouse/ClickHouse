@@ -43,6 +43,13 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     Int32 current_schema_id,
     ExternalStorageCache & external_storages);
 
+struct ExternalFile
+{
+    ObjectStoragePtr storage;
+    String key;
+    IcebergPathFromMetadata path;
+};
+
 struct ReachableFilesResult
 {
     std::unordered_set<String> files;
@@ -50,7 +57,7 @@ struct ReachableFilesResult
     /// Resolved storage path of the metadata file the traversal was rooted at. Two distinct
     /// files can share a version number, so identity of the root is this path, not the number.
     String metadata_path;
-    std::vector<std::pair<ObjectStoragePtr, String>> external_files;
+    std::vector<ExternalFile> external_files;
 };
 
 /// Use the latest head for `remove_orphan_files`, but the configured head for `drop`.

@@ -119,6 +119,7 @@ extern const DataLakeStorageSettingsNonZeroUInt64 iceberg_format_version;
 
 namespace ErrorCodes
 {
+extern const int ACCESS_DENIED;
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
@@ -1698,29 +1699,12 @@ SinkToStoragePtr IcebergMetadata::write(
     }
 }
 
-void IcebergMetadata::drop(ContextPtr context)
+std::vector<Iceberg::ExternalFile> IcebergMetadata::collectExternalFilesToDeleteOnDrop(ContextPtr context) const
 {
-    if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
-        return;
-
-    /// The table is already marked dropped; throwing would make `DatabaseCatalog` retry forever.
-    if (persistent_components.table_root_was_derived)
-    {
-        LOG_WARNING(
-            log,
-            "Keeping the data of the Iceberg table at '{}': it is below the queried path '{}', which also covers "
-            "other tables. Drop it while querying the table directory itself to delete the data.",
-            persistent_components.path_resolver.getTableRoot(),
-            persistent_components.table_path);
-        return;
-    }
-
-    /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
-    /// The catalog entry is already removed, so use the configured metadata head, not an uncommitted higher version.
-    std::vector<std::pair<ObjectStoragePtr, String>> external_files;
+    /// `drop` runs after the catalog entry is removed, so use the configured metadata head, not an uncommitted higher version.
     try
     {
-        external_files = Iceberg::collectReachableFiles(
+        return Iceberg::collectReachableFiles(
             object_storage, persistent_components, data_lake_settings, context, log, *external_storages,
             /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false,
             /* ignore_explicit_metadata_file_path */ false).external_files;
@@ -1739,15 +1723,65 @@ void IcebergMetadata::drop(ContextPtr context)
             "The table directory is deleted, but those files are left behind and have to be removed manually.",
             persistent_components.table_path,
             e.displayText());
+        return {};
+    }
+}
+
+void IcebergMetadata::checkCanBeDropped(ContextPtr query_context) const
+{
+    /// `drop` runs in the background with the global context, so the dropping user's grants are checked here.
+    if (!Context::getGlobalContextInstance()->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value
+        || persistent_components.table_root_was_derived)
+        return;
+
+    for (const auto & file : collectExternalFilesToDeleteOnDrop(query_context))
+    {
+        if (!isPathWriteGranted(persistent_components.table_location, file.path.serialize(), object_storage, query_context))
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "Not enough privileges to drop the Iceberg table: `iceberg_delete_data_on_drop` deletes the file '{}' "
+                "outside the table directory, which requires the `WRITE` grant on it",
+                file.path);
+    }
+    external_files_drop_authorized = true;
+}
+
+void IcebergMetadata::drop(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
+        return;
+
+    /// The table is already marked dropped; throwing would make `DatabaseCatalog` retry forever.
+    if (persistent_components.table_root_was_derived)
+    {
+        LOG_WARNING(
+            log,
+            "Keeping the data of the Iceberg table at '{}': it is below the queried path '{}', which also covers "
+            "other tables. Drop it while querying the table directory itself to delete the data.",
+            persistent_components.path_resolver.getTableRoot(),
+            persistent_components.table_path);
+        return;
+    }
+
+    /// Enumerate external files before deleting the metadata needed to rediscover them on retry.
+    auto external_files = collectExternalFilesToDeleteOnDrop(context);
+    if (!external_files.empty() && !external_files_drop_authorized)
+    {
+        LOG_WARNING(
+            log,
+            "Keeping {} file(s) of the Iceberg table at '{}' that live outside its directory: deleting them was not "
+            "authorized by a `DROP` query in this server process. They have to be removed manually.",
+            external_files.size(),
+            persistent_components.table_path);
         external_files.clear();
     }
 
     /// Delete leaves first, one per request: a partial batch failure could delete the manifest needed for retry.
     std::reverse(external_files.begin(), external_files.end());
-    for (const auto & [storage, key] : external_files)
+    for (const auto & file : external_files)
     {
-        LOG_DEBUG(log, "Removing external file during drop: storage={}, key={}", storage->getDescription(), key);
-        storage->removeObjectIfExists(StoredObject(key));
+        LOG_DEBUG(log, "Removing external file during drop: storage={}, key={}", file.storage->getDescription(), file.key);
+        file.storage->removeObjectIfExists(StoredObject(file.key));
     }
 
     auto files = listFiles(*object_storage, persistent_components.table_path, "", "");

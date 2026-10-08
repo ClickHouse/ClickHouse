@@ -43,6 +43,13 @@ bool isPathReadGranted(
     const ObjectStoragePtr & base_storage,
     const ContextPtr & context);
 
+/// Checks the `WRITE` grant the same way, for deleting a file referenced by the table.
+bool isPathWriteGranted(
+    const std::string & table_location,
+    const std::string & path,
+    const ObjectStoragePtr & base_storage,
+    const ContextPtr & context);
+
 /// Also checks path restrictions, for metadata-only answers that must not bypass a failing scan.
 bool isPathReadable(
     const std::string & table_location,

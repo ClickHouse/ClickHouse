@@ -124,6 +124,37 @@ def test_delete_data_on_drop_uses_configured_metadata_head(started_cluster):
     assert count_objects(f"{external_prefix}/") == 0
 
 
+def test_delete_data_on_drop_requires_write_grant_on_external_files(started_cluster):
+    instance = started_cluster.instances["node1"]
+
+    TABLE_NAME = f"test_drop_external_grant_{get_uuid_str()}"
+    user = f"user_{TABLE_NAME}"
+    base_path, bucket, external_prefix = _external_data_files_in_the_same_bucket(started_cluster, TABLE_NAME)
+    external_uri_regex = f"s3a://{bucket}/{external_prefix}.*"
+
+    def count_objects(prefix):
+        return sum(1 for _ in started_cluster.minio_client.list_objects(bucket, prefix=prefix, recursive=True))
+
+    _create_iceberg_s3_table(started_cluster, TABLE_NAME, base_path)
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT DROP TABLE ON {TABLE_NAME} TO {user}")
+    instance.query(f"GRANT READ ON S3('{external_uri_regex}') TO {user}")
+
+    error = instance.query_and_get_error(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+    assert "ACCESS_DENIED" in error, error
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
+
+    instance.query(f"GRANT READ, WRITE ON S3('{external_uri_regex}') TO {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
+
+    assert count_objects(f"{base_path}/") == 0
+    assert count_objects(external_prefix) == 0
+
+    instance.query(f"DROP USER {user}")
+
+
 def test_file_uri_with_remote_authority_is_rejected(started_cluster):
     instance = started_cluster.instances["node1"]
 

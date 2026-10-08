@@ -343,8 +343,9 @@ SchemeAuthorityKey::SchemeAuthorityKey(const std::string & uri)
 #if USE_AVRO
 namespace
 {
-struct PathReadCheck
+struct PathAccessCheck
 {
+    DB::AccessType access_type = DB::AccessType::READ;
     bool granted = true;
     bool openable = true;
 };
@@ -356,7 +357,7 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     const DB::ObjectStoragePtr & base_storage,
     ExternalStorageCache & external_storages,
     const DB::ContextPtr & context,
-    PathReadCheck * read_check)
+    PathAccessCheck * access_check)
 {
     if (!isAbsolutePath(path))
         return std::nullopt;
@@ -375,8 +376,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             || !fileOrSymlinkPathStartsWith(target_path.string(), user_files_path.string())
             || !pathStartsWith(target_path.string(), user_files_path.string()))
         {
-            if (read_check)
-                read_check->openable = false;
+            if (access_check)
+                access_check->openable = false;
             else
                 throw DB::Exception(
                     DB::ErrorCodes::PATH_ACCESS_DENIED,
@@ -384,6 +385,15 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                     local_path,
                     user_files_path.string());
         }
+    };
+
+    /// Grants must match the file that is actually opened, so symlinks are resolved; `user_files` keeps its configured spelling.
+    auto local_path_for_grant_check = [&](const std::string & local_path)
+    {
+        const auto user_files_path = std::filesystem::path(context->getUserFilesPath()).lexically_normal();
+        if (context->getApplicationType() != Context::ApplicationType::SERVER || user_files_path.empty())
+            return std::filesystem::weakly_canonical(local_path).string();
+        return (user_files_path / std::filesystem::relative(local_path, user_files_path)).lexically_normal().string();
     };
 
     SchemeAuthorityKey table_location_decomposed{table_location};
@@ -412,8 +422,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
         if (!remote_authority.empty())
         {
-            if (read_check)
-                read_check->openable = false;
+            if (access_check)
+                access_check->openable = false;
             else
                 throw DB::Exception(
                     DB::ErrorCodes::BAD_ARGUMENTS,
@@ -426,24 +436,24 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         check_local_path_inside_user_files(target_decomposed.key);
     }
 
-    auto check_read_access = [&]
+    auto check_access = [&]
     {
         const auto source = sourceForScheme(target_scheme_normalized);
         if (!source)
         {
-            if (read_check)
+            if (access_check)
             {
-                read_check->openable = false;
+                access_check->openable = false;
                 return;
             }
             throw DB::Exception(
                 DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported storage scheme '{}' in path '{}'", target_scheme_normalized, path);
         }
 
-        const std::string & uri_to_check = target_scheme_normalized == "file" ? target_decomposed.key : path;
-        if (read_check)
-            read_check->granted = context->getAccess()->isGrantedWithFilter(
-                DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), uri_to_check);
+        const std::string uri_to_check = target_scheme_normalized == "file" ? local_path_for_grant_check(target_decomposed.key) : path;
+        if (access_check)
+            access_check->granted = context->getAccess()->isGrantedWithFilter(
+                access_check->access_type, AccessTypeObjects::toStringSource(*source), uri_to_check);
         else
             context->getAccess()->checkAccessWithFilter(
                 DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), uri_to_check);
@@ -483,8 +493,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
 
                 if (s3URIMatches(s3_uri, base_bucket, base_endpoint, target_scheme_normalized, provider_families_compatible))
                 {
-                    check_read_access();
-                    if (read_check != nullptr)
+                    check_access();
+                    if (access_check != nullptr)
                         return std::nullopt;
                     return std::make_pair(base_storage, key_to_use);
                 }
@@ -560,8 +570,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         }
 
         checkRemoteHostIsAllowed(context, endpoint_to_use);
-        check_read_access();
-        if (read_check != nullptr)
+        check_access();
+        if (access_check != nullptr)
             return std::nullopt;
 
         /// Include session restrictions in the cache identity to prevent reuse of a privileged client.
@@ -720,8 +730,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
             return std::nullopt;
         else
         {
-            check_read_access();
-            if (read_check != nullptr)
+            check_access();
+            if (access_check != nullptr)
                 return std::nullopt;
             return std::make_pair(base_storage, target_decomposed.key);
         }
@@ -730,9 +740,9 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     const std::string type_for_factory = factoryTypeForScheme(target_scheme_normalized);
     if (type_for_factory.empty())
     {
-        if (read_check)
+        if (access_check)
         {
-            read_check->openable = false;
+            access_check->openable = false;
             return std::nullopt;
         }
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unsupported storage scheme '{}' in path '{}'", target_scheme_normalized, path);
@@ -776,8 +786,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
                     account_name, base_account, account_name);
 
             checkRemoteHostIsAllowed(context, conn_params.getConnectionURL());
-            check_read_access();
-            if (read_check != nullptr)
+            check_access();
+            if (access_check != nullptr)
                 return std::nullopt;
 
             /// Clone connection parameters to preserve SAS and workload identity authentication, which config cannot express.
@@ -810,8 +820,8 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     if (!target_decomposed.authority.empty())
         checkRemoteHostIsAllowed(context, target_scheme_normalized + "://" + target_decomposed.authority + "/");
 
-    check_read_access();
-    if (read_check != nullptr)
+    check_access();
+    if (access_check != nullptr)
         return std::nullopt;
 
     return getOrCreateStorageAndKey(
@@ -851,19 +861,20 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
     ExternalStorageCache & external_storages,
     const DB::ContextPtr & context)
 {
-    return tryResolveObjectStorageForPathImpl(table_location, path, base_storage, external_storages, context, /*read_check*/ nullptr);
+    return tryResolveObjectStorageForPathImpl(table_location, path, base_storage, external_storages, context, /*access_check*/ nullptr);
 }
 
-static PathReadCheck checkPathRead(
+static PathAccessCheck checkPathAccess(
     const std::string & table_location,
     const std::string & path,
     const DB::ObjectStoragePtr & base_storage,
-    const DB::ContextPtr & context)
+    const DB::ContextPtr & context,
+    DB::AccessType access_type)
 {
     ExternalStorageCache unused_storages;
-    PathReadCheck read_check;
-    tryResolveObjectStorageForPathImpl(table_location, path, base_storage, unused_storages, context, &read_check);
-    return read_check;
+    PathAccessCheck access_check{.access_type = access_type};
+    tryResolveObjectStorageForPathImpl(table_location, path, base_storage, unused_storages, context, &access_check);
+    return access_check;
 }
 
 bool isPathReadGranted(
@@ -872,7 +883,16 @@ bool isPathReadGranted(
     const DB::ObjectStoragePtr & base_storage,
     const DB::ContextPtr & context)
 {
-    return checkPathRead(table_location, path, base_storage, context).granted;
+    return checkPathAccess(table_location, path, base_storage, context, DB::AccessType::READ).granted;
+}
+
+bool isPathWriteGranted(
+    const std::string & table_location,
+    const std::string & path,
+    const DB::ObjectStoragePtr & base_storage,
+    const DB::ContextPtr & context)
+{
+    return checkPathAccess(table_location, path, base_storage, context, DB::AccessType::WRITE).granted;
 }
 
 bool isPathReadable(
@@ -881,8 +901,8 @@ bool isPathReadable(
     const DB::ObjectStoragePtr & base_storage,
     const DB::ContextPtr & context)
 {
-    const auto read_check = checkPathRead(table_location, path, base_storage, context);
-    return read_check.granted && read_check.openable;
+    const auto access_check = checkPathAccess(table_location, path, base_storage, context, DB::AccessType::READ);
+    return access_check.granted && access_check.openable;
 }
 
 std::pair<DB::ObjectStoragePtr, std::string> resolveObjectStorageForPath(
