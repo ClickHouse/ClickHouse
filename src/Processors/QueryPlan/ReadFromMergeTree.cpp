@@ -6402,8 +6402,11 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
 
     const auto & table_columns = getStorageMetadata()->getColumns();
     IStorage::ColumnSizeByName result;
+    /// Columns stored by at least one selected `Wide` part, i.e. whose size in `result` was actually measured.
+    NameSet measured_columns;
     for (const auto & part : parts)
     {
+        const bool is_wide = isWidePart(part.data_part);
         for (const auto & column_name : columns)
         {
             const auto column = part.data_part->tryGetColumnForTable(column_name, table_columns);
@@ -6414,6 +6417,8 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
                 ? part.data_part->getSubcolumnSize(column_name)
                 : part.data_part->getColumnSize(column->getNameInStorage());
             result[column_name].add(size);
+            if (is_wide)
+                measured_columns.insert(column_name);
         }
     }
 
@@ -6426,6 +6431,21 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
     const bool no_part_publishes_sizes = std::ranges::none_of(parts, [](const auto & part) { return isWidePart(part.data_part); });
     if (!parts.empty() && no_part_publishes_sizes)
         return data.getColumnSizes(columns, calculate_subcolumn_sizes);
+
+    /// A column stored only by selected `Compact` parts is really read, but measures nothing: for example, a column
+    /// added after the selected `Wide` parts were written. Cost it by the table-wide estimate, not as free.
+    Names unmeasured_columns;
+    for (const auto & column_name : columns)
+        if (result.contains(column_name) && !measured_columns.contains(column_name))
+            unmeasured_columns.push_back(column_name);
+
+    if (!unmeasured_columns.empty())
+    {
+        auto table_wide_sizes = data.getColumnSizes(unmeasured_columns, calculate_subcolumn_sizes);
+        for (const auto & column_name : unmeasured_columns)
+            if (auto it = table_wide_sizes.find(column_name); it != table_wide_sizes.end())
+                result[column_name] = it->second;
+    }
 
     /// Keep an entry even for a column that no selected part stores, so that an all-default selection
     /// still reaches `MergeTreeWhereOptimizer`: `optimizePrewhere` gives up on an empty map.
