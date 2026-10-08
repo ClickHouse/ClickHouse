@@ -43,6 +43,10 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_al
 # The same holds for `url('file://...')`, which delegates to the `file` table function.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_allow_only_replicated_engine=1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_url_file_as AS url('file://${CLICKHOUSE_DATABASE}/tab_file_as.csv', 'CSV');" 2>&1 | grep -o "Only tables with a replicated engine or tables which do not store their own data on disk" | head -n 1
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_allow_only_replicated_engine=1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_url_file_as_static AS url('file://${CLICKHOUSE_DATABASE}/tab_file_as.csv', 'CSV', 'x UInt32');" 2>&1 | grep -o "Only tables with a replicated engine or tables which do not store their own data on disk" | head -n 1
+# An absolute `http` URL does not store data on disk and is allowed. A relative URL is rejected conservatively:
+# `url_base` is not persisted, so another replica could resolve it to a different backend, e.g. to `file://`.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_allow_only_replicated_engine=1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_url_http_as AS url('http://127.0.0.1:1/data.csv', 'CSV', 'x UInt32');"
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_allow_only_replicated_engine=1 --url_base='http://127.0.0.1:1/' --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_url_relative_as AS url('data.csv', 'CSV', 'x UInt32');" 2>&1 | grep -o "Only tables with a replicated engine or tables which do not store their own data on disk" | head -n 1
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_db"
 ${CLICKHOUSE_CLIENT} -q "DROP USER user_${CLICKHOUSE_DATABASE}"
 

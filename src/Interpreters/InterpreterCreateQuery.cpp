@@ -2640,6 +2640,16 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
         database_on_disk->checkTablesLimit(getNumberOfTablesToCreate(create, mode));
 
+    bool only_replicated_engine_allowed = !create.attach
+        && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine]
+        && database && database->getEngineName() == "Replicated";
+    auto throw_unreplicated_table_data_not_allowed = []
+    {
+        throw Exception(ErrorCodes::UNKNOWN_STORAGE,
+                        "Only tables with a replicated engine or tables which do not store their own data on disk "
+                        "are allowed in a Replicated database");
+    };
+
     StoragePtr res;
     /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
@@ -2654,6 +2664,12 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// from the function; a definition with an explicit column list skips that inference and is
         /// checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
+
+        /// Classify the table function before executing it: with a static structure it returns the final storage
+        /// directly, which may not have enough information to decide (e.g. `url` with a relative URL resolved
+        /// against `url_base`), see `ITableFunction::hasUnreplicatedTableDataOnDisk`.
+        if (only_replicated_engine_allowed && table_function->hasUnreplicatedTableDataOnDisk())
+            throw_unreplicated_table_data_not_allowed();
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -2701,13 +2717,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     validateStorage(*res, mode, getContext(), create.isTemporary());
 
-    if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
-    {
-        if (res->hasUnreplicatedTableDataOnDisk() && database && database->getEngineName() == "Replicated")
-            throw Exception(ErrorCodes::UNKNOWN_STORAGE,
-                            "Only tables with a replicated engine or tables which do not store their own data on disk "
-                            "are allowed in a Replicated database");
-    }
+    if (only_replicated_engine_allowed && res->hasUnreplicatedTableDataOnDisk())
+        throw_unreplicated_table_data_not_allowed();
 
     if (from_path && !res->storesDataOnDisk())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

@@ -108,6 +108,8 @@ protected:
     /// Source URI used for the access check of the delegated function (e.g. the file path or the
     /// resolved object-storage URL). Empty for `file://`, matching `TableFunctionFile` behavior.
     String delegate_function_uri;
+    /// Whether the URL argument was a relative reference resolved against the `url_base` setting.
+    bool is_relative_url = false;
 
 private:
     /// Build `delegate` for a non-URL scheme target by constructing and parsing the delegate

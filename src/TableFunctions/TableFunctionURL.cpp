@@ -158,6 +158,10 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
             args.push_back(headers_ast);
     }
 
+    /// `url_base` is not persisted in `CREATE TABLE ... AS url(...)`, so a relative URL may resolve to a different
+    /// backend on another replica or after a restart, see `hasUnreplicatedTableDataOnDisk`.
+    is_relative_url = !StorageURL::isAbsoluteURL(filename);
+
     /// Resolve relative URLs against the url_base setting.
     const auto & url_base = context->getSettingsRef()[Setting::url_base].value;
     filename = StorageURL::resolveURLBase(filename, url_base);
@@ -329,6 +333,10 @@ bool TableFunctionURL::hasStaticStructure() const
 
 bool TableFunctionURL::hasUnreplicatedTableDataOnDisk() const
 {
+    /// A relative URL is rejected conservatively: the backend it dispatches to depends on the `url_base` setting
+    /// of the replica executing the query, which can differ across replicas of a `Replicated` database.
+    if (is_relative_url)
+        return true;
     return delegate ? delegate->hasUnreplicatedTableDataOnDisk() : ITableFunctionFileLike::hasUnreplicatedTableDataOnDisk();
 }
 
