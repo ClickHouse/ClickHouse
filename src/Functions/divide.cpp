@@ -95,13 +95,18 @@ private:
     {
         const auto left = recursiveRemoveLowCardinality(arguments[0].type);
         const auto right = recursiveRemoveLowCardinality(arguments[1].type);
+        const bool constant_unsigned_divisor_fits = isUInt(right) && arguments[1].column
+            && isColumnConst(*arguments[1].column)
+            && accurateLess((*arguments[1].column)[0], Field(UInt256(1) << (8 * right->getSizeOfValueInMemory() - 1)));
         /// Reuse `intDiv` where its operand casts preserve every input value, including a signed
-        /// dividend with a narrower unsigned divisor. This retains its constant-divisor kernels
-        /// and monotonicity metadata, with a canonical name distinct from floating-point `divide`.
+        /// dividend with a narrower unsigned divisor or a constant that fits its signed cast.
+        /// This retains its constant-divisor kernels and monotonicity metadata, with a canonical
+        /// name distinct from floating-point `divide`.
         /// Other mixed-sign pairs need checked magnitudes; nullable inputs need to skip masked
         /// overflow and zero-divisor rows.
         if ((isInt(left) && isInt(right)) || (isUInt(left) && isUInt(right))
-            || (isInt(left) && isUInt(right) && left->getSizeOfValueInMemory() > right->getSizeOfValueInMemory()))
+            || (isInt(left) && isUInt(right)
+                && (left->getSizeOfValueInMemory() > right->getSizeOfValueInMemory() || constant_unsigned_divisor_fits)))
         {
             /// `intDiv` disables lazy execution for constant divisors. Keep potentially throwing
             /// constants on the checked path so an enclosing `if` can mask zero and overflow.
