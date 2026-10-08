@@ -50,6 +50,7 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, AggregateFunctionInputFormat) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
@@ -66,6 +67,7 @@ class WriteBuffer;
     M(CLASS_NAME, DistributedDDLOutputMode) \
     M(CLASS_NAME, DistributedProductMode) \
     M(CLASS_NAME, Double) \
+    M(CLASS_NAME, DoubleAuto) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, ExplainQueryPlanDefault) \
     M(CLASS_NAME, Float) \
@@ -114,6 +116,7 @@ class WriteBuffer;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, TextIndexPostingListApplyMode) \
+    M(CLASS_NAME, TextIndexPostingsIntersectionAlgorithm) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \
@@ -125,6 +128,7 @@ class WriteBuffer;
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
+    M(CLASS_NAME, JoinOrderConflictDetector) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \
@@ -171,6 +175,10 @@ struct Settings
     /// `compatibility` itself instead of being forced to the sender's derived values.
     void resetSettingsChangedByCompatibility();
 
+    /// Reset to its default every setting whose value was set only by the `compatibility` setting when
+    /// `is_allowed` refuses that value, so that `compatibility` leaves such a setting as it is.
+    void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
+
     /// Keep the values that the `compatibility` setting derived but clear their `changed` flags (and forget
     /// they were compatibility-derived). The resulting object still selects e.g. the client-side network codec
     /// from the derived values, while serialization to a server skips them — the server re-derives them from
@@ -178,7 +186,7 @@ struct Settings
     void markSettingsChangedByCompatibilityAsUnchanged();
 
     VectorWithMemoryTracking<String> getHints(const String & name) const;
-    String toString() const;
+    String toString(bool show_secrets) const;
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
@@ -193,9 +201,9 @@ struct Settings
     VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
     VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
 
-    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
-    void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
-    FlatStringMap changedToFlatMap() const;
+    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
+    void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
+    FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);

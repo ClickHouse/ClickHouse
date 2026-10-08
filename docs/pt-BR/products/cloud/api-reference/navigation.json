@@ -1,9 +1,9 @@
 [
   {
-    "group": "Organization",
+    "group": "Organização",
     "pages": [
       {
-        "group": "Organization",
+        "group": "Organização",
         "pages": [
           "GET /v1/organizations",
           "GET /v1/organizations/{organizationId}",
@@ -14,12 +14,23 @@
           "GET /v1/organizations/{organizationId}/activities/{activityId}",
           "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
           "POST /v1/organizations/{organizationId}/byocInfrastructure",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-validate",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-get",
           "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
-          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-progress-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-tags-get",
+          "products/cloud/api-reference/organization/organization-byoc-infrastructure-private-endpoint-config-get"
         ]
       },
       {
-        "group": "Billing",
+        "group": "Notifications",
+        "pages": [
+          "products/cloud/api-reference/notifications/notification-types-get-list"
+        ]
+      },
+      {
+        "group": "Faturamento",
         "pages": [
           "GET /v1/organizations/{organizationId}/usageCost",
           "products/cloud/api-reference/billing/active-balances-get",
@@ -27,8 +38,9 @@
         ]
       },
       {
-        "group": "User management",
+        "group": "Gerenciamento de usuários",
         "pages": [
+          "products/cloud/api-reference/user-management/whoami-get",
           "GET /v1/organizations/{organizationId}/members",
           "GET /v1/organizations/{organizationId}/members/{userId}",
           "PATCH /v1/organizations/{organizationId}/members/{userId}",
@@ -40,7 +52,7 @@
         ]
       },
       {
-        "group": "Role Management",
+        "group": "Gerenciamento de funções",
         "pages": [
           "GET /v1/organizations/{organizationId}/roles",
           "POST /v1/organizations/{organizationId}/roles",
@@ -52,27 +64,27 @@
       {
         "group": "UDF",
         "pages": [
-          "products/cloud/api-reference/udf/udf-attach",
-          "products/cloud/api-reference/udf/udf-attachment-get",
-          "products/cloud/api-reference/udf/udf-detach",
-          "products/cloud/api-reference/udf/udf-attachment-list",
-          "products/cloud/api-reference/udf/udf-create",
-          "products/cloud/api-reference/udf/udf-list",
-          "products/cloud/api-reference/udf/udf-delete",
-          "products/cloud/api-reference/udf/udf-get",
-          "products/cloud/api-reference/udf/udf-upload-session-create",
-          "products/cloud/api-reference/udf/udf-version-create",
-          "products/cloud/api-reference/udf/udf-version-list",
-          "products/cloud/api-reference/udf/udf-version-delete"
+          "POST /v1/organizations/{organizationId}/udfUploads/url",
+          "GET /v1/organizations/{organizationId}/udfs",
+          "POST /v1/organizations/{organizationId}/udfs",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "PUT /v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}",
+          "GET /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "POST /v1/organizations/{organizationId}/udfs/{functionName}/versions",
+          "DELETE /v1/organizations/{organizationId}/udfs/{functionName}/versions/{version}"
         ]
       }
     ]
   },
   {
-    "group": "Service",
+    "group": "Serviço",
     "pages": [
       {
-        "group": "Service",
+        "group": "Serviço",
         "pages": [
           "GET /v1/organizations/{organizationId}/serviceProfiles",
           "GET /v1/organizations/{organizationId}/services",
@@ -114,11 +126,40 @@
           "products/cloud/api-reference/backup/backup-bucket-update",
           "products/cloud/api-reference/backup/backup-bucket-delete"
         ]
+      },
+      {
+        "group": "Snapshot",
+        "pages": [
+          "products/cloud/api-reference/snapshot/snapshot-get-list",
+          "products/cloud/api-reference/snapshot/snapshot-get",
+          "products/cloud/api-reference/snapshot/snapshot-configuration-get",
+          "products/cloud/api-reference/snapshot/snapshot-configuration-update"
+        ]
+      },
+      {
+        "group": "Query API endpoints",
+        "pages": [
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}"
+        ]
+      },
+      {
+        "group": "Saved queries",
+        "pages": [
+          "products/cloud/api-reference/saved-queries/saved-query-list",
+          "products/cloud/api-reference/saved-queries/saved-query-create",
+          "products/cloud/api-reference/saved-queries/saved-query-delete",
+          "products/cloud/api-reference/saved-queries/saved-query-get",
+          "products/cloud/api-reference/saved-queries/saved-query-update"
+        ]
       }
     ]
   },
   {
-    "group": "API keys",
+    "group": "Chaves de API",
     "pages": [
       "GET /v1/organizations/{organizationId}/keys",
       "POST /v1/organizations/{organizationId}/keys",
@@ -212,6 +253,7 @@
       "products/cloud/api-reference/postgres/postgres-instance-config-post",
       "products/cloud/api-reference/postgres/postgres-instance-config-patch",
       "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+      "products/cloud/api-reference/postgres/postgres-service-backup-get-list",
       "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
       "products/cloud/api-reference/postgres/slow-query-pattern-get",
       "products/cloud/api-reference/postgres/postgres-logs-get-list"

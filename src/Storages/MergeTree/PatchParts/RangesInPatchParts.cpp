@@ -429,7 +429,9 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
         mark_cache.get(),
         uncompressed_cache.get(),
         /*vector_similarity_index_cache=*/ nullptr,
-        settings);
+        settings,
+        /// This reader's caller reports a cancellation exception as a broken part.
+        /*interruptible_marks_read=*/ false);
 
     MergeTreeIndexGranulePtr granule = nullptr;
     MinMaxStats result(ranges.size());

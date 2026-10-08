@@ -24,6 +24,8 @@ public:
         const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
+
+    std::string getAlgorithm() const override { return join->getAlgorithm(); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return join->anyTakeLastRow(); }
 
@@ -95,7 +97,7 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    void onProbePhaseFinish(size_t matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override { join->onProbePhaseFinish(matched_right_rows); }
 
     bool hasPostBuildPhase() const override { return join->hasPostBuildPhase(); }
 

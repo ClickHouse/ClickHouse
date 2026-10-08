@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
@@ -24,6 +25,7 @@ public:
             return nullptr;
         }
         bool isIdentifier() const override { return argument->as<ASTIdentifier>(); }
+        bool isSettings() const override { return argument->as<ASTSetQuery>(); }
         bool tryGetString(String * res, bool allow_identifier) const override
         {
             if (const auto * literal = argument->as<ASTLiteral>())

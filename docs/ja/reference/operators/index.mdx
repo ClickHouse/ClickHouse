@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 ClickHouse では、クエリのパース時に、演算子の優先度・優先順位・結合性に応じて、演算子が対応する関数に変換されます。
 
-<div id="access-operators">
-  ## アクセス演算子
-</div>
+## アクセス演算子 {#access-operators}
 
 `a[N]` – 配列要素へのアクセス。`arrayElement(a, N)` 関数。
 `N` には整数の配列も指定でき、その場合はそれらすべての位置の要素が配列として返されます。
@@ -20,17 +18,13 @@ ClickHouse では、クエリのパース時に、演算子の優先度・優先
 
 `a.N` – タプル要素へのアクセス。`tupleElement(a, N)` 関数。
 
-<div id="numeric-negation-operator">
-  ## 数値の否定演算子
-</div>
+## 数値の否定演算子 {#numeric-negation-operator}
 
 `-a` – `negate (a)` 関数です。
 
 タプルの否定については、[tupleNegate](/ja/reference/functions/regular-functions/tuple-functions#tupleNegate) を参照してください。
 
-<div id="multiplication-and-division-operators">
-  ## 乗算および除算の演算子
-</div>
+## 乗算および除算の演算子 {#multiplication-and-division-operators}
 
 `a * b` – `multiply(a, b)` 関数です。
 
@@ -42,9 +36,7 @@ ClickHouse では、クエリのパース時に、演算子の優先度・優先
 
 `a % b` – `modulo(a, b)` 関数です。
 
-<div id="addition-and-subtraction-operators">
-  ## 加算演算子と減算演算子
-</div>
+## 加算演算子と減算演算子 {#addition-and-subtraction-operators}
 
 `a + b` – `plus(a, b)` 関数。
 
@@ -54,105 +46,73 @@ ClickHouse では、クエリのパース時に、演算子の優先度・優先
 
 タプルの減算については、[tupleMinus](/ja/reference/functions/regular-functions/tuple-functions#tupleMinus) を参照してください。
 
-<div id="comparison-operators">
-  ## 比較演算子
-</div>
+## 比較演算子 {#comparison-operators}
 
-<div id="equals-function">
-  ### equals 関数
-</div>
+### equals 関数 {#equals-function}
 
 `a = b` – `equals(a, b)` 関数です。
 
 `a == b` – `equals(a, b)` 関数です。
 
-<div id="notequals-function">
-  ### notEquals 関数
-</div>
+### notEquals 関数 {#notequals-function}
 
 `a != b` — `notEquals(a, b)` 関数。
 
 `a <> b` — `notEquals(a, b)` 関数。
 
-<div id="lessorequals-function">
-  ### lessOrEquals 関数
-</div>
+### lessOrEquals 関数 {#lessorequals-function}
 
 `a <= b` – `lessOrEquals(a, b)` 関数。
 
-<div id="greaterorequals-function">
-  ### greaterOrEquals 関数
-</div>
+### greaterOrEquals 関数 {#greaterorequals-function}
 
 `a >= b` — `greaterOrEquals(a, b)` 関数。
 
-<div id="less-function">
-  ### less 関数
-</div>
+### less 関数 {#less-function}
 
 `a < b` – `less(a, b)` 関数。
 
-<div id="greater-function">
-  ### greater 関数
-</div>
+### greater 関数 {#greater-function}
 
 `a > b` – `greater(a, b)` 関数です。
 
-<div id="like-function">
-  ### like 関数
-</div>
+### like 関数 {#like-function}
 
 `a LIKE b` – `like(a, b)` 関数を表します。
 
-<div id="notlike-function">
-  ### notLike 関数
-</div>
+### notLike 関数 {#notlike-function}
 
 `a NOT LIKE b` — `notLike(a, b)` 関数。
 
-<div id="ilike-function">
-  ### ilike 関数
-</div>
+### ilike 関数 {#ilike-function}
 
 `a ILIKE b` – `ilike(a, b)` 関数と同等です。
 
-<div id="match-function">
-  ### match 関数
-</div>
+### match 関数 {#match-function}
 
 `a REGEXP b` – `match(a, b)` 関数。
 
 `a ~ b` – `match(a, b)` 関数 (PostgreSQL スタイルの正規表現マッチ) 。
 
-<div id="notmatch-function">
-  ### notMatch 関数
-</div>
+### notMatch 関数 {#notmatch-function}
 
 `a !~ b` – `notMatch(a, b)` 関数 (`a` が正規表現 `b` に一致しないかを確認します) 。
 
-<div id="matchcaseinsensitive-function">
-  ### matchCaseInsensitive 関数
-</div>
+### matchCaseInsensitive 関数 {#matchcaseinsensitive-function}
 
 `a ~* b` – `matchCaseInsensitive(a, b)` 関数 (大文字と小文字を区別しない正規表現に一致) 。
 
-<div id="notmatchcaseinsensitive-function">
-  ### notMatchCaseInsensitive 関数
-</div>
+### notMatchCaseInsensitive 関数 {#notmatchcaseinsensitive-function}
 
 `a !~* b` – `notMatchCaseInsensitive(a, b)` 関数 (`a` が正規表現 `b` に大文字と小文字を区別せずに一致しないかどうかを確認します) 。
 
-<div id="between-function">
-  ### BETWEEN 関数
-</div>
+### BETWEEN 関数 {#between-function}
 
 `a BETWEEN b AND c` – `a >= b AND a <= c` と同じ意味です。
 
 `a NOT BETWEEN b AND c` – `a < b OR a > c` と同じ意味です。
 
-<div id="is-not-distinct-from">
-  ### is not distinct from 演算子 (`<=>`)
-</div>
+### is not distinct from 演算子 (`<=>`) {#is-not-distinct-from}
 
 <Note>
   25.10 以降では、`<=>` を他の演算子と同様に使用できます。
@@ -186,70 +146,48 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-<div id="operators-for-working-with-strings">
-  ## Stringを扱う演算子
-</div>
+## Stringを扱う演算子 {#operators-for-working-with-strings}
 
-<div id="overlay">
-  ### OVERLAY
-</div>
+### OVERLAY {#overlay}
 
 * `OVERLAY(string PLACING replacement FROM offset)` - `overlay(string, replacement, offset)` 関数。
 * `OVERLAY(string PLACING replacement FROM offset FOR length)` - `overlay(string, replacement, offset, length)` 関数。
 * `OVERLAYUTF8(string PLACING replacement FROM offset)` - `overlayUTF8(string, replacement, offset)` 関数。
 * `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - `overlayUTF8(string, replacement, offset, length)` 関数。
 
-<div id="operators-for-working-with-data-sets">
-  ## データセットを扱う演算子
-</div>
+## データセットを扱う演算子 {#operators-for-working-with-data-sets}
 
 [IN 演算子](/ja/reference/statements/in)および [EXISTS](/ja/reference/operators/exists) 演算子を参照してください。
 
-<div id="in-function">
-  ### in 関数
-</div>
+### in 関数 {#in-function}
 
 `a IN ...` - `in(a, b)` 関数。
 
-<div id="notin-function">
-  ### notIn 関数
-</div>
+### notIn 関数 {#notin-function}
 
 `a NOT IN ...` に対応する `notIn(a, b)` 関数。
 
-<div id="globalin-function">
-  ### globalIn 関数
-</div>
+### globalIn 関数 {#globalin-function}
 
 `a GLOBAL IN ...` – `globalIn(a, b)` 関数です。
 
-<div id="globalnotin-function">
-  ### globalNotIn 関数
-</div>
+### globalNotIn 関数 {#globalnotin-function}
 
 `a GLOBAL NOT IN ...` — `globalNotIn(a, b)` 関数。
 
-<div id="in-subquery-function">
-  ### in サブクエリ function
-</div>
+### in サブクエリ function {#in-subquery-function}
 
 `a = ANY (subquery)` – `in(a, subquery)` 関数を表します。
 
-<div id="notin-subquery-function">
-  ### notIn サブクエリ関数
-</div>
+### notIn サブクエリ関数 {#notin-subquery-function}
 
 `a != ANY (subquery)` – `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)` と同じです。
 
-<div id="in-subquery-function">
-  ### in サブクエリ function
-</div>
+### in サブクエリ function {#in-subquery-function-1}
 
 `a = ALL (subquery)` – `a IN (SELECT singleValueOrNull(*) FROM subquery)` と同じです。
 
-<div id="notin-subquery-function-1">
-  ### notIn サブクエリ function
-</div>
+### notIn サブクエリ function {#notin-subquery-function-1}
 
 `a != ALL (subquery)` — `notIn(a, subquery)` 関数です。
 
@@ -287,9 +225,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
-<div id="some-all-on-arrays">
-  ### 配列に対する `SOME` / `ALL`
-</div>
+### 配列に対する `SOME` / `ALL` {#some-all-on-arrays}
 
 上で説明したサブクエリ形式に加えて、`SOME` / `ALL` の右辺には配列式 (配列リテラル、配列型のカラム、または配列を返す任意の式) を指定できます。これは PostgreSQL スタイルの配列量化子構文です。この構文は parse 時に認識され、配列関数に書き換えられるため、手動で書き換える必要はありません。
 
@@ -339,13 +275,9 @@ SELECT
   ```
 </Info>
 
-<div id="operators-for-working-with-dates-and-times">
-  ## 日付と時刻を扱う演算子
-</div>
+## 日付と時刻を扱う演算子 {#operators-for-working-with-dates-and-times}
 
-<div id="extract">
-  ### EXTRACT
-</div>
+### EXTRACT {#extract}
 
 ```sql
 EXTRACT(part FROM date);
@@ -431,9 +363,7 @@ FROM test.Orders;
 
 さらに多くの例は[テスト](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql)で確認できます。
 
-<div id="interval">
-  ### INTERVAL
-</div>
+### INTERVAL {#interval}
 
 [Date](/ja/reference/data-types/date) 型および [DateTime](/ja/reference/data-types/datetime) 型の値に対する算術演算で使用する、[Interval](/ja/reference/data-types/special-data-types/interval) 型の値を作成します。
 
@@ -507,9 +437,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 * [Interval](/ja/reference/data-types/special-data-types/interval) データ型
 * [toInterval](/ja/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 型変換関数
 
-<div id="date-time-addition">
-  ### 日付と時刻の加算
-</div>
+### 日付と時刻の加算 {#date-time-addition}
 
 [Date](/ja/reference/data-types/date) または [Date32](/ja/reference/data-types/date32) の値には、`+` 演算子を使用して [Time](/ja/reference/data-types/time) または [Time64](/ja/reference/data-types/time64) の値を加算できます。結果は、指定した時刻の日付を表す [DateTime](/ja/reference/data-types/datetime) または [DateTime64](/ja/reference/data-types/datetime64) になります。この演算は可換です。
 
@@ -559,9 +487,7 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
-<div id="at-time-zone">
-  ### AT TIME ZONE と AT LOCAL
-</div>
+### AT TIME ZONE と AT LOCAL {#at-time-zone}
 
 後置演算子 `AT TIME ZONE` と `AT LOCAL` は、`DateTime` または `DateTime64` の値を別のタイムゾーンに変換します。これらは既存の [`toTimeZone`](/ja/reference/functions/regular-functions/date-time-functions#toTimezone) 関数の糖衣構文です。
 
@@ -616,27 +542,19 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 * [`toTimeZone`](/ja/reference/functions/regular-functions/date-time-functions#toTimezone)
 * [`timeZone`](/ja/reference/functions/regular-functions/date-time-functions#timezone)
 
-<div id="logical-and-operator">
-  ## 論理 AND 演算子
-</div>
+## 論理 AND 演算子 {#logical-and-operator}
 
 構文 `SELECT a AND b` — 関数 [and](/ja/reference/functions/regular-functions/logical-functions#and) を用いて `a` と `b` の論理積を計算します。
 
-<div id="logical-or-operator">
-  ## 論理 OR 演算子
-</div>
+## 論理 OR 演算子 {#logical-or-operator}
 
 構文 `SELECT a OR b` — 関数 [or](/ja/reference/functions/regular-functions/logical-functions#or) を使用して、`a` と `b` の論理和を計算します。
 
-<div id="logical-negation-operator">
-  ## 論理否定演算子
-</div>
+## 論理否定演算子 {#logical-negation-operator}
 
 構文 `SELECT NOT a` — 関数 [not](/ja/reference/functions/regular-functions/logical-functions#not) を使って、`a` の論理否定を計算します。
 
-<div id="conditional-operator">
-  ## 条件演算子
-</div>
+## 条件演算子 {#conditional-operator}
 
 `a ? b : c` – `if(a, b, c)` 関数。
 
@@ -644,9 +562,7 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 
 条件演算子は、まず b と c の値を計算し、次に条件 a が満たされているかどうかを判定して、対応する値を返します。`b` または `C` が [arrayJoin()](/ja/reference/functions/regular-functions/array-join) 関数である場合、&quot;a&quot; の条件にかかわらず各行が複製されます。
 
-<div id="conditional-expression">
-  ## 条件式
-</div>
+## 条件式 {#conditional-expression}
 
 ```sql
 CASE [x]
@@ -662,57 +578,43 @@ END
 
 `transform` 関数は `NULL` では動作しません。
 
-<div id="concatenation-operator">
-  ## 連結演算子
-</div>
+## 連結演算子 {#concatenation-operator}
 
 `s1 || s2` – `concat(s1, s2) 関数。`
 
-<div id="lambda-creation-operator">
-  ## ラムダ作成演算子
-</div>
+## ラムダ作成演算子 {#lambda-creation-operator}
 
 `x -> expr` – `lambda(x, expr)` 関数。
 
 以下の演算子は括弧であるため、優先順位を持ちません:
 
-<div id="array-creation-operator">
-  ## Array作成演算子
-</div>
+## Array作成演算子 {#array-creation-operator}
 
 `[x1, ...]` – `array(x1, ...)` 関数。
 
-<div id="tuple-creation-operator">
-  ## Tuple 生成演算子
-</div>
+## Tuple 生成演算子 {#tuple-creation-operator}
 
 `(x1, x2, ...)` – `tuple(x2, x2, ...)` 関数。
 
-<div id="associativity">
-  ## 結合性
-</div>
+## 結合性 {#associativity}
 
 すべての二項演算子は左結合です。たとえば、`1 + 2 + 3` は `plus(plus(1, 2), 3)` に変換されます。
 ただし、常に期待どおりの動作になるとは限りません。たとえば、`SELECT 4 > 2 > 3` の結果は 0 になります。
 
 効率化のため、`and` 関数と `or` 関数は任意個の引数を受け取れます。対応する `AND` および `OR` 演算子の連鎖は、これらの関数への単一の呼び出しに変換されます。
 
-<div id="checking-for-null">
-  ## `NULL` かどうかの確認
-</div>
+## `NULL` かどうかの確認 {#checking-for-null}
 
 ClickHouse は `IS NULL` および `IS NOT NULL` 演算子をサポートしています。
 
-<div id="is_null">
-  ### IS NULL
-</div>
+### IS NULL {#is_null}
 
 * [Nullable](/ja/reference/data-types/nullable) 型の値に対して、`IS NULL` 演算子は次の値を返します。
   * 値が `NULL` の場合は `1`。
   * それ以外の場合は `0`。
 * その他の値に対しては、`IS NULL` 演算子は常に `0` を返します。
 
-[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NULL FROM table` は `SELECT n.null FROM TABLE` に変換されます。
+[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NULL FROM table` は `SELECT n.null != 0 FROM TABLE` に変換されます。
 
 {/* */}
 
@@ -726,9 +628,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-<div id="is_not_null">
-  ### IS NOT NULL
-</div>
+### IS NOT NULL {#is_not_null}
 
 * [Nullable](/ja/reference/data-types/nullable) 型の値に対しては、`IS NOT NULL` 演算子は次の値を返します。
   * 値が `NULL` の場合は `0`
@@ -749,9 +649,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 
 [optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすると、最適化できます。`optimize_functions_to_subcolumns = 1` の場合、関数はカラムデータ全体を読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NOT NULL FROM table` は `SELECT NOT n.null FROM TABLE` に変換されます。
 
-<div id="checking-boolean-values">
-  ## ブール値の確認
-</div>
+## ブール値の確認 {#checking-boolean-values}
 
 ClickHouse は、`IS TRUE`、`IS FALSE`、`IS UNKNOWN`、`IS NOT TRUE`、`IS NOT FALSE`、`IS NOT UNKNOWN` の演算子をサポートしています。
 これらは、[Bool](/ja/reference/data-types/boolean) および `Nullable(Bool)` の式に対して使用されます。

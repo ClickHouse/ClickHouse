@@ -31,6 +31,12 @@ using Processors = std::list<ProcessorPtr>;
 
 class StepWallClock;
 
+namespace Runtime::V1
+{
+class ExecutionThreadContext;
+class ExecutingGraph;
+}
+
 
 using StepWallClockPtr = std::shared_ptr<StepWallClock>;
 
@@ -148,9 +154,6 @@ public:
         /// All work is done (all data is processed or all output are closed), nothing more to do.
         Finished,
 
-        /// No one needs data on output ports.
-        /// Unneeded,
-
         /// You may call 'work' method and processor will do some work synchronously.
         Ready,
 
@@ -169,7 +172,7 @@ public:
       *
       * It may access input and output ports,
       *  indicate the need for work by another processor by returning NeedData or PortFull,
-      *  or indicate the absence of work by returning Finished or Unneeded,
+      *  or indicate that processing has finished by returning `Finished`,
       *  it may pull data from input ports and push data to output ports.
       *
       * The method is not thread-safe and must be called from a single thread in one moment of time,
@@ -277,6 +280,14 @@ public:
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
     virtual void onUpdatePorts() {}
+
+    /// Called by the executor once the whole pipeline has finished successfully, and the read progress of every
+    /// source has been reported. The progress of a source may arrive after all its consumers have finished
+    /// (e.g. `RemoteSource` drains the remaining packets of a connection after `LIMIT`), so anything that depends
+    /// on the final statistics, such as the epilogue of an output format, belongs here.
+    /// A query broken off by `timeout_overflow_mode = 'break'` also returns its partial result as a success,
+    /// so the hook is called for it as well, even though not every processor is finished in that case.
+    virtual void onPipelineFinished() {}
 
     virtual ~IProcessor() = default;
 
@@ -392,6 +403,10 @@ public:
     // If the in-memory data's size is not larger then bytes, it doesn't spill
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
+    /// True for a fan-out that cannot take its next input chunk until every one of its outputs has
+    /// accepted a share of the current one, so it cannot progress while an output is undemanded.
+    virtual bool requiresAllOutputsPushable() const { return false; }
+
 protected:
     /// May be called in parallel with work().
     virtual void onCancel() noexcept {}
@@ -404,11 +419,11 @@ private:
     /// - elapsed_ns
     /// - num_executed_jobs
     /// - query_plan_step_wall_clock_ptr
-    friend class ExecutionThreadContext;
+    friend class Runtime::V1::ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
     /// - output_wait_elapsed_ns
-    friend class ExecutingGraph;
+    friend class Runtime::V1::ExecutingGraph;
 
     std::string processor_description;
 
