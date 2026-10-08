@@ -94,11 +94,12 @@ IsColumnQualifier makeTupleColumnQualifierCheck(
         if (prefer_table_over_column && table_names.contains(name))
             return false;
 
-        auto try_get_column_without_table_prefix = [&](bool single_part_prefix_only) -> std::optional<NameAndTypePair>
+        /// `table_names` is unordered, so the prefixes of one kind (`t` or `db.t`) are tried in a separate pass.
+        auto try_get_column_without_table_prefix = [&](bool multi_part_prefix) -> std::optional<NameAndTypePair>
         {
             for (const auto & table_name : table_names)
             {
-                if (single_part_prefix_only && table_name.contains('.'))
+                if (table_name.contains('.') != multi_part_prefix)
                     continue;
                 if (name.size() > table_name.size() + 1 && name.starts_with(table_name) && name[table_name.size()] == '.')
                     if (auto column = try_get_column(name.substr(table_name.size() + 1)))
@@ -112,13 +113,18 @@ IsColumnQualifier makeTupleColumnQualifierCheck(
         /// Like `IdentifierResolver::tryResolveIdentifierFromTableExpression`, with
         /// `analyzer_compatibility_prefer_alias_over_subcolumn` a qualifier whose first part is the table name or
         /// the alias, e.g. `t.a`, is looked up without that part first, and only then as a whole.
+        /// Like `IdentifierResolver`, a single-part prefix (the table name or the alias) is always tried before
+        /// a `database.table` prefix, e.g. for `db.tbl.tup.*` over `db.tbl AS db` the column `tbl.tup` is tried
+        /// before `tup`.
         std::optional<NameAndTypePair> column;
         if (prefer_table_over_column)
-            column = try_get_column_without_table_prefix(/* single_part_prefix_only = */ true);
+            column = try_get_column_without_table_prefix(/* multi_part_prefix = */ false);
         if (!column)
             column = try_get_column(name);
+        if (!column && !prefer_table_over_column)
+            column = try_get_column_without_table_prefix(/* multi_part_prefix = */ false);
         if (!column)
-            column = try_get_column_without_table_prefix(/* single_part_prefix_only = */ false);
+            column = try_get_column_without_table_prefix(/* multi_part_prefix = */ true);
         if (!column)
             return false;
 
