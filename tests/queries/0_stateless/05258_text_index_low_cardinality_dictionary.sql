@@ -38,7 +38,8 @@ SELECT count(), sum(id) FROM tab WHERE hasPhrase(lc, 'v17 w3') SETTINGS use_skip
 
 SELECT 'MATERIALIZE INDEX';
 
-ALTER TABLE tab CLEAR INDEX idx_lc, MATERIALIZE INDEX idx_lc SETTINGS mutations_sync = 2;
+ALTER TABLE tab CLEAR INDEX idx_lc SETTINGS mutations_sync = 2;
+ALTER TABLE tab MATERIALIZE INDEX idx_lc SETTINGS mutations_sync = 2;
 
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab, idx_lc);
 SELECT count(), sum(cityHash64(token, cardinality)) FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);

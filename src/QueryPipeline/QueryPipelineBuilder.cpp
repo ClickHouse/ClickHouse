@@ -578,7 +578,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                     connect(*outport, squashing->getInputs().front());
                     processors.emplace_back(squashing);
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
-                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(JoinBuildStreamKey{}, next_stream++, outports.size()));
+                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
                     connect(squashing->getOutputPort(), adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }
@@ -588,7 +588,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesRightLe
                 for (const auto & outport : outports)
                 {
                     auto adding_joined = std::make_shared<FillingRightJoinSideTransform>(
-                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(JoinBuildStreamKey{}, next_stream++, outports.size()));
+                        right->getSharedHeader(), join, filling_finish_counter, JoinBuildContext::forStream(next_stream++, outports.size()));
                     connect(*outport, adding_joined->getInputs().front());
                     processors.emplace_back(std::move(adding_joined));
                 }

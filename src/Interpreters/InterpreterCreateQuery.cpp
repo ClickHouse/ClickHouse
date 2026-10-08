@@ -152,6 +152,7 @@ namespace Setting
     extern const SettingsBool materialized_views_populate_atomically;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_temporary_tables;
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
@@ -633,7 +634,7 @@ ASTPtr InterpreterCreateQuery::formatProjections(const ProjectionsDescription & 
 }
 
 DataTypePtr InterpreterCreateQuery::getColumnType(
-    const ASTColumnDeclaration & col_decl, const LoadingStrictnessLevel mode, const bool make_columns_nullable)
+    const ASTColumnDeclaration & col_decl, const bool make_columns_nullable, const bool pin_current_state_version)
 {
     auto col_type = col_decl.getType();
     if (!col_type)
@@ -644,14 +645,21 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 
     DataTypePtr column_type = DataTypeFactory::instance().get(col_type);
 
-    if (LoadingStrictnessLevel::ATTACH <= mode)
-        setVersionToAggregateFunctions(column_type, true);
-    else
+    if (pin_current_state_version)
         /// Spell the state version the column is going to be written with out in the type, so that
         /// it gets into the table metadata and the data stays readable when a newer server changes
         /// the default: an unversioned name in stored metadata denotes the layout from before the
-        /// function became versioned (the ATTACH branch above pins it to 0).
+        /// function became versioned (the branch below pins it to 0).
         pinCurrentStateVersionToAggregateFunctions(column_type);
+    else
+        /// The query replays formatted metadata rather than a user-written definition: an `ATTACH`
+        /// reads the stored `.sql` file, a DDL worker (`ON CLUSTER` / `Replicated` database -
+        /// including the initiator, which re-executes the entry it wrote to the log) replays a
+        /// query normalized on the initiator (so a version the initiator pinned is spelled out in
+        /// the type), and a restore replays the `CREATE` query saved in the backup. In all of these
+        /// an unversioned name denotes the layout from before the function became versioned, and
+        /// the data that goes with it is written in that layout - pin it to version 0.
+        setVersionToAggregateFunctions(column_type, true);
 
     if (col_decl.null_modifier)
     {
@@ -702,6 +710,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         && !is_restore_from_backup
         && context_->getSettingsRef()[Setting::data_type_default_nullable];
 
+    /// The current aggregate-function state version is pinned into the type only for a definition
+    /// the user wrote. A normalized query already spells any pinned version out in the type name,
+    /// so in it (and in stored metadata, and in a backup) an unversioned name denotes the layout
+    /// from before the function became versioned and must stay version 0 - see `getColumnType`.
+    bool pin_current_state_version = mode == LoadingStrictnessLevel::CREATE
+        && !already_normalized_on_initiator
+        && !is_restore_from_backup;
+
     for (const auto & ast : columns_ast.children)
     {
         const auto & col_decl = ast->as<ASTColumnDeclaration &>();
@@ -713,7 +729,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         }
 
 
-        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, mode, make_columns_nullable));
+        column_names_and_types.emplace_back(col_decl.name, getColumnType(col_decl, make_columns_nullable, pin_current_state_version));
 
         /// add column to postprocessing if there is a default_expression specified
         getDefaultExpressionInfoInto(col_decl, column_names_and_types.back().type, default_expr_info);
@@ -1501,6 +1517,19 @@ namespace
 
 }
 
+String InterpreterCreateQuery::getDatabaseDefaultTableEngineName(const ASTCreateQuery & create, ContextPtr local_context)
+{
+    if (!create.as_table.empty() || create.is_materialized_view)
+        return {};
+    if (create.storage && create.storage->engine)
+        return {};
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(local_context->resolveDatabase(create.getDatabase()));
+    if (!database)
+        return {};
+    return database->getDefaultTableEngineName(create.getTable());
+}
+
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 {
     if (create.as_table_function)
@@ -1567,6 +1596,18 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             }
             return;
         }
+    }
+
+    if (auto engine_name = getDatabaseDefaultTableEngineName(create, getContext()); !engine_name.empty())
+    {
+        if (!create.storage)
+            create.set(create.storage, make_intrusive<ASTStorage>());
+
+        auto engine_ast = make_intrusive<ASTFunction>();
+        engine_ast->name = std::move(engine_name);
+        engine_ast->setNoEmptyArgs(true);
+        create.storage->set(create.storage->engine, engine_ast);
+        return;
     }
 
     /// We'll try to extract a storage definition from clause `AS`:
@@ -2340,6 +2381,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 namespace
 {
 
+/// Enforces `max_temporary_tables` before a temporary table named `table_name` is added to the session.
+void checkTemporaryTablesLimit(const ContextPtr & context, const String & table_name)
+{
+    const UInt64 max_temporary_tables = context->getSettingsRef()[Setting::max_temporary_tables];
+    if (!max_temporary_tables)
+        return;
+
+    const Tables tables = context->getSessionContext()->getExternalTables();
+
+    /// Replacing an existing temporary table does not change the number of tables.
+    if (tables.contains(table_name))
+        return;
+
+    if (tables.size() >= max_temporary_tables)
+        throw Exception(ErrorCodes::TOO_MANY_TABLES,
+            "Too many temporary tables in the session: {}, the maximum is {} (the `max_temporary_tables` setting)",
+            tables.size(), max_temporary_tables);
+}
+
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
@@ -2417,6 +2477,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
             return false;
+
+        checkTemporaryTablesLimit(getContext(), create.getTable());
 
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
@@ -3160,6 +3222,10 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery & create,
                                                                 const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    /// Bare `REPLACE` requires the target to exist, so it never adds a table.
+    if (create.create_or_replace)
+        checkTemporaryTablesLimit(getContext(), create.getTable());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
 
     String temporary_table_name = create.getTable();
@@ -3838,7 +3904,9 @@ void InterpreterCreateQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
 
 void InterpreterCreateQuery::addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage)
 {
-    if (create.is_dictionary || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
+    if (create.is_dictionary
+        || storage->getName() == "Alias"
+        || (create.columns_list && create.columns_list->columns && !create.columns_list->columns->children.empty()))
         return;
 
     auto ast_storage = make_intrusive<ASTStorage>();

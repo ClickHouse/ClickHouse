@@ -84,15 +84,6 @@ inline void addMatchedRightRows(std::optional<size_t> & total, std::optional<siz
         *total += *part;
 }
 
-class QueryPipelineBuilder;
-
-/// Lets only `QueryPipelineBuilder` number the build streams.
-class JoinBuildStreamKey
-{
-    friend class QueryPipelineBuilder;
-    JoinBuildStreamKey() = default;
-};
-
 /// Says which build stream a build-side call works for, and whether the join checks the size limits.
 ///
 /// The pipeline fills a join from N concurrent `FillingRightJoinSideTransform`s only when
@@ -113,7 +104,7 @@ class JoinBuildContext
 {
 public:
     /// Stream `stream` of the `num_streams` streams that fill one join concurrently.
-    static JoinBuildContext forStream(JoinBuildStreamKey, size_t stream, size_t num_streams);
+    static JoinBuildContext forStream(size_t stream, size_t num_streams);
 
     static JoinBuildContext serial() { return JoinBuildContext(0, 1, /*join_checks_limits_=*/true); }
 

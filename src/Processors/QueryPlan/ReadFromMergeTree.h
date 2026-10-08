@@ -401,6 +401,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+    /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
+    /// does not depend on the direct order of rows can read in reverse order.
+    bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
@@ -456,7 +459,6 @@ public:
     void adoptFiltersFrom(const ReadFromMergeTree & other)
     {
         indexes = other.indexes;
-        indexes_built_by_apply_filters = other.indexes_built_by_apply_filters;
 
         filter_actions_dag = other.filter_actions_dag;
         query_info.filter_actions_dag = filter_actions_dag;
@@ -577,8 +579,7 @@ public:
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
@@ -693,8 +694,6 @@ private:
 
     /// Pre-computed value, needed to trigger sets creating for PK
     mutable std::optional<Indexes> indexes;
-    /// True if `applyFilters` built `indexes` from the filters pushed down to this step.
-    bool indexes_built_by_apply_filters = false;
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan

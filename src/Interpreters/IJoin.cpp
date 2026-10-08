@@ -8,7 +8,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-JoinBuildContext JoinBuildContext::forStream(JoinBuildStreamKey, size_t stream, size_t num_streams)
+JoinBuildContext JoinBuildContext::forStream(size_t stream, size_t num_streams)
 {
     if (stream >= num_streams || num_streams > std::numeric_limits<UInt32>::max())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Build stream {} of {} is out of range", stream, num_streams);
