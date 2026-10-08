@@ -58,6 +58,7 @@ struct LazyPostingsStats
     size_t segments_skipped_dense = 0;
     size_t segments_skipped_resolved = 0;
     size_t blocks_skipped_resolved = 0;
+    size_t blocks_skipped_dense = 0;
     size_t brute_force_intersections = 0;
     size_t brute_force_early_exits = 0;
     size_t leapfrog_intersections = 0;
@@ -99,8 +100,10 @@ public:
     PostingsApplyWindow linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
 
     /// Increments counters in `data` for all doc_ids in [row_offset, row_offset + num_rows).
+    /// `num_applied` is the number of posting lists already applied to `data`: a counter equal to it marks a row
+    /// present in all of them, and the regions without such rows are skipped.
     /// Returns the range of rows for which counters were incremented.
-    PostingsApplyWindow linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
+    PostingsApplyWindow linearAnd(UInt8 * data, size_t row_offset, size_t num_rows, UInt8 num_applied);
 
     /// Move to the next doc_id.
     void next();
@@ -148,7 +151,13 @@ private:
     /// segment- and block-level skips for regions already resolved by `op` (see `canSkipRegion`).
     /// Returns the range of rows written.
     template <PadOp op>
-    PostingsApplyWindow linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
+    PostingsApplyWindow linearSegments(UInt8 * data, size_t row_offset, size_t num_rows, UInt8 num_applied);
+
+    /// Linear scan over the decoded values (`decoded_values_ptr`), resumed from the read position `index`.
+    /// Moves `index` past the window and returns the range of rows written.
+    /// Inlined: `linearSegments` calls it for every decoded block.
+    template <PadOp op>
+    ALWAYS_INLINE PostingsApplyWindow linearDecoded(UInt8 * data, size_t row_offset, size_t num_rows);
 
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
@@ -228,7 +237,9 @@ bool lazyUnionPostingLists(
 ///   - Brute-force bitmap counting — the sparsest cursor sets bits,
 //      the remaining ones increment counters,
 ///     then a final pass keeps only the rows where the count is n.
-///   - Leapfrog — the sparsest cursor leads and the others advance forward, skipping whole blocks.
+///   - Leapfrog — the sparsest cursor leads, the others are advanced to its doc_id in ascending cardinality,
+///     and the first one that overshoots moves the lead forward, so a denser cursor only advances
+///     to the doc_ids that all the sparser ones contain.
 /// Returns false only if no row of the window is set, so the caller may skip scanning the column.
 /// True means that some rows may be set: brute-force intersection may return true when no row survives.
 bool lazyIntersectPostingLists(
