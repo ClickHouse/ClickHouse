@@ -19,6 +19,8 @@ namespace Runtime::V2
 class GlobalTasks
 {
 public:
+    GlobalTasks();
+
     void push(const Task & task);
     void pushMany(std::span<const Task> many);
     std::optional<Task> tryPop();

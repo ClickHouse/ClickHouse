@@ -4,7 +4,9 @@
 #include <atomic>
 #include <limits>
 #include <source_location>
+#include <string>
 #include <type_traits>
+#include <utility>
 
 #if defined(WYRD_SIMULATION)
 #    include <Processors/Executors/Runtime/Wyrd/Strategies/Simulation/InjectFault.h>
@@ -48,7 +50,7 @@ public:
     {
         injectFault("atomic::load", location);
         T result = impl.load(order);
-        trace(fmt::format("atomic::load -> {}", formatArgument(result)));
+        trace(fmt::format("{}: atomic::load -> {}", name, formatArgument(result)));
         return result;
     }
 
@@ -56,14 +58,14 @@ public:
     {
         injectFault("atomic::store", location);
         impl.store(desired, order);
-        trace(fmt::format("atomic::store -> {}", formatArgument(desired)));
+        trace(fmt::format("{}: atomic::store -> {}", name, formatArgument(desired)));
     }
 
     T exchange(T desired, std::memory_order order = std::memory_order::seq_cst, std::source_location location = std::source_location::current())
     {
         injectFault("atomic::exchange", location);
         T result = impl.exchange(desired, order);
-        trace(fmt::format("atomic::exchange -> {}", formatArgument(result)));
+        trace(fmt::format("{}: atomic::exchange -> {}", name, formatArgument(result)));
         return result;
     }
 
@@ -73,7 +75,7 @@ public:
         bool result = !spuriousFailure(location) && impl.compare_exchange_weak(expected, desired, success, failure);
         if (!result)
             expected = impl.load(failure);
-        trace(fmt::format("atomic::compare_exchange_weak -> {}, saw {}", result, formatArgument(expected)));
+        trace(fmt::format("{}: atomic::compare_exchange_weak -> {}, saw {}", name, result, formatArgument(expected)));
         return result;
     }
 
@@ -81,7 +83,7 @@ public:
     {
         injectFault("atomic::compare_exchange_strong", location);
         bool result = impl.compare_exchange_strong(expected, desired, success, failure);
-        trace(fmt::format("atomic::compare_exchange_strong -> {}, saw {}", result, formatArgument(expected)));
+        trace(fmt::format("{}: atomic::compare_exchange_strong -> {}, saw {}", name, result, formatArgument(expected)));
         return result;
     }
 
@@ -89,7 +91,7 @@ public:
     {
         injectFault("atomic::fetch_add", location);
         T result = impl.fetch_add(delta, order);
-        trace(fmt::format("atomic::fetch_add -> {}", formatArgument(result)));
+        trace(fmt::format("{}: atomic::fetch_add -> {}", name, formatArgument(result)));
         return result;
     }
 
@@ -97,7 +99,7 @@ public:
     {
         injectFault("atomic::fetch_sub", location);
         T result = impl.fetch_sub(delta, order);
-        trace(fmt::format("atomic::fetch_sub -> {}", formatArgument(result)));
+        trace(fmt::format("{}: atomic::fetch_sub -> {}", name, formatArgument(result)));
         return result;
     }
 
@@ -106,7 +108,7 @@ public:
         injectFault("atomic::wait", location);
         while (impl.load(order) == old)
             futexWait(this, location);
-        trace(fmt::format("atomic::wait -> {}", formatArgument(impl.load(order))));
+        trace(fmt::format("{}: atomic::wait -> {}", name, formatArgument(impl.load(order))));
     }
 
     void notify_one(std::source_location location = std::source_location::current())
@@ -137,9 +139,26 @@ public:
         return impl;
     }
 
+    void setName(std::string new_name)
+    {
+        name = std::move(new_name);
+    }
+
+    const std::string & getName() const
+    {
+        return name;
+    }
+
 private:
     std::atomic<T> impl{};
+    std::string name = fmt::format("{}", fmt::ptr(this));
 };
+
+template <typename T>
+void setName(Atomic<T> & atomic, std::string name)
+{
+    atomic.setName(std::move(name));
+}
 
 #elif defined(WYRD_ADVERSARY)
 
@@ -240,10 +259,20 @@ private:
     std::atomic<T> impl{};
 };
 
+template <typename T>
+void setName(Atomic<T> &, std::string)
+{
+}
+
 #else
 
 template <typename T>
 using Atomic = std::atomic<T>;
+
+template <typename T>
+void setName(Atomic<T> &, std::string)
+{
+}
 
 #endif
 

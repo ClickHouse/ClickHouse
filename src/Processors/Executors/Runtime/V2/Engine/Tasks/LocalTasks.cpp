@@ -1,6 +1,8 @@
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/LocalTasks.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
 
+#include <fmt/format.h>
+
 #include <algorithm>
 #include <bit>
 
@@ -46,6 +48,14 @@ Task getSlot(const auto & buffer, UInt32 index)
     return Task::unpack(buffer[index % LocalTasks::capacity].packed.load(std::memory_order::relaxed));
 }
 
+}
+
+LocalTasks::LocalTasks()
+{
+    Wyrd::setName(head, "local_tasks.head");
+    Wyrd::setName(bounds, "local_tasks.bounds");
+    for (UInt32 index = 0; index < capacity; ++index)
+        Wyrd::setName(buffer[index].packed, fmt::format("local_tasks.slot[{}]", index));
 }
 
 bool LocalTasks::push(const Task & task)

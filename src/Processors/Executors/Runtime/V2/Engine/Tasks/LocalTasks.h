@@ -26,6 +26,8 @@ class LocalTasks
 public:
     static constexpr UInt32 capacity = Wyrd::enabled() ? 8 : 256;
 
+    LocalTasks();
+
     bool push(const Task & task);
     UInt32 pushMany(std::span<const Task> many);
 

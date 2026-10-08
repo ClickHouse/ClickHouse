@@ -8,6 +8,12 @@ namespace DB
 namespace Runtime::V2
 {
 
+GlobalTasks::GlobalTasks()
+{
+    Wyrd::setName(mutex, "global_tasks.mutex");
+    Wyrd::setName(tasks_count, "global_tasks.tasks_count");
+}
+
 void GlobalTasks::push(const Task & task)
 {
     std::lock_guard lock(mutex);

@@ -20,7 +20,7 @@ void futexWaitFetch(Atomic<UInt32> & address, UInt32 & value, std::source_locati
     if (address.load(std::memory_order::seq_cst, location) == value)
         futexWait(&address, location);
     value = address.load(std::memory_order::seq_cst, location);
-    trace(fmt::format("futex::waitFetch -> {}", value));
+    trace(fmt::format("{}: futex::waitFetch -> {}", address.getName(), value));
 }
 
 void futexWakeOne(Atomic<UInt32> & address, std::source_location location)
