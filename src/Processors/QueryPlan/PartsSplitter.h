@@ -75,6 +75,8 @@ struct SplitPartsByRanges
 {
     using Values = std::vector<Field>;
 
+    /// With no `borders`, the layers are disjoint by construction (groups of whole partitions, see
+    /// `optimizeJoinByPartitions`) and are read without a range filter.
     std::vector<RangesInDataParts> layers;
     std::vector<Values> borders;
     bool in_reverse_order = false;
