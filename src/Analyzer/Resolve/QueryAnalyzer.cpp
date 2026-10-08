@@ -7767,17 +7767,44 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     for (const auto & prefixed : apply_prefixed_names)
         ++prefixed_name_count[prefixed.name];
 
+    /// Distinct instances of one table compare equal, so a column must also read the same instance.
+    auto reads_same_table_expressions = [&](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    {
+        std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes_to_process{{lhs.get(), rhs.get()}};
+        while (!nodes_to_process.empty())
+        {
+            auto [lhs_node, rhs_node] = nodes_to_process.back();
+            nodes_to_process.pop_back();
+
+            if (const auto * lhs_column = lhs_node->as<ColumnNode>())
+            {
+                auto lhs_source = lhs_column->getColumnSourceOrNull();
+                auto rhs_source = rhs_node->as<ColumnNode &>().getColumnSourceOrNull();
+                if (lhs_source != rhs_source
+                    && (scope.table_expression_node_to_data.contains(lhs_source) || scope.table_expression_node_to_data.contains(rhs_source)))
+                    return false;
+            }
+
+            const auto & lhs_children = lhs_node->getChildren();
+            const auto & rhs_children = rhs_node->getChildren();
+            for (size_t i = 0; i < lhs_children.size(); ++i)
+                if (lhs_children[i] && rhs_children[i])
+                    nodes_to_process.emplace_back(lhs_children[i].get(), rhs_children[i].get());
+        }
+        return true;
+    };
+
     /// Compared like the duplicated aliases above, except the root alias: a prefixed name is not an alias.
-    auto is_equal_without_root_alias = [](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
+    auto is_equal_without_root_alias = [&](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
     {
         if (lhs->getAlias() == rhs->getAlias())
-            return lhs->isEqual(*rhs);
+            return lhs->isEqual(*rhs) && reads_same_table_expressions(lhs, rhs);
 
         auto lhs_without_alias = lhs->clone();
         lhs_without_alias->removeAlias();
         auto rhs_without_alias = rhs->clone();
         rhs_without_alias->removeAlias();
-        return lhs_without_alias->isEqual(*rhs_without_alias);
+        return lhs_without_alias->isEqual(*rhs_without_alias) && reads_same_table_expressions(lhs, rhs);
     };
 
     auto is_same_expression = [&](const QueryTreeNodePtr & lhs, const QueryTreeNodePtr & rhs)
