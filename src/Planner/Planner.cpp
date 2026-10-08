@@ -2692,19 +2692,18 @@ static bool shouldUseQueryCacheForSubquery(
 /// changes (see `QueryTreeBuilder::buildSelectExpression`), so a subquery could otherwise escape
 /// the ban - and make the outer distributed plan's shape depend on cache contents again - just by
 /// specifying `SETTINGS make_distributed_plan = 0` while the outer query is still planned
-/// distributed. The exception is the in-process local fragment of a distributed plan
-/// (`is_local_plan_for_distributed_query`): it is never serialized, so reads are safe there. The
-/// exception covers the whole fragment, not only its root: nested subqueries and CTEs of that
-/// fragment are planned through `SelectQueryOptions::subquery`, which clears the root flag and
-/// raises the sticky `inside_local_plan_for_distributed_query` instead. Without it the fragment's
-/// own subqueries would keep losing safe cache hits on the initiator and the local replica.
+/// distributed.
+///
+/// There is no exception for the in-process local plans of a distributed query
+/// (`is_local_plan_for_distributed_query`, e.g. the local shard plan of a `Distributed` table): that
+/// flag only means nothing unmarshalls the blocks of the plan. The local plan is still united into
+/// the enclosing plan, which `QueryPlan::convertToDistributed` may split into fragments, so a cache
+/// hit there would make the shape of the outer plan depend on cache contents as well.
 static bool shouldReadFromQueryCacheForSubquery(
     const Settings & settings, const QueryResultCacheOnDiskPtr & query_result_cache_on_disk, const SelectQueryOptions & select_query_options)
 {
     if (!settings[Setting::enable_reads_from_query_cache] && !(query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled()))
         return false;
-    if (select_query_options.is_local_plan_for_distributed_query || select_query_options.inside_local_plan_for_distributed_query)
-        return true;
     return !settings[Setting::make_distributed_plan] && !select_query_options.building_distributed_plan;
 }
 
