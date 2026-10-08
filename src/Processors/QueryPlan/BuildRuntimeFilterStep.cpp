@@ -27,6 +27,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const QueryPlanSerializationSettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
     extern const QueryPlanSerializationSettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
+    extern const QueryPlanSerializationSettingsBool join_runtime_filter_use_minmax;
 }
 
 
@@ -60,10 +61,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     RuntimeFilterBuildOptions build_options_,
     Float64 pass_ratio_threshold_for_disabling_,
     UInt64 blocks_to_skip_before_reenabling_)
-    : ITransformingStep(
-        input_header_,
-        input_header_,
-        getTraits())
+    : ITransformingStep(input_header_, input_header_, getTraits())
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
@@ -119,6 +117,8 @@ void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling] = pass_ratio_threshold_for_disabling;
     settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling] = blocks_to_skip_before_reenabling;
     settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits] = build_options.max_ratio_of_set_bits;
+    settings[QueryPlanSerializationSetting::join_runtime_filter_use_minmax]
+        = build_options.minmax_mode != RuntimeFilterMinMaxMode::Disabled;
 }
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
@@ -151,6 +151,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     const Float64 pass_ratio_threshold_for_disabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     const UInt64 blocks_to_skip_before_reenabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling];
     const Float64 max_ratio_of_set_bits_in_bloom_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits];
+    const bool can_use_minmax_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_use_minmax];
 
     /// A deserialized step carries no random lookup key (it is never serialized); runtime filters are
     /// re-derived per plan build. If such a step is ever executed, `finish()` no-ops on the empty key.
@@ -165,6 +166,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
             .bloom = RuntimeBloomFilterParameters{bloom_filter_bytes, bloom_filter_hash_functions},
             .max_ratio_of_set_bits = max_ratio_of_set_bits_in_bloom_filter,
             .polarity = allow_to_use_not_exact_filter ? RuntimeFilterPolarity::Contains : RuntimeFilterPolarity::NotContains,
+            .minmax_mode = can_use_minmax_filter ? RuntimeFilterMinMaxMode::Combined : RuntimeFilterMinMaxMode::Disabled,
             .track_key_range = false,
             .distinct_keys_hint = std::nullopt,
             .distinct_keys_hint_matches_filter_key = false},
@@ -201,6 +203,9 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     else
     {
         format_settings.out << prefix << "Allow not exact filter: " << (build_options.polarity == RuntimeFilterPolarity::Contains) << '\n';
+        format_settings.out << prefix << "Can use minmax filter: " << (build_options.minmax_mode != RuntimeFilterMinMaxMode::Disabled)
+                            << '\n';
+        format_settings.out << prefix << "Use only minmax filter: " << (build_options.minmax_mode == RuntimeFilterMinMaxMode::Only) << '\n';
     }
 }
 

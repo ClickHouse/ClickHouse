@@ -37,6 +37,9 @@ struct RuntimeFilterStats
     std::atomic<Int64> rows_skipped = 0;
     std::atomic<Int64> blocks_processed = 0;
     std::atomic<Int64> blocks_skipped = 0;
+    std::atomic<Int64> minmax_batches_checked = 0;
+    std::atomic<Int64> minmax_batches_pruned = 0;
+    std::atomic<Int64> bloom_rows_avoided_by_minmax = 0;
 };
 
 struct RuntimeFilterConfig
@@ -116,9 +119,11 @@ public:
     explicit RuntimeFilterEvaluationState(RuntimeFilterConfig config_);
 
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
+    void recordMinMaxBatches(size_t batches_checked, size_t batches_pruned, size_t bloom_rows_avoided) const;
     const RuntimeFilterStats & getStats() const { return stats; }
     const RuntimeFilterConfig & getConfig() const { return config; }
     void markKeySetDropped() { key_set_dropped = true; }
+    bool isKeySetDropped() const { return key_set_dropped.load(); }
 
     /// Checks if a block should bypass the filter because its key set was dropped or evaluation is temporarily throttled.
     bool shouldSkip(size_t next_block_rows) const;
@@ -199,6 +204,13 @@ class ApproximateSetRuntimeFilter
 public:
     static constexpr bool is_prebuilt = false;
 
+    struct BatchFilterStats
+    {
+        size_t batches_checked = 0;
+        size_t batches_pruned = 0;
+        size_t bloom_rows_avoided = 0;
+    };
+
     static bool isDataTypeSupported(const DataTypePtr & data_type);
 
     ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_);
@@ -211,10 +223,83 @@ public:
     bool isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const;
 
 private:
+    friend class AdaptiveSetRuntimeFilter;
+
+    template <typename BatchFilter>
+    ColumnPtr find(
+        const ColumnWithTypeAndName & values,
+        std::optional<size_t> & rows_passed,
+        BatchFilter & batch_filter,
+        BatchFilterStats & batch_filter_stats) const;
+
     void insertIntoBloomFilter(const ColumnPtr & values);
 
     BloomFilter bloom_filter;
 };
+
+/// Typed numeric range component used by NumericMinMaxRuntimeFilterVariant.
+/// It can reject batches before Bloom hashing, filter Bloom results, and remain active when adaptive membership is dropped.
+template <typename T>
+struct NumericMinMaxRuntimeFilter
+{
+    NumericMinMaxRuntimeFilter();
+
+    void insert(const IColumn & values);
+    void mergeFrom(const NumericMinMaxRuntimeFilter & source);
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
+    String describe() const;
+
+private:
+    friend class RuntimeFilter;
+
+    auto makeBloomBatchFilter(const IColumn & values) const;
+    bool mayContain(T value) const;
+
+    T min_value;
+    T max_value;
+    bool has_value = false;
+    bool has_nan = false;
+};
+
+extern template struct NumericMinMaxRuntimeFilter<UInt64>;
+extern template struct NumericMinMaxRuntimeFilter<Int64>;
+extern template struct NumericMinMaxRuntimeFilter<Float32>;
+extern template struct NumericMinMaxRuntimeFilter<Float64>;
+
+/// Type-erased wrapper around all supported NumericMinMaxRuntimeFilter instantiations.
+class NumericMinMaxRuntimeFilterVariant
+{
+public:
+    static constexpr bool is_prebuilt = false;
+
+    explicit NumericMinMaxRuntimeFilterVariant(const DataTypePtr & data_type);
+
+    void insert(ColumnPtr values);
+    void finishInsert(RuntimeFilterEvaluationState &) { }
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
+    void mergeFrom(const NumericMinMaxRuntimeFilterVariant & source);
+    ColumnPtr getRecordedKeyValues() const { return nullptr; }
+    DataTypePtr getTargetType() const { return filter_column_target_type; }
+    String describe() const;
+
+private:
+    friend class RuntimeFilter;
+
+    using Filter = std::variant<
+        NumericMinMaxRuntimeFilter<UInt64>,
+        NumericMinMaxRuntimeFilter<Int64>,
+        NumericMinMaxRuntimeFilter<Float32>,
+        NumericMinMaxRuntimeFilter<Float64>>;
+
+    static Filter makeFilter(const DataTypePtr & data_type);
+
+    void insert(const IColumn & values);
+
+    const DataTypePtr filter_column_target_type;
+    Filter filter;
+};
+
+bool supportsNumericMinMaxRuntimeFilter(const DataTypePtr & data_type);
 
 /// Starts with an exact set and switches to an approximate set once the exact set becomes too large.
 class AdaptiveSetRuntimeFilter
@@ -234,6 +319,7 @@ public:
         bool distinct_keys_hint_matches_filter_key_);
 
     void insert(ColumnPtr values);
+    void finishInsert();
     void finishInsert(RuntimeFilterEvaluationState & evaluation_state);
     /// Forwards `rows_passed` to the underlying exact/approximate filter (see their docs).
     ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
@@ -242,6 +328,15 @@ public:
     DataTypePtr getTargetType() const { return filter_column_target_type; }
 
 private:
+    friend class RuntimeFilter;
+
+    template <typename BatchFilter>
+    ColumnPtr find(
+        const ColumnWithTypeAndName & values,
+        std::optional<size_t> & rows_passed,
+        BatchFilter & batch_filter,
+        ApproximateSetRuntimeFilter::BatchFilterStats & batch_filter_stats) const;
+
     using ExactFilter = ExactSetRuntimeFilter<false>;
     struct KeySetDropped
     {
@@ -252,10 +347,6 @@ private:
     void dropKeySet(Filter & filter);
     ApproximateSetRuntimeFilter * switchToApproximateFilter(Filter & filter);
 
-    /// Disables approximate filter if it is likely to have bad selectivity.
-    void checkApproximateFilterWorthiness(
-        RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const;
-
     const DataTypePtr filter_column_target_type;
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
@@ -265,6 +356,16 @@ private:
     const bool distinct_keys_hint_matches_filter_key;
 
     Filter filter;
+};
+
+/// Adaptive exact/Bloom membership filter paired with a numeric min/max filter.
+/// RuntimeFilter coordinates the two components so min/max remains active if adaptive membership is dropped.
+struct AdaptiveSetRuntimeFilterWithMinMax
+{
+    static constexpr bool is_prebuilt = false;
+
+    AdaptiveSetRuntimeFilter adaptive;
+    NumericMinMaxRuntimeFilterVariant minmax;
 };
 
 /// Runtime filter that delegates probe to a function captured at publication time.
@@ -307,27 +408,40 @@ public:
     using ExactContains = ExactSetRuntimeFilter<false>;
     using ExactNotContains = ExactSetRuntimeFilter<true>;
     using Adaptive = AdaptiveSetRuntimeFilter;
+    using AdaptiveWithMinMax = AdaptiveSetRuntimeFilterWithMinMax;
+    using MinMax = NumericMinMaxRuntimeFilterVariant;
     using SharedFixedHashTable = SharedFixedHashTableRuntimeFilter;
 
 private:
-    using Filter = std::variant<ExactContains, ExactNotContains, Adaptive, SharedFixedHashTable>;
+    using Filter = std::variant<ExactContains, ExactNotContains, Adaptive, AdaptiveWithMinMax, MinMax, SharedFixedHashTable>;
+
+    template <typename FilterImpl>
+    static DataTypePtr getTargetType(const FilterImpl & filter)
+    {
+        if constexpr (std::is_same_v<std::decay_t<FilterImpl>, AdaptiveWithMinMax>)
+            return filter.adaptive.getTargetType();
+        else
+            return filter.getTargetType();
+    }
 
     struct Data
     {
         detail::RuntimeFilterBuildState build_state;
         Filter filter;
         detail::RuntimeFilterIndexAnalysis index_analysis;
+        UInt64 build_rows = 0;
     };
 
     template <typename FilterImpl>
     static Data makeData(size_t filters_to_merge, FilterImpl && filter)
     {
         using FilterType = std::decay_t<FilterImpl>;
-        auto target_type = filter.getTargetType();
+        const auto target_type = getTargetType(filter);
         Data result{
             detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
             Filter(std::forward<FilterImpl>(filter)),
-            detail::RuntimeFilterIndexAnalysis(target_type, !std::is_same_v<FilterType, ExactNotContains>)};
+            detail::RuntimeFilterIndexAnalysis(target_type, !std::is_same_v<FilterType, ExactNotContains>),
+            0};
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
             result.index_analysis.enable();
@@ -374,6 +488,10 @@ public:
     /// Usage statistics
     const RuntimeFilterStats & getStats() const { return evaluation_state.getStats(); }
     const RuntimeFilterConfig & getConfig() const { return evaluation_state.getConfig(); }
+    UInt64 getBuildRows() const;
+    bool isFullyDisabled() const { return evaluation_state.isKeySetDropped(); }
+    String getModeForLogs() const;
+    String getExtraInfoForLogs() const;
 
 private:
     const DataTypePtr filter_column_target_type;
@@ -424,5 +542,4 @@ const ActionsDAG::Node * buildRuntimeRangePredicate(
     const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
     ActionsDAG & dag,
     const ContextPtr & context);
-
 }

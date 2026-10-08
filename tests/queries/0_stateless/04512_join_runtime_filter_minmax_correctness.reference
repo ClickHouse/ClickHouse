@@ -1,0 +1,14 @@
+numeric_minmax_selective	10
+numeric_minmax_full_range	100
+empty_build	0
+nullable_exact_fallback	2
+signed_unsigned_common_type	3
+float_nan_exact	1
+float_nan_minmax	1
+left_anti_nan_exact	0
+date_key	1
+datetime_key	1
+decimal_key	1
+string_key	1
+fixed_string_key	1
+parallel_merge_minmax	100
