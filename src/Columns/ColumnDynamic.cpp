@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
@@ -811,7 +812,7 @@ void ColumnDynamic::serializeValueIntoSharedVariant(
     shared_variant.getOffsets().push_back(chars.size());
 }
 
-std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings *) const
+std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings * settings) const
 {
     /// We cannot use Variant serialization here as it serializes discriminator + value,
     /// but Dynamic doesn't have fixed mapping discriminator <-> variant type
@@ -841,6 +842,15 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
         encodeDataType(variant_type, buf);
         variant_type->getDefaultSerialization()->serializeBinary(variant_col.getVariantByGlobalDiscriminator(discr), variant_col.offsetAt(n), buf, getFormatSettings());
         type_and_value = buf.str();
+    }
+
+    /// The serialized value is used as a key in a hash table, see `IColumn::SerializationSettings::canonicalize_negative_zero`.
+    std::optional<String> canonical_type_and_value;
+    if (settings && settings->canonicalize_negative_zero)
+    {
+        canonical_type_and_value = canonicalizeNegativeZeroInEncodedValue(type_and_value);
+        if (canonical_type_and_value)
+            type_and_value = *canonical_type_and_value;
     }
 
     char * pos = arena.allocContinue(sizeof(UInt8) + sizeof(size_t) + type_and_value.size(), begin);

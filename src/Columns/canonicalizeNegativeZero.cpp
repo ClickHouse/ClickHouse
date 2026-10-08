@@ -78,33 +78,6 @@ bool mayContainNegativeZero(const IDataType & type)
     });
 }
 
-/// A value in the shared variant of a `Dynamic` column and in the shared data of a `JSON` column
-/// is stored as the binary encoding of its type followed by the value in binary format
-/// (see `SerializationDynamic::serializeBinary`), so it cannot be canonicalized in place -
-/// it has to be decoded and encoded back.
-/// Returns `nullopt` if the value contains no negative zeros.
-std::optional<String> canonicalizeNegativeZeroInEncodedValue(std::string_view encoded_value)
-{
-    ReadBufferFromMemory read_buffer(encoded_value);
-    DataTypePtr type = decodeDataType(read_buffer);
-
-    if (!mayContainNegativeZero(*type))
-        return {};
-
-    SerializationPtr serialization = type->getDefaultSerialization();
-    auto value_column = type->createColumn();
-    serialization->deserializeBinary(*value_column, read_buffer, ColumnDynamic::getBinaryEncodedValueFormatSettings());
-
-    ColumnPtr canonical_column = canonicalizeNegativeZero(*value_column);
-    if (!canonical_column)
-        return {};
-
-    WriteBufferFromOwnString write_buffer;
-    encodeDataType(type, write_buffer);
-    serialization->serializeBinary(*canonical_column, 0, write_buffer, ColumnDynamic::getBinaryEncodedValueFormatSettings());
-    return write_buffer.str();
-}
-
 /// The same, for a `String` column of binary encoded values.
 ColumnPtr canonicalizeNegativeZeroInEncodedValues(const IColumn & column)
 {
@@ -186,6 +159,28 @@ ColumnPtr canonicalizeNegativeZeroInVariant(const ColumnVariant & column, std::o
         column.getLocalDiscriminatorsPtr(), column.getOffsetsPtr(), variants, column.getLocalToGlobalDiscriminatorsMapping());
 }
 
+}
+
+std::optional<String> canonicalizeNegativeZeroInEncodedValue(std::string_view encoded_value)
+{
+    ReadBufferFromMemory read_buffer(encoded_value);
+    DataTypePtr type = decodeDataType(read_buffer);
+
+    if (!mayContainNegativeZero(*type))
+        return {};
+
+    SerializationPtr serialization = type->getDefaultSerialization();
+    auto value_column = type->createColumn();
+    serialization->deserializeBinary(*value_column, read_buffer, ColumnDynamic::getBinaryEncodedValueFormatSettings());
+
+    ColumnPtr canonical_column = canonicalizeNegativeZero(*value_column);
+    if (!canonical_column)
+        return {};
+
+    WriteBufferFromOwnString write_buffer;
+    encodeDataType(type, write_buffer);
+    serialization->serializeBinary(*canonical_column, 0, write_buffer, ColumnDynamic::getBinaryEncodedValueFormatSettings());
+    return write_buffer.str();
 }
 
 ColumnPtr canonicalizeNegativeZero(const IColumn & column)

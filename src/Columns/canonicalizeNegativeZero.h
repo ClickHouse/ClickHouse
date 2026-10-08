@@ -27,6 +27,14 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column);
 /// The canonicalized columns are appended to `holder`, which has to outlive the usage of `key_columns`.
 void canonicalizeNegativeZeroInKeyColumns(ColumnRawPtrs & key_columns, Columns & holder);
 
+/** A value in the shared variant of a `Dynamic` column and in the shared data of a `JSON` column
+  * is stored as the binary encoding of its type followed by the value in binary format
+  * (see `SerializationDynamic::serializeBinary`), so it cannot be canonicalized in place -
+  * it has to be decoded and encoded back.
+  * Returns the canonicalized encoded value, or `nullopt` if the value contains no negative zeros.
+  */
+std::optional<String> canonicalizeNegativeZeroInEncodedValue(std::string_view encoded_value);
+
 /** `IColumn::updateHashWithValue` agrees with `equals`, so it hashes `-0.` as `0.`. That is wrong where a hash
   * identifies a constant, e.g. the key of the cache of compiled expressions or of the query condition cache,
   * because the two zeros are different values: `1 / -0.` is `-inf`.
