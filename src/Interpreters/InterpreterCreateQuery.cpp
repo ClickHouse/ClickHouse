@@ -912,8 +912,7 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
     throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
 }
 
-/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so a user without it is told the name is
-/// unknown, as a user holding the grant is told later by the factory.
+/// `TABLE ENGINE ON <name>` cannot be granted for an unregistered name, so without the grant the name is reported as unknown.
 void throwIfEngineIsUnknownAndNotGranted(const String & engine_name, bool is_database_engine, const ContextPtr & context)
 {
     if (is_database_engine ? DatabaseFactory::instance().getDatabaseEngines().contains(engine_name)
