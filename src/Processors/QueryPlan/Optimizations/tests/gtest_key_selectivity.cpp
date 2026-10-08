@@ -46,6 +46,26 @@ TEST(KeySelectivity, RowsStandInForMissingDistinctValues)
     EXPECT_FALSE(rows_only.from_statistics);
 }
 
+TEST(KeySelectivity, BoundStandsInForUnknownRows)
+{
+    /// A relation whose rows are unknown gives the rows it cannot exceed, so an equality between two
+    /// such relations still has a selectivity instead of pricing the join as a cross product.
+    RelationStats bounded;
+    bounded.max_rows = 1000;
+    bounded.column_stats["k"] = ColumnStats{};
+    const auto key = keyDistinctValues(bounded, "k");
+    EXPECT_EQ(key.from_statistics, 0u);
+    EXPECT_EQ(key.rows, 1000u);
+
+    JoinKeyEstimate keys;
+    keys.add(key, key, 0);
+    EXPECT_DOUBLE_EQ(keys.selectivity, 0.001);
+    EXPECT_FALSE(keys.from_statistics);
+
+    RelationStats nothing;
+    EXPECT_EQ(keyDistinctValues(nothing, "k").rows, 0u);
+}
+
 TEST(KeySelectivity, JoinedRowsByWhatIsKnown)
 {
     /// A key NDV from statistics sizes the join as the product over it, whichever side it is on.

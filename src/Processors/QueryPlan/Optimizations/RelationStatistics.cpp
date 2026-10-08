@@ -29,7 +29,7 @@ KeyDistinctValues keyDistinctValues(const RelationStats & relation, const String
     KeyDistinctValues result;
     if (auto it = relation.column_stats.find(column); it != relation.column_stats.end())
         result.from_statistics = it->second.num_distinct_values;
-    result.rows = relation.estimated_rows.value_or(0);
+    result.rows = relation.estimated_rows ? *relation.estimated_rows : relation.max_rows.value_or(0);
     return result;
 }
 

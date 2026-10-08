@@ -1404,6 +1404,9 @@ void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_ro
 
             frame.clone->step = frame.node->step->clone();
             frame.clone->children = std::move(frame.children);
+            /// The row estimate of the step belongs to the node; without it the clone shows no
+            /// estimate in `EXPLAIN` and the profile log.
+            frame.clone->cost_estimation = frame.node->cost_estimation;
 
             original_to_clone[frame.node] = frame.clone;
             if (auto * subplan_reference = typeid_cast<CommonSubplanReferenceStep *>(frame.clone->step.get()))

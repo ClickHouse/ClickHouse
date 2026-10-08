@@ -63,9 +63,23 @@ struct JoinKeyEstimate
     }
 };
 
+/// Rows the cost model counts for an entry: its estimate; for a join without one, its selectivity
+/// times its inputs' values (its bound is the product of its inputs' bounds, which would grow with
+/// every join); for a relation without one, its row bound, else one row.
+inline double searchRows(const DPJoinEntryPtr & entry, const QueryGraph & query_graph)
+{
+    if (entry->estimated_rows)
+        return static_cast<double>(*entry->estimated_rows);
+    if (!entry->isLeaf())
+        return entry->selectivity * searchRows(entry->left, query_graph) * searchRows(entry->right, query_graph);
+    if (entry->max_rows)
+        return static_cast<double>(*entry->max_rows);
+    return 1;
+}
+
 /// Distinct values of a column as the join order optimizer knows it: from the relation's
 /// statistics and rows, or from the DP entry of a joined relation set, whose column statistics
-/// the joins below narrowed.
+/// the joins below narrowed and whose rows are the ones its cost counts, see `searchRows`.
 inline KeyDistinctValues getColumnStats(
     const QueryGraph & query_graph,
     const PlanMemo & dp_table,
@@ -80,7 +94,7 @@ inline KeyDistinctValues getColumnStats(
         {
             if (auto col_it = it->second->column_stats.find(column_name); col_it != it->second->column_stats.end())
                 result.from_statistics = col_it->second.num_distinct_values;
-            result.rows = it->second->estimated_rows.value_or(0);
+            result.rows = roundToRowCount(searchRows(it->second, query_graph));
         }
         return result;
     }
@@ -231,32 +245,9 @@ inline std::optional<UInt64> estimateJoinRowsUpperBound(
     }
 }
 
-/// Rows the cost of an entry counts: the estimate when there is one. A join without one counts
-/// the rows its own cost counted, its selectivity over the search values of its inputs; its row
-/// bound is the product of its inputs' bounds, which would grow with every join and push the
-/// relations with known sizes to the end of the order. A relation without one counts its upper
-/// bound, so that a filtered table without statistics is not joined first as if it had one row.
-/// A relation with neither counts as one row: which side of its join is the key cannot be told,
-/// and the key of a relation with a known size must keep the join with it cheap, its rows over the
-/// key NDV, as when hash table statistics give sizes to some relations only. A relation read
-/// through a prepared join storage (a `Join` engine table, a dictionary) has neither, and one row
-/// joins it by its key early, before the other side picks up a second equality to it.
-inline double searchRows(const DPJoinEntryPtr & entry, const QueryGraph & query_graph)
-{
-    if (entry->estimated_rows)
-        return static_cast<double>(*entry->estimated_rows);
-    if (!entry->isLeaf())
-        return entry->selectivity * searchRows(entry->left, query_graph) * searchRows(entry->right, query_graph);
-    if (entry->max_rows)
-        return static_cast<double>(*entry->max_rows);
-    return 1;
-}
-
-/// Rows an inner join of `lhs` and `rhs` rows keeps. With a key NDV from statistics it is the
-/// product over that NDV. Without one, an equality is taken as a foreign key meeting a primary key:
-/// every row of the larger side finds its one match, so the join keeps the larger side. The rows of
-/// a side do not stand in for its key NDV here: a key without an NDV would count as unique and the
-/// join as keeping the smaller side. Without an equality the join is the product.
+/// Rows an inner join of `lhs` and `rhs` rows keeps: the product over the key NDV from statistics;
+/// without one, an equality is taken as a foreign key meeting a primary key and keeps the larger
+/// side; without an equality, the product.
 inline double estimateJoinedRows(const JoinKeyEstimate & keys, double lhs, double rhs)
 {
     if (keys.from_statistics)
@@ -365,11 +356,8 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, keys, join_kind, strictness);
 }
 
-/// Rows a join emits for the cost model. Two estimated inputs give `estimateJoinedRows`. An input
-/// without an estimate is counted at its search value, and the join at the reported selectivity
-/// times both search values: which side is the key cannot be told then, and a key of a sized
-/// relation must keep the join with it cheap, so the unknown side's rows are not taken as the
-/// larger side of a foreign key join.
+/// Rows a join emits for the cost model: `estimateJoinedRows` of two estimated inputs, otherwise
+/// the reported selectivity times the inputs' search values.
 inline double joinedRowsSearchValue(const QueryGraph & query_graph, const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const JoinKeyEstimate & keys)
 {
     if (left->estimated_rows && right->estimated_rows)

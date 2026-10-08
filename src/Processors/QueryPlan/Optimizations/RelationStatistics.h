@@ -79,7 +79,8 @@ void addUnionColumnStats(
 GroupCountEstimate estimateGroupCount(const std::vector<UInt64> & key_distinct_values, std::optional<UInt64> rows, std::optional<UInt64> max_rows);
 
 /// Distinct values of a join key: the NDV its column statistics give, and the rows of its relation,
-/// which stand in for a key without an NDV (the key then counts as unique). Zero means unknown.
+/// which stand in for a key without an NDV (the key then counts as unique); a relation without a
+/// row estimate gives the rows it cannot exceed. Zero means unknown.
 struct KeyDistinctValues
 {
     UInt64 from_statistics = 0;
