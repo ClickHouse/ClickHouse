@@ -2825,7 +2825,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
     return analyzed_result_ptr;
 }
 
-ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache(bool check_row_limits) const
 {
     /// Deliberately not stored in `analyzed_result_ptr`: the result must not become the analysis of the
     /// executed read, which has to re-analyze once its final shape (and with it the TopK gate) is known.
@@ -2849,7 +2849,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWith
         /*allow_query_condition_cache_=*/false,
         /*allow_top_k_prewhere_query_condition_cache_=*/false,
         supportsSkipIndexesOnDataRead(),
-        /*check_row_limits=*/true);
+        check_row_limits);
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEstimation() const
