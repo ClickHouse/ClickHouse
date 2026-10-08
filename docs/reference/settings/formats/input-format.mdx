@@ -1020,7 +1020,7 @@ The maximum number of packets (rows) in one block produced by the `PCAP` input f
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "16744704"},{"label": "New setting: the `PCAP` input format stops filling a block once the captured bytes of its packets reach this amount."}]}]}/>
 
-The `PCAP` input format stops filling a block once the captured bytes of its packets reach this amount, even if the block has fewer than `input_format_pcap_max_block_size` rows. Because the `raw` and `payload` columns hold the packet bytes, this bounds the memory of one block for captures with large packets. 0 means no byte limit.
+The `PCAP` input format stops filling a block once the packet bytes it stores reach this amount, even if the block has fewer than `input_format_pcap_max_block_size` rows. The count includes the captured bytes of every packet and, when the `payload` column is read, the payload bytes copied into it, so it bounds the string data of one block for captures with large packets. 0 means no byte limit.
 
 ## input_format_protobuf_flatten_google_wrappers {#input_format_protobuf_flatten_google_wrappers}
 
