@@ -29,6 +29,7 @@
 #include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/extractStringValueFilters.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -347,6 +348,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsBool apply_row_policy_after_final;
     extern const SettingsBool apply_prewhere_after_final;
+    extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool defer_partition_pruning_after_final;
     extern const SettingsBool distributed_index_analysis_only_on_coordinator;
 }
@@ -5281,6 +5283,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         if (query_info.filter_actions_dag)
             boost::hash_combine(salt, query_info.filter_actions_dag->getOutputs().front()->getHash());
         reader_settings.query_condition_cache_top_k_salt = salt;
+    }
+
+    /// Push down substring search conditions from PREWHERE into the column scan: the readers check
+    /// every value of the corresponding String columns and read non-matching values as empty strings.
+    /// This is allowed only when PREWHERE is guaranteed to filter out the non-matching rows (`need_filter`),
+    /// so that the replaced values can never appear in the query result.
+    /// At this point `query_info.prewhere_info` is final: query plan optimizations that update it have
+    /// already run, and the deferred-after-FINAL case above has been applied.
+    if (context->getSettingsRef()[Setting::apply_string_filters_during_scan]
+        && query_info.prewhere_info
+        && query_info.prewhere_info->need_filter)
+    {
+        reader_settings.string_value_filters = extractStringValueFilters(
+            query_info.prewhere_info->prewhere_actions,
+            query_info.prewhere_info->prewhere_column_name,
+            query_info.row_level_filter ? &query_info.row_level_filter->actions : nullptr);
     }
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
