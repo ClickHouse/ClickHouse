@@ -29,7 +29,7 @@ $CLICKHOUSE_CLIENT --query "
     GRANT SELECT ON $CLICKHOUSE_DATABASE.* TO $user;
     CREATE TABLE t (k UInt64, v String) ENGINE = MergeTree ORDER BY k
     SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192;
-    INSERT INTO t SELECT number, repeat(toString(number), 20) FROM numbers(400000);
+    INSERT INTO t SELECT number, repeat(toString(number), 5) FROM numbers(1000000);
     SYSTEM DROP COLUMNS CACHE"
 
 # Keeps the user active, and holds next to nothing itself, while the queries below run, so that the user's
@@ -60,6 +60,7 @@ if [ "$base" -le 0 ]; then
 fi
 
 # About 40 MB go to the cache, twice the limit of the query that reads them: what the cache keeps is not the query's.
+# The rows are narrow, so that the stripe the query holds while it reads it, about 3 MB, stays far below that limit.
 $CLICKHOUSE_CLIENT --user "$user" --query "
     SELECT count() FROM t WHERE NOT ignore(v)
     SETTINGS use_columns_cache = 1, max_threads = 1, max_memory_usage = 20000000, use_query_condition_cache = 0"
