@@ -91,6 +91,13 @@ MergingAggregatedStep::MergingAggregatedStep(
     /// `Aggregator::mergeAndConvertOneBucketToChunk`, so it would be a silent no-op here. Drop it,
     /// so that the plan does not claim an optimization the pipeline does not perform.
     params.threshold_top_k.reset();
+
+    /// The bucket-local Top-K conversion (`bucket_top_k`) is consumed by
+    /// `Aggregator::convertOneBucketToChunk`, which the ordinary merging path reaches, but
+    /// `MergingAggregatedMemoryEfficientTransform` converts through `Aggregator::mergeBlocks` and
+    /// never selects the best groups. Drop it there for the same reason.
+    if (memory_efficient_aggregation)
+        params.bucket_top_k = 0;
 }
 
 void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
