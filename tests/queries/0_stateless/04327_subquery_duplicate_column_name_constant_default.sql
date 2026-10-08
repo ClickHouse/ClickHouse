@@ -193,3 +193,22 @@ SELECT * FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(2) AS q)) 
 DESCRIBE (SELECT * FROM (SELECT 1 AS q) AS t JOIN (SELECT materialize(1) AS q, * FROM (SELECT materialize(9) AS q)) AS s ON 1);
 SELECT * FROM (SELECT 1 AS q) AS t JOIN (SELECT materialize(1) AS q, * FROM (SELECT materialize(9) AS q)) AS s ON 1;
 DESCRIBE (SELECT *, 5 AS q_1 FROM (SELECT materialize(1) AS q, * FROM (SELECT materialize(9) AS q)) AS s);
+
+-- A typo hint never suggests a generated internal name: `value_2` is closer to the hidden `value_1` than to `value`.
+SELECT value_2 AS typo_hint_04327 FROM (SELECT 7 AS value, * FROM (SELECT materialize(0) AS value)); -- { serverError UNKNOWN_IDENTIFIER }
+SYSTEM FLUSH LOGS query_log;
+SELECT count(), countIf(exception LIKE '%Maybe you meant%'), countIf(position(exception, 'value_1') > 0)
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'ExceptionBeforeStart' AND query LIKE '%typo\_hint\_04327%';
+
+-- The wrapped `JOIN ... USING` shape of https://github.com/ClickHouse/ClickHouse/issues/118986 returns the unwrapped rows.
+DROP TABLE IF EXISTS t1_118986;
+DROP TABLE IF EXISTS t2_118986;
+CREATE TABLE t1_118986 (a Int32) ENGINE = Memory;
+CREATE TABLE t2_118986 (a Int32) ENGINE = Memory;
+INSERT INTO t1_118986 VALUES (1), (2), (3);
+INSERT INTO t2_118986 VALUES (2), (3), (4);
+SELECT a, t1.a, t2.a FROM t1_118986 AS t1 FULL OUTER JOIN t2_118986 AS t2 USING (a) ORDER BY ALL;
+SELECT * FROM (SELECT a, t1.a, t2.a FROM t1_118986 AS t1 FULL OUTER JOIN t2_118986 AS t2 USING (a)) ORDER BY ALL;
+DROP TABLE t1_118986;
+DROP TABLE t2_118986;
