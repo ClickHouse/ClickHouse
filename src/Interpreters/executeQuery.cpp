@@ -2938,9 +2938,7 @@ static BlockIO executeQueryImpl(
                     context->setWorkloadExempt();
             }
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(
-                query_for_logging, normalized_query_hash, out_ast.get(), context,
-                start_watch.getStart(), internal);
+            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
