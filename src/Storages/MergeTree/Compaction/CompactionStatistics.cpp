@@ -82,6 +82,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsBool use_adaptive_write_buffer_for_dynamic_subcolumns;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
+    extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
     extern const MergeTreeSettingsBool vertical_merge_optimize_ttl_delete;
@@ -165,24 +166,26 @@ UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
     return result;
 }
 
-/// `MergedBlockOutputStream` creates one writer per physical substream of every non-text skip index.
+/// Calls `callback(index_description, index)` for every skip index a merge writes with `MergedBlockOutputStream`:
+/// one writer per physical substream of every non-text skip index.
 /// Text indexes are written by `MergeTextIndexesTask` instead and do not share this writer lifetime.
 /// With `materialize_skip_indexes_on_merge = 0` the merge (`MergeTask::prepare`) and the projection
-/// rebuild (`collectSkipIndicesToMaterialize`) write no skip indexes at all, so there is nothing to count.
-size_t countMaterializedSkipIndexStreams(
+/// rebuild (`collectSkipIndicesToMaterialize`) write no skip indexes at all, so there is nothing to visit.
+template <typename Callback>
+void forEachMaterializedSkipIndex(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeSettings & settings,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    Callback && callback)
 {
     if (!settings[MergeTreeSetting::materialize_skip_indexes_on_merge])
-        return 0;
+        return;
 
     std::unordered_set<String> excluded_index_names;
     const auto excluded_indexes = settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
     if (!excluded_indexes.empty())
         excluded_index_names = parseIdentifiersOrStringLiteralsToSet(excluded_indexes, context->getSettingsRef());
 
-    size_t streams = 0;
     for (const auto & index : metadata_snapshot->getSecondaryIndices())
     {
         if (index.type == "text" || excluded_index_names.contains(index.name))
@@ -190,9 +193,83 @@ size_t countMaterializedSkipIndexStreams(
 
         const auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, settings);
         if (!index_ptr->isInert())
-            streams += index_ptr->getSubstreams().size();
+            callback(index, *index_ptr);
     }
+}
+
+size_t countMaterializedSkipIndexStreams(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    const ContextPtr & context)
+{
+    size_t streams = 0;
+    forEachMaterializedSkipIndex(metadata_snapshot, settings, context, [&](const IndexDescription &, const IMergeTreeIndex & index)
+    {
+        streams += index.getSubstreams().size();
+    });
     return streams;
+}
+
+/// With `packed_skip_index_max_bytes > 0` every substream of a non-text skip index is written through a
+/// `SizeAdaptiveSpoolBuffer` for its data file and another one for its marks file (see
+/// `MergeTreeDataPartWriterOnDisk::initSkipIndices`). Each of them keeps everything written into it in an
+/// in-memory accumulator until the substream either crosses the threshold and spills to a standalone file
+/// or is committed to `skp_idx.packed` at finalize, so it is held for the whole merge. An accumulator holds
+/// at most the threshold plus the last working buffer appended to it (`compress_block_size` for the data
+/// file, `MARKS_FILE_BUFFER_SIZE` for the marks file), and it grows as a `PODArray`, so its capacity stays
+/// below twice that. This is the `2 * packed_skip_index_max_bytes * substreams` term of the setting's
+/// documentation.
+/// The accumulator never holds more than the substream's serialized (on-disk) bytes either. When every
+/// source part already stores the index, the merged index is priced at the sum of the source parts' index
+/// bytes (data and marks), doubled for the same capacity growth, which keeps a table with many small
+/// skip indexes (`add_minmax_index_for_numeric_columns`) from reserving megabytes per index for a small
+/// merge. An index some source part lacks is materialized by this merge with an unknown volume, and the
+/// sizes of a projection part are calculated against the parent table's indexes, so both are priced at
+/// the worst case. Pass empty `source_parts` when no source part represents the written index (a rebuilt
+/// projection).
+UInt64 estimatePackedSkipIndexAccumulators(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    const ContextPtr & context,
+    const MergeTreeDataPartsVector & source_parts,
+    UInt64 compress_block_size)
+{
+    const UInt64 spill_threshold = settings[MergeTreeSetting::packed_skip_index_max_bytes];
+    if (spill_threshold == 0)
+        return 0;
+
+    const UInt64 per_substream_worst_case = saturatingAdd(
+        saturatingStreamsTimesBuffer(2, saturatingAdd(spill_threshold, compress_block_size)),
+        saturatingStreamsTimesBuffer(2, saturatingAdd(spill_threshold, MergeTreeWriterStream::MARKS_FILE_BUFFER_SIZE)));
+
+    const bool source_sizes_known = !source_parts.empty()
+        && std::ranges::all_of(source_parts, [](const auto & part) { return !part->isProjectionPart() && part->areChecksumsLoaded(); });
+
+    UInt64 result = 0;
+    forEachMaterializedSkipIndex(metadata_snapshot, settings, context, [&](const IndexDescription & index_description, const IMergeTreeIndex & index)
+    {
+        const UInt64 worst_case = saturatingStreamsTimesBuffer(index.getSubstreams().size(), per_substream_worst_case);
+        UInt64 estimate = worst_case;
+        if (source_sizes_known)
+        {
+            UInt64 source_index_bytes = 0;
+            bool stored_in_every_part = true;
+            for (const auto & part : source_parts)
+            {
+                const auto size = part->getSecondaryIndexSize(index_description.name);
+                if (size.data_compressed == 0)
+                {
+                    stored_in_every_part = false;
+                    break;
+                }
+                source_index_bytes = saturatingAdd(source_index_bytes, saturatingAdd(size.data_compressed, size.marks));
+            }
+            if (stored_in_every_part)
+                estimate = std::min(worst_case, saturatingStreamsTimesBuffer(2, source_index_bytes));
+        }
+        result = saturatingAdd(result, estimate);
+    });
+    return result;
 }
 
 /// Number of on-disk column streams for a set of columns: one per non-ephemeral serialization
@@ -2119,6 +2196,10 @@ UInt64 estimateNeededMemoryForMerge(
     output_memory = saturatingAdd(
         output_memory,
         saturatingStreamsTimesBuffer(skip_index_streams, eager_stream_buffers_with_marks(base_max_compress_block_size)));
+    /// With packing enabled, the in-memory accumulators of those substreams come on top of their buffers.
+    output_memory = saturatingAdd(
+        output_memory,
+        estimatePackedSkipIndexAccumulators(metadata_snapshot, settings, context, future_part.parts, base_max_compress_block_size));
 
     /// The primary index is one more writer chain held for the whole merge: `MergedBlockOutputStream`
     /// rewrites the primary key, and `MergeTreeDataPartWriterOnDisk::initPrimaryIndex` opens the `primary`
@@ -2548,8 +2629,14 @@ UInt64 estimateNeededMemoryForMerge(
                 /// and file buffers as well.
                 const size_t projection_skip_index_streams
                     = countMaterializedSkipIndexStreams(projection.metadata, settings, context);
-                const UInt64 projection_skip_index_eager_buffers = saturatingStreamsTimesBuffer(
-                    projection_skip_index_streams, eager_stream_buffers_with_marks(projection_max_compress_block_size));
+                /// `packed_skip_index_max_bytes` cannot be overridden in a projection's WITH SETTINGS, so the
+                /// packing accumulators of those writers follow the table setting. The temporary projection
+                /// parts do not exist yet, so no source part bounds their volume.
+                const UInt64 projection_skip_index_eager_buffers = saturatingAdd(
+                    saturatingStreamsTimesBuffer(
+                        projection_skip_index_streams, eager_stream_buffers_with_marks(projection_max_compress_block_size)),
+                    estimatePackedSkipIndexAccumulators(
+                        projection.metadata, settings, context, /*source_parts=*/ {}, projection_max_compress_block_size));
                 projection_memory = saturatingAdd(
                     projection_memory,
                     saturatingAdd(
