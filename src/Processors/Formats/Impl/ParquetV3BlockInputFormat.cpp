@@ -554,7 +554,7 @@ namespace
 ///
 /// `apply_row_group_floor == false` disables the floor: it is part of the same
 /// heuristic as the byte-based gates, so turning both of those off (which
-/// `compatibility` set to a pre-26.8 version does) must restore the old
+/// `compatibility` set to a pre-26.10 version does) must restore the old
 /// row-group-count-only fan-out for every file, including one with fewer than
 /// `min_row_groups_per_chunk` row groups.
 std::vector<FileBucketInfoPtr> computeBucketsByCount(size_t target_count, size_t num_row_groups, bool apply_row_group_floor = true)
@@ -781,7 +781,7 @@ size_t projectedCompressedBytes(const parquet::format::FileMetaData & md, const 
 /// the per-source open/reader-init overhead without any read-parallelism win.
 /// `min_bytes_to_split == 0` disables the lower bound; `min_bytes_per_bucket == 0`
 /// disables the per-bucket size cap (falling back to a pure row-group-count split).
-/// With both at 0 - the values `compatibility` set to a pre-26.8 version restores -
+/// With both at 0 - the values `compatibility` set to a pre-26.10 version restores -
 /// the whole size heuristic is off, so `min_row_groups_per_chunk` is not applied
 /// either and the fan-out is driven by the row-group count alone, exactly as before
 /// the size gate existed. Otherwise the floor applies via the delegated

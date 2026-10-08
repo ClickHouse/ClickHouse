@@ -4,7 +4,7 @@
 
 -- Regression test for the compatibility contract of the size-based single-file Parquet split gate:
 -- `input_format_parquet_min_bytes_to_split = 0` together with
--- `input_format_parquet_bytes_per_split_bucket = 0` (the values `compatibility` set to a pre-26.8
+-- `input_format_parquet_bytes_per_split_bucket = 0` (the values `compatibility` set to a pre-26.10
 -- version restores) must reproduce the pre-gate fan-out, which was driven by the row-group count
 -- alone. The minimum-row-groups-per-bucket floor is part of the same heuristic, so it must be off as
 -- well - otherwise a file with fewer row groups than the floor stays single-source no matter what
