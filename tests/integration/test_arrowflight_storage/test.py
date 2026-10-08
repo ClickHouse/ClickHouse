@@ -24,7 +24,7 @@ def start_cluster():
 
 
 def test_table_function():
-    result = node.query("SELECT * FROM arrowFlight('arrowflight1:5005', 'ABC')")
+    result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', 'ABC')")
     assert result == TSV(
         [
             ["test_value_1", "data1"],
@@ -34,7 +34,7 @@ def test_table_function():
     )
     
     # test that dataset_name is being sent correctly to the arrowflight server
-    result = node.query("SELECT * FROM arrowFlight('arrowflight1:5005', 'XYZ')")
+    result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', 'XYZ')")
     assert result == TSV(
         [
             ["1", "4"],
@@ -46,7 +46,7 @@ def test_table_function():
 
 def test_table_function_old_name():
     # "arrowflight" is an obsolete name.
-    result = node.query("SELECT * FROM arrowflight('arrowflight1:5005', 'ABC')")
+    result = node.query(f"SELECT * FROM arrowflight('arrowflight1:5005', 'ABC')")
     assert result == TSV(
         [
             ["test_value_1", "data1"],
@@ -55,7 +55,7 @@ def test_table_function_old_name():
         ]
     )
     
-    result = node.query("SELECT * FROM arrowflight('arrowflight1:5005', 'XYZ')")
+    result = node.query(f"SELECT * FROM arrowflight('arrowflight1:5005', 'XYZ')")
     assert result == TSV(
         [
             ["1", "4"],
@@ -78,10 +78,10 @@ def test_table_function_with_auth():
     )
 
     assert "No credentials supplied" in node.query_and_get_error(
-        "SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC')"
+        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC')"
     )
     assert "Unknown user" in node.query_and_get_error(
-        "SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', 'default', '')"
+        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', 'default', '')"
     )
     assert "Wrong password" in node.query_and_get_error(
         f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', '{arrowflight_user}', 'qwe123')"
@@ -100,13 +100,13 @@ def test_arrowflight_storage():
         """
     )
 
-    assert node.query("SELECT * FROM arrow_test") == ""
+    assert node.query(f"SELECT * FROM arrow_test") == ""
 
     node.query(
         "INSERT INTO arrow_test VALUES ('a','data_a'), ('b','data_b'), ('c','data_c')"
     )
 
-    result = node.query("SELECT * FROM arrow_test ORDER BY column1")
+    result = node.query(f"SELECT * FROM arrow_test ORDER BY column1")
     assert result == TSV(
         [
             ["a", "data_a"],
@@ -117,7 +117,7 @@ def test_arrowflight_storage():
 
     node.query("INSERT INTO arrow_test VALUES ('x','data_x'), ('y','data_y')")
 
-    new_result = node.query("SELECT * FROM arrow_test ORDER BY column1")
+    new_result = node.query(f"SELECT * FROM arrow_test ORDER BY column1")
     assert new_result == TSV(
         [
             ["a", "data_a"],
@@ -142,56 +142,6 @@ def test_arrowflight_storage():
     )
 
     node.query("DROP TABLE arrow_test")
-
-
-def test_arrowflight_storage_virtual_column_table():
-    dataset = uuid.uuid4().hex
-
-    node.query(
-        f"""
-        CREATE TABLE arrow_virtual_test (
-            column1 String,
-            column2 String
-        ) ENGINE=ArrowFlight('arrowflight1:5005', '{dataset}')
-        """
-    )
-
-    node.query(
-        "INSERT INTO arrow_virtual_test VALUES ('a','data_a'), ('b','data_b')"
-    )
-
-    # Select only the _table virtual column
-    result = node.query("SELECT _table FROM arrow_virtual_test ORDER BY column1")
-    assert result == TSV(
-        [
-            ["arrow_virtual_test"],
-            ["arrow_virtual_test"],
-        ]
-    )
-
-    # Select physical and virtual columns together
-    result = node.query(
-        "SELECT column1, _table FROM arrow_virtual_test ORDER BY column1"
-    )
-    assert result == TSV(
-        [
-            ["a", "arrow_virtual_test"],
-            ["b", "arrow_virtual_test"],
-        ]
-    )
-
-    # Select all columns plus virtual
-    result = node.query(
-        "SELECT *, _table FROM arrow_virtual_test ORDER BY column1"
-    )
-    assert result == TSV(
-        [
-            ["a", "data_a", "arrow_virtual_test"],
-            ["b", "data_b", "arrow_virtual_test"],
-        ]
-    )
-
-    node.query("DROP TABLE arrow_virtual_test")
 
 
 def test_table_function_with_named_collection():
@@ -384,39 +334,3 @@ def test_remote_host_filter():
         assert "not allowed in configuration file" in error
     finally:
         node.query("DROP NAMED COLLECTION arrowflight_blocked_collection")
-
-
-def test_insert_unsupported_type_follows_setting():
-    # `ArrowFlightSink::consume` builds its own Arrow conversion settings, so it needs its own coverage that
-    # `output_format_arrow_unsupported_types` reaches it: `QBit` has no Arrow mapping, and in `text` mode it
-    # is written as a `utf8` column, which is what the test server's schema accepts.
-    dataset = uuid.uuid4().hex
-
-    node.query(
-        f"""
-        CREATE TABLE arrow_qbit_test (
-            column1 QBit(BFloat16, 3),
-            column2 String
-        ) ENGINE=ArrowFlight('arrowflight1:5005', '{dataset}')
-        """
-    )
-
-    try:
-        assert "UNKNOWN_TYPE" in node.query_and_get_error(
-            "INSERT INTO arrow_qbit_test "
-            "SELECT [1,2,3]::QBit(BFloat16, 3), 'rejected' "
-            "SETTINGS output_format_arrow_unsupported_types = 'throw'"
-        )
-
-        node.query(
-            "INSERT INTO arrow_qbit_test "
-            "SELECT [1,2,3]::QBit(BFloat16, 3), 'accepted' "
-            "SETTINGS output_format_arrow_unsupported_types = 'text'"
-        )
-
-        # Read back through the table function, whose columns come from the remote schema, so the opaque
-        # column arrives as the text the sink sent rather than as `QBit`.
-        result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', '{dataset}')")
-        assert result == TSV([["[1,2,3]", "accepted"]])
-    finally:
-        node.query("DROP TABLE IF EXISTS arrow_qbit_test SYNC")

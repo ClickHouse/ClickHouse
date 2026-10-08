@@ -36,11 +36,6 @@
 #include <fmt/ranges.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperWatchTriggeredClusterDiscovery;
-}
-
 namespace DB
 {
 
@@ -307,10 +302,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
             callback = res.first;
         }
-        nodes = zk->getChildrenWatch(
-            getShardsListPath(zk_root),
-            &stat,
-            Coordination::WatchCallbackPtrOrEventPtr{callback->second, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
+        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, callback->second);
     }
     else
         nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
@@ -431,13 +423,13 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
 
-    int start_version = 0;
+    int start_version;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false, cluster_info.zk_root_index);
     auto & nodes_info = cluster_info.nodes_info;
     auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
     {
         /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
-        int current_version = 0;
+        int current_version;
         getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true, cluster_info.zk_root_index);
 
         if (current_version != start_version)
@@ -596,10 +588,7 @@ void ClusterDiscovery::findDynamicClusters(
 
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(path.zk_name);
 
-        auto clusters = zk->getChildrenWatch(
-            path.zk_path,
-            nullptr,
-            Coordination::WatchCallbackPtrOrEventPtr{path.watch_callback, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
+        auto clusters = zk->getChildrenWatch(path.zk_path, nullptr, path.watch_callback);
 
         for (const auto & cluster : clusters)
         {

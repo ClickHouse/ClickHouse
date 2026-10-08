@@ -4,7 +4,6 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/AccessControl.h>
-#include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
 
@@ -41,7 +40,6 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 
 void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 {
-    getContext()->getAccess()->checkCanAdministerDefaultRoles();
     getContext()->checkAccess(query.to_users->collectRequiredGrants(AccessType::ALTER_USER));
 
     auto & access_control = getContext()->getAccessControl();
@@ -72,7 +70,6 @@ void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const Roles
     user.default_roles = roles_from_query;
 }
 
-void registerInterpreterSetRoleQuery(InterpreterFactory & factory);
 void registerInterpreterSetRoleQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

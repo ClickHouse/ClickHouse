@@ -1,7 +1,6 @@
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnectionsFactory.h>
-#include <base/sort.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Core/ProtocolDefines.h>
@@ -202,8 +201,8 @@ int HedgedConnectionsFactory::getNextIndex()
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnectionImpl(Connection *& connection_out)
 {
-    int index = 0;
-    State state = {};
+    int index;
+    State state;
     do
     {
         index = getNextIndex();
@@ -219,7 +218,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::startNewConnectionImpl
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(bool blocking, Connection *& connection_out, AsyncCallback & async_callback)
 {
-    int event_fd = 0;
+    int event_fd;
     while (!epoll.empty())
     {
         event_fd = getReadyFileDescriptor(blocking, async_callback);
@@ -263,7 +262,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
 
 int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallback & async_callback)
 {
-    epoll_event event{};
+    epoll_event event;
     event.data.fd = -1;
     if (!blocking)
     {
@@ -283,7 +282,7 @@ int HedgedConnectionsFactory::getReadyFileDescriptor(bool blocking, AsyncCallbac
 
 HedgedConnectionsFactory::State HedgedConnectionsFactory::resumeConnectionEstablisher(int index, Connection *& connection_out)
 {
-    replicas[index].connection_establisher->resume();
+    replicas[index].connection_establisher->resumeConnectionWithForceOption(/*force_connected_*/ shuffled_pools[index].error_count != 0);
 
     if (replicas[index].connection_establisher->isCancelled())
         return State::CANNOT_CHOOSE;
@@ -384,29 +383,6 @@ void HedgedConnectionsFactory::removeReplicaFromEpoll(int index, int fd)
     timeout_fd_to_replica_index.erase(replicas[index].change_replica_timeout.getDescriptor());
 }
 
-bool HedgedConnectionsFactory::maySelectReplicaBelowQueryPlanSerializationVersion(UInt64 version) const
-{
-    if (maySelectUnverifiedReplica())
-        return true;
-
-    if (!fallback_to_stale_replicas)
-        return false;
-
-    /// Every pool has already been resolved, but the usable and not up-to-date entries are still
-    /// held by the factory and `setBestUsableReplica` may hand one of them out on a later hedge.
-    for (const ReplicaStatus & replica : replicas)
-    {
-        if (replica.is_ready)
-            continue;
-
-        TryResult result = replica.connection_establisher->getResult();
-        if (!result.entry.isNull() && result.is_usable && result.entry->getQueryPlanSerializationVersion() < version)
-            return true;
-    }
-
-    return false;
-}
-
 size_t HedgedConnectionsFactory::numberOfProcessingReplicas() const
 {
     if (epoll.empty())
@@ -433,7 +409,7 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         return State::CANNOT_CHOOSE;
 
     /// Sort replicas by staleness.
-    ::stableSort(
+    std::stable_sort(
         indexes.begin(),
         indexes.end(),
         [&](size_t lhs, size_t rhs)

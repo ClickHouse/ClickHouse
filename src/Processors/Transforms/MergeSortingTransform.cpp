@@ -1,15 +1,18 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
-
-#include <algorithm>
-#include <iterator>
-
-#include <Processors/Transforms/BufferingFileTransforms.h>
+#include <Processors/IAccumulatingTransform.h>
+#include <Processors/ISink.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Common/Exception.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/ReadBufferFromFile.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <Disks/IVolume.h>
 
 
 namespace ProfileEvents
@@ -25,6 +28,98 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+class BufferingToFileSink : public ISink
+{
+public:
+    BufferingToFileSink(SharedHeader header, TemporaryBlockStreamHolder tmp_stream_, LoggerPtr log_)
+        : ISink(std::move(header))
+        , tmp_stream(std::move(tmp_stream_))
+        , log(log_)
+    {
+        outputs.emplace_back(Block(), this);
+        LOG_INFO(log, "Sorting and writing part of data into temporary file {}", tmp_stream.getHolder()->describeFilePath());
+    }
+
+    Status prepare() override
+    {
+        auto status = ISink::prepare();
+        if (status == Status::Finished)
+            outputs.front().finish();
+        return status;
+    }
+
+    String getName() const override { return "BufferingToFileSink"; }
+
+    void consume(Chunk chunk) override
+    {
+        Block block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        tmp_stream->write(block);
+    }
+
+    void onFinish() override
+    {
+        auto stat = tmp_stream.finishWriting();
+        LOG_INFO(log, "Done writing part of data into temporary file {}, compressed {}, uncompressed {} ",
+            tmp_stream.getHolder()->describeFilePath(),
+            ReadableSize(static_cast<double>(stat.compressed_size)), ReadableSize(static_cast<double>(stat.uncompressed_size)));
+    }
+
+    TemporaryBlockStreamHolder & getHolder() { return tmp_stream; }
+
+private:
+    TemporaryBlockStreamHolder tmp_stream;
+    LoggerPtr log;
+};
+
+class BufferingFromFileSource : public ISource
+{
+public:
+    BufferingFromFileSource(SharedHeader header, TemporaryBlockStreamHolder & tmp_stream_, LoggerPtr log_)
+        : ISource(std::move(header))
+        , tmp_stream(tmp_stream_)
+        , log(log_)
+    {
+        inputs.emplace_back(Block(), this);
+    }
+
+    Status prepare() override
+    {
+        if (!inputs.front().isFinished())
+        {
+            if (inputs.front().hasData())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read the data from BufferingToFileSource input");
+
+            inputs.front().setNeeded();
+            return Status::NeedData;
+        }
+
+        return ISource::prepare();
+    }
+
+    String getName() const override { return "BufferingFromFileSource"; }
+
+    Chunk generate() override
+    {
+        if (!tmp_read_stream)
+        {
+            LOG_INFO(log, "Start reading part of data from temporary file");
+            tmp_read_stream = tmp_stream.getReadStream();
+        }
+
+        Block block = tmp_read_stream.value()->read();
+        if (block.empty())
+            return {};
+
+        UInt64 num_rows = block.rows();
+        return Chunk(block.getColumns(), num_rows);
+    }
+
+private:
+    TemporaryBlockStreamHolder & tmp_stream;
+    std::optional<TemporaryBlockStreamReaderHolder> tmp_read_stream;
+    LoggerPtr log;
+};
 
 MergeSortingTransform::MergeSortingTransform(
     SharedHeader header,
@@ -52,7 +147,7 @@ MergeSortingTransform::MergeSortingTransform(
 {
 }
 
-IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
+Processors MergeSortingTransform::expandPipeline()
 {
     if (processors.size() > 2)
     {
@@ -61,14 +156,14 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
         connect(external_merging_sorted->getOutputs().front(), inputs.back());
     }
 
-    auto & source = processors.front();
+    auto & source = processors.at(0);
 
-    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput(header_without_constants);
+    static_cast<MergingSortedTransform &>(*external_merging_sorted).addInput();
     connect(source->getOutputs().back(), external_merging_sorted->getInputs().back());
 
     if (processors.size() > 1)
     {
-        auto & sink = *std::next(processors.begin());
+        auto & sink = processors.at(1);
         /// Serialize
         outputs.emplace_back(header_without_constants, this);
         connect(sink->getOutputs().front(), source->getInputs().front());
@@ -78,7 +173,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
         /// Generate
         static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return std::move(processors);
 }
 
 void MergeSortingTransform::consume(Chunk chunk)
@@ -99,7 +194,6 @@ void MergeSortingTransform::consume(Chunk chunk)
     }
 
     removeConstColumns(chunk);
-    compactReplicatedColumns(chunk);
 
     sum_rows_in_blocks += chunk.getNumRows();
     sum_bytes_in_blocks += chunk.allocatedBytes();
@@ -174,7 +268,6 @@ void MergeSortingTransform::consume(Chunk chunk)
                         /*filter_column_name=*/ std::nullopt,
                         use_average_block_sizes,
                         apply_virtual_row,
-                        /*virtual_row_prefetch_window=*/ 0,
                         have_all_inputs);
 
                 processors.emplace_back(external_merging_sorted);
@@ -259,12 +352,7 @@ void MergeSortingTransform::remerge()
     if (threshold_tracker && sum_rows_in_blocks == limit && chunks.size() == 1)
     {
         Field value;
-        /// Chunk columns follow `header_without_constants` order; the first sort column
-        /// is not necessarily at position 0 (e.g. lazy materialization can place a
-        /// WHERE-only column before it). Resolve its actual position by name.
-        chassert(!description.empty());
-        size_t sort_column_position = header_without_constants.getPositionByName(description.front().column_name);
-        chunks[0].getColumns()[sort_column_position]->get(limit - 1, value);
+        chunks[0].getColumns()[0]->get(limit - 1, value);
         threshold_tracker->testAndSet(value);
         LOG_DEBUG(log, "TopK threshold tracker is updated");
     }

@@ -1,53 +1,20 @@
-#include "config.h"
-
-#include <algorithm>
-#include <memory>
-#include <unordered_map>
-#include <utility>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/MergeTreeTransaction/VersionMetadataOnKeeper.h>
-#endif
-#include <Interpreters/TransactionManager.h>
-#include <Interpreters/TransactionsInfoLog.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#if CLICKHOUSE_CLOUD
-#include <Storages/StorageSharedMergeTree.h>
-#endif
-#include <Common/Exception.h>
-#include <Common/FailPoint.h>
-#include <Common/ThreadPool.h>
-#include <Common/TransactionID.h>
-#include <Common/ZooKeeper/IKeeper.h>
-#include <Common/ZooKeeper/Types.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
-#include <base/sleep.h>
 #include <fmt/ranges.h>
-#include <Core/UUID.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int INVALID_TRANSACTION;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int SERIALIZATION_ERROR;
-    extern const int TRANSACTION_ROLLBACK_PARTIAL_FAILURE;
-}
-
-namespace FailPoints
-{
-    extern const char transaction_after_commit_pause[];
-    extern const char transaction_rollback_pause_after_mark[];
-    extern const char transaction_rollback_reset_removal_tid_fail[];
 }
 
 static void checkNotOrdinaryDatabase(const StoragePtr & storage)
@@ -59,9 +26,8 @@ static void checkNotOrdinaryDatabase(const StoragePtr & storage)
                     "This engine is deprecated and is not supported in transactions.", storage->getStorageID().getNameForLogs());
 }
 
-MergeTreeTransaction::MergeTreeTransaction(
-    CSN snapshot_, LocalTID local_tid_, UUID host_id, Int64 session_version_, std::list<CSN>::iterator snapshot_it_)
-    : tid({snapshot_, local_tid_, host_id, session_version_})
+MergeTreeTransaction::MergeTreeTransaction(CSN snapshot_, LocalTID local_tid_, UUID host_id, std::list<CSN>::iterator snapshot_it_)
+    : tid({snapshot_, local_tid_, host_id})
     , snapshot(snapshot_)
     , snapshot_in_use_it(snapshot_it_)
     , csn(Tx::UnknownCSN)
@@ -85,12 +51,10 @@ MergeTreeTransaction::State MergeTreeTransaction::getState() const
     return COMMITTED;
 }
 
-/// Blocks until `csn` leaves `current_state_csn`. Every writer that changes `csn`
-/// must call `csn.notify_all`, otherwise `csn.wait` here is not guaranteed to wake.
 bool MergeTreeTransaction::waitStateChange(CSN current_state_csn) const
 {
     CSN current_value = current_state_csn;
-    while (current_value == current_state_csn && !TransactionManager::instance().isShuttingDown())
+    while (current_value == current_state_csn && !TransactionLog::instance().isShuttingDown())
     {
         csn.wait(current_value);
         current_value = csn.load();
@@ -116,106 +80,35 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
     {
         txn->addNewPart(storage, new_part);
         /// Now we know actual part name and can write it to system log table.
-        tryWriteEventToSystemLog(
-            new_part->version->getLogger(),
-            TransactionsInfoLogElement::ADD_PART,
-            txn->tid,
-            TransactionInfoContext{storage->getStorageID(), new_part->name});
+        tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, txn->tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
     }
 }
 
-NonTransactionalRemovalLocks::~NonTransactionalRemovalLocks()
+void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn)
 {
-    for (const auto & locked : locked_parts)
-    {
-        try
-        {
-            locked.part->version->unlockRemovalTID(Tx::NonTransactionalTID, locked.context, {});
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-}
-
-void NonTransactionalRemovalLocks::lock(
-    const StoragePtr & storage, const DataPartPtr & covering_part, const DataPartsVector & parts_to_remove,
-    LockKind kind)
-{
-    TransactionInfoContext transaction_context{storage->getStorageID(), ""};
-    if (covering_part)
-        transaction_context.covering_part = covering_part->name;
-
-    for (const auto & part : parts_to_remove)
-    {
-        auto & version = *part->version;
-
-        if (version.getInfo().isRemoved())
-        {
-            LOG_INFO(version.getLogger(), "Object {} is already removed", version.getObjectName());
-            continue;
-        }
-
-        /// Refused here rather than in `setAndStoreRemovalTID` so that nothing of the batch has
-        /// been written yet, see the class comment.
-        if (version.isCreatedByUncommittedTransaction())
-            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
-                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
-                version.getObjectName(), version.getInfo().creation_tid);
-
-        transaction_context.part_name = part->name;
-        version.lockRemovalTID(Tx::NonTransactionalTID, kind, transaction_context);
-        locked_parts.push_back({part, transaction_context});
-    }
-}
-
-void NonTransactionalRemovalLocks::store()
-{
-    /// Drain as we go, so that the destructor only releases the locks that were not stored.
-    while (!locked_parts.empty())
-    {
-        LockedPart locked = std::move(locked_parts.back());
-        locked_parts.pop_back();
-
-        /// Release via `unlockRemovalTID` so `UNLOCK_PART` pairs with the acquire's `LOCK_PART`.
-        SCOPE_EXIT({ locked.part->version->unlockRemovalTID(Tx::NonTransactionalTID, locked.context, {}); });
-        locked.part->version->setAndStoreRemovalTID(Tx::NonTransactionalTID);
-    }
-}
-
-void MergeTreeTransaction::removeOldPart(
-    const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn,
-    LockKind kind, NonTransactionalRemovalLocks & removal_locks)
-{
+    TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
     if (txn)
     {
         /// Lock part for removal and write current TID into version metadata file.
         /// If server crash just after committing transactions
         /// we will find this TID in version metadata and will finally remove part.
-        TransactionInfoContext transaction_context{storage->getStorageID(), part_to_remove->name};
-        txn->removeOldPart(storage, part_to_remove, transaction_context, kind);
-        return;
+        txn->removeOldPart(storage, part_to_remove, transaction_context);
     }
-    removal_locks.lock(storage, /*covering_part=*/ nullptr, {part_to_remove}, kind);
+    else
+    {
+        /// Lock part for removal with special TID, so transactions will not try to remove it concurrently.
+        /// We lock it only in memory if part was not involved in any transactions.
+        part_to_remove->version.lockRemovalTID(Tx::PrehistoricTID, transaction_context);
+        if (part_to_remove->wasInvolvedInTransaction())
+            part_to_remove->appendRemovalTIDToVersionMetadata();
+    }
 }
 
-void MergeTreeTransaction::addNewPartAndRemoveCovered(
-    const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts,
-    MergeTreeTransaction * txn, LockKind kind, NonTransactionalRemovalLocks & removal_locks)
+void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn)
 {
-    TransactionID tid = txn ? txn->tid : Tx::NonTransactionalTID;
+    TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
     TransactionInfoContext transaction_context{storage->getStorageID(), new_part->name};
-
-    /// When a part that was originally created by a real transaction is loaded onto a replica
-    /// (e.g. via addCurrentPart), its AddPart event was already logged at creation time.
-    /// Logging it again with NonTransactionalTID would produce a spurious duplicate entry.
-    const bool already_logged_by_transaction = !txn && new_part->version
-        && !new_part->version->getInfo().creation_tid.isEmpty()
-        && !new_part->version->getInfo().creation_tid.isNonTransactional();
-
-    if (!already_logged_by_transaction)
-        tryWriteEventToSystemLog(new_part->version->getLogger(), TransactionsInfoLogElement::ADD_PART, tid, transaction_context);
+    tryWriteEventToSystemLog(new_part->version.log, TransactionsInfoLogElement::ADD_PART, tid, transaction_context);
     transaction_context.covering_part = std::move(transaction_context.part_name);
     new_part->assertHasVersionMetadata(txn);
 
@@ -225,15 +118,18 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(
         for (const auto & covered : covered_parts)
         {
             transaction_context.part_name = covered->name;
-            /// This path serves plain MergeTree's `commit()` (no held lock): `removeOldPart` acquires
-            /// a fresh lock and stamps. The SMT merge instead calls `removeOldPart` directly with the
-            /// intention's held fingerprint (record-only), bypassing this function.
-            txn->removeOldPart(storage, covered, transaction_context, kind);
+            txn->removeOldPart(storage, covered, transaction_context);
         }
     }
     else
     {
-        removal_locks.lock(storage, new_part, covered_parts, kind);
+        for (const auto & covered : covered_parts)
+        {
+            transaction_context.part_name = covered->name;
+            covered->version.lockRemovalTID(tid, transaction_context);
+            if (covered->wasInvolvedInTransaction())
+                covered->appendRemovalTIDToVersionMetadata();
+        }
     }
 }
 
@@ -246,9 +142,7 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
     creating_parts.push_back(new_part);
 }
 
-void MergeTreeTransaction::removeOldPart(
-    const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context,
-    LockKind kind, const LockFingerprint & held_lock_fingerprint)
+void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, const TransactionInfoContext & context)
 {
     checkNotOrdinaryDatabase(storage);
 
@@ -256,59 +150,14 @@ void MergeTreeTransaction::removeOldPart(
         std::lock_guard lock{mutex};
         checkIsNotCancelled();
 
-        /// A source that already holds its removal lock, with `removal_tid` stamped under it by the
-        /// caller's Multi: record the part against the held fingerprint and stop — no fresh lock, no
-        /// re-stamp, no seal (the caller seals in its own commit Multi). Commit finalizes the removal;
-        /// rollback clears `removal_tid` and releases the lock.
-        ///
-        /// The fingerprint alone selects this path. Only Keeper-backed metadata can produce one, and
-        /// every caller of this protocol passes it — a merge / mutation / optimize source, or a
-        /// `DROP PARTITION` committed part from `dropPartitionInTx`. A single `DROP PART` passes none
-        /// and takes the plain path below.
-        if (held_lock_fingerprint.hasFingerprint())
-        {
-            chassert(kind == LockKind::BG_MERGE || kind == LockKind::MUTATION || kind == LockKind::OPTIMIZE
-                    || kind == LockKind::OPTIMIZE_FINAL || kind == LockKind::DROP,
-                "Only a merge / mutation / optimize / DROP PARTITION source arrives holding its removal lock");
-            NOEXCEPT_SCOPE({
-                storages.insert(storage);
-                removing_parts.push_back({storage, part_to_remove, kind, held_lock_fingerprint});
-            });
-            return;
-        }
-
-        /// Plain removal (e.g. a part dropped within the transaction): acquire a fresh lock and stamp.
-        /// Capture the acquire-time fingerprint: the commit Multi uses it to mark the lock committed and
-        /// rollback to release it. It also lets `unlockRemovalTID` detect that a peer took the lock over
-        /// (throws `ABORTED`, which is caught and ignored) instead of `LOGICAL_ERROR`.
-        /// `false` means the part already vanished (a peer's merge / TRUNCATE / DROP removed it): nothing
-        /// to register, skip so commit proceeds and the background executor doesn't retry forever. A real
-        /// conflict throws `SERIALIZATION_ERROR`, which propagates to the caller.
-        LockFingerprint acquired;
-        if (!part_to_remove->version->lockRemovalTID(tid, kind, context, &acquired))
-        {
-            LOG_DEBUG(getLogger("MergeTreeTransaction"),
-                "Part {} vanished, skipping transactional removal", part_to_remove->name);
-            return;
-        }
+        part_to_remove->version.lockRemovalTID(tid, context);
         NOEXCEPT_SCOPE({
             storages.insert(storage);
-            removing_parts.push_back({storage, part_to_remove, kind, acquired});
+            removing_parts.push_back(part_to_remove);
         });
-
-        /// Stamp `removal_tid` under the freshly acquired lock so a peer that reclaimed the lock cannot overwrite our stamp.
-        part_to_remove->version->setAndStoreRemovalTID(tid, acquired);
-
-#if CLICKHOUSE_CLOUD
-        /// Mark the fresh lock committed in the commit Multi so the removal is recorded on the lock
-        /// and no peer can take it over.
-        if (auto * vm = dynamic_cast<VersionMetadataOnKeeper *>(part_to_remove->version.get()))
-        {
-            auto committed_ops = vm->makeMarkRemovalLockCommittedRequests(tid, kind, acquired);
-            requests_on_commit.insert(requests_on_commit.end(), committed_ops.begin(), committed_ops.end());
-        }
-#endif
     }
+
+    part_to_remove->appendRemovalTIDToVersionMetadata();
 }
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
@@ -320,97 +169,13 @@ void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & 
     mutations.emplace_back(table, mutation_id);
 }
 
-void MergeTreeTransaction::addLockedPart(
-    const StoragePtr & storage, const DataPartPtr & part, LockKind kind, LockFingerprint acquired)
-{
-    checkNotOrdinaryDatabase(storage);
-    std::lock_guard lock{mutex};
-    if (csn.load() == Tx::RolledBackCSN)
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction {} was cancelled", tid);
-    storages.insert(storage);
-    locked_parts.push_back({storage, part, kind, acquired});
-}
-
 bool MergeTreeTransaction::isReadOnly() const
 {
     std::lock_guard lock{mutex};
     if (finalized)
         return is_read_only;
-    /// `addLockedPart` also inserts into `storages`, so a transaction that only
-    /// acquired source-part locks (e.g. a merge that failed at commit) has a
-    /// non-empty `storages` with no created/removed part or mutation. Add
-    /// `locked_parts.empty()` so this check still holds in that case.
-    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty() && locked_parts.empty()) == storages.empty());
+    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
     return storages.empty();
-}
-
-void MergeTreeTransaction::addRequestsOnCommit(const Coordination::Requests & requests)
-{
-    std::lock_guard lock{mutex};
-    requests_on_commit.insert(requests_on_commit.end(), requests.begin(), requests.end());
-}
-
-void MergeTreeTransaction::addRequestOnCommit(Coordination::RequestPtr request)
-{
-    std::lock_guard lock{mutex};
-    requests_on_commit.push_back(std::move(request));
-}
-
-Coordination::Requests MergeTreeTransaction::getRequestsOnCommit() const
-{
-    std::lock_guard lock{mutex};
-    return requests_on_commit;
-}
-
-void MergeTreeTransaction::addRequestsOnRollback(const Coordination::Requests & requests)
-{
-    std::lock_guard lock{mutex};
-    requests_on_rollback.insert(requests_on_rollback.end(), requests.begin(), requests.end());
-}
-
-void MergeTreeTransaction::addRequestOnRollback(Coordination::RequestPtr request)
-{
-    std::lock_guard lock{mutex};
-    requests_on_rollback.push_back(std::move(request));
-}
-
-Coordination::Requests MergeTreeTransaction::getRequestsOnRollback() const
-{
-    std::lock_guard lock{mutex};
-    return requests_on_rollback;
-}
-
-std::vector<MergeTreeTransaction::AffectedSMTTable> MergeTreeTransaction::getAffectedSMTTables() const
-{
-    std::lock_guard lock{mutex};
-    std::vector<AffectedSMTTable> result;
-#if CLICKHOUSE_CLOUD
-    /// Only `SharedMergeTree` (cloud-only) is stamped; public builds leave this empty.
-    /// Replicas of one table share a `cross_replica_id`, so collapse them into one row:
-    /// the fan-out is per table and `processCSNLogs` rejects the same id twice.
-    std::unordered_map<Int64, size_t> row_index_by_cross_replica_id;
-    for (const auto & storage : storages)
-    {
-        const auto * smt = dynamic_cast<const StorageSharedMergeTree *>(storage.get());
-        if (!smt)
-            continue;
-        const UUID storage_uuid = storage->getStorageID().uuid;
-        const Int64 cross_replica_id = smt->getCrossReplicaId();
-
-        auto [it, inserted] = row_index_by_cross_replica_id.try_emplace(cross_replica_id, result.size());
-        if (inserted)
-            result.push_back(AffectedSMTTable{cross_replica_id, smt->getZooKeeperPath(), {}, {}});
-        AffectedSMTTable & row = result[it->second];
-
-        for (const auto & part : creating_parts)
-            if (part->storage.getStorageID().uuid == storage_uuid)
-                row.added_part_names.push_back(part->name);
-        for (const auto & lp : removing_parts)
-            if (lp.storage.get() == storage.get())
-                row.removed_part_names.push_back(lp.part->name);
-    }
-#endif
-    return result;
 }
 
 scope_guard MergeTreeTransaction::beforeCommit()
@@ -425,359 +190,154 @@ scope_guard MergeTreeTransaction::beforeCommit()
     for (const auto & table_and_mutation : mutations_to_wait)
         table_and_mutation.first->waitForMutation(table_and_mutation.second, /* wait_for_another_mutation */ false);
 
-    chassert([&]()
+    assert([&]()
     {
         std::lock_guard lock{mutex};
         return mutations == mutations_to_wait;
     }());
 
-    /// Flip to COMMITTING under `commit_gate` so a background merge of this transaction's parts
-    /// never sees the state change mid-commit. See `isRunning`.
+    CSN expected = Tx::UnknownCSN;
+    bool can_commit = csn.compare_exchange_strong(expected, Tx::CommittingCSN);
+    if (!can_commit)
     {
-        std::unique_lock commit_gate_lock{commit_gate};
-        CSN expected = Tx::UnknownCSN;
-        bool can_commit = csn.compare_exchange_strong(expected, Tx::CommittingCSN);
-        if (!can_commit)
-        {
-            /// Transaction was concurrently cancelled by KILL TRANSACTION or KILL MUTATION
-            if (expected == Tx::RolledBackCSN)
-                throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
-        }
+        /// Transaction was concurrently cancelled by KILL TRANSACTION or KILL MUTATION
+        if (expected == Tx::RolledBackCSN)
+            throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
     }
-
-    csn.notify_all(); /// Wake `waitStateChange`.
 
     /// We should set CSN back to Unknown if we will fail to commit transaction for some reason (connection loss, etc)
     return [this]()
     {
         CSN expected_value = Tx::CommittingCSN;
-        if (csn.compare_exchange_strong(expected_value, Tx::UnknownCSN))
-            csn.notify_all();
+        csn.compare_exchange_strong(expected_value, Tx::UnknownCSN);
     };
 }
 
-/// `noexcept` is intentional. The commit CSN is already durable by now; the work below
-/// only finalizes per-part state (`VersionMetadata` on disk or in Keeper, mutation CSNs,
-/// table stamps). An exception escaping any of these means in-memory and durable state
-/// diverged — `std::terminate` lets the next restart re-derive consistency from the log.
-/// Swallowing would leave partial finalization that nothing reconciles.
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// Write allocated CSN into version metadata, so we will know CSN without reading it from transaction log
+    /// and we will be able to remove old entries from transaction log in ZK.
+    /// It's not a problem if server crash before CSN is written, because we already have TID in data part and entry in the log.
+    [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
+    chassert(prev_value == Tx::CommittingCSN);
 
     DataPartsVector created_parts;
-    std::vector<LockedPart> removed_parts;
+    DataPartsVector removed_parts;
     RunningMutationsList committed_mutations;
-    std::unordered_set<StoragePtr> affected_storages;
     {
         /// We don't really need mutex here, because no concurrent modifications of transaction object may happen after commit.
         std::lock_guard lock{mutex};
         created_parts = creating_parts;
         removed_parts = removing_parts;
         committed_mutations = mutations;
-        affected_storages = storages;
     }
 
-    /// Persist per-part version metadata BEFORE flipping `csn` below.
-    /// `csn.exchange(assigned_csn)` is the signal that `MergeTreeTransaction::waitStateChange`
-    /// blocks on; doing the disk-backed `setAndStore...CSN` calls first ensures that once a
-    /// waiter wakes up, the new `creation_csn` / `removal_csn` are already visible through
-    /// `VersionMetadata::getInfo`, and therefore through `system.parts`.
-    ///
-    /// Use `assigned_csn` directly because `this->csn` is still `Tx::CommittingCSN` here.
-    ///
-    /// Crash-safe: if the process terminates inside this loop, the CSN znode in ZK plus
-    /// `removal_tid` / `creation_tid` on disk are enough to recover any part whose
-    /// `setAndStore...CSN` did not complete; `TransactionManager::getCSN(tid)` returns the right
-    /// answer after restart.
     for (const auto & part : created_parts)
     {
-        part->version->setAndStoreCreationCSN(assigned_csn);
+        part->version.creation_csn.store(csn);
+        part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::CREATION);
     }
 
-    for (const auto & removed : removed_parts)
+    for (const auto & part : removed_parts)
     {
-        /// The removal lock was already committed in the commit Multi (kept parts) or removed by
-        /// the merge commit (merge sources), so there is no lock to release here — just stamp
-        /// the committed CSN onto the part.
-        removed.part->version->setAndStoreRemovalCSN(assigned_csn);
+        /// Ensure creation_csn is set before removal_csn.
+        /// The creating transaction's afterCommit may still be running on another thread,
+        /// so creation_csn might not yet be stored even though the creation is committed.
+        /// Without this, a concurrent reader could observe removal_csn != 0 with creation_csn == 0.
+        if (!part->version.creation_csn.load(std::memory_order_relaxed))
+        {
+            auto creation = TransactionLog::getCSN(part->version.creation_tid, &part->version.creation_csn);
+            if (creation)
+                part->version.creation_csn.store(creation, std::memory_order_relaxed);
+        }
+
+        part->version.removal_csn.store(csn);
+        part->appendCSNToVersionMetadata(VersionMetadata::WhichCSN::REMOVAL);
     }
 
     for (const auto & storage_and_mutation : committed_mutations)
-        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
-
-#if CLICKHOUSE_CLOUD
-    StorageSharedMergeTree::bumpVirtualPartsForStorages(
-        affected_storages,
-        "MergeTreeTransaction::afterCommit::bumpVirtualParts",
-        "Failed to bump virtual_parts znode after tx commit; promotion will run on the next watched event");
-#endif
-
-    /// Test-only pause point. With this failpoint enabled, a regression test can verify that
-    /// `waitStateChange` does not return until every part has its new CSN persisted (above).
-    /// Not wrapped in try/catch: `pauseFailPoint` only takes a mutex and a condvar, and the
-    /// surrounding `setAndStore...CSN` calls already trust their callees not to throw under
-    /// the same `noexcept` contract.
-    FailPointInjection::pauseFailPoint(FailPoints::transaction_after_commit_pause);
-
-    /// Flip the atomic last so that `waitStateChange` only wakes up after all metadata is durable.
-    [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
-    chassert(prev_value == Tx::CommittingCSN);
-    /// `std::atomic::wait` requires a matching `notify`; a bare store does not wake a waiter
-    /// (works on the Linux libc++ global-table fallback by luck, but hangs on the native wait used for 8-byte atomics on macOS).
-    csn.notify_all();
+        storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, csn);
 }
 
-MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
+bool MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
-    /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`
-    /// and the adoption that registers its parts here, so rollback cannot land between the two.
-    bool need_rollback = false;
-    {
-        std::unique_lock commit_gate_lock{commit_gate};
-        CSN expected = Tx::UnknownCSN;
-        need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
-    }
+    CSN expected = Tx::UnknownCSN;
+    bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
 
     /// Check that it was not rolled back concurrently
     if (!need_rollback)
-        return RollbackResult::NotNeeded;
-
-    /// Wake any `waitStateChange` waiter (see the `notify` note in `afterCommit`).
-    csn.notify_all();
-
-    /// The transaction reads as rolled back, but no removal stamp is cleared yet.
-    FailPointInjection::pauseFailPoint(FailPoints::transaction_rollback_pause_after_mark);
+        return false;
 
     /// It's not a problem if server crash at this point
     /// because on startup we will see that TID is not committed and will simply discard these changes.
 
     RunningMutationsList mutations_to_kill;
     DataPartsVector parts_to_remove;
-    /// Parts to restore on rollback, with the `<part>/removal_lock` fingerprint that
-    /// `lockRemovalTID` captured in `removeOldPart`. The fingerprint is consumed by
-    /// the `unlockRemovalTID` loop below to detect a peer's `tryTakeOver` (which would
-    /// otherwise make `unlock` throw `LOGICAL_ERROR`).
-    std::vector<LockedPart> parts_to_activate;
-    std::vector<LockedPart> locks_to_release;
+    DataPartsVector parts_to_activate;
 
     {
         std::lock_guard lock{mutex};
         mutations_to_kill = mutations;
         parts_to_remove = creating_parts;
         parts_to_activate = removing_parts;
-        locks_to_release = locked_parts;
     }
 
     /// Forcefully stop related mutations if any
     for (const auto & table_and_mutation : mutations_to_kill)
-    {
-        try
-        {
-            table_and_mutation.first->killMutation(table_and_mutation.second);
-        }
-        catch (...)
-        {
-            /// Safe: the mutation task will detect that the transaction is rolled back (RolledBackCSN)
-            /// and will stop on its own. Failing to send the kill signal is not fatal.
-            tryLogCurrentException(getLogger("MergeTreeTransaction"), fmt::format(
-                "Failed to kill mutation {} during rollback, ignoring", table_and_mutation.second));
-        }
-    }
+        table_and_mutation.first->killMutation(table_and_mutation.second);
 
     /// Discard changes in active parts set
     /// Remove parts that were created, restore parts that were removed (except parts that were created by this transaction too)
 
-    /// Any best-effort Keeper failure below sets `any_failed`; the caller invalidates the TID once
-    /// so peers' `isTIDInvalid` can detect the rolled-back part without waiting for restart.
-    bool any_failed = false;
+    /// Kind of optimization: cleanup thread can remove these parts immediately
     for (const auto & part : parts_to_remove)
     {
-        try
-        {
-            part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(part->version->getLogger(),
-                fmt::format("Failed to persist RolledBackCSN for part {}", part->name));
-            any_failed = true;
-        }
+        part->version.creation_csn.store(Tx::RolledBackCSN);
+        /// Write special RolledBackCSN, so we will be able to cleanup transaction log
+        part->appendCSNToVersionMetadata(VersionMetadata::CREATION);
     }
 
     for (const auto & part : parts_to_remove)
     {
-        /// Skip parts in `Temporary` state — they are not in `data_parts_indexes`,
-        /// so `removePartsFromWorkingSet` would raise `LOGICAL_ERROR` and (under
-        /// `abort_on_logical_error`) abort the server before the catch can swallow it.
-        ///
-        /// How a `Temporary` part reaches a rolling-back transaction: `SharedMergeTreeSink::commitPart`
-        /// hits a hardware error on Keeper commit, calls `rollbackPartsToTemporaryState` (which
-        /// erases the part and marks it `Temporary`), then on retry the memo-ID check determines
-        /// the original commit actually succeeded and re-registers the part via `txn->addNewPart`
-        /// without restoring it to the working set. The Keeper-side `RolledBackCSN` above is the
-        /// durable rollback marker; the uncommitted part's znode and S3 blobs are reaped by `processPartsUpdate`.
-        if (part->getState() == MergeTreeDataPartState::Temporary)
-            continue;
-
         /// NOTE It's possible that part is already removed from working set in the same transaction
-        /// (or, even worse, in a separate non-transactional query with NonTransactionalTID),
+        /// (or, even worse, in a separate non-transactional query with PrehistoricTID),
         /// but it's not a problem: removePartsFromWorkingSet(...) will do nothing in this case.
-        try
-        {
-            const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part}, true);
-        }
-        catch (...)
-        {
-            /// Safe: if the part was already removed by another path, the working set is already correct.
-            tryLogCurrentException(part->version->getLogger(),
-                fmt::format("Failed to remove part {} from working set during rollback, ignoring", part->name));
-        }
+        const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part}, true);
     }
 
-    /// Undo each removal, then restore only what the undo saw: `resetRemovalTID` reads Keeper, the
-    /// cached `VersionInfo` can be stale. A peer can still commit in between; the next parts update
-    /// demotes the part again.
-    for (const auto & entry : parts_to_activate)
+    for (const auto & part : parts_to_activate)
+        if (part->version.getCreationTID() != tid)
+            const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
+
+    for (const auto & part : parts_to_activate)
     {
-        const auto & part = entry.part;
-        /// Clear removal_tid so we needn't tell never-committed TIDs apart from long-committed ones.
-        /// The fingerprint gates the clear on still owning the lock.
-        bool removal_tid_cleared = true;
-        /// A peer removed the part for good, so there is nothing left to restore.
-        bool part_gone = false;
-        try
-        {
-            fiu_do_on(FailPoints::transaction_rollback_reset_removal_tid_fail,
-            {
-                throw Exception(ErrorCodes::ABORTED, "Injected failure of resetRemovalTID during rollback");
-            });
-            part->version->resetRemovalTID(entry.acquired);
-        }
-        catch (const Exception & e)
-        {
-            part_gone = e.code() == ErrorCodes::NO_SUCH_DATA_PART;
-            tryLogCurrentException(part->version->getLogger(),
-                fmt::format("Failed to clear removal_tid for part {} during rollback", part->name));
-            any_failed = true;
-            removal_tid_cleared = false;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(part->version->getLogger(),
-                fmt::format("Failed to clear removal_tid for part {} during rollback", part->name));
-            any_failed = true;
-            removal_tid_cleared = false;
-        }
-
-        /// Decide from the record, not from the clear above: a mutate task of this transaction can
-        /// blank a rolled-back stamp first, which makes the clear do nothing on a part still ours.
-        const auto & info = part->version->getInfo();
-        if (!part_gone && info.creation_tid != tid && info.removal_csn == Tx::UnknownCSN
-            && (info.removal_tid.isEmpty() || info.removal_tid == tid))
-        {
-            try
-            {
-                const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
-            }
-            catch (...)
-            {
-                /// Abort rather than continue: a half-restored partition can be made durable by a
-                /// later transaction, and a restart brings the parts back cleanly. Constructing the
-                /// exception without throwing names the cause in `system.errors`.
-                Exception ex(ErrorCodes::TRANSACTION_ROLLBACK_PARTIAL_FAILURE,
-                    "Rollback of transaction {} failed to restore part {} to "
-                    "Active; aborting to avoid serving the half-restored state",
-                    tid, part->name);
-
-                tryLogCurrentException(part->version->getLogger(), ex.message());
-
-                std::abort();
-            }
-        }
-
-        /// Keep the lock guarding the stamp we failed to clear. See `rollback` in the header.
-        if (!removal_tid_cleared)
-            continue;
-
-        try
-        {
-            /// Pass the acquire-time fingerprint so a peer's `tryTakeOver` between our
-            /// `lockRemovalTID` (in `removeOldPart`) and this `unlockRemovalTID` surfaces
-            /// as `ABORTED` (caught and ignored below) instead of `LOGICAL_ERROR`,
-            /// which would trip `abortOnFailedAssertion` in sanitizer builds.
-            part->version->unlockRemovalTID(
-                tid,
-                TransactionInfoContext{part->storage.getStorageID(), part->name},
-                entry.acquired);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(part->version->getLogger(),
-                fmt::format("Failed to unlock removal_tid for part {} during rollback", part->name));
-            any_failed = true;
-        }
+        /// Clear removal_tid from version metadata file, so we will not need to distinguish TIDs that were not committed
+        /// and TIDs that were committed long time ago and were removed from the log on log cleanup.
+        part->appendRemovalTIDToVersionMetadata(/* clear */ true);
+        part->version.unlockRemovalTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
     }
 
-    /// Release the source-part `<part>/removal_lock` znodes held by this transaction's merges,
-    /// mutations and optimizes (`BG_MERGE` / `MUTATION` / `OPTIMIZE` / `OPTIMIZE_FINAL`). The
-    /// locks of parts it removes were already cleared by the `unlockRemovalTID` loop above.
-    for (const auto & locked : locks_to_release)
-    {
-        try
-        {
-#if CLICKHOUSE_CLOUD
-            /// SMT-only: these locks live on `VersionMetadataOnKeeper`,
-            /// which is not built into public ClickHouse.
-            if (auto * vm = dynamic_cast<VersionMetadataOnKeeper *>(locked.part->version.get()))
-                vm->unlockPartLock(
-                    tid,
-                    TransactionInfoContext{locked.storage->getStorageID(), locked.part->name},
-                    locked.acquired);
-#endif
-        }
-        catch (...)
-        {
-            tryLogCurrentException(locked.part->version->getLogger(),
-                fmt::format("Failed to release removal_lock for source part {} during rollback", locked.part->name));
-            any_failed = true;
-        }
-    }
-
-    chassert([&]()
+    assert([&]()
     {
         std::lock_guard lock{mutex};
-        chassert(mutations_to_kill == mutations);
-        chassert(parts_to_remove == creating_parts);
-        chassert(parts_to_activate == removing_parts);
-        chassert(locks_to_release.size() == locked_parts.size());
+        assert(mutations_to_kill == mutations);
+        assert(parts_to_remove == creating_parts);
+        assert(parts_to_activate == removing_parts);
         return csn == Tx::RolledBackCSN;
     }());
 
-#if CLICKHOUSE_CLOUD
-    std::unordered_set<StoragePtr> rollback_storages;
-    {
-        std::lock_guard lock{mutex};
-        rollback_storages = storages;
-    }
-    StorageSharedMergeTree::bumpVirtualPartsForStorages(
-        rollback_storages,
-        "MergeTreeTransaction::rollback::bumpVirtualParts",
-        "Failed to bump virtual_parts znode after tx rollback; cleanup will run on the next watched event");
-#endif
-
-    return any_failed ? RollbackResult::Failed : RollbackResult::Ok;
+    return true;
 }
 
 void MergeTreeTransaction::afterFinalize()
 {
     std::lock_guard lock{mutex};
-    /// `locked_parts.empty()` is part of this invariant; see `isReadOnly` for why.
-    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty() && locked_parts.empty()) == storages.empty());
+    chassert((creating_parts.empty() && removing_parts.empty() && mutations.empty()) == storages.empty());
 
     /// Remember if it was read-only transaction before we clear storages
     is_read_only = storages.empty();
@@ -787,15 +347,12 @@ void MergeTreeTransaction::afterFinalize()
     removing_parts.clear();
     storages.clear();
     mutations.clear();
-    /// Lock release already happened by now; clear so the held `StoragePtr` /
-    /// `DataPartPtr` don't outlive the transaction, like the containers above.
-    locked_parts.clear();
     finalized = true;
 }
 
 void MergeTreeTransaction::onException()
 {
-    TransactionManager::instance().rollbackTransaction(shared_from_this());
+    TransactionLog::instance().rollbackTransaction(shared_from_this());
 }
 
 String MergeTreeTransaction::dumpDescription() const
@@ -823,13 +380,11 @@ String MergeTreeTransaction::dumpDescription() const
     for (const auto & part : creating_parts)
         std::get<0>(storage_to_changes[&(part->storage)]).push_back(part->name);
 
-    for (const auto & entry : removing_parts)
+    for (const auto & part : removing_parts)
     {
-        const auto & part = entry.part;
-        auto current_version_info = part->version->getInfo();
-        String info = fmt::format("{} ({})", part->name, current_version_info.toString(/*one_line=*/true));
+        String info = fmt::format("{} (created by {}, {})", part->name, part->version.getCreationTID(), part->version.creation_csn.load());
         std::get<1>(storage_to_changes[&(part->storage)]).push_back(std::move(info));
-        chassert(!current_version_info.creation_csn || current_version_info.creation_csn <= getSnapshot());
+        chassert(!part->version.creation_csn || part->version.creation_csn <= getSnapshot());
     }
 
     for (const auto & mutation : mutations)

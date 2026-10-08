@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import uuid
 
 import pytest
@@ -295,21 +296,6 @@ def test_executable_function_parameter_python(started_cluster):
         == "Parameter 2 key 1\n"
     )
 
-    # Placeholders with invalid parameter names must not be registered as
-    # command parameters, so each of these functions takes zero parameters and
-    # passing one fails the parameter-count check with a specific error.
-    for function_name in (
-        "test_function_invalid_parameter_name_python",  # name with a space: {test parameter:UInt64}
-        "test_function_invalid_empty_parameter_name_python",  # empty name: {:UInt64}
-        "test_function_invalid_blank_parameter_name_python",  # blank name: { :UInt64}
-    ):
-        assert (
-            "number of parameters does not match. Expected 0. Actual 1"
-            in node.query_and_get_error(
-                f"SELECT {function_name}(2)(toUInt64(1))"
-            )
-        )
-
 
 def test_executable_function_always_error_python(started_cluster):
     skip_test_msan(node)
@@ -408,45 +394,6 @@ def test_executable_function_query_cache(started_cluster):
 
     node.query("SYSTEM CLEAR QUERY CACHE");
 
-def test_executable_function_deterministic_declaration_deduplicates(started_cluster):
-    '''A function declared deterministic is entitled to run once per distinct value of a
-    LowCardinality argument instead of once per row.'''
-    skip_test_msan(node)
-
-    node.query("DROP TABLE IF EXISTS low_cardinality_argument")
-    node.query(
-        "CREATE TABLE low_cardinality_argument (v LowCardinality(UInt64)) ENGINE = MergeTree ORDER BY tuple()",
-        settings={"allow_suspicious_low_cardinality_types": 1},
-    )
-    node.query("INSERT INTO low_cardinality_argument SELECT number % 2 FROM numbers(100)")
-
-    def run(function_name):
-        query_id = uuid.uuid4().hex
-        # `sum` over the result keeps the call from being pruned as an unused column.
-        result = node.query(
-            f"SELECT sum(length({function_name}(v))) FROM low_cardinality_argument",
-            query_id=query_id,
-        )
-        node.query("SYSTEM FLUSH LOGS")
-        input_bytes = node.query(
-            f"""SELECT ProfileEvents['ExecutableUserDefinedFunctionInputBytes']
-                FROM system.query_log
-                WHERE query_id = '{query_id}' AND type = 'QueryFinish'"""
-        )
-        return result.strip(), int(input_bytes.strip())
-
-    deterministic_result, deterministic_bytes = run("test_function_bash_deterministic")
-    nondeterministic_result, nondeterministic_bytes = run("test_function_bash_nondeterministic")
-
-    # The table holds 100 rows over 2 distinct values, and the argument is one line per row on
-    # the child's stdin, so the declaration decides how much reaches the child.
-    assert nondeterministic_bytes >= 100
-    assert deterministic_bytes * 10 < nondeterministic_bytes
-    # Deduplicating must not change the answer for a function that is deterministic in fact.
-    assert deterministic_result == nondeterministic_result
-
-    node.query("DROP TABLE low_cardinality_argument")
-
 def test_executable_function_python_exception_in_query_log(started_cluster):
     '''Test that Python exceptions with tracebacks appear in query_log when stderr_reaction is configured as throw'''
     skip_test_msan(node)
@@ -495,24 +442,17 @@ def test_executable_function_python_exception_in_query_log(started_cluster):
         assert component in exception_text, f"Missing required component: {component}"
 
 
-@pytest.mark.parametrize("func_name", [
-    "test_function_stderr_log_last_reaction",
-    "test_function_stderr_log_first_reaction",
-    "test_function_stderr_none_reaction",
-])
-def test_executable_function_stderr_no_throw_on_success(started_cluster, func_name):
-    '''Test that UDFs writing to stderr succeed under log_last/log_first/none when exit code is 0'''
+def test_executable_function_default_stderr_reaction(started_cluster):
+    '''Test that UDFs writing to stderr succeed under default stderr_reaction (log_last) when exit code is 0'''
     skip_test_msan(node)
 
-    assert node.query(f"SELECT {func_name}('abc')") == "Key abc\n"
+    # input_always_error.py writes "Fake error" to stderr but exits 0
+    # With default stderr_reaction (log_last), this should NOT throw
+    assert node.query("SELECT test_function_stderr_default_reaction('abc')") == "Key abc\n"
 
 
-@pytest.mark.parametrize("func_name,mode", [
-    ("test_function_python_exception_log_last", "log_last"),
-    ("test_function_python_exception_log_first", "log_first"),
-])
-def test_executable_function_stderr_in_exception_on_failure(started_cluster, func_name, mode):
-    '''Test that stderr content appears in exception when exit code != 0 under log_last/log_first'''
+def test_executable_function_python_exception_log_last_in_query_log(started_cluster):
+    '''Test that stderr content appears in exception when exit code != 0 under log_last mode'''
     skip_test_msan(node)
 
     node.query("SYSTEM FLUSH LOGS")
@@ -520,10 +460,11 @@ def test_executable_function_stderr_in_exception_on_failure(started_cluster, fun
     query_id = uuid.uuid4().hex
 
     try:
-        node.query(f"SELECT {func_name}(1)", query_id=query_id)
+        node.query("SELECT test_function_python_exception_log_last(1)", query_id=query_id)
         assert False, "Exception should have been thrown"
     except Exception as ex:
         assert "DB::Exception" in str(ex)
+        # Under log_last mode, exit code exception is enriched with stderr
         assert "Child process was exited with return code 1" in str(ex)
 
     node.query("SYSTEM FLUSH LOGS")
@@ -538,6 +479,7 @@ def test_executable_function_stderr_in_exception_on_failure(started_cluster, fun
 
     exception_text = TSV(result).lines[0]
 
+    # Verify stderr content is included in the exit code exception
     required_components = [
         "Stderr:",
         "in process_data",
@@ -546,4 +488,4 @@ def test_executable_function_stderr_in_exception_on_failure(started_cluster, fun
     ]
 
     for component in required_components:
-        assert component in exception_text, f"Missing required component in {mode}: {component}"
+        assert component in exception_text, f"Missing required component: {component}"

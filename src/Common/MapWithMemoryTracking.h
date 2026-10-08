@@ -18,10 +18,10 @@ namespace DB
 /// To prevent this, we provide these `-WithMemoryTracking` aliases to standard containers that use the
 /// `AllocatorWithMemoryTracking`, which tracks memory using throwing methods of the `MemoryTracker`.
 
-template <typename K, typename V, typename Compare = std::less<K>>
-using MapWithMemoryTracking = std::map<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+template <typename K, typename V>
+using MapWithMemoryTracking = std::map<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
-template <typename K, typename V, typename Compare = std::less<K>>
-using MultiMapWithMemoryTracking = std::multimap<K, V, Compare, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
+template <typename K, typename V>
+using MultiMapWithMemoryTracking = std::multimap<K, V, std::less<K>, AllocatorWithMemoryTracking<std::pair<const K, V>>>;
 
 }

@@ -200,7 +200,7 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Map & map) const
     for (const auto & elem : map)
     {
         const auto & tuple = elem.safeGet<Tuple>();
-        chassert(tuple.size() == 2);
+        assert(tuple.size() == 2);
         key_types.push_back(applyVisitor(*this, tuple[0]));
         value_types.push_back(applyVisitor(*this, tuple[1]));
     }
@@ -238,6 +238,5 @@ template class FieldToDataType<LeastSupertypeOnError::Throw>;
 template class FieldToDataType<LeastSupertypeOnError::String>;
 template class FieldToDataType<LeastSupertypeOnError::Null>;
 template class FieldToDataType<LeastSupertypeOnError::Variant>;
-template class FieldToDataType<LeastSupertypeOnError::Dynamic>;
 
 }

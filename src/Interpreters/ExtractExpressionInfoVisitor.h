@@ -19,7 +19,6 @@ struct ExpressionInfoMatcher
         const TablesWithColumns & tables;
 
         bool is_array_join = false;
-        bool is_untuple = false;
         bool is_stateful_function = false;
         bool is_aggregate_function = false;
         bool is_window_function = false;

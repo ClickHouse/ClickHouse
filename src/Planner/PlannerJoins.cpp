@@ -1,14 +1,11 @@
 #include <Planner/PlannerJoins.h>
 
-#include <Columns/ColumnConst.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -35,17 +32,14 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
-#include <Interpreters/SpillingHashJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
@@ -70,14 +64,10 @@ namespace Setting
     extern const SettingsBool allow_general_join_planning;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsUInt64 parallel_hash_join_threshold;
-    extern const SettingsBool enable_hash_join_row_store;
-    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
     extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
     extern const SettingsBool allow_dynamic_type_in_join_keys;
-    extern const SettingsUInt64 max_bytes_before_external_join;
-    extern const SettingsDouble max_bytes_ratio_before_external_join;
 }
 
 namespace ServerSetting
@@ -194,7 +184,7 @@ JoinClause JoinClause::concatClauses(const JoinClause & lhs, const JoinClause & 
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 
-TableExpressionSet extractTableExpressionsSet(const TableExpressionNodePtr & node)
+TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node)
 {
     TableExpressionSet res;
     for (const auto & expr : extractTableExpressions(node, true))
@@ -243,8 +233,8 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
                 "JOIN {} actions has column {} that do not exist in left {} or right {} table expression columns",
                 join_node.formatASTForErrorMessage(),
                 column_source->formatASTForErrorMessage(),
-                join_node.getLeftTableExpressionNode()->formatASTForErrorMessage(),
-                join_node.getRightTableExpressionNode()->formatASTForErrorMessage());
+                join_node.getLeftTableExpression()->formatASTForErrorMessage(),
+                join_node.getRightTableExpression()->formatASTForErrorMessage());
 
         auto input_table_side = is_column_from_left_expr ? JoinTableSide::Left : JoinTableSide::Right;
         table_sides.insert(input_table_side);
@@ -253,7 +243,7 @@ std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     return table_sides;
 }
 
-static const ActionsDAG::Node * appendExpression(
+const ActionsDAG::Node * appendExpression(
     ActionsDAG & dag,
     const QueryTreeNodePtr & expression,
     const PlannerContextPtr & planner_context,
@@ -271,7 +261,7 @@ static const ActionsDAG::Node * appendExpression(
     return join_expression_dag_node_raw_pointers[0];
 }
 
-static void buildJoinClauseImpl(
+void buildJoinClauseImpl(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -438,7 +428,7 @@ static void buildJoinClauseImpl(
     }
 }
 
-static JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
+JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses & rhs)
 {
     JoinClauses result;
     for (const auto & rhs_clause : rhs)
@@ -452,7 +442,7 @@ static JoinClauses makeCrossProduct(const JoinClauses & lhs, const JoinClauses &
     return result;
 }
 
-static void buildSimpleJoinClause(
+void buildSimpleJoinClause(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -476,7 +466,7 @@ static void buildSimpleJoinClause(
         join_clause);
 }
 
-static void buildJoinClause(
+void buildJoinClause(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -533,7 +523,7 @@ static void buildJoinClause(
         join_clause);
 }
 
-static JoinClauses buildJoinClauses(
+JoinClauses buildJoinClauses(
     ActionsDAG & left_dag,
     ActionsDAG & right_dag,
     ActionsDAG & joined_dag,
@@ -671,7 +661,7 @@ static JoinClauses buildJoinClauses(
     return std::move(built_clauses.at(join_expression.get()));
 }
 
-static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
+std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     ActionsDAG & left_join_actions,
     ActionsDAG & right_join_actions,
     ActionsDAG & post_join_actions,
@@ -746,7 +736,7 @@ static std::pair<JoinClauses, bool /*is_inequal_join*/> buildAllJoinClauses(
     return std::make_pair(std::move(join_clauses), has_residual_filters);
 }
 
-static JoinClausesAndActions buildJoinClausesAndActions(
+JoinClausesAndActions buildJoinClausesAndActions(
     const ColumnsWithTypeAndName & left_table_expression_columns,
     const ColumnsWithTypeAndName & right_table_expression_columns,
     const JoinNode & join_node,
@@ -802,11 +792,11 @@ static JoinClausesAndActions buildJoinClausesAndActions(
         join_right_actions_names_set.insert(right_table_expression_column.name);
     }
 
-    auto join_left_table_expressions = extractTableExpressionsSet(join_node.getLeftTableExpressionNodeTyped());
-    auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpressionNodeTyped());
+    auto join_left_table_expressions = extractTableExpressionsSet(join_node.getLeftTableExpression());
+    auto join_right_table_expressions = extractTableExpressionsSet(join_node.getRightTableExpression());
 
     JoinClausesAndActions result;
-    bool has_residual_filters = false;
+    bool has_residual_filters;
 
     std::tie(result.join_clauses, has_residual_filters) = buildAllJoinClauses(
         left_join_actions,
@@ -832,7 +822,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
     };
 
     bool is_join_with_special_storage = false;
-    if (const auto * right_table_node = join_node.getRightTableExpressionNode()->as<TableNode>())
+    if (const auto * right_table_node = join_node.getRightTableExpression()->as<TableNode>())
     {
         is_join_with_special_storage = dynamic_cast<const StorageJoin *>(right_table_node->getStorage().get());
     }
@@ -870,7 +860,7 @@ static JoinClausesAndActions buildJoinClausesAndActions(
             add_necessary_name_if_needed(JoinTableSide::Right, dag_filter_condition_node->result_name);
         }
 
-        chassert(join_clause.getLeftKeyNodes().size() == join_clause.getRightKeyNodes().size());
+        assert(join_clause.getLeftKeyNodes().size() == join_clause.getRightKeyNodes().size());
         size_t join_clause_key_nodes_size = join_clause.getLeftKeyNodes().size();
 
         for (size_t i = 0; i < join_clause_key_nodes_size; ++i)
@@ -989,8 +979,8 @@ static JoinClausesAndActions buildJoinClausesAndActions(
         if (!which_type.isUInt8())
         {
             DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-            auto true_col = uint8_ty->createColumnConst(0, 1);
-            const auto * true_node = &result.residual_join_expressions_actions->addColumn(std::move(true_col), uint8_ty, "true");
+            auto true_col = ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true");
+            const auto * true_node = &result.residual_join_expressions_actions->addColumn(true_col);
             result.residual_join_expressions_actions = ActionsDAG::buildFilterActionsDAG({outputs[0], true_node});
         }
     }
@@ -1048,7 +1038,7 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         table_join->setStorageJoin(storage_key_value);
 }
 
-static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
+std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
 {
@@ -1067,11 +1057,6 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!allowed_inner && !allowed_left)
         return {};
 
-    /// `DirectKeyValueJoin` looks rows up by the equality key only and never evaluates a mixed
-    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
-    if (table_join->getMixedJoinExpression())
-        return {};
-
     const auto & clauses = table_join->getClauses();
     bool only_one_key = clauses.size() == 1 &&
         clauses[0].key_names_left.size() == 1 &&
@@ -1086,42 +1071,16 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
 
     const String & key_name = clauses[0].key_names_right[0];
 
-    auto table_column_name_it = right_table_expression.column_mapping.find(key_name);
-    if (table_column_name_it == right_table_expression.column_mapping.end())
+    if (auto table_column_name_it = right_table_expression.column_mapping.find(key_name); table_column_name_it != right_table_expression.column_mapping.end())
+    {
+        const auto & storage_primary_key = storage->getPrimaryKey();
+        if (storage_primary_key.size() != 1 || storage_primary_key[0] != table_column_name_it->second)
+            return {};
+    }
+    else
+    {
         return {};
-
-    const auto & storage_primary_key = storage->getPrimaryKey();
-    if (storage_primary_key.size() != 1 || storage_primary_key[0] != table_column_name_it->second)
-        return {};
-
-    /// Verify the right join key type matches the storage primary key type.
-    ///
-    /// `tryDirectJoin` chooses `DirectKeyValueJoin` based on the right key NAME matching the
-    /// storage's primary key name. The legacy `JOIN ... USING` planner path
-    /// (`buildQueryPlanForJoinNodeLegacy`) inserts a "Cast JOIN USING columns" plan step
-    /// that casts the right side to the join's common supertype while preserving the column
-    /// name. The name match then succeeds even though the type changed, and we would pass a
-    /// supertype-cast key to `IKeyValueEntity::getByKeys`, which checks the type against
-    /// the storage's primary key and throws `LOGICAL_ERROR` "Primary key type mismatch" on
-    /// mismatch. Decline `DirectKeyValueJoin` here so `chooseJoinAlgorithm` falls back to
-    /// `HashJoin`, which handles the type conversion correctly.
-    ///
-    /// We strip `Nullable` and `LowCardinality` wrappers on both sides to match the
-    /// equivalence semantics used by `getByKeys` itself (e.g. `StorageEmbeddedRocksDB::getByKeys`).
-    if (!right_table_expression_header->has(key_name))
-        return {};
-
-    const auto storage_sample_block = storage->getSampleBlock({});
-    if (!storage_sample_block.has(table_column_name_it->second))
-        return {};
-
-    auto right_key_type = removeNullable(recursiveRemoveLowCardinality(
-        right_table_expression_header->getByName(key_name).type));
-    auto storage_primary_key_type = removeNullable(recursiveRemoveLowCardinality(
-        storage_sample_block.getByName(table_column_name_it->second).type));
-
-    if (!right_key_type->equals(*storage_primary_key_type))
-        return {};
+    }
 
     /** For right table expression during execution columns have unique name.
       * Direct key value join implementation during storage querying must use storage column names.
@@ -1141,17 +1100,12 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
 
     for (const auto & right_table_expression_column : right_table_expression_header_)
     {
-        auto column_mapping_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
-        if (column_mapping_it == right_table_expression.column_mapping.end())
-            return {};
-
-        /// `getByKeys` cannot return a column absent from the storage sample block, and its result is
-        /// re-indexed against this header by position, so that column's slot would get another's data.
-        if (!storage_sample_block.has(column_mapping_it->second))
+        auto table_column_name_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
+        if (table_column_name_it == right_table_expression.column_mapping.end())
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
-        right_table_expression_column_with_storage_column_name.name = column_mapping_it->second;
+        right_table_expression_column_with_storage_column_name.name = table_column_name_it->second;
         right_table_expression_header_with_storage_column_names.insert(right_table_expression_column_with_storage_column_name);
     }
 
@@ -1184,30 +1138,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     SharedHeader & right_table_expression_header,
     const JoinAlgorithmParams & params)
 {
-    const HashJoinStatsCollectingParams stats_collecting_params{
-        .build = {
-            params.hash_table_key_hash,
-            params.collect_hash_table_stats_during_joins,
-            params.max_entries_for_hash_table_stats,
-            params.max_size_to_preallocate_for_joins},
-        .match = {
-            params.join_output_key_hash,
-            params.collect_hash_table_stats_during_joins,
-            params.max_entries_for_hash_table_stats,
-            params.max_size_to_preallocate_for_joins}};
-
-    /// Only enable hash table payload row-major transformation if the join produces more rows than row_store_ratio * build_size.
-    /// Prefer the number of hash table matches observed on a previous run over the optimizer's output estimate.
-    const double row_store_ratio = params.min_rows_ratio_for_hash_join_row_store;
-    const auto hash_join_match_hint = getHashJoinMatchHint(stats_collecting_params.match);
-    const std::optional<UInt64> row_store_output
-        = hash_join_match_hint ? std::optional<UInt64>(hash_join_match_hint->matches) : params.result_rows_estimation;
-    const bool enable_row_store = params.enable_hash_join_row_store
-        && (row_store_ratio == 0.0
-            || (params.rhs_size_estimation && row_store_output
-                && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio));
-    table_join->setRowStoreEnabled(enable_row_store);
-
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
     /// Direct JOIN with special storages that support key value access. For example JOIN with Dictionary
@@ -1231,75 +1161,33 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
-        {
-            if (table_join->allowParallelHashJoin())
-            {
-                const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
-                    || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
-                if (use_parallel_hash)
-                {
-                    return std::make_shared<SpillingHashJoin>(
-                        table_join,
-                        left_table_expression_header,
-                        right_table_expression_header,
-                        table_join->getTempDataOnDisk(),
-                        params.grace_hash_join_initial_buckets,
-                        params.grace_hash_join_max_buckets,
-                        params.max_threads,
-                        stats_collecting_params,
-                        params.join_any_take_last_row);
-                }
-            }
-
-            return std::make_shared<SpillingHashJoin>(
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                table_join->getTempDataOnDisk(),
-                params.grace_hash_join_initial_buckets,
-                params.grace_hash_join_max_buckets,
-                stats_collecting_params,
-                params.join_any_take_last_row);
-        }
-
         if (table_join->allowParallelHashJoin())
         {
             const bool use_parallel_hash = !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) || !params.rhs_size_estimation
                 || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
             if (use_parallel_hash)
             {
-                return std::make_shared<ConcurrentHashJoin>(
-                    table_join,
-                    params.max_threads,
-                    right_table_expression_header,
-                    stats_collecting_params,
-                    params.join_any_take_last_row);
+                StatsCollectingParams stats_collecting_params{
+                    params.hash_table_key_hash,
+                    params.collect_hash_table_stats_during_joins,
+                    params.max_entries_for_hash_table_stats,
+                    params.max_size_to_preallocate_for_joins};
+                return std::make_shared<ConcurrentHashJoin>(table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
             }
         }
 
         return std::make_shared<HashJoin>(
-            table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
-            /*is_concurrent_hash_join_=*/false, stats_collecting_params);
+            table_join, right_table_expression_header, params.join_any_take_last_row);
     }
 
-    /// `parallel_full_sorting_merge` uses the same `FullSortingMergeJoin`; the optimizer turns it into a
-    /// hash-sharded set of independent per-shard merge joins (see `optimizeJoinByShards`).
-    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE || algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE)
+    if (algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
     {
         if (FullSortingMergeJoin::isSupported(table_join))
-            return std::make_shared<FullSortingMergeJoin>(
-                table_join, right_table_expression_header, /*null_direction_=*/1,
-                /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+            return std::make_shared<FullSortingMergeJoin>(table_join, right_table_expression_header);
     }
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {
-        if (!table_join->getTempDataOnDisk())
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "Grace hash join requires temporary storage. Set `tmp_path` or `tmp_policy` in server configuration");
-
         if (GraceHashJoin::isSupported(table_join))
         {
             return std::make_shared<GraceHashJoin>(
@@ -1308,46 +1196,15 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
-                table_join->getTempDataOnDisk(),
-                params.join_any_take_last_row);
+                Context::getGlobalContextInstance()->getTempDataOnDisk());
         }
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
-        {
-            if (table_join->allowParallelHashJoin())
-            {
-                return std::make_shared<SpillingHashJoin>(
-                    table_join,
-                    left_table_expression_header,
-                    right_table_expression_header,
-                    table_join->getTempDataOnDisk(),
-                    params.grace_hash_join_initial_buckets,
-                    params.grace_hash_join_max_buckets,
-                    params.max_threads,
-                    stats_collecting_params,
-                    params.join_any_take_last_row);
-            }
-
-            return std::make_shared<SpillingHashJoin>(
-                table_join,
-                left_table_expression_header,
-                right_table_expression_header,
-                table_join->getTempDataOnDisk(),
-                params.grace_hash_join_initial_buckets,
-                params.grace_hash_join_max_buckets,
-                stats_collecting_params,
-                params.join_any_take_last_row);
-        }
-
         if (MergeJoin::isSupported(table_join))
-            return std::make_shared<JoinSwitcher>(
-                table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params);
-        return std::make_shared<HashJoin>(
-            table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
-            /*is_concurrent_hash_join_=*/false, stats_collecting_params);
+            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
     }
 
     return nullptr;
@@ -1362,20 +1219,13 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     collect_hash_table_stats_during_joins = settings[Setting::collect_hash_table_stats_during_joins];
     max_entries_for_hash_table_stats = context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats];
     hash_table_key_hash = 0;
-    join_output_key_hash = 0;
     parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
-    enable_hash_join_row_store = settings[Setting::enable_hash_join_row_store];
-    min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
     grace_hash_join_initial_buckets = settings[Setting::grace_hash_join_initial_buckets];
     grace_hash_join_max_buckets = settings[Setting::grace_hash_join_max_buckets];
 
     max_size_to_preallocate_for_joins = settings[Setting::max_size_to_preallocate_for_joins];
     max_threads = settings[Setting::max_threads];
-
-    max_bytes_before_external_join = JoinSettings::getMaxBytesBeforeExternalJoin(
-        settings[Setting::max_bytes_before_external_join],
-        settings[Setting::max_bytes_ratio_before_external_join]);
 
     initial_query_id = context.getInitialQueryId();
     lock_acquire_timeout = std::chrono::milliseconds(settings[Setting::lock_acquire_timeout].totalMilliseconds());
@@ -1385,7 +1235,6 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     const JoinSettings & join_settings,
     UInt64 max_threads_,
     UInt64 hash_table_key_hash_,
-    UInt64 join_output_key_hash_,
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
     std::chrono::milliseconds lock_acquire_timeout_)
@@ -1395,18 +1244,13 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     collect_hash_table_stats_during_joins = join_settings.collect_hash_table_stats_during_joins;
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     hash_table_key_hash = hash_table_key_hash_;
-    join_output_key_hash = join_output_key_hash_;
     parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
-    enable_hash_join_row_store = join_settings.enable_hash_join_row_store;
-    min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 
     grace_hash_join_initial_buckets = join_settings.grace_hash_join_initial_buckets;
     grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;
 
     max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
     max_threads = max_threads_;
-
-    max_bytes_before_external_join = join_settings.getEffectiveMaxBytesBeforeExternalJoin();
 
     initial_query_id = std::move(initial_query_id_);
     lock_acquire_timeout = lock_acquire_timeout_;
@@ -1451,12 +1295,24 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
         return storage->getJoinLocked(table_join, params.initial_query_id, params.lock_acquire_timeout, required_column_names);
     }
 
-    /** We have only one way to execute a CROSS JOIN and joins with constant predicate - with `ConstantJoin`.
-      * Therefore, for a query with an explicit CROSS JOIN or constant predicate, it should not fail because
-      * of the `join_algorithm` setting.
+    /** JOIN with constant.
+      * Example: SELECT * FROM test_table AS t1 INNER JOIN test_table AS t2 ON 1;
       */
-    if (isCrossOrComma(table_join->kind()) || table_join->isJoinWithConstant())
-        return std::make_shared<ConstantJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
+    if (table_join->isJoinWithConstant())
+    {
+        if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
+
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+    }
+
+    /** We have only one way to execute a CROSS JOIN - with a hash join.
+      * Therefore, for a query with an explicit CROSS JOIN, it should not fail because of the `join_algorithm` setting.
+      * If the user expects CROSS JOIN + WHERE to be rewritten to INNER join and to be executed with a specific algorithm,
+      * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
+      */
+    if (table_join->kind() == JoinKind::Cross)
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
@@ -1474,20 +1330,8 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
-    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
-    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
-    /// which the setting parser rejects.
-    std::vector<String> enabled_algorithm_names;
-    enabled_algorithm_names.reserve(table_join->getEnabledJoinAlgorithms().size());
-    for (auto algorithm : table_join->getEnabledJoinAlgorithms())
-        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
-
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
-                    "with the given right table storage type",
-                    fmt::join(enabled_algorithm_names, ", "),
-                    toString(table_join->strictness()),
-                    toString(table_join->kind()));
+                    "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
 }
 
 }

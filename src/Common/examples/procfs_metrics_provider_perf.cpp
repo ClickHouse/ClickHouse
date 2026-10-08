@@ -1,5 +1,3 @@
-#include <Examples/clickhouse_examples.h>
-
 #if defined(OS_LINUX)
 #include <Common/ProcfsMetricsProvider.h>
 
@@ -9,7 +7,7 @@
 
 
 #if defined(OS_LINUX)
-int mainEntryExampleProcfsMetricsProviderPerf(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     using namespace DB;
 
@@ -23,7 +21,7 @@ int mainEntryExampleProcfsMetricsProviderPerf(int argc, char ** argv)
 
     ProcfsMetricsProvider stats_provider(0);
 
-    ::taskstats stats{};
+    ::taskstats stats;
     stats_provider.getTaskStats(stats);
 
     const auto start_cpu_time = stats.cpu_run_virtual_total;
@@ -37,8 +35,7 @@ int mainEntryExampleProcfsMetricsProviderPerf(int argc, char ** argv)
     return 0;
 }
 #else
-int mainEntryExampleProcfsMetricsProviderPerf(int, char **)
+int main()
 {
-    return 0;
 }
 #endif

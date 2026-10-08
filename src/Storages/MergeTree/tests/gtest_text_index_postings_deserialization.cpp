@@ -1,12 +1,11 @@
 #include <gtest/gtest.h>
 
-#include <Common/PODArray.h>
+#include <IO/ConcatReadBuffer.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCodec.h>
-
-#include <roaring/roaring.hh>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 
 using namespace DB;
 
@@ -30,14 +29,29 @@ String serializePostings(const PostingList & postings)
     return payload;
 }
 
-PostingList decodePostings(const String & encoded)
+PostingsSerialization makeSerialization()
 {
-    PostingListCodecNone codec;
+    /// A posting list without the `IsCompressed` flag never consults the codec.
+    return PostingsSerialization(nullptr);
+}
+
+/// The whole payload is in the buffer, so `deserialize` deserializes it in place.
+PostingList decodePostingsInPlace(const String & encoded)
+{
+    auto serialization = makeSerialization();
     ReadBufferFromString in(encoded);
-    PostingList postings;
-    PaddedPODArray<char> buffer;
-    codec.decode(in, postings, buffer);
-    return postings;
+    return *serialization.deserialize(in, /*header=*/ 0, /*cardinality=*/ 0);
+}
+
+/// The payload spans two buffers, so `deserialize` copies it out before deserializing.
+PostingList decodePostingsAcrossBuffers(const String & encoded)
+{
+    auto serialization = makeSerialization();
+    size_t split_at = encoded.size() / 2;
+    ReadBufferFromMemory head(encoded.data(), split_at);
+    ReadBufferFromMemory tail(encoded.data() + split_at, encoded.size() - split_at);
+    ConcatReadBuffer in(head, tail);
+    return *serialization.deserialize(in, /*header=*/ 0, /*cardinality=*/ 0);
 }
 
 }
@@ -62,9 +76,15 @@ TEST(TextIndexPostingsDeserializationTest, RoundTrip)
 
     for (const auto & postings : {empty, array_container, bitset_container, run_container})
     {
-        auto decoded = decodePostings(encodePostingsPayload(serializePostings(postings)));
-        EXPECT_EQ(decoded.cardinality(), postings.cardinality());
-        EXPECT_TRUE(decoded == postings);
+        const String encoded = encodePostingsPayload(serializePostings(postings));
+
+        auto decoded_in_place = decodePostingsInPlace(encoded);
+        EXPECT_EQ(decoded_in_place.cardinality(), postings.cardinality());
+        EXPECT_TRUE(decoded_in_place == postings);
+
+        auto decoded_across_buffers = decodePostingsAcrossBuffers(encoded);
+        EXPECT_EQ(decoded_across_buffers.cardinality(), postings.cardinality());
+        EXPECT_TRUE(decoded_across_buffers == postings);
     }
 }
 
@@ -84,7 +104,8 @@ TEST(TextIndexPostingsDeserializationTest, TruncatedPayloadRejected)
     /// `std::runtime_error`, so assert on the common base rather than on the concrete exception type.
     for (size_t size : {payload.size() / 2, payload.size() - 1})
     {
-        const String truncated = payload.substr(0, size);
-        EXPECT_THROW(decodePostings(encodePostingsPayload(truncated)), std::exception) << "size = " << size;
+        const String encoded = encodePostingsPayload(payload.substr(0, size));
+        EXPECT_THROW(decodePostingsInPlace(encoded), std::exception) << "size = " << size;
+        EXPECT_THROW(decodePostingsAcrossBuffers(encoded), std::exception) << "size = " << size;
     }
 }

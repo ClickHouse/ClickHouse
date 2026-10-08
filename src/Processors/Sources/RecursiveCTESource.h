@@ -9,7 +9,7 @@ namespace DB
 
 class RecursiveCTEChunkGenerator;
 
-class RecursiveCTESource final : public ISource
+class RecursiveCTESource : public ISource
 {
 public:
     explicit RecursiveCTESource(SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_);
