@@ -555,7 +555,7 @@ def main():
             if retry_cmake.is_ok():
                 retry_build = Result.from_commands_run(
                     name="Build ClickHouse (retry without PGO)",
-                    command=f"command time -v ninja {targets}",
+                    command=build_command,
                     workdir=build_dir_normalized,
                 )
                 if retry_build.is_ok():

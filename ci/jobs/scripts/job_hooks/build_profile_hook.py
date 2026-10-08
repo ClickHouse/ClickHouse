@@ -67,8 +67,8 @@ _REQUIRED_ARTIFACTS = {
     "amd_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
     "arm_release": ("profile.json", "binary_sizes.txt", "binary_symbols.txt"),
     # The warmup build uploads the profile of its objects only
-    # (_OBJECTS_ONLY_BUILDS): no link trace, no symbols (the per-object nm pass
-    # is skipped under LTO). On a master push where
+    # (_OBJECTS_ONLY_BUILDS): no server-binary link trace, no symbols (the
+    # per-object nm pass is skipped under LTO). On a master push where
     # every TU is an sccache hit even the time trace is legitimately empty -
     # a broken trace extractor is told apart from that case by
     # _verify_trace_extraction instead.
@@ -149,7 +149,7 @@ _FINAL_BINARIES = ("programs/clickhouse", "programs/clickhouse-keeper")
 _SIZE_ONLY_BINARIES = ("programs/clickhouse-stripped",)
 
 # These builds link the server binary only as the reference of the PR performance
-# comparison: their uploaded profile stays the one of the compiled objects.
+# comparison, so its link trace and symbols are kept out of their upload.
 _OBJECTS_ONLY_BUILDS = ("arm_release_pr_cache_warmup",)
 
 

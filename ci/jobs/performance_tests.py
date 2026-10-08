@@ -2005,7 +2005,7 @@ def master_job_status(job_name, sha):
         return FETCH_ERROR, None
     for job in jobs:
         if isinstance(job, dict) and job.get("name") == job_name:
-            return FETCH_OK, job.get("status", "")
+            return FETCH_OK, job.get("status") or ""
     return FETCH_OK, None
 
 
