@@ -2894,19 +2894,38 @@ static bool isDeterministicTransformInjective(const ActionsDAG & dag, const Stri
     return dfs(output_node, dfs).injective;
 }
 
+namespace
+{
+
+/// Returns the name under which `node` appears among the key subexpressions (its own name, or
+/// its `moduloLegacy` spelling), or an empty string when it does not appear at all.
+String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet & key_subexpr_names)
+{
+    String expr_name = node.getColumnName();
+    if (key_subexpr_names.contains(expr_name))
+        return expr_name;
+
+    /// A partition key stored with `moduloLegacy` can match a predicate written with `modulo`.
+    /// Look up that spelling as well for deterministic transforms. Monotonic constant transforms
+    /// do not use this substitution; a surrounding monotonic function of `modulo` is rarely useful
+    /// for such a match. For negative values, the substitution can filter more partitions than needed.
+    expr_name = node.getColumnNameWithModuloLegacy();
+    if (key_subexpr_names.contains(expr_name))
+        return expr_name;
+
+    return {};
+}
+
+}
+
 std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantByDeterministicKeyFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
     const ColumnWithTypeAndName & constant) const
 {
-    String expr_name = node.getColumnName();
-
-    if (!info.key_subexpr_names.contains(expr_name))
-    {
-        expr_name = node.getColumnNameWithModuloLegacy();
-        if (!info.key_subexpr_names.contains(expr_name))
-            return {};
-    }
+    const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names);
+    if (expr_name.empty())
+        return {};
 
     /// With the multiple-key-columns analysis disabled, only the first key-wrapping sub-DAG is
     /// even extracted; if pushing the constant through it fails, no candidate is produced.
@@ -3008,29 +3027,6 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     return result;
 }
 
-
-namespace
-{
-/// Returns the name under which `node` appears among the key subexpressions (its own name, or
-/// its `moduloLegacy` spelling), or an empty string when it does not appear at all.
-String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet & key_subexpr_names)
-{
-    String expr_name = node.getColumnName();
-    if (key_subexpr_names.contains(expr_name))
-        return expr_name;
-
-    /// A partition key stored with `moduloLegacy` can match a predicate written with `modulo`.
-    /// Look up that spelling as well for deterministic transforms. Monotonic constant transforms
-    /// do not use this substitution; a surrounding monotonic function of `modulo` is rarely useful
-    /// for such a match. For negative values, the substitution can filter more partitions than needed.
-    expr_name = node.getColumnNameWithModuloLegacy();
-    if (key_subexpr_names.contains(expr_name))
-        return expr_name;
-
-    return {};
-}
-
-}
 
 std::vector<KeyCondition::SetTransformSource> KeyCondition::collectSetTransformSources(
     const RPNBuilderTreeNode & key_arg,
