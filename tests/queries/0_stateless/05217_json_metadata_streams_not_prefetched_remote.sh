@@ -16,6 +16,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# The rows are inline instead of `SELECT ... FROM numbers(5)`: the AST fuzzer of the stress test can grow the
+# row count to ~1M, and with `index_granularity = 1` every row is a granule that writes all streams of the `JSON`
+# column. Under sanitizers that takes tens of minutes, and the writing of a block cannot be cancelled midway.
 ${CLICKHOUSE_CLIENT} -q "
     DROP TABLE IF EXISTS t_json_metadata_streams_remote;
     CREATE TABLE t_json_metadata_streams_remote (t UInt32, json JSON)
@@ -26,7 +29,7 @@ ${CLICKHOUSE_CLIENT} -q "
 
     SYSTEM STOP MERGES t_json_metadata_streams_remote;
 
-    INSERT INTO t_json_metadata_streams_remote SELECT number, concat('{\"a\":', toString(number), ',\"b\":\"s', toString(number), '\",\"c\":[', toString(number), '],\"d\":', toString(number / 2), ',\"e\":true}')::JSON FROM numbers(5);
+    INSERT INTO t_json_metadata_streams_remote VALUES (0, '{\"a\":0,\"b\":\"s0\",\"c\":[0],\"d\":0,\"e\":true}'), (1, '{\"a\":1,\"b\":\"s1\",\"c\":[1],\"d\":0.5,\"e\":true}'), (2, '{\"a\":2,\"b\":\"s2\",\"c\":[2],\"d\":1,\"e\":true}'), (3, '{\"a\":3,\"b\":\"s3\",\"c\":[3],\"d\":1.5,\"e\":true}'), (4, '{\"a\":4,\"b\":\"s4\",\"c\":[4],\"d\":2,\"e\":true}');
 "
 
 function prefetches_for_granule()

@@ -69,6 +69,10 @@ public:
 
     DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
 
+    std::optional<std::string> getDefaultTableLocation(
+        const std::string & namespace_name,
+        const std::string & table_name) const override;
+
     bool createTable(
         const String & namespace_name,
         const String & table_name,
@@ -77,7 +81,7 @@ public:
         DB::CompressionMethod metadata_compression_method,
         bool if_not_exists) const override;
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+    void createNamespaceIfNotExists(const String & namespace_name) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 

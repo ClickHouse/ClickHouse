@@ -362,7 +362,7 @@ bool StorageInMemoryMetadata::hasProjections() const
     return !projections.empty();
 }
 
-TTLTableDescription StorageInMemoryMetadata::getTableTTLs() const
+const TTLTableDescription & StorageInMemoryMetadata::getTableTTLs() const
 {
     return table_ttl;
 }
@@ -378,7 +378,7 @@ bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
     return hasRowsTTL() && !has_any_other_ttl;
 }
 
-TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
+const TTLColumnsDescription & StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;
 }
@@ -388,7 +388,7 @@ bool StorageInMemoryMetadata::hasAnyColumnTTL() const
     return !column_ttls_by_name.empty();
 }
 
-TTLDescription StorageInMemoryMetadata::getRowsTTL() const
+const TTLDescription & StorageInMemoryMetadata::getRowsTTL() const
 {
     return table_ttl.rows_ttl;
 }
@@ -398,7 +398,7 @@ bool StorageInMemoryMetadata::hasRowsTTL() const
     return table_ttl.rows_ttl.expression_ast != nullptr;
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRowsWhereTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getRowsWhereTTLs() const
 {
     return table_ttl.rows_where_ttl;
 }
@@ -408,7 +408,7 @@ bool StorageInMemoryMetadata::hasAnyRowsWhereTTL() const
     return !table_ttl.rows_where_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getMoveTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getMoveTTLs() const
 {
     return table_ttl.move_ttl;
 }
@@ -418,7 +418,7 @@ bool StorageInMemoryMetadata::hasAnyMoveTTL() const
     return !table_ttl.move_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getRecompressionTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getRecompressionTTLs() const
 {
     return table_ttl.recompression_ttl;
 }
@@ -428,7 +428,7 @@ bool StorageInMemoryMetadata::hasAnyRecompressionTTL() const
     return !table_ttl.recompression_ttl.empty();
 }
 
-TTLDescriptions StorageInMemoryMetadata::getGroupByTTLs() const
+const TTLDescriptions & StorageInMemoryMetadata::getGroupByTTLs() const
 {
     return table_ttl.group_by_ttl;
 }
@@ -706,6 +706,22 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
     if (!primary_key.column_names.empty())
         return primary_key.column_names;
     return {};
+}
+
+NameSet StorageInMemoryMetadata::getStorageColumnsRequiredForKeys() const
+{
+    NameSet result;
+    for (const auto & required : {getColumnsRequiredForPartitionKey(), getColumnsRequiredForSortingKey(), getColumnsRequiredForPrimaryKey()})
+    {
+        for (const auto & name : required)
+        {
+            if (auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
+                result.insert(column->getNameInStorage());
+            else
+                result.insert(name);
+        }
+    }
+    return result;
 }
 
 const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const

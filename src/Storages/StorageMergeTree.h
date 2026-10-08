@@ -190,6 +190,11 @@ private:
     const bool support_transaction;
 
     void loadMutations();
+    /// Reads a `mutation_*.txt` entry, reporting an entry that the owner of a shared directory removed meanwhile.
+    MergeTreeMutationEntry loadMutationEntry(const DiskPtr & disk, const String & file_name) const;
+    /// Removes the mutation entries and the deduplication log, which `dropAllData` leaves alone when the table
+    /// occupies the whole disk (`table_disk`).
+    void removeOwnFilesInDiskRootOnDrop(const DiskPtr & disk) override;
 
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.
@@ -438,6 +443,9 @@ private:
     friend class MergeTreeSinkPatch;
     friend class MergeTreeData;
     friend class MergePlainMergeTreeTask;
+    /// Publishes a unique-key merge, so it needs the same reach as `MergePlainMergeTreeTask`:
+    /// the rename runs inside the commit's critical section.
+    friend class UniqueKeyTxnCommit;
     friend class MutatePlainMergeTreeTask;
     friend class MergeTreeCleanupThread;
 

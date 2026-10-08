@@ -483,6 +483,18 @@ struct HashMethodKeysFixed
         return true;
     }
 
+    /// The batch buffer is resized before probing, even when every input key is already present.
+    /// Match the padding and capacity rounding of `PaddedPODArray::resize_fill` on an empty array.
+    static size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes)
+    {
+        if (!num_rows || !usePreparedKeys(key_sizes))
+            return 0;
+
+        using Array = PaddedPODArray<Key>;
+        return roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
+            num_rows, sizeof(Key), Array::pad_left, Array::pad_right));
+    }
+
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr &)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {

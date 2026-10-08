@@ -103,9 +103,7 @@ struct TopKFilterInfo
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
 
-    /// Set while the dynamic `__topKFilter` prewhere condition is still to be installed. It belongs
-    /// here, not in `ReadFromMergeTree`, because a plan is cloned between the pass that sets it and
-    /// the pass that installs, and the copies rebuild this struct field by field.
+    /// `tryOptimizeTopK` requested the `__topKFilter` PREWHERE condition and `installTopKDynamicFilter` has not run yet.
     bool dynamic_filter_pending = false;
 };
 
@@ -403,6 +401,9 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
+    /// Whether `requestReadingInOrder` accepts a reverse direction. With `FINAL`, only the engines whose merge
+    /// does not depend on the direct order of rows can read in reverse order.
+    bool canReadInReverseOrder() const;
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
@@ -578,8 +579,7 @@ public:
     Strings getShardsForDistributedRead() const;
 
     bool canRemoveUnusedColumns() const override;
-    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
-    bool canRemoveColumnsFromOutput() const override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & unneeded_output_positions, const std::vector<PrunedInput> & inputs) override;
 
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }

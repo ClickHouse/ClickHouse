@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Columns/ColumnArray.h>
@@ -1100,19 +1101,23 @@ NameSet collectIdentifiersFullNames(const QueryTreeNodePtr & node)
     return out;
 }
 
+QueryTreeNodePtr createResolvedFunction(const ContextPtr & context, const String & name, QueryTreeNodes arguments)
+{
+    auto function_node = std::make_shared<FunctionNode>(name);
+    function_node->getArguments().getNodes() = std::move(arguments);
+    resolveOrdinaryFunctionNodeByName(*function_node, name, context);
+    return function_node;
+}
+
+QueryTreeNodePtr createTupleElementFunction(const ContextPtr & context, QueryTreeNodePtr argument, UInt64 index)
+{
+    return createResolvedFunction(context, "tupleElement", {std::move(argument), std::make_shared<ConstantNode>(index)});
+}
+
 QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_type, ContextPtr context)
 {
-    auto enum_literal_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
-
-    auto cast_function = FunctionFactory::instance().get("_CAST", std::move(context));
-    QueryTreeNodes arguments{ std::move(node), std::move(enum_literal_node) };
-
-    auto function_node = std::make_shared<FunctionNode>("_CAST");
-    function_node->getArguments().getNodes() = std::move(arguments);
-
-    function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
-
-    return function_node;
+    auto type_name_node = std::make_shared<ConstantNode>(result_type->getName(), std::make_shared<DataTypeString>());
+    return createResolvedFunction(context, "_CAST", {std::move(node), std::move(type_name_node)});
 }
 
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
@@ -1226,6 +1231,55 @@ std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodeP
         return {nullptr, true};
 
     return {nullptr, false};
+}
+
+namespace
+{
+
+class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
+{
+public:
+    const TableExpressionNodePtr & getTableExpression() const
+    {
+        return table_expression;
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || (!column_source->as<TableNode>() && !column_source->as<TableFunctionNode>()))
+            return;
+
+        if (!table_expression)
+            table_expression = std::static_pointer_cast<ITableExpressionNode>(std::move(column_source));
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    {
+        const auto child_type = child_node->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY
+            && child_type != QueryTreeNodeType::UNION
+            && child_type != QueryTreeNodeType::LAMBDA;
+    }
+
+private:
+    TableExpressionNodePtr table_expression;
+};
+
+}
+
+TableExpressionNodePtr getPrewhereTableExpression(const QueryTreeNodePtr & prewhere)
+{
+    if (!prewhere)
+        return {};
+
+    CollectPrewhereTableExpressionVisitor visitor;
+    visitor.visit(prewhere);
+    return visitor.getTableExpression();
 }
 
 /** There are no limits on the maximum size of the result for the subquery.
@@ -1642,15 +1696,11 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 /// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
-    bool result = false;
-    auto check = [&](const IDataType & nested)
+    return anyInTypeTree(type, [](const IDataType & nested)
     {
         WhichDataType which(nested);
-        result |= which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
-    };
-    check(type);
-    type.forEachChild(check);
-    return result;
+        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+    });
 }
 
 namespace
