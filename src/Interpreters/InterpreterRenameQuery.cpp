@@ -313,6 +313,7 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
     if (db)
     {
         catalog.assertDatabaseDoesntExist(new_name);
+        auto db_guard = catalog.getExclusiveDDLGuardForDatabase(old_name);
         db->renameDatabase(getContext(), new_name);
     }
 
