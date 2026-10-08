@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <future>
 #include <map>
 #include <set>
@@ -640,6 +641,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers; /// Map for auxiliary ZooKeeper clients. Protected by auxiliary_zookeepers_mutex.
     ConfigurationPtr auxiliary_zookeepers_config;                        /// Stores auxiliary zookeepers configs. Protected by auxiliary_zookeepers_mutex.
     mutable std::map<String, std::shared_ptr<ZooKeeperConnectionAttempt>> auxiliary_zookeeper_connection_attempts; /// Protected by auxiliary_zookeepers_mutex.
+    mutable std::condition_variable_any auxiliary_zookeeper_connection_attempt_finished;
     bool auxiliary_zookeepers_server_started = false;       /// Set by setServerCompletelyStarted. Protected by auxiliary_zookeepers_mutex.
     bool auxiliary_zookeepers_shut_down = false;            /// Set by shutdown. Protected by auxiliary_zookeepers_mutex.
     std::set<String> outdated_auxiliary_zookeepers;         /// As zookeeper_outdated. Protected by auxiliary_zookeepers_mutex.
@@ -7045,6 +7047,7 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
             auto it = shared->auxiliary_zookeeper_connection_attempts.find(name);
             if (it != shared->auxiliary_zookeeper_connection_attempts.end() && it->second == attempt)
                 shared->auxiliary_zookeeper_connection_attempts.erase(it);
+            shared->auxiliary_zookeeper_connection_attempt_finished.notify_all();
         };
 
         /// From here on every path finishes the attempt exactly once, as the last step.
@@ -7183,60 +7186,56 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
 {
     auto zookeeper_connection_log = getZooKeeperConnectionLog();
 
-    while (true)
+    std::unique_lock lock(shared->auxiliary_zookeepers_mutex);
+    while (!shared->auxiliary_zookeepers_shut_down)
     {
-        std::shared_ptr<ZooKeeperConnectionAttempt> attempt;
+        shared->auxiliary_zookeepers_config = config;
+        shared->outdated_auxiliary_zookeepers.clear();
+
+        for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
         {
-            std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-            if (shared->auxiliary_zookeepers_shut_down)
-                return;
-
-            shared->auxiliary_zookeepers_config = config;
-            shared->outdated_auxiliary_zookeepers.clear();
-
-            for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
+            const auto config_name = "auxiliary_zookeepers." + it->first;
+            /// As in reloadZooKeeperIfChanged: a client is not replaced while its own connection attempt is in flight.
+            if (shared->auxiliary_zookeeper_connection_attempts.contains(it->first))
             {
-                const auto config_name = "auxiliary_zookeepers." + it->first;
-                /// As in reloadZooKeeperIfChanged: a client is not replaced while its own connection attempt is in flight.
-                if (shared->auxiliary_zookeeper_connection_attempts.contains(it->first))
-                {
-                    if (!config->has(config_name) || it->second->configChanged(*config, config_name))
-                        shared->outdated_auxiliary_zookeepers.insert(it->first);
-                    ++it;
-                    continue;
-                }
-                LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
-                if (!config->has(config_name))
-                {
-                    LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
-                    if (zookeeper_connection_log)
-                        zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
-
-                    it = shared->auxiliary_zookeepers.erase(it);
-                }
-                else
-                {
-                    LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-                    reloadZooKeeperIfChangedImpl(
-                        config,
-                        it->first,
-                        config_name,
-                        it->second,
-                        getZooKeeperLog(),
-                        zookeeper_connection_log,
-                        getAggregatedZooKeeperLog(),
-                        shared->auxiliary_zookeepers_server_started,
-                        getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
-                        getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
-                    ++it;
-                }
+                if (!config->has(config_name) || it->second->configChanged(*config, config_name))
+                    shared->outdated_auxiliary_zookeepers.insert(it->first);
+                ++it;
+                continue;
             }
+            LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
+            if (!config->has(config_name))
+            {
+                LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
+                if (zookeeper_connection_log)
+                    zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
 
-            if (shared->auxiliary_zookeeper_connection_attempts.empty())
-                return;
-            attempt = shared->auxiliary_zookeeper_connection_attempts.begin()->second;
+                it = shared->auxiliary_zookeepers.erase(it);
+            }
+            else
+            {
+                LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
+                reloadZooKeeperIfChangedImpl(
+                    config,
+                    it->first,
+                    config_name,
+                    it->second,
+                    getZooKeeperLog(),
+                    zookeeper_connection_log,
+                    getAggregatedZooKeeperLog(),
+                    shared->auxiliary_zookeepers_server_started,
+                    getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
+                    getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
+                ++it;
+            }
         }
-        attempt->getFuture().wait();
+
+        if (shared->auxiliary_zookeeper_connection_attempts.empty())
+            return;
+        /// Any attempt that finishes may have published a client made with the old config.
+        const auto attempts = shared->auxiliary_zookeeper_connection_attempts;
+        shared->auxiliary_zookeeper_connection_attempt_finished.wait(
+            lock, [&] { return shared->auxiliary_zookeeper_connection_attempts != attempts; });
     }
 }
 

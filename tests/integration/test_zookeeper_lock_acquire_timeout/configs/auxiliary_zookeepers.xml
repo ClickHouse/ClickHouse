@@ -1,5 +1,14 @@
 <clickhouse>
     <auxiliary_zookeepers>
+        <zookeeper0>
+            <node index="1">
+                <host>zoo3</host>
+                <port>2181</port>
+            </node>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <connection_timeout_ms>5000</connection_timeout_ms>
+        </zookeeper0>
         <zookeeper2>
             <node index="1">
                 <host>zoo1</host>
@@ -18,5 +27,14 @@
             <operation_timeout_ms>5000</operation_timeout_ms>
             <connection_timeout_ms>5000</connection_timeout_ms>
         </zookeeper3>
+        <zookeeper4>
+            <node index="1">
+                <host>zoo2</host>
+                <port>2181</port>
+            </node>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <connection_timeout_ms>5000</connection_timeout_ms>
+        </zookeeper4>
     </auxiliary_zookeepers>
 </clickhouse>
