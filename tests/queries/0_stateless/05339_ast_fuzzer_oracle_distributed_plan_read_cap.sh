@@ -13,7 +13,8 @@ $CLICKHOUSE_CLIENT --query "
     INSERT INTO t SELECT number, 'hit' FROM numbers(900000);
 "
 
-rounds=$(for _ in $(seq 1 8); do echo "SELECT count() FROM t WHERE val = 'hit';"; done)
+# A query without aggregates reaches NoREC, whose sub-queries run through `executeScalar`.
+rounds=$(for _ in $(seq 1 16); do echo "SELECT count() FROM t WHERE val = 'hit'; SELECT id FROM t WHERE id >= 899500;"; done)
 
 mismatches=$($CLICKHOUSE_CLIENT --ignore-error --query "
     SET send_logs_level = 'none';
@@ -28,5 +29,8 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM FLUSH LOGS query_log;
     SELECT 'TLP Aggregate checked', count() > 0 FROM system.query_log
     WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish'
-        AND is_internal AND query ILIKE 'SELECT countMerge(%';
+        AND is_internal AND query ILIKE 'SELECT countMerge(%' AND ProfileEvents['DistributedPlanLocalExecution'] > 0;
+    SELECT 'NoREC checked', count() > 0 FROM system.query_log
+    WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryStart'
+        AND is_internal AND query ILIKE 'SELECT countIf(%';
 "
