@@ -159,6 +159,10 @@ public:
     /// falls back to sampling the data without a row bound.
     virtual std::optional<size_t> getRowsReachedOnParseError() const { return std::nullopt; }
 
+    /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the
+    /// rows it read. A format can decline it per file, e.g. when the file does not store the sort column.
+    virtual bool isTopKFilterApplied() const { return false; }
+
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }
 
