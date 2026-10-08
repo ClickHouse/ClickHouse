@@ -158,11 +158,16 @@ DiskPtr KeeperContext::getS3LogDisk() const
 namespace
 {
 
-/// Local filesystem directory a disk stores its files in, or nullopt for a remote disk (whose
-/// `getPath` is not a filesystem path and is not comparable with one).
+/// Local filesystem directory a disk stores its files in, or nullopt if there is none. For an object
+/// storage disk with local metadata (e.g. `s3`), `getPath` is the local metadata directory, and wiping
+/// a directory containing it loses the disk's files just as for a local disk. Other remote disks have
+/// no local directory: their `getPath` is not a filesystem path and is not comparable with one.
 std::optional<fs::path> localDiskPath(const DiskPtr & disk)
 {
-    if (!disk || disk->isRemote())
+    if (!disk)
+        return {};
+
+    if (disk->isRemote() && disk->getDataSourceDescription().metadata_type != MetadataStorageType::Local)
         return {};
 
     std::string path = disk->getPath();
