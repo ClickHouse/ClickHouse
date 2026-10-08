@@ -92,9 +92,20 @@ void writeCacheKeyColumnName(const String & name, const Block * input_header, Wr
 {
     /// `input_header->columns()` is the sentinel for "not a column of this header": it is one past every
     /// valid position, so it can never be confused with one.
-    const size_t position = (input_header && input_header->has(name)) ? input_header->getPositionByName(name)
-                                                                     : (input_header ? input_header->columns() : 0);
-    writeVarUInt(position, out);
+    /// Once the header resolves the column, its position IS its identity and the name adds nothing: two
+    /// distinct columns of one header sit at distinct positions, and two same-position columns of
+    /// different headers are separated by the child's own key. The name only adds a way to disagree - the
+    /// shard rewrite can render the same slot as `k` in one plan build and `plus(__table1.a, 1)` in the
+    /// other by inlining an alias or a `JOIN USING`, and normalizing erases just the qualifier's index.
+    ///
+    /// A name the header does not resolve keeps its normalized text, which is then all there is.
+    if (input_header && input_header->has(name))
+    {
+        writeVarUInt(input_header->getPositionByName(name), out);
+        return;
+    }
+
+    writeVarUInt(input_header ? input_header->columns() : 0, out);
     writeStringBinary(normalizeGeneratedTableQualifiers(name), out);
 }
 

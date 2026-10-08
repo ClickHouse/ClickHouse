@@ -29,12 +29,13 @@ String normalizeGeneratedTableQualifiers(const String & name, const std::unorder
 
 /// Write a column name that a query plan step carries into a build-independent cache key.
 ///
-/// The name alone is not enough to identify the column. `normalizeGeneratedTableQualifiers` erases the
-/// qualifier index on purpose, so `__table1.id` and `__table2.id` - the same column name taken from two
-/// different join inputs - normalize to one string. Where the step's input header is known, the column's
-/// POSITION in it is written first: that is structural, so it is the same in both plan builds, and it
-/// tells the two apart. A name that is not a column of the header (a derived aggregate name, say) gets a
-/// sentinel position and is discriminated by the normalized name alone.
+/// A name alone is both too weak and too strong. `normalizeGeneratedTableQualifiers` erases the qualifier
+/// index on purpose, so `__table1.id` and `__table2.id` - the same column name from two different join
+/// inputs - normalize to one string; and a rendered name can differ between plan builds for the same
+/// column once the shard rewrite inlines an alias. So where the step's input header resolves the column,
+/// its POSITION in that header is written and the name is left out: the position is structural, equal in
+/// both builds, and unique within the header. A name the header does not resolve (a derived aggregate
+/// label, say) gets a sentinel position and its normalized text.
 void writeCacheKeyColumnName(const String & name, const Block * input_header, WriteBuffer & out);
 
 
