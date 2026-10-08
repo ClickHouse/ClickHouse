@@ -1891,17 +1891,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return make_intrusive<ASTLiteral>(Null());
 
+            /// A literal alone loses the member type (an `Enum8` is inferred back as its number): name it and the `Dynamic` type.
+            /// A consumer that clears `date_time_as_numbers` has no `Dynamic` and gets the bare member literal.
+            auto name_member = [&](ASTPtr member_ast, const DataTypePtr & member_type)
+            {
+                if (!date_time_as_numbers)
+                    return member_ast;
+                return makeCastToTypeNameAST(makeCastToTypeNameAST(std::move(member_ast), member_type->getName()), type->getName());
+            };
+
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
             {
-                /// Recurse into the active member itself rather than through the `Variant` branch above:
-                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
-                /// would change the stored subtype of values whose literal is inferred back as a wider or
-                /// narrower type than the initiator's.
                 const auto & variant_types
                     = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
-                return columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                    variant_types[global_discr], /*date_time_as_numbers=*/false);
+                return name_member(
+                    columnConstantToExactLiteralASTImpl(
+                        variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                        variant_types[global_discr], date_time_as_numbers),
+                    variant_types[global_discr]);
             }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
@@ -1913,7 +1920,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             auto tmp_column = decoded_type->createColumn();
             tmp_column->reserve(1);
             decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
-            return columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, /*date_time_as_numbers=*/false);
+            return name_member(
+                columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, date_time_as_numbers), decoded_type);
         }
         case TypeIndex::Object:
         {
