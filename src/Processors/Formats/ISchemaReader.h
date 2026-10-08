@@ -69,7 +69,9 @@ public:
     /// `JSONColumnsWithMetadata`) when `input_format_json_validate_types_from_metadata` = 0: schema
     /// inference reads the types declared in the `meta` section, but the parser then ignores those
     /// types entirely and reads the data by value (and, for `JSONCompact`, positionally). The inferred
-    /// schema therefore does not correspond to what is parsed, and a caller comparing an inferred schema
+    /// schema therefore does not correspond to what is parsed. It is also false for `SQLite`, whose parser
+    /// selects the expected columns by name and reads every value as text, ignoring the declared column
+    /// order and types. In these cases a caller comparing an inferred schema
     /// against an expected one must not draw any conclusion from it.
     virtual bool schemaDescribesParsedData() const { return true; }
 

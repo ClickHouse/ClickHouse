@@ -360,7 +360,8 @@ String getInsertDataSchemaMismatchDescription(
     /// Some formats read a schema during inference that the real parser then ignores — the
     /// metadata-based `JSON*` formats with `input_format_json_validate_types_from_metadata` = 0 read a
     /// `meta` section that the parser discards, reading the data by value (and positionally for
-    /// `JSONCompact`). The inferred structure does not describe what is parsed there, so comparing
+    /// `JSONCompact`), and `SQLite` selects the expected columns by name and reads every value as text
+    /// regardless of the declared column order and types. The inferred structure does not describe what is parsed there, so comparing
     /// against it would attach a misleading explanation to an unrelated value-level parse error.
     if (!format_schema_describes_parsed_data)
         return {};
