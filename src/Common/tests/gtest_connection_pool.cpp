@@ -576,7 +576,7 @@ TEST_F(ConnectionPoolTest, CanReconnectAndReuse)
 /// This is that pattern in miniature: request, then take, inside one scope.
 static DB::HTTPConnectionInfo echoRequestAndTakeConnectionInfo(String data, HTTPSession & session)
 {
-    DB::HTTPConnectionInfoScope scope;
+    DB::HTTPConnectionInfoScope scope(true);
     echoRequest(std::move(data), session);
     return DB::takeCurrentHTTPConnectionInfo();
 }
@@ -668,7 +668,7 @@ TEST_F(ConnectionPoolTest, ConnectionInfoClearedWhenReconnectFails)
     connection->abort(); // further usage requires a reconnect - the one that is going to fail
 
     {
-        DB::HTTPConnectionInfoScope scope;
+        DB::HTTPConnectionInfoScope scope(true);
 
         auto data = String("Hello");
         Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
@@ -721,7 +721,7 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
     auto connection = pool->getConnection(timeouts, nullptr);
 
     {
-        DB::HTTPConnectionInfoScope scope;
+        DB::HTTPConnectionInfoScope scope(true);
         echoRequest("Hello", *connection);
         /// Published, but deliberately not taken.
     }
@@ -729,7 +729,7 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
 
     /// The next scoped request starts from a clean slot and sees only itself.
     {
-        DB::HTTPConnectionInfoScope scope;
+        DB::HTTPConnectionInfoScope scope(true);
         auto before = DB::takeCurrentHTTPConnectionInfo();
         ASSERT_FALSE(before.has_value);
 
@@ -744,6 +744,26 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIsClearedWhenScopeEnds)
     ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
 }
 
+/// A logging site whose `system.blob_storage_log` is turned off opens a disabled scope: nothing is
+/// published for its requests, but they still count towards the socket's request number.
+TEST_F(ConnectionPoolTest, ConnectionInfoIsNotPublishedInDisabledScope)
+{
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    {
+        DB::HTTPConnectionInfoScope scope(false);
+        ASSERT_FALSE(DB::isHTTPConnectionInfoCaptureEnabled());
+        echoRequest("Hello", *connection);
+        ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);
+    }
+
+    auto info = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(info.has_value);
+    ASSERT_EQ(1, info.requests_served);
+}
+
 /// A row whose timing covers several requests - an SDK that retried a write, a credential refresh
 /// made on the way to it - cannot honestly name a connection: `elapsed_microseconds` describes the
 /// whole sequence, including the backoff sleeps, while at most one of the sockets could be named.
@@ -756,7 +776,7 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIsEmptyWhenScopeSpansSeveralRequests)
     auto connection = pool->getConnection(timeouts, nullptr);
 
     {
-        DB::HTTPConnectionInfoScope scope;
+        DB::HTTPConnectionInfoScope scope(true);
         echoRequest("Hello", *connection);
         echoRequest("Hello", *connection);
         ASSERT_FALSE(DB::takeCurrentHTTPConnectionInfo().has_value);

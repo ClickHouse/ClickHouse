@@ -7,7 +7,7 @@ namespace DB
 
 static thread_local HTTPConnectionInfo current_connection_info;
 
-/// Whether the current thread is inside an `HTTPConnectionInfoScope`, i.e. issuing a blob storage
+/// Whether the current thread is inside an enabled `HTTPConnectionInfoScope`, i.e. issuing a blob storage
 /// request whose log entry will take the published connection.
 static thread_local bool capture_connection_info = false;
 
@@ -24,11 +24,11 @@ UInt64 nextHTTPConnectionId()
     return counter.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
-HTTPConnectionInfoScope::HTTPConnectionInfoScope()
+HTTPConnectionInfoScope::HTTPConnectionInfoScope(bool enabled)
     : previously_enabled(capture_connection_info)
     , previous_requests_in_scope(requests_in_scope)
 {
-    capture_connection_info = true;
+    capture_connection_info = enabled;
     current_connection_info = {};
     requests_in_scope = 0;
 }

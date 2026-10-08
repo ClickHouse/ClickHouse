@@ -179,7 +179,7 @@ namespace
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
 
-            HTTPConnectionInfoScope connection_info_scope;
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -223,7 +223,7 @@ namespace
             if (client->IsClientForDisk())
                 ProfileEvents::increment(ProfileEvents::DiskAzureCommitBlockList);
 
-            HTTPConnectionInfoScope connection_info_scope;
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -330,7 +330,7 @@ namespace
             auto block_id = getRandomASCIIString(64);
             block_ids[part_index] = block_id;
 
-            HTTPConnectionInfoScope connection_info_scope;
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -423,7 +423,7 @@ void copyAzureBlobStorageFile(
 
             auto source_uri = block_blob_client_src.GetUrl();
 
-            HTTPConnectionInfoScope connection_info_scope;
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto log_copy = [&](Int32 error_code, const String & error_message)
             {

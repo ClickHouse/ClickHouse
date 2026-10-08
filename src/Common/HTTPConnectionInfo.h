@@ -77,10 +77,15 @@ UInt64 nextHTTPConnectionId();
 /// request from the one they are logged next to, which is exactly the correlation this feature
 /// exists to support. A logging site that wants per-attempt connections has to open a scope per
 /// attempt and write a row per attempt, the way the S3 and Azure read paths do.
+///
+/// `enabled` says whether the entry will actually be written - in practice, whether the caller has a
+/// `BlobStorageLogWriter` at all. A disabled scope still clears the slot and shields an enclosing
+/// scope, but requests issued inside it skip the sampling entirely, so that object storage traffic
+/// with `system.blob_storage_log` turned off does not pay for it either.
 class HTTPConnectionInfoScope
 {
 public:
-    HTTPConnectionInfoScope();
+    explicit HTTPConnectionInfoScope(bool enabled);
     ~HTTPConnectionInfoScope();
 
     HTTPConnectionInfoScope(const HTTPConnectionInfoScope &) = delete;
@@ -91,7 +96,7 @@ private:
     size_t previous_requests_in_scope;
 };
 
-/// Whether the current thread is inside an `HTTPConnectionInfoScope`. The pooled session checks it
+/// Whether the current thread is inside an enabled `HTTPConnectionInfoScope`. The pooled session checks it
 /// before sampling the connection, so that requests nobody is going to log - most of the traffic
 /// through the shared pool - do not pay for it.
 bool isHTTPConnectionInfoCaptureEnabled();

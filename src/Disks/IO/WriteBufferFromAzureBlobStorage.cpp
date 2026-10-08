@@ -193,7 +193,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             /// One row is written for the whole `execWithRetry` sequence, so when a write is
             /// retried the connection columns of that row report zeroes: its elapsed time covers
             /// every attempt, and no single socket describes it.
-            HTTPConnectionInfoScope connection_info_scope;
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -260,7 +260,7 @@ void WriteBufferFromAzureBlobStorage::preFinalize()
             /// One row is written for the whole `execWithRetry` sequence, so when a write is
             /// retried the connection columns of that row report zeroes: its elapsed time covers
             /// every attempt, and no single socket describes it.
-            HTTPConnectionInfoScope connection_info_scope;
+            HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
             Stopwatch watch;
             Int32 error_code = 0;
             String error_message;
@@ -346,7 +346,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
         /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
         /// the connection columns of that row report zeroes: its elapsed time covers every
         /// attempt, and no single socket describes it.
-        HTTPConnectionInfoScope connection_info_scope;
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;
@@ -553,7 +553,7 @@ void WriteBufferFromAzureBlobStorage::writePart(WriteBufferFromAzureBlobStorage:
         /// One row is written for the whole `execWithRetry` sequence, so when a write is retried
         /// the connection columns of that row report zeroes: its elapsed time covers every
         /// attempt, and no single socket describes it.
-        HTTPConnectionInfoScope connection_info_scope;
+        HTTPConnectionInfoScope connection_info_scope(blob_log != nullptr);
         Stopwatch watch;
         Int32 error_code = 0;
         String error_message;

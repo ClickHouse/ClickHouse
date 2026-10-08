@@ -39,7 +39,7 @@ void deleteFileFromS3(
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
         ProfileEvents::increment(*profile_event);
 
-    HTTPConnectionInfoScope connection_info_scope;
+    HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
     Stopwatch watch;
     auto outcome = s3_client->DeleteObject(request);
     auto elapsed = watch.elapsedMicroseconds();
@@ -146,7 +146,7 @@ void deleteFilesFromS3(
             if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
                 ProfileEvents::increment(*profile_event);
 
-            HTTPConnectionInfoScope connection_info_scope;
+            HTTPConnectionInfoScope connection_info_scope(blob_storage_log != nullptr);
             Stopwatch watch;
             auto outcome = s3_client->DeleteObjects(request);
             auto elapsed = watch.elapsedMicroseconds();
