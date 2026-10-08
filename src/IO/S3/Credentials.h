@@ -259,9 +259,8 @@ public:
 
     const char * GetServiceRequestName() const override { return "AssumeRole"; }
 
-    Aws::String SerializePayload() const override { return {}; }
-
-    void AddQueryStringParameters(Aws::Http::URI & uri) const override;
+    /// The parameters go into a form-encoded POST body, as the AWS SDK does. A session policy is too long for a URL.
+    Aws::String SerializePayload() const override;
 
 private:
     std::string role_arn;

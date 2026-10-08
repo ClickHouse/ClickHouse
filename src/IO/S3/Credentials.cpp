@@ -57,6 +57,8 @@ namespace S3
 #    include <aws/core/http/HttpClientFactory.h>
 
 #    include <aws/core/utils/HashingUtils.h>
+#    include <aws/core/utils/StringUtils.h>
+#    include <aws/core/utils/memory/stl/AWSStringStream.h>
 #    include <aws/core/platform/FileSystem.h>
 
 #    include <Common/logger_useful.h>
@@ -1149,19 +1151,22 @@ AssumeRoleRequest::AssumeRoleRequest(std::string role_arn_, std::string role_ses
 
 Aws::Http::HeaderValueCollection AssumeRoleRequest::GetHeaders() const
 {
-    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::AMZN_XML_CONTENT_TYPE)}};
+    return {{Aws::Http::HeaderValuePair(Aws::Http::CONTENT_TYPE_HEADER, Aws::FORM_CONTENT_TYPE)}};
 }
 
-void AssumeRoleRequest::AddQueryStringParameters(Aws::Http::URI & uri) const
+Aws::String AssumeRoleRequest::SerializePayload() const
 {
-    uri.AddQueryStringParameter("RoleArn", role_arn);
-    uri.AddQueryStringParameter("RoleSessionName", role_session_name);
+    Aws::StringStream ss;
+    ss << "Action=AssumeRole&Version=2011-06-15";
+    ss << "&RoleArn=" << Aws::Utils::StringUtils::URLEncode(role_arn.c_str());
+    ss << "&RoleSessionName=" << Aws::Utils::StringUtils::URLEncode(role_session_name.c_str());
     /// ExternalId is optional; STS rejects an empty value, so only send it when configured.
     if (!external_id.empty())
-        uri.AddQueryStringParameter("ExternalId", external_id);
-    /// Policy is optional. The URI encodes the JSON.
+        ss << "&ExternalId=" << Aws::Utils::StringUtils::URLEncode(external_id.c_str());
+    /// Policy is optional.
     if (!policy.empty())
-        uri.AddQueryStringParameter("Policy", policy);
+        ss << "&Policy=" << Aws::Utils::StringUtils::URLEncode(policy.c_str());
+    return ss.str();
 }
 
 AssumeRoleResult::AssumeRoleResult(Aws::AmazonWebServiceResult<Aws::Utils::Xml::XmlDocument> result)
@@ -1235,7 +1240,7 @@ AWSAssumeRoleClient::AWSAssumeRoleClient(
     if (client_configuration.region != "aws-global")
         endpoint_str += client_configuration.region + ".";
 
-    endpoint_str += "amazonaws.com?Action=AssumeRole&Version=2011-06-15";
+    endpoint_str += "amazonaws.com";
 
     endpoint.SetURL(endpoint_str);
 }
