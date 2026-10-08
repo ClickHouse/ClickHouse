@@ -28,6 +28,9 @@ trap_node = cluster.add_instance(
 zk_node = cluster.add_instance(
     "zk_node", main_configs=["configs/errno_from_zk.xml"], with_zookeeper=True
 )
+no_processes_node = cluster.add_instance(
+    "no_processes_node", main_configs=["configs/no_processes.xml"]
+)
 
 # `/proc/<pid>/status` reports the seccomp mode of a process: 0 is no filter, 2 is a BPF filter.
 SECCOMP_MODE_DISABLED = "0"
@@ -51,6 +54,7 @@ def started_cluster():
             log_node,
             trap_node,
             zk_node,
+            no_processes_node,
         ]:
             os.system(
                 f"docker cp {os.path.join(SCRIPT_DIR, 'user_scripts/.')} "
@@ -125,19 +129,19 @@ def test_filter_is_installed_by_default(started_cluster):
 def test_filter_covers_every_thread(started_cluster):
     # The filter is installed with `SECCOMP_FILTER_FLAG_TSYNC`, so the threads that already existed
     # when it was installed must be filtered too, not just the one that installed it.
-    pid = get_server_pid(default_node)
-    modes = default_node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"for task in /proc/{pid}/task/*; do grep -hE '^(Seccomp|NoNewPrivs):' $task/status 2>/dev/null; "
-            f"done | sort -u",
-        ],
-        user="root",
-    )
-    # `PR_SET_NO_NEW_PRIVS` is set on the installing thread only, but `TSYNC` carries it over to
-    # every thread it synchronizes the filter to - so no thread may be left with `NoNewPrivs: 0`.
-    assert modes.split() == ["NoNewPrivs:", "1", "Seccomp:", SECCOMP_MODE_FILTER]
+    for node in [default_node, no_processes_node]:
+        pid = get_server_pid(node)
+        modes = node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"for task in /proc/{pid}/task/*; do grep -hE '^(Seccomp|NoNewPrivs):' $task/status 2>/dev/null; "
+                f"done | sort -u",
+            ],
+            user="root",
+        )
+        # `TSYNC` carries `PR_SET_NO_NEW_PRIVS` to every synchronized thread.
+        assert modes.split() == ["NoNewPrivs:", "1", "Seccomp:", SECCOMP_MODE_FILTER]
 
 
 def test_no_filter_when_disabled(started_cluster):
@@ -241,7 +245,7 @@ def test_server_works_under_the_filter(started_cluster):
     # threads, networking, timers. `errno_node` is the interesting one: if the policy were missing
     # something, the call would fail with `EPERM` instead of taking the server down, so the query
     # would report a strange error rather than losing the connection.
-    for node in [trap_node, errno_node]:
+    for node in [trap_node, errno_node, no_processes_node]:
         node.query("CREATE TABLE t (k UInt64, s String) ENGINE = MergeTree ORDER BY k")
         node.query("INSERT INTO t SELECT number, toString(number) FROM numbers(100000)")
         node.query("OPTIMIZE TABLE t FINAL")
@@ -249,6 +253,20 @@ def test_server_works_under_the_filter(started_cluster):
         assert node.query("SELECT count() > 0 FROM system.stack_trace") == "1\n"
         node.query("SYSTEM FLUSH LOGS")
         node.query("DROP TABLE t SYNC")
+
+
+def test_process_creation_is_disabled(started_cluster):
+    error = no_processes_node.query_and_get_error(
+        "SELECT * FROM executable('seccomp_status.py', 'TabSeparated', "
+        "'mode String, getxattr_result String, clone_result String, clone3_result String, "
+        "thread_result String, mknod_device_result String, mkfifo_result String')"
+    )
+    assert "Cannot vfork" in error
+    assert "Operation not permitted" in error
+    assert (
+        no_processes_node.query("SELECT sum(number) FROM numbers_mt(100000)")
+        == "4999950000\n"
+    )
 
 
 def test_binary_integrity_check_survives_the_filter(started_cluster):

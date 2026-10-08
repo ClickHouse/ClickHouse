@@ -1945,6 +1945,28 @@ The policy is only implemented for x86-64 and AArch64, since it is a list of arc
 <seccomp>log</seccomp>
 ```
 )", 0) \
+    DECLARE(Bool, seccomp_allow_process_creation, true, R"(
+Whether the seccomp allowlist permits process creation and executable replacement.
+
+When false, the policy also refuses `fork`, `vfork`, `execve`, `execveat`, and `clone` without
+`CLONE_THREAD`. Thread creation and the rest of the syscall allowlist remain unchanged.
+The `seccomp` setting controls enforcement: `log` only records these calls, and `disabled`
+installs no filter. Changing this setting requires a server restart.
+
+An enforcing mode with this setting false is incompatible with executable UDFs and dictionaries,
+the `Executable` and `ExecutablePool` table engines, the `executable` table function, automatic
+bridge launching, and the OOM canary. It only restricts the server and threads covered by its
+filter; it does not restrict a watchdog or other processes started before filter installation.
+
+Implemented on Linux x86-64 and AArch64.
+
+**Example**
+
+```xml
+<seccomp>errno</seccomp>
+<seccomp_allow_process_creation>false</seccomp_allow_process_creation>
+```
+)", 0) \
     DECLARE(UInt32, listen_backlog, 4096, R"(
 Backlog (queue size of pending connections) of the listen socket. The default value of `<4096>` is the same as that of linux 5.4+).
 
@@ -3901,6 +3923,9 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
     if (const auto seccomp_mode = getInstalledSeccompMode())
         changeable_settings.insert(
             {"seccomp", {SettingFieldSeccompMode(*seccomp_mode).toString(), ChangeableWithoutRestart::No}});
+    if (const auto allow_process_creation = getInstalledSeccompAllowProcessCreation())
+        changeable_settings.insert(
+            {"seccomp_allow_process_creation", {*allow_process_creation ? "true" : "false", ChangeableWithoutRestart::No}});
 
     /// `keeper_hosts` is not a regular config setting; it is derived from the `<zookeeper>` config and follows
     /// it on config reload, so the live value diverges from the empty default stored in `ServerSettings`.

@@ -38,6 +38,9 @@ enum class SeccompMode : uint8_t
 /// the filter cannot be changed once installed - nor installed later, if it was not at startup.
 std::optional<SeccompMode> getInstalledSeccompMode();
 
+/// The process-creation setting passed at startup; reloading cannot change the installed filter.
+std::optional<bool> getInstalledSeccompAllowProcessCreation();
+
 #if defined(OS_LINUX)
 
 struct SeccompFilterStatus
@@ -51,6 +54,8 @@ struct SeccompFilterStatus
 
 /// Installs a seccomp-BPF system call filter on every thread of the current process, allowing only
 /// the system calls ClickHouse is known to use and applying `mode` to all the others.
+/// When `allow_process_creation` is false, also refuse process creation and executable replacement
+/// while retaining thread creation and every other restriction of the allowlist.
 ///
 /// In every mode but `Disabled` this also sets `PR_SET_NO_NEW_PRIVS`, which does not depend on the
 /// architecture and happens even where no filter can be installed.
@@ -64,7 +69,7 @@ struct SeccompFilterStatus
 ///
 /// Call this once, as early in the startup as the configuration allows: the filter takes effect
 /// immediately and there is no way to widen it afterwards.
-SeccompFilterStatus installSeccompFilter(SeccompMode mode);
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_process_creation = true);
 
 #endif
 

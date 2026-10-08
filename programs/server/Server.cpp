@@ -488,6 +488,7 @@ namespace ServerSetting
     extern const ServerSettingsBool mlock_executable;
     extern const ServerSettingsUInt64 mlock_executable_min_total_memory_amount_bytes;
     extern const ServerSettingsSeccompMode seccomp;
+    extern const ServerSettingsBool seccomp_allow_process_creation;
     extern const ServerSettingsUInt32 listen_backlog;
     extern const ServerSettingsBool listen_reuse_port;
     extern const ServerSettingsBool listen_try;
@@ -1874,7 +1875,15 @@ try
     /// exist, so everything that runs from here on - including the processes the server forks
     /// later, which inherit it - is covered.
     const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
-    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
+    const bool seccomp_allow_process_creation = server_settings[ServerSetting::seccomp_allow_process_creation];
+    if (!seccomp_allow_process_creation && seccomp_mode != SeccompMode::Disabled && seccomp_mode != SeccompMode::Log
+        && server_settings[ServerSetting::oom_canary_enable])
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `seccomp_allow_process_creation` setting is false, but `oom_canary_enable` requires a child process");
+
+    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode, seccomp_allow_process_creation);
+        seccomp_status.allowed_syscalls != 0)
         LOG_INFO(
             log,
             "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
@@ -2650,6 +2659,14 @@ try
                     "after a restart: the seccomp policy of a running process cannot be changed",
                     SettingFieldSeccompMode(*installed_seccomp_mode).toString(),
                     new_server_settings[ServerSetting::seccomp].toString());
+            if (const auto allow_process_creation = getInstalledSeccompAllowProcessCreation(); allow_process_creation
+                && *allow_process_creation != new_server_settings[ServerSetting::seccomp_allow_process_creation].value)
+                LOG_WARNING(
+                    log,
+                    "The `seccomp_allow_process_creation` server setting was changed from {} to {} in the configuration, "
+                    "but it takes effect only after a restart: the seccomp policy of a running process cannot be changed",
+                    *allow_process_creation,
+                    new_server_settings[ServerSetting::seccomp_allow_process_creation].value);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
             const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];

@@ -1,0 +1,4 @@
+<clickhouse>
+    <seccomp>errno</seccomp>
+    <seccomp_allow_process_creation>false</seccomp_allow_process_creation>
+</clickhouse>

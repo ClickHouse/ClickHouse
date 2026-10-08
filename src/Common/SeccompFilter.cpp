@@ -19,11 +19,13 @@ namespace
 
 /// The mode `installSeccompFilter` was called with, or -1 if it has not been called.
 std::atomic<int> installed_mode{-1};
+std::atomic<int> installed_allow_process_creation{-1};
 
 #if defined(OS_LINUX)
-void rememberInstalledMode(SeccompMode mode)
+void rememberInstalledConfiguration(SeccompMode mode, bool allow_process_creation)
 {
     installed_mode.store(static_cast<int>(mode), std::memory_order_relaxed);
+    installed_allow_process_creation.store(allow_process_creation, std::memory_order_relaxed);
 }
 #endif
 
@@ -35,6 +37,14 @@ std::optional<SeccompMode> getInstalledSeccompMode()
     if (mode < 0)
         return std::nullopt;
     return static_cast<SeccompMode>(mode);
+}
+
+std::optional<bool> getInstalledSeccompAllowProcessCreation()
+{
+    const int allow_process_creation = installed_allow_process_creation.load(std::memory_order_relaxed);
+    if (allow_process_creation < 0)
+        return std::nullopt;
+    return allow_process_creation != 0;
 }
 
 }
@@ -470,7 +480,7 @@ void link(Program & program, const Blocks & blocks)
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 clone3_action)
+Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 clone3_action, bool allow_process_creation)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -521,6 +531,11 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_clone_flags));
     program.push_back(jump(BPF_JMP | BPF_JSET | BPF_K, denied_clone_flags, 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+    if (!allow_process_creation)
+    {
+        program.push_back(jump(BPF_JMP | BPF_JSET | BPF_K, CLONE_THREAD, 1, 0));
+        program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+    }
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
 
     /// `mknodat` and `mknod` differ only in where the mode is.
@@ -614,7 +629,7 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
 }
 
 void verifyProgram(
-    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 clone3_action)
+    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 clone3_action, bool allow_process_creation)
 {
     auto check = [&](const struct seccomp_data & data, UInt32 expected)
     {
@@ -636,13 +651,15 @@ void verifyProgram(
 
     /// Every number the running kernel could put into `nr`, and then some, so that a range which
     /// is off by one on either end cannot go unnoticed. The calls that are decided by an argument
-    /// are in `allowed`, and with every argument zero that is indeed the answer they get - for
-    /// `mknodat`, a zero mode makes a regular file.
+    /// are in `allowed`, except that a zero-flags `clone` is refused when processes are disabled.
+    /// For `mknodat`, a zero mode makes a regular file.
     for (int nr = -4096; nr < 8192; ++nr)
     {
         UInt32 expected = allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action;
         if (nr == clone3_syscall_number)
             expected = clone3_action;
+        else if (nr == __NR_clone && !allow_process_creation)
+            expected = default_action;
         check({.nr = nr, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {}}, expected);
     }
 
@@ -674,18 +691,20 @@ void verifyProgram(
             {.nr = __NR_ioctl, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {0, request, 0, 0, 0, 0}},
             SECCOMP_RET_ALLOW);
 
-    /// `clone` makes a thread or a process - the first three are the flags a libc passes for a
-    /// thread, for `fork` and for `posix_spawn` - and the high half of the argument, which the
-    /// kernel does not look at, does not change that.
-    for (UInt64 flags : {UInt64{CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
-                                | CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID},
+    /// `clone` makes a thread or a process - these are the flags a libc passes for a
+    /// thread, for `fork` and for `posix_spawn`. Only threads remain allowed when process creation
+    /// is disabled. The kernel ignores the high half of the argument.
+    const UInt64 thread_flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
+        | CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID;
+    for (UInt64 flags : {thread_flags,
+                         UInt64{1} << 32 | thread_flags,
                          UInt64{CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID | SIGCHLD},
                          UInt64{CLONE_VM | CLONE_VFORK | SIGCHLD},
                          UInt64{0},
                          UInt64{1} << 32})
         check(
             {.nr = __NR_clone, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {flags, 0, 0, 0, 0, 0}},
-            SECCOMP_RET_ALLOW);
+            allow_process_creation || (flags & CLONE_THREAD) ? SECCOMP_RET_ALLOW : default_action);
 
     /// A `clone` that asks for a namespace is refused, whether it asks for it alone, among the
     /// flags of an ordinary thread, or with junk in the half of the argument the kernel ignores.
@@ -696,7 +715,8 @@ void verifyProgram(
                         UInt32{CLONE_NEWUSER},
                         UInt32{CLONE_NEWPID},
                         UInt32{CLONE_NEWNET}})
-        for (UInt64 flags : {UInt64{flag}, UInt64{flag} | CLONE_VM | CLONE_FILES | SIGCHLD, UInt64{1} << 32 | flag})
+        for (UInt64 flags : {UInt64{flag}, UInt64{flag} | CLONE_VM | CLONE_FILES | SIGCHLD,
+                             thread_flags | flag, UInt64{1} << 32 | thread_flags | flag, UInt64{1} << 32 | flag})
             check(
                 {.nr = __NR_clone, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {flags, 0, 0, 0, 0, 0}},
                 default_action);
@@ -841,9 +861,9 @@ void setNoNewPrivs()
 
 }
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_process_creation)
 {
-    rememberInstalledMode(mode);
+    rememberInstalledConfiguration(mode, allow_process_creation);
 
     if (mode == SeccompMode::Disabled)
         return {};
@@ -872,6 +892,15 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     }
 
     std::vector<int> numbers(std::begin(allowed_syscalls), std::end(allowed_syscalls));
+    if (!allow_process_creation)
+    {
+        std::erase(numbers, __NR_execve);
+        std::erase(numbers, __NR_execveat);
+#if defined(__x86_64__)
+        std::erase(numbers, __NR_fork);
+        std::erase(numbers, __NR_vfork);
+#endif
+    }
     std::sort(numbers.begin(), numbers.end());
     numbers.erase(std::unique(numbers.begin(), numbers.end()), numbers.end());
 
@@ -891,8 +920,8 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     /// falls back to `clone` instead of failing to make a thread. Nothing is refused in the `log`
     /// mode, so there the call gets the same treatment as the rest of the policy.
     const UInt32 clone3_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
-    Program program = buildProgram(toRanges(numbers), default_action, clone3_action);
-    verifyProgram(program, allowed, default_action, clone3_action);
+    Program program = buildProgram(toRanges(numbers), default_action, clone3_action, allow_process_creation);
+    verifyProgram(program, allowed, default_action, clone3_action, allow_process_creation);
 
     if (program.size() > size_t{BPF_MAXINSNS})
         throw Exception(
@@ -959,12 +988,15 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 namespace DB
 {
 
-SeccompFilterStatus installSeccompFilter(SeccompMode mode)
+SeccompFilterStatus installSeccompFilter(SeccompMode mode, bool allow_process_creation)
 {
-    rememberInstalledMode(mode);
+    rememberInstalledConfiguration(mode, allow_process_creation);
 
     if (mode == SeccompMode::Disabled)
         return {};
+
+    if (!allow_process_creation && mode != SeccompMode::Log)
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "The seccomp process-creation restriction is not implemented for this architecture");
 
     /// A policy is a list of system call numbers and those are specific to an architecture, so
     /// there is none to install here. `PR_SET_NO_NEW_PRIVS` is not: it is the half of the setting
