@@ -1,10 +1,15 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/IFunctionDateOrDateTime.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -80,5 +85,27 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(const ColumnsWithTypeAn
     return DateLUT::instance();
 }
 
+std::optional<DataTypePtr> getDateTimeTypeWithTimeZoneArgument(
+    const IFunctionBase & function, const IDataType & type, const ColumnWithTypeAndName & time_zone_argument)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    if (!adaptor || !dynamic_cast<const FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()))
+        return std::nullopt;
+
+    auto time_zone = extractTimeZoneNameFromColumn(time_zone_argument.column.get(), time_zone_argument.name);
+
+    const IDataType * type_ptr = &type;
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type_ptr))
+        type_ptr = low_cardinality_type->getDictionaryType().get();
+
+    if (type_ptr->isNullable())
+        type_ptr = static_cast<const DataTypeNullable &>(*type_ptr).getNestedType().get();
+
+    if (typeid_cast<const DataTypeDateTime *>(type_ptr))
+        return std::make_shared<DataTypeDateTime>(time_zone);
+    if (const auto * dt64 = typeid_cast<const DataTypeDateTime64 *>(type_ptr))
+        return std::make_shared<DataTypeDateTime64>(dt64->getScale(), time_zone);
+    return DataTypePtr{};
 }
 
+}

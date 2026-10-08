@@ -2669,9 +2669,9 @@ struct ToYearNumSinceEpochImpl
             /// Clamped: see ToStartOfDayImpl.
             return static_cast<UInt16>(std::clamp<Int64>(time_zone.toYearSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
-    static auto execute(UInt32 t, const DateLUTImpl & time_zone)
+    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return execute(static_cast<Int64>(t), time_zone);
+        return time_zone.toYearSinceEpoch(static_cast<time_t>(t));
     }
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -2687,6 +2687,7 @@ struct ToYearNumSinceEpochImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+    static constexpr bool is_monotonic_only_on_each_side_of_local_epoch = true;
 };
 
 template <ResultPrecision precision_>
@@ -2766,9 +2767,9 @@ struct ToMonthNumSinceEpochImpl
             /// Clamped: see ToStartOfDayImpl.
             return static_cast<UInt16>(std::clamp<Int64>(time_zone.toMonthNumSinceEpoch(t), 0, std::numeric_limits<UInt16>::max()));
     }
-    static auto execute(UInt32 t, const DateLUTImpl & time_zone)
+    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return execute(static_cast<Int64>(t), time_zone);
+        return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(static_cast<time_t>(t)));
     }
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
@@ -2784,6 +2785,7 @@ struct ToMonthNumSinceEpochImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+    static constexpr bool is_monotonic_only_on_each_side_of_local_epoch = true;
 };
 
 template <ResultPrecision precision_>
@@ -2832,9 +2834,9 @@ struct ToRelativeDayNumImpl
             /// Clamped: see ToStartOfDayImpl.
             return static_cast<UInt16>(std::clamp<Int64>(time_zone.toDayNum(t), 0, std::numeric_limits<UInt16>::max()));
     }
-    static auto execute(UInt32 t, const DateLUTImpl & time_zone)
+    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return execute(static_cast<Int64>(t), time_zone);
+        return static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(t)));
     }
     static auto execute(Int32 d, const DateLUTImpl &)
     {
@@ -2850,6 +2852,7 @@ struct ToRelativeDayNumImpl
     static constexpr bool hasPreimage() { return false; }
 
     using FactorTransform = ZeroTransform;
+    static constexpr bool is_monotonic_only_on_each_side_of_local_epoch = true;
 };
 
 template <ResultPrecision precision_>
