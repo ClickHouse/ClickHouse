@@ -39,7 +39,7 @@ FROM {}.{})",
         system_db->getDatabaseName(),
         functions_table);
 
-    if (query.has_like)
+    if (!query.like.empty())
     {
         rewritten_query += " WHERE name ";
         rewritten_query += query.case_insensitive_like ? "ILIKE " : "LIKE ";
@@ -49,7 +49,6 @@ FROM {}.{})",
     return rewritten_query;
 }
 
-void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory);
 void registerInterpreterShowFunctionsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

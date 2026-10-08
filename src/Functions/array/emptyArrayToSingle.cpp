@@ -359,8 +359,8 @@ ColumnPtr FunctionEmptyArrayToSingle::executeImpl(const ColumnsWithTypeAndName &
     const NullMap * src_null_map = nullptr;
     NullMap * res_null_map = nullptr;
 
-    const IColumn * inner_col = nullptr;
-    IColumn * inner_res_col = nullptr;
+    const IColumn * inner_col;
+    IColumn * inner_res_col;
 
     const auto * nullable_col = checkAndGetColumn<ColumnNullable>(&src_data);
     if (nullable_col)
@@ -409,7 +409,7 @@ INSERT INTO test VALUES ([], [], []);
 SELECT emptyArrayToSingle(a), emptyArrayToSingle(b), emptyArrayToSingle(c) FROM test;
 )", R"(
 ┌─emptyArrayToSingle(a)─┬─emptyArrayToSingle(b)─┬─emptyArrayToSingle(c)───┐
-│ [0]                   │ ['']                  │ ['1970-01-01 00:00:00'] │
+│ [0]                   │ ['']                  │ ['1970-01-01 01:00:00'] │
 └───────────────────────┴───────────────────────┴─────────────────────────┘
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};

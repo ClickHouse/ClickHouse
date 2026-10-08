@@ -1,23 +1,16 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
-#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTWithAlias.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -37,8 +30,6 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
-    extern const Event QueryCacheOnDiskHits;
-    extern const Event QueryCacheOnDiskMisses;
     extern const Event QueryCacheAgeSeconds;
     extern const Event QueryCacheReadRows;
     extern const Event QueryCacheReadBytes;
@@ -56,19 +47,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_writes_to_query_cache;
-    extern const SettingsBool extremes;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
-    extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
-    extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsString query_cache_tag;
-}
-
-namespace ErrorCodes
-{
-    extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
-    extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
 }
 
 namespace
@@ -91,15 +70,6 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
-            /// The `eval` table function hides its real query inside an opaque string argument, so the
-            /// generated query cannot be inspected here. Treat it as non-deterministic (and, in
-            /// HasSystemTablesMatcher, as touching a system table) to keep such queries out of the cache,
-            /// e.g. `eval('SELECT now()')` must not be cached as if it were deterministic.
-            if (function->name == "eval")
-            {
-                data.has_non_deterministic_functions = true;
-                return;
-            }
             if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
             {
                 if (!func->isDeterministic())
@@ -108,14 +78,9 @@ struct HasNonDeterministicFunctionsMatcher
             }
             if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
             {
-                /// Driver-created executable functions are also persisted in the SQL-object storage,
-                /// but their determinism is described by the generated executable UDF configuration checked below.
-                if (!udf_sql->as<ASTCreateFunctionWithDriverQuery>())
-                {
-                    /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
-                    data.has_non_deterministic_functions = true;
-                    return;
-                }
+                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
+                data.has_non_deterministic_functions = true;
+                return;
             }
             if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
             {
@@ -169,13 +134,6 @@ struct HasSystemTablesMatcher
         ///     [...]
         else if (const auto * function = node->as<ASTFunction>())
         {
-            /// See HasNonDeterministicFunctionsMatcher: the query behind `eval` is opaque here, so
-            /// conservatively assume it may read a system table (e.g. `eval('SELECT * FROM system.processes')`).
-            if (function->name == "eval")
-            {
-                data.has_system_tables = true;
-                return;
-            }
             if (function->name == "clusterAllReplicas")
             {
                 const ASTs & function_children = function->children;
@@ -214,76 +172,18 @@ using HasSystemTablesVisitor = InDepthNodeVisitor<HasSystemTablesMatcher, true>;
 
 }
 
-/// Does AST contain non-deterministic functions like rand() and now()?
-static bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
+bool astContainsNonDeterministicFunctions(ASTPtr ast, ContextPtr context)
 {
     HasNonDeterministicFunctionsMatcher::Data finder_data{context};
     HasNonDeterministicFunctionsVisitor(finder_data).visit(ast);
     return finder_data.has_non_deterministic_functions;
 }
 
-/// Does AST contain system tables like "system.processes"?
-static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
+bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 {
     HasSystemTablesMatcher::Data finder_data{context};
     HasSystemTablesVisitor(finder_data).visit(ast);
     return finder_data.has_system_tables;
-}
-
-bool canWriteToQueryResultCacheInMemory(ContextPtr context)
-{
-    if (!context->getSettingsRef()[Setting::enable_writes_to_query_cache])
-        return false;
-    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
-    return query_result_cache && query_result_cache->canStoreEntries();
-}
-
-bool canWriteToQueryResultCacheOnDisk(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache)
-{
-    if (!on_disk_cache || !on_disk_cache->writesEnabled())
-        return false;
-    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
-    return query_result_cache && query_result_cache->entrySizeLimitsAllowEntries();
-}
-
-bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache)
-{
-    /// Judge both backends by what can actually receive a write, not by the raw settings: an in-memory cache with zero limits
-    /// (e.g. in `clickhouse-local`) or a configured but unavailable on-disk backend (e.g. a filesystem cache which is not initialized
-    /// yet), or a maximum entry size of 0, never stores anything, so it must not trigger the checks which protect against storing
-    /// wrong results.
-    return canWriteToQueryResultCacheInMemory(context) || canWriteToQueryResultCacheOnDisk(context, on_disk_cache);
-}
-
-bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache, bool skip_context_check)
-{
-    const Settings & settings = context->getSettingsRef();
-
-    if ((skip_context_check || context->getCanUseQueryResultCache()) && hasQueryResultCacheWriteBackend(context, on_disk_cache))
-    {
-        const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
-        const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
-
-        const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
-            = settings[Setting::query_cache_nondeterministic_function_handling];
-        const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
-
-        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
-            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
-                "The query result was not cached because the query contains a non-deterministic function."
-                " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
-
-        if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
-            throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
-                "The query result was not cached because the query contains a system table."
-                " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless, or omit caching");
-
-        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
-            && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
-            return true;
-    }
-
-    return false;
 }
 
 namespace
@@ -291,19 +191,7 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
-    return (setting_name.starts_with("query_cache_")
-            || setting_name.ends_with("_query_cache")
-            /// covers `enable_reads_from_query_cache_on_disk` and `enable_writes_to_query_cache_on_disk`
-            || setting_name.starts_with("enable_reads_from_query_cache")
-            || setting_name.starts_with("enable_writes_to_query_cache"))
-        && setting_name != "query_cache_tag";
-}
-
-/// Some additional settings are set for subqueries, they don't affect the result of SELECT queries,
-/// however with them similar subqueries can sometimes mismatch, so ignore this settings.
-bool isSubquerySpecificSetting(const String & setting_name)
-{
-    return setting_name == "use_structure_from_insertion_table_in_table_functions";
+    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
 bool settingDoesNotAffectQueryResultCache(const String & setting_name)
@@ -321,7 +209,7 @@ bool settingDoesNotAffectQueryResultCache(const String & setting_name)
 
 bool isSettingIgnoredInQueryResultCache(const String & setting_name)
 {
-    return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name) || isSubquerySpecificSetting(setting_name);
+    return isQueryResultCacheRelatedSetting(setting_name) || settingDoesNotAffectQueryResultCache(setting_name);
 }
 
 class RemoveQueryResultCacheSettingsMatcher
@@ -333,7 +221,7 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        auto remove_query_cache_settings = [](ASTSetQuery * set_clause)
+        if (auto * set_clause = ast->as<ASTSetQuery>())
         {
             chassert(!set_clause->is_standalone);
 
@@ -343,23 +231,6 @@ public:
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
-        };
-
-        if (auto * select_clause = ast->as<ASTSelectQuery>())
-        {
-            if (auto select_settings = select_clause->settings())
-            {
-                auto* set_clause = select_settings->as<ASTSetQuery>();
-
-                remove_query_cache_settings(set_clause);
-
-                /// Remove SETTINGS clause completely if it is empty
-                /// E.g. SELECT 1 SETTINGS use_query_cache = true
-                /// and SET use_query_cache = true; SELECT 1;
-                /// will match.
-                if (set_clause->changes.empty())
-                    select_clause->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-            }
         }
         else
         {
@@ -368,7 +239,10 @@ public:
         }
     }
 
-
+    /// TODO further improve AST cleanup, e.g. remove SETTINGS clause completely if it is empty
+    /// E.g. SELECT 1 SETTINGS use_query_cache = true
+    /// and  SELECT 1;
+    /// currently don't match.
 };
 
 using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResultCacheSettingsMatcher, true>;
@@ -386,90 +260,16 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 /// have been parsed already, they are not lost or discarded.
 ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 {
+    ASTPtr transformed_ast = ast->clone();
+
     RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(ast);
+    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
 
-    return ast;
+    return transformed_ast;
 }
 
-/// The Analyzer/Planner generates synthetic table aliases of the exact form `__table<N>`
-/// (see `createUniqueAliasesIfNecessary.cpp`), where `N` is a non-empty sequence of digits.
-/// Only strip aliases that match this exact pattern, otherwise user-visible identifiers
-/// like `__table_prod` could be confused with a planner-generated alias and rewritten,
-/// which would let unrelated queries collide in the subquery cache.
-bool isPlannerGeneratedTableAlias(std::string_view name)
+IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
-    constexpr std::string_view prefix = "__table";
-    if (!name.starts_with(prefix))
-        return false;
-    auto suffix = name.substr(prefix.size());
-    if (suffix.empty())
-        return false;
-    for (char c : suffix)
-    {
-        if (c < '0' || c > '9')
-            return false;
-    }
-    return true;
-}
-
-class RemoveTableAliasMatcher
-{
-public:
-    struct Data {};
-
-    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
-
-    static void visit(ASTPtr & ast, Data &)
-    {
-        if (auto * table_identifier = ast->as<ASTTableIdentifier>())
-        {
-            if (isPlannerGeneratedTableAlias(table_identifier->alias))
-                table_identifier->setAlias("");
-        }
-        else if (auto * identifier = ast->as<ASTIdentifier>())
-        {
-            if (identifier->compound() && isPlannerGeneratedTableAlias(identifier->name_parts[0]))
-            {
-                /// Preserve every component after the planner alias, so identifiers like
-                /// `__table1.nested.field` are normalized to `nested.field`, not just `nested`.
-                std::vector<String> trimmed_parts(identifier->name_parts.begin() + 1, identifier->name_parts.end());
-                auto new_identifier = make_intrusive<ASTIdentifier>(std::move(trimmed_parts));
-                new_identifier->setAlias(identifier->tryGetAlias());
-                ast = std::move(new_identifier);
-            }
-        }
-        else if (auto * function = ast->as<ASTFunction>())
-        {
-            if (isPlannerGeneratedTableAlias(function->alias))
-                function->setAlias("");
-        }
-    }
-};
-
-using RemoveTableAliasVisitor = InDepthNodeVisitor<RemoveTableAliasMatcher, true>;
-
-/// QueryTree is used for caching subqueries, therefore ast has unnecessary aliases (__table1, __table2, ...)
-/// Remove these aliases from ast before using it for caching.
-ASTPtr removeTableAliases(ASTPtr ast)
-{
-    RemoveTableAliasVisitor::Data visitor_data;
-    RemoveTableAliasVisitor(visitor_data).visit(ast);
-
-    return ast;
-}
-
-/// When `pre_cleaned` is true, the caller has already cloned the AST and stripped planner table
-/// aliases (`removeTableAliases`). Skip both steps to avoid mutating the original AST or running
-/// `removeTableAliases` twice (which would over-strip chains like `__table1.__table2.x` -> `x`).
-IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Settings & settings, const bool is_subquery, const bool pre_cleaned = false)
-{
-    if (!pre_cleaned)
-    {
-        ast = ast->clone();
-        if (is_subquery)
-            ast = removeTableAliases(ast);
-    }
     ast = removeQueryResultCacheSettings(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
@@ -482,32 +282,15 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
 
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.
-    /// Therefore, collect and sort the settings first, then hash them.
+    ///       Therefore, collect and sort the settings first, then hash them.
     auto changed_settings = settings.changes();
     std::vector<std::pair<String, String>> changed_settings_sorted; /// (name, value)
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() and isSubquerySpecificSetting() for why this is a good idea
+        if (!isSettingIgnoredInQueryResultCache(name)) /// see removeQueryResultCacheSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
-
-    /// The Planner forcibly sets `extremes`, `max_result_bytes`, `max_result_rows` for subqueries, which makes them
-    /// appear in `settings.changes()`. Non-subquery executions of the same AST typically don't have these in their
-    /// changed settings. To ensure cache hits between subquery writes and subquery reads, normalize by always
-    /// including the default values of these settings for subqueries.
-    if (is_subquery)
-    {
-        if (!changed_settings.tryGet("extremes"))
-            changed_settings_sorted.push_back({"extremes", settings[Setting::extremes].toString()});
-
-        if (!changed_settings.tryGet("max_result_bytes"))
-            changed_settings_sorted.push_back({"max_result_bytes", settings[Setting::max_result_bytes].toString()});
-
-        if (!changed_settings.tryGet("max_result_rows"))
-            changed_settings_sorted.push_back({"max_result_rows", settings[Setting::max_result_rows].toString()});
-    }
-
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
     for (const auto & setting : changed_settings_sorted)
     {
@@ -523,24 +306,6 @@ String queryStringFromAST(ASTPtr ast)
     return ast->formatForLogging();
 }
 
-/// For subqueries, clones the AST once, strips aliases, and returns both hash and query string from the cleaned AST.
-/// For non-subqueries, computes hash (which clones internally) and query string from the original AST.
-std::pair<IASTHash, String> calculateASTHashAndQueryString(
-    ASTPtr ast, const String & current_database, const Settings & settings, bool is_subquery)
-{
-    if (is_subquery)
-    {
-        auto cleaned = removeTableAliases(ast->clone());
-        /// Get the query string before `calculateASTHash` mutates the AST (it strips cache-related SETTINGS).
-        auto qs = queryStringFromAST(cleaned);
-        auto hash = calculateASTHash(cleaned, current_database, settings, is_subquery, /*pre_cleaned=*/ true);
-        return {hash, std::move(qs)};
-    }
-    auto hash = calculateASTHash(ast, current_database, settings, is_subquery);
-    auto qs = queryStringFromAST(ast);
-    return {hash, std::move(qs)};
-}
-
 }
 
 QueryResultCache::Key::Key(
@@ -554,24 +319,19 @@ QueryResultCache::Key::Key(
     bool is_shared_,
     std::chrono::time_point<std::chrono::system_clock> created_at_,
     std::chrono::time_point<std::chrono::system_clock> expires_at_,
-    bool is_compressed_,
-    bool is_subquery_)
-    : header(header_)
+    bool is_compressed_)
+    : ast_hash(calculateASTHash(ast_, current_database, settings))
+    , header(header_)
     , user_id(user_id_)
     , current_user_roles(current_user_roles_)
     , is_shared(is_shared_)
     , created_at(created_at_)
     , expires_at(expires_at_)
     , is_compressed(is_compressed_)
+    , query_string(queryStringFromAST(ast_))
     , query_id(query_id_)
     , tag(settings[Setting::query_cache_tag])
-    , is_subquery(is_subquery_)
 {
-    /// For subqueries, both hashing and display need a cloned AST with table aliases stripped.
-    /// Compute both from a single clone via `calculateASTHashAndQueryString`.
-    auto [hash, qs] = calculateASTHashAndQueryString(ast_, current_database, settings, is_subquery_);
-    ast_hash = hash;
-    query_string = std::move(qs);
 }
 
 QueryResultCache::Key::Key(
@@ -580,8 +340,7 @@ QueryResultCache::Key::Key(
     const Settings & settings,
     const String & query_id_,
     std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_,
-    bool is_subquery_)
+    const std::vector<UUID> & current_user_roles_)
     : QueryResultCache::Key(
             ast_,
             current_database,
@@ -593,23 +352,19 @@ QueryResultCache::Key::Key(
             false,
             std::chrono::system_clock::from_time_t(1),
             std::chrono::system_clock::from_time_t(1),
-            false,
-            is_subquery_)
+            false)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
 
 bool QueryResultCache::Key::operator==(const Key & other) const
 {
-    return ast_hash == other.ast_hash && is_subquery == other.is_subquery;
+    return ast_hash == other.ast_hash;
 }
 
 size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
 {
-    SipHash hash;
-    hash.update(key.ast_hash.low64);
-    hash.update(key.is_subquery);
-    return hash.get64();
+    return key.ast_hash.low64;
 }
 
 size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
@@ -634,9 +389,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
-    size_t max_block_size_,
-    bool write_to_memory_cache_,
-    QueryResultCacheOnDiskPtr on_disk_cache_)
+    size_t max_block_size_)
     : cache(cache_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
@@ -644,22 +397,12 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
-    , write_to_memory_cache(write_to_memory_cache_)
-    , on_disk_cache(on_disk_cache_)
 {
-    if (!write_to_memory_cache)
-        skip_memory_insert = true;
-    else if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
-        skip_memory_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
+        skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
     }
-
-    if (!on_disk_cache)
-        skip_disk_insert = true;
-
-    if (skip_memory_insert && skip_disk_insert)
-        skip_insert = true; /// don't even buffer the query result
 }
 
 QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & other)
@@ -670,11 +413,6 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
-    , write_to_memory_cache(other.write_to_memory_cache)
-    , on_disk_cache(other.on_disk_cache)
-    , skip_memory_insert(other.skip_memory_insert)
-    , skip_disk_insert(other.skip_disk_insert)
-    , skip_insert(other.skip_insert.load())
 {
 }
 
@@ -729,15 +467,9 @@ void QueryResultCacheWriter::finalizeWrite()
     if (skip_insert)
         return;
 
-    /// Multiple StreamInQueryResultCacheTransform instances (for Main/Totals/Extremes streams) share
-    /// the same writer. The first call finalizes; subsequent calls are no-ops. This is correct because
-    /// all transforms buffer into the same query_result before any of them calls finalizeWrite.
-    /// Early-exit paths below (min_query_runtime, duplicate key, max size) are intentional rejections
-    /// that should not be retried by another transform.
-    if (was_finalized.exchange(true))
-        return;
-
     std::lock_guard lock(mutex);
+
+    chassert(!was_finalized);
 
     /// Check some reasons why the entry must not be cached:
 
@@ -748,19 +480,12 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (!skip_memory_insert)
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
-        if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
-        {
-            /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime.
-            /// The corresponding re-check for the on-disk cache happens inside QueryResultCacheOnDisk::write.
-            LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
-            skip_memory_insert = true;
-        }
-    }
-
-    if (skip_memory_insert && skip_disk_insert)
+        /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
+        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
         return;
+    }
 
     if (squash_partial_results)
     {
@@ -803,45 +528,6 @@ void QueryResultCacheWriter::finalizeWrite()
         query_result->chunks = std::move(squashed_chunks);
     }
 
-    auto count_rows_in_chunks = [](const QueryResultCache::Entry & entry)
-    {
-        size_t res = 0;
-        for (const auto & chunk : entry.chunks)
-            res += chunk.getNumRows();
-        res += entry.totals.has_value() ? entry.totals->getNumRows() : 0;
-        res += entry.extremes.has_value() ? entry.extremes->getNumRows() : 0;
-        return res;
-    };
-
-    if (!skip_disk_insert)
-    {
-        /// The maximum entry size applies to both backends. Each backend measures the entry the way it is going to store it: the
-        /// in-memory backend checks the weight of the (possibly compressed) columns further below, the on-disk backend checks the
-        /// size of the serialized entry inside `write`, because the in-memory weight says little about the bytes on disk (the
-        /// per-column allocations differ from the `Native` framing plus the compression, in both directions). Only the row limit is
-        /// the same for both backends, so it is checked here upfront.
-        /// A limit of 0 means that nothing may be cached, same as for the in-memory backend. The writer is normally not created then
-        /// (see `canWriteToQueryResultCacheOnDisk`), but the limits may have been reconfigured since.
-        const size_t entry_size_in_rows = count_rows_in_chunks(*query_result);
-        if (max_entry_size_in_bytes == 0 || max_entry_size_in_rows == 0)
-        {
-            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the maximum entry size is 0, query: {}",
-                    doubleQuoteString(key.query_string));
-        }
-        else if (entry_size_in_rows > max_entry_size_in_rows)
-        {
-            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the query result is too big, query result size in rows: {} (maximum size: {}), query: {}",
-                    entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
-        }
-        else
-        {
-            on_disk_cache->write(key, *query_result, max_entry_size_in_bytes); /// best-effort, logs instead of throwing
-        }
-    }
-
-    if (skip_memory_insert)
-        return;
-
     if (key.is_compressed)
     {
         /// Compress result chunks. Reduces the space consumption of the cache but means reading from it will be slower due to decompression.
@@ -865,6 +551,16 @@ void QueryResultCacheWriter::finalizeWrite()
 
     /// Check more reasons why the entry must not be cached.
 
+    auto count_rows_in_chunks = [](const QueryResultCache::Entry & entry)
+    {
+        size_t res = 0;
+        for (const auto & chunk : entry.chunks)
+            res += chunk.getNumRows();
+        res += entry.totals.has_value() ? entry.totals->getNumRows() : 0;
+        res += entry.extremes.has_value() ? entry.extremes->getNumRows() : 0;
+        return res;
+    };
+
     size_t new_entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
     size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
 
@@ -878,6 +574,8 @@ void QueryResultCacheWriter::finalizeWrite()
     cache.set(key, query_result);
 
     LOG_TRACE(logger, "Stored query result of query {}", doubleQuoteString(key.query_string));
+
+    was_finalized = true;
 }
 
 /// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
@@ -911,25 +609,6 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
     }
 }
 
-QueryResultCacheReader::QueryResultCacheReader(Source source_)
-    : source(source_)
-{
-}
-
-QueryResultCacheReader::QueryResultCacheReader(
-    Source source_,
-    SharedHeader header,
-    QueryResultCache::Entry && entry,
-    std::chrono::time_point<std::chrono::system_clock> created_at_,
-    std::chrono::time_point<std::chrono::system_clock> expires_at_)
-    : source(source_)
-{
-    buildSourceFromChunks(header, std::move(entry.chunks), entry.totals, entry.extremes);
-
-    created_at = created_at_;
-    expires_at = expires_at_;
-}
-
 QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_.getWithKey(key);
@@ -956,6 +635,9 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
         LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
         return;
     }
+
+    auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
+    ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
 
     if (!entry_key.is_compressed)
     {
@@ -1003,26 +685,13 @@ bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) con
 
     if (update_profile_events)
     {
-        /// Only the per-backend breakdown of the on-disk cache is recorded here. `QueryCacheHits` / `QueryCacheMisses` describe
-        /// the query result cache as a whole and are recorded by `recordProbeResult` once every backend has been probed: with
-        /// both backends enabled, a miss in memory followed by a hit on disk is a hit of the query result cache.
-        if (source == Source::OnDisk)
-            ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheOnDiskHits : ProfileEvents::QueryCacheOnDiskMisses);
-
-        /// The age of the entry is a property of the hit and not of the backend that served it, so it is recorded for both.
         if (has_entry)
-        {
-            auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - created_at).count();
-            ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
-        }
+            ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+        else
+            ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
     }
 
     return has_entry;
-}
-
-void QueryResultCacheReader::recordProbeResult(bool has_entry)
-{
-    ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheHits : ProfileEvents::QueryCacheMisses);
 }
 
 
@@ -1067,14 +736,6 @@ void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_
     cache.setMaxCount(max_entries);
     max_entry_size_in_bytes = max_entry_size_in_bytes_;
     max_entry_size_in_rows = max_entry_size_in_rows_;
-
-    /// A cache with a zero limit can not store entries, so no writer will ever insert into it again (see `canStoreEntries`).
-    /// The eviction is lazy and happens only upon insert, hence drop the existing entries now, otherwise they would linger.
-    if (max_size_in_bytes == 0 || max_entries == 0 || max_entry_size_in_bytes_ == 0 || max_entry_size_in_rows_ == 0)
-    {
-        cache.clear();
-        times_executed.clear();
-    }
 }
 
 QueryResultCacheReader QueryResultCache::createReader(const Key & key)
@@ -1089,9 +750,7 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     bool squash_partial_results,
     size_t max_block_size,
     size_t max_query_result_cache_size_in_bytes_quota,
-    size_t max_query_result_cache_entries_quota,
-    bool write_to_memory_cache,
-    QueryResultCacheOnDiskPtr on_disk_cache)
+    size_t max_query_result_cache_entries_quota)
 {
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
@@ -1100,17 +759,8 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
-    size_t max_entry_size_in_bytes_copy = 0;
-    size_t max_entry_size_in_rows_copy = 0;
-    {
-        /// Don't construct the writer under the mutex: the writer ctor may probe the on-disk cache (i.e. do disk IO).
-        std::lock_guard lock(mutex);
-        max_entry_size_in_bytes_copy = max_entry_size_in_bytes;
-        max_entry_size_in_rows_copy = max_entry_size_in_rows;
-    }
-    return QueryResultCacheWriter(
-        cache, key, max_entry_size_in_bytes_copy, max_entry_size_in_rows_copy, min_query_runtime, squash_partial_results, max_block_size,
-        write_to_memory_cache, on_disk_cache);
+    std::lock_guard lock(mutex);
+    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
 void QueryResultCache::clear(const std::optional<String> & tag)
@@ -1127,22 +777,6 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
-}
-
-bool QueryResultCache::canStoreEntries() const
-{
-    return entrySizeLimitsAllowEntries() && cache.maxSizeInBytes() != 0 && cache.maxCount() != 0;
-}
-
-bool QueryResultCache::entrySizeLimitsAllowEntries() const
-{
-    std::lock_guard lock(mutex);
-    return max_entry_size_in_bytes != 0 && max_entry_size_in_rows != 0;
-}
-
-size_t QueryResultCache::maxSizeInBytes() const
-{
-    return cache.maxSizeInBytes();
 }
 
 size_t QueryResultCache::sizeInBytes() const

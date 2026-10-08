@@ -18,7 +18,7 @@ namespace DB
 
 ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWithType & input_nodes_values) const
 {
-    chassert(input_nodes_values.size() == getInputNodesCount());
+    assert(input_nodes_values.size() == getInputNodesCount());
 
     llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
 
@@ -85,7 +85,8 @@ std::string CompileDAG::dump() const
         {
             case CompileType::CONSTANT:
             {
-                const auto & data = node.column->getDataColumn();
+                const auto * column = typeid_cast<const ColumnConst *>(node.column.get());
+                const auto & data = column->getDataColumn();
 
                 dumped_values[i] = applyVisitor(FieldVisitorToString(), data[0]) + " : " + node.result_type->getName();
                 break;
@@ -138,7 +139,7 @@ UInt128 CompileDAG::hash() const
         {
             case CompileType::CONSTANT:
             {
-                node.column->getDataColumn().updateHashWithValue(0, hash);
+                assert_cast<const ColumnConst *>(node.column.get())->getDataColumn().updateHashWithValue(0, hash);
                 break;
             }
             case CompileType::FUNCTION:

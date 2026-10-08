@@ -1,2 +1,0 @@
--- the metadata alter replicated to the second replica
-CREATE TABLE default.t_modify_projection_r2\n(\n    `k` UInt64,\n    `v` UInt64,\n    PROJECTION p\n    (\n        SELECT v\n        ORDER BY v\n    ) WITH SETTINGS (index_granularity = 128)\n)\nENGINE = ReplicatedMergeTree(\'/clickhouse/tables/default/t_modify_projection\', \'r2\')\nORDER BY k\nSETTINGS index_granularity = 8192

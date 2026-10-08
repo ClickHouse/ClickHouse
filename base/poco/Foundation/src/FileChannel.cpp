@@ -355,8 +355,6 @@ void FileChannel::unsafeOpen()
 }
 
 
-namespace
-{
 void archiveByNumber(const std::string& basePath)
 	/// A monotonic increasing number is appended to the
 	/// log file name. The most recent archived file
@@ -403,7 +401,6 @@ void archiveByNumber(const std::string& basePath)
 			f.renameTo(newPath);
 		--n;
 	}
-}
 }
 
 

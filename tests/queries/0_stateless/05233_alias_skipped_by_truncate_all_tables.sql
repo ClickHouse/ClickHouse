@@ -1,6 +1,9 @@
 -- Tags: no-replicated-database
 -- no-replicated-database: TRUNCATE ALL TABLES is not supported for Replicated databases.
 
+-- The `Alias` engine is still experimental on this release branch.
+SET allow_experimental_alias_table_engine = 1;
+
 -- A database-wide TRUNCATE enqueues one task per table name, all sharing one query id. An `Alias` is
 -- a name without data, so the alias entry and its target entry converge on one storage and both take
 -- that storage's lock, which `RWLockImpl` rejects for a query id that already holds it.

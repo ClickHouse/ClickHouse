@@ -79,8 +79,6 @@ table = pa.table(
 pq.write_table(table, path)
 PY
 
-${CLICKHOUSE_CLIENT} --query "SELECT x FROM icebergLocal('${ICEBERG_TABLE_PATH_UNMAPPED}') ORDER BY x;" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
-
 # Cleanup
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_row_lineage;"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_v3_unmapped;"

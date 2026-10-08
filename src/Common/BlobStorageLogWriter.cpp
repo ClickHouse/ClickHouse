@@ -2,7 +2,6 @@
 
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
@@ -16,47 +15,6 @@ void BlobStorageLogWriter::addEvent(
     const String & bucket,
     const String & remote_path,
     const String & local_path_,
-    size_t data_size,
-    size_t elapsed_microseconds,
-    Int32 error_code,
-    const String & error_message,
-    BlobStorageLogElement::EvenTime time_now)
-{
-    addEventImpl(
-        event_type, bucket, remote_path, local_path_, {}, {}, data_size, elapsed_microseconds, error_code, error_message, time_now);
-}
-
-void BlobStorageLogWriter::addCopyEvent(
-    const String & source_bucket,
-    const String & source_remote_path,
-    const String & bucket,
-    const String & remote_path,
-    size_t data_size,
-    size_t elapsed_microseconds,
-    Int32 error_code,
-    const String & error_message)
-{
-    addEventImpl(
-        BlobStorageLogElement::EventType::Copy,
-        bucket,
-        remote_path,
-        {},
-        source_bucket,
-        source_remote_path,
-        data_size,
-        elapsed_microseconds,
-        error_code,
-        error_message,
-        {});
-}
-
-void BlobStorageLogWriter::addEventImpl(
-    BlobStorageLogElement::EventType event_type,
-    const String & bucket,
-    const String & remote_path,
-    const String & local_path_,
-    const String & source_bucket,
-    const String & source_remote_path,
     size_t data_size,
     size_t elapsed_microseconds,
     Int32 error_code,
@@ -78,39 +36,31 @@ void BlobStorageLogWriter::addEventImpl(
     if (!time_now.time_since_epoch().count())
         time_now = std::chrono::system_clock::now();
 
-    log->add([&](BlobStorageLogElement & element)
-    {
-        element.event_type = event_type;
+    BlobStorageLogElement element;
 
-        element.query_id = query_id;
-        element.thread_id = getThreadId();
-        element.thread_name = getThreadName();
+    element.event_type = event_type;
 
-        element.disk_name = disk_name;
-        element.bucket = bucket;
-        element.remote_path = remote_path;
-        element.local_path = local_path_.empty() ? local_path : local_path_;
-        element.source_bucket = source_bucket;
-        element.source_remote_path = source_remote_path;
-        element.data_size = data_size;
-        element.elapsed_microseconds = elapsed_microseconds;
-        element.error_code = error_code;
-        element.error_message = error_message;
+    element.query_id = query_id;
+    element.thread_id = getThreadId();
+    element.thread_name = getThreadName();
 
-        element.event_time = time_now;
-    });
+    element.disk_name = disk_name;
+    element.bucket = bucket;
+    element.remote_path = remote_path;
+    element.local_path = local_path_.empty() ? local_path : local_path_;
+    element.data_size = data_size;
+    element.elapsed_microseconds = elapsed_microseconds;
+    element.error_code = error_code;
+    element.error_message = error_message;
+
+    element.event_time = time_now;
+
+    log->add(element);
 }
 
 BlobStorageLogWriterPtr BlobStorageLogWriter::create(const String & disk_name)
 {
-    /// Prefer the current query context so that per-query settings such as `enable_blob_storage_log`
-    /// are honoured. Fall back to the global context for background operations that have no
-    /// associated query.
-    ContextPtr context = CurrentThread::tryGetQueryContext();
-    if (!context)
-        context = Context::getGlobalContextInstance();
-
-    if (auto blob_storage_log = context->getBlobStorageLog())
+    if (auto blob_storage_log = Context::getGlobalContextInstance()->getBlobStorageLog())
     {
         auto log_writer = std::make_shared<BlobStorageLogWriter>(std::move(blob_storage_log));
 

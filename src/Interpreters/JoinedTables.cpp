@@ -13,6 +13,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/FunctionsExternalDictionaries.h>
 
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
@@ -23,11 +24,9 @@
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageValues.h>
-#include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
@@ -35,13 +34,13 @@ namespace Setting
 {
     extern const SettingsBool asterisk_include_alias_columns;
     extern const SettingsBool asterisk_include_materialized_columns;
+    extern const SettingsBool enable_optimize_predicate_expression;
     extern const SettingsBool joined_subquery_requires_alias;
     extern const SettingsJoinAlgorithm join_algorithm;
 }
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int LOGICAL_ERROR;
@@ -49,6 +48,75 @@ namespace ErrorCodes
 
 namespace
 {
+
+template <typename T, typename ... Args>
+boost::intrusive_ptr<T> addASTChildrenTo(IAST & node, ASTPtr & children, Args && ... args)
+{
+    auto new_children = make_intrusive<T>(std::forward<Args>(args)...);
+    children = new_children;
+    node.children.push_back(children);
+    return new_children;
+}
+
+template <typename T>
+boost::intrusive_ptr<T> addASTChildren(IAST & node)
+{
+    auto children = make_intrusive<T>();
+    node.children.push_back(children);
+    return children;
+}
+
+void replaceJoinedTable(const ASTSelectQuery & select_query)
+{
+    const ASTTablesInSelectQueryElement * join = select_query.join();
+    if (!join || !join->table_expression)
+        return;
+
+    const auto & table_join = join->table_join->as<ASTTableJoin &>();
+
+    /// TODO: Push down for CROSS JOIN is not OK [disabled]
+    if (table_join.kind == JoinKind::Cross)
+        return;
+
+    /* Do not push down predicates for ASOF because it can lead to incorrect results
+     * (for example, if we will filter a suitable row before joining and will choose another, not the closest row).
+     * ANY join behavior can also be different with this optimization,
+     * but it's ok because we don't guarantee which row to choose for ANY, unlike ASOF, where we have to pick the closest one.
+     */
+    if (table_join.strictness == JoinStrictness::Asof)
+        return;
+
+    auto & table_expr = join->table_expression->as<ASTTableExpression &>();
+    if (table_expr.database_and_table_name)
+    {
+        const auto & table_id = table_expr.database_and_table_name->as<ASTTableIdentifier &>();
+        String table_name = table_id.name();
+        String table_short_name = table_id.shortName();
+        // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
+        //        we can't replace aliased tables.
+        // FIXME: long table names include database name, which we can't save within alias.
+        if (table_id.alias.empty() && table_id.isShort())
+        {
+            /// Build query of form '(SELECT * FROM table_name) AS table_short_name'
+            table_expr = ASTTableExpression();
+
+            auto subquery = addASTChildrenTo<ASTSubquery>(table_expr, table_expr.subquery);
+            subquery->setAlias(table_short_name);
+
+            auto sub_select_with_union = addASTChildren<ASTSelectWithUnionQuery>(*subquery);
+            auto list_of_selects = addASTChildrenTo<ASTExpressionList>(*sub_select_with_union, sub_select_with_union->list_of_selects);
+
+            auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
+            new_select->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
+            addASTChildren<ASTAsterisk>(*new_select->select());
+            new_select->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
+
+            auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
+            auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);
+            addASTChildrenTo<ASTTableIdentifier>(*sub_table_expr, sub_table_expr->database_and_table_name, table_name);
+        }
+    }
+}
 
 class RenameQualifiedIdentifiersMatcher
 {
@@ -222,14 +290,13 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const StorageMetadataPtr & 
 {
     if (storage)
     {
-        const ColumnsDescription & storage_columns = metadata_snapshot->columns;
-        const VirtualColumnsDescription & virtual_columns = metadata_snapshot->virtuals;
+        const ColumnsDescription & storage_columns = metadata_snapshot->getColumns();
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, storage_columns.getOrdinary());
 
         auto & table = tables_with_columns.back();
         table.addHiddenColumns(storage_columns.getMaterialized());
         table.addHiddenColumns(storage_columns.getAliases());
-        table.addHiddenColumns(virtual_columns.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::All).getNamesAndTypesList());
+        table.addHiddenColumns(storage->getVirtualsList());
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());
@@ -266,8 +333,7 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     const auto & settings = context->getSettingsRef();
     MultiEnum<JoinAlgorithm> join_algorithm = settings[Setting::join_algorithm];
     bool try_use_direct_join = join_algorithm.isSet(JoinAlgorithm::DIRECT) || join_algorithm.isSet(JoinAlgorithm::DEFAULT);
-    auto table_join = std::make_shared<TableJoin>(
-        settings, context->getJoinAnalyzeMode(), context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
+    auto table_join = std::make_shared<TableJoin>(settings, context->getGlobalTemporaryVolume(), context->getTempDataOnDisk());
 
     const ASTTablesInSelectQueryElement * ast_join = select_query_.join();
     const auto & table_to_join = ast_join->table_expression->as<ASTTableExpression &>();
@@ -279,24 +345,15 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
 
         /// A special storage replaces the right-side plan, and with it the `FilterStep` carrying the
-        /// table's row policy, so such a table has to be joined as an ordinary stream. A `Join` table
-        /// is a prebuilt hash table read as is, so it cannot be filtered at all.
-        if (storage)
-        {
-            auto row_policy_filter = context->getRowPolicyFilter(
-                joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-            if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-            {
-                if (typeid_cast<StorageJoin *>(resolveStorageProxyLoading(storage).get()))
-                    throw Exception(ErrorCodes::ACCESS_DENIED,
-                        "Cannot join table {} with the Join engine because a row policy is applied on it", joined_table_id.getNameForLogs());
-                storage = nullptr;
-            }
-        }
+        /// table's row policy, so such a table has to be joined as an ordinary stream.
+        auto joined_table_row_policy = context->getRowPolicyFilter(
+            joined_table_id.getDatabaseName(), joined_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (joined_table_row_policy && !joined_table_row_policy->isAlwaysTrue())
+            storage = nullptr;
 
         if (storage)
         {
-            if (auto storage_join = castStorage<StorageJoin>(storage, DeferredTable::Load); storage_join)
+            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
             {
                 table_join->setStorageJoin(storage_join);
             }
@@ -319,17 +376,19 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
                     return nullptr;
                 }
 
-                /// NOLINT(storage-cast): a dictionary, which the catalog never hands out behind a proxy.
                 auto dictionary_kv = std::dynamic_pointer_cast<const IKeyValueEntity>(dictionary);
                 table_join->setStorageJoin(dictionary_kv);
             }
 
-            if (auto storage_kv = castStorage<IKeyValueEntity>(storage, DeferredTable::Load); storage_kv && try_use_direct_join)
+            if (auto storage_kv = std::dynamic_pointer_cast<IKeyValueEntity>(storage); storage_kv && try_use_direct_join)
             {
                 table_join->setStorageJoin(storage_kv);
             }
         }
     }
+
+    if (!table_join->isSpecialStorage() && settings[Setting::enable_optimize_predicate_expression])
+        replaceJoinedTable(select_query_);
 
     return table_join;
 }

@@ -1,8 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <join_algorithm>hash</join_algorithm>
-            <any_join_distinct_right_table_keys>0</any_join_distinct_right_table_keys>
-        </default>
-    </profiles>
-</clickhouse>
