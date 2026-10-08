@@ -4686,8 +4686,10 @@ void Server::createServers(
             createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
 #if USE_MONGODB && USE_RAPIDJSON
+                /// The listener is plaintext; a Mongo endpoint over TLS is declared in the `protocols`
+                /// section as a `tls` layer over a `mongo` one.
                 Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ false);
                 socket.setReceiveTimeout(Poco::Timespan());
                 socket.setSendTimeout(settings[Setting::send_timeout]);
                 return ProtocolServerAdapter(

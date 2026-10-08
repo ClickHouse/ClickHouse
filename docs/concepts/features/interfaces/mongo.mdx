@@ -40,7 +40,25 @@ client["my_database"]["my_collection"].find({"age": {"$gt": 20}})
 The user name is taken from the authentication payload sent by the client, not from the authentication database, so the database in the connection string may be any value. A payload with an empty user name authenticates as the default session user: the `default_session_user` server setting, which can be overridden for the endpoint in the `protocols` section (see [Composable protocols](/concepts/features/configuration/server-config/composable-protocols)).
 
 :::note
-The wire protocol port is plaintext. Do not expose it outside a trusted network.
+The `mongo_port` listener is plaintext, and the `PLAIN` mechanism sends the password as it is, the same as the native protocol does on `tcp_port`. Do not expose it outside a trusted network. To accept Mongo connections over TLS, declare the endpoint in the `protocols` section with a `tls` layer below the `mongo` one (see [Composable protocols](/concepts/features/configuration/server-config/composable-protocols)) and connect with `tls=true`:
+
+```xml
+<clickhouse>
+    <protocols>
+        <mongo_tls>
+            <type>tls</type>
+            <port>27017</port>
+            <description>Mongo endpoint over TLS</description>
+            <impl>mongo</impl>
+        </mongo_tls>
+        <mongo>
+            <type>mongo</type>
+        </mongo>
+    </protocols>
+</clickhouse>
+```
+
+The TLS layer uses the certificate of the `openSSL.server` section unless it has a `certificateFile` and a `privateKeyFile` of its own.
 :::
 
 ### Mapping of MongoDB concepts {#mapping-of-mongodb-concepts}
@@ -233,7 +251,7 @@ SET dialect = 'mongo';
 analytics.users.find({"age" : 20});
 ```
 
-The dialect is available only in builds that include `rapidjson`; otherwise setting `dialect = 'mongo'` fails with `SUPPORT_IS_DISABLED`.
+The dialect is available only in builds that include `rapidjson`. In a build without it, `SET dialect = 'mongo'` itself succeeds, but every following query of the session fails with `SUPPORT_IS_DISABLED`, except a `SET` - such as `SET dialect = 'clickhouse'` - that switches the session back.
 
 ## See also {#see-also}
 

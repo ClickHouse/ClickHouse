@@ -590,6 +590,9 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     if (!path.starts_with("$") || path.size() == 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The path of '$unwind' must be a non-empty field name starting with '$'");
     path = path.substr(1);
+    if (index_name == path)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "The 'includeArrayIndex' of '$unwind' must name a field other than the one that is unwound");
 
     /** An `ARRAY JOIN` applies to the rows the select reads, so everything collected so far has to
       * be below it - including a `WHERE`, which in the pipeline filters the documents before they
@@ -623,7 +626,9 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
             "arrayMap",
             makeASTFunction("lambda", std::move(parameters), std::move(body)),
             makeASTFunction("arrayEnumerate", make_intrusive<ASTIdentifier>(path)));
-        expressions->children.push_back(withAlias(std::move(indexes), preserve_empty ? std::string(unwound_index) : index_name));
+        /// It is joined under a name of its own, so that a field of the document that has the name
+        /// of the index can be told apart from it and replaced by it below.
+        expressions->children.push_back(withAlias(std::move(indexes), std::string(unwound_index)));
     }
 
     auto unwind = make_intrusive<ASTArrayJoin>();
@@ -641,7 +646,10 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
           * although its array held nothing answers with no value at all.
           */
         auto select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(makeAsterisk({path}));
+        std::vector<std::string> replaced = {path};
+        if (!index_name.empty())
+            replaced.push_back(index_name);
+        select_list->children.push_back(makeAsterisk(replaced));
 
         auto preserved = [&](const std::string & name)
         {
@@ -660,10 +668,11 @@ void translateUnwind(SelectChain & chain, const rapidjson::Value & stage)
     else if (!index_name.empty())
     {
         /// A `*` does not expand to the columns an `ARRAY JOIN` introduces, so the index has to be
-        /// named in the list of the select that produces it.
+        /// named in the list of the select that produces it. It creates the field or overwrites the
+        /// one the document already has, so a field of that name is left out of the `*`.
         auto select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(makeAsterisk({}));
-        select_list->children.push_back(make_intrusive<ASTIdentifier>(index_name));
+        select_list->children.push_back(makeAsterisk({index_name}));
+        select_list->children.push_back(withAlias(make_intrusive<ASTIdentifier>(std::string(unwound_index)), index_name));
         chain.select_list = std::move(select_list);
     }
 

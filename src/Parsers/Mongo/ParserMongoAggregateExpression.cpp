@@ -1,11 +1,13 @@
 #include <Parsers/Mongo/ParserMongoAggregateExpression.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <Core/Field.h>
 #include <Parsers/ASTExpressionList.h>
@@ -298,6 +300,21 @@ std::string parseVariableName(const rapidjson::Value & argument, const char * de
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'as' of a higher order operator must be a string");
     return std::string(stringView(it->value));
 }
+
+/// The user variables bound by the `$map` and `$filter` operators around the expression being
+/// parsed, innermost last. A `$$<name>` is valid only inside the body of an operator that binds it:
+/// Mongo refuses any other as an undefined variable, so it must not fall back to a column.
+thread_local std::vector<std::string> bound_variables;
+
+/// Binds a variable for as long as the body of the operator that declares it is parsed.
+class BoundVariableScope
+{
+public:
+    explicit BoundVariableScope(std::string name) { bound_variables.push_back(std::move(name)); }
+    ~BoundVariableScope() { bound_variables.pop_back(); }
+    BoundVariableScope(const BoundVariableScope &) = delete;
+    BoundVariableScope & operator=(const BoundVariableScope &) = delete;
+};
 
 /// The function that adds a date unit of `$dateAdd` (and, with `add` replaced by `subtract`, of
 /// `$dateSubtract`). Unlike `plus` with an interval, these take the time zone the calendar
@@ -791,7 +808,11 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     {
         auto input = parseMongoAggregateExpression(requireMember(argument, "input", name));
         auto variable = parseVariableName(argument, "this");
-        auto body = parseMongoAggregateExpression(requireMember(argument, name == "$map" ? "in" : "cond", name));
+        ASTPtr body;
+        {
+            BoundVariableScope scope(variable);
+            body = parseMongoAggregateExpression(requireMember(argument, name == "$map" ? "in" : "cond", name));
+        }
         auto mapped = makeASTFunction(name == "$map" ? "arrayMap" : "arrayFilter", makeLambda(variable, std::move(body)), std::move(input));
         if (auto limit_it = argument.FindMember("limit"); limit_it != argument.MemberEnd() && name == "$filter")
             return makeASTFunction(
@@ -933,11 +954,13 @@ ASTPtr parseMongoAggregateExpression(const rapidjson::Value & value)
             /// A system variable stands for something the translation has no counterpart for - the
             /// document being processed, the pruning decision of `$redact`, the current cluster
             /// time. A user variable, which only `$map` and `$filter` can bind, names the lambda
-            /// parameter of the same name.
+            /// parameter of the same name, and is an error anywhere it is not bound.
             static const std::unordered_set<std::string_view> system_variables
                 = {"ROOT", "CURRENT", "REMOVE", "DESCEND", "PRUNE", "KEEP", "CLUSTER_TIME", "SEARCH_META", "USER_ROLES"};
             if (variable.empty() || system_variables.contains(variable))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The aggregation system variable '{}' is not supported", text);
+            if (std::find(bound_variables.begin(), bound_variables.end(), variable) == bound_variables.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Use of undefined variable: '{}'", variable);
             return make_intrusive<ASTIdentifier>(String(variable));
         }
         if (text.starts_with("$"))
