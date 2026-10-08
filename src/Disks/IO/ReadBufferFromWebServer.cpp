@@ -8,6 +8,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>
+#include <Common/maskURIPassword.h>
 
 
 namespace DB
@@ -58,6 +59,14 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
         read_until_position_,
         std::move(headers_))
 {
+}
+
+String ReadBufferFromWebServer::getFileName() const
+{
+    auto result = current_url.empty() ? urls.front() : current_url;
+    maskURIUserinfo(result);
+    maskURIQuery(result);
+    return result;
 }
 
 ReadBufferFromWebServer::ReadBufferFromWebServer(
