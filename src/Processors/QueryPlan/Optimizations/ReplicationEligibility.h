@@ -46,12 +46,9 @@ struct ReplicationDecision
     String describe(const ReplicationSize & size, const ReplicationBudget & budget) const;
 };
 
-/// Decides whether a result may be replicated to every node.
-///
-/// The row limit is the planner's heuristic on the estimate; a proven bound stands in for a
-/// missing estimate. The byte budget trusts an estimate only when no default went into it; an
-/// unknown or default-based size has to prove with its row bound that it fits, so a guess alone
-/// never authorizes a replication. The bytes are modeled as rows times the average row width.
+/// Decides whether a result may be replicated to every node: the row limit on the estimate, or on
+/// the bound without one; the byte budget (rows times the row width) on the estimate when no
+/// default went into it, else on the bound. A result with neither is never replicated.
 ReplicationDecision decideReplication(const ReplicationSize & size, const ReplicationBudget & budget);
 
 }

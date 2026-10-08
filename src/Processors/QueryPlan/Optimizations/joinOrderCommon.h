@@ -26,19 +26,19 @@ struct EdgeSelectivity
 };
 using SelectivityCache = std::unordered_map<JoinActionRef, EdgeSelectivity>;
 
-/// The equality predicates of a join combined. `selectivity` is one over the largest key NDV, a
-/// key without an NDV counting its relation's rows; `EXPLAIN` reports it. `statistics_selectivity`
-/// takes only the NDVs the statistics give: it sizes the join when some key has one, see
-/// `estimateJoinedRows`. A side's match fraction is the smallest share of its key values the other
-/// side also has, known when the side's NDV comes from statistics, see `keyContainment`.
+/// The equality predicates of a join combined: the most selective key decides.
 struct JoinKeyEstimate
 {
+    /// One over the largest key NDV, a key without an NDV counting its relation's rows. `EXPLAIN` reports it.
     double selectivity = 1.0;
+    /// The same over the NDVs from statistics only; sizes the join when some key has one.
     double statistics_selectivity = 1.0;
     /// An equality connects the two sides.
     bool has_equality = false;
     /// Some key NDV comes from statistics.
     bool from_statistics = false;
+    /// Smallest share of a side's key values the other side also has, see `keyContainment`; known
+    /// when the side's NDV comes from statistics.
     std::optional<double> left_match_fraction;
     std::optional<double> right_match_fraction;
 
@@ -185,12 +185,8 @@ inline std::optional<bool> singleMatchSideIsLeft(JoinKind join_kind, JoinStrictn
     }
 }
 
-/// Rows a join cannot exceed, from the bounds of its inputs: a paste join the shorter side; a semi,
-/// anti, any or asof join the side it emits at most once (empty for a semi join and an inner any
-/// or asof join when the other side is); an inner or cross join the product, empty when a side is;
-/// an outer join one row per preserved row times the matches it can have, at least one, plus every
-/// row of the other side for a full join. Unknown when a needed input bound is; the arithmetic
-/// saturates instead of wrapping, and a saturated bound is still a bound.
+/// Rows a join cannot exceed, from the bounds of its inputs by the join kind and strictness;
+/// unknown when a needed input bound is. The arithmetic saturates, and a saturated bound is still a bound.
 inline std::optional<UInt64> estimateJoinRowsUpperBound(
     std::optional<UInt64> left_max, std::optional<UInt64> right_max, JoinKind join_kind, JoinStrictness strictness)
 {
@@ -257,12 +253,8 @@ inline double estimateJoinedRows(const JoinKeyEstimate & keys, double lhs, doubl
     return lhs * rhs;
 }
 
-/// Join cardinality for every planner. An inner join keeps `estimateJoinedRows`, at least one row.
-/// An outer join is at least its preserved side(s): every preserved row is emitted, matched or
-/// padded. A semi or anti join is a filter on its preserved side: the fraction of its rows with a
-/// match, or without one. A paste join pairs rows by position: the shorter side. An `ANY` or
-/// `ASOF` join emits each row of one side at most once: exactly that side for an outer join, at
-/// most that side for an inner join. An empty side decides the result alone, as the bound does.
+/// Join cardinality for every planner, by the join kind and strictness, at least one row. An empty
+/// side decides the result alone, as the bound does.
 inline std::optional<UInt64> estimateJoinCardinality(
     std::optional<UInt64> left_rows,
     std::optional<UInt64> right_rows,
@@ -298,11 +290,8 @@ inline std::optional<UInt64> estimateJoinCardinality(
         const bool preserve_left = !isRight(join_kind);
         const double preserved = preserve_left ? lhs : rhs;
         const double other = preserve_left ? rhs : lhs;
-        /// The fraction of preserved rows with a match: the share of the preserved key values the
-        /// other side has, when the preserved key's NDV is known. Otherwise the other side's rows
-        /// per key value stand in, capped at 1: per NDV from statistics when there is one (the
-        /// preserved side then refers to the other side's keys, as a foreign key does), else per
-        /// row of the larger side.
+        /// Fraction of preserved rows with a match: the share of the preserved key values the other
+        /// side has when that key's NDV is known, else the other side's rows per key value, capped at 1.
         const auto & known_fraction = preserve_left ? keys.left_match_fraction : keys.right_match_fraction;
         const double rows_per_key = keys.from_statistics ? keys.statistics_selectivity : keys.selectivity;
         const double match_fraction = known_fraction.value_or(std::min(1.0, rows_per_key * other));

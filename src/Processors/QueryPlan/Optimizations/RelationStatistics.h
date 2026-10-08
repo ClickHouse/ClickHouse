@@ -98,11 +98,10 @@ UInt64 keyDomain(const RelationStats & relation, const String & column);
 /// rows does. Zero when the NDV is unknown; never above `rows_after`.
 UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UInt64 rows_after);
 
-/// Fraction of one side's key values that the other side also has, from the two NDVs (zero =
-/// unknown) and the key's domain. Fewer values on the other side are taken to lie within this
-/// side's (a set derived from this side, a dimension's filtered keys); at least as many meet this
-/// side's values in proportion to their share of the domain, or all of them when the domain is
-/// unknown. Nothing when either NDV is unknown.
+/// Share of one side's key values that the other side also has, from the two NDVs (zero =
+/// unknown) and the key's domain: fewer values on the other side all lie within this side's; as
+/// many or more meet this side's in proportion to their share of the domain, all of them when the
+/// domain is unknown. Nothing when either NDV is unknown.
 std::optional<double> keyContainment(UInt64 side_distinct_values, UInt64 other_distinct_values, UInt64 domain_distinct_values = 0);
 
 /// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
