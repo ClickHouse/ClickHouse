@@ -47,11 +47,11 @@ USE {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE TEMPORARY TABLE view_src (id UInt64) ENGINE = Memory;
 CREATE VIEW view_own AS SELECT * FROM view_src;
 DROP TEMPORARY TABLE view_src;
-USE {CLICKHOUSE_DATABASE:Identifier};
 
 -- Guard the precondition: the source of the view is stored unqualified.
 SELECT 'source is stored unqualified', position(create_table_query, '.view_src') = 0
-FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'view_own';
+FROM system.tables WHERE database = currentDatabase() AND name = 'view_own';
+USE {CLICKHOUSE_DATABASE:Identifier};
 
 RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.view_own TO {CLICKHOUSE_DATABASE_2:Identifier}.view_own;
 
