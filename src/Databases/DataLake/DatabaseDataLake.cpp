@@ -2151,12 +2151,16 @@ SELECT * FROM catalog_name.`namespace.table`;
 ```
 
 With `allow_experimental_table_namespaces` enabled, you can also spell out
-every part with dots. The rules are deterministic and do not depend on what
-currently exists in any catalog:
+every part with dots:
 
-- `a.b` always means database `a`, table `b`.
 - `db.ns.table` (three or more parts) always means the table path `ns.table`
-  inside database `db`:
+  inside database `db`.
+- A two-part name `a.b` in a table expression is resolved both as table `b` of
+  database `a` and as table `a.b` of the current database. Database `a` must
+  exist; when only one of the two tables exists it is used, and when both exist
+  the query fails with `AMBIGUOUS_IDENTIFIER`. Other statements (`EXISTS`,
+  `DESCRIBE`, `INSERT`, `SHOW CREATE TABLE`, DDL) always read `a.b` as
+  database `a`, table `b`.
 
 ```sql
 -- Equivalent to catalog_name.`namespace.table`
@@ -2190,18 +2194,12 @@ scope. The scope is cleared as soon as you switch to another database with
 dropping a database literally named `catalog_name.namespace` afterwards does not
 change the meaning of an already selected scope; the next `USE` re-evaluates it.
 
-Because a two-part name always means `database.table`, writing
-`namespace.table` without the catalog prefix does **not** resolve inside the
-current database - use the full path or `USE catalog_name.namespace`.
-
 A namespace scope can also arrive as a connection default database: the
 client sends `catalog_name.namespace` in the handshake after a `USE`, on
-reconnect, via `--database`, or from the user's `DEFAULT DATABASE`. These
-paths are validated with the session (profile) settings, before any per-query
-settings are received, so `allow_experimental_table_namespaces` must be
-enabled in the user's profile for them; otherwise the connection fails with
-`UNKNOWN_DATABASE`. Enabling the setting only per query is enough for `USE`
-within an established connection.
+reconnect, via `--database`, or from the user's `DEFAULT DATABASE`. The
+namespace is validated against the catalog when the connection is set up;
+the queries that follow still need `allow_experimental_table_namespaces`,
+from the user's profile or per query.
 
 While a namespace is selected, statements that do not support namespace
 scoping - DDL (`CREATE`, `DROP`, `ALTER`, `RENAME`, `OPTIMIZE`, `TRUNCATE`),
@@ -2218,10 +2216,9 @@ indistinguishable from `catalog_name.a.b.table`. Catalog objects whose native
 names contain literal dots remain visible in listings, but they cannot be
 addressed through a multipart path - only through the quoted canonical name.
 
-The same mechanism works for regular databases (`Atomic`, `Memory`), where a
-dot inside a table name lexically defines a namespace: a table named
-`ns.table` in database `db` can be addressed as `db.ns.table` or through
-`USE db.ns`.
+Only `DataLakeCatalog` databases support namespaces: `USE db.namespace` and
+`SHOW TABLES FROM db.namespace` fail with `NOT_IMPLEMENTED` for other database
+engines.
 
 ## Examples {#examples}
 

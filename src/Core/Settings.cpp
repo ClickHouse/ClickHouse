@@ -9416,12 +9416,14 @@ Cloud default value: `1`.
         {"24.12", false, false, "New setting. At the time the setting was named `allow_experimental_database_iceberg`, which is now an alias of it."}) \
     DECLARE(Bool, allow_experimental_table_namespaces, false, R"(
 Allow hierarchical table paths (`db.namespace.table`) and `USE db.namespace` scoping.
-The rules are deterministic: a two-part name always means `database.table`, three or
-more parts always mean a table path inside the first-part database, and an unqualified
-name under `USE db.namespace` resolves inside the selected namespace. Statements that
-do not support namespaces fail with an error while a namespace is selected.
-When disabled, multipart paths are syntax errors and no namespace interpretation
-happens anywhere; quoted dotted table names (`db.` `` `ns.table` ``) keep working.
+Three or more parts always mean a table path inside the first-part database, and an
+unqualified name under `USE db.namespace` resolves inside the selected namespace.
+A two-part name `a.b` in a table expression may mean table `b` of database `a` or
+table `a.b` of the current database; the query fails with `AMBIGUOUS_IDENTIFIER` when
+both exist. Statements that do not support namespaces fail with an error while a
+namespace is selected. When disabled, multipart paths are syntax errors and no
+namespace interpretation happens anywhere; quoted dotted table names
+(`db.` `` `ns.table` ``) keep working.
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New experimental setting gating hierarchical table paths and USE db.namespace scoping."}) \
     DECLARE_WITH_ALIAS(Bool, allow_database_unity_catalog, false, R"(
