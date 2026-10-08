@@ -1173,8 +1173,9 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
     /// The external metadata (the `datalake_table_state` of e.g. Iceberg) has already been refreshed by the
-    /// caller - `InterpreterAlterQuery`, `InterpreterDeleteQuery` or `StorageMaterializedView::mutate` - before
-    /// it validated the mutation, so execute it against that same state instead of refreshing it again.
+    /// caller - `InterpreterAlterQuery` or `InterpreterDeleteQuery`, through the view for the target of a
+    /// materialized view - before it validated the mutation, so execute it against that same state instead of
+    /// refreshing it again.
     auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
     configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
