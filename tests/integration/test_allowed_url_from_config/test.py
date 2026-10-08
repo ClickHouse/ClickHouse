@@ -108,6 +108,9 @@ def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_ur
         "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV')",
         "INSERT INTO TABLE FUNCTION azureBlobStorage("
         "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV', 'x UInt8') VALUES (1)",
+        "CREATE TABLE azure_blocked_disk (x UInt8) ENGINE = MergeTree ORDER BY x "
+        "SETTINGS disk = disk(type = azure_blob_storage, storage_account_url = 'http://127.0.0.1:1', "
+        "container_name = 'container', account_name = 'account', account_key = 'YQ==')",
     ],
 )
 def test_azure_host_filter_before_client_creation(start_cluster, query):

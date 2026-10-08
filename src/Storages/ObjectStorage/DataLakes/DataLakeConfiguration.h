@@ -247,7 +247,9 @@ public:
 
     void check(ContextPtr context) override
     {
-        if (ready_object_storage && ready_object_storage->getType() == ObjectStorageType::S3)
+        if (ready_object_storage
+            && (ready_object_storage->getType() == ObjectStorageType::S3
+                || ready_object_storage->getType() == ObjectStorageType::Azure))
             this->checkFormat();
         else
             BaseStorageConfiguration::check(context);

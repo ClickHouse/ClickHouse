@@ -23,6 +23,7 @@
 #include <Interpreters/Context.h>
 
 #include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <Core/Settings.h>
 
@@ -189,7 +190,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const std::string & config_prefix,
         const ContextPtr & context,
         bool /* run_access_check */,
-        bool /* run_local_paths_check */) -> ObjectStoragePtr
+        bool run_local_paths_check) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -205,6 +206,10 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
             .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
         };
+
+        /// Set only for a disk created by a query (`disk(...)`): its endpoint is checked like a URL in a query.
+        if (run_local_paths_check)
+            context->getRemoteHostFilter().checkURL(Poco::URI(params.getConnectionURL()));
 
         return std::make_shared<AzureObjectStorage>(
             name,
