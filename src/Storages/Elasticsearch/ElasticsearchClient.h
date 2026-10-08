@@ -2,6 +2,7 @@
 
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
 #include <Interpreters/Context_fwd.h>
+#include <Storages/Elasticsearch/ElasticsearchSettings.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -14,13 +15,15 @@ namespace DB
 class ElasticsearchClient
 {
 public:
-    ElasticsearchClient(ElasticsearchConfiguration, ContextPtr);
+    ElasticsearchClient(ElasticsearchConfiguration, ContextPtr, const ElasticsearchSettings &);
 
     ~ElasticsearchClient();
 
     using IndexPage = Poco::JSON::Array::Ptr;
 
     IndexPage searchIndex(bool fetch_source);
+
+    size_t pageSize() const { return page_size; }
 
 private:
 
@@ -35,7 +38,9 @@ private:
         const Poco::URI & uri,
         const String & request_body) const;
 
+    size_t page_size;
     String pit_id;
+    String pit_keep_alive;
     Poco::JSON::Array::Ptr last_document_order_no;
     ElasticsearchConfiguration config;
     Poco::Net::HTTPBasicCredentials credentials;

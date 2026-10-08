@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/StorageID.h>
+#include <Storages/Elasticsearch/ElasticsearchSettings.h>
 #include <Storages/IStorage.h>
 #include <Common/logger_useful.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
@@ -20,7 +21,8 @@ public:
         ElasticsearchConfiguration configuration_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment_
+        const String & comment_,
+        std::unique_ptr<ElasticsearchSettings> settings_
     );
 
     std::string getName() const override { return "Elasticsearch"; }
@@ -41,9 +43,19 @@ public:
         size_t num_streams
     ) override;
 
+    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
+
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
+
+    const ElasticsearchSettings & getSettings() const { return *storage_settings.get(); }
+
+    void setSettings(std::unique_ptr<ElasticsearchSettings> && settings_) { storage_settings.set(std::move(settings_)); }
+
+
 private:
 
     VirtualColumnsDescription createVirtuals();
+    MultiVersion<ElasticsearchSettings> storage_settings;
     ElasticsearchConfiguration config;
 };
 

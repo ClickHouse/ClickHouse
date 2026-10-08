@@ -15,8 +15,11 @@
 #include <Columns/ColumnString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
+#include <Storages/Elasticsearch/ElasticsearchSettings.h>
 #include <Storages/Elasticsearch/StorageElasticsearch.h>
 #include <Storages/Elasticsearch/ElasticsearchClient.h>
+#include <Storages/AlterCommands.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/ISource.h>
 #include <Storages/IStorage.h>
 #include <Core/Block.h>
@@ -42,6 +45,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_DATA;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class ElasticsearchSource : public ISource
@@ -117,8 +121,7 @@ private:
             object_serialization->deserializeObject(*columns[*json_pos], source_stream.view(), format_settings);
         }
 
-        /// Page size
-        if (num_rows < 10'000)
+        if (num_rows < client->pageSize())
             has_data = false;
 
         return Chunk(std::move(columns), num_rows);
@@ -140,7 +143,8 @@ StorageElasticsearch::StorageElasticsearch(
     ElasticsearchConfiguration configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment_)
+    const String & comment_,
+    std::unique_ptr<ElasticsearchSettings> settings_)
     : IStorage(table_id_)
     , config(configuration_)
 {
@@ -159,7 +163,9 @@ StorageElasticsearch::StorageElasticsearch(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
     storage_metadata.setVirtuals(createVirtuals());
+    storage_metadata.setSettingsChanges(settings_->getSettingsChangesQuery());
     setInMemoryMetadata(storage_metadata);
+    setSettings(std::move(settings_));
 }
 
 Pipe StorageElasticsearch::read(
@@ -182,7 +188,7 @@ Pipe StorageElasticsearch::read(
         return storage_snapshot->tryGetColumn(json_column_options, name).has_value();
     });
 
-    auto client = std::make_shared<ElasticsearchClient>(config, context);
+    auto client = std::make_shared<ElasticsearchClient>(config, context, *storage_settings.get());
     return Pipe(std::make_shared<ElasticsearchSource>(
         std::move(client),
         std::make_shared<Block>(std::move(sample_block)), context, json_column_name, fetch_source));
@@ -196,6 +202,35 @@ VirtualColumnsDescription StorageElasticsearch::createVirtuals()
     virtual_columns.addEphemeral("_index", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Reader);
 
     return virtual_columns;
+}
+
+void StorageElasticsearch::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder)
+{
+    IStorage::alter(params, query_context, holder);
+    auto new_metadata = getInMemoryMetadataPtr(query_context, false);
+    if (new_metadata->settings_changes)
+    {
+        const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
+        auto new_settings = std::make_unique<ElasticsearchSettings>();
+        new_settings->applyChanges(settings_changes.changes);
+        setSettings(std::move(new_settings));
+    }
+}
+
+void StorageElasticsearch::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
+{
+    for (const auto & command : commands)
+    {
+        if (!command.isCommentAlter() && !command.isSettingsAlter())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
+
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            ElasticsearchSettings new_settings = *storage_settings.get();
+            new_settings.applyChanges(command.settings_changes);
+            new_settings.sanityCheck();
+        }
+    }
 }
 
 void registerStorageElasticsearch(StorageFactory & factory);
@@ -219,13 +254,18 @@ void registerStorageElasticsearch(StorageFactory & factory)
             if (!columns.empty() && !isObject(columns.front().type))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch table engine requires the column type to be JSON, got {}", columns.front().type->getName());
 
-            auto configuration = ElasticsearchConfiguration::fromArguments(args.engine_args, args.getLocalContext());
+            auto settings = std::make_unique<ElasticsearchSettings>();
+            settings->loadFromQuery(*args.storage_def);
+            settings->sanityCheck();
+            auto configuration = ElasticsearchConfiguration::fromArguments(args.engine_args, args.getLocalContext(), &args.table_id);
             return std::make_shared<StorageElasticsearch>(
-                args.table_id, std::move(configuration), args.columns, args.constraints, args.comment);
+                args.table_id, std::move(configuration), args.columns, args.constraints, args.comment, std::move(settings));
         },
         {
+            .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::ELASTICSEARCH,
+            .has_builtin_setting_fn = ElasticsearchSettings::hasBuiltin,
         },
         Documentation{
             .description = R"DOCS_MD(Elasticsearch docs))DOCS_MD",

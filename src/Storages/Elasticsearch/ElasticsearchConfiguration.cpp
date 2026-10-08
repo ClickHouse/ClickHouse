@@ -34,7 +34,7 @@ namespace
 
 constexpr auto USAGE = "Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...]) "
                         "or Elasticsearch(named_collection[, key = value, ...]). "
-                        "Allowed keys: url, index, user, password, bearer_token, api_key, query, keep_alive, page_size";
+                        "Allowed keys: url, index, user, password, bearer_token, api_key, query";
 
 const ConfigurationFields & configurationFields()
 {
