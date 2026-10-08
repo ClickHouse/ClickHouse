@@ -1,8 +1,10 @@
 #include <Parsers/ASTDropQuery.h>
 
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ParserDropQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -19,6 +21,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
 {
     ParserKeyword s_temporary(Keyword::TEMPORARY);
     ParserKeyword s_table(Keyword::TABLE);
+    ParserKeyword s_detached(Keyword::DETACHED);
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_database(Keyword::DATABASE);
@@ -52,8 +55,10 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     bool temporary = false;
     bool is_dictionary = false;
     bool is_view = false;
+    bool is_table = false;
     bool sync = false;
     bool permanently = false;
+    bool detached = false;
 
     if (s_all.checkWithoutMoving(pos, expected))
         has_all = true;
@@ -107,6 +112,9 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     }
     else
     {
+        if (s_detached.ignore(pos, expected))
+            detached = true;
+
         if (s_temporary.ignore(pos, expected))
             temporary = true;
 
@@ -114,9 +122,11 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
             is_view = true;
         else if (s_dictionary.ignore(pos, expected))
             is_dictionary = true;
+        else if (s_table.ignore(pos, expected))
+            is_table = true;
 
         /// for TRUNCATE queries TABLE keyword is assumed as default and can be skipped
-        if (!is_view && !is_dictionary && (!s_table.ignore(pos, expected) && kind != ASTDropQuery::Kind::Truncate))
+        if (!is_view && !is_dictionary && !is_table && kind != ASTDropQuery::Kind::Truncate)
         {
             return false;
         }
@@ -148,6 +158,18 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     if (s_no_delay.ignore(pos, expected) || s_sync.ignore(pos, expected))
         sync = true;
 
+    if (detached)
+    {
+        if (kind != ASTDropQuery::Kind::Drop)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is only supported with DROP queries");
+        if (if_empty)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DETACHED keyword is not supported with IF EMPTY");
+        if (!is_table)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "DROP DETACHED supports only tables");
+        if (temporary)
+            throw Exception(ErrorCodes::SYNTAX_ERROR, "TEMPORARY keyword is meaningless here, since you can't detach temporary tables");
+    }
+
     auto query = make_intrusive<ASTDropQuery>();
     node = query;
 
@@ -161,6 +183,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     query->is_view = is_view;
     query->sync = sync;
     query->permanently = permanently;
+    query->detached = detached;
     query->database = database;
     query->database_and_tables = database_and_tables;
     query->case_insensitive_like = is_case_insensitive_like;
@@ -239,6 +262,31 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...]
 Limitations:
 - If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.
 - Deleting multiple tables at once is not an atomic operation, i.e. if the deletion of a table fails, subsequent tables will not be deleted.
+
+## DROP DETACHED TABLE {#drop-detached-table}
+
+Removes a previously detached table's metadata and data from disk.
+
+The table must be detached first with [`DETACH TABLE`](/reference/statements/detach) before it can be dropped with this statement.
+
+<Tip>
+To undo the deletion of a table, please see [UNDROP TABLE](/reference/statements/undrop).
+</Tip>
+
+<Note>
+This experimental feature is gated by the [`allow_experimental_drop_detached_table`](/reference/settings/session-settings/allow-experimental#allow_experimental_drop_detached_table) setting, which is disabled by default.
+</Note>
+
+Syntax:
+
+```sql
+DROP DETACHED TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+Limitations:
+
+- Only supported for `Atomic` and `Replicated` database engines.
+- Cannot be used on detached views or dictionaries.
 
 ## DROP DICTIONARY {#drop-dictionary}
 
@@ -392,7 +440,7 @@ System log tables can be also attached back (e.g. `query_log`, `text_log`, etc.)
 
 Note that you can not detach permanently the table which is already detached (temporary). But you can attach it back and then detach permanently again.
 
-Also, you can not [DROP](/reference/statements/drop#drop-table) the detached table, or [CREATE TABLE](/reference/statements/create/table) with the same name as detached permanently, or replace it with the other table with [RENAME TABLE](/reference/statements/rename) query.
+Also, you can not [DROP](/reference/statements/drop#drop-table) the detached table, or [CREATE TABLE](/reference/statements/create/table) with the same name as detached permanently, or replace it with the other table with [RENAME TABLE](/reference/statements/rename) query. You can remove a detached table with [`DROP DETACHED TABLE`](/reference/statements/drop#drop-detached-table).
 
 The `SYNC` modifier executes the action without delay.
 
