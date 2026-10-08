@@ -70,6 +70,7 @@ BlockIO InterpreterParallelWithQuery::execute()
     thread_pool.reset();
 
     /// Execute the combined pipeline if now we have it.
+    getContext()->onQueryExecutionStarted();
     executeCombinedPipeline();
 
     return {};
