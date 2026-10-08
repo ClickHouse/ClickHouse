@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/TypeTree.h>
 
 #include <Interpreters/Context.h>
 #include <Processors/ISource.h>
@@ -47,6 +48,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
+#include <algorithm>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -404,8 +406,11 @@ bool LogSource::isFinished()
 
     if (limited_by_file_sizes)
     {
-        /// Check for EOF.
-        if (!streams.empty() && streams.begin()->second.compressed->eof())
+        /// One data file can be exhausted while the others still hold rows: an array of only empty
+        /// arrays writes no elements at all, and a LowCardinality dictionary file holds only a header,
+        /// read before the first row.
+        auto at_eof = [](auto & name_and_stream) { return name_and_stream.second.compressed->eof(); };
+        if (!streams.empty() && std::ranges::all_of(streams, at_eof))
         {
             is_finished = true;
             return true;
@@ -731,8 +736,7 @@ namespace
                 if (isVariant(type))
                     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
             };
-            callback(*column.type);
-            column.type->forEachChild(callback);
+            forEachInTypeTree(*column.type, callback);
         }
     }
 }

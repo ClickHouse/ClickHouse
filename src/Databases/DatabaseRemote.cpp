@@ -82,6 +82,10 @@ DatabaseRemote::DatabaseRemote(
     , secure(secure_)
     , db_uuid(uuid)
 {
+    if (remote_database.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Engine `{}` requires a non-empty remote database name", database_engine_define_->engine->name);
+
     persistent = !context_->getClientInfo().is_shared_catalog_internal;
     if (persistent)
     {
@@ -249,6 +253,10 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
         new_settings[Setting::max_result_bytes] = 0;
         query_context->setSettings(new_settings);
     }
+
+    /// The server lists the tables on its own under the global context (e.g. at shutdown), which has
+    /// no client version.
+    query_context->setInitiatorVersionIfUnset();
 
     /// Ask the replicas of the cluster for the list of names, taking the answer of the first one that
     /// responds (`PoolMode::GET_ONE`), and report the failed attempts when none of them does.
@@ -1244,8 +1252,10 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         /// A chain of proxy databases on this server that refers back to itself is rejected eagerly
         /// (see `throwIfLocalChainRefersBack`), but not on internal metadata replay: a server that
         /// persisted such a chain must still start. An explicit `ATTACH DATABASE` is a user query and
-        /// is validated like `CREATE DATABASE`, so the invariant cannot be bypassed by attaching.
-        if (!(args.internal && args.mode >= LoadingStrictnessLevel::ATTACH))
+        /// is validated like `CREATE DATABASE`, so the invariant cannot be bypassed by attaching. The loader
+        /// flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user statements
+        /// as internal ones.
+        if (!(args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH))
             database->throwIfLocalChainRefersBack();
 
         return database;
