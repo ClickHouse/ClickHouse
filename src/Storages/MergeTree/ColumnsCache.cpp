@@ -422,18 +422,17 @@ size_t ColumnsCache::setManyImpl(const std::vector<MappedPtr> & entries, UInt64 
     if (on_entries_staged_for_test)
         on_entries_staged_for_test();
 
+    /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
+    /// the space left by the protected segment, even when it is within the overall size limit.
+    /// In that case the eviction callback has already reset the bit. Checked together with the
+    /// insertion: a concurrent write of the same stripe can replace the entry right after it, and
+    /// the memory of an entry the cache does not hold must not be handed over to the server below.
+    std::vector<bool> resident(keys.size());
     for (size_t i = 0; i < keys.size(); ++i)
-        shardOf(keys[i]).set(keys[i], to_store[i]);
+        resident[i] = shardOf(keys[i]).setAndContains(keys[i], to_store[i]);
 
     if (on_entries_inserted_for_test)
         on_entries_inserted_for_test();
-
-    /// An entry can fail admission: SLRU does not keep a probationary entry that does not fit
-    /// the space left by the protected segment, even when it is within the overall size limit.
-    /// In that case the eviction callback has already reset the bit.
-    std::vector<bool> resident(keys.size());
-    for (size_t i = 0; i < keys.size(); ++i)
-        resident[i] = shardOf(keys[i]).contains(keys[i]);
 
     /// An invalidation can have happened between the check above and the insertion. The entries
     /// are then stale and nobody will look them up under this schema identity, but they would
