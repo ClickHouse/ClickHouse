@@ -1565,7 +1565,8 @@ bool mainTableTouchedIfExists(const IAST & ast, const ContextPtr & context)
 /// database for `CREATE DATABASE`, the dictionary/view/table being created otherwise, plus the engine grant.
 /// The external `TO`/target tables are deliberately left out: the collector records them separately, with
 /// their own required access, so the generic access preflight covers them.
-AccessRightsElements createQueryDestinationAccess(const ASTCreateQuery & create, const String & database, const String & table)
+AccessRightsElements createQueryDestinationAccess(
+    const ASTCreateQuery & create, const String & database, const String & table, const ContextPtr & context)
 {
     AccessRightsElements required_access;
 
@@ -1595,6 +1596,22 @@ AccessRightsElements createQueryDestinationAccess(const ASTCreateQuery & create,
         if (create.replace_table)
             required_access.emplace_back(AccessType::DROP_TABLE, database, table);
         required_access.emplace_back(AccessType::CREATE_TABLE, database, table);
+    }
+
+    /// A replacing `CREATE` (including `CREATE OR REPLACE`) also needs the drop privilege matching the kind
+    /// of the object it replaces, if that object exists.
+    if ((create.replace_table || create.create_or_replace || create.replace_view) && !create.isTemporary())
+    {
+        if (auto db = DatabaseCatalog::instance().tryGetDatabase(database))
+            if (auto existing = db->tryGetTable(table, context))
+            {
+                AccessType drop_access = AccessType::DROP_TABLE;
+                if (existing->isView())
+                    drop_access = AccessType::DROP_VIEW;
+                else if (existing->isDictionary())
+                    drop_access = AccessType::DROP_DICTIONARY;
+                required_access.emplace_back(drop_access, database, table);
+            }
     }
 
     if (create.storage && create.storage->engine)
@@ -1654,7 +1671,7 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
         destination_table = resolved.getTableName();
     }
 
-    if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table)))
+    if (!context->getAccess()->isGranted(createQueryDestinationAccess(create, destination_database, destination_table, context)))
         return true;
 
     /// Parameterized views never analyze their SELECT when they are created, and validating a column

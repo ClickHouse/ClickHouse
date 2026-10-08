@@ -3071,6 +3071,11 @@ class TestCase:
             if timed_out:
                 diagnosis_lines.append("Result: Inconclusive (global time limit reached).")
                 return "\n".join(diagnosis_lines) + "\n"
+            if faild == 0 and okd == 0:
+                diagnosis_lines.append(
+                    "Result: No failures, but no clean passes either. Inconclusive."
+                )
+                return "\n".join(diagnosis_lines) + "\n"
             if faild == 0:
                 diagnosis_lines.append(
                     "Result: The failure requires DETACH/ATTACH randomization "

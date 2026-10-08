@@ -3,6 +3,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -27,6 +30,31 @@ namespace ActionLocks
 }
 
 
+namespace
+{
+
+/// Forwarding storages return the action locks of the storage they resolve to, so the lock
+/// belongs to that storage rather than to the one it was requested from.
+StoragePtr resolveActionLockOwner(StoragePtr table)
+{
+    /// Bound the walk in case of a cycle of aliases.
+    for (size_t depth = 0; depth < 16 && table; ++depth)
+    {
+        StoragePtr next;
+        if (const auto * alias = typeid_cast<const StorageAlias *>(table.get()))
+            next = alias->tryGetTargetTable();
+        else if (const auto * view = typeid_cast<const StorageMaterializedView *>(table.get()); view && view->hasInnerTable())
+            next = view->tryGetTargetTable();
+
+        if (!next)
+            break;
+        table = std::move(next);
+    }
+    return table;
+}
+
+}
+
 ActionLocksManager::ActionLocksManager(ContextPtr context_) : WithContext(context_->getGlobalContext())
 {
 }
@@ -43,8 +71,11 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 
     if (!action_lock.expired())
     {
+        auto owner = resolveActionLockOwner(table);
         std::lock_guard lock(mutex);
-        storage_locks[table.get()][action_type] = std::move(action_lock);
+        auto & entry = storage_locks[table.get()];
+        entry.owner = owner ? owner.get() : table.get();
+        entry.locks[action_type] = std::move(action_lock);
     }
 }
 
@@ -58,8 +89,8 @@ void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType
 {
     std::lock_guard lock(mutex);
 
-    if (storage_locks.contains(table.get()))
-        storage_locks[table.get()].erase(action_type);
+    if (auto it = storage_locks.find(table.get()); it != storage_locks.end())
+        it->second.locks.erase(action_type);
 }
 
 bool ActionLocksManager::has(const StorageID & table_id, StorageActionBlockType action_type) const
@@ -71,17 +102,7 @@ bool ActionLocksManager::has(const StorageID & table_id, StorageActionBlockType 
 
 bool ActionLocksManager::has(const StoragePtr & table, StorageActionBlockType action_type) const
 {
-    std::lock_guard lock(mutex);
-
-    auto it = storage_locks.find(table.get());
-    if (it == storage_locks.end())
-        return false;
-
-    auto lock_it = it->second.find(action_type);
-    if (lock_it == it->second.end())
-        return false;
-
-    return !lock_it->second.expired();
+    return hasImpl(table.get(), action_type);
 }
 
 bool ActionLocksManager::hasAny(const StorageID & table_id) const
@@ -93,16 +114,22 @@ bool ActionLocksManager::hasAny(const StorageID & table_id) const
 
 bool ActionLocksManager::hasAny(const StoragePtr & table) const
 {
+    return hasImpl(table.get(), std::nullopt);
+}
+
+bool ActionLocksManager::hasImpl(StorageRawPtr table, std::optional<StorageActionBlockType> action_type) const
+{
     std::lock_guard lock(mutex);
 
-    auto it = storage_locks.find(table.get());
-    if (it == storage_locks.end())
-        return false;
+    for (const auto & [storage, entry] : storage_locks)
+    {
+        if (storage != table && entry.owner != table)
+            continue;
 
-    /// Check if there are any non-expired locks
-    for (const auto & [_, action_lock] : it->second)
-        if (!action_lock.expired())
-            return true;
+        for (const auto & [type, action_lock] : entry.locks)
+            if ((!action_type || type == *action_type) && !action_lock.expired())
+                return true;
+    }
 
     return false;
 }
@@ -113,7 +140,7 @@ void ActionLocksManager::cleanExpired()
 
     for (auto it_storage = storage_locks.begin(); it_storage != storage_locks.end();)
     {
-        auto & locks = it_storage->second;
+        auto & locks = it_storage->second.locks;
         for (auto it_lock = locks.begin(); it_lock != locks.end();)
         {
             if (it_lock->second.expired())

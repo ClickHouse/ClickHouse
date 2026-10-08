@@ -305,8 +305,8 @@ void StorageMergeTree::startup()
         {
             if (refresh_parts_task)
                 refresh_parts_task->deactivate();
-            if (refresh_stats_task)
-                refresh_stats_task->deactivate();
+            /// Take `refresh_stats_task_mutex` like the concurrent `shutdown()` does.
+            stopStatisticsCache();
             stopOutdatedAndUnexpectedDataPartsLoadingTask();
             background_operations_assignee.finish();
             background_moves_assignee.finish();

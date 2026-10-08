@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel, no-fasttest, no-random-detach
 # - no-parallel: the test occupies every merge-executor slot and toggles the server-global
 #   failpoints `merge_task_projection_stage_pause` and `mt_merge_selecting_task_pause_when_scheduled`.
 # - no-fasttest: failpoints are not available in the fast test build.
+# - no-random-detach: concurrent `OPTIMIZE` queries run in the background; reattaching the table under them
+#   makes them fail with `UNKNOWN_TABLE`.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
