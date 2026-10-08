@@ -34,16 +34,6 @@ public:
         return "TableProxy";
     }
 
-    /// Same forwarding as `getInMemoryMetadataPtr` below, for the same reason: the proxy's own
-    /// metadata is seeded from the `CREATE TABLE` query and never carries a unique key.
-    bool hasUniqueKey() const override
-    {
-        std::lock_guard lock{nested_mutex};
-        if (nested)
-            return nested->hasUniqueKey();
-        return IStorage::hasUniqueKey();
-    }
-
     /// Forward the metadata query to the nested storage once it has been materialized.
     /// `IStorage::metadata` on the proxy itself is only seeded with the columns from the
     /// `CREATE TABLE` query and is updated lazily in `StorageProxy::alter` *after*
@@ -61,14 +51,6 @@ public:
             return nested->getInMemoryMetadataPtr(context_, bypass_metadata_cache);
         return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
     }
-
-    StoragePtr tryGetNested() const override
-    {
-        std::lock_guard lock{nested_mutex};
-        return nested;
-    }
-
-    bool isLazyStandIn() const override { return true; }
 
     StoragePtr getNested() const override
     {

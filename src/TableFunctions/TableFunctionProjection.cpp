@@ -1,5 +1,4 @@
 #include <Interpreters/DatabaseCatalog.h>
-#include <Storages/StorageProxy.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/StorageFromMergeTreeProjection.h>
@@ -21,9 +20,6 @@ class TableFunctionMergeTreeProjection : public ITableFunction
 public:
     static constexpr auto name = "mergeTreeProjection";
     std::string getName() const override { return name; }
-
-    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
-    bool canBeUsedToCreateTable() const override { return false; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -69,7 +65,7 @@ void TableFunctionMergeTreeProjection::parseArguments(const ASTPtr & ast_functio
 
 ColumnsDescription TableFunctionMergeTreeProjection::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
     if (!metadata_snapshot->getProjections().has(projection_name))
@@ -89,7 +85,7 @@ StoragePtr TableFunctionMergeTreeProjection::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool /* is_insert_query */) const
 {
-    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
     ProjectionDescriptionRawPtr projection = &metadata_snapshot->getProjections().get(projection_name);
 

@@ -23,11 +23,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NetUtils.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/WriteBufferFromVector.h>
-#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Core/UUID.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
@@ -500,66 +496,43 @@ void RecordBatchEncoder::encodeValues(
             return;
         }
         default:
-            /// A type with no first-class Arrow mapping, written as an opaque variable-width column or
-            /// rejected, per `output_format_arrow_unsupported_types`. `SchemaConverter::buildField` makes
-            /// the same decision for the schema, so the two cannot disagree.
-            if (settings.arrow.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Native Arrow IPC writer does not support encoding type {}. Set "
-                    "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
-                    type->getName());
-            encodeAsOpaque(column, type, num_rows, null_map_column);
-            return;
+            /// A type with no first-class Arrow mapping. Mirror the Apache Arrow library writer: when
+            /// `output_format_arrow_unsupported_types_as_binary` is set, write its raw per-row bytes as an
+            /// Arrow `Binary` column (read back as `String`); otherwise reject it.
+            if (settings.arrow.output_unsupported_types_as_binary)
+            {
+                encodeAsBinary(column, num_rows, null_map_column);
+                return;
+            }
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Native Arrow IPC writer does not support encoding type {}. Set "
+                "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
+                type->getName());
     }
 }
 
-void RecordBatchEncoder::encodeAsOpaque(
-    const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column)
+void RecordBatchEncoder::encodeAsBinary(const IColumn & column, size_t num_rows, const IColumn * null_map_column)
 {
-    /// Serialize one value per row into a variable-width Arrow column. This goes through
-    /// `ISerialization` rather than `IColumn::getDataAt`: `getDataAt` exposes a column's contiguous
-    /// in-memory bytes, which most of the types reaching this path do not have - `ColumnObject`,
-    /// `ColumnVariant` (hence `ColumnDynamic`) and `ColumnQBit` throw `NOT_IMPLEMENTED`, and
-    /// `ColumnAggregateFunction` returns the `AggregateDataPtr` itself, so the export would carry heap
-    /// addresses instead of aggregate states. `serializeText`/`serializeBinary` are pure virtual on
-    /// `ISerialization`, so every type has a real per-value representation here.
     const NullMap * null_map
         = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
-    /// `SchemaConverter::buildField` types this column from the same predicate, so what is written here
-    /// cannot disagree with what the reader has been told the column holds.
-    const bool as_text = arrowOpaqueValueIsText(settings.arrow.output_unsupported_types, type);
-    const auto serialization = type->getDefaultSerialization();
-
     PODArray<Int32> arrow_offsets(num_rows + 1);
     arrow_offsets[0] = 0;
     PODArray<char> data;
+    size_t total = 0;
+    for (size_t i = 0; i < num_rows; ++i)
     {
-        WriteBufferFromVector<PODArray<char>> buffer(data);
-        WriteBufferFromOwnString value;
-        String valid_utf8_scratch;
-        for (size_t i = 0; i < num_rows; ++i)
+        /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
+        /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
+        if (!(null_map && (*null_map)[i]))
         {
-            /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
-            /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
-            if (!(null_map && (*null_map)[i]))
-            {
-                if (as_text)
-                {
-                    value.restart();
-                    serialization->serializeText(column, i, value, settings);
-                    const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
-                    buffer.write(valid.data(), valid.size());
-                }
-                else
-                    serialization->serializeBinary(column, i, buffer, settings);
-            }
-            const size_t total = buffer.count();
+            const std::string_view value = column.getDataAt(i);
+            total += value.size();
             if (total > static_cast<size_t>(std::numeric_limits<Int32>::max()))
                 throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Arrow IPC binary offset exceeds 32 bits");
-            arrow_offsets[i + 1] = static_cast<Int32>(total);
+            data.insert(data.end(), value.data(), value.data() + value.size());
         }
-        buffer.finalize();
+        arrow_offsets[i + 1] = static_cast<Int32>(total);
     }
     appendBuffer(arrow_offsets.data(), (num_rows + 1) * sizeof(Int32));
     appendBuffer(data.data(), data.size());

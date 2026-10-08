@@ -40,7 +40,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
     }
     else
     {
-        ostr << backQuoteIfNeed(func_name);
+        ostr << func_name;
 
         if (parameters)
         {
@@ -53,7 +53,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
     }
 
     if (!column_name_prefix.empty())
-        ostr << ", " << quoteString(column_name_prefix) << ")";
+        ostr << ", '" << column_name_prefix << "')";
 }
 
 void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const
@@ -84,14 +84,11 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 {
     hash_state.update(func_name.size());
     hash_state.update(func_name);
-    /// `parameters` and `lambda` are not children, so `updateTreeHash` is needed to reach their own
-    /// subtrees; `updateTreeHashImpl` alone stops at the node itself, and the arguments of
-    /// `APPLY quantile(0.5)` live below it.
     if (parameters)
-        parameters->updateTreeHash(hash_state, ignore_aliases);
+        parameters->updateTreeHashImpl(hash_state, ignore_aliases);
 
     if (lambda)
-        lambda->updateTreeHash(hash_state, ignore_aliases);
+        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(lambda_arg.size());
     hash_state.update(lambda_arg);
@@ -306,8 +303,8 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     /// `lambda->as<const ASTFunction &>()`). Restoring them through the generic child path
     /// would let a wrong node type reach those downcasts as an internal cast error instead of
     /// a user-facing `BAD_ARGUMENTS`.
-    parameters = r.readScreenedChildOfType<ASTExpressionList>("parameters");
-    lambda = r.readFunctionChildWithExpressionArguments("lambda");
+    parameters = r.readChildOfType<ASTExpressionList>("parameters");
+    lambda = r.readChildOfType<ASTFunction>("lambda");
     lambda_arg = r.getString("lambda_arg");
     column_name_prefix = r.getString("column_name_prefix");
 
@@ -332,15 +329,6 @@ void ASTColumnsApplyTransformer::readJSON(const Poco::JSON::Object & json)
     if (parameters && !has_function_mode)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ColumnsApplyTransformer with parameters requires a function name during AST JSON deserialization");
-
-    /// A `parameters` child is an expression, and neither an expression list nor a select query is one.
-    if (parameters)
-    {
-        for (const auto & child : parameters->children)
-            if (child->as<ASTExpressionList>() || isBareSelectQuery(child.get()))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'parameters' cannot have an expression list or select query child during AST JSON deserialization");
-    }
 
     /// `applyColumnsApplyTransformer` substitutes the current column for `lambda_arg` inside the lambda body,
     /// so a lambda without its argument name would be meaningless, and the argument name
@@ -405,12 +393,6 @@ void ASTColumnsReplaceTransformer::Replacement::readJSON(const Poco::JSON::Objec
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "ASTColumnsReplaceTransformer::Replacement JSON must have exactly one child (the expression), got {}",
             children.size());
-
-    /// That child is the replacement expression, and neither an expression list nor a select query is one.
-    if (children[0]->as<ASTExpressionList>() || isBareSelectQuery(children[0].get()))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "ASTColumnsReplaceTransformer::Replacement cannot have an expression list or select query child "
-            "during AST JSON deserialization");
 }
 
 void ASTColumnsReplaceTransformer::readJSON(const Poco::JSON::Object & json)

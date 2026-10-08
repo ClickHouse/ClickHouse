@@ -18,7 +18,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
-#include <Storages/StorageProxy.h>
 
 namespace DB
 {
@@ -262,16 +261,11 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
     {
         Identifier identifier = parseTableIdentifier(set.storage_name, context);
         auto table_node = resolveTable(identifier, context);
-        const auto * storage_set = castStorage<StorageSet>(table_node->getStorage(), DeferredTable::Load).get();
+        const auto * storage_set = typeid_cast<const StorageSet *>(table_node->getStorage().get());
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
-        /// The initiator ran this check against its own policies; the replica's may differ.
-        storage_set->checkNoRowPolicy(context);
-
-        /// The `StorageSet` this replica resolved the name to, so its set is mutable like any other.
-        auto future_set = std::make_shared<FutureSetFromStorage>(
-            set.hash, nullptr, storage_set->getSet(), table_node->getStorageID(), /*is_mutable_during_query_=*/ true);
+        auto future_set = std::make_shared<FutureSetFromStorage>(set.hash, nullptr, storage_set->getSet(), table_node->getStorageID());
         for (auto * column : set.columns)
             column->setData(future_set);
     }

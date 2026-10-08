@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "データの可視化",
+      "group": "データ可視化",
       "pages": [
         "ja/integrations/connectors/data-visualization/index",
         {
@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "コミュニティによるインテグレーション",
+          "group": "コミュニティインテグレーション",
           "pages": [
             "ja/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "ja/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,17 +100,11 @@
     },
     {
       "expanded": true,
-      "group": "データのインジェスト",
+      "group": "データ取り込み",
       "pages": [
+        "ja/integrations/connectors/data-ingestion/index",
         "ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
-        {
-          "expanded": false,
-          "group": "Apache Airflow",
-          "pages": [
-            "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
-            "ja/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin"
-          ]
-        },
+        "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ja/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
         {
           "expanded": false,
@@ -155,7 +149,15 @@
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
+          "expanded": false,
+          "group": "dbt",
+          "pages": [
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/index",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
+            "ja/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
+          ]
         },
         "ja/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -178,7 +180,7 @@
         },
         {
           "expanded": false,
-          "group": "コミュニティによるインテグレーション",
+          "group": "コミュニティインテグレーション",
           "pages": [
             "ja/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "ja/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -201,7 +203,6 @@
         "ja/integrations/connectors/tools/data-integration-index",
         "ja/integrations/connectors/data-integrations/integrations/retool",
         "ja/integrations/connectors/data-integrations/integrations/easypanel",
-        "ja/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "ja/integrations/connectors/data-integrations/integrations/middleware",
         "ja/integrations/connectors/data-integrations/integrations/notion",
         "ja/integrations/connectors/data-integrations/integrations/splunk"
@@ -209,7 +210,7 @@
     },
     {
       "expanded": true,
-      "group": "SQL クライアント",
+      "group": "SQLクライアント",
       "pages": [
         "ja/integrations/connectors/sql-clients/index",
         "ja/integrations/connectors/sql-clients/sql-console",

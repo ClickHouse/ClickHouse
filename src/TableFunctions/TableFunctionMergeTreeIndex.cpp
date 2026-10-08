@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Storages/StorageProxy.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -30,9 +29,6 @@ class TableFunctionMergeTreeIndex : public ITableFunction
 public:
     static constexpr auto name = "mergeTreeIndex";
     std::string getName() const override { return name; }
-
-    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
-    bool canBeUsedToCreateTable() const override { return false; }
 
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
@@ -154,10 +150,10 @@ static NameSet getAllPossibleStreamNames(
 
 ColumnsDescription TableFunctionMergeTreeIndex::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
 
-    const auto * merge_tree = castStorage<MergeTreeData>(source_table, DeferredTable::Load).get();
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function mergeTreeIndex expected MergeTree table, got: {}", source_table->getName());
 
@@ -208,7 +204,7 @@ StoragePtr TableFunctionMergeTreeIndex::executeImpl(
     ColumnsDescription /*cached_columns*/,
     bool is_insert_query) const
 {
-    auto source_table = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(source_table_id, context));
+    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
     auto columns = getActualTableStructure(context, is_insert_query);
 
     StorageID storage_id(getDatabaseName(), table_name);

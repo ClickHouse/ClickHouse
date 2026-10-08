@@ -23,11 +23,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Field.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeString.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
@@ -43,25 +39,6 @@ using namespace DB;
 namespace DB::ErrorCodes
 {
 extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// Estimates the row count of a boolean `expression` over `columns` the way the planner feeds the
-/// estimator: the expression is built into an `ActionsDAG` and its output node is analysed.
-template <class Estimator>
-UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, const NamesAndTypesList & columns)
-{
-    ContextPtr context = getContext().context;
-    ParserExpressionWithOptionalAlias parser(false);
-    ASTPtr ast = parseQuery(parser, expression, 10000, 10000, 10000);
-    auto syntax_result = TreeRewriter(context).analyze(ast, columns);
-    ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/ false, /*remove_unused_result=*/ false);
-    const auto * node = &dag.findInOutputs(ast->getColumnName());
-    return estimator->estimateRelationProfile(nullptr, node).rows;
-}
-
 }
 
 TEST(Statistics, TDigestLessThan)
@@ -181,13 +158,17 @@ TEST(Statistics, Estimator)
     estimator_builder.incrementRowCount(10000);
 
     auto estimator = estimator_builder.getEstimator();
-    NamesAndTypesList columns{{"a", data_type}, {"b", data_type}, {"c", data_type}};
 
     auto test_impl = [&](const String & expression, Int64 real_result, Float64 eps)
     {
-        UInt64 estimated_rows = estimateRowsFor(estimator, expression, columns);
-        std::cout << expression << " " << real_result << " " << estimated_rows << std::endl;
-        EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimated_rows)), 10000 * eps);
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{ DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        auto estimate_result = estimator->estimateRelationProfile(nullptr, node);
+        std::cout << expression << " " << real_result << " "<< estimate_result.rows << std::endl;
+        EXPECT_LT(std::abs(real_result - static_cast<Int64>(estimate_result.rows)), 10000 * eps);
     };
 
     auto test_f = [&](const String & expression, Int64 real_result, Float64 eps = 0.001)
@@ -298,6 +279,21 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+/// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    ParserExpressionWithOptionalAlias exp_parser(false);
+    ContextPtr context = getContext().context;
+    RPNBuilderTreeContext tree_context(
+        context,
+        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
+        {});
+    ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+    RPNBuilderTreeNode node(ast.get(), tree_context);
+    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+}
+
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
@@ -323,12 +319,9 @@ TEST(Statistics, NullableEstimatorWithBasic)
     builder.incrementRowCount(1000);
     auto estimator = builder.getEstimator();
 
-    DataTypePtr nullable_int32 = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt32>());
-    NamesAndTypesList columns{{"a", nullable_int32}, {"b", nullable_int32}};
-
     auto check = [&](const String & expression, Float64 expected, Float64 eps)
     {
-        Float64 actual = static_cast<Float64>(estimateRowsFor(estimator, expression, columns));
+        Float64 actual = estimateRowsFor(estimator, expression);
         EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
     };
 
@@ -399,19 +392,15 @@ TEST(Statistics, LikeSelectivity)
 {
     /// Build a simple estimator to test LIKE / NOT LIKE / ILIKE / NOT ILIKE
     /// selectivity defaults and their complement behavior under NOT.
-    /// LIKE selectivity is a fixed factor of the total row count, but the builder yields an estimator
-    /// only when it holds some statistics, so the String column gets `basic` ones.
-    tryRegisterFunctions();
+    DataTypePtr data_type = std::make_shared<DataTypeInt32>();
 
-    DataTypePtr data_type = std::make_shared<DataTypeString>();
-
-    MutableColumnPtr col = DataTypeString().createColumn();
+    MutableColumnPtr col = DataTypeInt32().createColumn();
     for (Int32 i = 0; i < 10000; i++)
-        col->insert(toString(i + 1));
+        col->insert(i + 1);
 
     ColumnStatisticsDescription mock_description;
     mock_description.data_type = data_type;
-    mock_description.types_to_desc.emplace(StatisticsType::Basic, SingleStatisticsDescription(StatisticsType::Basic, nullptr, false));
+    mock_description.types_to_desc.emplace(StatisticsType::TDigest, SingleStatisticsDescription(StatisticsType::TDigest, nullptr, false));
 
     ColumnDescription column_desc;
     column_desc.name = "a";
@@ -424,14 +413,16 @@ TEST(Statistics, LikeSelectivity)
     estimator_builder.addStatistics("a", stats);
     estimator_builder.incrementRowCount(10000);
     auto estimator = estimator_builder.getEstimator();
-    ASSERT_NE(estimator, nullptr);
-
-    NamesAndTypesList columns{{"a", data_type}};
 
     /// Helper: estimate rows for a condition string.
     auto estimate = [&](const String & expression) -> UInt64
     {
-        return estimateRowsFor(estimator, expression, columns);
+        ParserExpressionWithOptionalAlias exp_parser(false);
+        ContextPtr context = getContext().context;
+        RPNBuilderTreeContext tree_context(context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
+        ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
+        RPNBuilderTreeNode node(ast.get(), tree_context);
+        return estimator->estimateRelationProfile(nullptr, node).rows;
     };
 
     /// default_like_factor = 0.1, total_rows = 10000.
