@@ -2,11 +2,13 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -228,6 +230,62 @@ namespace
         }
         return true;
     }
+}
+
+String PrometheusQueryParsingUtil::quoteStringLiteral(std::string_view input)
+{
+    String result;
+    result.reserve(input.size() + 2);
+    result.push_back('"');
+
+    for (size_t i = 0; i < input.size();)
+    {
+        const auto c = static_cast<UInt8>(input[i]);
+
+        if (c >= 0x80)
+        {
+            const size_t sequence_length = UTF8::seqLength(c);
+            if (sequence_length <= input.size() - i
+                && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(input.data() + i), sequence_length))
+            {
+                result.append(input.data() + i, sequence_length);
+                i += sequence_length;
+                continue;
+            }
+        }
+
+        switch (c)
+        {
+            case '"':
+            case '\\':
+                result.push_back('\\');
+                result.push_back(static_cast<char>(c));
+                break;
+            case '\a': result.append("\\a"); break;
+            case '\b': result.append("\\b"); break;
+            case '\f': result.append("\\f"); break;
+            case '\n': result.append("\\n"); break;
+            case '\r': result.append("\\r"); break;
+            case '\t': result.append("\\t"); break;
+            case '\v': result.append("\\v"); break;
+            default:
+                if (c < 0x20 || c == 0x7F || c >= 0x80)
+                {
+                    result.append("\\x");
+                    result += getHexUIntLowercase(c);
+                }
+                else
+                {
+                    result.push_back(static_cast<char>(c));
+                }
+                break;
+        }
+
+        ++i;
+    }
+
+    result.push_back('"');
+    return result;
 }
 
 /// Converts a quoted string literal to its unquoted version.
@@ -511,8 +569,16 @@ namespace
     /// If it succeeds the function returns true and sets `result`.
     /// If it fails the function returns false and sets either `allow_other_formats` or `error_pos` & `error_message`.
     template <typename T>
-    bool tryParseDurationFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseDurationFormat(
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        std::optional<Int64> * res_duration_ms = nullptr)
     {
+        if (res_duration_ms)
+            *res_duration_ms = std::nullopt;
         bool has_time_units = false;
         Int64 seconds = 0;
         Int64 milliseconds = 0;
@@ -684,13 +750,31 @@ namespace
             result = static_cast<ScalarType>(seconds) + static_cast<ScalarType>(milliseconds) / 1000;
         }
 
+        if (res_duration_ms)
+        {
+            Int64 total_ms = 0;
+            if (DecimalUtils::tryMultiplyAdd<Int64>(seconds, 1000, milliseconds, total_ms))
+                *res_duration_ms = total_ms;
+        }
+
         return true;
     }
 
     template <typename T>
     bool tryParseNumber(
-        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool allow_octal_literals)
+        std::string_view input,
+        UInt32 scale,
+        T & result,
+        String * error_message,
+        size_t * error_pos,
+        bool allow_octal_literals,
+        bool * is_duration = nullptr,
+        std::optional<Int64> * res_duration_ms = nullptr)
     {
+        if (is_duration)
+            *is_duration = false;
+        if (res_duration_ms)
+            *res_duration_ms = std::nullopt;
         size_t pos = 0;
 
         /// Parse a sign.
@@ -724,7 +808,24 @@ namespace
         }
         else if (isDurationFormat(unsigned_input))
         {
-            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos);
+            std::optional<Int64> parsed_ms;
+            ok = tryParseDurationFormat(unsigned_input, scale, result, error_message, error_pos, res_duration_ms ? &parsed_ms : nullptr);
+            if (ok && is_duration)
+                *is_duration = true;
+            if (ok && res_duration_ms && parsed_ms)
+            {
+                if (negative)
+                {
+                    if (*parsed_ms == std::numeric_limits<Int64>::min())
+                        *res_duration_ms = std::nullopt;
+                    else
+                        *res_duration_ms = -*parsed_ms;
+                }
+                else
+                {
+                    *res_duration_ms = parsed_ms;
+                }
+            }
         }
         else
         {
@@ -746,10 +847,17 @@ namespace
 }
 
 
-bool PrometheusQueryParsingUtil::tryParseScalar(std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseScalar(
+    std::string_view input,
+    ScalarType & res_scalar,
+    String * error_message,
+    size_t * error_pos,
+    bool * res_is_duration,
+    std::optional<Int64> * res_duration_ms)
 {
-    /// Here `scale` is set to `0` because it's unused when parsing a floating-point number.
-    return tryParseNumber(input, /* scale */ 0, res_scalar, error_message, error_pos, /* allow_octal_literals */ true);
+    /// Scale is 0 because it is unused when parsing a floating-point number.
+    return tryParseNumber(
+        input, /* scale */ 0, res_scalar, error_message, error_pos, /* allow_octal_literals */ true, res_is_duration, res_duration_ms);
 }
 
 bool PrometheusQueryParsingUtil::tryParseTimestamp(

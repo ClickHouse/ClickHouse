@@ -296,14 +296,17 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 107,
+      count: 110,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
         { name: "output_format_arrow_date_as_uint16", path: "/output-format#output_format_arrow_date_as_uint16", default: "0" },
         { name: "output_format_arrow_fixed_string_as_fixed_byte_array", path: "/output-format#output_format_arrow_fixed_string_as_fixed_byte_array", default: "1" },
         { name: "output_format_arrow_low_cardinality_as_dictionary", path: "/output-format#output_format_arrow_low_cardinality_as_dictionary", default: "0" },
+        { name: "output_format_arrow_record_batch_size", path: "/output-format#output_format_arrow_record_batch_size", default: "0" },
+        { name: "output_format_arrow_record_batch_size_bytes", path: "/output-format#output_format_arrow_record_batch_size_bytes", default: "0" },
         { name: "output_format_arrow_string_as_string", path: "/output-format#output_format_arrow_string_as_string", default: "1" },
+        { name: "output_format_arrow_unsupported_types", path: "/output-format#output_format_arrow_unsupported_types", default: "binary" },
         { name: "output_format_arrow_unsupported_types_as_binary", path: "/output-format#output_format_arrow_unsupported_types_as_binary", default: "1" },
         { name: "output_format_arrow_use_64_bit_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_64_bit_indexes_for_dictionary", default: "0" },
         { name: "output_format_arrow_use_signed_indexes_for_dictionary", path: "/output-format#output_format_arrow_use_signed_indexes_for_dictionary", default: "1" },
@@ -430,11 +433,12 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "type_json_*",
-      count: 4,
+      count: 5,
       settings: [
         { name: "type_json_allow_duplicated_key_with_literal_and_nested_object", path: "/type-json#type_json_allow_duplicated_key_with_literal_and_nested_object", default: "1" },
         { name: "type_json_skip_duplicated_paths", path: "/type-json#type_json_skip_duplicated_paths", default: "0" },
         { name: "type_json_skip_invalid_typed_paths", path: "/type-json#type_json_skip_invalid_typed_paths", default: "0" },
+        { name: "type_json_skip_null_typed_paths", path: "/type-json#type_json_skip_null_typed_paths", default: "0" },
         { name: "type_json_use_partial_match_to_skip_paths_by_regexp", path: "/type-json#type_json_use_partial_match_to_skip_paths_by_regexp", default: "1" }
       ],
       children: []

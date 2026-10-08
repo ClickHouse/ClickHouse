@@ -117,10 +117,11 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         }
     }
 
-    configuration.emplace(StoragePostgreSQL::getConfiguration(args, context, &postgresql_settings));
+    configuration.emplace(StoragePostgreSQL::getConfiguration(
+        args, context, &postgresql_settings, /*table_id=*/ nullptr, settings_ast ? settings_ast->as<ASTSetQuery>() : nullptr));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
-    /// stored in a named collection.
+    /// stored in a named collection. `getConfiguration` checks these overrides of the collection.
     if (settings_ast)
         postgresql_settings.loadFromQuery(settings_ast->as<ASTSetQuery &>());
 
@@ -199,6 +200,14 @@ Instead of a table name, the third argument can be a `SELECT` query that is pass
 ```sql
 SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to PostgreSQL, so it must not end with a semicolon. The `schema` argument does not apply to a passed query: qualify the table names in the query instead.
+
+With a [named collection](/concepts/features/configuration/server-config/named-collections) such as `mypg` from the [examples](#examples), pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+SELECT * FROM postgresql(mypg, query = 'SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`PostgreSQL`](/reference/engines/table-engines/integrations/postgresql) table engine.

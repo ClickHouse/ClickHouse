@@ -219,6 +219,7 @@ ColumnsDescription TableFunctionTraceView::getActualTableStructure(ContextPtr /*
     return ColumnsDescription{
         {"span", std::make_shared<DataTypeString>()},
         {"kind", std::make_shared<DataTypeString>()},
+        {"host", std::make_shared<DataTypeString>()},
         {"status", std::make_shared<DataTypeString>()},
         {"status_message", std::make_shared<DataTypeString>()},
         {"start_offset_us", std::make_shared<DataTypeUInt64>()},
@@ -274,7 +275,10 @@ Block executeInternalQuery(const String & query, ContextPtr context)
     /// `limit`, `offset`, and the result size limits - belong to the final traceView output, not
     /// to the queries that build it: applied here they would cut the spans read, or fail on a
     /// column that only the output has. The resource limits (rows read, memory, time) stay:
-    /// these queries are where the work of the call is done.
+    /// these queries are where the work of the call is done. `additional_table_filters` stays too:
+    /// keyed by table name, a filter on `system.opentelemetry_span_log` restricts the spans the
+    /// caller may see, possibly pinned by a profile as a row restriction, and it must apply to the
+    /// reads here exactly as it would to a view over the span log.
     Settings settings = query_context->getSettingsCopy();
     ClusterProxy::stripInitiatorOnlySettings(settings);
     settings[Setting::max_result_rows] = 0;
@@ -291,7 +295,8 @@ Block loadSpans(const String & source, const String & time_filter, const UUID & 
     Block spans = executeInternalQuery(
         fmt::format(
             "SELECT span_id, parent_span_id, toString(operation_name) AS operation_name,"
-            " toString(kind) AS kind, toString(status_code) AS status, toString(status_message) AS status_message,"
+            " toString(kind) AS kind, toString(hostname) AS host,"
+            " toString(status_code) AS status, toString(status_message) AS status_message,"
             " start_time_us, finish_time_us,"
             " toString(attribute['clickhouse.shard_num']) AS shard_num,"
             " CAST(attribute, 'Map(String, String)') AS attribute"
@@ -317,6 +322,7 @@ struct SpanColumns
         , parent_span_id(*spans.getByName("parent_span_id").column)
         , operation_name(*spans.getByName("operation_name").column)
         , kind(*spans.getByName("kind").column)
+        , host(*spans.getByName("host").column)
         , status(*spans.getByName("status").column)
         , status_message(*spans.getByName("status_message").column)
         , start_time_us(*spans.getByName("start_time_us").column)
@@ -331,6 +337,7 @@ struct SpanColumns
     const IColumn & parent_span_id;
     const IColumn & operation_name;
     const IColumn & kind;
+    const IColumn & host;
     const IColumn & status;
     const IColumn & status_message;
     const IColumn & start_time_us;
@@ -537,6 +544,7 @@ Block renderTrace(const SpanColumns & spans, UInt64 timeline_width, const NamesA
     };
     IColumn & span = column("span");
     IColumn & kind = column("kind");
+    IColumn & host = column("host");
     IColumn & status = column("status");
     IColumn & status_message = column("status_message");
     IColumn & start_offset_us = column("start_offset_us");
@@ -554,6 +562,7 @@ Block renderTrace(const SpanColumns & spans, UInt64 timeline_width, const NamesA
 
         span.insert(renderSpanText(spans, row, prefix + connector));
         kind.insert(String(spans.kind.getDataAt(row)));
+        host.insert(String(spans.host.getDataAt(row)));
         status.insert(String(spans.status.getDataAt(row)));
         status_message.insert(String(spans.status_message.getDataAt(row)));
         start_offset_us.insert(offset);
@@ -652,9 +661,12 @@ String spanLogSource(const TraceViewArguments & arguments, ContextMutablePtr con
     const ClusterPtr span_log_replicas = all_replicas->getClusterWithMultipleShards(
         std::vector<size_t>(indices.begin(), indices.end())); // STYLE_CHECK_ALLOW_STD_CONTAINERS: the type it takes
 
-    /// A Distributed table over those replicas only, visible to the internal queries of `context`
-    /// under this name. It lives as long as `context`, which is private to this call.
-    const String source = "_trace_view_span_log";
+    /// A Distributed table over those replicas only, visible to the internal queries of `context`.
+    /// It lives as long as `context`, which is private to this call, but `context` is a copy of
+    /// the caller's and carries the caller's temporary tables: the name is unique to this call so
+    /// that it cannot clash with one of them.
+    String source = "_trace_view_span_log_" + toString(UUIDHelpers::generateV4());
+    std::erase(source, '-');
     context->addExternalTable(source, TemporaryTableHolder(context, [&](const StorageID & table_id) -> StoragePtr
     {
         auto storage = std::make_shared<StorageDistributed>(
@@ -671,6 +683,7 @@ String spanLogSource(const TraceViewArguments & arguments, ContextMutablePtr con
             /* relative_data_path */ String{},
             DistributedSettings{},
             LoadingStrictnessLevel::CREATE,
+            /* is_fresh_definition = */ false,
             span_log_replicas);
         storage->startup();
         return storage;
@@ -792,6 +805,7 @@ Renders the spans of one OpenTelemetry trace from `system.opentelemetry_span_log
 Returns one row per span of the trace, in depth-first tree order:
 - `span` - the operation name indented by its depth in the call tree, with `clickhouse.shard_num` appended when present;
 - `kind`, `status`, `status_message` - from the span log;
+- `host` - the `hostname` of the server that recorded the span. In a trace read with the `cluster` argument it tells the spans of the initiator from those of the remote shards, replicas and stateless workers, and `WHERE host = ...` keeps the spans of one node;
 - `start_offset_us`, `duration_us`, `duration` - timing relative to the trace start;
 - `self_pct` - the span's own time (its duration minus the union of its children's intervals) as a percentage of the whole trace: a phase that is slow by itself, not merely a container of a slow child;
 - `timeline` - a fixed-width bar: the position is the span's start offset within the trace, the length is proportional to its duration;
