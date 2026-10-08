@@ -107,3 +107,9 @@ source: empirical
 real:
 ReadFromMergeTree (p_n)
 Granules: 4
+--- a projection that stores _row_exists on a part with deleted rows ---
+marks: 10
+rows: 1000
+status: applicable
+marks: 1
+rows: 100

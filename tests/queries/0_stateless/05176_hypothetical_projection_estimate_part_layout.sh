@@ -201,3 +201,15 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real_n SELECT number, number % 1000, repeat('x', 500) FROM numbers(5000);
 "
 compare p_n "(SELECT a, b ORDER BY b)" "SELECT sum(b) FROM TABLE WHERE a % 7 = 3" t_est_n t_real_n
+
+# a projection that stores `_row_exists` reads the mask once and keeps it
+echo "--- a projection that stores _row_exists on a part with deleted rows ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_x;
+    CREATE TABLE t_est_x (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    INSERT INTO t_est_x SELECT number, number % 100 FROM numbers(1000);
+    DELETE FROM t_est_x WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_x ON t_est_x (SELECT a, b, _row_exists ORDER BY b);
+    EXPLAIN WHATIF SELECT a, b FROM t_est_x WHERE b = 1 SETTINGS ${PIN};
+" | grep -E '^\s+(marks|rows|status):' | awk '{$1=$1; print}'

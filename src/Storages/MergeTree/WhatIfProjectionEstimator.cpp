@@ -277,8 +277,10 @@ bool buildProjectionPart(
     const auto & proj_key = projection.metadata->getSortingKey();
 
     const bool has_lightweight_delete = part->hasLightweightDelete();
+    const bool projection_reads_row_exists
+        = std::ranges::find(projection.required_columns, RowExistsColumn::name) != projection.required_columns.end();
     Names columns_to_read = projection.required_columns;
-    if (has_lightweight_delete)
+    if (has_lightweight_delete && !projection_reads_row_exists)
         columns_to_read.push_back(RowExistsColumn::name);
 
     Pipe pipe = makePartPipe(part, ranges, columns_to_read, read_step, context);
@@ -319,7 +321,8 @@ bool buildProjectionPart(
         {
             const size_t rows_read = block.rows();
             FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
-            block.erase(RowExistsColumn::name);
+            if (!projection_reads_row_exists)
+                block.erase(RowExistsColumn::name);
             const size_t rows_kept = row_exists_filter.countBytesInFilter();
             out.deleted_rows += rows_read - rows_kept;
             if (rows_kept == 0)
