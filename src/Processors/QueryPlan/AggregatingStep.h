@@ -81,6 +81,8 @@ public:
         params.threshold_top_k = threshold_top_k;
     }
 
+    void disableThresholdTopK() { params.threshold_top_k.reset(); }
+
     /// See `Aggregator::Params::bucket_top_k`; called by the plan optimization.
     void enableBucketTopK(size_t n, bool ascending, size_t count_index)
     {

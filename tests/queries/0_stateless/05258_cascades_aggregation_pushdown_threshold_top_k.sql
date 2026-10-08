@@ -1,9 +1,9 @@
--- The cascades `AggregationPushdown` transformation must not push an aggregation below a join
--- when the top-K threshold merge is enabled on it (`Aggregator::Params::threshold_top_k`): the
--- merge keeps only each bucket's best groups, which is exact only when the aggregation directly
--- feeds its `ORDER BY ... LIMIT`. Below a `LEFT SEMI` join it would prune groups before the join
+-- The cascades `AggregationPushdown` transformation must not carry the top-K threshold merge
+-- (`Aggregator::Params::threshold_top_k`) onto an aggregation it pushes below a join: the merge
+-- keeps only each bucket's best groups, which is exact only when the aggregation directly feeds
+-- its `ORDER BY ... LIMIT`. Below a `LEFT SEMI` join it would prune groups before the join
 -- filters them, so the winners that have no match on the right side would push the true answer
--- out. The same restriction already applies to the conversion-stage selection (`bucket_top_k`).
+-- out. The pushdown itself stays allowed: only the pushed aggregation loses the threshold merge.
 
 DROP TABLE IF EXISTS t_abtk_facts;
 DROP TABLE IF EXISTS t_abtk_dims;
@@ -48,7 +48,7 @@ SELECT splitByChar(' ', trimLeft(explain))[1] FROM
 )
 WHERE explain LIKE '%Aggregating%' OR explain LIKE '%Join%';
 
-SELECT '-- with the top-K threshold merge the aggregation stays above the join';
+SELECT '-- with the top-K threshold merge the aggregation is still pushed below the join';
 SELECT splitByChar(' ', trimLeft(explain))[1] FROM
 (
     EXPLAIN SELECT t1.key AS k, max(t1.value) AS m FROM t_abtk_facts AS t1 LEFT SEMI JOIN t_abtk_dims AS t2 ON t1.key = t2.key GROUP BY t1.key

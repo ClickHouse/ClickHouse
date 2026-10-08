@@ -1,9 +1,9 @@
 -- canary: without ORDER BY ... LIMIT the aggregation is pushed below the join
 JoinLogical
 Aggregating
--- with the top-K threshold merge the aggregation stays above the join
-Aggregating
+-- with the top-K threshold merge the aggregation is still pushed below the join
 JoinLogical
+Aggregating
 -- result through cascades
 49999	49999
 49998	49998
