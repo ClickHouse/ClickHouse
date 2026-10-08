@@ -94,15 +94,31 @@ IsColumnQualifier makeTupleColumnQualifierCheck(
         if (prefer_table_over_column && table_names.contains(name))
             return false;
 
+        auto try_get_column_without_table_prefix = [&](bool single_part_prefix_only) -> std::optional<NameAndTypePair>
+        {
+            for (const auto & table_name : table_names)
+            {
+                if (single_part_prefix_only && table_name.contains('.'))
+                    continue;
+                if (name.size() > table_name.size() + 1 && name.starts_with(table_name) && name[table_name.size()] == '.')
+                    if (auto column = try_get_column(name.substr(table_name.size() + 1)))
+                        return column;
+            }
+            return {};
+        };
+
         /// The qualifier is resolved as an identifier in the scope of the table, so it may be the name of a column,
         /// e.g. `tup` or a nested `tup.inner`, or the name of a column qualified with the table, e.g. `t.tup`.
-        auto column = try_get_column(name);
-        for (auto it = table_names.begin(); !column && it != table_names.end(); ++it)
-        {
-            const auto & table_name = *it;
-            if (name.size() > table_name.size() + 1 && name.starts_with(table_name) && name[table_name.size()] == '.')
-                column = try_get_column(name.substr(table_name.size() + 1));
-        }
+        /// Like `IdentifierResolver::tryResolveIdentifierFromTableExpression`, with
+        /// `analyzer_compatibility_prefer_alias_over_subcolumn` a qualifier whose first part is the table name or
+        /// the alias, e.g. `t.a`, is looked up without that part first, and only then as a whole.
+        std::optional<NameAndTypePair> column;
+        if (prefer_table_over_column)
+            column = try_get_column_without_table_prefix(/* single_part_prefix_only = */ true);
+        if (!column)
+            column = try_get_column(name);
+        if (!column)
+            column = try_get_column_without_table_prefix(/* single_part_prefix_only = */ false);
         if (!column)
             return false;
 
