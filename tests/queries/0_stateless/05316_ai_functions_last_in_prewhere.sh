@@ -43,7 +43,7 @@ function ai_position()
     column=$($CLICKHOUSE_CLIENT -q "
         EXPLAIN json = 1, actions = 1 SELECT other FROM tab WHERE ${where}
         SETTINGS enable_analyzer = 1, optimize_move_to_prewhere = 1, query_plan_enable_optimizations = 1,
-            query_plan_optimize_prewhere = 1, move_all_conditions_to_prewhere = 1, allow_reorder_prewhere_conditions = ${allow_reorder}" \
+            move_all_conditions_to_prewhere = 1, allow_reorder_prewhere_conditions = ${allow_reorder}" \
         | grep -oE '"Prewhere filter column": "[^"]*"')
 
     local ai cheap
