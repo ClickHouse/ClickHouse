@@ -72,28 +72,38 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT table, content, count(), sum(record_count) FROM system.iceberg_files
     WHERE database = currentDatabase() GROUP BY table, content ORDER BY table, content"
 
-echo '--- T1: v = 3, 10000 / 5 values'
+echo '--- T1: v = 3, every file overlaps'
+echo 'Expect ~2000: v is 0..4, so its counted NDV is 5, and equality keeps 10000 / 5 rows.'
 labels t v 't.v = 3' ${ON}
 echo '--- T1: v = 3, without column statistics'
+echo 'Expect ~?: a filter that prunes no file gives no estimate, as MergeTree without column statistics.'
 labels t v 't.v = 3' ${OFF}
 echo '--- T1: v IN (1, 2)'
+echo 'Expect ~4000: 2 of the 5 values of v, so 10000 * 2 / 5.'
 labels t v 't.v IN (1, 2)' ${ON}
 echo '--- T1: n IS NULL'
+echo 'Expect ~9000: the NULL counts of the manifests, 9000 of the 10000 rows.'
 labels t v 't.n IS NULL' ${ON}
 echo '--- T1: k BETWEEN 1000 AND 8999, every file overlaps'
+echo 'Expect ~7999: interpolated between min 0 and max 9999, so about 8000 of the 10000 rows.'
 labels t v 't.k BETWEEN 1000 AND 8999' ${ON}
-echo "--- T1: s = 'rare', strings have no bounds in the statistics and no counted NDV, so 1%"
+echo "--- T1: s = 'rare'"
+echo 'Expect ~100: a string has no counted NDV, so equality takes the default 1% of 10000 (true 200).'
 labels t v "t.s = 'rare'" ${ON}
 
 echo '--- T2: k < 1000, 1 of 4 files remains'
+echo 'Expect ~999: the remaining file holds k 0..2499 in 2500 rows, interpolated to 2500 * 1000 / 2500.'
 labels t v 't.k < 1000' ${ON}
-echo "--- T2: d = '2024-01-05', 1 of 4 files remains, 25 days in it"
+echo "--- T2: d = '2024-01-05', 1 of 4 files remains"
+echo 'Expect ~100: the remaining file holds 25 days in 2500 rows, so 2500 / 25.'
 labels t v "t.d = '2024-01-05'" ${ON}
 
-echo "--- T3: r = 'us', the partition of 3000 rows"
+echo "--- T3: r = 'us', the eu partition is pruned"
+echo 'Expect ~3000: the us partition holds 3000 rows and one partition value, so 3000 / 1.'
 labels p k "t.r = 'us'" ${ON}
 
-echo '--- T4: v = 1 with 500 of 2000 rows deleted, 2000 / 5 * 1500 / 2000'
+echo '--- T4: v = 1, 500 of 2000 rows deleted'
+echo 'Expect ~300: 2000 / 5 = 400 rows before the deletes, scaled by the live share 1500 / 2000.'
 labels del v 't.v = 1' ${ON}
 
 # T5 tables: l -> o -> c -> g, every key dense; g is filtered.
@@ -108,13 +118,16 @@ ${CLICKHOUSE_CLIENT} ${PINS} --query "
     INSERT INTO g SELECT number FROM numbers(5);
 "
 T5="SELECT count() FROM l JOIN o ON l.lo = o.id JOIN c ON o.oc = c.id JOIN g ON c.cg = g.id WHERE g.id = 2"
-echo '--- T5: plan, column statistics off: the filtered reads are unknown, so are the joins above them'
+echo '--- T5: plan, column statistics off'
+echo 'Expect g and c unknown (~?): their filters prune no file, so the joins above them are unknown too.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query "
     SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1 ${T5}) WHERE explain LIKE '%Join: %'"
 echo '--- T5: plan, column statistics on'
+echo 'Expect g ~1 (5 rows / 5 ids) and c ~200 (1000 rows / 5 values of cg), joined first.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query "
     SELECT trimLeft(explain) FROM (EXPLAIN keep_logical_steps = 1, actions = 1 ${T5}) WHERE explain LIKE '%Join: %'"
 echo '--- T5: result, then rows put into hash tables, column statistics off and on'
+echo 'Expect 6000 rows; off builds c (200), l (30000) and g (1) = 30201; on builds g (1), c x g (200) and o x c x g (2000) = 2201.'
 ${CLICKHOUSE_CLIENT} ${PINS} ${OFF} --query_id="${CLICKHOUSE_DATABASE}_t5_off" --query "${T5}"
 ${CLICKHOUSE_CLIENT} ${PINS} ${ON} --query_id="${CLICKHOUSE_DATABASE}_t5_on" --query "${T5}"
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
