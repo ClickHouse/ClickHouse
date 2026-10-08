@@ -4348,9 +4348,6 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
             "BACKUP is not supported for UNIQUE KEY tables yet: a restored part is renamed, and "
             "the delete bitmaps held for it are filed under its old name.");
 
-    if (skipBackupDataForBackupMetadataOnlyPolicy())
-        return;
-
     DataPartsVector data_parts;
     if (partitions)
         data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(*partitions, local_context));

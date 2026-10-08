@@ -943,8 +943,7 @@ void BackupEntriesCollector::makeBackupEntriesForTableData(const QualifiedTableN
 
 bool BackupEntriesCollector::shouldBackupTableData(
     const QualifiedTableName & table_name,
-    /// Used in the Cloud build.
-    [[maybe_unused]] const StoragePtr & storage,
+    const StoragePtr & storage,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
@@ -960,6 +959,12 @@ bool BackupEntriesCollector::shouldBackupTableData(
     if (isTableDataExcluded(table_name))
     {
         LOG_TRACE(log, "Skipping table data for {} (excluded via EXCEPT DATA FROM TABLE)", table_name.getFullName());
+        return false;
+    }
+
+    if (storage && BackupUtils::isDataOnBackupMetadataOnlyStoragePolicy(storage, context))
+    {
+        LOG_INFO(log, "Skipping table data for {} (on a storage policy marked backup_metadata_only)", table_name.getFullName());
         return false;
     }
 

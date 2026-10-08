@@ -1368,6 +1368,19 @@ def test_backup_restore_s3_plain_backup_metadata_only(cluster):
     assert "CANNOT_RESTORE_TABLE" in err and "partition filter cannot be applied" in err, err
     instance.query("DROP TABLE IF EXISTS sample SYNC")
 
+    # An existing table with another UUID doesn't see the data of the table from the backup.
+    instance.query(
+        f"""
+        ATTACH TABLE sample UUID '{uuid.uuid4()}' (key Int, value String) ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
+        SETTINGS storage_policy = '{policy}'
+        """
+    )
+    err = instance.query_and_get_error(
+        f"RESTORE TABLE sample FROM {backup_destination} SETTINGS create_table = 'must-exist'"
+    )
+    assert "CANNOT_RESTORE_TABLE" in err and f"must have its UUID {sample_uuid}" in err, err
+    instance.query("DROP TABLE sample SYNC")
+
     instance.query(f"RESTORE TABLE sample, TABLE mv FROM {backup_destination}")
     assert get_uuid("sample") == sample_uuid
     assert instance.query("SELECT count(), sum(key) FROM sample") == "100\t4950\n"

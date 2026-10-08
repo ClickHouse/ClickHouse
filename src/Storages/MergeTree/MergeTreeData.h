@@ -1224,14 +1224,6 @@ public:
     /// Extract data from the backup and put it to the storage.
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
 
-    /// The storage policy is `backup_metadata_only`: the data of the table is provided by the storage itself,
-    /// so `BACKUP` stores only the metadata of the table and `RESTORE` recreates it without restoring data.
-    /// The engines call these from `backupData` and `restoreDataFromBackup`, so a table restored through
-    /// another one (e.g. the inner table of a materialized view) is covered too.
-    bool skipBackupDataForBackupMetadataOnlyPolicy() const;
-    /// Throws if `partitions` are given: such a table shows all the data of its storage, whatever partitions were requested.
-    bool skipRestoreDataForBackupMetadataOnlyPolicy(const std::optional<ASTs> & partitions) const;
-
     /// Returns true if the storage supports backup/restore for specific partitions.
     bool supportsBackupPartition() const override { return true; }
 

@@ -12187,9 +12187,6 @@ void StorageReplicatedMergeTree::backupData(
     /// because we need to coordinate them with other replicas (other replicas can have better parts).
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::backupData");
-    if (skipBackupDataForBackupMetadataOnlyPolicy())
-        return;
-
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
     auto local_context = backup_entries_collector.getContext();
     auto zookeeper_retries_info = backup_entries_collector.getZooKeeperRetriesInfo();
@@ -12302,9 +12299,6 @@ void StorageReplicatedMergeTree::backupData(
 void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::restoreDataFromBackup");
-    if (skipRestoreDataForBackupMetadataOnlyPolicy(partitions))
-        return;
-
     if (!restorer.getRestoreCoordination()->acquireInsertingDataIntoReplicatedTable(zookeeper_info.full_path))
     {
         /// Other replica is already restoring the data of this table.
