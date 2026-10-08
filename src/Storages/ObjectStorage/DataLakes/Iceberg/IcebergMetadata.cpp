@@ -1733,7 +1733,7 @@ void IcebergMetadata::checkCanBeDropped(ContextPtr query_context) const
         || persistent_components.table_root_was_derived)
         return;
 
-    for (const auto & file : collectExternalFilesToDeleteOnDrop(query_context))
+    for (const auto & file : collectExternalFilesToDeleteOnDrop(Context::getGlobalContextInstance()))
     {
         if (!isPathWriteGranted(persistent_components.table_location, file.path.serialize(), object_storage, query_context))
             throw Exception(

@@ -146,7 +146,8 @@ def test_delete_data_on_drop_requires_write_grant_on_external_files(started_clus
     assert "ACCESS_DENIED" in error, error
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY id") == ALL_ROWS
 
-    instance.query(f"GRANT READ, WRITE ON S3('{external_uri_regex}') TO {user}")
+    instance.query(f"REVOKE READ ON S3('{external_uri_regex}') FROM {user}")
+    instance.query(f"GRANT WRITE ON S3('{external_uri_regex}') TO {user}")
     instance.query(f"DROP TABLE {TABLE_NAME} SYNC", user=user)
 
     assert count_objects(f"{base_path}/") == 0
