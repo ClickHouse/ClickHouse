@@ -16,8 +16,17 @@ namespace DB
   *
   * Unlike ConcatProcessor, marks ALL inputs as needed simultaneously,
   * which allows the pipeline executor to schedule upstream sources in parallel.
-  * Data from non-current inputs is buffered (up to max_buffered_chunks per input)
-  * to keep their upstream sources producing data while we consume the current input.
+  * Data from non-current inputs is buffered to keep their upstream sources producing data
+  * while we consume the current input.
+  *
+  * Since the output consumes the inputs one after another, sustained parallelism requires
+  * the later inputs to run far ahead of the current one, so a small per-input cap
+  * (a couple of chunks) degenerates into reading one input at a time. Instead, the buffers
+  * share a budget of `max_buffered_bytes`, granted to the inputs in order starting from the
+  * current one: an input keeps reading ahead while the inputs before it (including itself)
+  * buffer less than the budget. The nearest inputs, which are needed first, get the budget
+  * first. Every input may still buffer up to `min_buffered_chunks` chunks regardless of the
+  * budget, so that each one gets a head start.
   *
   * This is useful for read-in-order optimization where a single part is split
   * into non-overlapping range groups read by separate sources: we want parallel
@@ -26,7 +35,7 @@ namespace DB
 class PrefetchingConcatProcessor final : public IProcessor
 {
 public:
-    PrefetchingConcatProcessor(SharedHeader header, size_t num_inputs, size_t max_buffered_chunks_ = 2);
+    PrefetchingConcatProcessor(SharedHeader header, size_t num_inputs, size_t max_buffered_bytes_, size_t min_buffered_chunks_ = 2);
 
     String getName() const override { return "PrefetchingConcat"; }
 
@@ -35,9 +44,16 @@ public:
     OutputPort & getOutputPort() { return outputs.front(); }
 
 private:
+    struct Buffer
+    {
+        std::deque<Chunk> chunks;
+        size_t bytes = 0;
+    };
+
     size_t current_input_idx = 0;
-    size_t max_buffered_chunks;
-    std::vector<std::deque<Chunk>> buffers;
+    size_t max_buffered_bytes;
+    size_t min_buffered_chunks;
+    std::vector<Buffer> buffers;
 };
 
 }

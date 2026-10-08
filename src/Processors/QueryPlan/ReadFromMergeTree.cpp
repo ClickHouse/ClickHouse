@@ -274,6 +274,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
+    extern const SettingsUInt64 read_in_order_max_bytes_to_prefetch;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
@@ -2304,7 +2305,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 source_header = pipes.front().getHeader();
 
             auto pipe = Pipe::unitePipes(std::move(pipes));
-            pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(pipe.getSharedHeader(), pipe.numOutputPorts()));
+            pipe.addTransform(std::make_shared<PrefetchingConcatProcessor>(
+                pipe.getSharedHeader(), pipe.numOutputPorts(), settings[Setting::read_in_order_max_bytes_to_prefetch]));
 
             if (have_input_columns_removed_after_prewhere)
                 out_projection = createProjection(source_header);
