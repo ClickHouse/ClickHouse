@@ -3330,7 +3330,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     }
 
     /// an unqualified (param view) name would bind to the parent database, ignoring the selected namespace
-    if (!view_name_is_qualified && getCurrentDatabase().hasTablePrefix())
+    if (!view_name_is_qualified && getCurrentDatabase().hasSchema())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Parameterized views and unqualified table functions are not supported while a table "
             "namespace is selected; qualify the name with its database");
@@ -8857,8 +8857,8 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
         }
         storage_id.database_name = current_database.getDatabasePart();
         /// the current database may be a logical namespace path, fold it into the table name
-        if (current_database.hasTablePrefix())
-            storage_id.table_name = fmt::format("{}.{}", current_database.getTablePrefixPart(), storage_id.table_name);
+        if (current_database.hasSchema())
+            storage_id.table_name = fmt::format("{}.{}", current_database.getSchemaPart(), storage_id.table_name);
 
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
