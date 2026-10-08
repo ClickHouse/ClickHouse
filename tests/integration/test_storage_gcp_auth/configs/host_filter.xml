@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- Allow GCS, but deny the IAM endpoint on port 22235. -->
+    <remote_url_allow_hosts>
+        <host>resolver:22234</host>
+    </remote_url_allow_hosts>
+</clickhouse>

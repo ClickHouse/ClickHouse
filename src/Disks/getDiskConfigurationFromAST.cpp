@@ -103,6 +103,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "role_session_name" || k == "external_id" || k == "use_environment_credentials" || k == "http_client"
             || k == "service_account" || k == "metadata_service" || k == "request_token_path"
             || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token"
+            || k == "impersonate_service_account" || k == "impersonation_delegates" || k == "impersonation_scopes"
+            || k == "impersonation_lifetime_seconds" || k == "iam_credentials_endpoint"
             || k == "server_side_encryption_customer_key_base64" || k == "server_side_encryption_kms_key_id"
             || k == "server_side_encryption_kms_encryption_context" || startsWith(k, "header") || startsWith(k, "access_header");
     };
@@ -318,6 +320,10 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
     /// `prefix` selects the backend: empty for the disk root, or `locations.<name>.` for a multi-location child.
     config.setString(prefix + "http_client", "");
     config.setString(prefix + "no_sign_request", "1");
+
+    /// The impersonation target goes with the source identity that was just removed: the client rejects a target
+    /// without `http_client = gcp_oauth`, which would make the disk fail to attach instead of loading anonymously.
+    config.setString(prefix + "impersonate_service_account", "");
 
     /// The disk is intentionally inaccessible, so skip the startup access check: the table must load (and
     /// merely be inaccessible on query) rather than fail to attach. `skip_access_check` is read from the disk

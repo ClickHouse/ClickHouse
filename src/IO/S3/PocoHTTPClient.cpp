@@ -18,6 +18,7 @@
 #include <Common/re2.h>
 #include <IO/Expect404ResponseScope.h>
 #include <IO/GCPOAuth.h>
+#include <IO/GCPServiceAccountImpersonation.h>
 #include <IO/HTTPCommon.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -850,6 +851,14 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
     , google_adc_client_id(client_configuration.google_adc_client_id)
     , google_adc_client_secret(client_configuration.google_adc_client_secret)
     , google_adc_refresh_token(client_configuration.google_adc_refresh_token)
+    , impersonation
+    {
+        .target_service_account = client_configuration.impersonate_service_account,
+        .delegates = parseGCPCommaSeparatedList(client_configuration.impersonation_delegates),
+        .scopes = parseGCPCommaSeparatedList(client_configuration.impersonation_scopes),
+        .lifetime_seconds = static_cast<Int64>(client_configuration.impersonation_lifetime_seconds),
+        .endpoint = client_configuration.iam_credentials_endpoint,
+    }
 {
     const bool has_client_id = !google_adc_client_id.empty();
     const bool has_client_secret = !google_adc_client_secret.empty();
@@ -862,6 +871,21 @@ PocoHTTPClientGCPOAuth::PocoHTTPClientGCPOAuth(const PocoHTTPClientConfiguration
                 "GCP OAuth ADC credentials must be specified together: "
                 "google_adc_client_id, google_adc_client_secret, and google_adc_refresh_token "
                 "must all be set or all be empty");
+    }
+
+    /// Configured impersonation settings are inert without a target.
+    if (!impersonation.target_service_account.empty())
+    {
+        /// An explicitly empty scope list must not silently widen access to the default read/write scope.
+        if (!client_configuration.impersonation_scopes.empty() && impersonation.scopes.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`impersonation_scopes` is set to '{}', which contains no scope. Remove it to use the default "
+                "({}), or give a comma-separated list of OAuth 2.0 scopes.",
+                client_configuration.impersonation_scopes,
+                DEFAULT_GCP_IMPERSONATION_SCOPE);
+
+        validateGCPImpersonationParams(impersonation);
     }
 }
 
@@ -892,6 +916,44 @@ std::string PocoHTTPClientGCPOAuth::getBearerToken() const
 }
 
 PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestBearerToken() const
+{
+    if (impersonation.target_service_account.empty())
+        return requestSourceBearerToken();
+
+    /// Cache the source token separately: it may outlive many short-lived impersonated tokens.
+    if (!source_bearer_token || std::chrono::system_clock::now() > source_bearer_token->is_valid_to)
+    {
+        auto source_token = requestSourceBearerToken();
+
+        /// Leave a 10% margin so the source token does not expire during the exchange.
+        const auto now = std::chrono::system_clock::now();
+        source_token.is_valid_to = now + (source_token.is_valid_to - now) * 9 / 10;
+        source_bearer_token = std::move(source_token);
+    }
+
+    auto group = for_disk_s3 ? HTTPConnectionGroupType::DISK : HTTPConnectionGroupType::STORAGE;
+    GCPOAuthToken result;
+    try
+    {
+        result = fetchImpersonatedGCPAccessToken(
+            source_bearer_token->token, impersonation, getCredentialAcquisitionTimeouts(timeouts), remote_host_filter, group);
+    }
+    catch (...)
+    {
+        /// Do not reuse a potentially rejected source token on the next exchange.
+        source_bearer_token.reset();
+        throw;
+    }
+
+    /// Refresh with a 10% margin, but cache for at least one second.
+    return
+    {
+        .token = std::move(result.access_token),
+        .is_valid_to = std::chrono::system_clock::now() + std::chrono::seconds(std::max<Int64>(1, result.expires_in * 9 / 10))
+    };
+}
+
+PocoHTTPClientGCPOAuth::BearerToken PocoHTTPClientGCPOAuth::requestSourceBearerToken() const
 {
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return requestBearerTokenFromADC();

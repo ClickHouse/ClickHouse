@@ -782,7 +782,9 @@ void S3ObjectStorage::applyNewSettings(
     settings_from_config->loadFromConfigForObjectStorage(
         config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
-    auto modified_settings = std::make_unique<S3Settings>(*s3_settings.get());
+    /// Use one snapshot so concurrent updates cannot mix settings generations.
+    auto current_settings = s3_settings.get();
+    auto modified_settings = std::make_unique<S3Settings>(*current_settings);
 
     /// Static configurations keep their resolved authentication settings when a session change rebuilds the client.
     auto apply_endpoint_settings = [&]
@@ -817,6 +819,11 @@ void S3ObjectStorage::applyNewSettings(
         apply_endpoint_settings();
     }
 
+    /// Preserve the target and qualifiers resolved during parsing. Re-merging config could restore
+    /// privileges deliberately cleared for a query-supplied target. Disks use their own config instead.
+    if (!for_disk_s3)
+        modified_settings->auth_settings.copyGcpImpersonationFrom(current_settings->auth_settings);
+
     modified_settings->request_settings.proxy_resolver = DB::ProxyConfigurationResolverProvider::getFromOldSettingsFormat(
         ProxyConfiguration::protocolFromString(uri.uri.getScheme()), config_prefix, config);
 
@@ -829,7 +836,6 @@ void S3ObjectStorage::applyNewSettings(
     const bool restricts_now = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
     const bool restriction_mode_changed = client_restricts_server_credentials != restricts_now;
 
-    auto current_settings = s3_settings.get();
     /// The client is rebuilt only when a setting it is built from changes (see `S3Settings::hasChangesAffectingClient`):
     /// this method may run on every query of a table (see `StorageObjectStorageConfiguration::update`), including a
     /// table working on a copy of a server disk's object storage. Changes the settings comparison does not cover (the

@@ -72,10 +72,18 @@ struct S3AuthSettings
     void clearRoleArn();
 
     /// Clear the GCP OAuth metadata-service mechanism (`http_client`, `service_account`, `metadata_service`,
-    /// `request_token_path`, and the explicit Application Default Credentials triple). Used by restricted paths
-    /// whose syntax cannot supply these fields, so any value here came from the server `<s3>` config and would
-    /// otherwise mint a server-identity bearer token for a user-chosen endpoint.
+    /// `request_token_path`, the explicit Application Default Credentials triple, and the service account
+    /// impersonation settings). Used by restricted paths whose syntax cannot supply these fields, so any value
+    /// here came from the server `<s3>` config and would otherwise mint a server-identity bearer token for a
+    /// user-chosen endpoint.
     void clearServerManagedGcpOAuth();
+
+    /// Drop server-configured impersonation before applying query credentials.
+    void clearGcpImpersonation();
+
+    /// Copy the target and all qualifiers, including unchanged or empty values that
+    /// `updateIfChanged` would skip. Qualifiers must stay with their target.
+    void copyGcpImpersonationFrom(const S3AuthSettings & other);
 
     NormalizedHTTPHeaderEntries headers;
     NormalizedHTTPHeaderEntries access_headers;

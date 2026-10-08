@@ -91,17 +91,19 @@ public:
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
     /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
-    /// value stays visible when the map is masked. Only `role_arn` qualifies: it names the role to
-    /// assume, like `access_key_id` names a key. The other two keys of the assume-role triple are
-    /// secrets: `external_id` is its shared secret, and `role_session_name` can be one too, because a
-    /// trust policy can require a specific value through the `sts:RoleSessionName` condition (the
-    /// ClickHouse Cloud guide documents exactly this use). Any other key - unknown, malformed or an
-    /// expression - fails closed.
+    /// value stays visible when the map is masked. `role_arn` qualifies: it names the role to
+    /// assume, like `access_key_id` names a key. The GCP impersonation keys qualify likewise: they
+    /// name the target service account, the delegation chain and the OAuth scopes. The other two
+    /// keys of the assume-role triple are secrets: `external_id` is its shared secret, and
+    /// `role_session_name` can be one too, because a trust policy can require a specific value
+    /// through the `sts:RoleSessionName` condition (the ClickHouse Cloud guide documents exactly
+    /// this use). Any other key - unknown, malformed or an expression - fails closed.
     /// The `.backup` metadata is a different matter: its `<base_backup>` locator keeps `role_session_name`
     /// on purpose, so that a role-authenticated backup chain stays restorable (see `BackupInfo.cpp`).
     static bool isNonSecretExtraCredentialsKey(std::string_view key)
     {
-        return key == "role_arn";
+        return key == "role_arn" || key == "impersonate_service_account" || key == "impersonation_delegates"
+            || key == "impersonation_scopes";
     }
 
 protected:

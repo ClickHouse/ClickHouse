@@ -1,16 +1,34 @@
 <clickhouse>
     <named_collections>
+        <!-- Rotating tokens expire immediately; each GCS request must fetch a new one. -->
         <gcs_conn>
-            <url>http://resolver:22234/test/</url>
+            <url>http://resolver:22238/test/</url>
             <http_client>gcp_oauth</http_client>
             <service_account>my-account</service_account>
             <metadata_service>resolver</metadata_service>
         </gcs_conn>
-         <gcs_conn_bad>
-            <url>http://resolver:22234/test/</url>
+        <gcs_conn_bad>
+            <url>http://resolver:22238/test/</url>
             <http_client>gcp_oauth</http_client>
             <service_account>non-existing-account</service_account>
             <metadata_service>resolver</metadata_service>
         </gcs_conn_bad>
+
+        <!-- The GCS endpoint accepts only the impersonated token. -->
+        <gcs_impersonation_conn>
+            <url>http://resolver:22234/test/</url>
+            <http_client>gcp_oauth</http_client>
+            <service_account>impersonation-source</service_account>
+            <metadata_service>resolver</metadata_service>
+            <impersonate_service_account>impersonated@test-project.iam.gserviceaccount.com</impersonate_service_account>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcs_impersonation_conn>
+
+        <!-- Keep the mock IAM endpoint even for invalid configuration, to avoid contacting Google. -->
+        <gcs_impersonation_without_oauth_conn>
+            <url>http://resolver:22234/test/</url>
+            <impersonate_service_account>impersonated@test-project.iam.gserviceaccount.com</impersonate_service_account>
+            <iam_credentials_endpoint>http://resolver:22235</iam_credentials_endpoint>
+        </gcs_impersonation_without_oauth_conn>
     </named_collections>
 </clickhouse>

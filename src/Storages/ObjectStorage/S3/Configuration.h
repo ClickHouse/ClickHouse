@@ -16,6 +16,15 @@
 namespace DB
 {
 
+/// Reject identity or endpoint overrides that use a named collection's source credentials,
+/// unless the query supplies its own ADC triple or server credentials are permitted.
+/// On metadata load, clear GCP credentials if anonymous loading is enabled.
+void checkQueryOverriddenGcpImpersonation(
+    const NamedCollection & collection,
+    const ContextPtr & context,
+    S3::S3AuthSettings & auth_settings,
+    bool is_loading_from_existing_metadata);
+
 struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;
@@ -83,7 +92,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     String path_suffix;
 
 public:
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context, bool is_loading_from_existing_metadata);
     void fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     S3StorageParsedArguments() = default;

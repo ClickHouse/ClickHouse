@@ -3,6 +3,8 @@
 
 #if USE_AWS_S3
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/logger_useful.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -29,6 +31,7 @@
 #include <Storages/IPartitionStrategy.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <IO/S3/URI.h>
+#include <IO/S3Defines.h>
 
 namespace DB
 {
@@ -68,6 +71,11 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString impersonate_service_account;
+    extern const S3AuthSettingsString impersonation_delegates;
+    extern const S3AuthSettingsString impersonation_scopes;
+    extern const S3AuthSettingsUInt64 impersonation_lifetime_seconds;
+    extern const S3AuthSettingsString iam_credentials_endpoint;
 }
 
 namespace S3RequestSetting
@@ -75,11 +83,68 @@ namespace S3RequestSetting
     extern const S3RequestSettingsString storage_class_name;
 }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
+}
+
+void checkQueryOverriddenGcpImpersonation(
+    const NamedCollection & collection,
+    const ContextPtr & context,
+    S3::S3AuthSettings & auth_settings,
+    bool is_loading_from_existing_metadata)
+{
+    if (!context->shouldRestrictUserQueryS3Credentials())
+        return;
+
+    if (collection.isQueryOverridden("google_adc_client_id") && collection.isQueryOverridden("google_adc_client_secret")
+        && collection.isQueryOverridden("google_adc_refresh_token"))
+        return;
+
+    for (const auto & key : S3::GCP_IMPERSONATION_SETTING_NAMES)
+    {
+        /// Lifetime changes select neither an identity nor an endpoint. Guard new settings by default.
+        if (key == "impersonation_lifetime_seconds")
+            continue;
+
+        if (!collection.isQueryOverridden(String(key)))
+            continue;
+
+        /// Stored query overrides are re-parsed on startup. Honor the anonymous-load setting
+        /// so restricted credentials do not prevent the table from attaching.
+        if (is_loading_from_existing_metadata
+            && context->getGlobalContext()->getServerSettings()[ServerSetting::s3_load_table_anonymously_if_credentials_restricted])
+        {
+            LOG_WARNING(
+                getLogger("StorageS3Configuration"),
+                "Loading this table with an anonymous S3 client: its definition overrides `{}` on a named "
+                "collection, which is restricted for user queries "
+                "(s3_allow_server_credentials_in_user_queries = 0). The table will be inaccessible until its "
+                "credentials resolve to a permitted source. Set the server setting "
+                "s3_load_table_anonymously_if_credentials_restricted = 0 to fail loading instead.",
+                key);
+
+            auth_settings.clearServerManagedGcpOAuth();
+            return;
+        }
+
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "`{}` cannot be overridden in a query on a named collection: the GCP service account impersonation it "
+            "configures would be performed with the collection's own identity as the source. Supply the Google "
+            "Application Default Credentials triple (google_adc_client_id, google_adc_client_secret, "
+            "google_adc_refresh_token) in the same query, or enable the setting "
+            "`s3_allow_server_credentials_in_user_queries`.",
+            key);
+    }
 }
 
 static const std::unordered_set<std::string_view> required_configuration_keys =
@@ -122,6 +187,11 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "google_adc_client_id", /// For GCP (explicit Application Default Credentials triple)
     "google_adc_client_secret", /// For GCP
     "google_adc_refresh_token", /// For GCP
+    "impersonate_service_account",
+    "impersonation_delegates",
+    "impersonation_scopes",
+    "impersonation_lifetime_seconds",
+    "iam_credentials_endpoint",
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -203,7 +273,8 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
-void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
+void S3StorageParsedArguments::fromNamedCollection(
+    const NamedCollection & collection, ContextPtr context, bool is_loading_from_existing_metadata)
 {
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
@@ -329,6 +400,15 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.getOrDefault<String>("google_adc_client_id", "");
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
     s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
+    s3_settings->auth_settings[S3AuthSetting::impersonate_service_account]
+        = collection.getOrDefault<String>("impersonate_service_account", "");
+    s3_settings->auth_settings[S3AuthSetting::impersonation_delegates] = collection.getOrDefault<String>("impersonation_delegates", "");
+    s3_settings->auth_settings[S3AuthSetting::impersonation_scopes] = collection.getOrDefault<String>("impersonation_scopes", "");
+    s3_settings->auth_settings[S3AuthSetting::impersonation_lifetime_seconds]
+        = collection.getOrDefault<UInt64>("impersonation_lifetime_seconds", S3::DEFAULT_GCP_IMPERSONATION_LIFETIME_SECONDS);
+    s3_settings->auth_settings[S3AuthSetting::iam_credentials_endpoint] = collection.getOrDefault<String>("iam_credentials_endpoint", "");
+
+    checkQueryOverriddenGcpImpersonation(collection, context, s3_settings->auth_settings, is_loading_from_existing_metadata);
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -401,6 +481,12 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
         else if (arg_name == "external_id")
             auth_settings_[S3AuthSetting::external_id] = arg_value.safeGet<String>();
+        else if (arg_name == "impersonate_service_account")
+            auth_settings_[S3AuthSetting::impersonate_service_account] = arg_value.safeGet<String>();
+        else if (arg_name == "impersonation_delegates")
+            auth_settings_[S3AuthSetting::impersonation_delegates] = arg_value.safeGet<String>();
+        else if (arg_name == "impersonation_scopes")
+            auth_settings_[S3AuthSetting::impersonation_scopes] = arg_value.safeGet<String>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
     }
@@ -488,6 +574,17 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     auto key_value_args = parseKeyValueArguments(key_value_asts, context);
     if (key_value_args.contains("structure"))
         with_structure = false;
+
+    /// Unknown arguments are otherwise ignored, which would silently use the source identity.
+    for (const auto & key : S3::GCP_IMPERSONATION_SETTING_NAMES)
+        if (key_value_args.contains(String(key)))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` is not an argument of this form. Configure GCP service account impersonation on a named "
+                "collection or in the server `<s3>` configuration; `impersonate_service_account`, "
+                "`impersonation_delegates` and `impersonation_scopes` may also be given per query inside "
+                "`extra_credentials(...)`.",
+                key);
 
     const auto & config = context->getConfigRef();
     s3_capabilities = std::make_unique<S3Capabilities>(getCapabilitiesFromConfig(config, "s3"));
@@ -740,16 +837,31 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
 
     /// Drop any role_arn/STS fields from the global `<s3>` config before parsing `extra_credentials`, so only
     /// a query-supplied role_arn remains (a server role_arn would assume the role with the server's identity).
+    /// Same for the GCP impersonation target, whose source identity would likewise be the server's.
     const bool restrict_server_credentials = context->shouldRestrictUserQueryS3Credentials();
+
+    /// Remember whether the restriction removed a configured target for the error below.
+    const bool config_supplied_impersonation_target
+        = !String(s3_settings->auth_settings[S3AuthSetting::impersonate_service_account]).empty();
+
     if (restrict_server_credentials)
+    {
         s3_settings->auth_settings.clearRoleArn();
+        s3_settings->auth_settings.clearGcpImpersonation();
+    }
 
-    S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+    /// Keep query credentials separate so configured values cannot be mistaken for query overrides.
+    S3::S3AuthSettings query_auth_settings;
+    S3StorageParsedArguments::collectCredentials(extra_credentials, query_auth_settings, context);
 
-    /// Remember the query-supplied role_arn/STS fields so the per-endpoint `<s3>` merge below cannot replace them.
-    const String user_role_arn = s3_settings->auth_settings[S3AuthSetting::role_arn];
-    const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
-    const String user_external_id = s3_settings->auth_settings[S3AuthSetting::external_id];
+    const String user_role_arn = query_auth_settings[S3AuthSetting::role_arn];
+    const String user_role_session_name = query_auth_settings[S3AuthSetting::role_session_name];
+    const String user_external_id = query_auth_settings[S3AuthSetting::external_id];
+    const String user_impersonate_service_account = query_auth_settings[S3AuthSetting::impersonate_service_account];
+    const String user_impersonation_delegates = query_auth_settings[S3AuthSetting::impersonation_delegates];
+    const String user_impersonation_scopes = query_auth_settings[S3AuthSetting::impersonation_scopes];
+
+    s3_settings->auth_settings.updateIfChanged(query_auth_settings);
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
@@ -757,11 +869,18 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
+    bool restriction_dropped_config_target = false;
+
     if (restrict_server_credentials)
     {
         s3_settings->auth_settings[S3AuthSetting::role_arn] = user_role_arn;
         s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
         s3_settings->auth_settings[S3AuthSetting::external_id] = user_external_id;
+
+        /// Check both the global target cleared above and the per-endpoint target.
+        restriction_dropped_config_target = user_impersonate_service_account.empty()
+            && (config_supplied_impersonation_target
+                || !String(s3_settings->auth_settings[S3AuthSetting::impersonate_service_account]).empty());
 
         /// Drop any GCP OAuth mechanism inherited from `<s3>` config: the bare-URL `s3(...)` form cannot supply
         /// these fields, so a value here is always server-configured and would mint a server-identity token.
@@ -772,6 +891,42 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         /// anonymous/NOSIGN request does not send the server's `Authorization` header or encryption keys to the
         /// user-chosen endpoint.
         s3_settings->auth_settings.clearServerManagedRequestAuth();
+    }
+
+    /// A query target takes its own delegates and scopes, including empty values.
+    /// Otherwise it could inherit privileges configured for a different target.
+    /// Without a query target, query qualifiers apply to the configured target.
+    if (!user_impersonate_service_account.empty())
+    {
+        s3_settings->auth_settings[S3AuthSetting::impersonate_service_account] = user_impersonate_service_account;
+        s3_settings->auth_settings[S3AuthSetting::impersonation_delegates] = user_impersonation_delegates;
+        s3_settings->auth_settings[S3AuthSetting::impersonation_scopes] = user_impersonation_scopes;
+    }
+    else
+    {
+        if (!user_impersonation_delegates.empty())
+            s3_settings->auth_settings[S3AuthSetting::impersonation_delegates] = user_impersonation_delegates;
+        if (!user_impersonation_scopes.empty())
+            s3_settings->auth_settings[S3AuthSetting::impersonation_scopes] = user_impersonation_scopes;
+    }
+
+    /// Reject query qualifiers without a target instead of silently using the source token.
+    if (String(s3_settings->auth_settings[S3AuthSetting::impersonate_service_account]).empty()
+        && (!user_impersonation_delegates.empty() || !user_impersonation_scopes.empty()))
+    {
+        /// Report the restriction if it removed the configured target.
+        if (restriction_dropped_config_target)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "`impersonation_delegates` and `impersonation_scopes` in `extra_credentials` qualify the "
+                "`impersonate_service_account` configured for this endpoint, and S3 access from user queries is "
+                "not allowed to impersonate from the server's own GCP identity. Enable the setting "
+                "`s3_allow_server_credentials_in_user_queries` to use it.");
+
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "`impersonation_delegates` and `impersonation_scopes` in `extra_credentials` require "
+            "`impersonate_service_account`, which names the service account they apply to.");
     }
 
     /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
@@ -1185,7 +1340,7 @@ void StorageS3Configuration::initializeFromParsedArguments(S3StorageParsedArgume
 void StorageS3Configuration::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
 {
     S3StorageParsedArguments parsed_arguments;
-    parsed_arguments.fromNamedCollection(collection, context);
+    parsed_arguments.fromNamedCollection(collection, context, is_loading_from_existing_metadata);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
