@@ -239,6 +239,7 @@ namespace ProfileEvents
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
     extern const Event LoadedStatisticsMicroseconds;
+    extern const Event LoadedStatistics;
 }
 
 namespace CurrentMetrics
@@ -288,6 +289,8 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
+    extern const SettingsUInt64 max_temporary_table_size_bytes_compressed;
+    extern const SettingsUInt64 max_temporary_table_size_bytes_uncompressed;
     extern const SettingsBool use_statistics;
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
@@ -441,6 +444,7 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
+    extern const int TOO_MANY_BYTES;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int BAD_TTL_EXPRESSION;
     extern const int INCORRECT_FILE_NAME;
@@ -1028,7 +1032,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
-        auto parts_lock = readLockParts();
+        ProfileEvents::increment(ProfileEvents::LoadedStatistics);
         auto stats = part.data_part->loadStatistics(required_columns);
         estimator_builder.markDataPart(part.data_part);
         for (const auto & [column_name, stat] : stats)
@@ -3688,7 +3692,7 @@ try
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
-        auto parts_lock = readLockParts();
+        ProfileEvents::increment(ProfileEvents::LoadedStatistics);
         auto stats = data_part->loadStatistics();
         estimator_builder.markDataPart(data_part);
         for (const auto & [column_name, stat] : stats)
@@ -8601,6 +8605,49 @@ void MergeTreeData::throwIfTableSizeLimitsExceededForReplacement(
             "value ({}). Note: inactive parts are removed in the background, so the total size can decrease over time",
             getLogName(), ReadableSize(current.bytes_uncompressed + added.bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
     }
+}
+
+void MergeTreeData::throwIfTemporaryTableSizeLimitsExceededForReplacement(
+    const ContextPtr & query_context,
+    const DataPartsLock & parts_lock,
+    const MutableDataPartsVector & added_parts,
+    const std::optional<MergeTreePartInfo> & drop_range) const
+{
+    /// Only `CREATE TEMPORARY TABLE` creates `MergeTree` tables in the temporary database.
+    if (getStorageID().database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        return;
+
+    const auto & settings = query_context->getSettingsRef();
+    const UInt64 max_bytes_compressed = settings[Setting::max_temporary_table_size_bytes_compressed];
+    const UInt64 max_bytes_uncompressed = settings[Setting::max_temporary_table_size_bytes_uncompressed];
+
+    if (!max_bytes_compressed && !max_bytes_uncompressed)
+        return;
+
+    /// The limits are accounted in the same way as `total_bytes` and `total_bytes_uncompressed` in `system.tables`,
+    /// that is, by the active regular parts, which the parts covered by 'drop_range' stop being after the operation.
+    auto active_range = getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular);
+    const PartsSize current = calculatePartsSize(DataPartsVector(active_range.begin(), active_range.end()));
+
+    DataPartsVector replaced_parts;
+    if (drop_range)
+        replaced_parts = getPartHierarchy(*drop_range, DataPartState::Active, parts_lock).covered_parts;
+
+    const PartsSize replaced = calculatePartsSize(replaced_parts);
+    const PartsSize added = calculatePartsSize(DataPartsVector(added_parts.begin(), added_parts.end()));
+
+    /// An operation that does not increase the size is always allowed, as for the 'max_table_size_*' limits.
+    const UInt64 total_bytes_compressed = current.bytes_compressed - std::min(current.bytes_compressed, replaced.bytes_compressed) + added.bytes_compressed;
+    if (max_bytes_compressed && total_bytes_compressed > max_bytes_compressed && added.bytes_compressed > replaced.bytes_compressed)
+        throw Exception(ErrorCodes::TOO_MANY_BYTES,
+            "The temporary table would take {} of compressed data, the maximum is {} (the `max_temporary_table_size_bytes_compressed` setting)",
+            ReadableSize(total_bytes_compressed), ReadableSize(max_bytes_compressed));
+
+    const UInt64 total_bytes_uncompressed = current.bytes_uncompressed - std::min(current.bytes_uncompressed, replaced.bytes_uncompressed) + added.bytes_uncompressed;
+    if (max_bytes_uncompressed && total_bytes_uncompressed > max_bytes_uncompressed && added.bytes_uncompressed > replaced.bytes_uncompressed)
+        throw Exception(ErrorCodes::TOO_MANY_BYTES,
+            "The temporary table would take {} of uncompressed data, the maximum is {} (the `max_temporary_table_size_bytes_uncompressed` setting)",
+            ReadableSize(total_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
 }
 
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw, bool allow_delay) const
