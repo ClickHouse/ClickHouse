@@ -43,7 +43,7 @@ public:
         size_t num_streams
     ) override;
 
-    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder &) override;
+    void alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder, DDLGuardPtr & ddl_guard) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 
@@ -51,7 +51,7 @@ public:
 
     void setSettings(std::unique_ptr<ElasticsearchSettings> && settings_) { storage_settings.set(std::move(settings_)); }
 
-
+    static void checkColumns(const ColumnsDescription & descriptions);
 private:
 
     VirtualColumnsDescription createVirtuals();

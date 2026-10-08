@@ -2,6 +2,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/Elasticsearch/ElasticsearchSettings.h>
 
 namespace DB
@@ -55,6 +56,11 @@ void ElasticsearchSettings::loadFromQuery(const ASTStorage & storage_def)
             throw;
         }
     }
+}
+
+void ElasticsearchSettings::loadFromQuery(const ASTSetQuery & settings_def)
+{
+    impl->applyChanges(settings_def.changes);
 }
 
 bool ElasticsearchSettings::hasBuiltin(std::string_view name)

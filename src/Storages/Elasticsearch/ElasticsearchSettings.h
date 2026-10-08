@@ -2,12 +2,14 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/SettingsChanges.h>
 
 namespace DB
 {
 
 class ASTStorage;
+class ASTSetQuery;
 struct ElasticsearchSettingsImpl;
 
 #define ELASTICSEARCH_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -28,6 +30,8 @@ struct ElasticsearchSettings
     void applyChanges(const SettingsChanges & changes);
 
     void loadFromQuery(const ASTStorage & storage_def);
+
+    void loadFromQuery(const ASTSetQuery & settings_def);
 
     static bool hasBuiltin(std::string_view name);
 

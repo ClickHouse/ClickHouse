@@ -131,7 +131,7 @@ void validate(ElasticsearchConfiguration & configuration, const ContextPtr & con
 
     auto auth_headers = configuration.authorizationHeaders();
     if (!auth_headers.empty())
-        context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(auth_headers);
+        context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(auth_headers);
 
     try
     {

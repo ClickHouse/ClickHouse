@@ -204,9 +204,9 @@ VirtualColumnsDescription StorageElasticsearch::createVirtuals()
     return virtual_columns;
 }
 
-void StorageElasticsearch::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder)
+void StorageElasticsearch::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder, DDLGuardPtr & ddl_guard)
 {
-    IStorage::alter(params, query_context, holder);
+    IStorage::alter(params, query_context, holder, ddl_guard);
     auto new_metadata = getInMemoryMetadataPtr(query_context, false);
     if (new_metadata->settings_changes)
     {
@@ -233,6 +233,24 @@ void StorageElasticsearch::checkAlterIsPossible(const AlterCommands & commands, 
     }
 }
 
+void StorageElasticsearch::checkColumns(const ColumnsDescription & descriptions)
+{
+    if (!descriptions.hasOnlyOrdinary())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch table engine does not support MATERIALIZED, ALIAS or EPHEMERAL columns");
+
+    for (const auto * reserved_name : {"_id", "_index"})
+        if (descriptions.has(reserved_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column name '{}' is reserved for a virtual column of the Elasticsearch table engine", reserved_name);
+
+    auto columns = descriptions.getOrdinary();
+        if (columns.size() > 1)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Elasticsearch table engine requires at most one column, got {}", columns.size());
+
+    if (!columns.empty() && !isObject(columns.front().type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch table engine requires the column type to be JSON, got {}", columns.front().type->getName());
+
+}
+
 void registerStorageElasticsearch(StorageFactory & factory);
 void registerStorageElasticsearch(StorageFactory & factory)
 {
@@ -240,19 +258,7 @@ void registerStorageElasticsearch(StorageFactory & factory)
         "Elasticsearch",
         [](const StorageFactory::Arguments & args)
         {
-            if (!args.columns.hasOnlyOrdinary())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch table engine does not support MATERIALIZED, ALIAS or EPHEMERAL columns");
-
-            for (const auto * reserved_name : {"_id", "_index"})
-                if (args.columns.has(reserved_name))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column name '{}' is reserved for a virtual column of the Elasticsearch table engine", reserved_name);
-
-            auto columns = args.columns.getOrdinary();
-            if (columns.size() > 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Elasticsearch table engine requires at most one column, got {}", columns.size());
-
-            if (!columns.empty() && !isObject(columns.front().type))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch table engine requires the column type to be JSON, got {}", columns.front().type->getName());
+            StorageElasticsearch::checkColumns(args.columns);
 
             auto settings = std::make_unique<ElasticsearchSettings>();
             settings->loadFromQuery(*args.storage_def);
