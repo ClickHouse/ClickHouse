@@ -128,15 +128,20 @@ def test_correctness(started_cluster):
     node_zk = get_fake_zk("node_logs")
     try:
         node_zk.create("/test")
-        for _ in range(30):
+        # Wait for every create to be acknowledged rather than for a specific
+        # `commit upto N` log line: the commit index also depends on how many
+        # sessions were created, and commits are batched, so a fixed index may
+        # never appear in the log.
+        requests = [
             node_zk.create_async("/test/somenode", b"somedata", sequence=True)
+            for _ in range(30)
+        ]
+        for request in requests:
+            request.get(timeout=30)
 
-        node_logs.wait_for_log_line(
-            "RaftInstance: commit upto 33",
-            look_behind_lines=1000,
-        )
-
-        for child in node_zk.get_children("/test"):
+        children = node_zk.get_children("/test")
+        assert len(children) == 30
+        for child in children:
             assert node_zk.get(f"/test/{child}")[0] == b"somedata"
 
         # The static config sets `s3_experimental_changelog=true` and
@@ -166,13 +171,12 @@ def test_restart_reads_changelog_from_s3(started_cluster):
     node_zk = get_fake_zk("node_logs")
     try:
         node_zk.create("/test_restart")
-        for _ in range(30):
+        requests = [
             node_zk.create_async("/test_restart/somenode", b"somedata", sequence=True)
-
-        node_logs.wait_for_log_line(
-            "RaftInstance: commit upto",
-            look_behind_lines=1000,
-        )
+            for _ in range(30)
+        ]
+        for request in requests:
+            request.get(timeout=30)
 
         children_before = sorted(node_zk.get_children("/test_restart"))
         assert len(children_before) == 30
