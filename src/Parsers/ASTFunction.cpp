@@ -885,6 +885,8 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                             /// We have just emitted `(` around the child, so suppress the
                             /// child's own `parenthesized` parens (which would otherwise duplicate ours).
                             nested_need_parens.wrapped_in_parens = true;
+                            /// These parens isolate the operand from an enclosing argument list, so a descendant IN needs none.
+                            nested_need_parens.current_function = nullptr;
                             ostr << '(';
                         }
 
