@@ -41,3 +41,6 @@ hello clickhouse world
 2730	9382398775103070376
 2730	9382398775103070376
 2730	9382398775103070376
+Cursors run only with leapfrog
+02346_cursors_bruteforce	0	10
+02346_cursors_leapfrog	10	10

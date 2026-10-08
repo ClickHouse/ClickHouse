@@ -36,6 +36,7 @@ namespace ProfileEvents
     extern const Event TextIndexPositionsBytesRead;
     extern const Event TextIndexPhraseCandidates;
     extern const Event TextIndexPhraseSearches;
+    extern const Event TextIndexPhraseCursorSearches;
     extern const Event TextIndexPhraseFallbacks;
 }
 
@@ -1212,6 +1213,8 @@ std::vector<PostingListCursorPtr> MergeTreeReaderTextIndex::makePhraseCursors(co
 
 PaddedPODArray<UInt32> MergeTreeReaderTextIndex::phraseSearchBlockedCursors(const PhraseTokens & phrase, std::vector<PostingListCursorPtr> postings_cursors)
 {
+    ProfileEvents::increment(ProfileEvents::TextIndexPhraseCursorSearches);
+
     const auto & unique_tokens = phrase.unique_tokens;
     const auto & unique_infos = phrase.unique_infos;
     const auto & term_to_unique = phrase.term_to_unique;

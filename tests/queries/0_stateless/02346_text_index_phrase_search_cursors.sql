@@ -40,53 +40,61 @@ OPTIMIZE TABLE tab_idx FINAL;
 
 SELECT 'needle clickhouse';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'needle clickhouse');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'clickhouse rare';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'clickhouse rare');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'needle clickhouse rare';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'needle clickhouse rare');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'needle clickhouse rare') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'world needle';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'world needle');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world needle') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world needle') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world needle') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world needle') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'clickhouse needle';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'clickhouse needle');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse needle') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse needle') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse needle') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse needle') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'unicorn clickhouse';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'unicorn clickhouse');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'unicorn clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'unicorn clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'unicorn clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'unicorn clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'hello clickhouse';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'hello clickhouse');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'clickhouse world';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'clickhouse world');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'world hello';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'world hello');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world hello') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world hello') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world hello') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'world hello') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
 
 SELECT 'hello clickhouse world';
 SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_ref WHERE hasPhrase(message, 'hello clickhouse world');
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
-SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'leapfrog', log_comment = '02346_cursors_leapfrog';
+SELECT count(), cityHash64(arraySort(groupArray(id))) FROM tab_idx WHERE hasPhrase(message, 'hello clickhouse world') SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '02346_cursors_bruteforce';
+
+SELECT 'Cursors run only with leapfrog';
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, countIf(ProfileEvents['TextIndexPhraseCursorSearches'] > 0), count()
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment IN ('02346_cursors_leapfrog', '02346_cursors_bruteforce')
+GROUP BY log_comment
+ORDER BY log_comment;
 
 DROP TABLE tab_ref;
 DROP TABLE tab_idx;
