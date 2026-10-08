@@ -7,42 +7,42 @@
       "versionId": "b7588d2a637ef8d5324fcc969fb485e57eb21502ef1f4a0042669b22c66bf0c6",
       "translations": {
         "ru": {
-          "updatedAt": "2026-10-08T12:08:24.163Z",
+          "updatedAt": "2026-10-08T14:48:37.294Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         },
         "ar": {
-          "updatedAt": "2026-10-08T12:08:24.531Z",
+          "updatedAt": "2026-10-08T14:48:37.643Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         },
         "es": {
-          "updatedAt": "2026-10-08T12:08:23.364Z",
+          "updatedAt": "2026-10-08T14:48:36.520Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         },
         "fr": {
-          "updatedAt": "2026-10-08T12:08:24.708Z",
+          "updatedAt": "2026-10-08T14:48:37.831Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         },
         "pt-BR": {
-          "updatedAt": "2026-10-08T12:08:23.963Z",
+          "updatedAt": "2026-10-08T14:48:37.098Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         },
         "ko": {
-          "updatedAt": "2026-10-08T12:08:23.778Z",
+          "updatedAt": "2026-10-08T14:48:36.920Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         },
         "zh": {
-          "updatedAt": "2026-10-08T12:08:24.355Z",
+          "updatedAt": "2026-10-08T14:48:37.467Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         },
         "ja": {
-          "updatedAt": "2026-10-08T12:08:23.574Z",
+          "updatedAt": "2026-10-08T14:48:36.735Z",
           "fileName": "docs.json",
           "postProcessHash": "6e93b27cfc90480e615645cf9f757ffc3403efea3c064fa4b7f198fd11b9ead9"
         }
@@ -48218,51 +48218,50 @@
     },
     {
       "fileId": "d242de9991d8e8b30135fbcf6026d2dd894c6e6f44a6d87b3d32a5e845fe21fb",
-      "versionId": "b68655f28e384dbe6cdbbf15798b138e0cb93d9ba8eac5e7ae6f83a2fa7dd956",
+      "versionId": "e9e94c40209dfc873fa3dcbf5f0d4f7269e1b86c8b60961508a9b90518196b51",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.710Z",
-          "fileName": "es/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "3a6e78fab3dafb71f70e0b3ea7e7e8baffbf2653cfd8140bb6bd9509c3259765"
+        "fr": {
+          "updatedAt": "2026-10-08T14:48:41.165Z",
+          "fileName": "fr/products/kubernetes-operator/install/helm.mdx",
+          "postProcessHash": "635a5db85587765d5063d86952796f6f3858cc97f386f350400927a975400b12"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:06.710Z",
+          "updatedAt": "2026-10-08T14:48:41.166Z",
           "fileName": "ja/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "5f6225b2098fe1b0eac59ff05ba8897a975e885d64ad0372964908ab5cbb4ef1"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.710Z",
-          "fileName": "ko/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "4968f2f8b718eb75adaea6d89a2089a6e1b3c01fae06944eb569d828cb6cf857"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.710Z",
-          "fileName": "pt-BR/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "8764e95817ae73cbcc42ed78e757c52d0aa856617e0872f493fa26916a928acb"
+          "postProcessHash": "21915da35d261f5a5326df6224d4411a0108385199f6c36885a1cfaadf2d000d"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.710Z",
+          "updatedAt": "2026-10-08T14:48:41.167Z",
           "fileName": "ru/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "b6f86c56231335e906adb2a85783439428759c483099582179d1d5c7a2901452"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.710Z",
-          "fileName": "zh/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "3093441c45e95af17a5e8ad182fcca2efe4d4ef51cca89547de26164017ccce6"
+          "postProcessHash": "023073147844fa55bd297629dd760ebb7e8f703375acac512f515fbd5b1b11ce"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.711Z",
+          "updatedAt": "2026-10-08T14:48:41.167Z",
           "fileName": "ar/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "48cb8f767e16f164719427ab918add3b256673104c9130633534e41f221431b9"
+          "postProcessHash": "625f3ee71a9947c87def6f0cf79a41a546a97dac8242879c0dffcd95d004e1d8"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.711Z",
-          "fileName": "fr/products/kubernetes-operator/install/helm.mdx",
-          "postProcessHash": "3e2e5ab69486b3e66f3d8c14c9b4b504e0de183e08609dcb440e8bc2975676b8"
+        "es": {
+          "updatedAt": "2026-10-08T14:48:41.168Z",
+          "fileName": "es/products/kubernetes-operator/install/helm.mdx",
+          "postProcessHash": "c8930b1582a0c4cf92aa37895b31f7ed3fd4c216fe303b5f2217428473f54ed8"
+        },
+        "ko": {
+          "updatedAt": "2026-10-08T14:48:41.168Z",
+          "fileName": "ko/products/kubernetes-operator/install/helm.mdx",
+          "postProcessHash": "6b0dcd569458ca2eea69be51bc846d560998641e54f31248a602d1aefa904069"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-10-08T14:48:41.169Z",
+          "fileName": "pt-BR/products/kubernetes-operator/install/helm.mdx",
+          "postProcessHash": "421ff3db876406d198a2ed7d9d840ee36e39a985051b77fdc1ecbfe7a8d03473"
+        },
+        "zh": {
+          "updatedAt": "2026-10-08T14:48:41.169Z",
+          "fileName": "zh/products/kubernetes-operator/install/helm.mdx",
+          "postProcessHash": "fc4d49f900ae94d6f327b3253df6fdb21cac783713cdbb6b8d00695da720aa13"
         }
       },
-      "fileName": "products/kubernetes-operator/install/helm.mdx",
-      "staged": false
+      "fileName": "products/kubernetes-operator/install/helm.mdx"
     },
     {
       "fileId": "6723f1b075d3e20d2f203aa42de7e2973a4bcf948a4efebed8fb4cef2069061d",
