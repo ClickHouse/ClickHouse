@@ -4558,6 +4558,12 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
             transaction.setPublishFenceEpoch(admission_epoch);
 
         auto lock = lockParts();
+
+        /// Check the size limits of a temporary table for all parts before adding any of them: an `ATTACH PARTITION`
+        /// that does not fit is rejected as a whole. The parts are committed in one transaction under the same lock,
+        /// so the check is atomic with concurrent writes.
+        throwIfTemporaryTableSizeLimitsExceededForReplacement(local_context, lock, loaded_parts, std::nullopt);
+
         std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
         for (size_t i = 0; i < loaded_parts.size(); ++i)
@@ -4595,15 +4601,6 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
     /// The parts are published: the changes this command made to `detached/` are final.
     detached_rollback.commit();
-
-    /// The parts are committed one by one, so check the size limits of a temporary table for all of them
-    /// beforehand: an `ATTACH PARTITION` that does not fit is rejected as a whole instead of being half attached.
-    /// The parts are not checked again one by one, because that could leave the partition half attached if the table
-    /// grows concurrently. The check is not atomic with concurrent writes, so they may exceed the limits slightly.
-    {
-        auto lock = lockParts();
-        throwIfTemporaryTableSizeLimitsExceededForReplacement(local_context, lock, loaded_parts, std::nullopt);
-    }
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
