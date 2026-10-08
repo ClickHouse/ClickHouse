@@ -3164,6 +3164,130 @@ def test_namespace_show_tables_variants(started_cluster):
     ), f"SHOW TABLES FROM a namespace with the setting off: {err}"
 
 
+def test_namespace_scope_statement_gating(started_cluster):
+    """
+    Under USE db.namespace only scope-capable statements run; the rest fail
+    with NOT_IMPLEMENTED before execution.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+    insert_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        **ns_settings,
+    }
+
+    test_ref = f"test_ns_gating_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    scope = f"USE {CATALOG_NAME}.{ns}; "
+
+    def rejected(statement):
+        _, err = node.query_and_get_answer_with_error(scope + statement, settings=ns_settings)
+        assert "NOT_IMPLEMENTED" in err, f"{statement!r} must be rejected under a namespace scope: {err}"
+
+    rejected("CREATE TABLE oops (x Int32) ENGINE = Memory")
+    rejected("DROP TABLE t")
+    rejected("ALTER TABLE t ADD COLUMN y Int32")
+    rejected("RENAME TABLE t TO t2")
+    rejected("TRUNCATE TABLE t")
+    rejected("OPTIMIZE TABLE t")
+    rejected("CREATE VIEW v AS SELECT * FROM t")
+    rejected("GRANT SELECT ON *.* TO CURRENT_USER")
+    rejected("SYSTEM STOP MERGES t")
+    rejected("CHECK TABLE t")
+    rejected("SHOW ROW POLICIES ON t")
+    rejected("SHOW ROW POLICIES ON *")
+    rejected("SHOW CREATE ROW POLICY nopol ON t")
+    rejected("CREATE TABLE oops ON CLUSTER default (x Int32) ENGINE = Memory")
+    rejected("BACKUP TABLE t TO Null")
+
+    result = node.query(scope + "SELECT count() FROM t", settings=ns_settings).strip()
+    assert result == "3", f"SELECT under scope: {result}"
+
+    node.query(
+        scope + "INSERT INTO t VALUES (NULL, 'AAPL', 193.24, 193.31, tuple('bot'))",
+        settings=insert_settings,
+    )
+    result = node.query(scope + "SELECT count() FROM t", settings=ns_settings).strip()
+    assert result == "4", f"INSERT under scope: {result}"
+
+    result = node.query(scope + "EXISTS TABLE t", settings=ns_settings).strip()
+    assert result == "1", f"EXISTS TABLE under scope: {result}"
+
+    node.query(scope + "SET max_threads = 1", settings=ns_settings)
+
+    result = node.query(scope + "DESCRIBE TABLE t", settings=ns_settings)
+    assert "symbol" in result, f"DESCRIBE TABLE under scope: {result}"
+
+    result = node.query(scope + "EXPLAIN SYNTAX SELECT 1", settings=ns_settings)
+    assert result.split("\n")[0] == "SELECT 1", f"EXPLAIN SYNTAX under scope: {result}"
+
+    result = node.query(
+        scope + f"SHOW ROW POLICIES ON {CATALOG_NAME}.`{ns}.t`", settings=ns_settings
+    )
+    assert result == "", f"SHOW ROW POLICIES on a qualified name under scope: {result}"
+
+    # inferred: loop over a catalog table under scope
+    result = node.query(
+        scope + "SELECT count() FROM (SELECT * FROM loop(t) LIMIT 2)", settings=ns_settings
+    ).strip()
+    assert result == "2", f"loop over a catalog table under scope: {result}"
+
+    rejected("SELECT * FROM merge('^t$')")
+    rejected("SELECT * FROM v(p = 1)")
+
+
+def test_namespace_show_subqueries_under_scope(started_cluster):
+    """
+    Subqueries inside SHOW statements resolve unqualified names in the
+    selected namespace.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_show_subq_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    create_table(catalog, ns, "t")
+    probe = create_table(catalog, ns, "probe")
+    probe.append(pa.Table.from_pylist([generate_record()]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    scope = f"USE {CATALOG_NAME}.{ns}; "
+
+    result = node.query(
+        scope + f"SHOW TABLES WHERE name = '{ns}.probe' AND exists(SELECT * FROM probe)",
+        settings=ns_settings,
+    ).strip()
+    assert result == f"{ns}.probe", f"SHOW TABLES WHERE with a subquery: {result}"
+
+    result = node.query(
+        scope
+        + f"SHOW TABLES FROM {CATALOG_NAME} WHERE name = '{ns}.probe' AND exists(SELECT * FROM probe)",
+        settings=ns_settings,
+    ).strip()
+    assert result == f"{ns}.probe", f"SHOW TABLES FROM catalog WHERE with a subquery: {result}"
+
+    result = node.query(
+        scope + "SHOW TABLES LIMIT (SELECT count() FROM probe)", settings=ns_settings
+    )
+    assert len(result.strip().split("\n")) == 1, f"SHOW TABLES LIMIT with a subquery: {result}"
+
+    result = node.query(
+        scope + "SHOW COLUMNS FROM t LIMIT (SELECT count() FROM probe)", settings=ns_settings
+    )
+    assert len(result.strip().split("\n")) == 1, f"SHOW COLUMNS LIMIT with a subquery: {result}"
+
+
 def test_alter_database_settings_not_supported(started_cluster):
     node = started_cluster.instances["node1"]
 
