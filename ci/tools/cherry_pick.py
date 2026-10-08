@@ -284,6 +284,24 @@ close it.
             return
         assert self.cherrypick_pr, "Unable to create cherry-pick PR"
 
+        if self.cherrypick_pr.draft and self.cherrypick_pr.state != "closed":
+            logging.info(
+                "Cherry-pick PR #%s for PR #%s is draft, we don't allow it",
+                self.cherrypick_pr.number,
+                self.pr.number,
+            )
+            if dry_run:
+                logging.info(
+                    "DRY RUN: Would mark cherry-pick PR for #%s as ready and comment",
+                    self.pr.number,
+                )
+                return
+            self.cherrypick_pr.mark_ready_for_review()
+            self.cherrypick_pr.create_issue_comment(
+                "The cherry-pick PR shouldn't me marked as draft, it completely breaks "
+                "the processing. Please, avoid it."
+            )
+            self.cherrypick_pr.update()
         if self.cherrypick_pr.mergeable and self.cherrypick_pr.state != "closed":
             if dry_run:
                 logging.info(
