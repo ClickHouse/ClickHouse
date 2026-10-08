@@ -3019,6 +3019,10 @@ String findKeySubexpressionName(const RPNBuilderTreeNode & node, const NameSet &
     if (key_subexpr_names.contains(expr_name))
         return expr_name;
 
+    /// A partition key stored with `moduloLegacy` can match a predicate written with `modulo`.
+    /// Look up that spelling as well for deterministic transforms. Monotonic constant transforms
+    /// do not use this substitution; a surrounding monotonic function of `modulo` is rarely useful
+    /// for such a match. For negative values, the substitution can filter more partitions than needed.
     expr_name = node.getColumnNameWithModuloLegacy();
     if (key_subexpr_names.contains(expr_name))
         return expr_name;
@@ -3071,27 +3075,25 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
         index_mapping.tuple_index = tuple_index;
         DataTypePtr data_type;
         std::optional<size_t> key_space_filling_curve_argument_pos;
-        DeterministicKeyTransformDag set_transforming_dag;
         if (tryMatchKeyColumnThroughMonotonicChain(
                 node, info, index_mapping.key_index, key_space_filling_curve_argument_pos, data_type, index_mapping.functions)
             && !key_space_filling_curve_argument_pos) /// We don't support the analysis of space-filling curves and IN set.
         {
-            candidate.indexes_mapping.push_back(index_mapping);
-            candidate.key_expr_types.push_back(data_type);
-            candidate.set_transforming_dags.push_back(std::nullopt);
+            candidate.column_mappings.push_back({
+                .index_mapping = std::move(index_mapping),
+                .set_transform = std::nullopt,
+                .key_expr_type = std::move(data_type)});
         }
-        else
+        else if (auto transform = tryGetDeterministicKeyTransform(node, info))
         {
-            bool is_injective = false;
-            if (tryGetDeterministicKeyTransform(
-                    node, info, index_mapping.key_index, data_type, set_transforming_dag, is_injective))
-            {
-                candidate.indexes_mapping.push_back(index_mapping);
-                candidate.key_expr_types.push_back(data_type);
-                candidate.set_transforming_dags.push_back(std::move(set_transforming_dag));
-                if (!is_injective)
-                    candidate.is_relaxed = true;
-            }
+            const auto & dag = transform->dag;
+            if (!isDeterministicTransformInjective(dag.actions->getActionsDAG(), dag.input_name, dag.output_name))
+                candidate.is_relaxed = true;
+
+            candidate.column_mappings.push_back({
+                .index_mapping = {.tuple_index = tuple_index, .key_index = transform->key_column_num, .functions = {}},
+                .set_transform = std::move(transform->dag),
+                .key_expr_type = std::move(transform->key_column_type)});
         }
     };
 
@@ -3106,7 +3108,7 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
             /// Keep the packed tuple mapping in addition to the per-component mappings. The
             /// former can use a key such as `tuple(a, b)`, while the latter can use `a` and `b`.
             add_key_mapping(arg, 0, result.packed_tuple_candidate.emplace());
-            if (result.packed_tuple_candidate->indexes_mapping.empty())
+            if (result.packed_tuple_candidate->column_mappings.empty())
                 result.packed_tuple_candidate.reset();
             for (size_t i = 0; i < result.componentwise_candidate.args_count; ++i)
                 add_key_mapping(arg_tuple.getArgumentAt(i), i, result.componentwise_candidate);
@@ -3116,7 +3118,7 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
             /// kept. The per-component mapping has priority, because it is the one that was always
             /// built; the packed mapping is kept when there is no component mapping at all, so that
             /// a Tuple-typed key column keeps being used for such a leaf.
-            if (!multiple_key_columns_per_condition && !result.componentwise_candidate.indexes_mapping.empty())
+            if (!multiple_key_columns_per_condition && !result.componentwise_candidate.column_mappings.empty())
                 result.packed_tuple_candidate.reset();
         }
         else
@@ -3135,23 +3137,20 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
         result.transform_sources = collectSetTransformSources(arg, info.key_subexpr_names, result.componentwise_candidate.args_count);
 
     /// Decline unusable predicates before the caller obtains or materializes their set columns.
-    if (result.componentwise_candidate.indexes_mapping.empty() && !result.packed_tuple_candidate && result.transform_sources.empty())
+    if (result.componentwise_candidate.column_mappings.empty() && !result.packed_tuple_candidate && result.transform_sources.empty())
         return std::nullopt;
 
     return result;
 }
 
-static bool tryPrepareSetColumnsForIndex(
+bool KeyCondition::tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
-    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
-    const DataTypes & data_types,
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    const SetAtomCandidate & candidate)
 {
     Columns new_columns;
     DataTypes new_types;
-    while (set_columns.size() < args_count) /// If we have a packed tuple inside, we unpack it
+    while (set_columns.size() < candidate.args_count) /// If we have a packed tuple inside, we unpack it
     {
         bool has_tuple = false;
         for (size_t i = 0; i < set_columns.size(); ++i)
@@ -3185,22 +3184,24 @@ static bool tryPrepareSetColumnsForIndex(
     IColumn::Filter filter(transformed_set_columns.front()->size(), 1);
     bool filter_used = false;
 
-    for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
+    for (const auto & mapping : candidate.column_mappings)
     {
+        chassert(!mapping.set_transform || mapping.index_mapping.functions.empty());
+
         /// Recursively strip LowCardinality from the key column type (including inside Tuples).
         /// When castColumnAccurateOrNull targets a LowCardinality type and the source value
         /// is out-of-range (e.g. Int64 → LowCardinality(UInt32)), accurateOrNull produces nulls
         /// that get inserted into the non-nullable ColumnUnique dictionary, crashing the server.
-        auto key_column_type = recursiveRemoveLowCardinality(data_types[indexes_mapping_index]);
-        size_t set_element_index = indexes_mapping[indexes_mapping_index].tuple_index;
+        auto key_column_type = recursiveRemoveLowCardinality(mapping.key_expr_type);
+        size_t set_element_index = mapping.index_mapping.tuple_index;
         auto set_element_type = set_types[set_element_index];
         ColumnPtr set_column = set_columns[set_element_index];
 
-        if (set_transforming_dags[indexes_mapping_index].has_value())
+        if (mapping.set_transform)
         {
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
-            const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
+            const auto & set_transforming_dag = *mapping.set_transform;
             if (!applyDeterministicDagToColumn(
                     set_column,
                     set_element_type,
@@ -3311,6 +3312,8 @@ bool typeContainsFloat(const DataTypePtr & type)
     return anyInTypeTree(*type, [](const IDataType & subtype) { return isFloat(subtype); });
 }
 
+}
+
 /** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
   * works with ranges produced by `IColumn::getExtremes`, which deliberately skips `NaN`. A part or
   * granule that holds `NaN` next to finite values therefore gets a `NaN`-free range, the set-vs-range
@@ -3318,9 +3321,12 @@ bool typeContainsFloat(const DataTypePtr & type)
   * matches the `NaN` rows. The set atom serves every index at once, so it has to be declined outright;
   * `has` declines floating-point arrays for a closely related mismatch.
   */
-bool setElementsContainNaN(const Columns & set_columns, const DataTypes & key_types)
+bool KeyCondition::setElementsContainNaN(const Columns & set_columns, const SetAtomCandidate & candidate)
 {
-    if (std::none_of(key_types.begin(), key_types.end(), typeContainsFloat))
+    if (std::ranges::none_of(candidate.column_mappings, [](const SetColumnMapping & mapping)
+        {
+            return typeContainsFloat(mapping.key_expr_type);
+        }))
         return false;
 
     for (const auto & column : set_columns)
@@ -3334,8 +3340,6 @@ bool setElementsContainNaN(const Columns & set_columns, const DataTypes & key_ty
     }
 
     return false;
-}
-
 }
 
 /// `has` compares array elements with the key values as raw `Field`s, whereas `MergeTreeSetIndex`
@@ -3493,15 +3497,9 @@ static bool areTypesCompatibleForHasSetIndex(
     return false;
 }
 
-static bool areSetAndKeyTypesCompatibleForHas(
-    DataTypes set_types,
-    size_t key_args_count,
-    const DataTypes & key_types,
-    const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
-    const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    bool only_permuting_casts = false)
+bool KeyCondition::areSetAndKeyTypesCompatibleForHas(DataTypes set_types, const SetAtomCandidate & candidate)
 {
-    while (set_types.size() < key_args_count)
+    while (set_types.size() < candidate.args_count)
     {
         DataTypes unpacked_set_types;
         bool has_tuple = false;
@@ -3526,9 +3524,9 @@ static bool areSetAndKeyTypesCompatibleForHas(
         set_types = std::move(unpacked_set_types);
     }
 
-    for (size_t index = 0; index < indexes_mapping.size(); ++index)
+    for (const auto & mapping : candidate.column_mappings)
     {
-        const auto set_element_index = indexes_mapping[index].tuple_index;
+        const auto set_element_index = mapping.index_mapping.tuple_index;
         if (set_element_index >= set_types.size())
             return true;
 
@@ -3536,13 +3534,14 @@ static bool areSetAndKeyTypesCompatibleForHas(
         /// same chain before the comparison, so it is the chain's input - the column `has` compares
         /// against - whose equality semantics must match, not the key expression result.
         const auto & compared_type
-            = set_transforming_dags[index].has_value() ? set_transforming_dags[index]->input_type : key_types[index];
+            = mapping.set_transform ? mapping.set_transform->input_type : mapping.key_expr_type;
 
         /// With multiple key arguments the right-hand side of `has` is a tuple of key columns, so the
         /// per-index comparison happens between the children of two `Tuple` `Field`s - with the plain
         /// `Field::operator==`, not the accurate one.
         if (!areTypesCompatibleForHasSetIndex(
-                set_types[set_element_index], compared_type, /*within_container=*/ key_args_count > 1, only_permuting_casts))
+                set_types[set_element_index], compared_type, /*within_container=*/ candidate.args_count > 1,
+                /*only_permuting_casts=*/ candidate.is_relaxed))
             return false;
     }
 
@@ -3557,10 +3556,7 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     const DataTypePtr & has_element_type)
 {
     chassert(set_types.size() == set_columns.size());
-    chassert(candidate.indexes_mapping.size() == candidate.set_transforming_dags.size());
-    chassert(candidate.indexes_mapping.size() == candidate.key_expr_types.size());
-
-    if (candidate.indexes_mapping.empty())
+    if (candidate.column_mappings.empty())
         return std::nullopt;
 
     auto atom_set_columns = set_columns;
@@ -3570,17 +3566,18 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     /// ORDER BY key_tuple (a single Tuple-typed key column) with predicate
     /// `key_tuple IN ((a, b), (c, d), ...)`, or a key-side transform of the tuple, such as
     /// `ORDER BY toString(tuple(a, b))`.
-    if (candidate.args_count == 1 && candidate.key_expr_types.size() == 1)
+    if (candidate.args_count == 1 && candidate.column_mappings.size() == 1)
     {
+        const auto & mapping = candidate.column_mappings.front();
         /// The transformed set must match the key expression's input layout.
-        const bool key_is_transformed = candidate.set_transforming_dags[0].has_value();
+        const bool key_is_transformed = mapping.set_transform.has_value();
         DataTypePtr key_type = removeNullable(
-            key_is_transformed ? candidate.set_transforming_dags[0]->input_type : candidate.key_expr_types[0]);
+            key_is_transformed ? mapping.set_transform->input_type : mapping.key_expr_type);
         if (const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get()))
         {
             const size_t tuple_size = key_tuple_type->getElements().size();
             const auto * result_tuple_type
-                = typeid_cast<const DataTypeTuple *>(removeNullable(candidate.key_expr_types[0]).get());
+                = typeid_cast<const DataTypeTuple *>(removeNullable(mapping.key_expr_type).get());
             const bool transform_consumes_whole_tuple
                 = key_is_transformed && !(result_tuple_type && result_tuple_type->getElements().size() == tuple_size);
 
@@ -3611,26 +3608,22 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
     /// A relaxed `has` atom still needs a sound positive condition. Casts that permute
     /// named tuple fields or enum codes can otherwise remove matching values from the set.
     /// Validate each mapping, including the packed-tuple and additional wrapped atoms.
-    if (has_element_type && !areSetAndKeyTypesCompatibleForHas(
-            {has_element_type}, candidate.args_count, candidate.key_expr_types, candidate.set_transforming_dags,
-            candidate.indexes_mapping, /*only_permuting_casts=*/ candidate.is_relaxed))
+    if (has_element_type && !areSetAndKeyTypesCompatibleForHas({has_element_type}, candidate))
         return std::nullopt;
 
-    if (!tryPrepareSetColumnsForIndex(
-            atom_set_columns,
-            atom_set_types,
-            candidate.set_transforming_dags,
-            candidate.key_expr_types,
-            candidate.indexes_mapping,
-            candidate.args_count))
+    if (!tryPrepareSetColumnsForIndex(atom_set_columns, atom_set_types, candidate))
         return std::nullopt;
 
-    if (setElementsContainNaN(atom_set_columns, candidate.key_expr_types))
+    if (setElementsContainNaN(atom_set_columns, candidate))
         return std::nullopt;
 
     RPNElement element;
     element.relaxed = candidate.is_relaxed;
-    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(candidate.indexes_mapping));
+    std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
+    indexes_mapping.reserve(candidate.column_mappings.size());
+    for (auto & mapping : candidate.column_mappings)
+        indexes_mapping.push_back(std::move(mapping.index_mapping));
+    element.set_index = std::make_shared<MergeTreeSetIndex>(atom_set_columns, std::move(indexes_mapping));
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
     const auto & adjusted_indexes_mapping = element.set_index->getIndexesMapping();
@@ -3708,9 +3701,10 @@ void KeyCondition::appendSetAtoms(
                 continue;
 
             SetAtomCandidate set_candidate;
-            set_candidate.indexes_mapping.emplace_back(std::move(mapping));
-            set_candidate.set_transforming_dags.emplace_back(std::move(candidate.dag));
-            set_candidate.key_expr_types.emplace_back(candidate.key_column_type);
+            set_candidate.column_mappings.push_back({
+                .index_mapping = std::move(mapping),
+                .set_transform = std::move(candidate.dag),
+                .key_expr_type = std::move(candidate.key_column_type)});
             /// A whole-tuple candidate consumes one packed set column, like `packed_tuple_candidate`.
             /// `tryPrepareSetAtom` repacks an unpacked set for the transform's tuple input.
             set_candidate.args_count = source.is_whole_tuple ? 1 : args_count;
@@ -4407,47 +4401,19 @@ std::vector<KeyCondition::KeyWrappingChain> KeyCondition::collectKeyWrappingChai
     return result;
 }
 
-bool KeyCondition::tryGetDeterministicKeyTransform(
-    const RPNBuilderTreeNode & node,
-    const BuildInfo & info,
-    size_t & out_key_column_num,
-    DataTypePtr & out_key_res_column_type,
-    DeterministicKeyTransformDag & out_transform,
-    bool & out_is_injective) const
+std::optional<KeyCondition::DeterministicKeyDag> KeyCondition::tryGetDeterministicKeyTransform(
+    const RPNBuilderTreeNode & node, const BuildInfo & info) const
 {
-    out_is_injective = false;
-
-    // Checking if column name matches any of key subexpressions
-    String expr_name = node.getColumnName();
-
-    if (!info.key_subexpr_names.contains(expr_name))
-    {
-        /// Let's check another one case.
-        /// If our storage was created with moduloLegacy in partition key,
-        /// We can assume that `modulo(...) = const` is the same as `moduloLegacy(...) = const`.
-        /// Replace modulo to moduloLegacy in AST and check if we also have such a column.
-        ///
-        /// We do not check this in transformConstantByMonotonicKeyFunctions.
-        /// The case `f(modulo(...))` for totally monotonic `f` is considered to be rare.
-        ///
-        /// Note: for negative values, we can filter more partitions than needed.
-        expr_name = node.getColumnNameWithModuloLegacy();
-
-        if (!info.key_subexpr_names.contains(expr_name))
-            return false;
-    }
+    const String expr_name = findKeySubexpressionName(node, info.key_subexpr_names);
+    if (expr_name.empty())
+        return std::nullopt;
 
     /// The set-tuple mapping needs exactly one key column per tuple component, so only
     /// the first match is collected.
     auto dags = collectKeyWrappingDags(expr_name, info, /*first_match_only*/ true);
     if (dags.empty())
-        return false;
-    out_key_column_num = dags.front().key_column_num;
-    out_key_res_column_type = std::move(dags.front().key_column_type);
-    out_transform = std::move(dags.front().dag);
-
-    out_is_injective = isDeterministicTransformInjective(out_transform.actions->getActionsDAG(), out_transform.input_name, out_transform.output_name);
-    return true;
+        return std::nullopt;
+    return std::move(dags.front());
 }
 
 struct KeyCondition::RPNElement::Polygon

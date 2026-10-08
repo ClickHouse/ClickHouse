@@ -787,16 +787,10 @@ private:
         const BuildInfo & info,
         bool first_match_only) const;
 
-    /// Finds the first key column computable from `node` through deterministic functions and
-    /// returns its position, type, transformation DAG, and injectivity. The set analysis uses
-    /// the DAG to transform set elements into key column values.
-    bool tryGetDeterministicKeyTransform(
-        const RPNBuilderTreeNode & node,
-        const BuildInfo & info,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_res_column_type,
-        DeterministicKeyTransformDag & out_transform,
-        bool & out_is_injective) const;
+    /// Finds the first key column computable from `node` through deterministic functions. The set
+    /// analysis uses the returned recipe to transform set elements into key column values.
+    std::optional<DeterministicKeyDag> tryGetDeterministicKeyTransform(
+        const RPNBuilderTreeNode & node, const BuildInfo & info) const;
 
     /// Appends prepared set-membership atoms for this predicate to `group`. Each atom may constrain
     /// several key columns. The caller finalizes their function kinds. An empty group means the
@@ -812,12 +806,22 @@ private:
         AtomGroup & group,
         bool allow_relaxed_pruning);
 
-    /// The inputs for one set atom, with one mapping, transform, and type per matched key column.
+    /// One predicate component mapped to a key column, together with its comparison type and the
+    /// optional transformation of set values into that column's key space.
+    /// A set transform compares against the key column directly, so `index_mapping.functions` is empty.
+    /// `key_expr_type` is the range-function chain's result type, or the key column type when a set
+    /// transform is present. It is the type compared with the prepared set.
+    struct SetColumnMapping
+    {
+        MergeTreeSetIndex::KeyTuplePositionMapping index_mapping;
+        std::optional<DeterministicKeyTransformDag> set_transform;
+        DataTypePtr key_expr_type;
+    };
+
+    /// The inputs for one set atom, keeping each matched predicate component with its key mapping.
     struct SetAtomCandidate
     {
-        std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
-        std::vector<std::optional<DeterministicKeyTransformDag>> set_transforming_dags;
-        DataTypes key_expr_types;
+        std::vector<SetColumnMapping> column_mappings;
         /// The number of tuple components of the predicate expression (1 for a scalar or packed tuple).
         size_t args_count = 1;
         /// A non-injective transform makes the set check a superset of the matching values.
@@ -851,6 +855,19 @@ private:
         /// Their transformation DAGs are collected only when building the group from the set columns.
         std::vector<SetTransformSource> transform_sources;
     };
+
+    /// Unpacks the set layout and converts its columns using each mapping's comparison type and
+    /// optional key transform. `set_types` records the unpacked source types, before conversion.
+    /// Returns false when the layout or value transformation cannot be used for set-index analysis.
+    static bool tryPrepareSetColumnsForIndex(
+        Columns & set_columns, DataTypes & set_types, const SetAtomCandidate & candidate);
+
+    /// Checks that conversion preserves the raw element comparison used by `has`. A relaxed candidate
+    /// needs only a sound positive membership condition; an exact candidate also needs its complement.
+    static bool areSetAndKeyTypesCompatibleForHas(DataTypes set_types, const SetAtomCandidate & candidate);
+
+    /// Checks for NaNs that range-based set analysis cannot represent in the candidate's key space.
+    static bool setElementsContainNaN(const Columns & set_columns, const SetAtomCandidate & candidate);
 
     /// Converts a candidate's set columns into key space and builds its `MergeTreeSetIndex`.
     /// The caller finalizes the prepared atom's function kind for the membership predicate.
