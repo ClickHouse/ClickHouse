@@ -33,6 +33,8 @@ REMOVED_NAME_PREFIX = "__removed."
 TOMBSTONE_KEY_PREFIX = KEY_PREFIX + "__meta/__tombstone/"
 # `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`
 PENDING_TOMBSTONE_PREFIX = "pending\n"
+# `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`
+PENDING_REPLACE_TOMBSTONE_PREFIX = "pending replace\n"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -238,6 +240,63 @@ def test_drop_table_killed_before_finalize(
     assert node.contains_in_log("orphaned objects left by")
 
 
+def removed_directory_names(keys):
+    """The reserved names that `RemoveRecursive` moved subtrees under, as written into `prefix.path`."""
+    return {
+        read_key(key).split("/")[0]
+        for key in keys
+        if key.endswith("/prefix.path")
+        and read_key(key).startswith(REMOVED_NAME_PREFIX)
+    }
+
+
+def test_failed_cleanup_is_not_loaded_back():
+    """The objects of a committed removal are deleted after the commit, in best-effort mode: a failure there is
+    only logged. The leftovers must not come back as metadata when it is reloaded, and the next start reclaims them.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    node.query("DROP TABLE IF EXISTS t_probe SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("SYSTEM STOP MERGES t")
+    for i in range(3):
+        node.query(f"INSERT INTO t VALUES ({i})")
+
+    node.query("SYSTEM ENABLE FAILPOINT plain_object_storage_fail_on_finalize")
+    try:
+        # The removal is committed, so the query succeeds even though the objects are not deleted.
+        node.query("DROP TABLE t SYNC")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT plain_object_storage_fail_on_finalize")
+
+    keys = list_keys()
+    assert tombstone_markers(keys) != []
+    removed_names = removed_directory_names(keys)
+    assert removed_names != set()
+
+    # A reload that is not the initial one keeps the leftovers in the bucket, but does not load them.
+    node.query("SYSTEM DROP DISK METADATA CACHE disk_s3_plain_rewritable")
+    assert list_keys() == keys
+
+    # A new entry with a reserved name is accepted only if that name already exists in the loaded metadata
+    # (see `test_existing_look_alike_directory_stays_usable`), so the rejection shows that it was not loaded.
+    node.query("CREATE TABLE t_probe (x UInt64) ENGINE = Memory")
+    for name in removed_names:
+        error = node.query_and_get_error(
+            f"BACKUP TABLE t_probe TO Disk('disk_s3_plain_rewritable', '{name}')"
+        )
+        assert "are reserved" in error
+    node.query("DROP TABLE t_probe SYNC")
+    assert list_keys() == keys
+
+    node.restart_clickhouse()
+    wait_for_empty_prefix()
+    assert node.contains_in_log("orphaned objects left by")
+
+
 def test_names_that_only_look_reserved_are_kept():
     """A reserved name denotes an unfinished removal only while it has a marker object. Any name of that
     shape, the exact one included, could have been created as ordinary data by a version that reserved
@@ -353,20 +412,7 @@ def test_partially_moved_removal_is_rolled_back():
         put_key(data_key, b"a file of a directory")
         data_keys.append(data_key)
     marker_key = TOMBSTONE_KEY_PREFIX + removed_name
-    put_key(
-        marker_key,
-        (PENDING_TOMBSTONE_PREFIX + original_path + "\n" + removed_name).encode(),
-    )
-
-    # A marker truncated by a process that died while writing it says nothing reliable about its removal:
-    # nothing under its name is moved back or deleted, and the marker stays.
-    truncated_name = REMOVED_NAME_PREFIX + "truncatedmarkera"
-    truncated_marker_key = TOMBSTONE_KEY_PREFIX + truncated_name
-    truncated_directory_key = f"{KEY_PREFIX}__meta/zyxwvutsrqponmld/prefix.path"
-    put_key(truncated_directory_key, f"{truncated_name}/".encode())
-    truncated_data_key = f"{KEY_PREFIX}zyxwvutsrqponmld/data.bin"
-    put_key(truncated_data_key, b"a file of a directory")
-    put_key(truncated_marker_key, (PENDING_TOMBSTONE_PREFIX + "partially").encode())
+    put_key(marker_key, (PENDING_TOMBSTONE_PREFIX + original_path + "\n").encode())
 
     node.start_clickhouse()
     assert int(node.query("SELECT count() FROM t")) == 1
@@ -385,10 +431,103 @@ def test_partially_moved_removal_is_rolled_back():
     )
     assert node.contains_in_log("Rolled back 1 removals that were not committed")
 
-    assert key_exists(truncated_marker_key)
-    assert key_exists(truncated_data_key)
-    assert read_key(truncated_directory_key) == f"{truncated_name}/"
-    assert node.contains_in_log("is malformed")
+    node.query("DROP TABLE t SYNC")
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()
+
+
+@pytest.mark.parametrize(
+    "target_content",
+    [
+        # Killed after the target was deleted and before the source was copied over it.
+        pytest.param(None, id="target_deleted"),
+        # Killed after the source was copied over the target and before the replacement was marked as committed.
+        pytest.param(b"the new content", id="target_overwritten"),
+        # Killed before the target was touched.
+        pytest.param(b"the old content", id="target_intact"),
+    ],
+)
+def test_pending_replacement_is_rolled_back(target_content):
+    """`MoveFile` with replacement copies the target to a backup under a reserved name, deletes the target and copies
+    the source over it. Until the source is in place, the backup is the only copy of the target, and its marker says
+    that the replacement is pending. A process killed in between must not lose the target: the next start copies the
+    backup back over it before reclaiming the backup.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1)")
+    node.stop_clickhouse()
+
+    old_content = b"the old content"
+    remote_name = "zyxwvutsrqponmla"
+    put_key(f"{KEY_PREFIX}__meta/{remote_name}/prefix.path", b"replaced/")
+    # The source is deleted only after the replacement is marked as committed, so it is still there.
+    source_key = f"{KEY_PREFIX}{remote_name}/source.txt"
+    put_key(source_key, b"the new content")
+    target_key = f"{KEY_PREFIX}{remote_name}/target.txt"
+    if target_content is not None:
+        put_key(target_key, target_content)
+
+    removed_name = REMOVED_NAME_PREFIX + "pendingreplaceab"
+    backup_key = f"{KEY_PREFIX}__root/{removed_name}"
+    put_key(backup_key, old_content)
+    marker_key = TOMBSTONE_KEY_PREFIX + removed_name
+    put_key(
+        marker_key,
+        f"{PENDING_REPLACE_TOMBSTONE_PREFIX}{remote_name}\ntarget.txt\n{len(old_content)}\n".encode(),
+    )
+
+    node.start_clickhouse()
+    assert int(node.query("SELECT count() FROM t")) == 1
+
+    wait_for_keys_to_disappear([marker_key, backup_key])
+    assert read_key(target_key) == old_content.decode()
+    assert key_exists(source_key)
+    if target_content != old_content:
+        assert node.contains_in_log("left by a replacement that was not committed")
+
+    node.query("DROP TABLE t SYNC")
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()
+
+
+def test_incomplete_backup_of_replacement_is_reclaimed():
+    """The process was killed while it was writing the backup, so the target was never touched and must stay as it is."""
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1)")
+    node.stop_clickhouse()
+
+    old_content = b"the old content"
+    remote_name = "zyxwvutsrqponmla"
+    put_key(f"{KEY_PREFIX}__meta/{remote_name}/prefix.path", b"replaced/")
+    target_key = f"{KEY_PREFIX}{remote_name}/target.txt"
+    put_key(target_key, old_content)
+
+    removed_name = REMOVED_NAME_PREFIX + "pendingreplaceab"
+    backup_key = f"{KEY_PREFIX}__root/{removed_name}"
+    put_key(backup_key, old_content[:5])
+    marker_key = TOMBSTONE_KEY_PREFIX + removed_name
+    put_key(
+        marker_key,
+        f"{PENDING_REPLACE_TOMBSTONE_PREFIX}{remote_name}\ntarget.txt\n{len(old_content)}\n".encode(),
+    )
+
+    node.start_clickhouse()
+    assert int(node.query("SELECT count() FROM t")) == 1
+
+    wait_for_keys_to_disappear([marker_key, backup_key])
+    assert read_key(target_key) == old_content.decode()
 
     node.query("DROP TABLE t SYNC")
     node.stop_clickhouse()

@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1215784",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1215944",
       "email": "support@clickhouse.com"
     }
   },
@@ -29502,6 +29502,9 @@
               "organization_update_private_endpoints",
               "organization_update_pci_compliance",
               "organization_update_hipaa_status",
+              "organization_security_contact_add",
+              "organization_security_contact_remove",
+              "organization_security_contact_replace",
               "organization_update_public_preview",
               "transfer_credits_in",
               "transfer_credits_out",

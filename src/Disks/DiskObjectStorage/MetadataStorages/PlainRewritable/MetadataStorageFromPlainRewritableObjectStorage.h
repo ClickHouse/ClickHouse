@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/PathLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
@@ -12,6 +13,7 @@
 
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace DB
 {
@@ -117,13 +119,18 @@ private:
     /// would read the setting from the wrong place. Changing it requires a restart, as a downgrade does anyway.
     const bool hard_links_enabled;
 
-    std::mutex metadata_mutex;
+    /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
+    /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.
+    PathLocks path_locks;
     FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
     /// Paths from the last completed load. Validate them against the current snapshot before reuse.
     std::unordered_map<std::string, std::string> local_paths_by_remote_directory;
+    /// The remote paths of the directories of the targets of the pending replacements seen by the last completed load.
+    /// Protected by `load_mutex`, like `local_paths_by_remote_directory`.
+    std::unordered_set<std::string> remote_directories_of_pending_replaces;
     AtomicStopwatch previous_refresh;
 };
 
@@ -152,6 +159,13 @@ protected:
 
     void planFileMove(const NormalizedPath & path_from, const NormalizedPath & path_to);
     void markFallbackCopyMoved(const std::string & path_from, const std::string & path_to);
+
+    /// Normalized paths of the files and directories the operations modify; locked for the duration of the commit.
+    std::vector<std::string> affected_paths;
+
+    void addAffectedPath(const std::string & path);
+    /// The same for a file, and also for its directory if the operation may rewrite the `prefix.path` of the directory.
+    void addAffectedFilePath(const std::string & path);
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);

@@ -44,9 +44,11 @@ namespace FailPoints
     extern const char plain_object_storage_copy_temp_source_file_fail_on_file_move[];
     extern const char plain_object_storage_copy_temp_target_file_fail_on_file_move[];
     extern const char plain_object_storage_fail_after_copy_on_file_move[];
+    extern const char plain_object_storage_pause_on_file_copy[];
     extern const char plain_object_storage_pause_before_unlink_file_finalize[];
     extern const char plain_object_storage_pause_before_remove_recursive_finalize[];
     extern const char plain_object_storage_pause_before_remove_recursive_metadata[];
+    extern const char plain_object_storage_fail_on_finalize[];
 }
 
 namespace
@@ -59,11 +61,11 @@ namespace
 ///
 /// A marker written with `pending_original_path` belongs to a removal that is not committed yet, see
 /// `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`.
-void writeTombstoneMarker(
+void writeTombstoneMarkerContent(
     IObjectStorage & object_storage,
     const PlainRewritableLayout & layout,
     const std::string & removed_name,
-    const std::optional<std::string> & pending_original_path = std::nullopt)
+    const std::string & content)
 {
     StoredObject marker_object(layout.constructTombstoneMarkerKey(removed_name));
     auto buf = object_storage.writeObject(
@@ -73,11 +75,32 @@ void writeTombstoneMarker(
         /*buf_size*/ 128,
         /*settings*/ getWriteSettingsForMetadata());
 
-    writeString(
-        pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(removed_name, *pending_original_path)
-                              : PlainRewritableLayout::makeCommittedTombstoneContent(removed_name),
-        *buf);
+    writeString(content, *buf);
     buf->finalize();
+}
+
+void writeTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const std::optional<std::string> & pending_original_path = std::nullopt)
+{
+    writeTombstoneMarkerContent(
+        object_storage,
+        layout,
+        removed_name,
+        pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(*pending_original_path)
+                              : PlainRewritableLayout::makeCommittedTombstoneContent(removed_name));
+}
+
+/// See `PlainRewritableLayout::PENDING_REPLACE_TOMBSTONE_PREFIX`.
+void writePendingReplaceTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const PlainRewritableLayout::PendingReplace & pending_replace)
+{
+    writeTombstoneMarkerContent(object_storage, layout, removed_name, PlainRewritableLayout::makePendingReplaceTombstoneContent(pending_replace));
 }
 
 void removeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritableLayout & layout, const std::string & removed_name)
@@ -185,6 +208,40 @@ MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::MetadataSto
 void MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation::execute()
 {
     preconditions->runChecks(fs_tree);
+}
+
+MetadataStorageFromPlainObjectStoragePublishOperation::MetadataStorageFromPlainObjectStoragePublishOperation(
+    std::shared_ptr<FsSnapshot> fs_tree_,
+    FsMetadata & fs_,
+    std::shared_ptr<IObjectStorage> object_storage_,
+    std::shared_ptr<PlainRewritableLayout> layout_,
+    StoredObjects & removed_objects_)
+    : fs_tree(std::move(fs_tree_))
+    , fs(fs_)
+    , object_storage(std::move(object_storage_))
+    , layout(std::move(layout_))
+    , removed_objects(removed_objects_)
+{
+}
+
+void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
+{
+    /// A transaction that removes a link to a shared blob does not exclude the transactions removing the other links
+    /// to it, because they lock only the paths of their own files. Each of them may see the other link left and keep
+    /// the blob, so the last link is found only here, where the publications are serialized.
+    for (const auto & blob_key : fs.applyJournal(fs_tree->getJournal()))
+        unlinked_blobs.emplace_back(layout->constructBlobObjectKey(blob_key));
+}
+
+void MetadataStorageFromPlainObjectStoragePublishOperation::finalize()
+{
+    if (unlinked_blobs.empty())
+        return;
+
+    LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStoragePublishOperation"),
+        "Removing {} blobs whose last links were removed by concurrent transactions", unlinked_blobs.size());
+    object_storage->removeObjectsIfExist(unlinked_blobs);
+    removed_objects.append_range(unlinked_blobs);
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -684,6 +741,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
 
     if (blob_removal_attempted)
     {
+        fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the removal of '{}'", path);
+        });
+
         removed_objects.push_back(StoredObject(remote_source_path));
         object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
         /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
@@ -746,6 +807,8 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
     const std::string default_blob_key = getDefaultBlobKey(directory_info_to.remote_path, normalized_path_to.filename());
     const std::string new_blob_key = blob_key.empty() ? default_blob_key : blob_key;
     remote_path_to = layout->constructBlobObjectKey(new_blob_key);
+
+    FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_on_file_copy);
 
     copy_attempted = true;
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
@@ -950,7 +1013,14 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", path_from, path_to);
         });
 
-        writeTombstoneMarker(*object_storage, *layout, tmp_name_to);
+        /// The target is deleted below and replaced only later, so until then the backup is its only copy: the marker
+        /// says the replacement is pending, which makes a load restore the backup rather than reclaim it.
+        pending_replace = PlainRewritableLayout::PendingReplace{
+            .directory_remote_path = directory_info_to.remote_path,
+            .file_name = normalized_path_to.filename().string(),
+            .size = fs_tree->getFileRemoteInfo(path_to).value().bytes_size,
+        };
+        writePendingReplaceTombstoneMarker(*object_storage, *layout, tmp_name_to, *pending_replace);
         object_storage->copyObject(
             /*object_from=*/StoredObject(remote_path_to),
             /*object_to=*/StoredObject(tmp_remote_path_to),
@@ -991,6 +1061,11 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
         fiu_do_on(FailPoints::plain_object_storage_fail_after_copy_on_file_move, {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after moving from '{}' to '{}'", path_from, path_to);
         });
+
+        /// The replacement is in place, and the source is deleted only after this, so the move is complete as seen
+        /// from the object storage: from now on the backup of the target is garbage.
+        if (had_existing_target)
+            writeTombstoneMarker(*object_storage, *layout, tmp_name_to);
 
         object_storage->removeObjectIfExists(StoredObject(remote_path_from));
     }
@@ -1055,6 +1130,17 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
             write_settings);
     });
 
+    /// The source is back under its own key, so rolling the target back completes the rollback. The marker may already
+    /// say that the replacement is committed, so a process that dies in the middle of this has to find it pending
+    /// again, to restore the target from the backup rather than reclaim the backup.
+    if (pending_replace)
+    {
+        undoWithRetries(log, fmt::format("mark the replacement of '{}' as pending", path_to), [&]
+        {
+            writePendingReplaceTombstoneMarker(*object_storage, *layout, tmp_name_to, *pending_replace);
+        });
+    }
+
     undoWithRetries(log, fmt::format("restore the blob of the target file '{}'", path_to), [&]
     {
         if (!had_existing_target)
@@ -1117,6 +1203,10 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::finalize()
 
     if (blob_move_attempted)
     {
+        fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the move from '{}' to '{}'", path_from, path_to);
+        });
+
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
         object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
         /// The markers outlive the objects they mark, so that a process that dies in the middle of this always
@@ -1241,11 +1331,16 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
 
     FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_finalize);
 
+    fiu_do_on(FailPoints::plain_object_storage_fail_on_finalize, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when finalizing the removal of '{}'", path);
+    });
+
     /// The `prefix.path` object of a directory is the only thing that lets the next load find the objects of this
     /// subtree, so it has to outlive them: the data objects are deleted first, and the `prefix.path` objects only
     /// once all of them are gone. A single pass would not do, because the multi-object delete of S3 and Azure
     /// gives no ordering guarantees within a request: a directory could lose its `prefix.path` while still having
     /// data objects, and if the process died at that moment, they would become unreachable forever.
+    /// The objects were chosen by `execute`, which keeps the blobs shared with the files outside of the subtree.
     object_storage->removeObjectsIfExist(data_objects_to_remove);
 
     FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_metadata);

@@ -1,6 +1,8 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
 
+#include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 #include <Common/getRandomASCIIString.h>
 #include <base/find_symbols.h>
 
@@ -11,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 PlainRewritableLayout::PlainRewritableLayout(std::string object_storage_common_key_prefix_)
     : object_storage_common_key_prefix(object_storage_common_key_prefix_)
@@ -98,30 +105,64 @@ std::string PlainRewritableLayout::makeCommittedTombstoneContent(const std::stri
     return removed_name;
 }
 
-std::string PlainRewritableLayout::makePendingTombstoneContent(const std::string & removed_name, const std::string & original_local_path)
+std::string PlainRewritableLayout::makePendingTombstoneContent(const std::string & original_local_path)
 {
-    return PENDING_TOMBSTONE_PREFIX + original_local_path + "\n" + removed_name;
+    /// The line feed terminates the content, so it cannot be a part of the path.
+    if (original_local_path.contains('\n'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot remove '{}' on a plain_rewritable disk: the path contains a line feed", original_local_path);
+
+    return fmt::format("{}{}\n", PENDING_TOMBSTONE_PREFIX, original_local_path);
 }
 
-PlainRewritableLayout::TombstoneMarkerContent PlainRewritableLayout::parseTombstoneContent(std::string_view removed_name, std::string_view content)
+std::string PlainRewritableLayout::makePendingReplaceTombstoneContent(const PendingReplace & pending_replace)
 {
-    if (content == removed_name)
-        return {TombstoneMarkerContent::State::Committed, {}};
+    if (pending_replace.directory_remote_path.contains('\n') || pending_replace.file_name.contains('\n'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot replace '{}' on a plain_rewritable disk: the name contains a line feed", pending_replace.file_name);
 
-    /// A truncated pending marker cannot end with the removed name, because the original path never contains it.
-    const size_t suffix_size = removed_name.size() + 1;
-    if (content.size() > PENDING_TOMBSTONE_PREFIX.size() + suffix_size
-        && content.starts_with(PENDING_TOMBSTONE_PREFIX)
-        && content.ends_with(removed_name)
-        && content[content.size() - suffix_size] == '\n')
+    return fmt::format("{}{}\n{}\n{}\n", PENDING_REPLACE_TOMBSTONE_PREFIX, pending_replace.directory_remote_path, pending_replace.file_name, pending_replace.size);
+}
+
+PlainRewritableLayout::TombstoneMarker PlainRewritableLayout::parseTombstoneMarkerContent(std::string_view content, std::string_view removed_name)
+{
+    using Kind = TombstoneMarker::Kind;
+
+    if (content == removed_name)
+        return {.kind = Kind::Committed, .pending_original_path = {}, .pending_replace = {}};
+
+    if (content.starts_with(PENDING_TOMBSTONE_PREFIX))
     {
-        auto original_local_path = content.substr(PENDING_TOMBSTONE_PREFIX.size(), content.size() - PENDING_TOMBSTONE_PREFIX.size() - suffix_size);
-        /// `RemoveRecursive` always writes the path with a trailing slash.
-        if (original_local_path.ends_with('/'))
-            return {TombstoneMarkerContent::State::Pending, std::string(original_local_path)};
+        auto path = content.substr(PENDING_TOMBSTONE_PREFIX.size());
+        if (!path.ends_with('\n'))
+            return {};
+        path.remove_suffix(1);
+
+        /// `RemoveRecursiveOperation` writes the path of a directory, which ends with a slash.
+        if (path.empty() || path.contains('\n') || !path.ends_with('/'))
+            return {};
+
+        return {.kind = Kind::PendingRemoval, .pending_original_path = std::string(path), .pending_replace = {}};
     }
 
-    return {TombstoneMarkerContent::State::Malformed, {}};
+    if (content.starts_with(PENDING_REPLACE_TOMBSTONE_PREFIX))
+    {
+        auto rest = content.substr(PENDING_REPLACE_TOMBSTONE_PREFIX.size());
+        if (!rest.ends_with('\n'))
+            return {};
+        rest.remove_suffix(1);
+
+        std::vector<std::string> lines;
+        splitInto<'\n'>(lines, rest);
+
+        PendingReplace pending_replace;
+        if (lines.size() != 3 || lines[0].empty() || lines[1].empty() || !tryParse(pending_replace.size, lines[2]))
+            return {};
+
+        pending_replace.directory_remote_path = std::move(lines[0]);
+        pending_replace.file_name = std::move(lines[1]);
+        return {.kind = Kind::PendingReplace, .pending_original_path = {}, .pending_replace = std::move(pending_replace)};
+    }
+
+    return {};
 }
 
 std::string PlainRewritableLayout::constructTombstoneDirectoryKey() const

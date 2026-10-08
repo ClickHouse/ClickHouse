@@ -41,25 +41,24 @@ public:
     /// committed and has to be rolled back rather than reclaimed. So the marker is first written as pending, with
     /// the original path of the subtree, and rewritten as committed only once every directory has been moved.
     /// A pending marker never causes anything to be deleted: the directories under its name are moved back.
-    /// The content of a committed marker is the removed name itself.
-    ///
-    /// `LocalObjectStorage` writes to the final key directly, so a process that dies while writing a marker can
-    /// leave it empty or truncated. That is why both forms end with the removed name, and a marker of any other
-    /// content is malformed: its removal is in an unknown state, so nothing of it is loaded, moved, or deleted.
+    /// The content of any other marker is the removed name itself, and such a marker is committed.
     constexpr static std::string PENDING_TOMBSTONE_PREFIX = "pending\n";
 
-    struct TombstoneMarkerContent
-    {
-        enum class State : uint8_t
-        {
-            Committed,
-            Pending,
-            Malformed,
-        };
+    /// `MoveFile` with replacement copies the target it overwrites to a backup under a removed name in `__root`, then
+    /// deletes the target and copies the source over it. Until the source is in place, the target key is either
+    /// missing or holds content of a move that is not committed, and the backup is the only copy of the target. So the
+    /// marker of the backup is first written as a pending replacement, with the key of the target and the size of the
+    /// backup, and rewritten as committed only once the source is in place. A pending replacement is rolled back during
+    /// the initial load: a complete backup is copied back over the target before the backup is reclaimed.
+    constexpr static std::string PENDING_REPLACE_TOMBSTONE_PREFIX = "pending replace\n";
 
-        State state = State::Malformed;
-        /// The original path of the subtree, for a pending marker.
-        std::string pending_original_path;
+    struct PendingReplace
+    {
+        /// The target is `constructFileObjectKey(directory_remote_path, file_name)`.
+        std::string directory_remote_path;
+        std::string file_name;
+        /// The size of the target, to tell a complete backup from one the process died in the middle of writing.
+        size_t size = 0;
     };
 
     static std::string generateRemovedName();
@@ -71,9 +70,35 @@ public:
     /// The local path the directory with `local_path` under the removed name had before a pending removal moved it.
     static std::string restoreLocalPathOfPendingRemoval(const std::string & local_path, const std::string & original_local_path);
 
+    struct TombstoneMarker
+    {
+        enum class Kind
+        {
+            Committed,
+            PendingRemoval,
+            PendingReplace,
+            /// Not one of the contents that are written, see `parseTombstoneMarkerContent`.
+            Malformed,
+        };
+
+        Kind kind = Kind::Malformed;
+        /// The original path of the subtree, for `PendingRemoval`.
+        std::string pending_original_path;
+        /// For `PendingReplace`.
+        PendingReplace pending_replace;
+    };
+
+    /// The content of a committed marker is the removed name itself.
     static std::string makeCommittedTombstoneContent(const std::string & removed_name);
-    static std::string makePendingTombstoneContent(const std::string & removed_name, const std::string & original_local_path);
-    static TombstoneMarkerContent parseTombstoneContent(std::string_view removed_name, std::string_view content);
+    static std::string makePendingTombstoneContent(const std::string & original_local_path);
+    static std::string makePendingReplaceTombstoneContent(const PendingReplace & pending_replace);
+    /// A marker is rewritten in place, and on the local object storage a process that dies in the middle of it leaves
+    /// the content torn: empty, or a prefix of the one being written. A torn content must never be taken for another
+    /// valid one: a truncated original path of a pending removal would restore the subtree under a wrong path, and a
+    /// torn pending marker taken for a committed one would reclaim a subtree whose removal was never committed. So every
+    /// content is complete only with its last byte (the pending ones end with a line feed, and the committed one must
+    /// be exactly the removed name), and anything else is `Malformed`.
+    static TombstoneMarker parseTombstoneMarkerContent(std::string_view content, std::string_view removed_name);
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 
