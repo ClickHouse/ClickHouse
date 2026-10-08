@@ -1,4 +1,5 @@
 #include <Server/GRPCServer.h>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <Poco/Net/SocketAddress.h>
@@ -778,6 +779,8 @@ namespace
         void close();
 
         void readQueryInfo();
+        void startReadingQueryInfo();
+        void readAheadQueryInfo();
         void throwIfFailedToReadQueryInfo();
         bool isQueryCancelled();
 
@@ -840,6 +843,11 @@ namespace
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
         bool need_input_data_delimiter = false;
+
+        /// Extra query infos read ahead by `readAheadQueryInfo` and not consumed by `readQueryInfo` yet,
+        /// in the order they were received. They precede `next_query_info_while_reading`.
+        std::deque<GRPCQueryInfo> read_ahead_query_infos;
+        size_t read_ahead_input_bytes = 0;
 
         Stopwatch query_time;
         UInt64 waited_for_client_reading = 0;
@@ -1127,7 +1135,12 @@ namespace
 
         /// For admission queue disconnect detection: the call is done before we send the final status
         /// only if the client cancelled it or disconnected.
-        query_context->setConnectionAliveCheck([this]() -> bool { return !want_to_cancel.load() && !responder->isDone(); });
+        /// The callback is called on call_thread by `ProcessList::insert` while the query waits there.
+        query_context->setConnectionAliveCheck([this]() -> bool
+        {
+            readAheadQueryInfo();
+            return !want_to_cancel.load() && !responder->isDone();
+        });
 
         /// Start executing the query.
         const auto * query_end = end;
@@ -1608,38 +1621,48 @@ namespace
         session.reset();
     }
 
+    void Call::startReadingQueryInfo()
+    {
+        reading_query_info.set(true);
+        responder->read(next_query_info_while_reading, [this](bool ok)
+        {
+            /// Called on queue_thread.
+            if (ok)
+            {
+                const auto & nqi = next_query_info_while_reading;
+                if (check_query_info_contains_cancel_only)
+                {
+                    if (!nqi.query().empty() || !nqi.query_id().empty() || !nqi.settings().empty() || !nqi.database().empty()
+                        || !nqi.input_data().empty() || !nqi.input_data_delimiter().empty() || !nqi.output_format().empty()
+                        || !nqi.user_name().empty() || !nqi.password().empty() || !nqi.quota().empty() || !nqi.session_id().empty())
+                    {
+                        LOG_WARNING(log, "Cannot add extra information to a query which is already executing. Only the 'cancel' field can be set");
+                    }
+                }
+                if (nqi.cancel())
+                    want_to_cancel = true;
+            }
+            else
+            {
+                /// We cannot throw an exception right here because this code is executed
+                /// on queue_thread.
+                failed_to_read_query_info = true;
+            }
+            reading_query_info.set(false);
+        });
+    }
+
     void Call::readQueryInfo()
     {
-        auto start_reading = [&]
+        if (!read_ahead_query_infos.empty())
         {
-            reading_query_info.set(true);
-            responder->read(next_query_info_while_reading, [this](bool ok)
-            {
-                /// Called on queue_thread.
-                if (ok)
-                {
-                    const auto & nqi = next_query_info_while_reading;
-                    if (check_query_info_contains_cancel_only)
-                    {
-                        if (!nqi.query().empty() || !nqi.query_id().empty() || !nqi.settings().empty() || !nqi.database().empty()
-                            || !nqi.input_data().empty() || !nqi.input_data_delimiter().empty() || !nqi.output_format().empty()
-                            || !nqi.user_name().empty() || !nqi.password().empty() || !nqi.quota().empty() || !nqi.session_id().empty())
-                        {
-                            LOG_WARNING(log, "Cannot add extra information to a query which is already executing. Only the 'cancel' field can be set");
-                        }
-                    }
-                    if (nqi.cancel())
-                        want_to_cancel = true;
-                }
-                else
-                {
-                    /// We cannot throw an exception right here because this code is executed
-                    /// on queue_thread.
-                    failed_to_read_query_info = true;
-                }
-                reading_query_info.set(false);
-            });
-        };
+            /// The next query info has already been read by `readAheadQueryInfo`. A read of the following one
+            /// is in flight or finished, so it must not be started here.
+            query_info = std::move(read_ahead_query_infos.front());
+            read_ahead_query_infos.pop_front();
+            read_ahead_input_bytes -= query_info.input_data().size();
+            return;
+        }
 
         auto finish_reading = [&]
         {
@@ -1657,7 +1680,7 @@ namespace
         if (!initial_query_info_read)
         {
             /// Initial query info hasn't been read yet, so we're going to read it now.
-            start_reading();
+            startReadingQueryInfo();
         }
 
         /// Maybe it's reading a query info right now. Let it finish.
@@ -1667,8 +1690,32 @@ namespace
         {
             /// Next query info can contain more input data. Now we start reading a next query info,
             /// so another call of readQueryInfo() in the future will probably be able to take it.
-            start_reading();
+            startReadingQueryInfo();
         }
+    }
+
+    void Call::readAheadQueryInfo()
+    {
+        /// While the query waits in `ProcessList::insert` (for an admission slot or for a replaced query),
+        /// nothing consumes the extra query infos of a streaming input, so only a single speculative read
+        /// is in flight. If that read brings input data, a later query info with the `cancel` field would
+        /// stay unread until the query starts. To notice such cancellation, keep reading the stream ahead,
+        /// but buffer a limited amount of input data, because a queued query must not hold unbounded memory.
+        static constexpr size_t max_read_ahead_input_bytes = 1024 * 1024;
+
+        if (!isInputStreaming(call_type) || !initial_query_info_read || want_to_cancel || failed_to_read_query_info)
+            return;
+        if (reading_query_info.get())
+            return;
+        if (!next_query_info_while_reading.next_query_info())
+            return; /// The client is not going to send more.
+        if (read_ahead_input_bytes >= max_read_ahead_input_bytes)
+            return;
+
+        read_ahead_input_bytes += next_query_info_while_reading.input_data().size();
+        read_ahead_query_infos.push_back(std::move(next_query_info_while_reading));
+        next_query_info_while_reading.Clear();
+        startReadingQueryInfo();
     }
 
     void Call::throwIfFailedToReadQueryInfo()

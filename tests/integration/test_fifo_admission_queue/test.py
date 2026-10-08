@@ -18,6 +18,7 @@ import os
 import re
 import socket
 import sys
+import threading
 import time
 import urllib.parse
 import uuid
@@ -748,6 +749,82 @@ def test_grpc_client_cancel_while_waiting_in_queue(started_cluster):
         channel.close()
 
     # The cancelled waiter must not have been admitted once the blockers were gone.
+    node.query("SYSTEM FLUSH LOGS query_log")
+    started = node.query(
+        f"SELECT count() FROM system.query_log WHERE query_id = '{waiter_id}' AND type = 'QueryStart'"
+    ).strip()
+    assert started == "0", f"The cancelled gRPC waiter was admitted, QueryStart count: {started}"
+
+
+def test_grpc_streaming_cancel_after_input_data_while_waiting_in_queue(started_cluster):
+    """
+    A streaming gRPC call can cancel its query in-band, with a later `QueryInfo` that sets
+    the `cancel` field. While the query waits in the admission queue, nothing consumes the
+    extra input data, so the server used to keep only one speculative read in flight: if
+    that read brought input data, a `cancel` sent after it stayed unread and the waiter
+    kept its place in the queue. The server must read ahead to notice the cancellation.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"grpc_stream_cancel_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_id = f"grpc_stream_cancel_waiter_{prefix}"
+
+    pool = Pool(4)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    send_cancel = threading.Event()
+
+    def query_infos():
+        yield clickhouse_grpc_pb2.QueryInfo(
+            query="INSERT INTO FUNCTION null('x UInt8') FORMAT TSV",
+            query_id=waiter_id,
+            settings={"queue_max_wait_ms": "30000"},
+            input_data=b"1\n",
+            next_query_info=True,
+        )
+        for value in range(2, 5):
+            yield clickhouse_grpc_pb2.QueryInfo(
+                input_data=f"{value}\n".encode(), next_query_info=True
+            )
+        send_cancel.wait(timeout=60)
+        yield clickhouse_grpc_pb2.QueryInfo(cancel=True)
+
+    channel = grpc.insecure_channel(f"{node.ip_address}:{GRPC_PORT}")
+    try:
+        grpc.channel_ready_future(channel).result(timeout=10)
+        stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
+
+        for qid in blocker_ids:
+            pool.apply_async(run_blocker, (qid,))
+
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        call = stub.ExecuteQueryWithStreamInput.future(query_infos())
+
+        wait_for_queue_length(node, 1)
+        send_cancel.set()
+
+        # Well below `queue_max_wait_ms`, so the waiter can only leave the queue by cancellation.
+        wait_for_queue_length(node, 0, timeout=10)
+        call.result(timeout=10)
+    finally:
+        send_cancel.set()
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+        pool.close()
+        pool.join()
+        channel.close()
+
     node.query("SYSTEM FLUSH LOGS query_log")
     started = node.query(
         f"SELECT count() FROM system.query_log WHERE query_id = '{waiter_id}' AND type = 'QueryStart'"
