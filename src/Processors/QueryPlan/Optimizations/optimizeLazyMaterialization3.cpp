@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 #include <Processors/QueryPlan/Optimizations/lazyFrontier.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -200,18 +201,7 @@ bool canReadLazily(const QueryPlan::Node & source, const QueryPlanOptimizationSe
     auto * step = source.step.get();
 
     if (auto * merge_tree = typeid_cast<ReadFromMergeTree *>(step))
-    {
-        /// Which row FINAL keeps is decided by the columns it merges on, which stay in the main read, and a
-        /// lazy read then fetches the rest of the row it kept. Only ReplacingMergeTree merges that way.
-        if (merge_tree->isQueryWithFinal()
-            && merge_tree->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Replacing)
-            return false;
-
-        if (merge_tree->isQueryWithSampling())
-            return false;
-
-        return !merge_tree->getMutationsSnapshot()->hasPatchParts();
-    }
+        return canUseLazyMaterializationForReadingStep(merge_tree);
 
     if (auto * object_storage = typeid_cast<ReadFromObjectStorageStep *>(step))
         return settings.optimize_lazy_materialization_for_object_storage && object_storage->canUseLazyMaterialization();
