@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
@@ -14,6 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Processors/ISimpleTransform.h>
 
+#include <optional>
 #include <span>
 
 namespace DB
@@ -132,8 +132,10 @@ private:
     /// A merge queue that streams the row ids of several postings cursors in the globally sorted order.
     class PostingsMergeQueue;
 
+    /// Re-encodes the positions of the current token's sources in the merged posting order.
+    class PositionsMerge;
+
     /// Points the cursor at a source and decodes its first postings.
-    /// A source with positions is decoded at once because positions are addressed by posting rank.
     void initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source);
     /// Decodes one posting list segment of the source and appends its row ids in pre-remap order.
     void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
@@ -146,12 +148,6 @@ private:
 
     TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
     TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
-
-    /// Reads the positions of one source and appends them to output_positions.
-    /// Positions are stored per posting rank, so they are paired with the row ids of the source in pre-remap order.
-    void readAndAppendPositions(const TokenSource & source, std::span<const UInt32> row_ids);
-    /// Sorts and merges output_positions and serializes them to the positions stream.
-    void flushPositions(TokenPostingsInfo & token_info);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -189,13 +185,7 @@ private:
     std::vector<TokenSource> current_token_sources;
     /// Merges the postings cursors of the current token; drained by every mergePostings call.
     std::unique_ptr<PostingsMergeQueue> postings_queue;
-
-    /// Reusable buffer for position entries of one token read from a source.
-    PODArray<RoaringishEntry> position_entries_buffer;
-    /// Positions accumulated for the current token (phrase query support).
-    PaddedPODArray<RoaringishEntry> output_positions;
-    /// Reused across tokens to keep position decode allocation-free during merge.
-    TextIndexBlockedPositionsCodec::DecodeScratch blocked_decode_scratch;
+    std::unique_ptr<PositionsMerge> positions_merge;
 
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
@@ -213,18 +203,24 @@ using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;
 
 MutableDataPartStoragePtr createTemporaryTextIndexStorage(const DiskPtr & disk, const String & part_relative_path);
 
-/// Resolves the stream's on-disk name and size from the part's checksums instead of the filesystem.
+/// Opens a substream of a text index.
+/// If `expected_buffer_size` is set, the read buffer of the dictionary or postings is limited to it.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const IMergeTreeDataPartInfoForReader & data_part_info,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings);
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
+    const MergeTreeReaderSettings & reader_settings,
+    std::optional<size_t> expected_buffer_size);
 
 /// For a caller with no part: the index merge reads segments from a temporary storage.
 std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     DataPartStoragePtr data_part_storage,
-    const String & stream_name,
-    const String & extension,
-    const MergeTreeReaderSettings & reader_settings);
+    const String & index_file_name,
+    const MergeTreeIndexSubstream & substream,
+    const MergeTreeReaderSettings & reader_settings,
+    std::optional<size_t> expected_buffer_size);
+
+/// Estimates the read buffer size for the posting list of a token based on max estimated segment size.
+size_t estimatePostingListBufferSize(const TokenPostingsInfo & token_info);
 
 }
