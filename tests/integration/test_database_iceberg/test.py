@@ -33,6 +33,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
 from helpers.s3_tools import get_file_contents, list_s3_objects
+from helpers.test_tools import assert_eq_with_retry
 
 BASE_URL = "http://rest:8181/v1"
 
@@ -3286,6 +3287,177 @@ def test_namespace_show_subqueries_under_scope(started_cluster):
         scope + "SHOW COLUMNS FROM t LIMIT (SELECT count() FROM probe)", settings=ns_settings
     )
     assert len(result.strip().split("\n")) == 1, f"SHOW COLUMNS LIMIT with a subquery: {result}"
+
+
+def test_namespace_scope_frozen_at_use(started_cluster):
+    """
+    A scope entered with USE over an HTTP session stays on the catalog table
+    even when a database named like the namespace appears later.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_frozen_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    params = {"session_id": f"{test_ref}_session", "allow_experimental_table_namespaces": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.http_query(f"USE {CATALOG_NAME}.{ns}", params=params)
+    result = node.http_query("SELECT currentDatabase()", params=params).strip()
+    assert result == CATALOG_NAME, f"currentDatabase() under scope: {result}"
+    result = node.http_query("SELECT currentSchemas(true)", params=params).strip()
+    assert result == f"['{ns}']", f"currentSchemas(true) under scope: {result}"
+    result = node.http_query("SELECT count() FROM t", params=params).strip()
+    assert result == "3", f"count() under scope before the collider: {result}"
+
+    try:
+        node.query(f"CREATE DATABASE `{CATALOG_NAME}.{ns}`")
+        node.query(f"CREATE TABLE `{CATALOG_NAME}.{ns}`.t (x Int32) ENGINE = Memory")
+
+        result = node.http_query("SELECT count() FROM t", params=params).strip()
+        assert result == "3", f"count() must still read the catalog table: {result}"
+        result = node.http_query("SELECT currentDatabase()", params=params).strip()
+        assert result == CATALOG_NAME, f"currentDatabase() after the collider: {result}"
+        result = node.http_query("SHOW TABLES", params=params).strip()
+        assert result == f"{ns}.t", f"SHOW TABLES after the collider: {result}"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS `{CATALOG_NAME}.{ns}`")
+
+
+def test_namespace_use_prefers_exact_database(started_cluster):
+    """
+    PR 93194 rule: when a database literally named `demo.<ns>` exists, the next `USE demo.<ns>` selects
+    that database, and dropping it leaves the session without a database. Known to fail: `CurrentDatabaseInfo`
+    splits every unquoted dotted name at the first dot, so the second `USE` re-enters the catalog scope
+    (decision B in tmp/table-namespaces-integration-tests/implementation-notes.md).
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_exact_db_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    params = {"session_id": f"{test_ref}_session", "allow_experimental_table_namespaces": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.http_query(f"USE {CATALOG_NAME}.{ns}", params=params)
+
+    try:
+        node.query(f"CREATE DATABASE `{CATALOG_NAME}.{ns}`")
+        node.query(f"CREATE TABLE `{CATALOG_NAME}.{ns}`.t (x Int32) ENGINE = Memory")
+
+        node.http_query(f"USE {CATALOG_NAME}.{ns}", params=params)
+        result = node.http_query("SELECT currentDatabase()", params=params).strip()
+        assert result == f"{CATALOG_NAME}.{ns}", f"currentDatabase() after the second USE: {result}"
+        result = node.http_query("SELECT count() FROM t", params=params).strip()
+        assert result == "0", f"count() must read the exact database table: {result}"
+
+        node.query(f"DROP DATABASE `{CATALOG_NAME}.{ns}`")
+        err = node.http_query_and_get_error("SELECT count() FROM t", params=params)
+        assert "UNKNOWN_DATABASE" in err, f"count() after dropping the exact database: {err}"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS `{CATALOG_NAME}.{ns}`")
+
+
+def test_namespace_http_database_param_and_sql_security(started_cluster):
+    """
+    The HTTP `database` parameter selects a namespace scope, and a view with
+    `SQL SECURITY NONE` over a namespaced table works under a scope.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_http_db_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    params = {"database": f"{CATALOG_NAME}.{ns}", "allow_experimental_table_namespaces": 1}
+    result = node.http_query("SELECT count() FROM t", params=params).strip()
+    assert result == "3", f"count() with the database parameter: {result}"
+    result = node.http_query("SELECT currentDatabase()", params=params).strip()
+    assert result == CATALOG_NAME, f"currentDatabase() with the database parameter: {result}"
+
+    try:
+        node.query(
+            f"CREATE VIEW default.{test_ref}_v SQL SECURITY NONE AS SELECT count() AS c FROM {CATALOG_NAME}.`{ns}.t`"
+        )
+        result = node.query(
+            f"USE {CATALOG_NAME}.{ns}; SELECT c FROM default.{test_ref}_v", settings=ns_settings
+        ).strip()
+        assert result == "3", f"view with SQL SECURITY NONE under scope: {result}"
+    finally:
+        node.query(f"DROP VIEW IF EXISTS default.{test_ref}_v")
+
+
+def test_namespace_current_database_full_name(started_cluster):
+    """
+    The query log keeps the full scope name in `current_database`, and a quoted
+    dotted database name is never split.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_full_name_{uuid.uuid4().hex[:8]}"
+    ns = f"ns_{test_ref}"
+    params = {"session_id": f"{test_ref}_session", "allow_experimental_table_namespaces": 1}
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns)
+    catalog.create_namespace(f"{ns}.sub")
+    table = create_table(catalog, ns, "t")
+    table.append(pa.Table.from_pylist([generate_record()]))
+    table_sub = create_table(catalog, f"{ns}.sub", "t")
+    table_sub.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.http_query(f"USE {CATALOG_NAME}.{ns}", params=params)
+    result = node.http_query(
+        f"SELECT count() FROM t SETTINGS log_comment = '{test_ref}_ns'", params=params
+    ).strip()
+    assert result == "1", f"count() in the namespace: {result}"
+    result = node.http_query("SELECT currentDatabase()", params=params).strip()
+    assert result == CATALOG_NAME, f"currentDatabase() in the namespace: {result}"
+
+    node.http_query(f"USE {CATALOG_NAME}.{ns}.sub", params=params)
+    result = node.http_query(
+        f"SELECT count() FROM t SETTINGS log_comment = '{test_ref}_sub'", params=params
+    ).strip()
+    assert result == "3", f"count() in the nested namespace: {result}"
+    result = node.http_query("SELECT currentDatabase()", params=params).strip()
+    assert result == CATALOG_NAME, f"currentDatabase() in the nested namespace: {result}"
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT log_comment, current_database FROM system.query_log WHERE type = 'QueryFinish' AND log_comment IN ('{test_ref}_ns', '{test_ref}_sub') ORDER BY log_comment",
+        f"{test_ref}_ns\t{CATALOG_NAME}.{ns}\n{test_ref}_sub\t{CATALOG_NAME}.{ns}.sub",
+        retry_count=40,
+    )
+
+    plain = f"{CATALOG_NAME}.{test_ref}_plain"
+    try:
+        node.query(f"CREATE DATABASE `{plain}`")
+        node.query(f"CREATE TABLE `{plain}`.t (x Int32) ENGINE = Memory")
+        result = node.query(f"SHOW TABLES FROM `{plain}`", settings=ns_settings).strip()
+        assert result == "t", f"SHOW TABLES FROM a quoted dotted database: {result}"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS `{plain}`")
 
 
 def test_alter_database_settings_not_supported(started_cluster):
