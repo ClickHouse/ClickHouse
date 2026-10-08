@@ -52,6 +52,10 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
     if (!storage->isMergeTree() && !typeid_cast<const StorageDummy *>(storage.get()))
         return false;
 
+    /// TODO(unique-key): support parallel replicas; this misses a UNIQUE KEY table on a JOIN's non-driving side.
+    if (storage->hasUniqueKey())
+        return false;
+
     if (!storage->supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
         return false;
 

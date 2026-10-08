@@ -21,6 +21,7 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/SipHash.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
@@ -29,6 +30,7 @@
 #include <Core/Settings.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <set>
 
 namespace DB
 {
@@ -40,6 +42,7 @@ namespace Setting
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
+    extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
@@ -247,6 +250,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
+    format_settings.parquet.apply_string_filters = settings[Setting::apply_string_filters_during_scan];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
@@ -308,6 +312,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.squash_consecutive_ms = settings[Setting::output_format_pretty_squash_consecutive_ms];
     format_settings.pretty.squash_max_wait_ms = settings[Setting::output_format_pretty_squash_max_wait_ms];
     format_settings.pretty.highlight_trailing_spaces = settings[Setting::output_format_pretty_highlight_trailing_spaces];
+    format_settings.pretty.display_control_characters = settings[Setting::output_format_pretty_display_control_characters];
     format_settings.pretty.multiline_fields = settings[Setting::output_format_pretty_multiline_fields];
     format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
@@ -464,6 +469,42 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     }
 
     return format_settings;
+}
+
+UInt64 getFormatSettingsHash(const Settings & settings)
+{
+    /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
+    /// added there is covered without anyone remembering this place, plus the core settings it reads
+    /// besides.
+    ///
+    /// A format setting is hashed only when its effective value differs from the declared default, so a
+    /// session that spells a default explicitly shares the hash of a session that left it alone, and
+    /// sessions at the defaults all share one hash. The `changed` flag is checked first, so only the
+    /// few settings a session actually set are compared. The order is the declaration order, so the
+    /// hash does not depend on the order the session set them in.
+    SipHash hash;
+#define HASH_FORMAT_SETTING_IF_NOT_DEFAULT(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    if (const auto & field = settings[Setting::NAME]; field.changed) \
+    { \
+        String value = field.toString(); \
+        if (value != SettingField##TYPE{DEFAULT}.toString()) \
+        { \
+            hash.update(std::string_view(#NAME)); \
+            hash.update(value); \
+        } \
+    }
+    /// No format setting has an alias, so the alias macro is never expanded (an alias names the same
+    /// field as its setting anyway).
+    FORMAT_FACTORY_SETTINGS(HASH_FORMAT_SETTING_IF_NOT_DEFAULT, HASH_FORMAT_SETTING_IF_NOT_DEFAULT)
+#undef HASH_FORMAT_SETTING_IF_NOT_DEFAULT
+
+    /// The core settings `getFormatSettings` reads besides; keep in step with the function above.
+    hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
+    hash.update(settings[Setting::allow_special_serialization_kinds_in_output_formats].value);
+    hash.update(settings[Setting::enable_nullable_tuple_type].value);
+    hash.update(settings[Setting::http_write_exception_in_output_format].value);
+    hash.update(settings[Setting::max_parser_depth].value);
+    return hash.get64();
 }
 
 FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
@@ -988,9 +1029,72 @@ void FormatFactory::setDocumentation(const String & name, Documentation document
     it->second.documentation = std::move(documentation);
 }
 
-void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
+void FormatFactory::registerFileExtension(const String & extension, const String & format_name, bool used_for_format_inference)
 {
-    file_extension_formats[boost::to_lower_copy(extension)] = format_name;
+    const auto lowercased_extension = boost::to_lower_copy(extension);
+    if (used_for_format_inference)
+        file_extension_formats[lowercased_extension] = format_name;
+    format_file_extensions[boost::to_lower_copy(format_name)].insert(lowercased_extension);
+}
+
+void FormatFactory::registerFormatAlias(const String & alias, const String & format_name)
+{
+    const auto lowercased_alias = boost::to_lower_copy(alias);
+    const auto lowercased_format_name = boost::to_lower_copy(format_name);
+    format_aliases[lowercased_alias] = lowercased_format_name;
+    format_alias_groups[lowercased_format_name].insert(lowercased_alias);
+}
+
+std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & format_name) const
+{
+    const auto lowercased_format_name = boost::to_lower_copy(format_name);
+
+    /// Interchangeable spellings of the same format (`JSONLines` for `JSONEachRow`, `TSV` for
+    /// `TabSeparated`) are registered as independent formats: each spelling carries its own name
+    /// as a file extension, and the shared extensions are registered only for the canonical
+    /// spelling. A hive lake written as `JSONLines` is a lake of `.jsonlines` files and has to be
+    /// readable as `JSONEachRow` and the other way round, so collect the whole group of spellings.
+    const auto spellings_of = [&](const String & name)
+    {
+        String canonical = name;
+        if (const auto it = format_aliases.find(name); it != format_aliases.end())
+            canonical = it->second;
+
+        std::vector<String> spellings{canonical};
+        if (const auto it = format_alias_groups.find(canonical); it != format_alias_groups.end())
+            spellings.insert(spellings.end(), it->second.begin(), it->second.end());
+        return spellings;
+    };
+
+    std::vector<String> format_names = spellings_of(lowercased_format_name);
+
+    /// A format registered via registerWithNamesAndTypes reads the files of its base format:
+    /// e.g. a lake of `.csv` files with a header row is read with the `CSVWithNames` format.
+    /// The `WithNames` flavours are spelled with the same aliases as the base format, and each
+    /// of them is a format of its own as well: `TSVWithNames` writes `.tsvwithnames` files.
+    for (const std::string_view suffix : {"withnamesandtypes", "withnames"})
+    {
+        if (lowercased_format_name.ends_with(suffix))
+        {
+            for (const auto & spelling : spellings_of(lowercased_format_name.substr(0, lowercased_format_name.size() - suffix.size())))
+            {
+                format_names.push_back(spelling);
+                format_names.push_back(spelling + String(suffix));
+            }
+            break;
+        }
+    }
+
+    /// The format name itself is registered as a file extension for every input and output
+    /// format, so the lowercased format name always ends up in the result.
+    std::set<String> extensions{lowercased_format_name};
+    for (const auto & name : format_names)
+    {
+        if (const auto it = format_file_extensions.find(name); it != format_file_extensions.end())
+            extensions.insert(it->second.begin(), it->second.end());
+    }
+
+    return {extensions.begin(), extensions.end()};
 }
 
 std::optional<String> FormatFactory::tryGetFormatFromFileName(String file_name)
