@@ -207,6 +207,22 @@ FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ngrams WHERE hasAllTokens(m['k'], c
 SELECT 'ngrams phrase all control pruned', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT id FROM tab_ngrams WHERE hasPhrase(m['k'], concat('a', char(0), char(0), char(0)))) WHERE explain LIKE '%Granules: 0/2%';
 
+-- A needle equal to the default gets the index tokenizer as well, as it does with the tokenizer argument.
+SELECT 'default needle', 'subcolumns=1',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_ngrams WHERE hasAnyTokens(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_ngrams WHERE hasAllTokens(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_ngrams WHERE hasPhrase(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post WHERE hasAnyTokens(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_split_pos WHERE hasPhrase(m['k'], repeat(char(0), 5)) ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'default needle', 'subcolumns=0',
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_ngrams WHERE hasAnyTokens(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_ngrams WHERE hasAllTokens(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_ngrams WHERE hasPhrase(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_post WHERE hasAnyTokens(m['k'], repeat(char(0), 3)) ORDER BY id)),
+    (SELECT groupArray(id) FROM (SELECT id FROM tab_split_pos WHERE hasPhrase(m['k'], repeat(char(0), 5)) ORDER BY id))
+SETTINGS optimize_functions_to_subcolumns = 0;
+
 -- The preprocessor is applied to the indexed values only, never to `m['k']`.
 CREATE TABLE tab_pre_lower (id UInt32, m Map(String, FixedString(6)),
     INDEX tix mapValues(m) TYPE text(tokenizer = ngrams(3), preprocessor = lower(mapValues(m)), postprocessor = if(match(mapValues(m), '[a-z]'), mapValues(m), '#')))

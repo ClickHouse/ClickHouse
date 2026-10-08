@@ -1326,7 +1326,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     bool candidate_for_exact_mode = true;
     bool is_map_element_value = false;
-    if (traverseMapElementValueNode(index_column_node, value_field))
+    if (traverseMapElementValueNode(function_name, index_column_node, value_field))
     {
         has_index_column = true;
         is_map_element_value = true;
@@ -1363,7 +1363,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 && !isMapValueDefault(value_field.safeGet<String>(), header))
             {
                 has_index_column = true;
-                is_map_element_value = true;
                 direct_read_mode = getHintOrNoneMode();
                 candidate_for_exact_mode = false;
             }
@@ -2206,13 +2205,20 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     return header.has(fmt::format("mapValues({})", map_column_name));
 }
 
-bool MergeTreeIndexConditionText::traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
+bool MergeTreeIndexConditionText::traverseMapElementValueNode(
+    const String & function_name, const RPNBuilderTreeNode & index_column_node, const Field & const_value) const
 {
     /// Here we check whether we can use index defined for `mapValues(m)`
     /// for functions like `func(arrayElement(m, 'const_key'), ...)`.
     /// If index can be used, than we can analyze the index as for scalar string column
     /// because `arrayElement(m, 'const_key')` projects Array(String) to String.
-    if (const_value.getType() != Field::Types::String || isMapValueDefault(const_value.safeGet<String>(), header))
+    if (const_value.getType() != Field::Types::String)
+        return false;
+
+    /// A default needle can match a row without the key. Keep these anyway: the plan applies the index tokenizer
+    /// to them only when the index takes them, and absentMapValueMatches keeps such rows.
+    const bool is_rewritten_token_search = function_name == "hasAnyTokens" || function_name == "hasAllTokens" || function_name == "hasPhrase";
+    if (!is_rewritten_token_search && isMapValueDefault(const_value.safeGet<String>(), header))
         return false;
 
     return hasIndexForMapElementValue(index_column_node);
