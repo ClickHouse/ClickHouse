@@ -2153,6 +2153,13 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
         const auto storage_metadata = storage->getInMemoryMetadataPtr(context, false);
         if (!canComputeModificationHash(context, storage_id.database_name, storage_id.table_name, storage_metadata->getColumns()))
             return {};
+        /// A non-trivial `SELECT` row policy on the resolved local child filters what the in-process read
+        /// returns, and a policy change is invisible to the child's hash. Fail closed, matching
+        /// `computeTableModificationHashForConsistency`. The caller checks the configured remote name as
+        /// well; this checks the table the local shard actually resolves to.
+        if (auto row_policy_filter = context->getRowPolicyFilter(storage_id.database_name, storage_id.table_name, RowPolicyFilterType::SELECT_FILTER);
+            row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            return {};
         /// Refresh lazily applied external metadata before hashing, so that the first read through this
         /// `Distributed` table does not report a change that is only the local child's own first-use
         /// metadata update (see `getModificationHashWithRefreshedMetadata`).

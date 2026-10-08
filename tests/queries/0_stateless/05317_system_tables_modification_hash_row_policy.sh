@@ -3,6 +3,7 @@
 # `system.tables.modification_hash` covers the whole table, so it must be `NULL` for a caller whose
 # `SELECT` on the table is restricted by a non-trivial row policy: otherwise polling it would reveal
 # changes to the rows the policy hides. A policy that is literally always true hides nothing.
+# The same holds for a `Distributed` table whose local shard reads the filtered table.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,13 +18,15 @@ policy="policy_05317_${CLICKHOUSE_DATABASE}"
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_05317 (x UInt64) ENGINE = MergeTree ORDER BY x;
     INSERT INTO t_05317 VALUES (1), (2);
+    CREATE TABLE d_05317 AS t_05317 ENGINE = Distributed(test_shard_localhost, currentDatabase(), t_05317);
     CREATE USER ${user};
     GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_05317 TO ${user};
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.d_05317 TO ${user};
 "
 
 function show_hash()
 {
-    $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT '$1', isNotNull(modification_hash) FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name = 't_05317'"
+    $CLICKHOUSE_CLIENT --user "${user}" -q "SELECT '$1', name, isNotNull(modification_hash) FROM system.tables WHERE database = '${CLICKHOUSE_DATABASE}' AND name IN ('t_05317', 'd_05317') ORDER BY name"
 }
 
 show_hash 'no policy'
