@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
+#include <Processors/QueryPlan/Optimizations/useDataParallelAggregation.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -28,6 +29,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_index_analysis;
+    extern const SettingsBool force_aggregate_partitions_independently;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsBool use_primary_key;
 }
@@ -235,7 +237,7 @@ bool optimizePrimaryKeyFilterElimination(
     QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto * aggregating = typeid_cast<AggregatingStep *>(node.step.get());
-    if (!aggregating || node.children.size() != 1 || aggregating->getParams().only_merge)
+    if (!aggregating || node.children.size() != 1 || aggregating->getParams().only_merge || aggregating->isMergingSkipped())
         return false;
 
     auto * original_root = node.children.front();
@@ -298,17 +300,36 @@ bool optimizePrimaryKeyFilterElimination(
             [&](const auto & name) { return !payload_column_set.contains(name); }))
         return false;
 
+    /// Preserve the ordinary read's cache pruning and row-limit checks. Its original `PREWHERE`
+    /// and filter can have separate cache entries that the reconstructed proof predicate cannot use.
+    /// A declined rewrite must leave this analysis installed, not replace it with speculative ranges.
+    const auto ordinary_analysis = reading->getOrCreateAnalyzedResult();
+    if (!ordinary_analysis->isUsable() || ordinary_analysis->read_type != ReadFromMergeTree::ReadType::Default
+        || ordinary_analysis->sampling.use_sampling || !ordinary_analysis->split_parts.layers.empty()
+        || ordinary_analysis->selected_marks < 8)
+        return false;
+
+    const auto context = reading->getContext();
+    const auto & data = reading->getMergeTreeData();
+
+    /// The per-partition pass runs later and cannot see through a `Union`. Preserve potentially
+    /// applicable partition aggregation without requesting ports or changing the aggregate early.
+    if (optimization_settings.aggregate_partitions_independently && !aggregating->isGroupingSets()
+        && aggregating->getParams().max_rows_to_group_by == 0
+        && isPartitionKeyFunctionOfKeys(metadata->getPartitionKey(), payload_dag, aggregating->getParams().keys)
+        && (context->getSettingsRef()[Setting::force_aggregate_partitions_independently]
+            || reading->isPartitionIndependentProcessingProfitable(ReadFromMergeTree::ProcessorKind::Aggregation)))
+        return false;
+
     auto query_info = reading->getQueryInfo();
     query_info.prewhere_info = nullptr;
     query_info.row_level_filter = nullptr;
     query_info.filter_actions_dag = std::make_shared<const ActionsDAG>(std::move(proof_dag));
-    const auto context = reading->getContext();
-    const auto & data = reading->getMergeTreeData();
     auto logger = getLogger("optimizePrimaryKeyFilterElimination");
 
     /// A previous analysis may have attached proofs for a different filter. Primary-key analysis
     /// appends exact ranges, so both the conditions and these result vectors must start fresh.
-    auto proof_parts = std::make_shared<RangesInDataParts>(reading->getParts());
+    auto proof_parts = std::make_shared<RangesInDataParts>(ordinary_analysis->parts_with_ranges);
     for (auto & part : *proof_parts)
     {
         part.exact_ranges.clear();
@@ -319,20 +340,29 @@ bool optimizePrimaryKeyFilterElimination(
         reading->getAllColumnNames(), data, data.getSettings(), query_info, reading->getStorageSnapshot(), context,
         reading->getMaxBlockSize(), reading->getNumStreams(), nullptr, logger, nullptr, false);
     proof_read.disableQueryConditionCache();
-    auto analysis = proof_read.selectRangesToReadForPredicateElimination();
-    if (!analysis->isUsable() || analysis->read_type != ReadFromMergeTree::ReadType::Default
-        || analysis->sampling.use_sampling || !analysis->split_parts.layers.empty())
+    auto proof_analysis = proof_read.selectRangesToReadForPredicateElimination();
+    if (!proof_analysis->isUsable() || proof_analysis->read_type != ReadFromMergeTree::ReadType::Default
+        || proof_analysis->sampling.use_sampling || !proof_analysis->split_parts.layers.empty())
         return false;
 
-    /// Retain the analysis even when the split is unprofitable, so the ordinary reader does not
-    /// repeat primary-key range analysis. Its runtime filters and dependencies remain unchanged.
-    reading->setAnalyzedResult(analysis);
+    std::unordered_map<const IMergeTreeDataPart *, const RangesInDataPart *> proofs_by_part;
+    for (const auto & part : proof_analysis->parts_with_ranges)
+        proofs_by_part.emplace(part.data_part.get(), &part);
 
     RangesInDataParts exact_parts;
     RangesInDataParts boundary_parts;
-    for (const auto & part : analysis->parts_with_ranges)
+    size_t selected_marks = 0;
+    for (const auto & part : ordinary_analysis->parts_with_ranges)
     {
-        auto [exact, boundary] = splitRanges(part.ranges, part.exact_ranges);
+        auto proof = proofs_by_part.find(part.data_part.get());
+        if (proof == proofs_by_part.end())
+            continue;
+
+        /// Index analysis can bridge gaps to avoid seeks. Intersect its selection with the
+        /// ordinary ranges so that proof collection cannot restore marks pruned by the cache.
+        auto selected = splitRanges(part.ranges, proof->second->ranges).first;
+        selected_marks += selected.getNumberOfMarks();
+        auto [exact, boundary] = splitRanges(selected, proof->second->exact_ranges);
         auto append = [&](RangesInDataParts & destination, MarkRanges ranges)
         {
             if (ranges.empty())
@@ -346,11 +376,11 @@ bool optimizePrimaryKeyFilterElimination(
         append(boundary_parts, std::move(boundary));
     }
 
-    auto exact_analysis = withRanges(*analysis, std::move(exact_parts), payload_columns);
+    auto exact_analysis = withRanges(*ordinary_analysis, std::move(exact_parts), payload_columns);
     /// Avoid creating a second read for a handful of granules or a predominantly uncertain scan.
     /// This conservative prototype threshold is deliberately expressed in granules, not rows.
     if (exact_analysis->selected_marks < 8
-        || exact_analysis->selected_marks < analysis->selected_marks - exact_analysis->selected_marks)
+        || exact_analysis->selected_marks < selected_marks - exact_analysis->selected_marks)
         return false;
 
     query_info.filter_actions_dag = nullptr;
@@ -370,7 +400,7 @@ bool optimizePrimaryKeyFilterElimination(
         node.children.front() = &exact_root;
     else
     {
-        reading->setAnalyzedResult(withRanges(*analysis, std::move(boundary_parts), reading->getAllColumnNames()));
+        reading->setAnalyzedResult(withRanges(*ordinary_analysis, std::move(boundary_parts), reading->getAllColumnNames()));
         auto & union_node = nodes.emplace_back(QueryPlan::Node{
             .step = std::make_unique<UnionStep>(SharedHeaders{original_root->step->getOutputHeader(), exact_root.step->getOutputHeader()}),
             .children = {original_root, &exact_root}});
@@ -378,7 +408,7 @@ bool optimizePrimaryKeyFilterElimination(
     }
 
     LOG_DEBUG(logger, "Eliminated primary key filter on {} of {} marks, reading {} instead of {} columns",
-        exact_analysis->selected_marks, analysis->selected_marks, payload_columns.size(), reading->getAllColumnNames().size());
+        exact_analysis->selected_marks, selected_marks, payload_columns.size(), reading->getAllColumnNames().size());
     return true;
 }
 

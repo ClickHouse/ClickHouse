@@ -374,8 +374,9 @@ public:
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
-    /// Collect exact ranges for eliminating predicates while still reading their payload rows.
-    /// This does not enable the read-limit deferral or replica analysis policy of exact-count candidate analysis.
+    /// Collect speculative proofs after the caller has analyzed the ordinary read and checked its row limits.
+    /// These ranges can bridge gaps, so intersect them with the ordinary selection before using them.
+    /// Do not check execution row limits on this temporary analysis or enable exact-count candidate policy.
     AnalysisResultPtr selectRangesToReadForPredicateElimination() const;
 
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
@@ -665,7 +666,7 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
-    AnalysisResultPtr selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization) const;
+    AnalysisResultPtr selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization, bool check_row_limits) const;
 
     static void buildPartitionPruningIndexes(
         Indexes & indexes,

@@ -2718,16 +2718,16 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
-    return selectRangesToReadImpl(find_exact_ranges, /*allow_exact_count_optimization=*/true);
+    return selectRangesToReadImpl(find_exact_ranges, /*allow_exact_count_optimization=*/true, /*check_row_limits=*/true);
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForPredicateElimination() const
 {
-    return selectRangesToReadImpl(/*find_exact_ranges=*/true, /*allow_exact_count_optimization=*/false);
+    return selectRangesToReadImpl(/*find_exact_ranges=*/true, /*allow_exact_count_optimization=*/false, /*check_row_limits=*/false);
 }
 
 ReadFromMergeTree::AnalysisResultPtr
-ReadFromMergeTree::selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization) const
+ReadFromMergeTree::selectRangesToReadImpl(bool find_exact_ranges, bool allow_exact_count_optimization, bool check_row_limits) const
 {
     analyzed_result_ptr = selectRangesToRead(
         getParts(),
@@ -2749,7 +2749,7 @@ ReadFromMergeTree::selectRangesToReadImpl(bool find_exact_ranges, bool allow_exa
         allow_query_condition_cache,
         allow_top_k_prewhere_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
-        /*check_row_limits=*/true,
+        check_row_limits,
         allow_exact_count_optimization);
 
     return analyzed_result_ptr;
