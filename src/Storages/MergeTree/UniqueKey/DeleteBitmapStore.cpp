@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
+#include <Interpreters/TransactionManager.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -290,7 +291,10 @@ DeleteBitmapStore::resolveOwnVersion(const DataPartPtr & holder)
 {
     chassert(!partsLockHeldByCurrentThread(), fmt::format("resolving the version of {} under a parts lock", holder->name));
     /// TODO(unique-key): support REPEATABLE_READ, currently we ignore the COMMITTING
-    const CSN csn = holder->version->getInfo().creation_csn;
+    /// The stored csn is set only once the transaction is finalized, while the part is visible from the
+    /// moment the transaction log knows its csn, so resolve it the way part visibility does.
+    const VersionInfo info = holder->version->getInfo();
+    const CSN csn = info.creation_csn != Tx::UnknownCSN ? info.creation_csn : TransactionManager::getCSN(info.creation_tid);
     if (!isSettledCSN(csn))
         return {};
     return Version{csn, holder, /*carried=*/false};
