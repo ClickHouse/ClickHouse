@@ -15,6 +15,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
@@ -334,7 +335,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
     {
         /// Empty table -> ReadNothing, no read step, report a zero baseline
         auto storage = tryResolveSingleTable(select_query, local_context);
-        if (const auto * mt = dynamic_cast<const MergeTreeData *>(storage.get());
+        if (const auto * mt = castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
             mt && mt->getActivePartsCount() == 0)
             return buildEmptyTableResult(*mt, local_context->getHypotheticalIndexStore());
 

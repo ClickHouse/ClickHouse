@@ -13,6 +13,7 @@
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageValues.h>
+#include <Storages/StorageProxy.h>
 
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/ProcessList.h>
@@ -533,7 +534,7 @@ static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, 
 {
     auto constraints = metadata->getConstraints();
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
     if (storage_merge_tree
         && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
             || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -713,7 +714,7 @@ private:
                 local_context);
 
             bool inner_share_nested_offsets = true;
-            if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+            if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())
                 inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
             auto adding_missing_defaults_dag = addMissingDefaults(
@@ -1095,7 +1096,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     const auto & parent = path.parent(1);
     const auto & current = path.current();
 
-    auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
+    auto storage = current == init_table_id ? init_storage : resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(current, init_context));
     auto lock = storage ? storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]) : nullptr;
     if (!lock)
     {
@@ -1424,7 +1425,7 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     auto insert_context = insert_contexts.at(view_id);
 
     bool inner_share_nested_offsets = true;
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(storages.at(inner_table_id).get()))
+    if (auto * merge_tree = castStorage<MergeTreeData>(storages.at(inner_table_id), DeferredTable::Load).get())
         inner_share_nested_offsets = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     /// Widen Enum columns to their target type before adding defaults, so the valid Enum-widening
@@ -1487,7 +1488,7 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     {
         bool skip_nested_validation = false;
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(inner_storage.get()))
+        if (auto * merge_tree = castStorage<MergeTreeData>(inner_storage, DeferredTable::Load).get())
             skip_nested_validation = !(*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
         if (!skip_nested_validation)
             result.addSink(std::make_shared<NestedElementsValidationTransform>(header));
