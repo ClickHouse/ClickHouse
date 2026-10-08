@@ -43,7 +43,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
 }
@@ -151,11 +150,7 @@ StorageElasticsearch::StorageElasticsearch(
     StorageInMemoryMetadata storage_metadata;
     if (columns_.empty())
     {
-        NamesAndTypesList names_and_types;
-
-        names_and_types.emplace_back("document", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON));
-        ColumnsDescription json_column(std::move(names_and_types));
-        storage_metadata.setColumns(json_column);
+        storage_metadata.setColumns(getDefaultColumns());
     }
     else
         storage_metadata.setColumns(columns_);
@@ -233,6 +228,14 @@ void StorageElasticsearch::checkAlterIsPossible(const AlterCommands & commands, 
     }
 }
 
+ColumnsDescription StorageElasticsearch::getDefaultColumns()
+{
+    NamesAndTypesList names_and_types;
+
+    names_and_types.emplace_back("document", std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON));
+    return ColumnsDescription(std::move(names_and_types));
+}
+
 void StorageElasticsearch::checkColumns(const ColumnsDescription & descriptions)
 {
     if (!descriptions.hasOnlyOrdinary())
@@ -243,12 +246,11 @@ void StorageElasticsearch::checkColumns(const ColumnsDescription & descriptions)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column name '{}' is reserved for a virtual column of the Elasticsearch table engine", reserved_name);
 
     auto columns = descriptions.getOrdinary();
-        if (columns.size() > 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Elasticsearch table engine requires at most one column, got {}", columns.size());
+    if (columns.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch table engine requires at most one column, got {}", columns.size());
 
     if (!columns.empty() && !isObject(columns.front().type))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Elasticsearch table engine requires the column type to be JSON, got {}", columns.front().type->getName());
-
 }
 
 void registerStorageElasticsearch(StorageFactory & factory);

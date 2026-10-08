@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/Elasticsearch/ElasticsearchSettings.h>
 #include <Storages/IStorage.h>
@@ -50,6 +51,8 @@ public:
     const ElasticsearchSettings & getSettings() const { return *storage_settings.get(); }
 
     void setSettings(std::unique_ptr<ElasticsearchSettings> && settings_) { storage_settings.set(std::move(settings_)); }
+
+    static ColumnsDescription getDefaultColumns();
 
     static void checkColumns(const ColumnsDescription & descriptions);
 private:

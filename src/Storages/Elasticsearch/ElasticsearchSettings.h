@@ -2,7 +2,7 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Parsers/IAST_fwd.h>
 #include <Common/SettingsChanges.h>
 
 namespace DB
