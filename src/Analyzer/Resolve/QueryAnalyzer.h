@@ -336,6 +336,11 @@ private:
       */
     std::unordered_set<const IQueryTreeNode *> projection_nodes_before_matcher;
 
+    /** The definitions of the named windows, as of the time the window function referencing them is passed by `expandProjectionMatchers`.
+      * The key is the window node of the function, see `expandMatchersInsideProjectionExpression` and `resolveWindow`.
+      */
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> named_window_snapshots;
+
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
     /** The name of the view a table expression was inlined from, see `inlineViewSubqueryIfNeeded`.

@@ -3491,6 +3491,12 @@ bool QueryAnalyzer::expandMatchersInsideProjectionExpression(QueryTreeNodePtr & 
             auto parent_window_node = parent_window_it->second;
             expanded |= expandMatchersInsideWindowDefinition(parent_window_node, scope);
             windows_in_resolve_process.erase(parent_window_node.get());
+
+            /** Without `group_by_use_nulls` the window function copies the definition when it is resolved,
+              * so the `REPLACE` transformers of the following projection items, which rewrite the `WINDOW` clause,
+              * do not affect it. Here it is resolved later, so it gets a copy of the definition as of now.
+              */
+            named_window_snapshots[window_node] = parent_window_node->clone();
         }
     }
 
@@ -3672,6 +3678,13 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
                 nearest_query_scope->scope_node->formatASTForErrorMessage());
 
         parent_window_node = window_node_it->second;
+
+        /// See `expandMatchersInsideProjectionExpression`.
+        if (auto snapshot_it = named_window_snapshots.find(node); snapshot_it != named_window_snapshots.end())
+        {
+            parent_window_node = snapshot_it->second;
+            named_window_snapshots.erase(snapshot_it);
+        }
 
         auto [_, inserted] = windows_in_resolve_process.emplace(parent_window_node.get());
         if (!inserted)
