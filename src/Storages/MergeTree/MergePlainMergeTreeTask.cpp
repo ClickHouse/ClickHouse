@@ -168,8 +168,8 @@ void MergePlainMergeTreeTask::prepare()
 void MergePlainMergeTreeTask::finish()
 {
     new_part = merge_task->getFuture().get();
-    new_part->getDataPartStorage().commitTransaction();
 
+    /// `UniqueKeyCommitBase::stage` commits a unique-key part's storage.
     if (uk_txn.getTransaction())
     {
         /// Holds open the window between the merge's snapshot and its commit, where a kill is a late one.
@@ -185,6 +185,7 @@ void MergePlainMergeTreeTask::finish()
     }
     else
     {
+        new_part->getDataPartStorage().commitTransaction();
         MergeTreeData::Transaction transaction(storage, txn.get());
         storage.merger_mutator.renameMergedTemporaryPart(new_part, future_part->parts, txn, transaction);
         transaction.commit();

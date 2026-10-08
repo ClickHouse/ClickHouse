@@ -1,0 +1,28 @@
+insert	[(2,'a'),(3,'b'),(7,'b')]
+insert_storage	all_1_1_0	Packed	[]
+insert_storage	all_2_2_0	Packed	['for_all_1_1_0']
+1
+ignore	[(0,'a'),(1,'a'),(2,'a'),(3,'a'),(4,'a'),(5,'b'),(6,'b'),(7,'b')]
+ignore_storage	all_1_1_0	Packed	5	[]
+ignore_storage	all_2_2_0	Packed	5	['for_all_2_2_0']
+dedup	[(1,'a'),(2,'b')]
+dedup_storage	['Packed']
+delete	[0,1,3,4,6,7,8,9]
+delete_marker	Packed	['for_all_1_1_0']
+late_kill	18	18	0
+late_kill_probe	[(4,'a'),(5,'new'),(6,'a'),(15,'new')]
+late_kill_bitmaps	['for_all_1_2_1']
+carry_rows	15	5	new
+carry	all_1_1_0	[]
+carry	all_2_3_1	['csn_for_all_1_1_0']
+merged_storage	uk_packed_carry	all_2_3_1	Packed
+merged_storage	uk_packed_merge	all_1_2_1	Packed
+mutation	[(3,'x'),(5,'u'),(13,'x')]
+mutation_count	20	20
+mutation_storage	['Packed']	3
+mutation_probe	[(3,'y'),(5,'y'),(13,'y')]
+mutation_probe_count	20	20
+reattach	[(2,'a'),(3,'b'),(7,'b')]
+reattach_storage	['Packed']
+reattach_probe	[(2,'a'),(3,'c'),(7,'b')]
+reattach_probe_count	10	10

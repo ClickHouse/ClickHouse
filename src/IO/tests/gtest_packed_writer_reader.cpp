@@ -181,3 +181,48 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
     assertString("123", *in);
     assertEOF(*in);
 }
+
+/// Offsets are relative to the member, and a read is clamped to its end.
+TEST(PackedFilesWriter, ReadMemberAtOffset)
+{
+    static constexpr auto data_filename = "data.packed";
+
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
+
+    PackedFilesWriter writer;
+
+    {
+        auto out1 = writer.writeFile("file1");
+        writeString("abcdef", *out1);
+        out1->finalize();
+
+        auto out2 = writer.writeFile("file2");
+        writeString("0123456789", *out2);
+        out2->finalize();
+
+        auto out3 = writer.writeFile("file3");
+        writeString("xyz", *out3);
+        out3->finalize();
+    }
+
+    writeArchive(disk, data_filename, writer);
+
+    PackedFilesReader reader(disk, data_filename, getReadSettings());
+    ASSERT_EQ(reader.getFileOffsetAndSize("file2").offset + 10, reader.getFileOffsetAndSize("file3").offset);
+    auto in = reader.readFile(disk, data_filename, "file2", ReadSettings{}, {});
+    ASSERT_TRUE(in->supportsReadAt());
+
+    String buf(16, '\0');
+    auto read_at = [&](size_t n, size_t offset)
+    {
+        const size_t bytes = in->readBigAt(buf.data(), n, offset, {});
+        return buf.substr(0, bytes);
+    };
+
+    EXPECT_EQ(read_at(4, 0), "0123");
+    EXPECT_EQ(read_at(4, 3), "3456");
+    EXPECT_EQ(read_at(16, 6), "6789");
+    EXPECT_EQ(read_at(4, 10), "");
+    EXPECT_EQ(read_at(4, 11), "");
+}

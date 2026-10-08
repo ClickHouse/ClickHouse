@@ -52,7 +52,8 @@ struct MergeTreeTemporaryPart
     IColumn::Permutation sort_permutation;
 
     void cancel();
-    void finalize();
+    /// With `precommit_storage = false` the part's storage transaction stays open; the caller commits it.
+    void finalize(bool precommit_storage = true);
     void prewarmCaches();
 };
 

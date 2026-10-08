@@ -90,6 +90,11 @@ public:
             return {};
         }
 
+        if (!own_part || !own_part->getDataPartStorage().hasActiveTransaction())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "UNIQUE KEY {} (partition {}) has no part with an open storage transaction to stage into",
+                writeKind(), partitionId());
+
         auto kills = ownKills();
         auto carried = selectCarriedBitmaps();
 
@@ -139,6 +144,7 @@ public:
 
         recordBitmapChecksums(written);
 
+        own_part->getDataPartStorage().commitTransaction();
         return staged;
     }
 
@@ -163,12 +169,8 @@ protected:
         for (const auto & [name, checksum] : written.files)
             own_part->checksums.files[name] = checksum;
 
-        {
-            auto out = storage.writeFile("checksums.txt", 4096, {});
-            own_part->checksums.write(*out);
-            out->sync();
-            out->finalize();
-        }
+        DeleteBitmapFileOps::replacePartFile(
+            storage, "checksums.txt", [&](WriteBuffer & out) { own_part->checksums.write(out); }, /*sync=*/true);
 
         own_part->setBytesOnDisk(own_part->checksums.getTotalSizeOnDisk());
     }
@@ -469,6 +471,10 @@ UniqueKeyInsertOutcome UniqueKeyTxnCommit::insert(InsertRequest request)
     InsertCommit op(request);
     auto conflicts = op.run();
 
+    /// An unpublished part (a dedup conflict, every row ignored) still commits its storage.
+    if (auto & part_storage = request.temp_part.part->getDataPartStorage(); part_storage.hasActiveTransaction())
+        part_storage.commitTransaction();
+
     LOG_DEBUG(getLogger("UniqueKeyTxnCommit"),
         "UNIQUE KEY INSERT (partition {}): done, {} conflicting block(s), part {}",
         op.partitionId(), conflicts.size(), op.partDiscarded() ? "discarded" : "published");
@@ -699,7 +705,7 @@ void UniqueKeyTxnCommit::DeleteCommit::stageOwnerMarkerPart()
 
     std::tie(own_part, marker_tmp_dir_holder) = storage.createEmptyPart(
         new_part_info, target_parts.front().part->partition, new_part_name, metadata_snapshot,
-        request.transaction.getTransaction(), /*patch_part_index=*/std::nullopt);
+        request.transaction.getTransaction(), /*patch_part_index=*/std::nullopt, /*precommit_storage=*/false);
 
     LOG_TRACE(log, "UNIQUE KEY DELETE (partition {}): staged the 0-row marker part {} at block {}",
         request.partition_id, own_part->name, block_number);

@@ -135,7 +135,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 #if CLICKHOUSE_CLOUD
                 data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
 #endif
-                if (data_part_storage.hasActiveTransaction())
+                /// `UniqueKeyCommitBase::stage` commits a unique-key part's storage.
+                if (!uk_txn.getTransaction() && data_part_storage.hasActiveTransaction())
                     data_part_storage.commitTransaction();
 
                 /// Before `mutation_wait_mutex`, so nothing waits on the pause.
