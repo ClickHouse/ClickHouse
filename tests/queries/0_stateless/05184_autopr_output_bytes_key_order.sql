@@ -45,13 +45,6 @@ SYSTEM FLUSH LOGS query_log;
 -- - so the sample has to be put into key order to be priced the way the replicas send it. Without that
 -- both queries are measured in hash-table order and report the same size, and the sorted one is
 -- overcharged by the whole difference between the two orders.
---
--- The margin is 1.3x rather than the 2x this test first asked for, because the sample is no longer
--- compressed one output block at a time: over a block's worth of rows a codec finds the structure of a
--- monotonic `UInt64` key in either order, so ordering the sample is worth less than it was over the few
--- hundred rows one block carried. Measured on this query, ordering it still takes the estimate from
--- 4398570 down to 3431547 - and makes it repeat exactly, which it does not do unordered - and the two
--- queries below come out 1.49x to 1.68x apart.
 WITH stats AS (
     SELECT log_comment AS lc, ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes
     FROM system.query_log
@@ -64,4 +57,4 @@ FROM (
            sumIf(output_bytes, lc = 'okey_hash') AS hash
     FROM stats
 )
-WHERE in_order = 0 OR hash = 0 OR (hash / in_order) < 1.3;
+WHERE in_order = 0 OR hash = 0 OR (hash / in_order) < 2;

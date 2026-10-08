@@ -96,23 +96,12 @@ class RuntimeDataflowStatisticsCacheUpdater
     struct Statistics
     {
         std::atomic_size_t counter{0};
-        /// Set once the sample below is full, so that `shouldSampleBlock` stops without the mutex.
-        std::atomic_bool sample_full{false};
 
         std::mutex mutex;
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
         size_t sample_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t compressed_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
-
-        /// The sampled rows themselves, gathered across blocks and compressed once at the end. A codec
-        /// measures a ratio only as good as the window it is given, and one output block of an aggregation
-        /// can be a few hundred rows; compressing each block on its own made the ratio - and with it the
-        /// estimate - depend on how the output happened to be split into blocks.
-        DataTypes sample_types TSA_GUARDED_BY(mutex);
-        MutableColumns sample_columns TSA_GUARDED_BY(mutex);
-        size_t sample_rows TSA_GUARDED_BY(mutex) = 0;
-        size_t sample_memory TSA_GUARDED_BY(mutex) = 0;
     };
 
 public:
@@ -184,16 +173,6 @@ public:
 
 private:
     static bool shouldSampleBlock(Statistics & statistics, size_t block_rows);
-
-    /// Appends the sampled rows to `statistics.sample_columns`, up to the budget. Returns whether this
-    /// call is the one that filled it, so that its caller compresses the sample rather than the thread
-    /// that happens to finish the query.
-    static bool appendToSample(Statistics & statistics, const ColumnsWithTypeAndName & cols, size_t num_rows)
-        TSA_REQUIRES(statistics.mutex);
-
-    /// Compresses whatever the sample gathered, in one go, and records the ratio. `max_rows` caps how
-    /// much of it is compressed, for the one caller that runs on the query's teardown path.
-    static void compressSample(Statistics & statistics, size_t max_rows = 0);
 
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
