@@ -1877,6 +1877,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 String unique_column_name
                     = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
 
+                /// The set of a regular IN ignores the totals of the whole subquery plan (including the
+                /// totals of the queries in its join tree), so drop `WITH TOTALS` here as well, recursively:
+                /// otherwise the `TotalsHaving` step ends up on the right side of the join built by the
+                /// decorrelation, leaks the totals row into the outer query, and fails with `LOGICAL_ERROR`
+                /// when the outer query has `WITH TOTALS` itself.
+                for (const auto & table_expression : extractTableExpressions(
+                         std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true))
+                {
+                    if (auto * table_expression_query_node = table_expression->as<QueryNode>())
+                        table_expression_query_node->setIsGroupByWithTotals(false);
+                }
+
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
                 subquery_node->as<QueryNode>()->clearProjectionColumns();
