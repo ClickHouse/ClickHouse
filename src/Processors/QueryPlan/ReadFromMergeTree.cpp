@@ -3006,7 +3006,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
 
     if (auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings); !minmax_columns.empty())
     {
-        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, metadata_snapshot, skip_partition_pruning_, minmax_columns, data_settings, require_ready_sets](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets_for_this_condition)
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
@@ -3014,7 +3014,7 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
                 /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
-                require_ready_sets};
+                require_ready_sets || require_ready_sets_for_this_condition};
             /// The part minmax bound comes from `getExtremes`, which skips NaN.
             condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
             return condition;
@@ -3078,10 +3078,10 @@ void ReadFromMergeTree::buildIndexes(
     const auto & filter_dag = *filter_dag_ptr;
 
     {
-        auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            KeyCondition key_condition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+            KeyCondition key_condition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key], require_ready_sets};
             key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(metadata_snapshot->getPrimaryKey().data_types);
             return key_condition;
         };
@@ -3090,10 +3090,12 @@ void ReadFromMergeTree::buildIndexes(
     }
 
     {
-        auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate)
+        auto key_condition_factory = [query_context](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{}))};
+            return KeyCondition{
+                wrapped, query_context, {}, std::make_shared<ExpressionActions>(ActionsDAG(NamesAndTypesList{})),
+                /* single_point_ */ false, /* skip_analysis_ */ false, require_ready_sets};
         };
         indexes->key_condition_rpn_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
@@ -3151,7 +3153,7 @@ void ReadFromMergeTree::buildIndexes(
             const auto * vector_similarity_index = typeid_cast<const MergeTreeIndexVectorSimilarity *>(index_helper.get());
             chassert(vector_similarity_index);
 
-            factory = [vector_similarity_index, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate)
+            factory = [vector_similarity_index, query_context, vector_search_parameters](const ActionsDAG *, const ActionsDAG::Node * predicate, bool /*require_ready_sets*/)
             {
                 return vector_similarity_index->createIndexCondition(predicate, query_context, vector_search_parameters);
             };
@@ -3159,11 +3161,11 @@ void ReadFromMergeTree::buildIndexes(
         }
         else
         {
-            factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+            factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate, bool require_ready_sets) -> MergeTreeIndexConditionPtr
             {
                 if (!predicate)
                     return nullptr;
-                return index_helper->createIndexCondition(predicate, query_context);
+                return index_helper->createIndexCondition(predicate, query_context, require_ready_sets);
             };
         }
 
