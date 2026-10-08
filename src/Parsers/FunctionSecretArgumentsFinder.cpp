@@ -1,6 +1,7 @@
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <algorithm>
+#include <functional>
 #include <unordered_set>
 
 #include <Common/KnownObjectNames.h>
@@ -26,6 +27,100 @@ namespace
         changed |= maskPresignedURLParameters(url);
         return changed;
     }
+
+    /// How an Azure destination reads a connection value, and whether the masking here can show it.
+    enum class AzureConnectionValue
+    {
+        /// An http(s) scheme and a host, with no userinfo, query or fragment: each of those carries a
+        /// credential of its own (`http://user:key@host`, a SAS `?sig=`).
+        PlainStorageAccountURL,
+        /// A connection string, whose secret keys `maskAzureConnectionString` masks in place.
+        ConnectionString,
+        /// A value that can carry a credential no rule here masks.
+        Unmaskable,
+    };
+
+    AzureConnectionValue classifyAzureConnectionValue(const String & value)
+    {
+        static constexpr std::string_view SEPARATOR = "://";
+        const size_t separator = value.find(SEPARATOR);
+        const std::string_view scheme = std::string_view(value).substr(0, std::min(separator, value.length()));
+        /// The scheme grammar `maskURIUserinfo` reads. A connection string does not match it, even when
+        /// one of its values embeds an endpoint URL.
+        const bool is_url = separator != String::npos && !scheme.empty() && isAlphaASCII(scheme.front())
+            && std::all_of(
+                   scheme.begin(), scheme.end(), [](char c) { return isAlphaNumericASCII(c) || c == '+' || c == '.' || c == '-'; });
+        /// `maskAzureConnectionString` masks nothing in a value starting with `http`, so one that is no
+        /// URL either would be left as written.
+        if (!is_url)
+            return value.starts_with("http") ? AzureConnectionValue::Unmaskable : AzureConnectionValue::ConnectionString;
+
+        if ((!equalsCaseInsensitive(scheme, "http") && !equalsCaseInsensitive(scheme, "https"))
+            || value.find_first_of("?#") != String::npos)
+            return AzureConnectionValue::Unmaskable;
+
+        const size_t authority_begin = separator + SEPARATOR.length();
+        const size_t authority_end = std::min(value.find('/', authority_begin), value.length());
+        if (authority_end == authority_begin || value.find('@', authority_begin) < authority_end)
+            return AzureConnectionValue::Unmaskable;
+        return AzureConnectionValue::PlainStorageAccountURL;
+    }
+
+    /// The backup engines whose locator names a destination with no credential in it, each with the
+    /// argument count it accepts. `BackupFactory` registers exactly these plus `S3` and `AzureBlobStorage`.
+    std::optional<size_t> credentialFreeBackupEngineArity(const String & engine_name)
+    {
+        if (engine_name == "File" || engine_name == "Memory")
+            return 1;
+        if (engine_name == "Disk")
+            return 2;
+        if (engine_name == "Null")
+            return 0;
+        return {};
+    }
+
+    constexpr std::string_view password_key[] = {"password"};
+
+    /// `password`, and the TLS credentials passed as the literal contents of a certificate or a key file
+    /// rather than as a path to it.
+    constexpr std::string_view mysql_secret_keys[]
+        = {"password", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
+
+    constexpr std::string_view ytsaurus_secret_keys[] = {"oauth_token"};
+
+    constexpr std::string_view kafka_secret_keys[] = {"kafka_sasl_password"};
+}
+
+void FunctionSecretArgumentsFinder::maskEveryArgument()
+{
+    for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
+        markSecretArgument(i);
+}
+
+bool FunctionSecretArgumentsFinder::hasOnlyLiteralArguments(const AbstractFunction & function)
+{
+    if (!function.hasArguments())
+        return true;
+    for (size_t i = 0, size = function.arguments->size(); i < size; ++i)
+        if (!function.arguments->at(i)->tryGetLiteralText(nullptr))
+            return false;
+    return true;
+}
+
+bool FunctionSecretArgumentsFinder::isCredentialFreeBackupLocator(const AbstractFunction & function)
+{
+    auto arity = credentialFreeBackupEngineArity(function.name());
+    if (!arity)
+        return false;
+    const size_t count = function.hasArguments() ? function.arguments->size() : 0;
+    if (count != *arity)
+        return false;
+    /// Each of these reads every argument of its own as a string, so another shape - an array among
+    /// them - is read by none of them and can carry a string of its own.
+    for (size_t i = 0; i < count; ++i)
+        if (!tryGetStringFromArgument(*function.arguments->at(i), nullptr, /* allow_identifier= */ false))
+            return false;
+    return true;
 }
 
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
@@ -211,113 +306,169 @@ void FunctionSecretArgumentsFinder::maskS3UrlArgument(const std::vector<size_t> 
 
 void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
 {
-    if ((function->name() == "mysql") || (function->name() == "postgresql"))
-    {
-        /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
-        /// postgresql('host:port', 'database', 'table', 'user', 'password', ...)
-        /// mongodb('host:port', 'database', 'collection', 'user', 'password', ...)
-        findMySQLFunctionSecretArguments();
-    }
-    else if (function->name() == "mongodb")
-    {
-        findMongoDBSecretArguments();
-    }
-    else if ((function->name() == "s3") || (function->name() == "cosn") || (function->name() == "oss") ||
-             (function->name() == "deltaLake") || (function->name() == "deltaLakeS3") || (function->name() == "hudi") ||
-             (function->name() == "iceberg") || (function->name() == "gcs") || (function->name() == "icebergS3") ||
-             (function->name() == "paimon") || (function->name() == "paimonS3"))
-    {
-        /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-        findS3FunctionSecretArguments(/* is_cluster_function= */ false);
-    }
-    else if ((function->name() == "s3Cluster") || (function ->name() == "hudiCluster") ||
-             (function ->name() == "deltaLakeCluster") || (function ->name() == "deltaLakeS3Cluster") ||
-             (function ->name() == "icebergS3Cluster") || (function ->name() == "icebergCluster") ||
-             (function ->name() == "paimonCluster") || (function ->name() == "paimonS3Cluster"))
-    {
-        /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
-        findS3FunctionSecretArguments(/* is_cluster_function= */ true);
-    }
-    else if ((function->name() == "azureBlobStorage") || (function->name() == "deltaLakeAzure") ||
-             (function->name() == "icebergAzure") || (function->name() == "paimonAzure"))
-    {
-        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
-        findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false);
-    }
-    else if ((function->name() == "azureBlobStorageCluster") || (function->name() == "icebergAzureCluster") ||
-             (function->name() == "deltaLakeAzureCluster") || (function->name() == "paimonAzureCluster"))
-    {
-        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
-        findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true);
-    }
-    else if ((function->name() == "remote") || (function->name() == "remoteSecure"))
-    {
-        /// remote('addresses_expr', 'db', 'table', 'user', 'password', ...)
-        findRemoteFunctionSecretArguments();
-    }
-    else if ((function->name() == "encrypt") || (function->name() == "decrypt") ||
-                (function->name() == "aes_encrypt_mysql") || (function->name() == "aes_decrypt_mysql") ||
-                (function->name() == "tryDecrypt"))
+    const String & name = function->name();
+
+    /// The arguments of these are expressions, where `=` is a comparison rather than a named argument.
+    if ((name == "encrypt") || (name == "decrypt") || (name == "aes_encrypt_mysql") || (name == "aes_decrypt_mysql")
+        || (name == "tryDecrypt"))
     {
         /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
         findEncryptionFunctionSecretArguments();
+        return;
     }
-    else if (equalsCaseInsensitive(function->name(), "HMAC"))
+    if (equalsCaseInsensitive(name, "HMAC"))
     {
         /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
         findHMACSecretArguments();
+        return;
     }
-    else if (function->name() == "url" || function->name() == "urlCluster")
+    if (name == "bigquery")
+    {
+        /// Accepts positional arguments after named ones and models their slots itself.
+        findBigQuerySecretArguments();
+        return;
+    }
+
+    std::function<void()> find_secrets;
+    if ((name == "mysql") || (name == "postgresql"))
+    {
+        /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
+        /// postgresql('host:port', 'database', 'table', 'user', 'password', ...)
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 4, .secret_keys = mysql_secret_keys}); };
+    }
+    else if (name == "mongodb")
+    {
+        find_secrets = [this] { findMongoDBSecretArguments(); findMongoDBConnectionStringSecretArguments(); };
+    }
+    else if ((name == "s3") || (name == "cosn") || (name == "oss") || (name == "deltaLake") || (name == "deltaLakeS3")
+             || (name == "hudi") || (name == "iceberg") || (name == "gcs") || (name == "icebergS3") || (name == "paimon")
+             || (name == "paimonS3"))
+    {
+        /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
+        find_secrets = [this] { findS3FunctionSecretArguments(/* is_cluster_function= */ false); };
+    }
+    else if ((name == "s3Cluster") || (name == "hudiCluster") || (name == "deltaLakeCluster") || (name == "deltaLakeS3Cluster")
+             || (name == "icebergS3Cluster") || (name == "icebergCluster") || (name == "paimonCluster")
+             || (name == "paimonS3Cluster"))
+    {
+        /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', ...)
+        find_secrets = [this] { findS3FunctionSecretArguments(/* is_cluster_function= */ true); };
+    }
+    else if ((name == "azureBlobStorage") || (name == "deltaLakeAzure") || (name == "icebergAzure") || (name == "paimonAzure"))
+    {
+        /// azureBlobStorage(connection_string|storage_account_url, container_name, blobpath, account_name, account_key, format, compression, structure)
+        find_secrets = [this] { findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ false); };
+    }
+    else if ((name == "azureBlobStorageCluster") || (name == "icebergAzureCluster") || (name == "deltaLakeAzureCluster")
+             || (name == "paimonAzureCluster"))
+    {
+        /// azureBlobStorageCluster(cluster, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+        find_secrets = [this] { findAzureBlobStorageFunctionSecretArguments(/* is_cluster_function= */ true); };
+    }
+    else if ((name == "remote") || (name == "remoteSecure"))
+    {
+        /// remote('addresses_expr', 'db', 'table', 'user', 'password', ...)
+        find_secrets = [this] { findRemoteFunctionSecretArguments(); };
+    }
+    else if ((name == "url") || (name == "urlCluster"))
     {
         /// url('url', ...) keeps the url at slot 0; urlCluster('cluster', 'url', ...) at slot 1.
-        findURLSecretArguments(function->name() == "urlCluster" ? 1 : 0);
+        find_secrets = [this, is_cluster = name == "urlCluster"] { findURLSecretArguments(is_cluster ? 1 : 0); };
     }
-    else if (function->name() == "redis")
+    else if (name == "redis")
     {
-        findRedisFunctionSecretArguments();
+        /// redis('host:port', 'key', 'structure', 'db_index', 'password', 'pool_size')
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 4, .secret_keys = password_key}); };
     }
-    else if (function->name() == "ytsaurus")
+    else if (name == "ytsaurus")
     {
-        findYTsaurusStorageTableEngineSecretArguments();
+        /// ytsaurus('http_proxy_url', 'cypress_path', 'oauth_token', 'structure')
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 2, .secret_keys = ytsaurus_secret_keys}); };
     }
-    else if (function->name() == "bigquery")
+    else if ((name == "arrowFlight") || (name == "arrowflight"))
     {
-        findBigQuerySecretArguments();
+        /// arrowFlight('host:port', 'dataset', 'username', 'password')
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 3, .secret_keys = password_key}); };
     }
-    else if ((function->name() == "arrowFlight") || (function->name() == "arrowflight"))
-    {
-        findArrowFlightSecretArguments();
-    }
-    else if ((function->name() == "jdbc") || (function->name() == "odbc"))
+    else if ((name == "jdbc") || (name == "odbc"))
     {
         /// jdbc('DSN', schema, table) or jdbc('DSN', table)
         /// odbc('DSN', schema, table) or odbc('DSN', table)
         /// The DSN (connection string) may contain credentials.
-        findXDBCSecretArguments();
-    }
-}
-
-void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
-{
-    if (isNamedCollectionName(0))
-    {
-        /// mysql(named_collection, ..., password = 'password', ...)
-        findSecretNamedArgument("password", 1);
-        findTLSCredentialsSecretArguments(1);
+        find_secrets = [this] { findXDBCSecretArguments(); };
     }
     else
     {
-        /// mysql('host:port', 'database', 'table', 'user', 'password', ...)
-        markSecretArgument(4);
-        findTLSCredentialsSecretArguments(5);
+        return;
     }
+
+    /// The query is formatted for logging before validation rejects a positional argument after a
+    /// `key = value` one, and the slot it was meant for is unknowable: hide every such positional.
+    classifyPositionalArguments();
+    find_secrets();
 }
 
-void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+void FunctionSecretArgumentsFinder::findPositionalAndNamedSecretArguments(const PositionalSecretSignature & signature)
 {
-    for (const auto & key : tls_credentials_secret_keys)
-        findSecretNamedArgument(key, start);
+    /// Not gated on the named-collection form: an identifier can also be a positional endpoint
+    /// (`redis(localhost, ...)`), and a collection rejects positional overrides anyway.
+    if (signature.positional_secret_slot)
+    {
+        const auto positional = classifyPositionalArguments();
+        if (*signature.positional_secret_slot < positional.size())
+            markSecretArgument(positional[*signature.positional_secret_slot]);
 
+        /// The explicit form constant-folds its positionals, so an `equals` at the secret slot can be the
+        /// folded secret with the secret as its left operand (`Redis('host:port', 0, 'password' = 'x')`):
+        /// hide it whole. An identifier first argument does not prove a named collection (`redis(localhost, ...)`),
+        /// so there only an identifier left operand (`port = 6379`), which does not fold, is kept as an override.
+        const size_t slot = *signature.positional_secret_slot;
+        if (slot < function->arguments->size())
+        {
+            const auto equals_func = function->arguments->at(slot)->getFunction();
+            if (equals_func && equals_func->name() == "equals"
+                && (!function->arguments->at(0)->isIdentifier() || !equals_func->arguments || equals_func->arguments->size() != 2
+                    || !equals_func->arguments->at(0)->isIdentifier()))
+                markSecretArgument(slot);
+        }
+    }
+
+    for (const auto & key : signature.secret_keys)
+        findSecretNamedArgument(key);
+    markNamedArgumentsWithUnreadableKeys(0);
+}
+
+std::vector<size_t> FunctionSecretArgumentsFinder::classifyPositionalArguments(size_t start)
+{
+    std::vector<size_t> positional;
+    bool seen_named = false;
+    for (size_t i = start; i < function->arguments->size(); ++i)
+    {
+        const auto argument = function->arguments->at(i);
+        if (argument->isSettings())
+            continue;
+
+        const auto equals_func = argument->getFunction();
+        if (equals_func && equals_func->name() == "equals" && equals_func->hasArguments()
+            && equals_func->arguments->size() == 2)
+        {
+            seen_named = true;
+            continue;
+        }
+
+        if (seen_named)
+        {
+            markSecretArgument(i);
+            continue;
+        }
+
+        positional.push_back(i);
+    }
+    return positional;
+}
+
+void FunctionSecretArgumentsFinder::markNamedArgumentsWithUnreadableKeys(size_t start)
+{
     /// The named-collection parser does not require the key of a `key = value` argument to be a plain
     /// literal or identifier: `getKeyValueFromASTImpl` evaluates it as a constant expression, so
     /// `mysql(creds, concat('ssl_ca', '_pem') = 'SECRET', table = 't')` passes a TLS credential too.
@@ -342,80 +493,161 @@ void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t sta
 
 void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
 {
-    String uri;
+    /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
+    /// MongoDB(named_collection, ..., password = 'password', ...)
+    findPositionalAndNamedSecretArguments({.positional_secret_slot = 4, .secret_keys = password_key});
 
-    if (isNamedCollectionName(0))
+    /// Hides the secrets of a uri, or the whole value when it is not a plain string literal.
+    auto mask_uri = [this](size_t index, const AbstractFunction::Argument & value, std::string_view prefix, bool argument_is_named)
     {
-        /// MongoDB(named_collection, ..., password = 'password', ...)
-        if (findSecretNamedArgument("password", 1))
-            return;
+        String uri;
+        if (!value.tryGetString(&uri, /* allow_identifier= */ false))
+            markSecretArgument(index, argument_is_named);
+        else if (maskMongoDBConnectionString(uri))
+            result.replaced_arguments[index] = String(prefix) + quoteString(uri);
+    };
 
-        /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
-        if (findNamedArgument(&uri, "uri", 1) == -1)
-            return;
-
-        result.are_named = true;
-        result.start = 1;
+    /// MongoDB('mongodb://username:password@127.0.0.1:27017/database', 'collection'[, ...]). Not gated
+    /// on the argument count, which a rejected named argument changes; a `host:port` has no password.
+    if (function->arguments->size() != 0)
+    {
+        const auto first = function->arguments->at(0);
+        const auto first_function = first->getFunction();
+        if (first->isIdentifier())
+        {
+            String name;
+            /// A collection name has no password; a backquoted uri, rejected as an unknown collection, can.
+            if (first->tryGetString(&name, /* allow_identifier= */ true) && maskMongoDBConnectionString(name))
+                result.replaced_arguments[0] = backQuoteIfNeed(name);
+        }
+        else if (!first_function || first_function->name() != "equals")
+        {
+            mask_uri(0, *first, "", /* argument_is_named= */ false);
+        }
     }
-    else if (function->arguments->size() == 2)
-    {
-        tryGetStringFromArgument(0, &uri);
-        result.are_named = false;
-        result.start = 0;
-    }
-    else
-    {
-        // MongoDB('127.0.0.1:27017', 'database', 'collection', 'user, 'password'...)
-        markSecretArgument(4, false);
-        return;
-    }
 
-    chassert(result.count == 0);
-    maskURIPassword(&uri);
-    result.count = 1;
-    result.replacement = std::move(uri);
-}
-
-void FunctionSecretArgumentsFinder::findRedisTableEngineSecretArguments()
-{
-    /// Redis does not have URL/address argument,
-    /// only 'host:port' and separate "password" argument.
-
-    if (isNamedCollectionName(0))
+    /// MongoDB(named_collection, ..., uri = 'mongodb://username:password@127.0.0.1:27017', ...)
+    /// Every occurrence: a duplicated or conflicting override is logged before validation rejects it.
+    for (ssize_t i = findNamedArgument(nullptr, "uri"); i >= 0; i = findNamedArgument(nullptr, "uri", static_cast<size_t>(i) + 1))
     {
-        if (findSecretNamedArgument("password", 1))
-            return;
-    }
-    else
-    {
-        // Redis('host:port', 'db_index', 'password', 'pool_size')
-        markSecretArgument(2, false);
-        return;
+        const auto index = static_cast<size_t>(i);
+        mask_uri(index, *function->arguments->at(index)->getFunction()->arguments->at(1), "uri = ", /* argument_is_named= */ true);
     }
 }
 
-void FunctionSecretArgumentsFinder::findArrowFlightSecretArguments()
+void FunctionSecretArgumentsFinder::findMongoDBConnectionStringSecretArguments()
 {
-    if (isNamedCollectionName(0))
+    auto is_masked = [&](size_t index)
     {
-        /// ArrowFlight(named_collection, ..., password = 'password')
-        findSecretNamedArgument("password", 1);
+        return result.replaced_arguments.contains(index) || result.masked_arguments.contains(index)
+            || (result.start <= index && index < result.start + result.count);
+    };
+
+    auto mask_argument = [&](size_t index, bool hide_unreadable)
+    {
+        const auto argument = function->arguments->at(index);
+        String value;
+        if (!tryGetStringFromArgument(*argument, &value))
+        {
+            if (hide_unreadable)
+                result.replaced_arguments[index] = "'[HIDDEN]'";
+        }
+        else if (maskMongoDBConnectionString(value))
+        {
+            result.replaced_arguments[index] = argument->isIdentifier() ? backQuoteIfNeed(value) : quoteString(value);
+        }
+    };
+
+    const bool is_engine = function->name() == "MongoDB";
+    const bool is_named_collection = isNamedCollectionName(0);
+    const size_t size = function->arguments->size();
+
+    /// The table function appends `options` and `oid_columns` to the positionals before index 5, so a named argument
+    /// there can move them into the user or password slot.
+    bool shifted = false;
+    if (!is_engine && size > 4 && !is_named_collection)
+    {
+        for (size_t i = 0; i < 5; ++i)
+        {
+            const auto equals = function->arguments->at(i)->getFunction();
+            if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+                shifted = true;
+        }
     }
-    else
+
+    bool seen_named = false;
+    for (size_t i = 0; i < size; ++i)
     {
-        /// ArrowFlight('host:port', 'dataset', 'username', 'password')
-        markSecretArgument(3);
+        const auto equals = function->arguments->at(i)->getFunction();
+        if (equals && equals->name() == "equals" && equals->hasArguments() && equals->arguments->size() == 2)
+        {
+            seen_named = true;
+            if (is_masked(i))
+                continue;
+
+            String key;
+            if (!tryGetStringFromArgument(*equals->arguments->at(0), &key))
+            {
+                /// The key is evaluated as a constant expression, so it can name `options`.
+                result.replaced_arguments[i] = "'[HIDDEN]'";
+                continue;
+            }
+            if (shifted && (equalsCaseInsensitive(key, "options") || equalsCaseInsensitive(key, "oid_columns")))
+            {
+                result.replaced_arguments[i] = key + " = '[HIDDEN]'";
+                continue;
+            }
+            if (!equalsCaseInsensitive(key, "uri") && !equalsCaseInsensitive(key, "options"))
+                continue;
+
+            String value;
+            if (!tryGetStringFromArgument(*equals->arguments->at(1), &value))
+                result.replaced_arguments[i] = key + " = '[HIDDEN]'";
+            else if (maskMongoDBConnectionString(value))
+                result.replaced_arguments[i] = key + " = " + quoteString(value);
+            continue;
+        }
+
+        if (is_masked(i))
+            continue;
+
+        /// A positional after a collection name is rejected or ignored, but only after the statement is logged.
+        if ((shifted && i > 5) || (is_named_collection && i > 0))
+        {
+            result.replaced_arguments[i] = "'[HIDDEN]'";
+            continue;
+        }
+
+        if (seen_named)
+        {
+            /// A positional argument after a named one shifts the others, so its role is unknown.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (i == 0)
+        {
+            /// The URI.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
+        else if (is_engine ? i == 5 : i >= 6)
+        {
+            /// The positional `options` of the `host:port` forms.
+            mask_argument(i, /* hide_unreadable= */ true);
+        }
     }
 }
 
 void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
 {
+    /// The connection string goes verbatim to the bridge, so its grammar is the JDBC/ODBC driver's: the
+    /// password can sit in a query parameter (`?password=`) or as `Pwd=` in a `KEY=value;` list.
+    /// An invalid call is formatted for logging before validation rejects it, so both branches below
+    /// fail closed: after a collection name a positional argument can be the connection string, and a
+    /// named argument means the call is not the positional form at all.
     if (isNamedCollectionName(0))
     {
         /// jdbc(named_collection, ..., datasource = 'DSN', ...)
         /// odbc(named_collection, ..., connection_settings = 'DSN', ...)
         /// `datasource` and `connection_settings` are mutually exclusive aliases.
-        /// If the value is a URI, mask only the password; otherwise hide the whole value.
         /// If somehow both are present (invalid query), hide all named arguments.
         ssize_t ds_idx = findNamedArgument(nullptr, "datasource", 1);
         ssize_t cs_idx = findNamedArgument(nullptr, "connection_settings", 1);
@@ -426,53 +658,31 @@ void FunctionSecretArgumentsFinder::findXDBCSecretArguments()
             result.start = 1;
             result.count = function->arguments->size() - 1;
             result.are_named = true;
+            return;
         }
-        else if (ds_idx >= 0)
-            maskXDBCSecretNamedArgument("datasource", 1);
-        else if (cs_idx >= 0)
-            maskXDBCSecretNamedArgument("connection_settings", 1);
+
+        findSecretNamedArgument("datasource", 1);
+        findSecretNamedArgument("connection_settings", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
+
+        for (size_t i = 1; i < function->arguments->size(); ++i)
+        {
+            const auto equals_func = function->arguments->at(i)->getFunction();
+            if (!equals_func || equals_func->name() != "equals" || !equals_func->hasArguments()
+                || equals_func->arguments->size() != 2)
+                markSecretArgument(i, /* argument_is_named= */ false);
+        }
     }
     else
     {
         /// jdbc('DSN', schema, table) / jdbc('DSN', table)
         /// odbc('DSN', schema, table) / odbc('DSN', table)
         /// JDBC('DSN', database, table) / ODBC('DSN', database, table)
-        /// The connection string may be a URI with credentials embedded,
-        /// e.g. scheme://username:password@host:port/dbname
-        /// If so, mask only the password part; otherwise hide the whole argument.
-        String uri;
-        if (tryGetStringFromArgument(0, &uri))
-        {
-            if (maskURIPassword(&uri))
-            {
-                chassert(result.count == 0);
-                result.start = 0;
-                result.count = 1;
-                result.replacement = std::move(uri);
-                return;
-            }
-        }
         markSecretArgument(0, false);
-    }
-}
 
-void FunctionSecretArgumentsFinder::maskXDBCSecretNamedArgument(std::string_view key, size_t start)
-{
-    String value;
-    ssize_t arg_idx = findNamedArgument(&value, key, start);
-    if (arg_idx < 0)
-        return;
-
-    if (!value.empty() && maskURIPassword(&value))
-    {
-        result.are_named = true;
-        result.start = arg_idx;
-        result.count = 1;
-        result.replacement = std::move(value);
-    }
-    else
-    {
-        markSecretArgument(arg_idx, /* argument_is_named= */ true);
+        findSecretNamedArgument("datasource", 1);
+        findSecretNamedArgument("connection_settings", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
     }
 }
 
@@ -599,6 +809,54 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
     return false;
 }
 
+bool FunctionSecretArgumentsFinder::azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit)
+{
+    size_t positionals = 0;
+    for (size_t i = start, size = function->arguments->size(); i < size; ++i)
+    {
+        const auto argument_function = function->arguments->at(i)->getFunction();
+        if (argument_function && argument_function->name() == "equals")
+        {
+            /// A key this rule cannot read hides which credential the override carries; a value that is
+            /// no plain literal or identifier can nest one (`headers('Authorization' = '...')`).
+            if (argument_function->arguments && argument_function->arguments->size() == 2
+                && tryGetStringFromArgument(*argument_function->arguments->at(0), nullptr)
+                && (tryGetStringFromArgument(*argument_function->arguments->at(1), nullptr)
+                    || argument_function->arguments->at(1)->tryGetLiteralText(nullptr)))
+                continue;
+            return false;
+        }
+        if (++positionals > positional_limit || !function->arguments->at(i)->tryGetLiteralText(nullptr))
+            return false;
+    }
+
+    /// A destination reads at most one of the two mutually exclusive connection keys, and rejects a
+    /// second one only after the statement has been formatted, so a surplus one stays as written.
+    size_t connection_overrides = 0;
+    for (const auto & key : {"connection_string", "storage_account_url"})
+        for (ssize_t i = findNamedArgument(nullptr, key, start); i >= 0;
+             i = findNamedArgument(nullptr, key, static_cast<size_t>(i) + 1))
+            ++connection_overrides;
+
+    if (connection_overrides > 1)
+        return false;
+
+    for (const auto & key : {"connection_string", "storage_account_url"})
+    {
+        String value;
+        if (findNamedArgument(&value, key, start) < 0)
+            continue;
+        /// Hiding a connection string replaces its whole argument, which cannot be combined with
+        /// hiding `account_key`.
+        const auto shape = classifyAzureConnectionValue(value);
+        if (value.empty() || shape == AzureConnectionValue::Unmaskable
+            || (shape == AzureConnectionValue::ConnectionString
+                && findNamedArgument(nullptr, "account_key", start) >= 0))
+            return false;
+    }
+    return true;
+}
+
 void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
 {
     /// `headers(...)` can appear at any position in every url form (function, cluster function, engine,
@@ -676,13 +934,11 @@ bool FunctionSecretArgumentsFinder::tryGetStringFromArgument(const AbstractFunct
 
 void FunctionSecretArgumentsFinder::findRemoteFunctionSecretArguments()
 {
-    if (isNamedCollectionName(0))
-    {
-        /// remote(named_collection, ..., password = 'password', ...)
-        findSecretNamedArgument("password", 1);
-        /// An identifier is also a cluster name when no such collection exists, and that form keeps the
-        /// password in a positional slot, so the walk below has to run for it too.
-    }
+    /// remote(named_collection, ..., password = 'password', ...), and a `password` written before the
+    /// positionals. An identifier is also a cluster name when no such collection exists, and that form
+    /// keeps the password in a positional slot, so the walk below has to run for it too.
+    findSecretNamedArgument("password");
+    markNamedArgumentsWithUnreadableKeys(0);
 
     /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
     /// remote('addresses_expr', db.table, 'user' [, 'password'] [, sharding_key])
@@ -802,22 +1058,27 @@ void FunctionSecretArgumentsFinder::findHMACSecretArguments()
 void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
 {
     const String & engine_name = function->name();
+    std::function<void()> find_secrets;
     if (engine_name == "ExternalDistributed")
     {
         /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
-        findExternalDistributedTableEngineSecretArguments();
+        /// ExternalDistributed('engine', named_collection, ..., password = 'password', ...)
+        find_secrets = [this]
+        {
+            findPositionalAndNamedSecretArguments(
+                {.positional_secret_slot = 5, .secret_keys = password_key});
+        };
     }
     else if ((engine_name == "MySQL") || (engine_name == "PostgreSQL") || (engine_name == "MaterializedPostgreSQL"))
     {
         /// MySQL('host:port', 'database', 'table', 'user', 'password', ...)
         /// PostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
         /// MaterializedPostgreSQL('host:port', 'database', 'table', 'user', 'password', ...)
-        /// MongoDB('host:port', 'database', 'collection', 'user', 'password', ...)
-        findMySQLFunctionSecretArguments();
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 4, .secret_keys = mysql_secret_keys}); };
     }
     else if (engine_name == "MongoDB")
     {
-        findMongoDBSecretArguments();
+        find_secrets = [this] { findMongoDBSecretArguments(); findMongoDBConnectionStringSecretArguments(); };
     }
     else if ((engine_name == "S3") || (engine_name == "COSN") || (engine_name == "OSS") || (engine_name == "GCS")
              || (engine_name == "DeltaLake") || (engine_name == "DeltaLakeS3") || (engine_name == "Hudi")
@@ -826,31 +1087,36 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
              || (engine_name == "S3Queue"))
     {
         /// S3('url', ['aws_access_key_id', 'aws_secret_access_key',] ...)
-        findS3TableEngineSecretArguments();
+        find_secrets = [this] { findS3TableEngineSecretArguments(); };
     }
     else if (engine_name == "URL")
     {
-        findURLSecretArguments();
+        find_secrets = [this] { findURLSecretArguments(); };
     }
     else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
     {
-        findAzureBlobStorageTableEngineSecretArguments();
+        find_secrets = [this] { findAzureBlobStorageTableEngineSecretArguments(); };
     }
     else if (engine_name == "Redis")
     {
-        findRedisTableEngineSecretArguments();
+        /// Redis('host:port', 'db_index', 'password', 'pool_size')
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 2, .secret_keys = password_key}); };
     }
     else if (engine_name == "YTsaurus")
     {
-        findYTsaurusStorageTableEngineSecretArguments();
+        /// YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 2, .secret_keys = ytsaurus_secret_keys}); };
     }
     else if (engine_name == "BigQuery")
     {
+        /// Accepts positional arguments after named ones and models their slots itself.
         findBigQuerySecretArguments();
+        return;
     }
     else if (engine_name == "ArrowFlight")
     {
-        findArrowFlightSecretArguments();
+        /// ArrowFlight('host:port', 'dataset', 'username', 'password')
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 3, .secret_keys = password_key}); };
     }
     else if ((engine_name == "Remote") || (engine_name == "RemoteSecure"))
     {
@@ -858,33 +1124,53 @@ void FunctionSecretArgumentsFinder::findTableEngineSecretArguments()
         /// RemoteSecure(...) - same as Remote(...)
         /// The arguments are identical to the `remote`/`remoteSecure` table functions, so reuse
         /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
-        findRemoteFunctionSecretArguments();
+        find_secrets = [this] { findRemoteFunctionSecretArguments(); };
     }
     else if (engine_name == "NATS")
     {
         /// NATS(named_collection, nats_password = 'password', nats_credentials = '...', ...)
-        findNATSTableEngineSecretArguments();
+        find_secrets = [this] { findNATSTableEngineSecretArguments(); };
+    }
+    else if (engine_name == "RabbitMQ")
+    {
+        /// RabbitMQ(named_collection, rabbitmq_address = '...', rabbitmq_password = '...')
+        find_secrets = [this] { findRabbitMQTableEngineSecretArguments(); };
+    }
+    else if (engine_name == "Kafka")
+    {
+        /// Kafka(named_collection, kafka_sasl_password = '...'); the legacy positional form carries no
+        /// secret and makes the collection name optional, so a named argument can be the first one.
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.secret_keys = kafka_secret_keys}); };
     }
     else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
     {
         /// JDBC('DSN', database, table)
         /// ODBC('DSN', database, table)
         /// The DSN (connection string) may contain credentials.
-        findXDBCSecretArguments();
+        find_secrets = [this] { findXDBCSecretArguments(); };
     }
+    else
+    {
+        return;
+    }
+
+    /// A positional after a named argument is hidden, see findOrdinaryFunctionSecretArguments.
+    classifyPositionalArguments();
+    find_secrets();
 }
 
-void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
+void FunctionSecretArgumentsFinder::findBrokerTableEngineSecretArguments(
+    std::span<const std::string_view> secret_keys, std::string_view address_key)
 {
     /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
     ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
     ///      [, nats_url = 'nats://user:password@host:4222']
     ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
-    /// The only positional argument the engine accepts is the name of a named collection, so the
+    /// RabbitMQ(named_collection [, rabbitmq_password = '...'] [, rabbitmq_address = 'amqp://user:pass@host'], ...)
+    /// The only positional argument these engines accept is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
-    /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
-    /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
-    /// `nats_server_list` is hidden whole because each list entry can carry userinfo credentials.
+    /// separately by the engine's own `SETTINGS_TO_HIDE`, which this function must stay in sync with.
+    /// A destination key (`nats_server_list`) is hidden whole: each list entry can carry userinfo.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
@@ -906,13 +1192,14 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
         {
             markSecretArgument(i, /* argument_is_named= */ true);
         }
-        else if (key == "nats_url")
+        else if (key == address_key)
         {
             String url;
             if (equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
             {
-                if (maskURIPassword(&url))
-                    result.replaced_arguments[i] = "nats_url = " + quoteString(url);
+                /// An '@' is the only reliable sign of a credential here; see the engine's `_fwd.h`.
+                if (url.contains('@'))
+                    markSecretArgument(i, /* argument_is_named= */ true);
             }
             else
             {
@@ -921,25 +1208,21 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
                 markSecretArgument(i, /* argument_is_named= */ true);
             }
         }
-        else if (std::find(std::begin(nats_secret_keys), std::end(nats_secret_keys), key) != std::end(nats_secret_keys))
+        else if (std::find(secret_keys.begin(), secret_keys.end(), key) != secret_keys.end())
         {
             markSecretArgument(i, /* argument_is_named= */ true);
         }
     }
 }
 
-void FunctionSecretArgumentsFinder::findExternalDistributedTableEngineSecretArguments()
+void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
 {
-    if (isNamedCollectionName(1))
-    {
-        /// ExternalDistributed('engine', named_collection, ..., password = 'password', ...)
-        findSecretNamedArgument("password", 2);
-    }
-    else
-    {
-        /// ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password')
-        markSecretArgument(5);
-    }
+    findBrokerTableEngineSecretArguments(nats_secret_keys, "nats_url");
+}
+
+void FunctionSecretArgumentsFinder::findRabbitMQTableEngineSecretArguments()
+{
+    findBrokerTableEngineSecretArguments(rabbitmq_secret_keys, "rabbitmq_address");
 }
 
 void FunctionSecretArgumentsFinder::findS3TableEngineSecretArguments()
@@ -966,43 +1249,52 @@ void FunctionSecretArgumentsFinder::findAzureBlobStorageTableEngineSecretArgumen
     if (isNamedCollectionName(url_arg_idx))
     {
         /// AzureBlobStorage(named_collection, ..., account_key = 'account_key', ...)
+        if (!azureCollectionArgumentsAreShowable(url_arg_idx + 1, /* positional_limit= */ 0))
+        {
+            maskEveryArgument();
+            return;
+        }
         if (maskAzureConnectionString(-1, true, 1))
             return;
         findSecretNamedArgument("account_key", 1);
         return;
     }
 
-    if (maskAzureConnectionString(url_arg_idx))
-        return;
-
     /// We should check other arguments first because we don't need to do any replacement in case of
     /// AzureBlobStorage(connection_string|storage_account_url, container_name, blobpath, format) -- in this case there is no account_key argument
     size_t count = function->arguments->size();
+    bool fourth_argument_is_format = false;
     if ((url_arg_idx + 4 <= count) && (count <= url_arg_idx + 7))
     {
         String fourth_arg;
         if (tryGetStringFromArgument(url_arg_idx + 3, &fourth_arg))
-        {
-            if (fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg))
-                return;
-        }
+            fourth_argument_is_format = fourth_arg == "auto" || KnownFormatNames::instance().exists(fourth_arg);
+    }
+    /// Which argument holds a credential: the two-argument shape takes a shared access signature beside
+    /// the url (`endpoint.sas_auth`), the longer ones an `account_key` - unless the fourth names a format.
+    std::optional<size_t> credential_arg_idx;
+    if (count == url_arg_idx + 2)
+        credential_arg_idx = url_arg_idx + 1;
+    else if (!fourth_argument_is_format && (url_arg_idx + 4 < count))
+        credential_arg_idx = url_arg_idx + 4;
+
+    /// The engine reads this argument as a connection string or as a plain account url; a value of
+    /// another shape is read by neither rule below, and a hidden connection string replaces it whole.
+    String connection_value;
+    const auto shape = tryGetStringFromArgument(url_arg_idx, &connection_value)
+        ? classifyAzureConnectionValue(connection_value)
+        : AzureConnectionValue::Unmaskable;
+    if (shape == AzureConnectionValue::Unmaskable || (shape == AzureConnectionValue::ConnectionString && credential_arg_idx))
+    {
+        maskEveryArgument();
+        return;
     }
 
-    /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
-    if (url_arg_idx + 4 < count)
-        markSecretArgument(url_arg_idx + 4);
-}
+    if (maskAzureConnectionString(url_arg_idx))
+        return;
 
-void FunctionSecretArgumentsFinder::findRedisFunctionSecretArguments()
-{
-    // redis(host:port, key, structure, db_index, password, pool_size)
-    markSecretArgument(4);
-}
-
-void FunctionSecretArgumentsFinder::findYTsaurusStorageTableEngineSecretArguments()
-{
-    // YTsaurus('base_uri', 'yt_path', 'auth_token')
-    markSecretArgument(2);
+    if (credential_arg_idx)
+        markSecretArgument(*credential_arg_idx);
 }
 
 void FunctionSecretArgumentsFinder::findBigQuerySecretArguments()
@@ -1093,58 +1385,43 @@ void FunctionSecretArgumentsFinder::findBigQuerySecretArguments()
 void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
 {
     const String & engine_name = function->name();
-    if (engine_name == "MySQL" ||
-        engine_name == "PostgreSQL" ||
-        engine_name == "MaterializedPostgreSQL")
+    std::function<void()> find_secrets;
+    if (engine_name == "MySQL" || engine_name == "PostgreSQL" || engine_name == "MaterializedPostgreSQL"
+        || engine_name == "Remote" || engine_name == "RemoteSecure")
     {
         /// MySQL('host:port', 'database', 'user', 'password')
         /// PostgreSQL('host:port', 'database', 'user', 'password')
-        findMySQLDatabaseSecretArguments();
-    }
-    else if (engine_name == "Remote" || engine_name == "RemoteSecure")
-    {
         /// Remote('addresses_expr', 'database', 'user', 'password')
-        /// RemoteSecure(...) - same as Remote(...)
-        /// The password is the last positional argument (or `password = ...` in the named-collection
-        /// form), exactly like the MySQL/PostgreSQL database engines. Note this differs from the
-        /// `Remote`/`RemoteSecure` *table* engine signature (which also has a table name), so the
-        /// database engine cannot reuse `findRemoteFunctionSecretArguments`.
-        findMySQLDatabaseSecretArguments();
+        /// Unlike the `Remote` table engine there is no table name, so `findRemoteFunctionSecretArguments`
+        /// does not apply.
+        find_secrets = [this] { findPositionalAndNamedSecretArguments({.positional_secret_slot = 3, .secret_keys = mysql_secret_keys}); };
     }
     else if (engine_name == "S3")
     {
         /// S3('url', 'access_key_id', 'secret_access_key')
-        findS3DatabaseSecretArguments();
+        find_secrets = [this] { findS3DatabaseSecretArguments(); };
     }
     else if (engine_name == "DataLakeCatalog")
     {
-        findDataLakeCatalogSecretArguments();
+        find_secrets = [this] { findDataLakeCatalogSecretArguments(); };
     }
     else if (engine_name == "Backup")
     {
-        findBackupDatabaseSecretArguments();
+        find_secrets = [this] { findBackupDatabaseSecretArguments(); };
     }
     else if (engine_name == "URL")
     {
         /// URL('base_url')
-        findURLSecretArguments();
-    }
-}
-
-void FunctionSecretArgumentsFinder::findMySQLDatabaseSecretArguments()
-{
-    if (isNamedCollectionName(0))
-    {
-        /// MySQL(named_collection, ..., password = 'password', ...)
-        findSecretNamedArgument("password", 1);
-        findTLSCredentialsSecretArguments(1);
+        find_secrets = [this] { findURLSecretArguments(); };
     }
     else
     {
-        /// MySQL('host:port', 'database', 'user', 'password')
-        markSecretArgument(3);
-        findTLSCredentialsSecretArguments(4);
+        return;
     }
+
+    /// A positional after a named argument is hidden, see findOrdinaryFunctionSecretArguments.
+    classifyPositionalArguments();
+    find_secrets();
 }
 
 void FunctionSecretArgumentsFinder::findS3DatabaseSecretArguments()
@@ -1175,8 +1452,13 @@ void FunctionSecretArgumentsFinder::findDataLakeCatalogSecretArguments()
 
 void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 {
-    if (function->arguments->size() < 2)
+    /// `Backup(database_name, locator)` is the only valid shape, a locator carrying credentials can be
+    /// written in either position, and the query is formatted for logging before validation rejects it.
+    if (function->arguments->size() != 2 || !function->arguments->at(0)->tryGetLiteralText(nullptr))
+    {
+        maskEveryArgument();
         return;
+    }
 
     auto storage_arg = function->arguments->at(1);
     auto storage_function = storage_arg->getFunction();
@@ -1200,7 +1482,26 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
     ///   Backup('', S3('url', 'access_key_id', 'secret_access_key' [, ...]))
     ///   Backup('', S3(named_collection, ..., secret_access_key = '...', session_token = '...', ...))
     /// by reconstructing the nested `S3(...)` with the secret arguments replaced by `[HIDDEN]`.
-    if (!storage_function || storage_function->name() != "S3" || !storage_function->hasArguments())
+    if (storage_function->name() != "S3")
+    {
+        if (isCredentialFreeBackupLocator(*storage_function))
+            return;
+
+        /// Any other locator holds a credential no rule below reconstructs (`AzureBlobStorage` holds
+        /// `account_key` and connection-string material); its engine name and arity are not secrets.
+        std::string replacement = backQuoteIfNeed(storage_function->name()) + "(";
+        for (size_t i = 0, size = storage_function->hasArguments() ? storage_function->arguments->size() : 0; i < size; ++i)
+            replacement += i > 0 ? ", '[HIDDEN]'" : "'[HIDDEN]'";
+        replacement += ")";
+
+        result.start = 1;
+        result.count = 1;
+        result.replacement = std::move(replacement);
+        result.quote_replacement = false;
+        return;
+    }
+
+    if (!storage_function->hasArguments())
         return;
 
     const auto & nested_args = *storage_function->arguments;
@@ -1383,10 +1684,70 @@ void FunctionSecretArgumentsFinder::findBackupNameSecretArguments()
         maskS3UrlArgument(positional, 0);
         maskS3PositionalsFrom(positional, positional.size() == 3 ? 2 : 1);
     }
-    else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
+    else if (engine_name == "AzureBlobStorage")
     {
-        findAzureBlobStorageTableEngineSecretArguments();
+        findAzureBlobStorageBackupSecretArguments();
     }
+    else if (!isCredentialFreeBackupLocator(*function))
+    {
+        /// Everything else either is an engine no rule here reconstructs, or has arguments the named
+        /// engine does not read (an override, a nested map, a surplus slot), which can carry a credential.
+        /// `AzureQueue` reaches this branch: it is a table engine, not a registered backup engine.
+        maskEveryArgument();
+    }
+}
+
+void FunctionSecretArgumentsFinder::findAzureBlobStorageBackupSecretArguments()
+{
+    /// The destination reads AzureBlobStorage(named_collection [, 'filename'] [, key = value, ...]),
+    /// ('connection_string|storage_account_url', 'container', 'path'), or those three followed by
+    /// ('account_name', 'account_key'). An argument no shape reads holds whatever was written in it.
+    const size_t count = function->arguments->size();
+
+    if (isNamedCollectionName(0))
+    {
+        if (!azureCollectionArgumentsAreShowable(1, /* positional_limit= */ 1))
+        {
+            maskEveryArgument();
+            return;
+        }
+        if (maskAzureConnectionString(-1, /* argument_is_named= */ true, 1))
+            return;
+        findSecretNamedArgument("account_key", 1);
+        return;
+    }
+
+    if ((count != 3 && count != 5) || !hasOnlyLiteralArguments(*function))
+    {
+        maskEveryArgument();
+        return;
+    }
+
+    if (count == 3)
+    {
+        /// Only this shape accepts a connection string, which can embed `AccountKey`. A value that is no
+        /// string is read by neither the classification below nor the destination.
+        String connection_value;
+        if (!tryGetStringFromArgument(0, &connection_value)
+            || classifyAzureConnectionValue(connection_value) == AzureConnectionValue::Unmaskable)
+        {
+            maskEveryArgument();
+            return;
+        }
+        maskAzureConnectionString(0);
+        return;
+    }
+
+    String storage_account_url;
+    if (!tryGetStringFromArgument(0, &storage_account_url)
+        || classifyAzureConnectionValue(storage_account_url) != AzureConnectionValue::PlainStorageAccountURL)
+    {
+        /// This shape requires a plain account URL. A connection string here can only be hidden whole,
+        /// which cannot be combined with hiding `account_key`.
+        maskEveryArgument();
+        return;
+    }
+    markSecretArgument(4);
 }
 
 bool FunctionSecretArgumentsFinder::isNamedCollectionName(size_t arg_idx) const

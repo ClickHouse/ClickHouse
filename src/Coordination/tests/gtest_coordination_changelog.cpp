@@ -30,6 +30,7 @@ namespace FailPoints
 {
     extern const char keeper_changelog_read_plan_resolved[];
     extern const char keeper_changelog_removed_from_disk_set[];
+    extern const char keeper_changelog_preallocate_no_space[];
 }
 
 namespace ErrorCodes
@@ -344,6 +345,36 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestFlushThrottling)
     EXPECT_TRUE(changelog.flush());
 
     EXPECT_GE(watch.elapsedMilliseconds(), 100);
+}
+
+/// A failed preallocation (e.g. `ENOSPC`) fails the batch, but must leave the writer usable:
+/// the next append retries the preallocation. Previously the append completion thread
+/// finalized the writer without holding the writer lock, and the next append dereferenced
+/// the destroyed file buffer.
+TEST_P(CoordinationTestWithCompression, ChangelogTestAppendAfterPreallocationFailure)
+{
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 1000, .max_size = 1024 * 1024},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_preallocate_no_space);
+
+    auto entry = getLogEntry("hello world", 77);
+    changelog.append(entry);
+    EXPECT_FALSE(changelog.flush());
+
+    for (size_t i = 0; i < 10; ++i)
+    {
+        changelog.append(entry);
+        EXPECT_TRUE(changelog.flush());
+    }
 }
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestFile)
@@ -1373,6 +1404,127 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestLostFiles2)
     ASSERT_THROW(changelog_reader.init(5, 0), DB::Exception);
 }
 
+namespace ProfileEvents
+{
+    extern const Event DirectorySync;
+}
+
+namespace
+{
+
+/// Remembers the global `DirectorySync` count at the moment each changelog file is created.
+class ChangelogCreationTrackingDisk : public DB::DiskLocal
+{
+public:
+    ChangelogCreationTrackingDisk(const String & name_, const String & path_)
+        : DB::DiskLocal(name_, path_)
+    {
+    }
+
+    std::unique_ptr<DB::WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, DB::WriteMode mode, const DB::WriteSettings & settings) override
+    {
+        if (mode == DB::WriteMode::Rewrite && fs::path(path).filename().string().starts_with("changelog_"))
+        {
+            std::lock_guard lock(mutex);
+            created_files.emplace_back(path, ProfileEvents::global_counters[ProfileEvents::DirectorySync]);
+        }
+        return DB::DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    /// (file path, `DirectorySync` count when the file was created)
+    std::vector<std::pair<String, UInt64>> createdFiles() const
+    {
+        std::lock_guard lock(mutex);
+        return created_files;
+    }
+
+private:
+    mutable std::mutex mutex;
+    std::vector<std::pair<String, UInt64>> created_files;
+};
+
+}
+
+TEST_P(CoordinationTestWithCompression, ChangelogTestRotateSyncsDirectory)
+{
+    ChangelogDirTest test("./logs");
+    auto disk = std::make_shared<ChangelogCreationTrackingDisk>("LogDisk", "./logs");
+    this->keeper_context->setLogDisk(disk);
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 12; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", 1);
+        changelog.append(entry);
+    }
+    ASSERT_TRUE(changelog.flush());
+
+    /// changelog_1_5 (created by init), changelog_6_10 and changelog_11_15 (created by appends)
+    const auto created = disk->createdFiles();
+    ASSERT_EQ(created.size(), 3u);
+
+    /// Each file's directory is synced after the file is created, before the next file is created and before
+    /// the entries are reported durable.
+    const UInt64 syncs_after_flush = ProfileEvents::global_counters[ProfileEvents::DirectorySync];
+    for (size_t i = 0; i < created.size(); ++i)
+    {
+        const UInt64 next = i + 1 < created.size() ? created[i + 1].second : syncs_after_flush;
+        EXPECT_GT(next, created[i].second) << created[i].first;
+    }
+}
+
+TEST_P(CoordinationTestWithCompression, ChangelogTestContinuedSegmentSyncsDirectory)
+{
+    ChangelogDirTest test("./logs");
+    auto disk = std::make_shared<ChangelogCreationTrackingDisk>("LogDisk", "./logs");
+    this->keeper_context->setLogDisk(disk);
+
+    /// A run without `force_sync` never syncs the directory entry of changelog_6_10.
+    {
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{.force_sync = false, .compress_logs = this->enable_compression, .rotate_interval = 5},
+            DB::FlushSettings(),
+            DB::ReadAheadSettings{},
+            this->keeper_context);
+        changelog.init(0, 0);
+
+        for (size_t i = 0; i < 7; ++i)
+        {
+            auto entry = getLogEntry(std::to_string(i) + "_hello_world", 1);
+            changelog.append(entry);
+        }
+        ASSERT_TRUE(changelog.flush());
+    }
+    /// changelog_1_5 and changelog_6_10
+    ASSERT_EQ(disk->createdFiles().size(), 2u);
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    /// `init` continues changelog_6_10 instead of creating a file.
+    ASSERT_EQ(disk->createdFiles().size(), 2u);
+
+    const UInt64 syncs_before_flush = ProfileEvents::global_counters[ProfileEvents::DirectorySync];
+    auto entry = getLogEntry("7_hello_world", 1);
+    changelog.append(entry);
+    ASSERT_TRUE(changelog.flush());
+
+    /// The continued file's directory is synced before its entries are reported durable.
+    const UInt64 syncs_after_flush = ProfileEvents::global_counters[ProfileEvents::DirectorySync];
+    EXPECT_GT(syncs_after_flush, syncs_before_flush);
+}
+
 TEST_P(CoordinationTestWithCompression, TestRotateIntervalChanges)
 {
     using namespace Coordination;
@@ -1969,7 +2121,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendWhileHistoricalReadPaused)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("data", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -2040,7 +2192,7 @@ TYPED_TEST(CoordinationChangelogTest, CompactionRemovesFileAfterPlanBeforeRead)
         writer.init(0, 0);
         for (size_t i = 0; i < 10; ++i)
         {
-            auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+            auto entry = getLogEntry("d", i + 1);
             writer.append(entry);
         }
         writer.end_of_append_batch(0, 0);
@@ -2124,7 +2276,7 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("d", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("d", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -2356,7 +2508,7 @@ TYPED_TEST(CoordinationChangelogTest, DirectPathEvictedReadsAndByteHints)
 
         for (size_t i = 0; i < 20; ++i)
         {
-            auto entry = getLogEntry("data", static_cast<size_t>(i + 1));
+            auto entry = getLogEntry("data", i + 1);
             writer.append(entry);
         }
         writer.end_of_append_batch(0, 0);
@@ -2414,7 +2566,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendVsActiveFileRead)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("base", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("base", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3319,7 +3471,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
 
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test1", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test1", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3352,7 +3504,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
     changelog_disabled.init(0, 0);
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test1", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test1", i + 1);
         changelog_disabled.append(entry);
     }
     changelog_disabled.end_of_append_batch(0, 0);
@@ -3391,7 +3543,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFill)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test5", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test5", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3714,7 +3866,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadNonSequentialRewind)
 
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test9", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("readahead_test_l2_test9", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3756,7 +3908,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadCompactionReaderLifecycle)
 
     for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("compaction_lifecycle", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("compaction_lifecycle", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
@@ -3813,7 +3965,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTSanStress)
 
     for (size_t i = 0; i < 50; ++i)
     {
-        auto entry = getLogEntry("l2_stress", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("l2_stress", i + 1);
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);

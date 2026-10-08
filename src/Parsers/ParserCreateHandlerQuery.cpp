@@ -7,8 +7,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 #include <Common/StringUtils.h>
 #include <Poco/String.h>
 
@@ -183,9 +181,11 @@ bool ParserCreateHandlerQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     return true;
 }
 
-void registerStatementCreateHandler(StatementFactory & factory)
+std::map<String, Documentation> ParserCreateHandlerQuery::getDocumentation() const
 {
-    factory.registerStatement("CREATE HANDLER",
+    std::map<String, Documentation> documentation;
+
+    documentation["CREATE HANDLER"] =
     {
         .description = R"DOCS_MD(
 Creates a custom HTTP handler defined from SQL, without editing the server configuration file. SQL-defined handlers are an alternative to the configuration-based [HTTP interface handlers](/concepts/features/interfaces/http).
@@ -307,7 +307,9 @@ AS [SELECT|INSERT|...] ...
 )",
         .parent = "CREATE",
         .related = {"ALTER", "DROP"},
-    });
+    };
+
+    return documentation;
 }
 
 }
