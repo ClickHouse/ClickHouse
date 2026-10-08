@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT --query "
 run_user()
 {
     # shellcheck disable=SC2086
-    $CLICKHOUSE_CLIENT --user="$user" $SETTINGS --log_comment="04494_$2" --query "$1" 2>&1
+    $CLICKHOUSE_CLIENT --user="$user" $SETTINGS --query_id="04494_${CLICKHOUSE_DATABASE}_$2" --query "$1" 2>&1
 }
 
 hits()
@@ -46,7 +46,7 @@ hits()
         FROM system.query_log
         WHERE event_date >= yesterday()
           AND type = 'QueryFinish'
-          AND log_comment = '04494_$1'
+          AND query_id = '04494_${CLICKHOUSE_DATABASE}_$1'
           AND user = '$user'"
 }
 
