@@ -36,31 +36,31 @@ WYRD_TEST(LocalTasks, OwnerTakesNewestAndThiefTakesOldest)
         EXPECT_TRUE(ring.push(taskFor(state)));
 
     std::array<Task, 1> stolen{};
-    EXPECT_EQ(ring.grab(stolen), 1u);
+    EXPECT_EQ(ring.steal(stolen), 1u);
     EXPECT_EQ(&stolen[0].state(), states.data());
     EXPECT_EQ(stolen[0].step(), Task::Step::Work);
 
     EXPECT_EQ(popped(ring), &states[2]);
     EXPECT_EQ(popped(ring), &states[1]);
     EXPECT_EQ(popped(ring), nullptr);
-    EXPECT_EQ(ring.grab(stolen), 0u);
+    EXPECT_EQ(ring.steal(stolen), 0u);
     EXPECT_EQ(ring.size(), 0u);
 }
 
-WYRD_TEST(LocalTasks, GrabTakesHalfRoundedUpWithinSpan)
+WYRD_TEST(LocalTasks, StealTakesHalfRoundedUpWithinSpan)
 {
     std::vector<ProcessorState> states(5);
     LocalTasks ring;
     for (auto & state : states)
         EXPECT_TRUE(ring.push(taskFor(state)));
 
-    std::array<Task, 8> grabbed{};
-    EXPECT_EQ(ring.grab(grabbed), 3u);
+    std::array<Task, 8> stolen{};
+    EXPECT_EQ(ring.steal(stolen), 3u);
     for (size_t index = 0; index < 3; ++index)
-        EXPECT_EQ(&grabbed[index].state(), &states[index]);
+        EXPECT_EQ(&stolen[index].state(), &states[index]);
 
     std::array<Task, 1> one{};
-    EXPECT_EQ(ring.grab(one), 1u);
+    EXPECT_EQ(ring.steal(one), 1u);
     EXPECT_EQ(&one[0].state(), &states[3]);
 
     EXPECT_EQ(popped(ring), &states[4]);
@@ -68,7 +68,7 @@ WYRD_TEST(LocalTasks, GrabTakesHalfRoundedUpWithinSpan)
     EXPECT_EQ(ring.size(), 0u);
 }
 
-WYRD_TEST(LocalTasks, FullRingRefusesPushUntilGrab)
+WYRD_TEST(LocalTasks, FullRingRefusesPushUntilSteal)
 {
     std::vector<ProcessorState> states(LocalTasks::capacity + 1);
     LocalTasks ring;
@@ -76,8 +76,8 @@ WYRD_TEST(LocalTasks, FullRingRefusesPushUntilGrab)
         EXPECT_TRUE(ring.push(taskFor(states[index])));
     EXPECT_FALSE(ring.push(taskFor(states.back())));
 
-    std::array<Task, LocalTasks::capacity> grabbed{};
-    EXPECT_EQ(ring.grab(grabbed), LocalTasks::capacity / 2);
+    std::array<Task, LocalTasks::capacity> stolen{};
+    EXPECT_EQ(ring.steal(stolen), LocalTasks::capacity / 2);
     EXPECT_TRUE(ring.push(taskFor(states.back())));
     EXPECT_EQ(ring.size(), LocalTasks::capacity / 2 + 1);
 }
@@ -88,7 +88,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
     constexpr UInt32 thieves = 3;
     constexpr UInt32 batch = 4;
     constexpr UInt32 owner_pops_one_in = 4;
-    constexpr UInt32 min_successful_grabs = 4;
+    constexpr UInt32 min_successful_steals = 4;
 
     std::vector<ProcessorState> states(total);
     std::vector<Wyrd::Atomic<UInt32>> taken(total);
@@ -96,7 +96,7 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
 
     LocalTasks ring;
     Wyrd::Atomic<bool> owner_done{false};
-    Wyrd::Atomic<UInt32> successful_grabs{0};
+    Wyrd::Atomic<UInt32> successful_steals{0};
 
     Wyrd::Race race;
     race.add(
@@ -134,21 +134,21 @@ WYRD_TEST(LocalTasks, EveryPushedTaskIsTakenExactlyOnce, .runs = 10000, .simulat
         [&](size_t)
         {
             Wyrd::LockFreeScope scope;
-            std::array<Task, batch> grabbed{};
+            std::array<Task, batch> stolen{};
             while (!owner_done.load())
             {
-                const UInt32 count = ring.grab(grabbed);
+                const UInt32 count = ring.steal(stolen);
                 for (UInt32 offset = 0; offset < count; ++offset)
-                    take(grabbed[offset]);
+                    take(stolen[offset]);
                 if (count > 0)
-                    successful_grabs.fetch_add(1);
+                    successful_steals.fetch_add(1);
                 Wyrd::progress();
             }
         });
     race.run();
 
     EXPECT_EQ(ring.size(), 0u);
-    EXPECT_GE(successful_grabs.load(), min_successful_grabs);
+    EXPECT_GE(successful_steals.load(), min_successful_steals);
     for (UInt32 index = 0; index < total; ++index)
         EXPECT_EQ(taken[index].load(), 1u) << "task " << index;
 }

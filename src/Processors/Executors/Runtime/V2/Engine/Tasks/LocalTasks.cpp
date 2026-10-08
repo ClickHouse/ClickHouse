@@ -131,13 +131,13 @@ std::optional<Task> LocalTasks::pop()
     }
 }
 
-UInt32 LocalTasks::grab(std::span<Task> out)
+UInt32 LocalTasks::steal(std::span<Task> out)
 {
     /// Try lock steal range.
     Wyrd::SpinWait spin_wait;
     UInt64 word = bounds.load();
-    UInt32 grab_begin = 0;
-    UInt32 grab_end = 0;
+    UInt32 steal_begin = 0;
+    UInt32 steal_end = 0;
     while (true)
     {
         const auto [tail, taken] = unpackBounds(word);
@@ -149,9 +149,9 @@ UInt32 LocalTasks::grab(std::span<Task> out)
             return 0;
 
         const UInt32 count = std::min<UInt32>(static_cast<UInt32>(out.size()), available - available / 2);
-        grab_begin = tail;
-        grab_end = tail + count;
-        if (bounds.compare_exchange_weak(word, packBounds({grab_begin, grab_end})))
+        steal_begin = tail;
+        steal_end = tail + count;
+        if (bounds.compare_exchange_weak(word, packBounds({steal_begin, steal_end})))
             break;
 
         spin_wait.spin();
@@ -159,19 +159,19 @@ UInt32 LocalTasks::grab(std::span<Task> out)
 
     /// Lower the range end: between the head read above and the steal start, pop may have taken slots.
     const UInt32 head_now = head.load();
-    if (signedDifference(grab_end, head_now) > 0)
+    if (signedDifference(steal_end, head_now) > 0)
     {
-        grab_end = signedDifference(head_now, grab_begin + 1) > 0 ? head_now : grab_begin + 1;
-        bounds.store(packBounds({grab_begin, grab_end}));
+        steal_end = signedDifference(head_now, steal_begin + 1) > 0 ? head_now : steal_begin + 1;
+        bounds.store(packBounds({steal_begin, steal_end}));
     }
 
     /// Steal the batch.
-    for (UInt32 index = grab_begin; index != grab_end; ++index)
-        out[index - grab_begin] = getSlot(buffer, index);
+    for (UInt32 index = steal_begin; index != steal_end; ++index)
+        out[index - steal_begin] = getSlot(buffer, index);
 
     /// Commit steal by advancing (tail, taken) pair.
-    bounds.store(packBounds({grab_end, grab_end}));
-    return grab_end - grab_begin;
+    bounds.store(packBounds({steal_end, steal_end}));
+    return steal_end - steal_begin;
 }
 
 UInt32 LocalTasks::size() const
