@@ -595,6 +595,7 @@ private:
         DataTypePtr & out_key_column_type,
         DeterministicKeyTransformDag & out_functions_chain) const;
 
+    /// `original_const_column` is the column of the constant in the query, see `createConstantColumn`.
     bool canConstantBeWrappedByMonotonicFunctions(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
@@ -602,6 +603,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        const ColumnWithTypeAndName & original_const_column,
         bool & out_chain_is_positive);
 
     bool canConstantBeWrappedByDeterministicFunctions(
@@ -611,6 +613,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        const ColumnWithTypeAndName & original_const_column,
         bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
