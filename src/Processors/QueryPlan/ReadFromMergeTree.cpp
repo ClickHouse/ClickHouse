@@ -275,6 +275,7 @@ namespace Setting
 {
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsUInt64 read_in_order_max_bytes_to_prefetch;
+    extern const SettingsBool read_in_order_use_buffering;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
@@ -2169,6 +2170,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// including the `Merge` children it stamps directly) sets `query_info.input_order_info`
         /// without that analysis, so it must not take the PrefetchingConcat fast path.
         if (!read_in_order_requested_by_plan_optimizer)
+            return false;
+
+        /// `PrefetchingConcat` buffers the streams that come later in the order ahead of
+        /// time, so `read_in_order_use_buffering = 0` must disable it like it disables
+        /// the buffering before `MergingSortedTransform`.
+        if (!settings[Setting::read_in_order_use_buffering])
             return false;
 
         /// Only enable PrefetchingConcat when there is per-chunk CPU work
