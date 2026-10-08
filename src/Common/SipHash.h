@@ -61,11 +61,13 @@ private:
         if (size >= 4)
             return unalignedLoadLittleEndian<UInt32>(data)
                 | (static_cast<UInt64>(unalignedLoadLittleEndian<UInt32>(data + size - 4)) << (8 * (size - 4)));
-        if (size == 0)
-            return 0;
-        return static_cast<UInt8>(data[0])
-            | (static_cast<UInt64>(static_cast<UInt8>(data[size / 2])) << (8 * (size / 2)))
-            | (static_cast<UInt64>(static_cast<UInt8>(data[size - 1])) << (8 * (size - 1)));
+        switch (size)
+        {
+            case 3: return unalignedLoadLittleEndian<UInt16>(data) | (static_cast<UInt64>(static_cast<UInt8>(data[2])) << 16);
+            case 2: return unalignedLoadLittleEndian<UInt16>(data);
+            case 1: return static_cast<UInt8>(data[0]);
+            default: return 0;
+        }
     }
 
     ALWAYS_INLINE void finalize()
