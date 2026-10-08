@@ -41,15 +41,9 @@ void checkNoRowPolicyForMovedTable(const StorageID & moved_id, const StorageID &
     if (!moved)
         return;
 
-    /// A policy on the new name already covered a blending engine
-    if (exchange)
-    {
-        auto replaced = catalog.tryGetTable(new_id, context);
-        if (replaced && findBlendingEngine(*replaced))
-            return;
-    }
-
-    checkNoRowPolicyForBlendingEngine(*moved, new_id, /*include_database_policies=*/ moved_id.database_name != new_id.database_name, context);
+    auto replaced = exchange ? catalog.tryGetTable(new_id, context) : nullptr;
+    checkNoRowPolicyForBlendingEngine(
+        *moved, new_id, /*include_database_policies=*/ moved_id.database_name != new_id.database_name, context, replaced.get());
 }
 
 }

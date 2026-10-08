@@ -30,6 +30,7 @@ public:
     bool readRequiresAnalyzedQuery() const override { return getNested()->readRequiresAnalyzedQuery(); }
     std::vector<StoragePtr> getUnderlyingStorages() const override { return getNested()->getUnderlyingStorages(); }
     bool isView() const override { return getNested()->isView(); }
+    bool isBlendingEngine() const override { return getNested()->isBlendingEngine(); }
     bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }

@@ -51,13 +51,14 @@ const IStorage * findBlendingEngine(const IStorage & storage)
     return findBlendingEngineImpl(storage, visited);
 }
 
-void checkNoRowPolicyForBlendingEngine(const IStorage & storage, const StorageID & table_id, bool include_database_policies, const ContextPtr & context)
+void checkNoRowPolicyForBlendingEngine(
+    const IStorage & storage,
+    const StorageID & table_id,
+    bool include_database_policies,
+    const ContextPtr & context,
+    const IStorage * replaced)
 {
     if (context->getSettingsRef()[Setting::allow_suspicious_row_policies_with_blending_engines])
-        return;
-
-    const auto * blending = findBlendingEngine(storage);
-    if (!blending)
         return;
 
     const auto & access_control = context->getAccessControl();
@@ -68,6 +69,11 @@ void checkNoRowPolicyForBlendingEngine(const IStorage & storage, const StorageID
             continue;
         if (policy->isForDatabase() ? !include_database_policies : policy->getTableName() != table_id.table_name)
             continue;
+
+        /// Resolving the storages can load a lazy table, so it happens only after a policy is found
+        const auto * blending = findBlendingEngine(storage);
+        if (!blending || (replaced && findBlendingEngine(*replaced)))
+            return;
 
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,

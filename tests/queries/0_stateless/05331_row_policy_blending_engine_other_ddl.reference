@@ -21,3 +21,7 @@ t_plain	MergeTree
 t_renamed	SummingMergeTree
 t_replaced	SummingMergeTree
 t_summing_2	SummingMergeTree
+lazy table which is not loaded yet
+TableProxy
+has the SummingMergeTree engine
+SummingMergeTree
