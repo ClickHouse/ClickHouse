@@ -1,3 +1,4 @@
+#include <Storages/IStorage.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -40,6 +41,11 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
 }
 
+
+String ReadFromObjectStorageStep::getTableName() const
+{
+    return storage_snapshot->storage.getStorageID().getTableName();
+}
 
 ReadFromObjectStorageStep::ReadFromObjectStorageStep(
     const StorageID & storage_id_,

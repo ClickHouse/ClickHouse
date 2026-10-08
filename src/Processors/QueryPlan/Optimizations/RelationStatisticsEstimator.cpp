@@ -256,8 +256,19 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             .source = RowEstimateSource::PrimaryIndex};
     }
 
-    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
-        return RelationStats{};
+    if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
+    {
+        /// A data lake table knows its rows from its metadata; a plain object storage read does not.
+        RelationStats stats;
+        stats.table_name = reading->getTableName();
+        if (const auto total_rows = reading->totalRows())
+        {
+            stats.estimated_rows = total_rows;
+            stats.max_rows = total_rows;
+            stats.source = RowEstimateSource::Statistics;
+        }
+        return stats;
+    }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {

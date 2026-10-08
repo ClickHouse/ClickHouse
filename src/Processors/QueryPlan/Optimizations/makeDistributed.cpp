@@ -1043,15 +1043,17 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     else if (read_from_object_storage_step)
     {
 #if CLICKHOUSE_CLOUD
-        /// As for a MergeTree read; a table without a known row count cannot show that it fits and
-        /// is read distributed.
+        /// As for a MergeTree read, sized by the estimator, which takes the rows a data lake table
+        /// keeps in its metadata; a table without a known row count is read distributed.
         /// TODO: implement better logic for choosing number of parallel readers
-        if (const auto total_rows = read_from_object_storage_step->totalRows())
+        const auto stats = estimateReadRowsCount(node);
+        if (stats.estimated_rows)
         {
             const ReplicationSize size{
-                .estimated_rows = *total_rows,
-                .max_rows = *total_rows,
-                .bytes_per_row = estimateRowWidthFromHeader(*read_from_object_storage_step->getOutputHeader())};
+                .estimated_rows = stats.estimated_rows,
+                .estimate_from_defaults = stats.estimate_from_defaults,
+                .max_rows = stats.max_rows,
+                .bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_object_storage_step->getOutputHeader(), stats.column_stats))};
             if (decideReplication(size, replicationBudget(optimization_settings)).allowed)
                 return;
         }
