@@ -152,3 +152,10 @@ SELECT length(groupArrayDistinct(x)), length(groupUniqArray(tuple(x))) FROM (SEL
 SELECT arrayIntersect([[0.0::BFloat16]], [[-0.0::BFloat16]]);
 SELECT count() FROM (SELECT arrayJoin([0.0::BFloat16, -0.0::BFloat16]) AS x GROUP BY x);
 SELECT materialize(-0.0::BFloat16) IN (0.0::BFloat16);
+
+SELECT 'LowCardinality in serialized keys';
+SET allow_suspicious_low_cardinality_types = 1;
+SELECT count() FROM (SELECT CAST(arrayJoin([0., -0.]), 'LowCardinality(Float64)') AS x, '' AS s GROUP BY x, s);
+SELECT count() FROM (SELECT CAST(arrayJoin([0., -0.]), 'LowCardinality(Nullable(Float64))') AS x, '' AS s GROUP BY x, s);
+SELECT count() FROM (SELECT tuple(CAST(arrayJoin([0., -0.]), 'LowCardinality(Float32)')) AS x, '' AS s GROUP BY x, s);
+SELECT count() FROM (SELECT CAST(arrayJoin([0., -0.]), 'LowCardinality(Float64)') AS x, '' AS s GROUP BY x, s SETTINGS group_by_two_level_threshold = 1, group_by_two_level_threshold_bytes = 1);

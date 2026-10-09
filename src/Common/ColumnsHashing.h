@@ -462,6 +462,9 @@ struct HashMethodSerialized
                             demangle(typeid(cached_val).name()));
         }
 
+        /// Canonicalize negative zeros in the serializer as well: `canonicalizeNegativeZeroInKeyColumns` below
+        /// does not see floating point values nested inside `LowCardinality` and other composite columns.
+        serialization_settings = IColumn::SerializationSettings::createForHashTableKey();
         serialization_settings.serialize_string_with_zero_byte = hash_serialized_context->settings.serialize_string_with_zero_byte;
         if constexpr (nullable)
         {

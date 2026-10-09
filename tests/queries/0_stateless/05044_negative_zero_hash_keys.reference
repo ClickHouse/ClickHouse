@@ -98,3 +98,8 @@ BFloat16
 [[0]]
 1
 1
+LowCardinality in serialized keys
+1
+1
+1
+1
