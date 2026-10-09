@@ -188,7 +188,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     LoggerPtr log)
 {
     const auto [metadata_version, metadata_file_path, compression_method]
-        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, true);
+        = getLatestOrExplicitMetadataFileAndVersion(object_storage, configuration->getPathForRead().path, configuration->getDataLakeSettings(), cache_ptr, context_, log.get(), std::nullopt, CompressionMethod::None, /* force_fetch_latest_metadata */ false);
     LOG_DEBUG(log, "Latest metadata file path is {}, version {}", metadata_file_path, metadata_version);
     auto metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, cache_ptr, context_, log, compression_method, std::nullopt);
@@ -979,8 +979,7 @@ void IcebergMetadata::createInitial(
 
     String location_path = configuration_ptr->getRawPath().path;
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
-        location_path = Iceberg::makeIcebergLocationURI(
-            configuration_ptr->getTypeName(), configuration_ptr->getNamespace(), location_path);
+        location_path = configuration_ptr->getMetadataLocationURI();
     else if (!location_path.contains("://") && !location_path.starts_with('/'))
         location_path = "/" + location_path;
 
