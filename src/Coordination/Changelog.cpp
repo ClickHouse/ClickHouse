@@ -960,9 +960,9 @@ private:
                 tryLogCurrentException(log, fmt::format("Failed to remove in-progress S3 changelog {}", in_progress_path));
             }
 
-            /// `writeAt` into a segment that is broken at end rotates to a new segment with the same start index
-            /// instead of reopening it. Remove the superseded object now, so it does not compete with the new one
-            /// on the next startup. `writeAt` already dropped the locations of its entries from `entry_storage`.
+            /// `writeAt` removes a broken segment that starts at the rewritten index before rotating to a new one with
+            /// the same start index, so normally nothing else is listed here. If another object is still listed under
+            /// this start index, remove it now, so it does not compete with the new one on the next startup.
             auto & listed = existing_changelogs[current_file_description->from_log_index];
             if (listed && listed != current_file_description && listed->disk == disk && listed->path != new_path)
             {
@@ -4616,7 +4616,8 @@ Changelog::Changelog(
                 /// The S3 changelog writer publishes a new version of a segment (a rewrite by `writeAt`, or a merge
                 /// starting at the same index) before it removes the old one, so a crash in between leaves two
                 /// objects with the same start index on the same disk. The new version always starts with a full
-                /// copy of the old one, so keep the larger object and remove the other, rather than let the listing
+                /// copy of the old one (a broken segment rewritten from its start index is removed before the new one
+                /// is written, see `Changelog::writeAt`), so keep the larger object and remove the other, rather than let the listing
                 /// order decide. The removed one must not survive: it would come back once the kept one is removed.
                 if (keeper_context->isS3ExperimentalChangelog())
                 {
@@ -5374,10 +5375,14 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
             ChangelogFileDescriptionPtr description{nullptr};
 
-            if (index_changelog->first == index) /// exactly this file starts from index
+            /// In S3 mode the segment the writer has open is listed only once it is published, so `index` may be
+            /// past the start of every listed segment: it then belongs to the last one.
+            if (index_changelog != existing_changelogs.end() && index_changelog->first == index) /// exactly this file starts from index
                 description = index_changelog->second;
-            else
+            else if (index_changelog != existing_changelogs.begin())
                 description = std::prev(index_changelog)->second;
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find a changelog containing index {} to rewrite", index);
 
             description->waitAllAsyncOperations();
             /// if the changelog is broken at end, we cannot append it with new logs
@@ -5385,6 +5390,23 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
             if (description->broken_at_end)
             {
                 LOG_INFO(log, "Cannot write into {} because it has broken changelog at end, rotating", description->path);
+
+                /// The S3 writer publishes the rotated segment before it removes the old one with the same start index,
+                /// and after a crash in between startup keeps the larger of the two. The new segment does not start with
+                /// a copy of the broken one, so it can be the smaller one, and the overwritten entries would come back.
+                /// Every entry of a broken segment that starts at `index` is overwritten and is no longer acknowledged
+                /// as durable, so remove it before writing the new one.
+                if (keeper_context->isS3ExperimentalChangelog() && description->from_log_index == index)
+                {
+                    description->withWriteLock(
+                        [&]
+                        {
+                            description->removed_from_disk = true;
+                            description->disk->removeFileIfExists(description->path);
+                        });
+                    existing_changelogs.erase(index);
+                }
+
                 current_writer->rotate(index);
             }
             else
