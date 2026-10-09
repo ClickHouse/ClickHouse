@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnNumbers.h>
+#include <Common/SipHash.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
@@ -53,6 +54,11 @@ public:
     virtual String getName() const = 0;
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    /// True when a NULL argument makes `result_type` NULL. The default implementation for Nulls
+    /// guarantees this only when `result_type` can hold a NULL. Functions that handle NULLs
+    /// themselves but still propagate them (`CAST`, `toNullable`, ...) override this.
+    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /// Cancel current execution if possible
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
@@ -191,6 +197,19 @@ public:
 
     /// Get the main function name.
     virtual String getName() const = 0;
+
+    /** Contributes whatever decides the values this function produces beyond its name, its
+      * parameters and the types it was resolved for: a conversion, for instance, captures the
+      * settings that tell it how to parse. Anything that keys an expression by a hash - the query
+      * condition cache, the reuse of collected statistics - relies on this, so a function that
+      * captures a setting must override this and hash it, as the conversions, the comparisons,
+      * the `JSON*` functions, `JSONAllPaths*`, `JSONAllValues`, `has` / `indexOf` / `countEqual` and
+      * `empty` / `notEmpty` on `JSON`, `countMatches`, `formatQuery`, `toJSONString` and `visibleWidth` do. A
+      * function that does not is keyed by its name and types alone, and two sessions that differ in
+      * the setting it captured share one key (the query condition cache still tells them apart by
+      * `queryConditionCacheSettingsSalt`, the statistics cache does not).
+      */
+    virtual void updateHash(SipHash &) const {}
 
     const Array & getParameters() const final;
 
@@ -438,6 +457,7 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
+
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
@@ -587,6 +607,10 @@ public:
 
     virtual String getName() const = 0;
 
+    /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
+    /// into one forwards to this.
+    virtual void updateHash(SipHash &) const {}
+
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting
     ///  getReturnTypeImpl sometimes; I didn't understand it. This only applies to conversion functions,
@@ -608,6 +632,11 @@ public:
       *   and wrap result in Nullable column where NULLs are in all rows where any of arguments are NULL.
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
+
+    /** True when a NULL argument makes `result_type` NULL. See `IExecutableFunction::isNullPropagating`:
+      * override this when the function handles NULLs itself but still propagates them.
+      */
+    virtual bool isNullPropagating(const DataTypePtr & result_type) const;
 
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing

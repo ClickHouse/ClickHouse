@@ -48,7 +48,7 @@ edit the structured documentation in the defining source code instead; the next
 nightly run regenerates the pages.
 
 ### Changelog category (leave one):
-- Not for changelog (changelog entry is not required)
+- Documentation (changelog entry is not required)
 
 ### Changelog entry (a [user-readable short description](https://github.com/ClickHouse/ClickHouse/blob/master/docs/changelog_entry_guidelines.md) of the changes that goes into CHANGELOG.md):
 """

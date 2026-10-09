@@ -325,7 +325,7 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+    auto [hive_partition_columns, file_columns] = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
         columns,
         configuration,
         sample_path,
@@ -340,6 +340,9 @@ StorageObjectStorage::StorageObjectStorage(
             "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
             sample_path);
     }
+
+    hive_partitioning_columns.set(std::make_unique<const HivePartitioningColumns>(
+        HivePartitioningColumns{std::move(hive_partition_columns), std::move(file_columns)}));
 
     bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
 
@@ -474,7 +477,8 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
 std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(
+        /*exclude=*/ hive_partitioning_columns.get()->hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
@@ -541,9 +545,12 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (!hive_partitioning_sample_path_deferred)
         return;
 
-    std::lock_guard lock(hive_partitioning_resolution_mutex);
-    if (hive_partitioning_sample_path_resolved)
-        return;
+    /// Not held while listing: a waiter could not be cancelled.
+    {
+        std::lock_guard lock(hive_partitioning_resolution_mutex);
+        if (hive_partitioning_sample_path_resolved)
+            return;
+    }
 
     /// Listing the storage happens on behalf of the triggering query, so it must use its context.
     /// Rebuilding the client with any other one would ignore that session's credential restriction.
@@ -592,6 +599,10 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         return;
     }
 
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+    if (hive_partitioning_sample_path_resolved)
+        return;
+
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
 
@@ -611,8 +622,8 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
             sample_path);
     }
 
-    hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
-    file_columns = std::move(new_file_columns);
+    hive_partitioning_columns.set(std::make_unique<const HivePartitioningColumns>(
+        HivePartitioningColumns{std::move(new_hive_partition_columns), std::move(new_file_columns)}));
 
     new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, inference_context));
     setInMemoryMetadata(new_metadata);
@@ -813,6 +824,7 @@ void StorageObjectStorage::read(
         }
     }
 #endif
+    const auto hive_columns = hive_partitioning_columns.get();
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
@@ -820,7 +832,7 @@ void StorageObjectStorage::read(
         supportsSubsetOfColumns(local_context),
         supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ hive_columns->file_columns, hive_columns->hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
 
     if (query_info.prewhere_info)
@@ -941,7 +953,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings, catalog);
 }
 
 void StorageObjectStorage::truncate(
