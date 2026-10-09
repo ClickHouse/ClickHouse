@@ -51,4 +51,14 @@ SETTINGS engine_file_truncate_on_insert = 1;
 SELECT sum(x) FROM file(currentDatabase() || '_05339_ok.parquet', Parquet);
 SELECT sum(x) FROM file(currentDatabase() || '_05339_bad.parquet', Parquet) SETTINGS input_format_parquet_verify_checksums = 0; -- { serverError INCORRECT_DATA }
 
+-- A 32-bit-wide bit-packed run whose first index is 0xFFFFFFFF is rejected without reading outside the dictionary.
+SELECT position(x, unhex('027F244992244992244992')) > 0 FROM file(currentDatabase() || '_05339_ok.parquet', 'RawBLOB', 'x String');
+
+INSERT INTO FUNCTION file(currentDatabase() || '_05339_wide.parquet', 'RawBLOB', 'x String')
+SELECT overlay(x, unhex('2003FFFFFFFF'), position(x, unhex('027F244992244992244992')))
+FROM file(currentDatabase() || '_05339_ok.parquet', 'RawBLOB', 'x String')
+SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT sum(x) FROM file(currentDatabase() || '_05339_wide.parquet', Parquet) SETTINGS input_format_parquet_verify_checksums = 0; -- { serverError INCORRECT_DATA }
+
 DROP VIEW src;
