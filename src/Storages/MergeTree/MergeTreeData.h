@@ -2050,6 +2050,9 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
     void checkTableCanBeDropped(ContextPtr query_context) const override;
+
+    /// Tables with an IVF index can not be moved to another database: their hidden objects stay in the old one.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override;
     void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.

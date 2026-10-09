@@ -1,0 +1,7 @@
+Constant reference vector: rewritten
+cid in 2-element set
+Filter on the cluster id column: not rewritten, and the rows of the farthest cluster are found
+0
+5
+Non-constant reference vector: not rewritten
+0

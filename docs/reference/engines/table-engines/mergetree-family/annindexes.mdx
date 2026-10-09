@@ -823,6 +823,150 @@ The performance benefit of `QBit` comes from reduced I/O operations, as less dat
 - **Higher precision** (closer to the original data width): More accurate results, slower queries
 - **Lower precision**: Faster queries with approximate results, reduced memory usage
 
+### Billion-scale vector search with IVF {#ivf}
+
+<ExperimentalBadge/>
+
+To create tables with an IVF index, run `SET allow_experimental_vector_ivf_index = 1` first.
+In case you run into problems, kindly open an issue in the [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
+
+#### Introduction {#ivf-introduction}
+
+IVF (inverted file) indexing is designed for tables with millions to billions of vectors, where an in-memory graph index becomes too expensive and an exhaustive scan reads too much data.
+The vectors are grouped into clusters around trained centroids, and a vector search reads only the clusters nearest to the reference vector.
+
+In ClickHouse, an IVF table is a regular MergeTree table sorted by a cluster id column:
+
+- **The clusters are ranges of the primary key.** A search is restricted to the nearest clusters by ordinary primary key pruning, so it reads a small, contiguous fraction of the table.
+- **No index to build or hold in memory.** Only the centroids are kept in memory; the vectors stay on disk (or object storage) and parts merge as usual.
+- **Combines with the rest of ClickHouse.** Filters in the `WHERE` clause, the [Quantized codec](#vector-search-with-quantized-codecs) for scanning compact codes, parallel and distributed execution all apply to the probed clusters.
+
+ClickHouse trains the centroids from a sample table, keeps them in an internal table and dictionary owned by the IVF table, and rewrites vector search queries to probe the nearest clusters.
+
+#### Preparing a sample table {#ivf-sample-table}
+
+The centroids are trained from a representative sample of the vectors.
+The sample table must have a vector column with the same name as the IVF table, and at least as many rows as there are clusters.
+The sample should be drawn uniformly at random rather than taken from the first rows of a table:
+
+```sql
+CREATE TABLE docs_sample (vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO docs_sample
+SELECT vec FROM docs_source WHERE cityHash64(id) % 450 = 0 LIMIT 2000000;
+```
+
+#### Creating an IVF table {#ivf-creating}
+
+```sql
+SET allow_experimental_vector_ivf_index = 1;
+SET enable_quantized_codec = 1;
+
+CREATE TABLE docs
+(
+    id  UInt64,
+    vec Array(BFloat16) CODEC(Quantized('rabitq', 768)),
+    cid UInt64 DEFAULT assignCentroid(vec, 'docs'),
+    INDEX ivf (vec, cid) TYPE vector_similarity(
+        'ivf', 'cosineDistance', 768,
+        samples    = 'docs_sample',
+        clustering = hierarchicalKMeans(32768, 512, 20, 2000000, 42, 1))
+)
+ENGINE = MergeTree
+ORDER BY (cid, id);
+```
+
+The index arguments are:
+
+| Argument | Description |
+|---|---|
+| `'ivf'` | The method. |
+| `'cosineDistance'` or `'L2Distance'` | The distance function used for the search. |
+| `768` | The number of vector dimensions. Inserted vectors must have this length. |
+| `samples` | The sample table. An unqualified name refers to the database of the IVF table. |
+| `clustering` | The aggregate function which trains the centroids, with its parameters. The first parameter is always the number of clusters. |
+| `target_cluster_size` | Optional. Clusters with more than this number of rows are split in two in the background, so that the number of clusters grows with the table. A split cluster keeps its rows; new rows go to the two new clusters. Without it, clusters are not split. |
+
+The index is declared on `(vec, cid)`, where `cid` is the cluster id column of type `UInt64`. It must be a column of the primary key, normally the first one; columns before it should have few distinct values (see [Limitations](#ivf-limitations)).
+The parameters of `hierarchicalKMeans` are `(k, branching, max_iter, sample_cap, seed, cosine_distance)`; use `cosine_distance = 1` together with `cosineDistance`.
+
+The clustering function returns either the `k` centroids as `Array(Array(Float32))`, or a tree of centroids as `Array(Tuple(vec Array(Float32), level UInt8, cid UInt32, parent UInt32[, radius Float32]))`.
+In a tree, level 0 holds the `k` leaves, which are the clusters of the table, and every centroid below the top level has its `parent` at the next level.
+Cluster ids are non-zero, and `parent` is 0 at the top level. The index replaces the ids of the leaves by its own: each leaf gets a range of cluster ids below 2<sup>63</sup> (so that they also fit signed 64-bit integers), and clusters split from it later take their ids from this range, so that they are stored next to it.
+`hierarchicalKMeans` returns the first form.
+If the result does not satisfy these rules, training fails and no centroids are stored.
+
+#### Training {#ivf-training}
+
+Training starts in the background when the table is created.
+Since training can run for minutes or hours, it should not be interrupted by an incidental connection drop or a client timeout.
+Therefore, `CREATE TABLE` returns right away while the training continues on the server.
+After issuing `CREATE TABLE`, check at a later time whether training has completed.
+Until then, inserts into the table fail.
+
+`CREATE TABLE` requires `SELECT` on the sample table. Training then runs internally with the settings of the user who created the table.
+It shows up in [system.query_log](/reference/system-tables/query_log) as an internal `INSERT` into the centroids table.
+The sample table is read when training starts, so do not drop or rename it until training completes; otherwise, training fails and the table must be recreated.
+
+#### Inserting data {#ivf-inserting}
+
+Each row needs a cluster id.
+`assignCentroid(vec, 'table')` returns the id of the nearest centroid of an IVF table; it rejects the insert if the centroids are missing or incomplete.
+When a column expression of an IVF table refers to the table itself this way, the table name is replaced by the name of its internal centroids dictionary at creation, so that the expression stays valid after `RENAME TABLE` and `EXCHANGE TABLES`.
+
+Either let the `DEFAULT` expression compute the cluster id, using several threads:
+
+```sql
+INSERT INTO docs (id, vec)
+SELECT id, vec FROM docs_source
+SETTINGS max_insert_threads = 32;
+```
+
+Or compute it in the `SELECT`, for example for bulk loads or precomputed ids:
+
+```sql
+INSERT INTO docs (id, vec, cid)
+SELECT id, vec, assignCentroid(vec, 'docs') FROM docs_source;
+```
+
+#### Searching {#ivf-searching}
+
+Vector search queries are written as usual; ClickHouse adds the cluster pruning automatically:
+
+```sql
+SELECT id, cosineDistance(vec, {q:Array(Float32)}) AS dist
+FROM docs
+ORDER BY dist
+LIMIT 10
+SETTINGS ivf_nprobe = 64;
+```
+
+Internally, the query is rewritten to `WHERE cid IN (SELECT cid FROM <centroids> ORDER BY cosineDistance(vec, q) LIMIT 64)`, so only the 64 clusters nearest to the reference vector are read.
+
+| Setting | Default | Description |
+|---|---|---|
+| `ivf_nprobe` | 64 | The number of nearest clusters to probe. `0` disables the use of IVF indexes. |
+| `ivf_epsilon` | 0 | If greater than 0, probe every cluster whose centroid is within `(1 + ivf_epsilon)` times the distance of the nearest centroid, but at most `ivf_nprobe` clusters. |
+
+The rewrite applies to queries on a single IVF table which order by the index's distance function on the vector column in ascending order and have a `LIMIT` clause.
+Until the centroids are trained, queries read all rows.
+
+#### Internal objects {#ivf-internal-objects}
+
+Each IVF table owns a quantizer table, which holds the centroids, and a dictionary, named `_ivf_quantizer_<index>_<uuid>` and `_ivf_centroids_dict_<index>_<uuid>` after the index and the table UUID.
+They are dropped together with the table and cannot be dropped or renamed on their own.
+They need no grants: searching an IVF table requires `SELECT` on it, and `assignCentroid(vec, 'table')` requires `SELECT` or `INSERT` on it.
+
+#### Limitations {#ivf-limitations}
+
+- Only databases with the `Atomic` engine are supported.
+- Not supported: `Replicated` databases, `ReplicatedMergeTree` tables, temporary tables, `CREATE OR REPLACE TABLE`, `REPLACE TABLE`, `CREATE TABLE ... AS SELECT`, `CREATE TABLE ... AS other_table` and `CREATE TABLE ... CLONE AS`.
+- A table can have at most one IVF index. It can only be declared in `CREATE TABLE`; it cannot be added or dropped with `ALTER TABLE`.
+- Columns before `cid` in the primary key should have few distinct values and be filtered in queries, for example `ORDER BY (tenant_id, cid, id)` with `WHERE tenant_id = ...`.
+- An IVF table can be renamed or exchanged with `EXCHANGE TABLES` within its database, for example to replace it by a re-indexed copy. It cannot be moved to another database, and its database cannot be renamed.
+- Training is not resumed after a server restart. If training fails or the server restarts before training completes, drop and recreate the table.
+- Cluster ids supplied by `INSERT` are not checked against the centroids.
+
 ### References {#references}
 
 Blogs:

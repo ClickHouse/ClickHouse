@@ -1,0 +1,9 @@
+Insert
+200000	1
+Only the probed clusters are read
+cid in 4-element set
+read less than 20000 rows
+ivf_epsilon probes only the clusters close to the nearest one
+cid in 1-element set
+Recall@10 of 10 queries with ivf_nprobe = 4 compared to the exact search
+recall >= 0.9: 1

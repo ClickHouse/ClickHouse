@@ -1,4 +1,5 @@
 #include <Storages/StorageMergeTree.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 #include <Storages/StorageProxy.h>
 
 #include <optional>
@@ -584,6 +585,9 @@ void StorageMergeTree::alter(
     auto settings_defaults = getDefaultSettings();
     commands.apply(
         new_metadata, local_context, (*old_storage_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
+    /// As at CREATE TABLE, a reference to the table itself in assignCentroid(..., 'table') becomes the name of the centroids
+    /// dictionary of its IVF index, which stays valid after RENAME and EXCHANGE.
+    rewriteVectorSimilarityIvfSelfReferences(table_id, getVectorSimilarityIvfIndexNames(new_metadata), new_metadata.columns);
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);

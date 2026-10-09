@@ -37,6 +37,7 @@
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 #include <Analyzer/Passes/DictGetTupleElementPass.h>
 #include <Analyzer/Passes/InverseDictionaryLookupPass.h>
+#include <Analyzer/Passes/IvfClusterPruningPass.h>
 #include <Analyzer/Passes/DistanceTransposedPartialReadsPass.h>
 #include <Analyzer/Passes/LikePerfectAffixRewritePass.h>
 #include <Analyzer/Passes/LogicalExpressionOptimizerPass.h>
@@ -313,6 +314,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     /// `toYear(d) = 2024` to a range on raw `d`. After aggregation only `toYear(d)` and
     /// `count()` remain, so the final projection would need `d` that is no longer present.
     manager.addPass(std::make_unique<InverseDictionaryLookupPass>());
+    manager.addPass(std::make_unique<IvfClusterPruningPass>());
     manager.addPass(std::make_unique<OptimizeDateOrDateTimeConverterWithPreimagePass>());
     manager.addPass(std::make_unique<ComparisonTupleEliminationPass>());
 

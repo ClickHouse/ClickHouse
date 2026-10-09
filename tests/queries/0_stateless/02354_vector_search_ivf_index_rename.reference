@@ -1,0 +1,11 @@
+EXCHANGE TABLES: each table keeps its own centroids
+t8	1
+t16	1
+RENAME TABLE
+t_renamed	1
+cid in 2-element set
+A reference to the table itself set by ALTER also survives RENAME
+t_altered	1
+Moving to another database is rejected
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED

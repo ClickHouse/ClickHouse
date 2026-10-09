@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyHypothesis.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
@@ -30,6 +31,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
     extern const int BAD_ARGUMENTS;
+#if !USE_USEARCH
+    extern const int SUPPORT_IS_DISABLED;
+#endif
 }
 
 bool indexFileExistsInChecksums(
@@ -581,6 +585,37 @@ void MergeTreeIndexFactory::validate(const IndexDescription & index, bool attach
     it->second(index, attach, settings);
 }
 
+namespace
+{
+
+/// vector_similarity('ivf', ...) has its own implementation without USearch, the other methods (HNSW) use USearch.
+MergeTreeIndexPtr vectorSimilarityIndexCreatorForMethod(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
+{
+    if (isVectorSimilarityIvfIndex(index))
+        return vectorSimilarityIvfIndexCreator(std::move(metadata_snapshot), index, settings);
+#if USE_USEARCH
+    return vectorSimilarityIndexCreator(std::move(metadata_snapshot), index, settings);
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HNSW vector similarity index is disabled because ClickHouse was built without USearch");
+#endif
+}
+
+void vectorSimilarityIndexValidatorForMethod(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
+{
+    if (isVectorSimilarityIvfIndex(index))
+    {
+        vectorSimilarityIvfIndexValidator(index, attach, settings);
+        return;
+    }
+#if USE_USEARCH
+    vectorSimilarityIndexValidator(index, attach, settings);
+#else
+    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "HNSW vector similarity index is disabled because ClickHouse was built without USearch");
+#endif
+}
+
+}
+
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {
     registerCreator("minmax", minmaxIndexCreator, Documentation{
@@ -619,13 +654,12 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
         .related = {"set", "tokenbf_v1"}});
     registerValidator("bloom_filter", bloomFilterIndexValidator);
 
-#if USE_USEARCH
-    registerCreator("vector_similarity", vectorSimilarityIndexCreator, Documentation{
-        .description = "An approximate nearest-neighbour index over a vector column (built using HNSW), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
-        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g",
+    registerCreator("vector_similarity", vectorSimilarityIndexCreatorForMethod, Documentation{
+        .description = "An approximate nearest-neighbour index over a vector column (built using HNSW or IVF), for speeding up `ORDER BY <distance_function>(vector, reference) LIMIT n` queries.",
+        .syntax = "INDEX name vector TYPE vector_similarity('hnsw', 'distance_function', dimensions[, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction]) GRANULARITY g\n"
+                  "INDEX name (vector, cluster_id) TYPE vector_similarity('ivf', 'distance_function', dimensions, samples = 'samples_table', clustering = clustering_function(k[, ...])) GRANULARITY g",
         .related = {}});
-    registerValidator("vector_similarity", vectorSimilarityIndexValidator);
-#endif
+    registerValidator("vector_similarity", vectorSimilarityIndexValidatorForMethod);
 
     registerCreator("text", textIndexCreator, Documentation{
         .description = "A full-text (inverted) index over the tokens of a string column, for speeding up text search functions such as `hasToken`, `hasAnyTokens`, `hasAllTokens`, and `hasPhrase`.",

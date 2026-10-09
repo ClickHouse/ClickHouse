@@ -1,0 +1,11 @@
+Tree of centroids
+1	1
+2	2
+3	3
+4	4
+Malformed trees fail training
+The clustering function must return a parent one level up for each centroid below the top level, and parent 0 at the top level
+The clustering function must return unique non-zero centroid ids per level and levels below 255
+Other result types are rejected
+BAD_ARGUMENTS
+BAD_ARGUMENTS

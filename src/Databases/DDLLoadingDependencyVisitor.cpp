@@ -17,6 +17,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Poco/String.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 
 
 namespace DB
@@ -37,6 +38,18 @@ TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, c
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
     data.dependencies.erase(table);
+
+    /// The table depends on the hidden objects of its IVF index, which also prevents dropping or renaming them on their own.
+    const auto * create = ast->as<ASTCreateQuery>();
+    if (create && create->uuid != UUIDHelpers::Nil)
+    {
+        const StorageID table_id(table.database, table.table, create->uuid);
+        for (const auto & index_name : getVectorSimilarityIvfIndexNames(*create))
+            for (const auto & inner_id : {getVectorSimilarityIvfCentroidsTableID(table_id, index_name),
+                                          getVectorSimilarityIvfCentroidsDictionaryID(table_id, index_name)})
+                data.dependencies.emplace(inner_id.getDatabaseName(), inner_id.getTableName());
+    }
+
     return data.dependencies;
 }
 

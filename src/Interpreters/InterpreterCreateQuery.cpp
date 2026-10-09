@@ -69,6 +69,8 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 #include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -128,6 +130,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_vector_ivf_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool compatibility_ignore_collation_in_create_table;
@@ -976,6 +979,9 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 const auto & settings = getContext()->getSettingsRef();
                 if (index_desc.type == TEXT_INDEX_NAME && !settings[Setting::enable_full_text_index])
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The text index feature is disabled. Enable the setting 'enable_full_text_index' to use it");
+                if (is_fresh_create && isVectorSimilarityIvfIndex(index_desc) && !settings[Setting::allow_experimental_vector_ivf_index])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "The IVF vector similarity index is experimental. Enable the setting 'allow_experimental_vector_ivf_index' to use it");
 
                 properties.indices.push_back(index_desc);
             }
@@ -2229,6 +2235,30 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return doCreateOrReplaceTemporaryTable(create, properties, mode);
     }
 
+    if (!create.attach && std::ranges::any_of(properties.indices, isVectorSimilarityIvfIndex))
+    {
+        /// These create the table under a temporary name and rename it, which skips creating the hidden objects of the index.
+        if (create.replace_table || create.isCreateQueryWithImmediateInsertSelect())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE OR REPLACE, REPLACE and CREATE ... AS SELECT are not supported for tables with an IVF vector similarity index");
+
+        /// A copy would get its own centroids, but keep the cluster ids (CLONE AS) and the assignCentroid references of the source.
+        if (!as_table_saved.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "CREATE TABLE ... AS and CREATE TABLE ... CLONE AS are not supported for tables with an IVF vector similarity index");
+
+        /// The hidden objects are created by internal DDL, supported in Atomic and Shared (Cloud) databases only.
+        if (create.isTemporary())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IVF vector similarity indexes are not supported for temporary tables");
+        const String database_engine = database ? database->getEngineName() : "";
+        if (database_engine != "Atomic" && database_engine != "Shared")
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "IVF vector similarity indexes are only supported in Atomic and Shared databases, not in {}", database_engine);
+        const String table_engine = create.storage && create.storage->engine ? create.storage->engine->name : "";
+        if (table_engine.starts_with("Replicated"))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IVF vector similarity indexes are not supported for {} tables", table_engine);
+    }
+
     if (create.replace_table
         || (create.replace_view && (database->getEngineName() == "Atomic" || database->getEngineName() == "Replicated")))
     {
@@ -2347,6 +2377,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return {};
     }
 
+    /// Under the DDL guard of the table, so that a concurrent RENAME, EXCHANGE or DROP cannot see the table without them.
+    if (!create.attach)
+        createInnerObjectsOfIndexes(create);
+
     /// A materialized view with POPULATE subscribes to new inserts of its source table and, at the same
     /// time, must be filled with the data that already exists in the source. Doing these two steps
     /// independently is racy: a row inserted concurrently can be routed to the view and also appear in the
@@ -2376,6 +2410,47 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// If table has dependencies - add them to the graph
     addTableDependencies(create, query_ptr, getContext());
     return fillTableIfNeeded(create);
+}
+
+void InterpreterCreateQuery::createInnerObjectsOfIndexes(const ASTCreateQuery & create)
+{
+    if (create.isView() || create.is_dictionary)
+        return;
+
+    auto table = DatabaseCatalog::instance().tryGetTable({create.getDatabase(), create.getTable()}, getContext());
+    /// A table which was just created is never deferred, so nothing is loaded here (e.g. tables defined by table functions).
+    if (!castStorage<MergeTreeData>(table, DeferredTable::Skip))
+        return;
+
+    const auto metadata = table->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+    const StorageID table_id = table->getStorageID();
+    try
+    {
+        createVectorSimilarityIvfInnerObjects(table_id, table->getName(), *metadata, getContext());
+        scheduleVectorSimilarityIvfTraining(table_id, *metadata, getContext());
+    }
+    catch (...)
+    {
+        /// Fail-close: do not leave a table without the hidden objects of its indexes. The synchronous drop waits until
+        /// nothing references the table, so the reference held here must be released first.
+        table.reset();
+        dropVectorSimilarityIvfInnerObjects(table_id, getVectorSimilarityIvfIndexNames(*metadata), getContext());
+
+        /// The caller holds the DDL guard of the table, which is not recursive.
+        auto drop_query = make_intrusive<ASTDropQuery>();
+        drop_query->setDatabase(table_id.getDatabaseName());
+        drop_query->setTable(table_id.getTableName());
+        drop_query->kind = ASTDropQuery::Kind::Drop;
+        drop_query->if_exists = true;
+        drop_query->sync = true;
+        drop_query->no_ddl_lock = true;
+        auto drop_context = Context::createCopy(getContext()->getGlobalContext());
+        drop_context->setSettings(getContext()->getSettingsRef());
+        drop_context->setDDLOrOnClusterInternal(true);
+        ASTPtr ast_drop_query = drop_query;
+        InterpreterDropQuery(ast_drop_query, drop_context).execute();
+        throw;
+    }
 }
 
 namespace
@@ -2510,6 +2585,13 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
     assertOrSetUUID(create, database);
+
+    /// References of the table to itself in assignCentroid are replaced by its IVF centroids dictionary, which needs the UUID.
+    ColumnsDescription columns = properties.columns;
+    if (!create.attach && create.columns_list && create.columns_list->columns
+        && rewriteVectorSimilarityIvfSelfReferences(
+            StorageID(create.getDatabase(), create.getTable(), create.uuid), getVectorSimilarityIvfIndexNames(create), columns))
+        create.columns_list->setOrReplace(create.columns_list->columns, formatColumns(columns));
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
     auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
@@ -2708,7 +2790,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             data_path,
             getContext(),
             getContext()->getGlobalContext(),
-            properties.columns,
+            columns,
             properties.constraints,
             mode,
             is_restore_from_backup);

@@ -14,6 +14,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/MergeTree/MergeTreeIndexVectorSimilarityIvf.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
@@ -390,6 +392,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             table->flushAndShutdown(true);
 
+            /// IVF indexes own hidden objects. They are found in the stored CREATE query, which neither loads a deferred table
+            /// (e.g. a table function or a lazily loaded table) nor resolves other tables (e.g. the target of an alias).
+            Strings ivf_index_names;
+            if (auto create_query = database->tryGetCreateTableQuery(table_id.table_name, context_))
+                if (const auto * create = create_query->as<ASTCreateQuery>())
+                    ivf_index_names = getVectorSimilarityIvfIndexNames(*create);
+
             TableExclusiveLockHolder table_lock;
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -397,6 +406,10 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             DatabaseCatalog::instance().removeDependencies(table_id, check_ref_deps, check_loading_deps, is_drop_or_detach_database);
             NamedCollectionFactory::instance().removeDependencies(table_id);
             database->dropTable(context_, table_id.table_name, query.sync);
+
+            /// Drop the hidden objects owned by indexes of the table (e.g. the centroids of IVF indexes).
+            if (!ivf_index_names.empty())
+                dropVectorSimilarityIvfInnerObjects(table_id, ivf_index_names, context_);
 
             /// We have to clear mmapio cache when dropping table from Ordinary database
             /// to avoid reading old data if new table with the same name is created

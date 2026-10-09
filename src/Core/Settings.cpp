@@ -9826,6 +9826,14 @@ Enables a two-stage approximate vector search without index (brute force scan) o
 2. rescore the found vectors against original, full-precision vectors.
 )", 0, \
         {"26.7", false, false, "New setting to opt into the two-stage approximate vector-search optimization over a Quantize(...) column codec; queries stay exact by default."}) \
+    DECLARE(UInt64, ivf_nprobe, 64, R"(
+Number of nearest clusters probed by a vector search on a table with an IVF vector similarity index (`vector_similarity('ivf', ...)`). The query `ORDER BY <distance_function>(vec, reference) LIMIT k` is restricted to the rows of the probed clusters. Acts as a cap when `ivf_epsilon` > 0. 0 disables the use of IVF indexes.
+)", 0, \
+        {"26.10", 0, 64, "New setting for IVF vector similarity indexes."}) \
+    DECLARE(Float, ivf_epsilon, 0, R"(
+If > 0, a vector search on a table with an IVF vector similarity index probes every cluster whose centroid is within `(1 + ivf_epsilon)` times the distance of the nearest centroid, but at most `ivf_nprobe` clusters. 0 means probe exactly `ivf_nprobe` clusters.
+)", 0, \
+        {"26.10", 0, 0, "New setting for IVF vector similarity indexes."}) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
 If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally.
 )", 0, \
@@ -10330,6 +10338,10 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_vector_ivf_index, false, R"(
+Allow creating tables with an IVF vector similarity index (`vector_similarity('ivf', ...)`).
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New experimental setting for IVF vector similarity indexes."}) \
     DECLARE_WITH_ALIAS(Bool, enable_time_series_table, false, R"(
 Allows creation of tables with the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine. Possible values:
 - 0 — the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine is disabled.
