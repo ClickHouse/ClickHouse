@@ -41,7 +41,6 @@ namespace Setting
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool cluster_function_process_archive_on_multiple_nodes;
     extern const SettingsObjectStorageGranularityLevel cluster_table_function_split_granularity;
-    extern const SettingsMaxThreads max_threads;
 }
 
 namespace ErrorCodes
@@ -477,9 +476,8 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     }
 
     const auto & settings = local_context->getSettingsRef();
-    constexpr size_t tasks_per_reading_thread = 8;
-    const size_t cluster_threads = ids_of_hosts.size() * std::max<size_t>(1, settings[Setting::max_threads]);
-    const size_t target_tasks = tasks_per_reading_thread * cluster_threads;
+    constexpr size_t tasks_per_node = 4;
+    const size_t target_tasks = tasks_per_node * ids_of_hosts.size();
     const size_t estimated_files = iterator->estimatedKeysCount();
     const bool files_are_known = estimated_files > 0 && estimated_files != std::numeric_limits<size_t>::max();
 
@@ -501,9 +499,9 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         const size_t min_buckets_per_file = files_are_known ? (target_tasks + estimated_files - 1) / estimated_files : 1;
         LOG_DEBUG(
             getLogger("StorageObjectStorageCluster"),
-            "Splitting files into buckets: estimated {} files for {} reading threads, at least {} buckets per file",
+            "Splitting files into buckets: estimated {} files for {} nodes, at least {} buckets per file",
             estimated_files,
-            cluster_threads,
+            ids_of_hosts.size(),
             min_buckets_per_file);
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
