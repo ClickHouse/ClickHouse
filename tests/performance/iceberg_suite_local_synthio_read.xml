@@ -13,7 +13,7 @@
             <values><value>icebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/tpch_ice_sf10/lineitem/')</value></values>
         </substitution>
     </substitutions>
-    <fill_query do_not_check_in_pr="119976">SYSTEM ENABLE FAILPOINT local_object_storage_slow_response</fill_query>
+    <failpoint action="enable">local_object_storage_slow_response</failpoint>
     <include file="iceberg_suite_shared_read.xml.inc"/>
-    <drop_query>SYSTEM DISABLE FAILPOINT local_object_storage_slow_response</drop_query>
+    <failpoint action="disable">local_object_storage_slow_response</failpoint>
 </test>
