@@ -1,6 +1,7 @@
 #include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
@@ -31,6 +32,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool exact_division_for_integers;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -582,6 +584,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         if (rollback_on_exception)
             column.popBack(1);
     }
+
+    normalizeDivision(*ast, context->getSettingsRef()[Setting::exact_division_for_integers]);
 
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 

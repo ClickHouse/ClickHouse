@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 
+#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
@@ -175,6 +176,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool exact_division_for_integers;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -2894,6 +2896,12 @@ static BlockIO executeQueryImpl(
                 query_database = query_with_table_output->getDatabase();
                 query_table = query_with_table_output->getTable();
             }
+
+            /// Freeze the meaning of division before the AST can enter table metadata, a mutation
+            /// entry, a SQL UDF, or a distributed query. Replayed ASTs already carry that decision.
+            if (!internal && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
+                && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                normalizeDivision(*out_ast, settings[Setting::exact_division_for_integers]);
 
             /// Propagate WITH statement to children ASTSelect.
             if (settings[Setting::enable_global_with_statement])

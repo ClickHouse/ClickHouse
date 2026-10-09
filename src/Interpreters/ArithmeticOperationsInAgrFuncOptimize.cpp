@@ -110,13 +110,13 @@ Field zeroField(const Field & value)
     throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Unexpected literal type in function");
 }
 
-ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & tables, bool exact_division_for_integers)
+ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & tables)
 {
     static const std::unordered_map<String, std::unordered_set<String>> supported
-        = {{"sum", {"multiply", "divide"}},
-           {"min", {"multiply", "divide", "plus", "minus"}},
-           {"max", {"multiply", "divide", "plus", "minus"}},
-           {"avg", {"multiply", "divide", "plus", "minus"}}};
+        = {{"sum", {"multiply", "divide", "divideExact"}},
+           {"min", {"multiply", "divide", "divideExact", "plus", "minus"}},
+           {"max", {"multiply", "divide", "divideExact", "plus", "minus"}},
+           {"avg", {"multiply", "divide", "divideExact", "plus", "minus"}}};
 
     /// Aggregate functions[sum|min|max|avg] is case-insensitive, so we use lower cases name
     auto lower_name = Poco::toLower(func.name);
@@ -151,7 +151,7 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
     if (first_literal && !second_literal)
     {
         /// It's possible to rewrite 'sum(1/n)' with 'sum(1) * div(1/n)' but we lose accuracy. Ignored.
-        if (child_func->name == "divide")
+        if (child_func->name == "divide" || child_func->name == "divideExact")
             return {};
 
         if (!getNonDecimalColumnType(child_func_args[1], tables))
@@ -171,12 +171,13 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
             return {};
 
         /// Preserve per-row truncation and overflow checks only for integer division.
-        if (exact_division_for_integers && child_func->name == "divide" && isInteger(column_type)
+        if (child_func->name == "divideExact" && isInteger(column_type)
             && second_literal->value.getType() != Field::Types::Float64)
             return {};
 
         bool need_reverse
-            = (child_func->name == "multiply" || child_func->name == "divide") && second_literal->value < zeroField(second_literal->value);
+            = (child_func->name == "multiply" || child_func->name == "divide" || child_func->name == "divideExact")
+            && second_literal->value < zeroField(second_literal->value);
         if (need_reverse)
             lower_name = get_reverse_aggregate_function_name(lower_name);
 
@@ -196,7 +197,7 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func, const TablesWithColumns & 
 
 void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
 {
-    if (auto exchanged_funcs = tryExchangeFunctions(func, data.tables, data.exact_division_for_integers))
+    if (auto exchanged_funcs = tryExchangeFunctions(func, data.tables))
     {
         ast = exchanged_funcs;
 

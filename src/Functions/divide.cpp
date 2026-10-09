@@ -1,16 +1,9 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/FunctionExactDivide.h>
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool exact_division_for_integers;
-}
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -52,12 +45,92 @@ struct DivideFloatingOrNullImpl : DivideFloatingImpl<A, B>
 struct NameDivide { static constexpr auto name = "divide"; };
 using FunctionDivideLegacy = BinaryArithmeticOverloadResolver<DivideFloatingImpl, NameDivide>;
 
-class FunctionDivide final : public IFunctionOverloadResolver
+/// Keep the serialized AST and the resolved expression under the same name. In particular, key
+/// expressions are built by the legacy analyzer while predicates use the query-tree analyzer.
+class FunctionDivideExactBase final : public IFunctionBase
 {
 public:
-    static constexpr auto name = NameDivide::name;
+    explicit FunctionDivideExactBase(FunctionBasePtr implementation_) : implementation(std::move(implementation_))
+    {
+    }
 
-    explicit FunctionDivide(ContextPtr context)
+    String getName() const override
+    {
+        return "divideExact";
+    }
+    const DataTypes & getArgumentTypes() const override
+    {
+        return implementation->getArgumentTypes();
+    }
+    const DataTypePtr & getResultType() const override
+    {
+        return implementation->getResultType();
+    }
+    void updateHash(SipHash & hash) const override
+    {
+        implementation->updateHash(hash);
+    }
+
+    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return implementation->prepare(arguments);
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        return implementation->isSuitableForShortCircuitArgumentsExecution(arguments);
+    }
+
+    bool isSuitableForConstantFolding() const override
+    {
+        return implementation->isSuitableForConstantFolding();
+    }
+    ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    {
+        return implementation->getConstantResultForNonConstArguments(arguments, result_type);
+    }
+    bool isInjective(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return implementation->isInjective(arguments);
+    }
+    bool isNameInsensitive() const override
+    {
+        return implementation->isNameInsensitive();
+    }
+    bool hasInformationAboutMonotonicity() const override
+    {
+        return implementation->hasInformationAboutMonotonicity();
+    }
+    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
+    {
+        return implementation->getMonotonicityForRange(type, left, right);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilable() const override
+    {
+        return implementation->isCompilable();
+    }
+    ColumnNumbers getArgumentsThatDontParticipateInCompilation(const DataTypes & types) const override
+    {
+        return implementation->getArgumentsThatDontParticipateInCompilation(types);
+    }
+    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
+    {
+        return implementation->compile(builder, arguments);
+    }
+#endif
+
+private:
+    FunctionBasePtr implementation;
+};
+
+class FunctionDivideExact final : public IFunctionOverloadResolver
+{
+public:
+    static constexpr auto name = "divideExact";
+
+    explicit FunctionDivideExact(ContextPtr context)
         : legacy(FunctionDivideLegacy::create(context))
         , exact(std::make_unique<FunctionToOverloadResolverAdaptor>(createFunctionExactDivide()))
         , integral(FunctionFactory::instance().get("intDiv", context))
@@ -66,9 +139,7 @@ public:
 
     static FunctionOverloadResolverPtr create(ContextPtr context)
     {
-        if (!context || !context->getSettingsRef()[Setting::exact_division_for_integers])
-            return FunctionDivideLegacy::create(context);
-        return std::make_unique<FunctionDivide>(std::move(context));
+        return std::make_unique<FunctionDivideExact>(std::move(context));
     }
 
     String getName() const override
@@ -87,7 +158,7 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override
     {
-        return delegate(arguments)->build(arguments);
+        return std::make_shared<FunctionDivideExactBase>(delegate(arguments)->build(arguments));
     }
 
 private:
@@ -100,8 +171,8 @@ private:
             && accurateLess((*arguments[1].column)[0], Field(UInt256(1) << (8 * right->getSizeOfValueInMemory() - 1)));
         /// Reuse `intDiv` where its operand casts preserve every input value, including a signed
         /// dividend with a narrower unsigned divisor or a constant that fits its signed cast.
-        /// This retains its constant-divisor kernels and monotonicity metadata, with a canonical
-        /// name distinct from floating-point `divide`.
+        /// This retains its constant-divisor kernels and monotonicity metadata, under the stable
+        /// `divideExact` name, distinct from floating-point `divide`.
         /// Other mixed-sign pairs need checked magnitudes; nullable inputs need to skip masked
         /// overflow and zero-divisor rows.
         if ((isInt(left) && isInt(right)) || (isUInt(left) && isUInt(right))
@@ -158,7 +229,8 @@ Floating-point division by `0` returns `inf`, `-inf`, or `nan`. `Decimal` divisi
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Arithmetic;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDivide>(documentation);
+    factory.registerFunction<FunctionDivideLegacy>(documentation);
+    factory.registerFunction<FunctionDivideExact>(FunctionDocumentation::INTERNAL_FUNCTION_DOCS);
 }
 
 struct NameDivideOrNull { static constexpr auto name = "divideOrNull"; };

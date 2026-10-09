@@ -4916,6 +4916,9 @@ Division by zero or a quotient outside the result type's range throws an excepti
 
 By default, division of two integers returns `Float64`. This setting does not change division involving `Decimal` or floating-point operands,
 or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
+
+The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
+Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
 )", 0, \
         {"26.10", false, false, "New setting to enable exact integer division for `/` and `divide`."}) \
     DECLARE(Bool, decimal_check_overflow, true, R"(

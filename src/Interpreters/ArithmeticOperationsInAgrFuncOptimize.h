@@ -22,7 +22,6 @@ public:
     struct Data
     {
         const TablesWithColumns & tables;
-        bool exact_division_for_integers;
     };
 
     static void visit(ASTPtr & ast, Data & data);
