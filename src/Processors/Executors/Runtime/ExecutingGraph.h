@@ -127,10 +127,19 @@ public:
         Cancelled,
     };
 
+    /// Working memory of `updateNode`. The caller keeps it between the calls,
+    /// so that memory is not allocated every time a processor is updated.
+    struct UpdateNodeBuffers
+    {
+        boost::container::devector<Edge *> updated_edges;
+        boost::container::devector<Node *> updated_processors;
+        std::vector<Node *> pending_expansion;
+    };
+
     /// Update `initial` processor (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue);
+    UpdateNodeStatus updateNode(IProcessor & initial, Queue & queue, Queue & async_queue, UpdateNodeBuffers & buffers);
 
     /// Cancel every processor with the given reason.
     void cancel(IProcessor::CancelReason reason);
