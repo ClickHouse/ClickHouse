@@ -130,6 +130,19 @@ template ColumnPtr encodeFixedSizeKeys<UInt64>(const ColumnRawPtrs &, const Size
 template ColumnPtr encodeFixedSizeKeys<UInt128>(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
 template ColumnPtr encodeFixedSizeKeys<UInt256>(const ColumnRawPtrs &, const Sizes &, size_t, ConstNullMapPtr);
 
+ColumnPtr computePrefixedHashes(const IColumn & column, size_t rows, ConstNullMapPtr null_map)
+{
+    auto keys = ColumnVector<UInt128>::create();
+    keys->reserve(rows);
+    for (size_t row = 0; row < rows; ++row)
+    {
+        if (null_map && (*null_map)[row])
+            continue;
+        keys->getData().push_back(getPrefixedHash(column.getDataAt(row)));
+    }
+    return keys;
+}
+
 ColumnPtr computeHashedKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map)
 {
     using HashedMethod = decltype(SetVariants::hashed)::element_type;
