@@ -25,8 +25,10 @@ namespace DB
   * share a budget of `max_buffered_bytes`, granted to the inputs in order starting from the
   * current one: an input keeps reading ahead while the inputs before it (including itself)
   * buffer less than the budget. The nearest inputs, which are needed first, get the budget
-  * first. Every input may still buffer up to `min_buffered_chunks` chunks regardless of the
-  * budget, so that each one gets a head start.
+  * first, and the budget bounds the total buffered bytes (exceeded by at most one chunk per
+  * input). Only the current input may buffer up to `min_buffered_chunks` chunks regardless of
+  * the budget, so that it always makes progress. If `max_buffered_bytes` is 0, every input
+  * buffers up to `min_buffered_chunks` chunks.
   *
   * This is useful for read-in-order optimization where a single part is split
   * into non-overlapping range groups read by separate sources: we want parallel

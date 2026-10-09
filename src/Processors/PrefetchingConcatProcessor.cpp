@@ -43,9 +43,10 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// producing into the buffer rather than stalling between consecutive `pull` calls.
     ///
     /// The budget is granted in input order: an input has room while the inputs from the
-    /// current one up to and including it buffer less than `max_buffered_bytes`, or while it
-    /// buffers fewer than `min_buffered_chunks` chunks. The inputs before `current_input_idx`
-    /// are finished and drained.
+    /// current one up to and including it buffer less than `max_buffered_bytes`. The current
+    /// input (or every input if `max_buffered_bytes` is 0) also has room while it buffers fewer
+    /// than `min_buffered_chunks` chunks. The inputs before `current_input_idx` are finished
+    /// and drained.
     ///
     /// `pull(set_not_needed=true)` is required because the input may legitimately
     /// have `IS_NEEDED == 0` here: an upstream chunk can race with our previous
@@ -57,9 +58,13 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
         for (auto & input : inputs)
         {
             auto & buffer = buffers[idx];
+            /// The head start of `min_buffered_chunks` is not counted in the budget only for the
+            /// current input, which must make progress, or for every input when there is no budget.
+            /// Otherwise the buffered bytes would grow with the number of inputs regardless of it.
+            const bool head_start = idx == current_input_idx || max_buffered_bytes == 0;
             auto has_room = [&]
             {
-                return buffer.chunks.size() < min_buffered_chunks
+                return (head_start && buffer.chunks.size() < min_buffered_chunks)
                     || bytes_in_previous_buffers + buffer.bytes < max_buffered_bytes;
             };
 
