@@ -2303,7 +2303,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
 
-    /// No bytes to append (check additional_bytes: empty buffer may have null position).
+    /// Nothing to append, and `in.position()` may be null.
     if (additional_bytes == 0)
         return;
 
