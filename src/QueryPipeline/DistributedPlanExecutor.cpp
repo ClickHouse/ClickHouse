@@ -16,10 +16,8 @@
 #include <Common/VectorWithMemoryTracking.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
-#if CLICKHOUSE_CLOUD
-#include <Server/StatelessWorker/StatelessWorkersProvider.h>
+#include <Server/StatelessWorker/IStatelessWorkersProvider.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
-#endif
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/printPipeline.h>
@@ -47,7 +45,6 @@
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
-#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
@@ -90,6 +87,7 @@ namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsUInt64 distributed_plan_workers_num;
+    extern const SettingsString distributed_plan_worker_cluster;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsBool use_concurrency_control;
@@ -103,6 +101,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int SW_SERVER_NO_WORKERS_AVAILABLE;
     extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
@@ -1197,57 +1196,33 @@ TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan
     assignHostsForTasks(distributed_query_plan_);
 }
 
-/// Worker hostnames from the `stateless_worker_client` config: the `cluster` replicas, or the
-/// single `host`; empty when the worker client is disabled.
-static Strings getDistributedWorkerHostnames(ContextPtr context)
-{
-    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-        return {};
-
-    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-    if (cluster_name.empty())
-    {
-        String host = context->getConfigRef().getString("stateless_worker_client.host", "");
-        if (host.empty())
-            return {};
-        return {host};
-    }
-
-    auto cluster = context->tryGetCluster(cluster_name);
-    if (!cluster)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-    auto shard_addresses = cluster->getShardsAddresses();
-    if (shard_addresses.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-    /// Only a single-shard worker cluster is supported for now.
-    if (shard_addresses.size() > 1)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
-
-    Strings result;
-    for (const auto & replica : shard_addresses[0])
-        result.push_back(replica.host_name);
-    return result;
-}
-
 size_t getCascadesPlanningNodeCount(ContextPtr context)
 {
-    const auto & settings = context->getSettingsRef();
+    /// Resolve the query-level context — the same one execution allocates from
+    /// (`getOrCreateStatelessWorkerAllocation`) — and read the plan's settings from it, so a copied or
+    /// subquery planning context's own `SETTINGS` (the worker cluster and the worker count) cannot plan a
+    /// different topology than execution uses (one query → one cluster, one size).
+    const ContextPtr query_context = context->hasQueryContext() ? context->getQueryContext() : context;
+    const auto & settings = query_context->getSettingsRef();
     const size_t requested_workers = settings[Setting::distributed_plan_workers_num];
 
     /// Local execution runs in-process, not bound to a cluster; use the requested count when set.
     if (settings[Setting::distributed_plan_execute_locally] && requested_workers > 0)
         return requested_workers;
 
-#if CLICKHOUSE_CLOUD
-    /// Cloud discovery leases `distributed_plan_workers_num` workers instead of a static cluster.
-    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
-        return requested_workers;
-#endif
-
-    /// Otherwise use the statically configured worker cluster's size.
-    return getDistributedWorkerHostnames(context).size();
+    /// Execution (`fillWorkerAddresses`) serves stateless-worker queries only when the client is enabled.
+    /// With it disabled the default cluster plans zero distributed nodes (runs locally), but a query that
+    /// explicitly named a worker cluster cannot be served, so reject it rather than silently running local.
+    const String worker_cluster = settings[Setting::distributed_plan_worker_cluster];
+    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+    {
+        if (!worker_cluster.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Stateless worker client is not enabled; cannot use worker cluster '{}'", worker_cluster);
+        return 0;
+    }
+    /// Size the plan from the provider the query executes on; an unusable selection throws here.
+    return query_context->getStatelessWorkersProvider()->getPlanningNodeCount(requested_workers);
 }
 
 TaskToHostMap::~TaskToHostMap() = default;
@@ -1257,55 +1232,14 @@ void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
 
-#if CLICKHOUSE_CLOUD
-    /// When the discovery service is configured it is the only source of
-    /// workers - the statically configured cluster/host is never used as a
-    /// fallback, so the two can never be mixed. Discovery takes precedence when
-    /// both are present.
-    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
-    {
-        const auto workers_num = context->getSettingsRef()[Setting::distributed_plan_workers_num];
-        if (workers_num == 0)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker discovery is configured but `distributed_plan_workers_num` is 0; "
-                "set it to a positive value to lease workers from the discovery service");
-        auto provider = context->getStatelessWorkersProvider();
-        worker_allocation = provider->allocate(workers_num);
-        for (const auto & endpoint : worker_allocation->getEndpoints())
-            worker_addresses.push_back(resolveWorkerAddress(endpoint.host, endpoint.port, 0, context));
-        if (worker_addresses.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No stateless workers available from the discovery service");
-        return;
-    }
-#endif
-
-    String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
-    if (!cluster_name.empty())
-    {
-        auto cluster = context->tryGetCluster(cluster_name);
-        if (!cluster)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' not found", cluster_name);
-
-        auto shard_addresses = cluster->getShardsAddresses();
-        if (shard_addresses.empty())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
-        /// Only a single-shard worker cluster is supported for now.
-        if (shard_addresses.size() > 1)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Stateless worker cluster '{}' must have a single shard, got {}", cluster_name, shard_addresses.size());
-        for (const auto & replica : shard_addresses[0])
-            worker_addresses.push_back(
-                resolveWorkerAddress(replica.host_name, replica.stateless_worker_port, replica.streaming_exchange_port, context));
-    }
-    else
-    {
-        String host = context->getConfigRef().getString("stateless_worker_client.host");
-        if (!host.empty())
-            worker_addresses.push_back(resolveWorkerAddress(host, 0, 0, context));
-    }
-
+    /// The query allocates its workers once, shared across its distributed plans, from the cluster it
+    /// selected (`distributed_plan_worker_cluster`, resolved inside getOrCreateStatelessWorkerAllocation).
+    worker_allocation = context->getOrCreateStatelessWorkerAllocation();
+    for (const auto & addr : worker_allocation->getAddresses())
+        worker_addresses.push_back(
+            resolveWorkerAddress(addr.host, addr.stateless_worker_port, addr.streaming_exchange_port, context));
     if (worker_addresses.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
+        throw Exception(ErrorCodes::SW_SERVER_NO_WORKERS_AVAILABLE, "No stateless workers available");
 }
 
 void TaskToHostMap::assignHostsForTasks(const DistributedQueryPlan & distributed_query_plan)
