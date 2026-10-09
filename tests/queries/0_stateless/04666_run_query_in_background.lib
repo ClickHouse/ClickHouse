@@ -87,7 +87,6 @@ function shared_native_and_http_tests()
     $run "ALTER TABLE t MODIFY COLUMN n String" | grep -o -m1 ALTER_OF_COLUMN_IS_FORBIDDEN
     $run "DROP TABLE t SETTINGS max_table_size_to_drop = 1" | grep -o -m1 TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT
     $run "DELETE FROM t WHERE n = 1 SETTINGS enable_lightweight_delete = 0" | grep -o -m1 SUPPORT_IS_DISABLED
-    $run "INSERT INTO t SELECT 1 PARALLEL WITH ALTER TABLE t UPDATE n = n + 1 WHERE 1" | grep -o -m1 CANNOT_UPDATE_COLUMN
     $run "BACKUP TABLE t TO Disk('backups', 'unused') SETTINGS compression_level = 'abc'" | grep -o -m1 CANNOT_PARSE_INPUT_ASSERTION_FAILED
 
     echo '--- errors raised after the main work has started are only logged'
@@ -95,8 +94,9 @@ function shared_native_and_http_tests()
     $run "OPTIMIZE TABLE t PARTITION ID 'missing' FINAL SETTINGS optimize_throw_if_noop = 1" "${logged_id}_optimize"
     $run "BACKUP TABLE t_missing TO Disk('backups', '${logged_id}')" "${logged_id}_backup"
     $run "INSERT INTO t SELECT throwIf(number = 5) FROM numbers(10)" "${logged_id}_insert"
-    wait_for_query_log "count() = 3 FROM system.query_log WHERE current_database = currentDatabase()
-        AND (query_id, exception_code) IN (('${logged_id}_optimize', 388), ('${logged_id}_backup', 60), ('${logged_id}_insert', 395))"
+    $run "INSERT INTO t SELECT 1 PARALLEL WITH ALTER TABLE t UPDATE n = n + 1 WHERE 1" "${logged_id}_parallel_with"
+    wait_for_query_log "count() = 4 FROM system.query_log WHERE current_database = currentDatabase()
+        AND (query_id, exception_code) IN (('${logged_id}_optimize', 388), ('${logged_id}_backup', 60), ('${logged_id}_insert', 395), ('${logged_id}_parallel_with', 420))"
     echo "only logged"
 
     echo '--- a settings constraint of the user is enforced on a background query'
