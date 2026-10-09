@@ -32,7 +32,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool exact_division_for_integers;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -585,7 +584,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             column.popBack(1);
     }
 
-    normalizeDivision(*ast, context->getSettingsRef()[Setting::exact_division_for_integers]);
+    normalizeDivision(*ast, context);
 
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 

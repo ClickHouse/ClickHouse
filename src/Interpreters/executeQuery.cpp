@@ -176,7 +176,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool exact_division_for_integers;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -2901,7 +2900,7 @@ static BlockIO executeQueryImpl(
             /// entry, a SQL UDF, or a distributed query. Replayed ASTs already carry that decision.
             if (!internal && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
                 && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
-                normalizeDivision(*out_ast, settings[Setting::exact_division_for_integers]);
+                normalizeDivision(*out_ast, context);
 
             /// Propagate WITH statement to children ASTSelect.
             if (settings[Setting::enable_global_with_statement])
