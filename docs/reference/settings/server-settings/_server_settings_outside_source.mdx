@@ -1171,6 +1171,7 @@ Keys for server/client settings:
 | `caConfig` | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). Like `certificateFile` and `privateKeyFile`, the CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`. |                                            |
 | `certificateFile` | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
 | `cipherList` | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
+| `cipherSuites`     | Supported TLS 1.3 cipher suites in OpenSSL notation. An empty value leaves the OpenSSL default suites in place. `cipherList` only applies to TLS 1.2 and below. Suite names OpenSSL does not recognize are ignored; a value that leaves no recognized suite is an error and the TLS context fails to initialize.                                                                                                                                                       |                                            |
 | `disableProtocols` | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
 | `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `true` for `openSSL.client`, `false` for `openSSL.server` |
 | `fips` | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
@@ -1961,28 +1962,7 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 - [Optional secured communication between ClickHouse and Zookeeper](/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
-Storage method for data part headers in ZooKeeper. This setting only applies to the [`MergeTree`](/reference/engines/table-engines/mergetree-family/index) family. It can be specified:
-
-**Globally in the [merge_tree](#merge_tree) section of the `config.xml` file**
-
-ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
-
-**For each table**
-
-When creating a table, specify the corresponding [engine setting](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
-
-**Possible values**
-
-- `0` — Functionality is turned off.
-- `1` — Functionality is turned on.
-
-If [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper), then [replicated](/reference/engines/table-engines/mergetree-family/replication) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
-
-<Note>
-After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can't downgrade the ClickHouse server to a version that does not support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don't upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
-
-Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
-</Note>
+Obsolete setting, does nothing. [Replicated](/reference/engines/table-engines/mergetree-family/replication) tables always store the header of a data part compactly in a single `znode`. Part headers written by older versions with separate `columns` and `checksums` child `znodes` are still read.
 
 ## distributed_ddl {#distributed_ddl}
 Manage executing [distributed ddl queries](/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) on cluster.
