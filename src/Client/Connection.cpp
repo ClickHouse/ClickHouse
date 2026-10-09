@@ -27,6 +27,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/DNSResolver.h>
 #include <Common/makeSocketAddress.h>
 #include <Common/StringUtils.h>
@@ -305,6 +306,9 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     /// if connection was broken it is necessary to cancel it before reconnecting
     disconnect();
 
+    /// The socket, its buffers and the handshake state live as long as the connection, which outlives the query that connects it.
+    MemoryTrackerBlockerInThread connection_not_charged_to_the_query;
+
     ProfileEvents::increment(ProfileEvents::DistributedConnectionConnectCount);
 
     /// Remove the possibly stale entries from the DNS cache. The local `bind_host` too: a client
@@ -487,8 +491,12 @@ void Connection::cancel() noexcept
 void Connection::reset() noexcept
 {
     maybe_compressed_out.reset();
-    out.reset();
-    socket.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_not_charged_to_the_query;
+        out.reset();
+        socket.reset();
+    }
     nonce.reset();
 
     connected = false;
@@ -497,7 +505,11 @@ void Connection::reset() noexcept
 
 void Connection::disconnect()
 {
-    in.reset();
+    {
+        /// Allocated by `connect`, not charged to any query.
+        MemoryTrackerBlockerInThread connection_not_charged_to_the_query;
+        in.reset();
+    }
     last_input_packet_type.reset();
 
     // no point to finalize tcp connections
