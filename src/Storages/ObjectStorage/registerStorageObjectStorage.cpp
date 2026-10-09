@@ -1,5 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -8,10 +9,12 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -50,6 +53,7 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
+    configuration->is_replayed_definition = isReplayedTableDefinition(args.mode, args.query, context);
     StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
 
     // Format settings come from the query context, so the session's settings apply, plus the SETTINGS clause.
@@ -135,6 +139,7 @@ static void registerStorageAzure(StorageFactory & factory)
         auto configuration = std::make_shared<StorageAzureConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
+    azureTableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -759,6 +764,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
         auto configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
+    s3TableEngineSecretArguments(),
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -803,6 +809,7 @@ static void registerStorageHDFS(StorageFactory & factory)
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
         return createStorageObjectStorage(args, configuration);
     },
+    SecretArgumentsSpec{},
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
@@ -1138,6 +1145,7 @@ void registerStorageIceberg(StorageFactory & factory)
             }
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1582,6 +1590,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageS3IcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1621,6 +1630,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageAzureIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1642,6 +1652,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1680,6 +1691,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
                 configuration = std::make_shared<StorageLocalIcebergConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_sort_order = true,
@@ -1760,6 +1772,7 @@ void registerStoragePaimon(StorageFactory & factory)
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -1910,6 +1923,57 @@ SELECT count()
 FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
+
+### Rewinding the warehouse {#rewinding-the-warehouse}
+
+The Keeper cursor at `paimon_keeper_path` records how far the stream has consumed, and incremental reads assume the warehouse only ever moves forward — Paimon snapshot ids increase monotonically and are never reused. Expiring old snapshots is fine: it removes a prefix and leaves the ids above it untouched.
+
+Moving the warehouse *backwards* breaks that assumption. Restoring the warehouse from an older backup, rolling it back with another engine, or dropping and recreating the Paimon table at the same path all rewind the snapshot ids, and the writer then reuses ids the cursor has already consumed.
+
+**Rewinding the warehouse requires resetting the cursor in the same operation.** ClickHouse cannot reconstruct which snapshots a consumer already received once ids are reused, so a cursor left behind after a rewind produces undefined delivery: snapshots at reused ids may be skipped.
+
+When the rewind leaves the cursor pointing past the warehouse's newest snapshot, the read fails with `INVALID_STATE` rather than reporting no new data, and the error names the recovery command. Nothing is read and the cursor is left untouched, so every subsequent poll fails identically until it is resolved:
+
+```
+clickhouse-keeper-client -q "set '<paimon_keeper_path>/committed_snapshot' '<latest snapshot id>'"
+```
+
+Do not delete the `committed_snapshot` node to recover. An absent cursor means "never consumed", which makes the next read a full re-read of the whole table rather than a resume.
+
+Before resetting the cursor, pause all consumers sharing `paimon_keeper_path`, including refreshable materialized views, and wait for in-flight reads to finish.
+
+A read's commit is conditioned on the cursor it observed. If the cursor changes after that observation but before the commit, the read fails with `INVALID_STATE`, delivers nothing, and leaves the value you set in place. A read that has already committed can still deliver its batch after the cursor is reset; rewinding the cursor can then cause that batch to be delivered again.
+
+Do not delete or replace `processing_lock` manually. It is an ephemeral node owned by the ClickHouse Keeper session that is running the incremental read; its lifecycle is not an operator recovery interface.
+
+### When a snapshot cannot be read {#when-a-snapshot-cannot-be-read}
+
+Snapshots that Paimon expired are skipped automatically: expiration removes a prefix of the snapshot ids, so anything below the warehouse's earliest snapshot is known to be gone and the cursor moves past it.
+
+Any other failure to read a snapshot — a transient object storage error, a corrupted snapshot file — fails the query and leaves the cursor where it is. There is deliberately no setting to tolerate this. Skipping an unread snapshot means permanently dropping the data committed in it, and a standing "tolerate errors" switch would turn every future network blip into silent data loss. Because the cursor is untouched, a transient error needs no intervention at all: the next poll re-reads the same range and succeeds.
+
+If a snapshot is genuinely unreadable and the stream must move on, abandon it explicitly. The error message names the command, but note what it costs: the failing read delivered nothing, so moving the cursor to the unreadable snapshot abandons **every** snapshot still unconsumed up to and including it — not only the unreadable one.
+
+With a cursor at 1 and snapshots 2, 3 and 4 pending where 3 is unreadable:
+
+```bash
+# Abandons snapshots 2 and 3; the next read resumes at 4.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+To keep the readable ones, drain up to the unreadable snapshot first. Each poll consumes one snapshot and advances the cursor, until it reaches the one that cannot be read:
+
+```sql
+-- Delivers snapshot 2 and advances the cursor to 2; the next poll fails on 3 again.
+SELECT * FROM paimon_inc SETTINGS max_consume_snapshots = 1;
+```
+
+```bash
+# Now only snapshot 3 is abandoned.
+clickhouse-keeper-client -q "set '/clickhouse/tables/<uuid>/committed_snapshot' '3'"
+```
+
+Either way the decision is recorded as an explicit operator action rather than inferred from a setting.
 
 ## Paimon to MergeTree via Refreshable Materialized View {#paimon-to-mergetree-via-refresh-mv}
 
@@ -2075,6 +2139,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2122,6 +2187,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2147,6 +2213,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2193,6 +2260,7 @@ Data types supported in Paimon partition keys:
             expandPaimonKeeperMacrosIfNeeded(args, storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2249,6 +2317,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
 
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2429,6 +2498,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
 
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2467,6 +2537,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(azureTableEngineSecretArguments()),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2504,6 +2575,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
                 configuration = std::make_shared<StorageLocalDeltaLakeConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(SecretArgumentsSpec{}),
         {
             .supports_settings = true,
             .supports_schema_inference = true,
@@ -2529,6 +2601,7 @@ void registerStorageHudi(StorageFactory & factory)
             auto configuration = std::make_shared<StorageS3HudiConfiguration>(storage_settings);
             return createStorageObjectStorage(args, configuration);
         },
+        DataLake::withSecretSettings(s3TableEngineSecretArguments()),
         {
             .supports_settings = false,
             .supports_schema_inference = true,
