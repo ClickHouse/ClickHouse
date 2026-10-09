@@ -14,9 +14,14 @@
 #include <Access/EnabledRowPolicies.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageFile.h>
+#include <Storages/StorageLog.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageStripeLog.h>
+#include <Storages/StorageURL.h>
 #include <Storages/StorageView.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
@@ -550,10 +555,17 @@ static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID &
     if (typeid_cast<const StorageMaterializedView *>(storage.get()))
         return true;
 
-    /// Storages known to read no other table. Anything else (`Merge`, `Distributed`, `Buffer`, ...) may
-    /// read tables that are not named here, locally or on another server, so the set is unknown.
+    /// Storages known to read no other table: they read only their own data, files or URLs. Anything else
+    /// (`Merge`, `Distributed`, `Buffer`, ...) may read tables that are not named here, locally or on
+    /// another server, so the set is unknown.
     /// The query names this table, so loading a lazily attached one is the expected cost.
-    return castStorage<const MergeTreeData>(storage, DeferredTable::Load) || typeid_cast<const StorageMemory *>(storage.get());
+    return castStorage<const MergeTreeData>(storage, DeferredTable::Load)
+        || typeid_cast<const StorageMemory *>(storage.get())
+        || typeid_cast<const StorageLog *>(storage.get())
+        || typeid_cast<const StorageStripeLog *>(storage.get())
+        || typeid_cast<const StorageFile *>(storage.get())
+        || dynamic_cast<const IStorageURLBase *>(storage.get())
+        || dynamic_cast<const StorageObjectStorage *>(storage.get());
 }
 
 static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth)
@@ -664,18 +676,33 @@ std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast,
     if (settings[Setting::additional_table_filters].value.empty() && query_filter_roots.empty())
         return NameSet{};
 
-    /// The filters themselves are planned with the same settings, so a table read by a filter's subquery
-    /// can match an entry as well. All filters are walked, which can only make the set larger.
-    ASTs roots{ast};
-    if (!parseFilterASTsInjectedFromSettings(context, roots))
-        return {};
-    roots.insert(roots.end(), query_filter_roots.begin(), query_filter_roots.end());
-
     NameSet names;
-    for (const auto & root : roots)
-        if (!collectNamesMatchableByAdditionalTableFiltersImpl(root->clone(), context, names, /*depth=*/ 0))
+    if (!collectNamesMatchableByAdditionalTableFiltersImpl(ast->clone(), context, names, /*depth=*/ 0))
+        return {};
+
+    /// The filters themselves are planned with the same settings, so a table read by the subquery of a
+    /// filter that applies can match an entry as well. Only the filters keyed by an already collected
+    /// name (and `additional_result_filter`, which always applies) are walked, until the set stops
+    /// growing: a filter of an unrelated table never runs, so the tables it reads cannot match anything.
+    static constexpr size_t max_iterations = 32;
+    for (size_t iteration = 0;; ++iteration)
+    {
+        if (iteration == max_iterations)
             return {};
-    return names;
+
+        ASTs filters;
+        if (!parseFilterASTsInjectedFromSettings(context, filters, &names))
+            return {};
+        if (!collectFiltersFromQuerySettings(*ast, settings, filters, &names))
+            return {};
+
+        const size_t names_before = names.size();
+        for (const auto & filter : filters)
+            if (!collectNamesMatchableByAdditionalTableFiltersImpl(filter->clone(), context, names, /*depth=*/ 0))
+                return {};
+        if (names.size() == names_before)
+            return names;
+    }
 }
 
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context, const NameSet * extra_matchable_names)
@@ -771,12 +798,17 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCa
         /// of the query the server runs, so the checks below have to see them too: a non-deterministic
         /// function or a system table hidden in such a filter makes the result just as unfit for caching
         /// as one in the query text, and the filter's own text is the same on every run, so an entry
-        /// written from it would be served again.
+        /// written from it would be served again. Only the `additional_table_filters` entries that can apply
+        /// to a table the query reads are checked, the same as in `computeQueryReferencedTablesModificationHash`,
+        /// so that a filter for an unrelated table does not make the query uncachable. When that set of
+        /// names is unknown, all entries are checked.
+        const auto matchable_names = collectNamesMatchableByAdditionalTableFilters(ast, context);
+        const NameSet * matchable_names_ptr = matchable_names ? &*matchable_names : nullptr;
         ASTs asts_to_check{ast};
-        if (!parseFilterASTsInjectedFromSettings(context, asts_to_check))
+        if (!parseFilterASTsInjectedFromSettings(context, asts_to_check, matchable_names_ptr))
             return false; /// A filter we cannot parse cannot be checked - fail closed.
         /// The same applies to the filters in the query's own `SETTINGS` clauses, e.g. of a subquery.
-        if (!collectFiltersFromQuerySettings(*ast, settings, asts_to_check))
+        if (!collectFiltersFromQuerySettings(*ast, settings, asts_to_check, matchable_names_ptr))
             return false;
 
         bool ast_contains_nondeterministic_functions = false;
