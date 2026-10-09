@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Random settings limits: read_in_order_two_level_merge_threshold=(2, None)
+# A threshold below the 2 parts can read them as one merged stream: the aggregation is then
+# single-stream and merges nothing, so the merge count below cannot be checked.
 
 # Lazy FINAL with optimize_aggregation_in_order: the deduplicating aggregation must merge groups in
 # blocks bounded by aggregation_in_order_max_block_bytes, not one group at a time (issue #114579).
@@ -27,7 +30,7 @@ $CLICKHOUSE_CLIENT -q "$query SETTINGS $settings"
 log=$($CLICKHOUSE_CLIENT --send_logs_level=trace -q "$query SETTINGS $settings FORMAT Null" 2>&1)
 echo "$log" | grep -o 'Lazy FINAL enabled' | head -1
 merges=$(echo "$log" | grep -c 'Merging partially aggregated blocks')
-# One merge per group would be ~20000 merges here.
+# One merge per group would be ~25000 merges here.
 [ "$merges" -ge 1 ] && [ "$merges" -le 100 ] && echo "batched merges: OK" || echo "batched merges: $merges"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_final_in_order"
