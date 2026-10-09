@@ -20,17 +20,20 @@ INSERT INTO t_cache_metrics SELECT number, toString(number) FROM numbers(10000);
 
 SYSTEM DROP COLUMNS CACHE;
 
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the read,
+-- and its `ProfileEvents` never reach this query's `query_log` row.
+
 -- First read (cache miss expected)
 SELECT sum(id), count() FROM t_cache_metrics
-SETTINGS use_columns_cache = 1, log_comment = '04064_test1_read1';
+SETTINGS use_columns_cache = 1, enable_parallel_replicas = 0, log_comment = '04064_test1_read1';
 
 -- Second read (cache hit expected)
 SELECT sum(id), count() FROM t_cache_metrics
-SETTINGS use_columns_cache = 1, log_comment = '04064_test1_read2';
+SETTINGS use_columns_cache = 1, enable_parallel_replicas = 0, log_comment = '04064_test1_read2';
 
 -- Third read (cache hit expected)
 SELECT sum(id), count() FROM t_cache_metrics
-SETTINGS use_columns_cache = 1, log_comment = '04064_test1_read3';
+SETTINGS use_columns_cache = 1, enable_parallel_replicas = 0, log_comment = '04064_test1_read3';
 
 -- The reads above populated the cache: the current metrics and the system table must expose it.
 SELECT value > 0 FROM system.metrics WHERE metric = 'ColumnsCacheEntries';

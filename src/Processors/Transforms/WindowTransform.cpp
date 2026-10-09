@@ -337,7 +337,8 @@ void WindowTransform::advanceFrameEndCurrentRow()
         // frame_end is a peer; extend over the run of equal ORDER BY values within this block,
         // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
         // so the scan will just return the end of the block.
-        const Int64 peer_group_end_row = findPeerRunEnd(frame_end.block, frame_end.row, rows_end);
+        const Int64 peer_group_end_row
+            = getEqualRangeEndAssumeSorted(blocks.blockAt(frame_end.block).materialized_columns, params.order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
 
         if (peer_group_end_row < rows_end)
         {
@@ -452,22 +453,7 @@ void WindowTransform::advanceFrameEndRangeOffset()
     frame_ended = partition.bounds().fully_visible;
 }
 
-ALWAYS_INLINE Int64 WindowTransform::findPeerRunEnd(Int64 block, Int64 begin, Int64 end)
-{
-    const auto & columns = blocks.blockAt(block).materialized_columns;
-    if (params.order_by_indices.size() < 2)
-        return getEqualRangeEndAssumeSorted(columns, params.order_by_indices, begin, end, 1 /* nan_direction_hint */);
-
-    if (block != peer_runs_block || end != peer_runs_end)
-    {
-        peer_runs.reset(params.order_by_indices.size());
-        peer_runs_block = block;
-        peer_runs_end = end;
-    }
-    return getEqualRangeEndAssumeSorted(peer_runs, columns, params.order_by_indices, begin, end, 1 /* nan_direction_hint */);
-}
-
-RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data)
+RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const
 {
     const RowNumber partition_end = partition.bounds().end;
     need_more_data = false;
@@ -494,7 +480,8 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
 
         // Try to jump over the whole peer group at once: the end of the run of rows equal to `cur` across
         // all ORDER BY columns, within the sorted, partition-bounded range [cur.row, end_bound).
-        const Int64 run_end = findPeerRunEnd(cur.block, cur.row, end_bound);
+        const Int64 run_end = getEqualRangeEndAssumeSorted(
+            blocks.blockAt(cur.block).materialized_columns, params.order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
 
         if (run_end < end_bound)
             return RowNumber{cur.block, run_end};   // a real peer-group boundary inside this block
@@ -539,7 +526,7 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
     return start;
 }
 
-bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group)
+bool WindowTransform::advanceGroupBoundary(RowNumber & pointer, Int64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const
 {
     const RowNumber partition_end = partition.bounds().end;
     chassert(target_group >= 1);

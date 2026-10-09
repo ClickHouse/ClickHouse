@@ -1700,7 +1700,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             std::move(postgresql_replica_settings),
             args.create_query.table_overrides ? args.create_query.table_overrides->clone() : nullptr);
     };
-    factory.registerDatabase("MaterializedPostgreSQL", create_fn, {
+    factory.registerDatabase("MaterializedPostgreSQL", create_fn, mysqlPostgreSQLSecretArguments(3), {
         .supports_arguments = true,
         .supports_settings = true,
         .supports_table_overrides = true,
