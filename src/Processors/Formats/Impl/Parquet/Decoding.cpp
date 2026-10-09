@@ -965,6 +965,8 @@ struct DeltaByteArrayDecoder : public PageDecoder
     /// This encoding is applicable for both BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY.
     std::shared_ptr<StringConverter> string_converter;
     std::shared_ptr<FixedSizeConverter> fixed_size_converter;
+    /// See PageDecoderInfo::makeDecoder. Used only for BYTE_ARRAY when the converter is trivial.
+    const StringValueFilter * value_filter = nullptr;
 
     PaddedPODArray<UInt64> prefixes;
     PaddedPODArray<UInt64> suffixes;
@@ -975,7 +977,15 @@ struct DeltaByteArrayDecoder : public PageDecoder
     MutableColumnPtr temp_column;
     PaddedPODArray<char> temp_buffer;
 
-    DeltaByteArrayDecoder(std::span<const char> data_, std::shared_ptr<StringConverter> string_converter_, std::shared_ptr<FixedSizeConverter> fixed_size_converter_) : PageDecoder(data_), string_converter(std::move(string_converter_)), fixed_size_converter(fixed_size_converter_)
+    DeltaByteArrayDecoder(
+        std::span<const char> data_,
+        std::shared_ptr<StringConverter> string_converter_,
+        std::shared_ptr<FixedSizeConverter> fixed_size_converter_,
+        const StringValueFilter * value_filter_)
+        : PageDecoder(data_)
+        , string_converter(std::move(string_converter_))
+        , fixed_size_converter(fixed_size_converter_)
+        , value_filter(value_filter_)
     {
         for (auto * lengths : {&prefixes, &suffixes})
         {
@@ -994,9 +1004,9 @@ struct DeltaByteArrayDecoder : public PageDecoder
     void skip(size_t num_values) override
     {
         if (fixed_size_converter)
-            decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0);
+            decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
         else
-            decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0);
+            decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
     }
 
     void decode(size_t num_values, IColumn & col, const UInt8 * filter, size_t filter_offset) override
@@ -1011,7 +1021,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                     pass_count += filter[filter_offset + i];
                 if (pass_count == 0)
                 {
-                    decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0);
+                    decodeImpl<true, true>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
                     return;
                 }
             }
@@ -1029,13 +1039,17 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 to = std::span(temp_buffer.data(), temp_buffer.size());
             }
 
-            decodeImpl<false, true>(num_values, nullptr, to.data(), filter, filter_offset);
+            decodeImpl<false, true>(num_values, nullptr, to.data(), filter, filter_offset, nullptr);
 
             if (!direct)
                 fixed_size_converter->convertColumn(to, pass_count, col);
         }
         else
         {
+            /// The full values are reconstructed anyway (each one is a prefix of the previous one and a suffix),
+            /// but the values that do not match the string filter from PREWHERE are not materialized.
+            const StringValueFilter * active_value_filter
+                = value_filter && value_filter->isEnabled() && string_converter->isTrivial() ? value_filter : nullptr;
             if (!filter)
             {
                 bool direct = string_converter->isTrivial();
@@ -1052,7 +1066,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 }
                 size_t initial_size = col_str->size();
                 col_str->reserve(initial_size + num_values);
-                decodeImpl<false, false>(num_values, col_str, nullptr, nullptr, 0);
+                decodeImpl<false, false>(num_values, col_str, nullptr, nullptr, 0, active_value_filter);
                 chassert(col_str->size() == initial_size + num_values);
                 if (!direct)
                     string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, num_values, col);
@@ -1063,7 +1077,7 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 pass_count += filter[filter_offset + i];
             if (pass_count == 0)
             {
-                decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0);
+                decodeImpl<true, false>(num_values, nullptr, nullptr, nullptr, 0, nullptr);
                 return;
             }
             bool direct = string_converter->isTrivial();
@@ -1082,18 +1096,27 @@ struct DeltaByteArrayDecoder : public PageDecoder
                 col_str->getChars().clear();
             }
             col_str->reserve(col_str->size() + pass_count);
-            decodeImpl<false, false>(num_values, col_str, nullptr, filter, filter_offset);
+            decodeImpl<false, false>(num_values, col_str, nullptr, filter, filter_offset, active_value_filter);
             if (!direct)
                 string_converter->convertColumn(std::span(reinterpret_cast<char *>(col_str->getChars().data()), col_str->getChars().size()), col_str->getOffsets().data(), /*separator_bytes*/ 0, pass_count, col);
         }
     }
 
     template <bool skip, bool is_fixed_size>
-    void decodeImpl(size_t num_values, ColumnString * out_str, char * out_fixed_size, const UInt8 * filter, size_t filter_offset)
+    void decodeImpl(
+        size_t num_values,
+        ColumnString * out_str,
+        char * out_fixed_size,
+        const UInt8 * filter,
+        size_t filter_offset,
+        const StringValueFilter * active_value_filter)
     {
         if (num_values > prefixes.size() - idx)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Too few values in page");
         size_t fixed_size = is_fixed_size ? fixed_size_converter->input_size : 0;
+        size_t values_checked = 0;
+        size_t values_replaced = 0;
+        size_t bytes_skipped = 0;
 
         for (size_t i = 0; i < num_values; ++i)
         {
@@ -1120,9 +1143,31 @@ struct DeltaByteArrayDecoder : public PageDecoder
             }
             else if (do_append)
             {
-                out_str->insertData(current_value.data(), current_value.size());
+                if (active_value_filter)
+                {
+                    /// Values that do not match the string filter from PREWHERE are decoded
+                    /// as empty strings (an empty string never matches the filter).
+                    ++values_checked;
+                    if (!current_value.empty() && active_value_filter->match(current_value.data(), current_value.size()))
+                    {
+                        out_str->insertData(current_value.data(), current_value.size());
+                    }
+                    else
+                    {
+                        out_str->insertDefault();
+                        ++values_replaced;
+                        bytes_skipped += current_value.size();
+                    }
+                }
+                else
+                {
+                    out_str->insertData(current_value.data(), current_value.size());
+                }
             }
         }
+
+        if (active_value_filter)
+            active_value_filter->updateStats(values_checked, values_replaced, bytes_skipped);
     }
 };
 
@@ -1326,7 +1371,8 @@ std::unique_ptr<PageDecoder> PageDecoderInfo::makeDecoder(
             {
                 case parq::Type::BYTE_ARRAY:
                 case parq::Type::FIXED_LEN_BYTE_ARRAY:
-                    return std::make_unique<DeltaByteArrayDecoder>(data, string_converter, fixed_size_converter);
+                    return std::make_unique<DeltaByteArrayDecoder>(
+                        data, string_converter, fixed_size_converter, physical_type == parq::Type::BYTE_ARRAY ? string_value_filter : nullptr);
                 default: break;
             }
             break;
@@ -1759,7 +1805,7 @@ void memcpyIntoColumn(const char * data, size_t num_values, size_t value_size, I
     memcpy(to.data(), data, to.size());
 }
 
-template <typename From, typename To>
+template <typename From, typename To, bool to_bool = false>
 static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_t num_values)
 {
     To * to = reinterpret_cast<To *>(to_bytes);
@@ -1768,7 +1814,10 @@ static void convertIntColumnImpl(const char * from_bytes, char * to_bytes, size_
         /// (Can't reinterpret_cast<const From *>(from_bytes) because pointer may be unaligned).
         From x;
         memcpy(&x, from_bytes + i * sizeof(From), sizeof(From));
-        to[i] = static_cast<To>(x);
+        if constexpr (to_bool)
+            to[i] = static_cast<To>(x != 0);
+        else
+            to[i] = static_cast<To>(x);
     }
 }
 
@@ -1803,7 +1852,9 @@ void IntConverter::convertColumn(std::span<const char> data, size_t num_values, 
         chassert(to.size() == num_values * output_size.value());
         /// Signedness doesn't matter here, we just need to copy the first 1 or 2 bytes of each
         /// group of 4 bytes.
-        if (*output_size == 1)
+        if (*output_size == 1 && output_bool)
+            convertIntColumnImpl<UInt32, UInt8, /*to_bool=*/ true>(data.data(), to.data(), num_values);
+        else if (*output_size == 1)
             convertIntColumnImpl<UInt32, UInt8>(data.data(), to.data(), num_values);
         else if (*output_size == 2)
             convertIntColumnImpl<UInt32, UInt16>(data.data(), to.data(), num_values);
@@ -1883,8 +1934,8 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
         return std::nullopt;
     if (!input_signed && field_signed && val > UInt64(INT64_MAX))
         return std::nullopt;
-    if (field_bool && val > 1)
-        return std::nullopt;
+    if (output_bool && val > 1)
+        val = 1;
 
     if (field_ipv4)
     {
