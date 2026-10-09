@@ -36,6 +36,9 @@ namespace Setting
     extern const SettingsBool input_format_orc_filter_push_down;
     extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
     extern const SettingsBool input_format_orc_case_insensitive_column_matching;
+    extern const SettingsBool input_format_parquet_allow_missing_columns;
+    extern const SettingsBool input_format_orc_allow_missing_columns;
+    extern const SettingsBool input_format_arrow_allow_missing_columns;
 }
 
 namespace
@@ -45,7 +48,9 @@ namespace
 /// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
 /// still has rows the query returns when it is not pruned, so a read with another set of enabled
 /// pruning methods must not consult the entries of this one. The column matching settings decide
-/// which physical column a predicate is evaluated against, so they are part of the key as well.
+/// which physical column a predicate is evaluated against, so they are part of the key as well. So are
+/// the settings allowing missing columns: a read that fills a missing column with defaults may cache
+/// a verdict, and a read that must throw for that column would otherwise skip the file instead.
 UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
 {
     SipHash hash;
@@ -57,6 +62,9 @@ UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::input_format_orc_filter_push_down].value);
     hash.update(settings[Setting::input_format_parquet_case_insensitive_column_matching].value);
     hash.update(settings[Setting::input_format_orc_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_parquet_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
     return hash.get64();
 }
 

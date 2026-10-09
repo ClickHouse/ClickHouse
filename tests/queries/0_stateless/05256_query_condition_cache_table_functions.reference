@@ -2,6 +2,8 @@
 0
 0
 CSV over Parquet: exception
+0
+Missing column not allowed: exception
 1
 file_1	0	1
 file_2	1	0
