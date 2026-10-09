@@ -1294,6 +1294,41 @@ void collectAliasDependenciesFromAST(
             collectAliasDependenciesFromAST(child, candidate_names, dependencies);
 }
 
+/// Names an ALIAS expression can read from the table. An identifier whose name or first part is a
+/// parameter of an enclosing lambda reads that parameter, as in the analyzer.
+void collectNamesReadFromTable(const ASTPtr & node, Names & lambda_parameters, NameSet & names)
+{
+    if (!node)
+        return;
+
+    if (const auto * identifier = node->as<ASTIdentifier>())
+    {
+        const auto is_lambda_parameter = [&](const String & name)
+        { return std::find(lambda_parameters.begin(), lambda_parameters.end(), name) != lambda_parameters.end(); };
+
+        if (!is_lambda_parameter(identifier->name()) && !is_lambda_parameter(identifier->name_parts.front()))
+            names.insert(identifier->name());
+        return;
+    }
+
+    if (node->as<ASTSubquery>())
+        return;
+
+    if (const auto * function = node->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        auto parameters = RequiredSourceColumnsMatcher::extractNamesFromLambda(*function);
+        size_t outer_size = lambda_parameters.size();
+        lambda_parameters.insert(lambda_parameters.end(), parameters.begin(), parameters.end());
+        collectNamesReadFromTable(function->arguments->children[1], lambda_parameters, names);
+        lambda_parameters.resize(outer_size);
+        return;
+    }
+
+    for (const auto & child : node->children)
+        if (child)
+            collectNamesReadFromTable(child, lambda_parameters, names);
+}
+
 [[noreturn]] void throwDefaultCycleException(const Strings & cycle_path)
 {
     Strings formatted_cycle = cycle_path;
@@ -1627,11 +1662,12 @@ void ColumnsDescription::checkAliasColumnsAreNotCyclic() const
 
     throwOnDependencyCycle(alias_columns, [&](const String & alias_column)
     {
-        RequiredSourceColumnsVisitor::Data data;
-        RequiredSourceColumnsVisitor(data).visit(get(alias_column).default_desc.expression);
+        Names lambda_parameters;
+        NameSet names;
+        collectNamesReadFromTable(get(alias_column).default_desc.expression, lambda_parameters, names);
 
         NameSet dependencies;
-        for (const auto & name : data.requiredColumns())
+        for (const auto & name : names)
             if (const auto * column = bind_to_column(name); column && column->default_desc.kind == ColumnDefaultKind::Alias)
                 dependencies.insert(column->name);
         return dependencies;

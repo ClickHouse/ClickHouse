@@ -6,6 +6,7 @@ CREATE TABLE t1 (c0 Int32, a String ALIAS toString(b.size), b String ALIAS a) EN
 CREATE TABLE t1 (c0 Int32, b String ALIAS a, a String ALIAS toString(b.size)) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 CREATE TABLE t1 (c0 Int32, t Tuple(x UInt64) ALIAS tuple(t.x)) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 CREATE TABLE t1 (a Int32, `a.b` Tuple(x Int32) ALIAS tuple(`a.b.x`)) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+CREATE TABLE t1 (src Array(Tuple(hash String)), x Tuple(foo Tuple(hash String)) ALIAS tuple(tuple(concat(`x.foo`.hash, arrayStringConcat(arrayMap(`x.foo` -> `x.foo`.hash, src)))))) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 
 CREATE TABLE dst (c0 Int32, c5 String) ENGINE = Memory;
 CREATE MATERIALIZED VIEW mv TO dst (c0 Int32, c5 String ALIAS `c5.size`) AS SELECT 1 AS c0, 'a' AS c5; -- { serverError CYCLIC_ALIASES }
@@ -20,6 +21,7 @@ ALTER TABLE t3 MODIFY COLUMN b String ALIAS a; -- { serverError CYCLIC_ALIASES }
 
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
 ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (c0 Int32, c5 String ALIAS `c5.size`) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
+ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 (s String, a String ALIAS concat(toString(length(s)) AS b, b), b String ALIAS toString(a.size)) ENGINE = Memory; -- { serverError CYCLIC_ALIASES }
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- Not cycles.
@@ -42,3 +44,11 @@ SELECT `a.c` FROM t6;
 CREATE TABLE t7 (id Int32, a Tuple(x Int32) DEFAULT tuple(b.x), b Tuple(x Int32) DEFAULT tuple(a.x)) ENGINE = Memory;
 INSERT INTO t7 (id, a) VALUES (1, tuple(9));
 SELECT * FROM t7;
+
+CREATE TABLE t8 (src Array(Tuple(hash String)), x Tuple(foo Tuple(hash String)) ALIAS tuple(arrayFirst(`x.foo` -> length(`x.foo`.hash) > 0, src))) ENGINE = Memory;
+INSERT INTO t8 (src) VALUES ([tuple(''), tuple('ab')]);
+SELECT x FROM t8;
+
+CREATE TABLE t9 (`n.x` UInt64, n Tuple(x UInt64) ALIAS tuple(`n.x`)) ENGINE = Memory;
+INSERT INTO t9 VALUES (7);
+SELECT n FROM t9;
