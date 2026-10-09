@@ -583,6 +583,8 @@ The `wide` schema stores each metric or profile event in a separate column. It i
 </clickhouse>
 ```
 
+Because the per-metric columns of this schema are `ALIAS` columns, it cannot be used together with a configuration that skips alias columns in system log tables (`default_system_log_flush_policy.skip_alias_columns`, or a table engine which does not support them): the server refuses to start instead of creating a table without the `ProfileEvent_*` and `CurrentMetric_*` columns. The engine settings of the bucketed `Map` serialization are part of the default table definition, so they are not applied when the configuration specifies `<engine>` explicitly.
+
 The `transposed` schema stores data in a format similar to `system.asynchronous_metric_log`, where metrics and events are stored as rows. This schema is useful for low-resource setups because it reduces resource consumption during merges.
 
 Changing `schema_type` for a table that already exists renames the existing table to `metric_log_0` (or the next free number) and creates a new one, the same way as for any other change of the structure of a system log table. The built-in dashboards read `merge('system', '^metric_log')`, so they keep showing the data collected before the change.
