@@ -115,9 +115,11 @@ deadline=$((SECONDS + 60))
 while [ $SECONDS -lt $deadline ]; do
     $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
     retried=$($CLICKHOUSE_CLIENT --max_rows_to_read 0 --query "
-        SELECT count() > 0 FROM system.text_log
+        SELECT countIf(message LIKE 'Failed to use set from cache, key: %') > 0
+           AND countIf(message LIKE 'Building set, key: %') > 0
+        FROM system.text_log
         WHERE event_date >= yesterday() AND logger_name = 'CreatingSetsTransform'
-          AND query_id LIKE concat('${table_uuid}', '::${waiter_2}\\_%') AND message LIKE 'Failed to use set from cache, key: %'")
+          AND query_id LIKE concat('${table_uuid}', '::${waiter_2}\\_%')")
     [ "$retried" = 1 ] && break
     sleep 1
 done

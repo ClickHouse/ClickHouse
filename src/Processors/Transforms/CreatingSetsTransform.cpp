@@ -144,10 +144,12 @@ void CreatingSetsTransform::startSubquery()
                 {
                     LOG_TRACE(log, "Waiting for set to be built by another thread, key: {}", set_and_key->key);
                     SharedSet set_built_by_another_thread = std::move(std::get<1>(from_cache));
-                    /// Another task builds the set, so wait in slices to observe the cancellation of this one.
+                    /// Another task builds the set, so wait in slices, and check once more when it is ready, to observe
+                    /// the cancellation of this one.
                     while (set_built_by_another_thread.wait_for(std::chrono::milliseconds(100)) != std::future_status::ready)
                         CurrentThread::checkIfNotCancelled();
                     const SetPtr & ready_set = set_built_by_another_thread.get();
+                    CurrentThread::checkIfNotCancelled();
                     if (!ready_set)
                     {
                         LOG_TRACE(log, "Failed to use set from cache, key: {}", set_and_key->key);
