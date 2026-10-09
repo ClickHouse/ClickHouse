@@ -820,14 +820,31 @@ void transformColumnsWithSharedIndex(
         positions);
 }
 
+namespace
+{
+
+/// nested rows between the smallest and the largest index, an ARRAY JOIN window refers only to a part of its block
+size_t getReferencedRowsSpan(const ColumnReplicated & column)
+{
+    if (column.empty())
+        return 0;
+    Field min;
+    Field max;
+    column.getIndexesColumn()->getExtremes(min, max, 0, column.size());
+    return max.safeGet<UInt64>() - min.safeGet<UInt64>() + 1;
+}
+
+}
+
 ColumnPtr convertToFullColumnIfReplicationNotUseful(const ColumnPtr & column, bool with_size_check)
 {
     if (!column->isReplicated())
         return column;
 
     const auto & replicated = typeid_cast<const ColumnReplicated &>(*column);
-    /// Materialize if the type doesn't benefit from lazy replication, or if nested data isn't smaller than output.
-    if (!isLazyReplicationUseful(replicated.getNestedColumn()) || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size()))
+    /// Materialize if the type doesn't benefit from lazy replication, or if the referenced nested data isn't smaller than output.
+    if (!isLazyReplicationUseful(replicated.getNestedColumn())
+        || (with_size_check && replicated.getNestedColumn()->size() >= replicated.size() && getReferencedRowsSpan(replicated) >= replicated.size()))
         return replicated.convertToFullColumnIfReplicated();
 
     return column;
