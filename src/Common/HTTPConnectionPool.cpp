@@ -518,13 +518,6 @@ private:
         {
             Session::close();
             forgetSocketIdentity();
-            /// The socket published for the request in flight - by `sendRequest`, before Poco found
-            /// out that the borrowed connection was dead - has just been dropped. Unpublish it
-            /// before anything below can throw: on a failed reconnect the request never reaches any
-            /// socket, and the row the caller then writes for the error must not claim the one that
-            /// was discarded. On a successful reconnect the publish at the end of this function puts
-            /// the replacement in its place.
-            clearCurrentHTTPConnectionInfo();
 
             if (auto lock = pool.lock())
             {
@@ -542,17 +535,13 @@ private:
             notifySocketInode();
 
             /// Poco can reconnect from inside sendRequest when the borrowed connection turns out
-            /// to be dead. Publish again so the log describes the socket that actually carried the
-            /// request, not the one that was discarded.
-            ///
-            /// Re-sample the idle time as well: the connection we just took from the pool may have
-            /// been sitting there far longer than the sample `assignFrom` copied along with it,
-            /// which belongs to that socket's previous request.
+            /// to be dead. Re-sample the idle time for the socket that is going to carry the
+            /// request: the connection we just took from the pool may have been sitting there far
+            /// longer than the sample `assignFrom` copied along with it, which belongs to that
+            /// socket's previous request. The connection itself is published by `sendRequest`
+            /// once the request has gone out, so it describes this socket, not the discarded one.
             if (isHTTPConnectionInfoCaptureEnabled())
-            {
                 sampleIdleTime();
-                publishConnectionInfo();
-            }
         }
 
         String getTarget() const
@@ -607,10 +596,17 @@ private:
             /// Sampled before Poco's sendRequest, which updates the session's last-request
             /// timestamp. Only for a request that is going to be logged: the pool is shared by
             /// many callers that never read it, and they should not pay for the sampling.
-            if (isHTTPConnectionInfoCaptureEnabled())
+            ///
+            /// The connection is published only after Poco's sendRequest returns, i.e. once the
+            /// request has actually been written to the socket. Anything that throws before that -
+            /// a failed reconnect of a dead keep-alive socket, the IO scheduler refusing the
+            /// request in the data hooks - leaves the slot empty, so the row the caller writes for
+            /// the error does not claim a connection that never carried it.
+            const bool capture_connection_info = isHTTPConnectionInfoCaptureEnabled();
+            if (capture_connection_info)
             {
                 sampleIdleTime();
-                publishConnectionInfo();
+                beginHTTPConnectionInfoRequest();
             }
 
             // Set data hooks for IO scheduling
@@ -635,6 +631,8 @@ private:
 
             std::ostream & result = Session::sendRequest(request, connect_time, first_byte_time);
             chassert(result.exceptions() & std::ios::badbit);
+            if (capture_connection_info)
+                publishConnectionInfo();
             ++requests_on_socket;
 
             request_stream = &result;

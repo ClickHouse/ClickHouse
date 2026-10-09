@@ -7,7 +7,7 @@ namespace DB
 
 /// Identity and age of the HTTP connection that carried one request.
 ///
-/// Written by the pooled session just before the request goes out, then taken — once — by
+/// Written by the pooled session right after the request goes out, then taken — once — by
 /// whoever logs that request (currently `system.blob_storage_log`), inside an
 /// `HTTPConnectionInfoScope` that the logging code opens around both. The handoff is a
 /// thread-local because Poco's HTTP client is synchronous: the request and the log entry
@@ -101,16 +101,15 @@ private:
 /// through the shared pool - do not pay for it.
 bool isHTTPConnectionInfoCaptureEnabled();
 
-/// Publish the connection that is about to serve a request on this thread. Called by the pooled
-/// session; does nothing outside of an `HTTPConnectionInfoScope`.
-void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info);
+/// Note that a request is about to be issued on this thread, and drop whatever was published for
+/// the previous one. Called by the pooled session before it tries to send the request, so that an
+/// attempt that fails before reaching the wire still counts towards the requests the entry spans,
+/// while leaving nothing published. Does nothing outside of an `HTTPConnectionInfoScope`.
+void beginHTTPConnectionInfoRequest();
 
-/// Drop whatever is published on this thread, without reading it. Called by the pooled session
-/// when the connection it published for the request in flight is discarded before that request
-/// reaches the wire — a borrowed keep-alive socket that turns out to be dead. The row the caller
-/// writes for such a failure has to report zeroes rather than the identity of a socket that never
-/// carried it.
-void clearCurrentHTTPConnectionInfo();
+/// Publish the connection that has just carried a request on this thread. Called by the pooled
+/// session once the request has been sent; does nothing outside of an `HTTPConnectionInfoScope`.
+void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info);
 
 /// Return the info for the request made on this thread, and clear it. Clearing is deliberate: a
 /// batched delete writes one entry per object for a single request, and only the first of them

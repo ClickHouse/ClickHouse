@@ -48,23 +48,23 @@ bool isHTTPConnectionInfoCaptureEnabled()
     return capture_connection_info;
 }
 
+void beginHTTPConnectionInfoRequest()
+{
+    if (!capture_connection_info)
+        return;
+
+    /// Counted per request rather than per socket: a dead keep-alive socket replaced by a reconnect
+    /// inside one `sendRequest` is still one request, and does not make the entry ambiguous.
+    ++requests_in_scope;
+    current_connection_info = {};
+}
+
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info)
 {
     if (!capture_connection_info)
         return;
 
-    ++requests_in_scope;
     current_connection_info = info;
-}
-
-void clearCurrentHTTPConnectionInfo()
-{
-    /// The request this connection was published for never reached the wire, so it does not count
-    /// as one of the requests the entry spans - otherwise a dead keep-alive socket replaced by a
-    /// successful reconnect, which is one request over one socket, would look ambiguous.
-    if (requests_in_scope)
-        --requests_in_scope;
-    current_connection_info = {};
 }
 
 HTTPConnectionInfo takeCurrentHTTPConnectionInfo()
