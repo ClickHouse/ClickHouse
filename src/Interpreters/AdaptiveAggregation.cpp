@@ -11,6 +11,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationSealedChunks;
     extern const Event AdaptiveAggregationBucketsRetired;
+    extern const Event AdaptiveAggregationStagedChunkSplits;
 }
 
 namespace DB
@@ -55,6 +56,7 @@ void Aggregator::initAdaptiveSession(AggregatedDataVariants & local_result, Adap
     early_drain_variants->key_sizes = key_sizes;
     early_drain_variants->init(convertToTwoLevelTypeIfPossible(local_result.type));
 
+    shared.drain_type = early_drain_variants->type;
     shared.early_drain_variants = std::move(early_drain_variants);
     shared.initialized.store(true, std::memory_order_release);
 }
@@ -64,6 +66,31 @@ void Aggregator::publishStagedChunk(
 {
     chassert(block->wellFormed());
 
+    /// The drains claim chunks whole, so a chunk is never let into the backlogs larger than
+    /// the part its claim is bounded by (see `splitStagedChunkAtPartBound`).
+    auto pieces = splitStagedChunkAtPartBound(shared, *block);
+    if (pieces.empty())
+    {
+        enqueueStagedChunk(shared, std::move(block));
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedChunkSplits);
+    LOG_TRACE(
+        log,
+        "Adaptive aggregation: split a staged chunk of {} records into {} pieces at the part bound",
+        block->keys.size(),
+        pieces.size());
+    block.reset();
+    for (auto & piece : pieces)
+    {
+        chassert(piece->wellFormed());
+        enqueueStagedChunk(shared, std::move(piece));
+    }
+}
+
+void Aggregator::enqueueStagedChunk(AdaptiveAggregationSession & shared, MutableStagedChunkPtr block) const
+{
     /// Prepared here, on the publishing thread, so the chunk is immutable once any bucket can
     /// see it.
     if (std::holds_alternative<StagedChunk::AggregatePayload>(block->payload))

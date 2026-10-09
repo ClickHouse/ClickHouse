@@ -754,3 +754,54 @@ TEST(SchedulerTimeSharedWorkloadNode, UpdateThrottlerMaxBurst)
     t.process(start + std::chrono::seconds(100500));
     t.consumed("all", 3);
 }
+
+TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreDeactivateBelowInflight)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    // Child with a cost semaphore (max_bytes_inflight => SemaphoreConstraint max_cost).
+    auto a = t.createUnifiedNode("A", all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 100});
+
+    // Keep 20 bytes in-flight (dequeued, not finished) and one request still queued so the node stays active.
+    t.enqueue(a, {10, 10, 10});
+    t.dequeue(2);
+    t.consumed("A", 20);
+
+    // Lower the semaphore limit below the in-flight amount: active() goes true -> false while the child
+    // queue is still active, taking the deactivation branch of SemaphoreConstraint::updateConstraints.
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 10});
+}
+
+TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreCancelsStaleActivation)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 20});
+
+    // Fill the cost semaphore to its limit (20 == max) so it is inactive, with one request still queued.
+    t.enqueue(a, {10, 10, 10});
+    ResourceRequest * r1 = t.getRoot().dequeueRequest().first;
+    ResourceRequest * r2 = t.getRoot().dequeueRequest().first;
+    t.processEvents();
+
+    // finishRequest brings it back under the limit -> queues an activation for the semaphore itself.
+    // Do NOT process events, so that activation stays pending in the EventQueue.
+    r1->finish();
+
+    // Lower the limit below the in-flight amount before the pending activation is processed.
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 5});
+
+    // Process the pending activation. Without cancelling it in the deactivation branch it would
+    // re-activate the semaphore under the new lower limit (it would admit one request over the bound).
+    t.processEvents();
+    EXPECT_FALSE(t.getRoot().isActive());
+
+    // Drain cleanly: restore a high limit, flush the queue, free the retained requests.
+    t.updateUnifiedNode(a, all, all, {.priority = Priority{}, .precedence = Priority{}, .max_bytes_inflight = 1000});
+    t.processEvents();
+    t.dequeue();
+    delete r1;
+    delete r2;
+}

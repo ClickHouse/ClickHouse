@@ -9,9 +9,12 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -83,7 +86,7 @@ ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
     };
 }
 
-static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
+static ASTPtr tryParseDDLQuery(const ContextPtr & context, const DDLTask & task)
 {
     const char * begin = task.entry.query.data();
     const char * end = begin + task.entry.query.size();
@@ -104,19 +107,42 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
         if (e.code() == ErrorCodes::SYNTAX_ERROR)
         {
             /// ignore parse error and present available information
-            return "";
+            return nullptr;
         }
         throw;
     }
 
-    String cluster_name;
-    if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
-        cluster_name = query_on_cluster->cluster;
-
-    return cluster_name;
+    return query;
 }
 
-static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const DDLTask & task, const String & cluster_name, UInt64 query_create_time_ms)
+static String clusterNameFromDDLQuery(const ASTPtr & query)
+{
+    if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
+        return query_on_cluster->cluster;
+
+    return "";
+}
+
+/// The entry in Keeper keeps the real values, because the hosts have to execute the query. Hide the
+/// secrets on the way out instead, the way `system.tables.create_table_query` does.
+static String queryForDisplay(const ContextPtr & context, const DDLTask & task, const ASTPtr & query)
+{
+    if (query)
+        return format({.ctx = context, .query = *query});
+
+    /// Nothing parsed, so there is no AST to hide a secret in. `executeQuery` falls back to the
+    /// masking rules for a query it could not parse either.
+    return wipeSensitiveDataAndCutToLength(task.entry.query, 0, /* wipe_sensitive */ true);
+}
+
+static void fillCommonColumns(
+    MutableColumns & res_columns,
+    size_t & col,
+    const DDLTask & task,
+    const String & cluster_name,
+    const String & query_for_display,
+    bool show_secrets,
+    UInt64 query_create_time_ms)
 {
     /// entry
     res_columns[col++]->insert(task.entry_name);
@@ -144,16 +170,20 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
     res_columns[col++]->insert(cluster_name);
 
     /// query
-    res_columns[col++]->insert(task.entry.query);
+    res_columns[col++]->insert(query_for_display);
 
     Map settings_map;
     if (task.entry.settings)
     {
         for (const auto & change : *task.entry.settings)
         {
+            String value = fieldToString(change.value);
+            if (!show_secrets)
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+
             Tuple pair;
             pair.push_back(change.name);
-            pair.push_back(fieldToString(change.value));
+            pair.push_back(std::move(value));
             settings_map.push_back(std::move(pair));
         }
     }
@@ -238,6 +268,7 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     auto component_guard = Coordination::setCurrentComponent("StorageSystemDDLWorkerQueue::fillData");
+    const bool show_secrets = canDisplaySecrets(context);
     auto & ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
     zkutil::ZooKeeperPtr zookeeper = ddl_worker.getZooKeeperFromContext();
@@ -281,11 +312,13 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             throw;
         }
 
-        String cluster_name = clusterNameFromDDLQuery(context, task);
+        ASTPtr query = tryParseDDLQuery(context, task);
+        String cluster_name = clusterNameFromDDLQuery(query);
         UInt64 query_create_time_ms = task_info.stat.ctime;
 
         size_t col = 0;
-        fillCommonColumns(res_columns, col, task, cluster_name, query_create_time_ms);
+        fillCommonColumns(
+            res_columns, col, task, cluster_name, queryForDisplay(context, task, query), show_secrets, query_create_time_ms);
 
         /// At first we process finished nodes, to avoid duplication if some host was active
         /// and suddenly become finished during status dirs listing.

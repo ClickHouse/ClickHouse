@@ -73,6 +73,31 @@ inline bool maskURIPassword(std::string * uri)
     return false;
 }
 
+/** The offset just past the `://` of a value that starts with an RFC 3986 scheme, `npos` otherwise.
+  */
+inline size_t findURIAuthority(std::string_view uri)
+{
+    static constexpr std::string_view SEPARATOR = "://";
+
+    /// `^[a-zA-Z][a-zA-Z0-9+.-]*` - the scheme. The character classes are spelled out rather than
+    /// taken from `<cctype>`, which depends on the locale.
+    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
+    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
+
+    if (uri.empty() || !is_letter(uri[0]))
+        return std::string_view::npos;
+
+    size_t scheme_end = 1;
+    while (scheme_end < uri.length()
+           && (is_letter_or_digit(uri[scheme_end]) || uri[scheme_end] == '+' || uri[scheme_end] == '.' || uri[scheme_end] == '-'))
+        ++scheme_end;
+
+    if (uri.compare(scheme_end, SEPARATOR.length(), SEPARATOR) != 0)
+        return std::string_view::npos;
+
+    return scheme_end + SEPARATOR.length();
+}
+
 /** Mask the userinfo part of a URL: `scheme://anything@rest` becomes `scheme://[HIDDEN]@rest`.
   * Returns whether anything was masked.
   *
@@ -83,26 +108,11 @@ inline bool maskURIPassword(std::string * uri)
   */
 inline bool maskURIUserinfo(std::string & url)
 {
-    static constexpr std::string_view SEPARATOR = "://";
-
-    /// `^[a-zA-Z][a-zA-Z0-9+.-]*` - the scheme. The character classes are spelled out rather than
-    /// taken from `<cctype>`, which depends on the locale.
-    auto is_letter = [](char c) { return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z'); };
-    auto is_letter_or_digit = [&](char c) { return is_letter(c) || ('0' <= c && c <= '9'); };
-
-    if (url.empty() || !is_letter(url[0]))
-        return false;
-
-    size_t scheme_end = 1;
-    while (scheme_end < url.length()
-           && (is_letter_or_digit(url[scheme_end]) || url[scheme_end] == '+' || url[scheme_end] == '.' || url[scheme_end] == '-'))
-        ++scheme_end;
-
-    if (url.compare(scheme_end, SEPARATOR.length(), SEPARATOR) != 0)
+    size_t authority_begin = findURIAuthority(url);
+    if (authority_begin == std::string::npos)
         return false;
 
     /// `[^/?#]+@` - the userinfo, greedy, so it ends at the last '@' before the path.
-    size_t authority_begin = scheme_end + SEPARATOR.length();
     size_t authority_end = url.find_first_of("/?#", authority_begin);
     if (authority_end == std::string::npos)
         authority_end = url.length();
@@ -152,32 +162,55 @@ inline bool maskPresignedURLParameters(std::string & url)
         return false;
     };
 
-    bool masked = false;
+    static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
+
+    /// Built in one pass rather than replacing in place: a replacement of a different length shifts
+    /// the rest of the string, which is quadratic in the number of masked parameters. A setting value
+    /// reaches this from the logging path and its length is chosen by whoever set the setting.
+    std::string result;
+    size_t copied = 0;
+
     for (size_t position = url.find_first_of("?&"); position != std::string::npos;
          position = url.find_first_of("?&", position + 1))
     {
         size_t name_begin = position + 1;
-        size_t equal_sign = url.find('=', name_begin);
-        if (equal_sign == std::string::npos)
-            break;
 
-        if (!is_secret_parameter(std::string_view(url).substr(name_begin, equal_sign - name_begin)))
+        /// Bounded by the next separator instead of scanning on to the next '=', which is quadratic
+        /// on a string of separators. None of the names above contains one, so a name that runs into
+        /// a separator is not one of them anyway.
+        size_t name_end = url.find_first_of("=?&", name_begin);
+        if (name_end == std::string::npos)
+            break;
+        if (url[name_end] != '=')
+        {
+            /// Rescan from the separator itself, so it is not skipped.
+            position = name_end - 1;
+            continue;
+        }
+
+        if (!is_secret_parameter(std::string_view(url).substr(name_begin, name_end - name_begin)))
             continue;
 
         /// `[^&#]*` - the value.
-        size_t value_begin = equal_sign + 1;
+        size_t value_begin = name_end + 1;
         size_t value_end = url.find_first_of("&#", value_begin);
         if (value_end == std::string::npos)
             value_end = url.length();
 
-        static constexpr std::string_view REPLACEMENT = "[HIDDEN]";
-        url.replace(value_begin, value_end - value_begin, REPLACEMENT);
-        masked = true;
-        /// Continue after the replacement, not inside it.
-        position = value_begin + REPLACEMENT.length() - 1;
+        result.append(url, copied, value_begin - copied);
+        result.append(REPLACEMENT);
+        copied = value_end;
+
+        /// Continue after the value, not inside it.
+        position = value_end - 1;
     }
 
-    return masked;
+    if (copied == 0)
+        return false;
+
+    result.append(url, copied, std::string::npos);
+    url = std::move(result);
+    return true;
 }
 
 }

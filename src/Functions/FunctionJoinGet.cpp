@@ -8,6 +8,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Storages/StorageJoin.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/TableLockHolder.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
@@ -168,7 +169,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     const auto storage_id = context->resolveStorageID({qualified_name.database, qualified_name.table});
 
     auto table = DatabaseCatalog::instance().getTable(storage_id, std::const_pointer_cast<Context>(context));
-    auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
+    auto storage_join = castStorage<StorageJoin>(table, DeferredTable::Load);
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
 
@@ -232,26 +233,27 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [s
     {
         "Usage example",
         R"(
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGet(id_val, 'val', toUInt32(1));
+SELECT joinGet(db_test.id_val, 'val', toUInt32(1));
         )",
         R"(
-┌─joinGet('id_val', 'val', toUInt32(1))─┐
-│                                    11 │
-└───────────────────────────────────────┘
+┌─joinGet(db_test.id_val, 'val', toUInt32(1))─┐
+│                                          11 │
+└─────────────────────────────────────────────┘
         )"
     },
     {
         "Usage with table from current database",
         R"(
+USE db_test;
 SELECT joinGet(id_val, 'val', toUInt32(2));
         )",
         R"(
-┌─joinGet('id_val', 'val', toUInt32(2))─┐
-│                                    12 │
-└───────────────────────────────────────┘
+┌─joinGet(id_val, 'val', toUInt32(2))─┐
+│                                  12 │
+└─────────────────────────────────────┘
         )"
     },
     {
@@ -260,12 +262,12 @@ SELECT joinGet(id_val, 'val', toUInt32(2));
 CREATE TABLE some_table (id1 UInt32, id2 UInt32, name String) ENGINE = Join(ANY, LEFT, id1, id2);
 INSERT INTO some_table VALUES (1, 11, 'a') (2, 12, 'b') (3, 13, 'c');
 
-SELECT joinGet(some_table, 'name', toUInt32(1), toUInt32(11));
+SELECT joinGet(some_table, 'name', 1, 11);
         )",
         R"(
-┌─joinGet('some_table', 'name', toUInt32(1), toUInt32(11))─┐
-│ a                                                        │
-└──────────────────────────────────────────────────────────┘
+┌─joinGet(some_table, 'name', 1, 11)─┐
+│ a                                  │
+└────────────────────────────────────┘
         )"
     }
     };
@@ -293,15 +295,15 @@ Only supports tables created with the `ENGINE = Join(ANY, LEFT, <join_keys>)` [s
     {
         "Usage example",
         R"(
-CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO id_val VALUES (1,11)(2,12)(4,13);
+CREATE TABLE db_test.id_val(`id` UInt32, `val` UInt32) ENGINE = Join(ANY, LEFT, id);
+INSERT INTO db_test.id_val VALUES (1,11)(2,12)(4,13);
 
-SELECT joinGetOrNull(id_val, 'val', toUInt32(1)), joinGetOrNull(id_val, 'val', toUInt32(999));
+SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.id_val, 'val', toUInt32(999));
         )",
         R"(
-┌─joinGetOrNull('id_val', 'val', toUInt32(1))─┬─joinGetOrNull('id_val', 'val', toUInt32(999))─┐
-│                                          11 │                                          ᴺᵁᴸᴸ │
-└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+┌─joinGetOrNull(db_test.id_val, 'val', toUInt32(1))─┬─joinGetOrNull(db_test.id_val, 'val', toUInt32(999))─┐
+│                                                11 │                                                ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
         )"
     }
     };

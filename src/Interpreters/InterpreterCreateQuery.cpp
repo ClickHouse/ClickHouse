@@ -37,7 +37,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -51,9 +50,11 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Storages/WindowView/StorageWindowView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -64,7 +65,6 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/replaceLegacyToTime.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -151,7 +151,6 @@ namespace Setting
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
-    extern const SettingsBool use_legacy_to_time;
 }
 
 namespace ServerSetting
@@ -200,47 +199,6 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
-
-namespace
-{
-
-/// Substitutes SQL UDFs the way `createTable` does, but never into an engine: an engine is an
-/// `ASTFunction` too, and a UDF may carry an engine's name, so substituting there would replace the
-/// engine with a function body. Key expressions live in several places (storage, a view's inner
-/// engine, a projection's own `ORDER BY`), so the walk covers the query rather than a list of slots.
-void substituteUserDefinedFunctionsOutsideEngines(ASTPtr & ast, const ContextPtr & context)
-{
-    for (auto & child : ast->children)
-    {
-        if (!child)
-            continue;
-
-        const auto * storage = ast->as<ASTStorage>();
-        if (storage && child.get() == storage->engine)
-            continue;
-
-        const IAST * old_ptr = child.get();
-        substituteUserDefinedFunctionsOutsideEngines(child, context);
-        if (child.get() != old_ptr)
-            ast->updatePointerToChild(old_ptr, child);
-    }
-
-    if (ast->as<ASTFunction>() && !ast->as<ASTStorage>())
-    {
-        ASTPtr expression = ast;
-        UserDefinedSQLFunctionVisitor::visit(expression, context);
-        ast = expression;
-    }
-}
-
-void normalizeLegacyToTimeInCreateQuery(ASTPtr & query, const ContextPtr & context)
-{
-    if (!UserDefinedSQLFunctionFactory::instance().empty())
-        substituteUserDefinedFunctionsOutsideEngines(query, context);
-    replaceLegacyToTime(*query);
-}
-
-}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -384,7 +342,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
+    DatabasePtr database = DatabaseFactory::instance().get(
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -873,7 +832,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     {
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
-        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+        /// A lazily loaded source reports only its columns, so the indices, projections, constraints
+        /// and comment copied below would silently come out empty.
+        StoragePtr as_storage = resolveStorageProxyLoading(
+            DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext()));
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -899,7 +861,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
             /// Note: only supports the source table engine is using the new syntax.
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(as_storage.get()))
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(as_storage, DeferredTable::Load).get())
             {
                 if (merge_tree_data->format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
                 {
@@ -1448,7 +1410,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.is_dictionary && getContext()->getSettingsRef()[Setting::restore_replace_external_dictionary_source_to_null])
         setNullDictionarySourceIfExternal(create);
 
-    if (create.is_dictionary || create.is_ordinary_view)
+    if (create.is_dictionary || create.is_ordinary_view || create.is_window_view)
         return;
 
     if (create.isTemporary())
@@ -1519,6 +1481,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 qualified_name,
                 as_create.getTargetTableID(ViewTarget::To).getFullTableName());
         }
+
+        if (as_create.is_window_view)
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Window View", qualified_name);
 
         if (as_create.is_dictionary)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a Dictionary", qualified_name);
@@ -1705,6 +1670,16 @@ bool isReplicated(const ASTStorage & storage)
         return false;
     const auto & storage_name = storage.engine->name;
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
+}
+
+/// The drop privilege matching the kind of an existing table.
+AccessType getDropAccessType(const IStorage & table)
+{
+    if (table.isView())
+        return AccessType::DROP_VIEW;
+    if (table.isDictionary())
+        return AccessType::DROP_DICTIONARY;
+    return AccessType::DROP_TABLE;
 }
 
 }
@@ -1919,7 +1894,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Query-construction settings (`select`/`filter`/`order`/`sort`/`limit`/`offset`/`page`) "
                 "are not supported in a {} definition. Specify them on the query that reads the view instead.",
-                create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
+                create.is_materialized_view ? "MATERIALIZED VIEW" : (create.is_window_view ? "WINDOW VIEW" : "VIEW"));
 
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor::visit(*create.select);
@@ -1945,39 +1920,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
-
-    /// The definition persisted below must not depend on the session setting, because reloads and
-    /// replicas re-derive the key type from the stored text. This must happen after normalization:
-    /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
-    /// definition (short attach, metadata load, backup restore) already records its spelling.
-    if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
-        && getContext()->getSettingsRef()[Setting::use_legacy_to_time]
-        && replaceLegacyToTime(*query_ptr))
-    {
-        /// `properties` was derived before the rewrite, and the live table below is built from it while
-        /// the metadata written to disk comes from the rewritten query. `CREATE TABLE ... AS src` copies
-        /// the source column expressions verbatim, so a `DEFAULT`, `MATERIALIZED`, `ALIAS` or column
-        /// `TTL` mentioning `toTime` would keep the source spelling in memory while the metadata records
-        /// `toTimeWithFixedDate`, and the same insert would produce different values before and after a
-        /// reload. The expressions are rewritten in place: re-deriving the whole `ColumnsDescription`
-        /// is not idempotent for the `AS SELECT` / `AS src` branches — `getColumnsDescription` would
-        /// flatten `Nested` columns that those branches deliberately keep intact.
-        for (const auto & column : properties.columns)
-        {
-            if (column.default_desc.expression)
-                replaceLegacyToTime(*column.default_desc.expression);
-            if (column.ttl)
-                replaceLegacyToTime(*column.ttl);
-        }
-
-        /// Constraints need the same treatment: `MergeTree` reparses them from the rewritten AST, but most
-        /// engines take `properties.constraints` verbatim, so a `CHECK` or `ASSUME` mentioning `toTime`
-        /// would be enforced with the session spelling in memory and with `toTimeWithFixedDate` after a
-        /// reload, accepting and rejecting the same row on the two sides of a restart.
-        if (create.columns_list)
-            properties.constraints
-                = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
-    }
 
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
@@ -2075,7 +2017,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// retry used to report `TABLE_ALREADY_EXISTS` instead of the access error). This reuses the same
     /// create-temporary-then-publish machinery as CREATE OR REPLACE (doCreateOrReplaceTable). On non-Atomic
     /// databases (getUUID() == Nil, e.g. Ordinary) we keep the previous behavior: the table is created first
-    /// and an orphan is left if the INSERT SELECT fails. Materialized views are excluded (they can own
+    /// and an orphan is left if the INSERT SELECT fails. Materialized/window views are excluded (they can own
     /// an inner table and carry source-view dependencies, so they keep the previous behavior for now).
     ///
     /// As a consequence, the final table name is only registered by the publishing RENAME, so the populating
@@ -2086,7 +2028,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// visible only once fully populated) is covered by
     /// `04547_create_as_select_destination_not_visible_during_populate`.
     if (create.isCreateQueryWithImmediateInsertSelect()
-        && !create.is_materialized_view
+        && !create.is_materialized_view && !create.is_window_view
         && database && database->getUUID() != UUIDHelpers::Nil)
     {
         chassert(!ddl_guard);
@@ -2514,7 +2456,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
-        bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
+        bool is_replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip) != nullptr;
         if (!is_replicated_storage && res->storesDataOnDisk() && database && database->getEngineName() == "Replicated")
             throw Exception(ErrorCodes::UNKNOWN_STORAGE,
                             "Only tables with a Replicated engine "
@@ -2526,7 +2468,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                         "ATTACH ... FROM ... query is not supported for {} table engine, "
                         "because such tables do not store any data on disk. Use CREATE instead.", res->getName());
 
-    auto * replicated_storage = typeid_cast<StorageReplicatedMergeTree *>(res.get());
+    /// `res` is the storage this query just built, and for a table function it is a proxy that
+    /// resolving would run during CREATE.
+    auto * replicated_storage = castStorage<StorageReplicatedMergeTree>(res, DeferredTable::Skip).get();
     if (replicated_storage)
     {
         const auto probability = getContext()->getSettingsRef()[Setting::create_replicated_merge_tree_fault_injection_probability];
@@ -2912,12 +2856,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                 {
                     /// The replaced table is dropped after the swap, under an internal temporary name that
                     /// grants cannot cover, so check the drop privilege for its kind here, on its real name.
-                    AccessType drop_access = AccessType::DROP_TABLE;
-                    if (to_drop->isView())
-                        drop_access = AccessType::DROP_VIEW;
-                    else if (to_drop->isDictionary())
-                        drop_access = AccessType::DROP_DICTIONARY;
-                    current_context->checkAccess(drop_access, to_drop_id);
+                    current_context->checkAccess(getDropAccessType(*to_drop), to_drop_id);
                     to_drop->checkTableSizeBelowDropLimit(current_context);
                 }
             });
@@ -3036,7 +2975,13 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
     {
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
-        insert->select = create.select->clone();
+        if (create.is_window_view)
+        {
+            auto table = DatabaseCatalog::instance().getTable(insert->table_id, getContext());
+            insert->select = typeid_cast<StorageWindowView *>(table.get())->getSourceTableSelectQuery();
+        }
+        else
+            insert->select = create.select->clone();
 
         InterpreterInsertQuery interpreter(
             insert,
@@ -3051,7 +2996,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
 
     /// If the query is a CREATE TABLE .. CLONE AS ..., attach all partitions of the source table to the newly created table.
     if (create.is_clone_as && !as_table_saved.empty() && !create.is_create_empty && !create.is_ordinary_view
-        && (!create.is_materialized_view || create.is_populate))
+        && (!(create.is_materialized_view || create.is_window_view) || create.is_populate))
     {
         String as_database_name = getContext()->resolveDatabase(as_database_saved);
 
@@ -3097,7 +3042,7 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
     /// swap (and with the old view's still-live subscription) is not handled here, so those queries keep
     /// the legacy non-atomic population; only the plain CREATE flow is atomic.
     bool applies = create.isCreateQueryWithImmediateInsertSelect()
-        && create.is_materialized_view && !create.is_clone_as && !internal
+        && create.is_materialized_view && !create.is_window_view && !create.is_clone_as && !internal
         && !create.replace_table && !create.replace_view
         && getContext()->getSettingsRef()[Setting::materialized_views_populate_atomically];
 
@@ -3161,7 +3106,8 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
     if (context->hasQueryContext())
         context->getQueryContext()->dropStorageCacheEntry(*ref_dependencies.mv_from_dependency);
 
-    auto source = DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context);
+    auto source = resolveStorageProxyLoading(
+        DatabaseCatalog::instance().tryGetTable(*ref_dependencies.mv_from_dependency, context));
 
     /// The view's SELECT was validated against the source before the view was published, so the source
     /// existed then; not finding it now means it was dropped, renamed or exchanged away in the window
@@ -3508,7 +3454,7 @@ BlockIO InterpreterCreateQuery::execute()
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
-        auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
+        auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
@@ -3516,32 +3462,6 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
-
-            /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
-            /// so a worker there would resolve `toTime` with its own default.
-            if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
-                && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
-            {
-                /// The source definition of `AS` is materialized on the worker, so the initiator cannot
-                /// rewrite it here. Starting with `SETTINGS_IN_ZK_VERSION` the entry carries the query
-                /// settings, hence the worker sees `use_legacy_to_time` and materializes exactly what a
-                /// local `CREATE` would; only `OLDEST_VERSION` drops the setting. `CLONE AS` stays rejected
-                /// for every version of this branch, because the worker-side rewrite skips clones on
-                /// purpose (a re-spelled key would make the partition copy see a different structure), so
-                /// carrying the setting does not make the stored spelling unambiguous.
-                if (!create.as_table.empty()
-                    && (create.is_clone_as || on_cluster_version == DDLLogEntry::OLDEST_VERSION))
-                {
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "CREATE TABLE ... {} ON CLUSTER with distributed_ddl_entry_format_version = {} "
-                        "and use_legacy_to_time = 1 is not supported",
-                        create.is_clone_as ? "CLONE AS" : "AS",
-                        on_cluster_version);
-                }
-
-                normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
-            }
 
             return executeQueryOnCluster(create);
         }
@@ -3600,6 +3520,16 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
                 required_access.emplace_back(AccessType::DROP_TABLE, create.getDatabase(), create.getTable());
             required_access.emplace_back(AccessType::CREATE_TABLE, create.getDatabase(), create.getTable());
         }
+    }
+
+    /// Replicated and ON CLUSTER replays run with full access, so the drop privilege for the replaced
+    /// table's kind must be required here, on its real name, while the query still runs as the user.
+    if ((create.replace_table || create.create_or_replace || create.replace_view) && !create.isTemporary())
+    {
+        String database_name = getContext()->resolveDatabase(create.getDatabase());
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+            if (auto table = database->tryGetTable(create.getTable(), getContext()))
+                required_access.emplace_back(getDropAccessType(*table), database_name, create.getTable());
     }
 
     if (create.targets)

@@ -183,14 +183,8 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     callback(*res);
     res->forEachMutableSubcolumnRecursively(callback);
 
-    /// Use `insertMergeResultInto` so every State-combinator state is copied into
-    /// `res`'s own arena. The pointer-sharing `insertResultInto` path is unsafe
-    /// here: a flag=0 row in `-OrFill` calls `res.insertDefault` ->
-    /// `res.ensureOwnership` which resets `res.src`, so any later flag=1 row would
-    /// dangle once the source column is destroyed (issue #105742). For non-State
-    /// functions `insertMergeResultInto` just delegates to `insertResultInto`.
     for (auto * val : data)
-        func->insertMergeResultInto(val, *res, &column_aggregate_func.createOrGetArena());
+        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
 
     return res;
 }
@@ -722,6 +716,14 @@ void ColumnAggregateFunction::popBack(size_t n)
             func->destroy(data[i]);
 
     data.resize_assume_reserved(new_size);
+}
+
+void ColumnAggregateFunction::popBackWithoutDestroy(size_t n)
+{
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    data.resize_assume_reserved(data.size() - n);
 }
 
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const

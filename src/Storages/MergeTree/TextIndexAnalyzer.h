@@ -1,7 +1,10 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/PostingListSegment.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
+#include <mutex>
 
 namespace DB
 {
@@ -42,6 +45,8 @@ public:
         bool is_failed = false;
         /// Query was discarded (low-selectivity hint, pattern bypass).
         bool is_bypassed = false;
+        /// The dictionary scan stopped early, so the matched tokens are incomplete and nothing can be pruned.
+        bool is_analysis_incomplete = false;
         /// Number of tokens whose posting list has already been folded into `postings`.
         size_t num_read_postings = 0;
         /// Declared tokens (`query->getTokens`) that may still contribute to an `Any` query.
@@ -54,6 +59,14 @@ public:
         void addRowsRange(RowsRange token_rows_range);
         void addPostings(const PostingList & token_postings);
         bool needReadPostings() const { return num_read_postings < tokens.size(); }
+
+        /// Sorted array of `postings`, built once and shared by all readers of the granule.
+        /// It is clipped to this query's readable rows, so it must never go to the server-wide postings cache.
+        FlatPostingsPtr getFlatPostings() const;
+
+    private:
+        mutable std::once_flag flat_postings_once;
+        mutable FlatPostingsPtr flat_postings;
     };
 
     explicit TextIndexAnalyzer(const MergeTreeIndexConditionText & condition_text);
@@ -105,8 +118,8 @@ private:
     /* Fields built in the constructor from MergeTreeIndexConditionText. */
 
     TextSearchMode global_search_mode;
-    /// One builder per parsed query, keyed by the query's stable hash.
-    absl::flat_hash_map<UInt128, QueryBuilder> query_builders;
+    /// One builder per parsed query, keyed by the query's stable hash. Node map because `QueryBuilder` is not movable.
+    absl::node_hash_map<UInt128, QueryBuilder> query_builders;
     /// Active queries that still depend on a given token.
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.

@@ -31,6 +31,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <Formats/castColumnToRequestedType.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -52,7 +53,6 @@
 #include <Common/setThreadName.h>
 #include <Common/Allocator.h>
 #include <Common/logger_useful.h>
-#include <Common/quoteString.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/memory.h>
 #include <Common/AllocationInterceptors.h>
@@ -1015,6 +1015,17 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     return builder->build();
 }
 
+std::unique_ptr<orc::Reader> createORCReader(std::unique_ptr<orc::InputStream> stream, const orc::ReaderOptions & options)
+{
+    auto reader = orc::createReader(std::move(stream), options);
+    if (reader->getType().getKind() != orc::STRUCT)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "ORC files whose root type is not a struct are not supported, the file has root type {}",
+            reader->getType().toString());
+    return reader;
+}
+
 static void getFileReader(
     ReadBuffer & in,
     std::unique_ptr<orc::Reader> & file_reader,
@@ -1036,7 +1047,7 @@ static void getFileReader(
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
-    file_reader = orc::createReader(std::move(input_stream), options);
+    file_reader = createORCReader(std::move(input_stream), options);
 }
 
 static const orc::Type *
@@ -1519,7 +1530,7 @@ void ORCColumnToCHColumn::orcTableToCHChunk(
 {
     const auto * struct_batch = dynamic_cast<const orc::StructVectorBatch *>(table);
     if (!struct_batch)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table must be StructVectorBatch but is {}", struct_batch->toString());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ORC table must be StructVectorBatch but is {}", table->toString());
 
     if (schema->getSubtypeCount() != struct_batch->fields.size())
         throw Exception(
@@ -3036,21 +3047,7 @@ void ORCColumnToCHColumn::orcColumnsToCHChunk(
         if (null_as_default)
             insertNullAsDefaultIfNeeded(column, header_column, column_i, block_missing_values);
 
-        try
-        {
-            column.column = castColumn(column, header_column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(fmt::format(
-                "while converting column {} from type {} to type {}",
-                backQuote(header_column.name),
-                column.type->getName(),
-                header_column.type->getName()));
-            throw;
-        }
-
-        column.type = header_column.type;
+        castColumnToRequestedType(column, header_column.type);
         columns_list.push_back(std::move(column.column));
     }
 

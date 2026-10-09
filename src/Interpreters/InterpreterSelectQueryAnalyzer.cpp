@@ -219,9 +219,44 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
 }
 }
 
+/// Like `extractAllTableReferences`, but does not descend into the inner queries of views inlined
+/// by the analyzer (`analyzer_inline_views`) into a query that is not itself inside a view:
+/// they read their own tables, just like a view that is not inlined.
+static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->getContext()->isViewInnerQuery();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->getContext()->isViewInnerQuery();
+    return false;
+}
+
+static void extractTableReferencesOutsideViews(const QueryTreeNodePtr & node, bool outer_is_view_inner, QueryTreeNodes & result)
+{
+    bool is_view_inner = isViewInnerQueryNode(node);
+    if (is_view_inner && !outer_is_view_inner)
+        return;
+
+    if (node->getNodeType() == QueryTreeNodeType::TABLE)
+    {
+        result.push_back(node);
+    }
+    else if (const auto * query_node = node->as<QueryNode>())
+    {
+        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ false, /*recursive=*/ false))
+            extractTableReferencesOutsideViews(table_expression, is_view_inner, result);
+    }
+    else if (const auto * union_node = node->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            extractTableReferencesOutsideViews(query, is_view_inner, result);
+    }
+}
+
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto nodes = extractAllTableReferences(query_tree);
+    QueryTreeNodes nodes;
+    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), nodes);
     IQueryTreeNode::ReplacementMap replacement_map;
 
     for (auto & node : nodes)

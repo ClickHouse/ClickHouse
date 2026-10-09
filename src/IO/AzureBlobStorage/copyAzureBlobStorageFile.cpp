@@ -165,13 +165,14 @@ namespace
         void performSinglepartUpload()
         {
             auto block_blob_client = client->GetBlockBlobClient(dest_blob);
-            auto read_buffer = create_read_buffer();
+            /// `offset` is non-zero for incremental backups, where only the tail of the file is uploaded.
+            LimitSeekableReadBuffer read_buffer(create_read_buffer(), offset, total_size);
 
             PODArray<char> memory;
             {
                 memory.resize(total_size);
                 WriteBufferFromVector<PODArray<char>> wb(memory);
-                copyData(*read_buffer, wb, total_size);
+                copyData(read_buffer, wb, total_size);
             }
 
             Azure::Core::IO::MemoryBodyStream stream(reinterpret_cast<const uint8_t *>(memory.data()), total_size);
@@ -379,7 +380,6 @@ void copyAzureBlobStorageFile(
     std::shared_ptr<const AzureBlobStorage::ContainerClient> dest_client,
     const String & src_container_for_logging,
     const String & src_blob,
-    size_t offset,
     size_t size,
     const String & dest_container_for_logging,
     const String & dest_blob,
@@ -436,16 +436,22 @@ void copyAzureBlobStorageFile(
                 auto copy_status = properties_model.CopyStatus;
                 auto copy_status_description = properties_model.CopyStatusDescription;
 
-
+                /// `CopySource` and `CopyStatusDescription` are optional in the properties of a blob:
+                /// the SDK models them as `Nullable`, and `Nullable::Value()` of an empty one aborts the
+                /// process in a release build (`AZURE_ASSERT_MSG` expands to a bare `std::abort` under
+                /// `NDEBUG`). The properties polled here come from the remote endpoint, which is under no
+                /// obligation to send either header, so nothing below dereferences them unchecked.
                 if (copy_status.HasValue() && copy_status.Value() == Azure::Storage::Blobs::Models::CopyStatus::Success)
                 {
-                    LOG_TRACE(log, "Copy of {} to {} finished", properties_model.CopySource.Value(), dest_blob);
+                    LOG_TRACE(log, "Copy of {} to {} finished", src_blob, dest_blob);
                 }
                 else
                 {
                     if (copy_status.HasValue())
                         throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Copy from {} to {} failed with status {} description {} (operation is done {})",
-                                        src_blob, dest_blob, copy_status.Value().ToString(), copy_status_description.Value(), operation.IsDone());
+                                        src_blob, dest_blob, copy_status.Value().ToString(),
+                                        copy_status_description.HasValue() ? copy_status_description.Value() : String("<none>"),
+                                        operation.IsDone());
                     throw Exception(
                         ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
                         "Copy from {} to {} didn't complete with success status (operation is done {})",
@@ -484,7 +490,7 @@ void copyAzureBlobStorageFile(
                 src_client, src_blob, read_settings, settings->max_single_read_retries, settings->max_single_download_retries);
         };
 
-        UploadHelper helper{create_read_buffer, dest_client, offset, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
+        UploadHelper helper{create_read_buffer, dest_client, /* offset= */ 0, size, dest_container_for_logging, dest_blob, settings, schedule, blob_storage_log, log};
         helper.performCopy();
     }
 }

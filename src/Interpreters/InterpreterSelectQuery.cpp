@@ -29,6 +29,7 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -139,6 +140,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool async_socket_for_remote;
@@ -183,6 +185,7 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
     extern const SettingsBool multiple_joins_try_to_keep_original_names;
     extern const SettingsBool optimize_aggregation_in_order;
+    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
@@ -252,47 +255,14 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-/// Assumes `storage` is set and the table filter (row-level security) is not empty.
-static FilterDAGInfoPtr generateFilterActions(
-    const StorageID & table_id,
-    const ASTPtr & row_policy_filter_expression,
-    const ContextPtr & context,
-    const StoragePtr & storage,
-    const StorageSnapshotPtr & storage_snapshot,
-    const StorageMetadataPtr & metadata_snapshot,
-    Names & prerequisite_columns,
-    PreparedSetsPtr prepared_sets)
-try
+/// Builds `SELECT <select_expressions> FROM db.table`.
+static ASTPtr makeSelectFromTable(const StorageID & table_id, ASTs select_expressions)
 {
-    auto filter_info = std::make_shared<FilterDAGInfo>();
-
-    const auto & db_name = table_id.getDatabaseName();
-    const auto & table_name = table_id.getTableName();
-
-    /// TODO: implement some AST builders for this kind of stuff
     ASTPtr query_ast = make_intrusive<ASTSelectQuery>();
     auto * select_ast = query_ast->as<ASTSelectQuery>();
 
     select_ast->setExpression(ASTSelectQuery::Expression::SELECT, make_intrusive<ASTExpressionList>());
-    auto expr_list = select_ast->select();
-
-    /// The first column is our filter expression.
-    /// the row_policy_filter_expression should be cloned, because it may be changed by TreeRewriter.
-    /// which make it possible an invalid expression, although it may be valid in whole select.
-    expr_list->children.push_back(row_policy_filter_expression->clone());
-
-    /// Keep columns that are required after the filter actions.
-    for (const auto & column_str : prerequisite_columns)
-    {
-        ParserExpression expr_parser;
-        /// We should add back quotes around column name as it can contain dots.
-        expr_list->children.push_back(parseQuery(
-            expr_parser,
-            backQuoteIfNeed(column_str),
-            0,
-            context->getSettingsRef()[Setting::max_parser_depth],
-            context->getSettingsRef()[Setting::max_parser_backtracks]));
-    }
+    select_ast->select()->children = std::move(select_expressions);
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, make_intrusive<ASTTablesInSelectQuery>());
     auto tables = select_ast->tables();
@@ -301,11 +271,66 @@ try
     tables->children.push_back(tables_elem);
     tables_elem->table_expression = table_expr;
     tables_elem->children.push_back(table_expr);
-    table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(db_name, table_name);
+    table_expr->database_and_table_name = make_intrusive<ASTTableIdentifier>(table_id.getDatabaseName(), table_id.getTableName());
     table_expr->children.push_back(table_expr->database_and_table_name);
 
+    return query_ast;
+}
+
+/// The table the synthetic `SELECT <filter> FROM db.table` is resolved against: the first table of the query, with
+/// its alias and columns. Without it, `TreeRewriter` cannot resolve qualified names such as `db.table.column`
+/// or `alias.column`, while the same names are resolved in a `WHERE` predicate.
+static TablesWithColumns getTablesWithColumnsForFilter(const JoinedTables & joined_tables)
+{
+    const auto & tables_with_columns = joined_tables.tablesWithColumns();
+    if (tables_with_columns.empty())
+        return {};
+    return {tables_with_columns.front()};
+}
+
+/// Assumes `storage` is set and the table filter (row-level security) is not empty.
+static FilterDAGInfoPtr generateFilterActions(
+    const StorageID & table_id,
+    const ASTPtr & row_policy_filter_expression,
+    const ContextPtr & context,
+    const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot,
+    const StorageMetadataPtr & metadata_snapshot,
+    const TablesWithColumns & tables_with_columns,
+    Names & prerequisite_columns,
+    PreparedSetsPtr prepared_sets)
+try
+{
+    auto filter_info = std::make_shared<FilterDAGInfo>();
+
+    ASTs select_expressions;
+
+    /// The first column is our filter expression. Clone it because `TreeRewriter` can change the AST.
+    auto filter_expression = row_policy_filter_expression->clone();
+
+    /// `TreeRewriter` expands table aliases only on the initiator, but these filters are also
+    /// created on shards. An `ALIAS` used by a row policy must be evaluated before the read filter.
+    replaceAliasColumnsInQuery(filter_expression, metadata_snapshot->getColumns(), {}, context);
+    select_expressions.push_back(std::move(filter_expression));
+
+    /// Keep columns that are required after the filter actions.
+    for (const auto & column_str : prerequisite_columns)
+    {
+        ParserExpression expr_parser;
+        /// We should add back quotes around column name as it can contain dots.
+        select_expressions.push_back(parseQuery(
+            expr_parser,
+            backQuoteIfNeed(column_str),
+            0,
+            context->getSettingsRef()[Setting::max_parser_depth],
+            context->getSettingsRef()[Setting::max_parser_backtracks]));
+    }
+
+    ASTPtr query_ast = makeSelectFromTable(table_id, std::move(select_expressions));
+    auto expr_list = query_ast->as<ASTSelectQuery &>().select();
+
     /// Using separate expression analyzer to prevent any possible alias injection
-    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot));
+    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, tables_with_columns);
     SelectQueryExpressionAnalyzer analyzer(query_ast, syntax_result, context, metadata_snapshot, {}, false, {}, prepared_sets);
     filter_info->actions = std::move(analyzer.simpleSelectActions()->dag);
 
@@ -463,6 +488,16 @@ void checkAccessRightsForSelect(
 
     /// General check.
     context->checkAccess(AccessType::SELECT, table_id, syntax_analyzer_result.requiredSourceColumnsForAccessCheck());
+}
+
+/// Settings-provided filters are user-controlled expressions over table columns and need the same check as the query.
+void checkAccessRightsForFilter(const ContextPtr & context, const StorageID & table_id, const StoragePtr & storage,
+    const StorageSnapshotPtr & storage_snapshot, const StorageMetadataPtr & metadata_snapshot,
+    const TablesWithColumns & tables_with_columns, const ASTPtr & filter_ast)
+{
+    ASTPtr query_ast = makeSelectFromTable(table_id, {filter_ast->clone()});
+    auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, tables_with_columns);
+    checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_result);
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
@@ -803,6 +838,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
+    /// Set when this server only ships the custom key to the replicas instead of applying it itself.
+    ASTPtr parallel_replicas_custom_key_ast_to_check = nullptr;
     if (storage && context->canUseParallelReplicasCustomKey() && !joined_tables.tablesWithColumns().empty())
     {
         if (settings[Setting::parallel_replicas_count] > 1)
@@ -831,6 +868,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         else if (auto * distributed = dynamic_cast<StorageDistributed *>(storage.get());
                  distributed && context->canUseParallelReplicasCustomKeyForCluster(*distributed->getCluster()))
         {
+            /// The key is evaluated on the replicas on behalf of this user.
+            parallel_replicas_custom_key_ast_to_check
+                = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
+
             context->setSetting("distributed_group_by_no_merge", 2);
             context->setSetting("prefer_localhost_replica", Field(0));
         }
@@ -839,6 +880,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             && context->getClientInfo().distributed_depth == 0
             && context->canUseParallelReplicasCustomKeyForCluster(*context->getClusterForParallelReplicas()))
         {
+            /// The key is evaluated on the replicas on behalf of this user.
+            parallel_replicas_custom_key_ast_to_check
+                = parseCustomKeyForTable(settings[Setting::parallel_replicas_custom_key], *context);
+
             context->setSetting("prefer_localhost_replica", Field(0));
         }
     }
@@ -1003,12 +1048,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (storage)
         {
             query_info.filter_asts.clear();
+            const auto filter_tables_with_columns = getTablesWithColumnsForFilter(joined_tables);
 
             /// Fix source_header for filter actions.
             if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
             {
                 row_policy_info = generateFilterActions(
-                    table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, row_policy_filter->expression, context, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, required_columns,
                     prepared_sets);
 
                 query_info.filter_asts.push_back(row_policy_filter->expression);
@@ -1017,7 +1063,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (query_info.additional_filter_ast)
             {
                 additional_filter_info = generateFilterActions(
-                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                    table_id, query_info.additional_filter_ast, context, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, required_columns,
                     prepared_sets);
 
                 additional_filter_info->do_remove_column = true;
@@ -1028,7 +1074,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (parallel_replicas_custom_filter_ast)
             {
                 parallel_replicas_custom_filter_info = generateFilterActions(
-                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, required_columns,
+                        table_id, parallel_replicas_custom_filter_ast, context, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, required_columns,
                         prepared_sets);
 
                 parallel_replicas_custom_filter_info->do_remove_column = true;
@@ -1120,6 +1166,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         /// checked in ITableFunction::execute().
         checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_analyzer_result);
 
+        const auto filter_tables_with_columns = getTablesWithColumnsForFilter(joined_tables);
+
+        if (query_info.additional_filter_ast)
+            checkAccessRightsForFilter(
+                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, query_info.additional_filter_ast);
+
+        if (parallel_replicas_custom_filter_ast)
+            checkAccessRightsForFilter(
+                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_filter_ast);
+
+        if (parallel_replicas_custom_key_ast_to_check)
+            checkAccessRightsForFilter(
+                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
+
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
         {
@@ -1161,7 +1221,7 @@ bool InterpreterSelectQuery::adjustParallelReplicasAfterAnalysis()
         return true;
     }
 
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+    auto storage_merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load);
     if (!storage_merge_tree || settings[Setting::parallel_replicas_min_number_of_rows_per_replica] == 0)
         return false;
 
@@ -2571,7 +2631,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     }
 
     /// Set of all (including ALIAS) required columns for PREWHERE
-    auto get_prewhere_columns = [&]()
+    auto get_prewhere_columns = [&](bool include_row_level_filter)
     {
         NameSet columns;
 
@@ -2584,7 +2644,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
         /// A row policy that will not be pushed into the storage read is applied as an ordinary
         /// FilterStep above it, so its columns are read normally and are not PREWHERE columns.
-        if (row_level_filter && shouldPushRowLevelFilterToStorage())
+        if (row_level_filter && include_row_level_filter && shouldPushRowLevelFilterToStorage())
         {
             auto row_level_required_columns = row_level_filter->actions.getRequiredColumns().getNames();
             columns.insert(row_level_required_columns.begin(), row_level_required_columns.end());
@@ -2602,14 +2662,13 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     /// before any other executions.
     if (alias_columns_required)
     {
-        NameSet required_columns_from_prewhere = get_prewhere_columns();
+        /// The row-level filter runs before `PREWHERE`, but its inputs are not produced by
+        /// `PREWHERE`. Keep them in the alias actions for queries that still need them.
+        NameSet required_columns_from_prewhere = get_prewhere_columns(/*include_row_level_filter=*/ false);
         NameSet required_aliases_from_prewhere; /// Set of ALIAS required columns for PREWHERE
 
         /// Expression, that contains all raw required columns
         ASTPtr required_columns_all_expr = make_intrusive<ASTExpressionList>();
-
-        /// Expression, that contains raw required columns for PREWHERE
-        ASTPtr required_columns_from_prewhere_expr = make_intrusive<ASTExpressionList>();
 
         /// Sort out already known required columns between expressions,
         /// also populate `required_aliases_from_prewhere`.
@@ -2635,8 +2694,6 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
 
             if (required_columns_from_prewhere.contains(column))
             {
-                required_columns_from_prewhere_expr->children.emplace_back(std::move(column_expr));
-
                 if (is_alias)
                     required_aliases_from_prewhere.insert(column);
             }
@@ -2704,7 +2761,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
     const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
     if (supported_prewhere_columns.has_value())
     {
-        NameSet required_columns_from_prewhere = get_prewhere_columns();
+        NameSet required_columns_from_prewhere = get_prewhere_columns(/*include_row_level_filter=*/ true);
         const auto & table_columns = metadata_snapshot->getColumns();
         const bool include_subcolumns = storage->supportedPrewhereColumnsIncludeSubcolumns();
 
@@ -3176,7 +3233,8 @@ void InterpreterSelectQuery::executeAggregation(
         std::move(group_by_sort_description),
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        force_aggregation_in_order);
+        force_aggregation_in_order,
+        settings[Setting::enable_sharding_aggregator]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -3893,7 +3951,15 @@ void InterpreterSelectQuery::initSettings()
 {
     auto & query = getSelectQuery();
     if (query.settings())
+    {
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
+
+        /// The old interpreter disabled the analyzer in `IInterpreterUnionOrSelectQuery`, but a `SELECT`
+        /// stored in a `VIEW` may enable it again here. Storages must not use analyzer-only query tree
+        /// paths (for example, `StorageDistributed::read`) when this interpreter built the query.
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            context->setSetting("allow_experimental_analyzer", false);
+    }
 
     const auto & client_info = context->getClientInfo();
 

@@ -1,10 +1,7 @@
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
@@ -27,6 +24,14 @@ ColumnArray::MutablePtr createArray(std::vector<UInt64> data_values, std::vector
     return ColumnArray::create(std::move(data), std::move(offsets));
 }
 
+/// One array of two rows of a constant: the offsets match the nested column, so only the constant is wrong.
+ColumnArray::MutablePtr createArrayOverConst()
+{
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->getData().push_back(2);
+    return ColumnArray::create(ColumnConst::create(ColumnUInt64::create(1, 42), 2), std::move(offsets));
+}
+
 }
 
 /// A ColumnArray is created from an already populated nested column and offsets, so its offsets
@@ -44,39 +49,6 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
     EXPECT_EQ(column->getSize(0), 2);
     EXPECT_EQ(column->getSize(1), 0);
     EXPECT_EQ(column->getSize(2), 1);
-}
-
-TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
-{
-    auto dictionary_keys = ColumnUInt64::create();
-    for (UInt64 value : {0, 10, 20, 30})
-        dictionary_keys->insertValue(value);
-
-    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(dictionary_keys));
-
-    auto indexes = ColumnUInt8::create();
-    for (UInt8 index : {UInt8{1}, UInt8{2}, UInt8{3}, UInt8{1}, UInt8{2}})
-        indexes->insertValue(index);
-
-    auto nested = ColumnLowCardinality::create(dictionary, std::move(indexes), /* is_shared = */ true);
-    auto offsets = ColumnArray::ColumnOffsets::create();
-    for (ColumnArray::Offset offset : {2, 2, 5})
-        offsets->insertValue(offset);
-
-    auto column = ColumnArray::create(std::move(nested), std::move(offsets));
-    auto cut_column = column->cut(1, 2);
-    const auto & cut_array = assert_cast<const ColumnArray &>(*cut_column);
-    const auto & cut_nested = assert_cast<const ColumnLowCardinality &>(cut_array.getData());
-
-    ASSERT_TRUE(cut_nested.isSharedDictionary());
-    EXPECT_EQ(cut_nested.getDictionaryPtr().get(), dictionary.get());
-    ASSERT_EQ(cut_array.size(), 2);
-    EXPECT_EQ(cut_array.getSize(0), 0);
-    EXPECT_EQ(cut_array.getSize(1), 3);
-    ASSERT_EQ(cut_nested.size(), 3);
-    EXPECT_EQ(cut_nested.getUInt(0), 30);
-    EXPECT_EQ(cut_nested.getUInt(1), 10);
-    EXPECT_EQ(cut_nested.getUInt(2), 20);
 }
 
 /// Skipped under debug/sanitizers: LOGICAL_ERROR aborts there, so EXPECT_THROW can't catch it.
@@ -101,6 +73,12 @@ TEST(ColumnArray, InconsistentOffsetsAreRejected)
     EXPECT_THROW(createArray({10}, {}), Exception);
 }
 
+TEST(ColumnArray, ConstNestedColumnIsRejected)
+{
+    EXPECT_THROW(createArrayOverConst(), Exception);
+    EXPECT_THROW(ColumnArray::create(ColumnConst::create(ColumnUInt64::create(1, 42), 0)), Exception);
+}
+
 #endif
 
 /// A decreasing offset makes `sizeAt` underflow to a huge value even when the last offset matches
@@ -121,6 +99,16 @@ TEST(ColumnArrayDeathTest, NonMonotonicOffsetsAreRejected)
     /// The last offset matches the nested column, but the offsets dip in the middle.
     EXPECT_DEATH((createArray({10, 20, 30}, {2, 1, 3})), "not monotonically increasing");
     EXPECT_DEATH((createArray({10, 20, 30}, {3, 0, 3})), "not monotonically increasing");
+}
+
+TEST(ColumnArrayDeathTest, ConstNestedColumnIsRejected)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+
+    EXPECT_DEATH(createArrayOverConst(), "ColumnArray cannot have ColumnConst as its nested column");
+    EXPECT_DEATH(
+        ColumnArray::create(ColumnConst::create(ColumnUInt64::create(1, 42), 0)),
+        "ColumnArray cannot have ColumnConst as its nested column");
 }
 
 #endif

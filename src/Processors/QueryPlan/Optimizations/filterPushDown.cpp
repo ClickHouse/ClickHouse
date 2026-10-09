@@ -24,6 +24,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -454,11 +455,6 @@ static void projectDagInputs(ActionsDAG & actions_dag)
     }
 }
 
-static bool isAnyInnerJoin(JoinKind kind, JoinStrictness strictness)
-{
-    return kind == JoinKind::Inner && (strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny);
-}
-
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
@@ -619,23 +615,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         right_stream_filter_push_down_input_columns_available = false;
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
-
-    /** `ANY INNER` join emits at most one row per key, deduplicating both sides.
-      * Both sides are blocked: filtering the right stream can change which match is taken for the left row.
-      * If the left side has multiple rows with the same value, only one survives
-      * and pushing the filter down to the left may affect which one survives.
-      * Also the optimizer is allowed to swap the sides of the join after that pass,
-      * thus a filter on the left may end up on the right.
-      * Predicates over the equi-join keys are still pushed to both sides through the equivalent-columns path below.
-      */
-    const bool is_any_inner_join = (table_join_ptr && isAnyInnerJoin(table_join_ptr->kind(), table_join_ptr->strictness()))
-        || (logical_join && isAnyInnerJoin(logical_join->getJoinOperator().kind, logical_join->getJoinOperator().strictness));
-
-    if (is_any_inner_join)
-    {
-        right_stream_filter_push_down_input_columns_available = false;
-        left_stream_filter_push_down_input_columns_available = false;
-    }
 
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
@@ -809,14 +788,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (is_any_inner_join
-        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi))
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// The `typeChangingSides` check is not needed in case of physical join, because
-        ///     1. `INNER` joins never widen the columns' types.
-        ///     2. On this path an `INNER` join cannot have been produced from an `OUTER` one by
-        ///        `tryConvertOuterJoinToInnerJoin` and thus it's not carrying the preserved nullability.
-        if (!logical_join || !logical_join->typeChangingSides().contains(JoinTableSide::Left))
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
         {
             /// In this case we can also push down to left side of JOIN using equivalent sets.
             for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
@@ -829,14 +803,9 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (is_any_inner_join
-        || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi))
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
-        /// The `typeChangingSides` check is not needed in case of physical join, because
-        ///     1. `INNER` joins never widen the columns' types.
-        ///     2. On this path an `INNER` join cannot have been produced from an `OUTER` one by
-        ///        `tryConvertOuterJoinToInnerJoin` and thus it's not carrying the preserved nullability.
-        if (!logical_join || !logical_join->typeChangingSides().contains(JoinTableSide::Right))
+        if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
         {
             /// In this case we can also push down to right side of JOIN using equivalent sets.
             for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
@@ -851,6 +820,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (is_filter_column_const_before)
         original_filter_const_column = filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column;
 
+    /// With no input given only the conjuncts that read no column are evaluated, so FALSE means no row passes.
+    const bool filter_is_always_false
+        = (left_stream_filter_push_down_input_columns_available || right_stream_filter_push_down_input_columns_available)
+        && !isSensitiveToEvaluationCount(filter->getExpression())
+        && filterResultForNotMatchedRows(filter->getExpression(), filter->getFilterColumnName(), Block{}) == FilterResult::FALSE;
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -860,7 +835,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         *right_stream_input_header,
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
-        equivalent_right_stream_column_to_left_stream_column);
+        equivalent_right_stream_column_to_left_stream_column,
+        filter_is_always_false);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
@@ -1202,6 +1178,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
     {
+        if (!settings.filter_push_down_below_limit_by)
+            return 0;
+
         /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
         /// per-group rows (and therefore the result) are identical whether it runs above or
         /// below the LIMIT BY. But it is only safe to push when every non-empty input group

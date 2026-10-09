@@ -5,6 +5,7 @@ from ci.defs.defs import (
     BINARIES_WITH_LONG_RETENTION,
     DOCKERS,
     GH_AUTH_TRUSTED_LAMBDA_NAME,
+    LOOM_SECRETS,
     SECRETS,
     ArtifactConfigs,
 )
@@ -23,7 +24,6 @@ workflow = Workflow.Config(
     name="MasterCI",
     event=Workflow.Event.PUSH,
     branches=[BASE_BRANCH],
-    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
@@ -61,7 +61,6 @@ workflow = Workflow.Config(
         JobConfigs.sqltest_master_job,
         JobConfigs.sqllogic_test_master_job,
         JobConfigs.sqlstorm_test_job,
-        JobConfigs.docs_examples_job,
         JobConfigs.llvm_coverage_job,
     ],
     artifacts=[
@@ -82,7 +81,7 @@ workflow = Workflow.Config(
     dockers=DOCKERS,
     enable_dockers_manifest_merge=True,
     set_latest_for_docker_merged_manifest=True,
-    secrets=SECRETS,
+    secrets=SECRETS + LOOM_SECRETS,
     enable_job_filtering_by_changes=True,
     enable_cache=True,
     enable_report=True,
@@ -93,6 +92,7 @@ workflow = Workflow.Config(
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/merge_sync_pr.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/loom_code_refresh.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],

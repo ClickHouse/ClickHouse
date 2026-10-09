@@ -7,6 +7,7 @@
 #include <memory>
 #include <unordered_map>
 #include <vector>
+#include <mutex>
 #include <future>
 #include <Common/callOnce.h>
 #include <Storages/IStorage_fwd.h>
@@ -231,6 +232,9 @@ private:
     /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
     /// plan, which its callers would silently take for "nothing left to build".
     std::exception_ptr in_place_build_failure;
+
+    /// Serializes `buildOrderedSetInplace`; see the rationale at its lock site.
+    std::mutex inplace_build_mutex;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;

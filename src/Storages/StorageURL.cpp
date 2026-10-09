@@ -484,7 +484,6 @@ StorageURLSource::StorageURLSource(
         });
 
         pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-        pipeline->disableProfileEventUpdate();
         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
         ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -1165,17 +1164,6 @@ bool IStorageURLBase::prefersLargeBlocks() const
 bool IStorageURLBase::parallelizeOutputAfterReading(ContextPtr context) const
 {
     return FormatFactory::instance().checkParallelizeOutputAfterReading(format_name, context);
-}
-
-size_t IStorageURLBase::getMaxReadStreams(size_t num_streams, ContextPtr context)
-{
-    if (distributed_processing)
-        return num_streams;
-
-    if (!urlWithGlobs(uri))
-        return 1;
-
-    return std::min(num_streams, static_cast<size_t>(context->getSettingsRef()[Setting::glob_expansion_max_elements]));
 }
 
 class ReadFromURL : public SourceStepWithFilter
@@ -1894,8 +1882,9 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     }
 
     auto scheme_end = base.find("://");
+    /// Not echoed back: the value can carry a credential, and password masking anchors on the `://` it lacks.
     if (scheme_end == String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://), got: {}", base_setting_name, base);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `{}` setting must contain a scheme (e.g. https://)", base_setting_name);
 
     /// Find the boundary of the path component in the base URL (before '?' or '#').
     auto authority_start = scheme_end + 3; /// skip "://"
@@ -2297,6 +2286,7 @@ public:
     }
 
     StoragePtr getNested() const override { return nested; }
+    StoragePtr tryGetNested() const override { return nested; }
     /// The table was created with `ENGINE = URL(...)`; report it as such for consistency with
     /// `SHOW CREATE TABLE` and `system.tables`, even though reads/writes go to the delegate.
     String getName() const override { return "URL"; }
@@ -2548,6 +2538,7 @@ static StoragePtr tryDispatchURLEngineByScheme(const StorageFactory::Arguments &
         /// `format = auto` that would force re-inference (and external I/O) on every `ATTACH`/restart.
         if (const auto * file = typeid_cast<const StorageFile *>(delegate_storage.get()))
             resolved_format = file->getFormatName();
+        /// NOLINT(storage-cast): the delegate is created right here, it never comes from the catalog.
         else if (const auto * object_storage = typeid_cast<const StorageObjectStorage *>(delegate_storage.get()))
             resolved_format = object_storage->getFormatName();
         else

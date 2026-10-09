@@ -33,7 +33,6 @@ extern const Event CachedReadBufferPredownloadedFromSourceBytes;
 extern const Event CachedReadBufferReadFromCacheBytes;
 extern const Event CachedReadBufferPredownloadedBytes;
 extern const Event CachedReadBufferCacheWriteBytes;
-extern const Event CachedReadBufferCacheWriteStopped;
 extern const Event CachedReadBufferCreateBufferMicroseconds;
 
 extern const Event CachedReadBufferReadFromCacheHits;
@@ -1132,7 +1131,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (continue_predownload)
             {
@@ -1193,7 +1193,6 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
                 LOG_TEST(log, "Bypassing cache for {}", file_segment.getInfoForLog());
 
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteStopped);
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
                 LOG_DEBUG(
@@ -1636,7 +1635,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (success)
             {
@@ -1668,7 +1668,6 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
 
             if (!success)
             {
-                ProfileEvents::increment(ProfileEvents::CachedReadBufferCacheWriteStopped);
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
             }
@@ -2067,6 +2066,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     first_offset = file_offset_of_buffer_end = new_pos;
 
     info.reset();
+    info.reserve_ahead.reset();
     state.reset();
     initialized = false;
 

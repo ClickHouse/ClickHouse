@@ -4,13 +4,14 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -109,6 +110,9 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
 }
 
+namespace
+{
+
 /// Returns whether the analyzer should be used for mutations.
 /// If the server config has `use_analyzer_for_mutations`, that value overrides the session setting.
 /// The override is parsed once per config reload in `Server.cpp` and stored on the shared context,
@@ -118,6 +122,8 @@ bool shouldUseAnalyzerForMutations(const ContextPtr & context)
     if (auto override_value = context->getMutationsUseAnalyzerOverride())
         return *override_value;
     return context->getSettingsRef()[Setting::allow_experimental_analyzer];
+}
+
 }
 
 /// A mutation command's predicate and `UPDATE` expressions are stored as serialized SQL text and
@@ -266,18 +272,6 @@ IsStorageTouched isStorageTouchedByMutations(
                 if (partition_id == source_part->info.getPartitionId())
                     all_commands_can_be_skipped = false;
             }
-            else if (alter->partitions)
-            {
-                for (const auto & partition_ast : alter->partitions->children)
-                {
-                    const String partition_id = storage_from_part->getPartitionIDFromQuery(partition_ast, context);
-                    if (partition_id == source_part->info.getPartitionId())
-                    {
-                        all_commands_can_be_skipped = false;
-                        break;
-                    }
-                }
-            }
             else
             {
                 all_commands_can_be_skipped = false;
@@ -341,34 +335,13 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
 )
 {
     ASTPtr partition_predicate_as_ast_func;
-    if (alter && alter->partitions)
-    {
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
-
-        auto func = makeASTFunction("in");
-        func->arguments->children.push_back(make_intrusive<ASTIdentifier>("_partition_id"));
-        auto tuple_func = makeASTFunction("tuple");
-        for (const auto & partition_ast : alter->partitions->children)
-        {
-            String partition_id;
-            if (storage_merge_tree)
-                partition_id = storage_merge_tree->getPartitionIDFromQuery(partition_ast, context);
-            else if (storage_from_merge_tree_data_part)
-                partition_id = storage_from_merge_tree_data_part->getPartitionIDFromQuery(partition_ast, context);
-            else
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER UPDATE/DELETE ... IN PARTITION is not supported for non-MergeTree tables");
-            tuple_func->arguments->children.push_back(make_intrusive<ASTLiteral>(partition_id));
-        }
-        func->arguments->children.push_back(std::move(tuple_func));
-        partition_predicate_as_ast_func = std::move(func);
-    }
-    else if (alter && alter->partition)
+    if (alter && alter->partition)
     {
         String partition_id;
 
-        auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(storage);
+        auto resolved_storage = resolveStorageProxyLoading(storage);
+        auto storage_merge_tree = castStorage<MergeTreeData>(resolved_storage, DeferredTable::Load);
+        auto storage_from_merge_tree_data_part = std::dynamic_pointer_cast<StorageFromMergeTreeDataPart>(resolved_storage);
         if (storage_merge_tree)
             partition_id = storage_merge_tree->getPartitionIDFromQuery(ASTPtr(alter->partition), context);
         else if (storage_from_merge_tree_data_part)
@@ -391,12 +364,14 @@ ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
     ASTPtr predicate_ast(predicate);
     normalizeSetOperations(predicate_ast, context);
 
-    if (alter->partition || alter->partitions)
+    if (alter->partition)
         return makeASTOperator("and", std::move(predicate_ast), std::move(partition_predicate_as_ast_func));
     return predicate_ast;
 }
 
-MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(std::move(storage_))
+/// A mutation reads and rewrites parts, so it needs the real storage rather than the proxy a lazily
+/// loaded table is reached through.
+MutationsInterpreter::Source::Source(StoragePtr storage_) : storage(resolveStorageProxyLoading(storage_))
 {
 }
 
@@ -438,7 +413,7 @@ const MergeTreeData * MutationsInterpreter::Source::getMergeTreeData() const
     if (data)
         return data;
 
-    return dynamic_cast<const MergeTreeData *>(storage.get());
+    return castStorage<MergeTreeData>(storage, DeferredTable::Load).get();
 }
 
 MergeTreeData::DataPartPtr MutationsInterpreter::Source::getMergeTreeDataPart() const
@@ -519,7 +494,7 @@ MutationsInterpreter::MutationsInterpreter(
         std::move(available_columns_),
         std::move(context_), std::move(settings_))
 {
-    if (settings.can_execute && !settings.return_mutated_rows && dynamic_cast<const MergeTreeData *>(source.getStorage().get()))
+    if (settings.can_execute && !settings.return_mutated_rows && castStorage<MergeTreeData>(source.getStorage(), DeferredTable::Load))
     {
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -790,8 +765,6 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    MaterializedColumnDependencies materialized_dependencies(columns_desc, context);
-
     /// We need to know which columns affect which MATERIALIZED columns, data skipping indices
     /// and projections to recalculate them if dependencies are updated.
     std::unordered_map<String, Names> column_to_affected_materialized;
@@ -799,6 +772,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a change of a
     /// base column recalculates every MATERIALIZED column transitively derived from it.
     std::unordered_map<String, NameSet> materialized_column_dependencies;
+    /// MATERIALIZED columns reading an EPHEMERAL column, with their readable dependencies. They are
+    /// skipped by the recompute, so they are checked for staleness after the graph is built.
+    std::vector<std::pair<String, Names>> ephemeral_reading_materialized;
 
     /// The MATERIALIZED-chain analysis is needed for classical UPDATE, for materializing
     /// patch parts (APPLY PATCHES) and for CLEAR COLUMN, since all three can change a
@@ -807,41 +783,51 @@ void MutationsInterpreter::prepare(bool dry_run)
         !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
     if (need_materialized_analysis)
     {
+        /// Collect ephemeral columns and include them in the analysis set so
+        /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
+        NamesAndTypesList all_columns_with_ephemeral = all_columns;
+        std::unordered_set<String> ephemeral_columns;
+        for (const auto & col : columns_desc.getEphemeral())
+        {
+            ephemeral_columns.insert(col.name);
+            all_columns_with_ephemeral.push_back(col);
+        }
+
         for (const auto & column : columns_desc)
         {
-            /// Restricted to the columns this task reads, because the recompute stages below can
-            /// only write into the block it produces. `AlterConversions` closes the read set of an
-            /// on-fly read over the same graph, so a chain hop is never missing from it.
-            if (!available_columns_set.contains(column.name))
-                continue;
-
-            const auto * materialized = materialized_dependencies.findNode(column.name);
-            if (!materialized)
-                continue;
-
-            const auto & required_columns = materialized->dependencies;
-
-            if (materialized->reads_ephemeral)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                && available_columns_set.contains(column.name)
+                && column.default_desc.expression)
             {
-                /// Warn if the mutation also updates a dependency of this MATERIALIZED column — the
-                /// on-disk value will become stale. Not on an on-fly read, which builds an interpreter
-                /// per read task per part and writes nothing, so the warning is untrue and repeats there.
-                if (!settings.apply_on_fly_for_read
-                    && std::ranges::any_of(required_columns, [&](const auto & dep) { return updated_columns.contains(dep); }))
-                    LOG_WARNING(logger,
-                        "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
-                        "columns that are being updated. Its value will NOT be recalculated "
-                        "during this mutation — the on-disk value may become inconsistent. "
-                        "To fix this, re-INSERT the affected rows.",
-                        column.name);
-                continue;
-            }
+                auto query = column.default_desc.expression->clone();
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+                auto required_columns = syntax_result->requiredSourceColumns();
 
-            for (const auto & dependency : required_columns)
-            {
-                materialized_column_dependencies[column.name].insert(dependency);
-                if (updated_columns.contains(dependency))
-                    column_to_affected_materialized[dependency].push_back(column.name);
+                /// If the MATERIALIZED expression depends on any EPHEMERAL column,
+                /// skip it — EPHEMERAL columns are only available during INSERT
+                /// and cannot be read from disk during mutations.
+                if (std::ranges::any_of(required_columns,
+                    [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
+                {
+                    /// Such a column is never recomputed, so its on-disk value goes stale as soon as
+                    /// one of its regular inputs changes. Collect it and warn below, once the readable
+                    /// dependency graph is complete: whether an input changed can only be answered
+                    /// over the transitive closure, and a hop of the chain may still be unvisited here.
+                    Names readable_dependencies;
+                    for (const auto & dep : required_columns)
+                        if (!ephemeral_columns.contains(dep))
+                            readable_dependencies.push_back(dep);
+                    ephemeral_reading_materialized.emplace_back(column.name, std::move(readable_dependencies));
+                    continue;
+                }
+
+                for (const auto & dependency : required_columns)
+                {
+                    materialized_column_dependencies[column.name].insert(dependency);
+                    if (updated_columns.contains(dependency))
+                        column_to_affected_materialized[dependency].push_back(column.name);
+                }
             }
         }
 
@@ -902,6 +888,30 @@ void MutationsInterpreter::prepare(bool dry_run)
         return affected;
     };
 
+    /// A MATERIALIZED column reading an EPHEMERAL column cannot be recomputed by a mutation, so if
+    /// any of its readable inputs is changed by this mutation — directly, or through another
+    /// MATERIALIZED hop that this mutation does recompute — its on-disk value becomes stale.
+    if (!ephemeral_reading_materialized.empty())
+    {
+        NameSet changed_base_columns = updated_columns;
+        changed_base_columns.insert(clear_column_names.begin(), clear_column_names.end());
+        changed_base_columns.insert(patch_updated_columns.begin(), patch_updated_columns.end());
+
+        NameSet stale_columns = affected_materialized_closure(changed_base_columns);
+        stale_columns.insert(changed_base_columns.begin(), changed_base_columns.end());
+
+        for (const auto & [name, readable_dependencies] : ephemeral_reading_materialized)
+        {
+            if (std::ranges::any_of(readable_dependencies, [&](const auto & dep) { return stale_columns.contains(dep); }))
+                LOG_WARNING(logger,
+                    "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
+                    "columns that are being updated or cleared. Its value will NOT be "
+                    "recalculated during this mutation — the on-disk value may become "
+                    "inconsistent. To fix this, re-INSERT the affected rows.",
+                    name);
+        }
+    }
+
     /// Emit recompute stages for a set of affected MATERIALIZED columns. A MATERIALIZED
     /// column may read another affected MATERIALIZED column (e.g. m2 MATERIALIZED m1, where
     /// m1 is itself recomputed). Recomputing them all in a single stage would evaluate m2
@@ -938,27 +948,26 @@ void MutationsInterpreter::prepare(bool dry_run)
             stages.emplace_back(context);
             for (const auto & column : columns_desc)
             {
-                /// Membership and level first: both sets are already built, while `findNode`
-                /// analyses the default. Asking it for every column of the table would undo the
-                /// on-demand analysis for any read that recomputes even one MATERIALIZED column.
-                if (!affected_materialized.contains(column.name)
-                    || level_of_column(column.name, level_of_column) != current_level)
-                    continue;
+                if (column.default_desc.kind == ColumnDefaultKind::Materialized
+                    && affected_materialized.contains(column.name)
+                    && level_of_column(column.name, level_of_column) == current_level
+                    && column.default_desc.expression)
+                {
+                    auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
 
-                const auto * materialized = materialized_dependencies.findNode(column.name);
-                if (!materialized)
-                    continue;
+                    ASTPtr materialized_column = makeASTFunction("_CAST",
+                        column.default_desc.expression->clone(),
+                        type_literal);
 
-                auto type_literal = make_intrusive<ASTLiteral>(column.type->getName());
+                    /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
+                    /// because otherwise subcolumns are extracted before the source column is updated and we get
+                    /// old subcolumns values.
+                    replaceSubcolumnsToGetSubcolumnFunctionInQuery(materialized_column, all_columns);
 
-                /// The expression comes with subcolumns already replaced by getSubcolumn(),
-                /// because otherwise subcolumns are extracted before the source column is
-                /// updated and we get old subcolumn values.
-                ASTPtr materialized_column = makeASTFunction("_CAST",
-                    materialized->expression->clone(),
-                    type_literal);
-
-                stages.back().column_to_updated.emplace(column.name, materialized_column);
+                    stages.back().column_to_updated.emplace(
+                        column.name,
+                        materialized_column);
+                }
             }
         }
     };
@@ -985,14 +994,21 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (!patch_updated_columns.empty())
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
+    NameSet materialized_with_ephemeral_dependency;
+    for (const auto & [name, readable_dependencies] : ephemeral_reading_materialized)
+        materialized_with_ephemeral_dependency.insert(name);
+
     /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts.
+    /// below writes, otherwise a rewritten column keeps stale dependent artifacts. A column reading
+    /// an EPHEMERAL one is not recomputable outside INSERT and must be left out, or the recompute
+    /// stage fails to resolve the EPHEMERAL name and the whole mutation fails.
     NameSet clear_affected_materialized;
     if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
     {
         for (const auto & column : columns_desc)
         {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
+                && !materialized_with_ephemeral_dependency.contains(column.name))
                 clear_affected_materialized.insert(column.name);
         }
     }
@@ -1412,8 +1428,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot MATERIALIZE TTL as there is no TTL set for table {}", source.getStorage()->getStorageID().getNameForLogs());
 
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = source.getMergeTreeData()
-                && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
+            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
                 && metadata_snapshot->hasOnlyRowsTTL();
 
             if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
@@ -1566,14 +1581,18 @@ void MutationsInterpreter::prepare(bool dry_run)
             bool has_dependent_materialized = false;
             for (const auto & column : columns_desc)
             {
-                if (!available_columns_set.contains(column.name))
+                /// A column reading an EPHEMERAL one is not recomputed, and its expression cannot
+                /// even be analyzed without the EPHEMERAL columns, which are absent from `all_columns`.
+                if (column.default_desc.kind != ColumnDefaultKind::Materialized
+                    || !available_columns_set.contains(column.name)
+                    || !column.default_desc.expression
+                    || materialized_with_ephemeral_dependency.contains(column.name))
                     continue;
 
-                const auto * materialized = materialized_dependencies.findNode(column.name);
-                if (!materialized)
-                    continue;
-
-                for (const auto & dep : materialized->dependencies)
+                auto query = column.default_desc.expression->clone();
+                replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+                for (const auto & dep : syntax_result->requiredSourceColumns())
                 {
                     if (dep == command.column_name)
                     {

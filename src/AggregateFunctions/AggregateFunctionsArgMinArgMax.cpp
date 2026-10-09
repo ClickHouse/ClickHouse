@@ -470,15 +470,6 @@ argMin(arg, val)
     {
         "Basic usage",
         R"(
-CREATE TABLE salary
-(
-    user String,
-    salary UInt32
-)
-ENGINE = Memory AS
-SELECT *
-FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
-
 SELECT argMin(user, salary) FROM salary;
         )",
         R"(
@@ -513,9 +504,9 @@ SELECT argMin(a, b), min(b) FROM test;
 SELECT argMin(a, (b, a)), min(tuple(b, a)) FROM test;
         )",
         R"(
-┌─argMin(a, (b, a))─┬─min((b, a))─┐
-│ a                 │ (0,NULL)    │
-└───────────────────┴─────────────┘
+┌─argMin(a, tuple(b, a))─┬─min(tuple(b, a))─┐
+│ d                      │ (NULL,NULL)      │
+└────────────────────────┴──────────────────┘
         )"
     }
     };
@@ -550,15 +541,6 @@ argMax(arg, val)
     {
         "Basic usage",
         R"(
-CREATE TABLE salary
-(
-    user String,
-    salary UInt32
-)
-ENGINE = Memory AS
-SELECT *
-FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
-
 SELECT argMax(user, salary) FROM salary;
         )",
         R"(
@@ -593,9 +575,9 @@ SELECT argMax(a, b), max(b) FROM test;
 SELECT argMax(a, (b,a)) FROM test;
         )",
         R"(
-┌─argMax(a, (b, a))─┐
-│ c                 │
-└───────────────────┘
+┌─argMax(a, tuple(b, a))─┐
+│ c                      │
+└────────────────────────┘
         )"
     }
     };
@@ -639,15 +621,6 @@ argAndMin(arg, val)
     {
         "Basic usage",
         R"(
-CREATE TABLE salary
-(
-    user String,
-    salary UInt32
-)
-ENGINE = Memory AS
-SELECT *
-FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
-
 SELECT argAndMin(user, salary) FROM salary;
         )",
         R"(
@@ -725,15 +698,6 @@ argAndMax(arg, val)
     {
         "Basic usage",
         R"(
-CREATE TABLE salary
-(
-    user String,
-    salary UInt32
-)
-ENGINE = Memory AS
-SELECT *
-FROM VALUES(('worker', 1000), ('manager', 3000), ('director', 5000));
-
 SELECT argAndMax(user, salary) FROM salary;
         )",
         R"(

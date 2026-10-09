@@ -286,6 +286,11 @@ public:
         return std::nullopt;
     }
 
+    virtual CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & /*storage_id*/)
+    {
+        return std::nullopt;
+    }
+
     /// Result of `prepareSettingsChanges`: the new catalog state built off to the side,
     /// ready to be published by `commitSettingsChanges`.
     struct PreparedSettingsChanges

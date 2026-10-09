@@ -91,10 +91,20 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int OPENSSL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_CLIENT;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
 static const size_t SSL_REQUEST_PAYLOAD_SIZE = 32;
+
+/** The handshake response is read before the client is authenticated, so its size has to be bounded.
+  * The fields it carries are a user name, a database name, an authentication plugin name and an
+  * authentication response, so this is generous: a real client sends a few hundred bytes.
+  * Without a bound, a peer can make the server grow memory while sending a response that never ends:
+  * `MySQLPacketPayloadReadBuffer` follows a chain of maximum-size (16 MiB) packets as one logical
+  * message, and the fields inside the response are read up to a terminator.
+  */
+static const size_t MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE = 64 * 1024;
 
 static bool checkShouldReplaceQuery(const String & query, const String & prefix)
 {
@@ -579,7 +589,10 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
-        if (secure_required && !(client_capabilities & CLIENT_SSL))
+        /// Check the actual state of the transport, not the capability bit advertised by the client:
+        /// a client can set `CLIENT_SSL` in a plaintext `HandshakeResponse` without ever sending an
+        /// `SSLRequest`, and then the connection stays unencrypted.
+        if (secure_required && !secure_connection)
             throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
 
         /// An empty user name means the default session user: the `default_session_user`
@@ -729,6 +742,11 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     }
     else
     {
+        if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+                payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
@@ -1056,7 +1074,33 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
-    packet_endpoint->receivePacket(packet); /// Reading HandshakeResponse from secure socket.
+
+    /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
+    /// path: read the packet header, reject an oversized declared payload before reading it, and
+    /// then read exactly as many bytes as it declares. The bound has to be applied to the logical
+    /// MySQL payload rather than to the underlying stream: `MySQLPacketPayloadReadBuffer` reports
+    /// end of file as soon as the stream under it ends, so a stream cut off at the limit would make
+    /// a truncated packet look like a complete one.
+    char header[PACKET_HEADER_SIZE];
+    in->readStrict(header, PACKET_HEADER_SIZE);
+
+    size_t payload_size = unalignedLoad<uint32_t>(header) & 0xFFFFFFu;
+    if (payload_size > MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Handshake response declares a payload of {} bytes, while it must be at most {} bytes",
+            payload_size, MAX_HANDSHAKE_RESPONSE_PAYLOAD_SIZE);
+
+    size_t packet_sequence_id = static_cast<uint8_t>(header[3]);
+    if (packet_sequence_id != sequence_id)
+        throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+            "Received packet with wrong sequence-id: {}. Expected: {}.",
+            packet_sequence_id, static_cast<unsigned int>(sequence_id));
+
+    WriteBufferFromOwnString buf_for_handshake_response;
+    copyData(*in, buf_for_handshake_response, payload_size);
+    ReadBufferFromString handshake_response_payload(buf_for_handshake_response.str());
+    packet.readPayloadWithUnpacked(handshake_response_payload);
+    packet_endpoint->sequence_id++;
 }
 
 #endif

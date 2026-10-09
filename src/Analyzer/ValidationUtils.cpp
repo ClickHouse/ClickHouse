@@ -1,5 +1,4 @@
 #include <Analyzer/ValidationUtils.h>
-#include <Interpreters/GetAggregatesVisitor.h>
 
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ArrayJoinNode.h>
@@ -275,21 +274,16 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
         assertNoWindowFunctionNodes(query_node_typed.getJoinTreeNode(), "in JOIN TREE");
     }
 
-    /// `SELECT count() AS c FROM t WHERE c > 1` is the common shape: the alias is expanded before this
-    /// check, so the user is told about an aggregate in WHERE that they never wrote. Name the clause that
-    /// does accept it. The text is shared with the old analyzer's copy of the check.
-    static const String use_having_hint = AGGREGATE_IN_WHERE_HINT;
-
     if (query_node_typed.hasWhere())
     {
-        assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE", use_having_hint);
+        assertNoAggregateFunctionNodes(query_node_typed.getWhere(), "in WHERE");
         assertNoGroupingFunctionNodes(query_node_typed.getWhere(), "in WHERE");
         assertNoWindowFunctionNodes(query_node_typed.getWhere(), "in WHERE");
     }
 
     if (query_node_typed.hasPrewhere())
     {
-        assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE", use_having_hint);
+        assertNoAggregateFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
         assertNoGroupingFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
         assertNoWindowFunctionNodes(query_node_typed.getPrewhere(), "in PREWHERE");
     }

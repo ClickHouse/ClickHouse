@@ -114,7 +114,6 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_task_projection_stage_pause[];
-    extern const char merge_task_pause_after_reserving_tmp_dir[];
 }
 
 namespace Setting
@@ -543,20 +542,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     global_ctx->need_block_offset_in_merge |= key_columns.contains(BlockOffsetColumn::name);
 }
 
-String MergeTask::buildTempPartBasename(const String & prefix, const String & part_name, const String & suffix)
-{
-    if (suffix.empty() || !suffix.starts_with(DRY_RUN_TEMP_INFIX))
-        return prefix + part_name + suffix;
-
-    /// `OPTIMIZE ... DRY RUN` leaves the result part name out: the name must not collide with the
-    /// merge of those parts, and its length must not follow the part name, which is not capped. What
-    /// is left is a fixed-size name, kept as short as uniqueness allows so that a dry run runs out of
-    /// filename budget as late as possible - no earlier than the corresponding real merge for any
-    /// part whose name is 15 characters or longer. Keeps `prefix`, which the temporary directory cleaner and the
-    /// startup skip logic select by, and is never parsed back into a part name.
-    return prefix + suffix;
-}
-
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 {
     ProfileEvents::increment(ProfileEvents::Merge);
@@ -566,9 +551,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
     String local_tmp_prefix = global_ctx->parent_part ? "" : TEMP_DIRECTORY_PREFIX;
 
-    /// Honor an explicitly supplied suffix for top-level merges too, not only projections.
-    /// Real top-level merges pass an empty suffix; `OPTIMIZE ... DRY RUN` passes a unique one.
-    const String local_tmp_suffix = global_ctx->suffix;
+    const String local_tmp_suffix = global_ctx->parent_part ? global_ctx->suffix : "";
 
     global_ctx->checkOperationIsNotCanceled();
 
@@ -593,7 +576,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->disk = global_ctx->space_reservation->getDisk();
-    auto local_tmp_part_basename = buildTempPartBasename(local_tmp_prefix, global_ctx->future_part->name, local_tmp_suffix);
+    auto local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
 
     /// The `SingleDiskVolume`, `DataPartStorageOnDiskFull`, and `IMergeTreeDataPart` constructed
     /// here are stored on the merged part and live for its whole lifetime, so route them into the
@@ -604,14 +587,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// interrupted merge. Projection merges write nested inside the parent's directory, which has no claim.
     if (!global_ctx->parent_part)
         global_ctx->temporary_directory_lock = global_ctx->data->claimTemporaryPartDirectory(global_ctx->disk, local_tmp_part_basename);
-
-    LOG_TRACE(ctx->log, "Reserved temporary directory {} for the merge", local_tmp_part_basename);
-
-    /// Test-only: widen the window between reserving the temporary merge directory and the rest
-    /// of the merge, to deterministically race two `OPTIMIZE ... DRY RUN` over the same parts.
-    /// Scoped to dry-run merges so an unrelated background merge cannot consume the pause.
-    if (local_tmp_suffix.starts_with(DRY_RUN_TEMP_INFIX))
-        FailPointInjection::pauseFailPoint(FailPoints::merge_task_pause_after_reserving_tmp_dir);
 
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -783,7 +758,31 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         hasLightweightDelete(global_ctx->future_part) ||
         global_ctx->merging_params.mode != MergeTreeData::MergingParams::Ordinary;
 
-    prepareProjectionsToMergeAndRebuild();
+    /// For TTLDrop merges, all source parts are fully expired.
+    /// Skip creating the read pipeline to avoid opening source parts
+    /// and allocating read/prefetch buffers.
+    ///
+    /// We restrict this to tables that have only an unconditional rows TTL
+    /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
+    /// When other TTL families are present, TTLTransform::finalize rebuilds
+    /// their maps from scratch, and replicating that logic here would be
+    /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
+    ///
+    /// A merge cancelled after selection has `need_remove_expired_values` cleared above and must
+    /// not drop rows, so it falls through to the normal pipeline, which builds no TTLTransform.
+    const bool can_short_circuit_ttl_drop =
+        global_ctx->future_part->merge_type == MergeType::TTLDrop
+        && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
+        && ctx->need_remove_expired_values;
+
+    /// The short-circuit below commits a 0-row part without ever running a pipeline, so nothing
+    /// would retire these projections. Decide before the bookkeeping rather than undoing it
+    /// after: `prepareProjectionsToMergeAndRebuild` increments `MergedProjections` and
+    /// `RebuiltProjections` and pushes the names into `MergeListElement::projections_pending`,
+    /// which only the rebuild and merge paths erase from. Clearing the worklists afterwards left
+    /// those names in `system.merges.projections_remaining` for the lifetime of the merge entry.
+    if (!can_short_circuit_ttl_drop)
+        prepareProjectionsToMergeAndRebuild();
 
     const auto & merge_tree_settings = global_ctx->data_settings;
 
@@ -1061,19 +1060,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
-    /// For TTLDrop merges, all source parts are fully expired.
-    /// Skip creating the read pipeline to avoid opening source parts
-    /// and allocating read/prefetch buffers.
-    ///
-    /// We restrict this to tables that have only an unconditional rows TTL
-    /// (no column TTL, moves, recompression, GROUP BY, or WHERE-clause TTL).
-    /// When other TTL families are present, TTLTransform::finalize rebuilds
-    /// their maps from scratch, and replicating that logic here would be
-    /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
-    const bool can_short_circuit_ttl_drop =
-        global_ctx->future_part->merge_type == MergeType::TTLDrop
-        && global_ctx->metadata_snapshot->hasOnlyRowsTTL();
-
     if (can_short_circuit_ttl_drop)
     {
         LOG_DEBUG(ctx->log, "TTLDrop merge: skipping data pipeline, "
@@ -1088,10 +1074,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->ttl_infos = {};
         global_ctx->new_data_part->ttl_infos.table_ttl = {0, 0, true};
 
-        /// Clear projections — no rows means no projection data to merge or rebuild.
-        global_ctx->projections_to_rebuild.clear();
-        global_ctx->projections_to_merge.clear();
-        global_ctx->projections_to_merge_parts.clear();
+        /// No rows means no projection data to merge or rebuild, and the bookkeeping that would
+        /// have announced some was skipped above, so there is nothing to undo here.
+        chassert(global_ctx->projections_to_rebuild.empty());
+        chassert(global_ctx->projections_to_merge.empty());
+        chassert(global_ctx->projections_to_merge_parts.empty());
 
         /// Force Horizontal algorithm. This prevents the Vertical stage from trying
         /// to finalize an empty rows_sources file, and ensures finalizePart takes
@@ -1115,15 +1102,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->skip_indexes_by_column.clear();
         global_ctx->text_indexes_to_merge.clear();
 
-        auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
-        for (const auto & index : all_skip_indexes)
+        /// Repopulate only when the setting asks for it: the clear above this branch already
+        /// honoured `materialize_skip_indexes_on_merge = 0`, and putting the indexes back would
+        /// override the user's choice on a TTLDrop merge only.
+        if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
         {
-            if (!exclude_index_names.contains(index.name))
+            auto all_skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
+            for (const auto & index : all_skip_indexes)
             {
-                if (index.type == "text")
-                    global_ctx->text_indexes_to_merge.push_back(index);
-                else
-                    global_ctx->merging_skip_indexes.push_back(index);
+                if (!exclude_index_names.contains(index.name))
+                {
+                    /// Inert indices (a removed index type kept only for attach compatibility) hold
+                    /// no data and cannot be recomputed. Skip them so the merge does not wedge
+                    /// trying to aggregate them.
+                    if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+                        continue;
+
+                    if (index.type == "text")
+                        global_ctx->text_indexes_to_merge.push_back(index);
+                    else
+                        global_ctx->merging_skip_indexes.push_back(index);
+                }
             }
         }
     }
@@ -2503,7 +2502,12 @@ bool MergeTask::MergeTextIndexStage::prepare() const
         auto index_ptr = MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings);
         std::vector<TextIndexSegment> segments;
 
-        if (global_ctx->merge_may_reduce_rows)
+        if (global_ctx->ttl_drop_short_circuit)
+        {
+            /// No read pipeline ran, so no transform built segments. The resulting part has no
+            /// rows, which is exactly what a 0-row pipeline would have produced anyway.
+        }
+        else if (global_ctx->merge_may_reduce_rows)
         {
             /// Text index was built for the resulting part.
             segments = getTextIndexSegments(global_ctx->new_data_part->name, index.name, 0);
@@ -3526,6 +3530,10 @@ MergeAlgorithm MergeTask::ExecuteAndFinalizeHorizontalPart::chooseMergeAlgorithm
         return MergeAlgorithm::Horizontal;
     if (ctx->need_remove_expired_values)
     {
+        /// `TTLTransform` stops reading after the first block when the rows TTL has expired for the whole part,
+        /// while a vertical merge reads every key row to write `rows_sources`.
+        if (global_ctx->future_part->merge_type == MergeType::TTLDrop && global_ctx->metadata_snapshot->hasRowsTTL())
+            return MergeAlgorithm::Horizontal;
         if (!canVerticalTTLDelete(*global_ctx))
             return MergeAlgorithm::Horizontal;
     }

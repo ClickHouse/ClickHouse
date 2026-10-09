@@ -152,8 +152,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::NumericMinMax;
     if (tracks_string)
         mask |= BasicFeatureMask::StringLengthSum;
-
-    mask |= BasicFeatureMask::DefaultCount;
+    if (has_default_count)
+        mask |= BasicFeatureMask::DefaultCount;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -163,8 +163,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
-
-    writeIntBinary(default_count, buf);
+    if (has_default_count)
+        writeIntBinary(default_count, buf);
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)

@@ -30,6 +30,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -70,9 +71,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -97,6 +96,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char object_storage_source_pause_before_virtual_columns[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -110,30 +114,6 @@ namespace ErrorCodes
 
 namespace
 {
-    DataTypePtr rowLineageColumnType()
-    {
-        return makeNullable(std::make_shared<DataTypeInt64>());
-    }
-
-    Names getMaterializedRowLineageColumns(
-        [[maybe_unused]] const ObjectInfo & object_info,
-        [[maybe_unused]] const ReadFromFormatInfo & read_from_format_info,
-        [[maybe_unused]] const String & format_name)
-    {
-        Names result;
-#if USE_AVRO
-        if (Poco::toLower(format_name) != "parquet" || !dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
-            return result;
-
-        for (const auto * name : {"_row_id", "_last_updated_sequence_number"})
-        {
-            if (read_from_format_info.requested_virtual_columns.contains(name))
-                result.emplace_back(name);
-        }
-#endif
-        return result;
-    }
-
     Map objectAttributesToMap(const ObjectAttributes & attributes)
     {
         Map result;
@@ -145,6 +125,28 @@ namespace
             result.emplace_back(std::move(element));
         }
         return result;
+    }
+
+    /// Compose the Query Condition Cache key (`part_name`) for an object, or return nullopt when the
+    /// object cannot be safely cached and caching must be skipped (fail-close).
+    ///
+    /// The object identifier already uses the full path, so files that share a base name in
+    /// different directories do not collide. For general (non-data-lake) remote objects the path
+    /// alone is not a stable identity - an object can be overwritten in place under the same path -
+    /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
+    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
+    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
+    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
+    /// lakes whose object metadata does not carry an ETag).
+    std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+    {
+        String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+        if (is_data_lake)
+            return identifier;
+        const auto & metadata = object_info.getObjectMetadata();
+        if (!metadata || metadata->etag.empty())
+            return std::nullopt;
+        return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
     }
 
     std::optional<Map> tryGetHeadersFromReadBuffer(const ReadBuffer * read_buffer)
@@ -207,6 +209,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool azure_validate_etag_on_read;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -360,9 +363,13 @@ StorageObjectStorageSource::~StorageObjectStorageSource()
 std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
     const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info)
 {
-    std::string result = joinPathUnderPrefix(
-        include_connection_info ? configuration.getDataSourceDescription() : configuration.getNamespace(),
-        object_info.getPath());
+    auto path = object_info.getPath();
+    if (path.starts_with("/"))
+        path = path.substr(1);
+
+    std::string result = include_connection_info
+        ? fs::path(configuration.getDataSourceDescription()) / path
+        : fs::path(configuration.getNamespace()) / path;
 
     /// For web URL shards the same relative path can be produced by different expanded URL options
     /// (e.g. `http://{host1,host2}/data/**`). Including `read_source_index` keeps schema/count cache
@@ -377,28 +384,6 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
         result += fmt::format("#read_source_index={}", *object_info.relative_path_with_metadata.read_source_index);
 
     return result;
-}
-
-/// The object identifier already uses the full path, so files that share a base name in
-/// different directories do not collide. For general (non-data-lake) remote objects the path
-/// alone is not a stable identity - an object can be overwritten in place under the same path -
-/// so the ETag is folded in as a content-version token; a query after an overwrite then misses
-/// rather than reusing stale row-group information. This only holds when the ETag is a strong
-/// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
-/// same across a same-second, same-size overwrite and would let the cache serve stale row-group
-/// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
-/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
-/// are immutable, so the path is a stable identity on its own and no ETag is required (this also
-/// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
-{
-    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-    if (is_data_lake)
-        return identifier;
-    const auto & metadata = object_info.getObjectMetadata();
-    if (!metadata || !metadata->isEtagUsableAsCacheKey())
-        return std::nullopt;
-    return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -493,9 +478,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             {
                 for (const auto & path : paths.value())
                 {
-                    /// `path` is a `_path` column value, so it needs that column's formatter
-                    /// inverted rather than a plain relative().
-                    const auto relative_path = relativizePathUnderPrefix(configuration->getNamespace(), path);
+                    const auto relative_path = fs::relative(path, configuration->getNamespace()).string();
                     const auto & path_for_matching = match_web_paths_only ? getPathComponentForGlobMatching(relative_path) : relative_path;
                     if (RE2::FullMatch(path_for_matching, matcher))
                         validated_paths.push_back(relative_path);
@@ -574,7 +557,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
             paths.reserve(keys.size());
             for (const auto & key : keys)
-                paths.push_back(joinPathUnderPrefix(configuration->getNamespace(), key));
+                paths.push_back(fs::path(configuration->getNamespace()) / key);
 
             VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context);
             auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -665,32 +648,6 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
 
-            ColumnPtr materialized_row_ids;
-            ColumnPtr materialized_last_updated_sequence_numbers;
-            /// Without an input format the chunk comes from the count-from-cache path, which reads no
-            /// file and therefore carries no row lineage columns.
-            if (const auto lineage_columns = reader.getInputFormat()
-                    ? getMaterializedRowLineageColumns(
-                          *object_info, read_from_format_info, object_info->getFileFormat().value_or(configuration->format))
-                    : Names{};
-                !lineage_columns.empty())
-            {
-                auto columns = chunk.detachColumns();
-                chassert(columns.size() >= lineage_columns.size());
-                const size_t first_lineage_column = columns.size() - lineage_columns.size();
-
-                for (size_t i = 0; i < lineage_columns.size(); ++i)
-                {
-                    if (lineage_columns[i] == "_row_id")
-                        materialized_row_ids = columns[first_lineage_column + i];
-                    else
-                        materialized_last_updated_sequence_numbers = columns[first_lineage_column + i];
-                }
-
-                columns.resize(first_lineage_column);
-                chunk.setColumns(std::move(columns), num_rows);
-            }
-
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema
             if (!read_from_format_info.hive_partition_columns_to_read_from_file_path.empty())
@@ -704,16 +661,9 @@ Chunk StorageObjectStorageSource::generate()
             }
 
             const String * iceberg_metadata_file_path = nullptr;
-            std::optional<UInt64> last_updated_sequence_number;
-            std::optional<UInt64> first_row_id;
 #if USE_AVRO
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
-            {
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
-                first_row_id = iceberg_info->info.first_row_id;
-                if (first_row_id.has_value())
-                    last_updated_sequence_number = iceberg_info->info.sequence_number;
-            }
 #endif
 
             std::optional<size_t> object_size;
@@ -721,6 +671,8 @@ Chunk StorageObjectStorageSource::generate()
                 object_size = object_info->fileSizeInArchive();
             else if (object_metadata->is_size_known)
                 object_size = object_metadata->size_bytes;
+
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,
@@ -739,10 +691,6 @@ Chunk StorageObjectStorageSource::generate()
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
-                    .last_updated_sequence_number = last_updated_sequence_number,
-                    .first_row_id = first_row_id,
-                    .materialized_row_ids = materialized_row_ids,
-                    .materialized_last_updated_sequence_numbers = materialized_last_updated_sequence_numbers,
                 },
                 read_context,
                 format_settings);
@@ -847,6 +795,11 @@ Chunk StorageObjectStorageSource::generate()
 
                                     const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
                                     auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// The `_delta_log` type differs from the declared one when the columns were
+                                    /// specified rather than inferred, and the block follows the declared schema.
+                                    const auto & declared_type = read_from_format_info.source_header.getByPosition(column_pos).type;
+                                    if (!name_and_type.type->equals(*declared_type))
+                                        partition_column = castColumn({partition_column, name_and_type.type, name_and_type.name}, declared_type);
                                     /// This column is filled with default value now, remove it.
                                     chunk.erase(column_pos);
                                     /// Add correct values.
@@ -1094,8 +1047,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     std::shared_ptr<ISource> source;
     std::unique_ptr<ReadBuffer> read_buf;
 
-    Names row_lineage_columns;
-
     auto try_get_num_rows_from_cache = [&]() -> std::optional<size_t>
     {
         if (!schema_cache)
@@ -1161,8 +1112,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         const auto format_name = object_info->getFileFormat().value_or(configuration->format);
         const bool input_format_does_not_read_file = Poco::toLower(format_name) == "one";
 
-        row_lineage_columns = getMaterializedRowLineageColumns(*object_info, read_from_format_info, format_name);
-
         CompressionMethod compression_method = {};
         if (input_format_does_not_read_file)
         {
@@ -1197,12 +1146,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             }
             initial_header = sample_header;
             schema_changed = true;
-        }
-
-        for (const auto & column_name : row_lineage_columns)
-        {
-            if (!initial_header.has(column_name))
-                initial_header.insert({rowLineageColumnType()->createColumn(), rowLineageColumnType(), column_name});
         }
         std::vector<std::pair<String, Field>> identity_partition_columns;
 #if USE_AVRO
@@ -1491,12 +1434,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (schema_transform.has_value())
         {
-            for (const auto & column_name : row_lineage_columns)
-            {
-                const auto & input = schema_transform->addInput(column_name, rowLineageColumnType());
-                schema_transform->getOutputs().push_back(&input);
-            }
-
             auto schema_modifying_actions = std::make_shared<ExpressionActions>(std::move(schema_transform.value()));
             builder.addSimpleTransform([&](const SharedHeader & header)
             {
@@ -1582,17 +1519,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
     /// Add ExtractColumnsTransform to extract requested columns/subcolumns
     /// from chunk read by IInputFormat.
-    NamesAndTypesList columns_to_extract = read_from_format_info.requested_columns;
-    for (const auto & column_name : row_lineage_columns)
-        columns_to_extract.emplace_back(column_name, rowLineageColumnType());
-
     builder.addSimpleTransform([&](const SharedHeader & header)
     {
-        return std::make_shared<ExtractColumnsTransform>(header, columns_to_extract);
+        return std::make_shared<ExtractColumnsTransform>(header, read_from_format_info.requested_columns);
     });
 
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
-    pipeline->disableProfileEventUpdate();
     auto current_reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     ProfileEvents::increment(ProfileEvents::EngineFileLikeReadFiles);
@@ -1648,16 +1580,24 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// 2. object etag suggests a cache key in case we use filesystem cache
     /// 3. object etag as a cache key for parquet metadata caching
     /// 4. object etag to detect a concurrent in-place overwrite during the read
+    /// Whether the read is pinned to the generation of the object seen at listing time. Each backend
+    /// that supports it has its own setting, because they are documented per backend and a user may
+    /// want to opt out of the check for one store but not the other.
+    bool validate_etag_on_read = false;
+    if (object_storage->getType() == ObjectStorageType::S3)
+        validate_etag_on_read = settings[Setting::s3_validate_etag_on_read];
+    else if (object_storage->getType() == ObjectStorageType::Azure)
+        validate_etag_on_read = settings[Setting::azure_validate_etag_on_read];
+
     if (!object_info.metadata)
     {
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
-    else if (!object_info.metadata->is_fetched && settings[Setting::s3_validate_etag_on_read]
-             && object_storage->getType() == ObjectStorageType::S3)
+    else if (!object_info.metadata->is_fetched && validate_etag_on_read)
     {
-        /// Refresh the s3Cluster skip_object_metadata placeholder to obtain its size + ETag for read-time
-        /// validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch that
-        /// merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
+        /// Refresh the cluster function's skip_object_metadata placeholder to obtain its size + ETag for
+        /// read-time validation (it carries no tags, so the with_tags=false HEAD drops nothing). A real fetch
+        /// that merely lacks an ETag (e.g. GCS) has is_fetched=true and is left as-is - no extra HEAD.
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
@@ -1723,13 +1663,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// filename to `readWithDistributedCache` (it ends up in `getFileName()` and in
     /// `system.distributed_cache_log.filename`). Use the object path so the DC log
     /// shows a useful name rather than an empty string.
-    const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
+    /// The size is used by the object storage as the right bound of the read, so it must come from a
+    /// real listing or HEAD: the skip_object_metadata placeholder is default-constructed, and its
+    /// `size_bytes == 0` would otherwise read every non-empty object as empty.
+    const auto stored_object_size = is_size_known && object_info.metadata->is_fetched
+        ? object_size
+        : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
 
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
-    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
-    /// instead of torn cross-generation data.
-    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
+    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ or
+    /// AZURE_OBJECT_CHANGED_DURING_READ instead of torn cross-generation data.
+    if (validate_etag_on_read && object_info.metadata.has_value())
         stored_object.etag = object_info.metadata->etag;
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 

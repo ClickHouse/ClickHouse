@@ -64,7 +64,7 @@ public:
             b.CreateCondBr(nativeBoolCast(b, cond), then, next);
             b.SetInsertPoint(then);
 
-            /// Use `nativeCastWithDecimalScale` to correctly lift integer/float branches to a
+            /// Use `nativeCastWithDecimalScale` to correctly lift integer branches to a
             /// `Decimal` `result_type` (and to convert between `Decimal` types of different scales).
             /// Plain `nativeCast` reinterprets the integer bits without applying the `10^scale`
             /// factor, which silently produces wrong values when the analyzer leaves a non-`Decimal`

@@ -51,7 +51,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
@@ -61,7 +60,6 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Formats/FormatFactory.h>
 #include <Columns/IColumn.h>
-#include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
@@ -69,6 +67,8 @@
 #include <Storages/StorageView.h>
 #include <Storages/ColumnsDescription.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Access/EnabledRowPolicies.h>
 
 #include <base/scope_guard.h>
@@ -85,6 +85,7 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
+    extern const SettingsBool analyzer_compatibility_allow_cte_redefinition;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
@@ -108,6 +109,7 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
+    extern const SettingsBool validate_group_by_all_key_types;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
@@ -147,6 +149,18 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// True for a `WITH` element declared `AS MATERIALIZED`, before or after its replacement by a `TableNode`.
+bool isMaterializedCTEDefinition(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->isMaterialized();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->isMaterialized();
+    if (const auto * table_node = node->as<TableNode>())
+        return table_node->isMaterializedCTE();
+    return false;
+}
 
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
@@ -904,6 +918,11 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
         return;
 
+    /// A parameterized view has a name to qualify its columns with, so it is exempt like the plain table below.
+    if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+        table_function_node && table_function_node->isParameterizedView())
+        return;
+
     auto table_expression_node_type = table_expression_node->getNodeType();
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
@@ -1175,6 +1194,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
 {
     const auto & identifier_bind_part = identifier_lookup.identifier.front();
 
+    /// Table aliases are single-part names, so a compound table identifier can only be `database.table`.
+    if (identifier_lookup.isTableExpressionLookup() && identifier_lookup.identifier.isCompound())
+        return {};
+
     auto * it = scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME);
     if (it == nullptr)
         return {};
@@ -1271,27 +1294,19 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 scope,
                 identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */))
             {
-                scope.used_alias_names.insert(identifier_bind_part);
                 return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
             }
             return {};
         }
-        if (identifier_lookup.isFunctionLookup() || identifier_lookup.isTableExpressionLookup())
+        if (identifier_lookup.isFunctionLookup())
         {
             throw Exception(
                 ErrorCodes::UNKNOWN_IDENTIFIER,
-                "Compound identifier '{}' cannot be resolved as {}. In scope {}",
+                "Compound identifier '{}' cannot be resolved as function. In scope {}",
                 identifier_lookup.identifier.getFullName(),
-                identifier_lookup.isFunctionLookup() ? "function" : "table expression",
                 scope.scope_node->formatASTForErrorMessage());
         }
     }
-
-    /// Record that some identifier was actually resolved through this alias
-    /// (used by the check for multiple expressions with the same alias, see resolveQuery).
-    /// Tentative lookups that fall back to another resolution path return earlier and are not recorded.
-    if (alias_node)
-        scope.used_alias_names.insert(identifier_bind_part);
 
     return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
 }
@@ -1307,7 +1322,9 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
 )
 {
     auto full_name = identifier_lookup.identifier.getFullName();
-    auto cte_query_node_it = scope.cte_name_to_query_node.find(full_name);
+    auto cte_nodes_it = scope.cte_name_to_query_node.find(full_name);
+    if (cte_nodes_it == scope.cte_name_to_query_node.end())
+        return {};
 
     /// CTE may reference table expressions with the same name, e.g.:
     ///
@@ -1321,10 +1338,23 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     ///
     /// To accomplish this behaviour it's not allowed to resolve identifiers to
     /// CTE that is being resolved.
-    if (cte_query_node_it == scope.cte_name_to_query_node.end() || ctes_in_resolve_process.contains(cte_query_node_it->second))
+    ///
+    /// With `analyzer_compatibility_allow_cte_redefinition` a name can have several definitions; the latest one
+    /// not being resolved wins, so a redefinition reads the previous definition and the query body the last one.
+    auto & cte_nodes = cte_nodes_it->second;
+    /// Every site that marks a scope-map CTE node as being resolved updates both sets. With one definition keep the
+    /// structural check: the materialized-CTE expression site inserts a clone, which only identity would miss.
+    const bool several_definitions = cte_nodes.size() > 1;
+    auto cte_node_it = std::find_if(cte_nodes.rbegin(), cte_nodes.rend(), [this, several_definitions](const QueryTreeNodePtr & node)
+    {
+        if (several_definitions)
+            return !cte_definitions_in_resolve_process.contains(node.get());
+        return !ctes_in_resolve_process.contains(node);
+    });
+    if (cte_node_it == cte_nodes.rend())
         return {};
 
-    auto & cte_node = cte_query_node_it->second;
+    auto & cte_node = *cte_node_it;
     auto * query_node = cte_node->as<QueryNode>();
     auto * union_node = cte_node->as<UnionNode>();
 
@@ -1656,6 +1686,13 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         if (table_node->isMaterializedCTE())
             additional_column_qualification_parts = {table_node->getMaterializedCTE()->cte_name};
     }
+    else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+        table_function_node && table_function_node->isParameterizedView())
+    {
+        /// A parameterized view has a name of its own, qualify with it exactly like for a `TableNode`.
+        const auto & table_storage_id = table_function_node->getStorageID();
+        additional_column_qualification_parts = {table_storage_id.getDatabaseName(), table_storage_id.getTableName()};
+    }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
     else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
@@ -1691,6 +1728,9 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             else
                 forced_qualifier = table_node->getStorageID().getTableName();
         }
+        else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+            table_function_node && table_function_node->isParameterizedView())
+            forced_qualifier = table_function_node->getStorageID().getTableName();
         else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
             forced_qualifier = query_node->getCTEName();
         else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
@@ -3290,6 +3330,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         /// In this example argument of function `in` is being resolve here. If CTE `test1` is not forbidden,
                         /// `test1` is resolved to CTE (not to the table) in `initializeQueryJoinTreeNode` function.
                         ctes_in_resolve_process.insert(original_cte_node);
+                        cte_definitions_in_resolve_process.insert(original_cte_node.get());
 
                         if (subquery_node)
                             resolveQuery(resolved_identifier_node, subquery_scope);
@@ -3297,6 +3338,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             resolveUnion(resolved_identifier_node, subquery_scope);
 
                         ctes_in_resolve_process.erase(original_cte_node);
+                        cte_definitions_in_resolve_process.erase(original_cte_node.get());
                     }
                     else if (table_node != nullptr && table_node->isMaterializedCTE())
                     {
@@ -3444,17 +3486,15 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                 }
 
-                /// The typo hint goes before the formatted query, which can be many kilobytes long, so that
-                /// the actionable part of the message does not end up behind it. The optional `FROM`-clause
-                /// hint is still attached via `addMessage` to keep the number of placeholders in
-                /// `message_format_string` for `text_log` at five
-                /// (see `03096_text_log_format_string_args_not_empty`).
-                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {}{}. In scope {}",
+                /// Keep the original five-placeholder `message_format_string` for `text_log`
+                /// (see `03096_text_log_format_string_args_not_empty`) and attach the optional
+                /// `FROM`-clause hint via `addMessage` so the format string stays stable.
+                Exception exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown {}{} identifier {} in scope {}{}",
                     toStringLowercase(IdentifierLookupContext::EXPRESSION),
                     message_clarification,
                     backQuote(unresolved_identifier.getFullName()),
-                    getHintsErrorMessageSuffix(hints),
-                    scope.scope_node->formatASTForErrorMessage());
+                    scope.scope_node->formatASTForErrorMessage(),
+                    getHintsErrorMessageSuffix(hints));
                 if (!from_clause_hint.empty())
                     exception.addMessage(from_clause_hint);
                 throw exception; /// NOLINT(hicpp-exception-baseclass,cert-err09-cpp,cert-err61-cpp,misc-throw-by-value-catch-by-reference)
@@ -4085,7 +4125,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
 
 /** Resolve GROUP BY clause.
   */
-void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope)
+void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierResolveScope & scope, bool validate_key_types)
 {
     QueryTreeNodes nullable_group_by_keys;
 
@@ -4107,7 +4147,10 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
         {
             for (const auto & group_by_elem : grouping_set->as<ListNode>()->getNodes())
             {
-                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+                if (validate_key_types)
+                    validateGroupByKeyType(group_by_elem->getResultType(), scope);
+                /// Outside the guard: the promotion to Nullable is what `group_by_use_nulls` asks for,
+                /// independently of whether the key types are validated.
                 if (scope.group_by_use_nulls)
                     nullable_group_by_keys.push_back(group_by_elem);
             }
@@ -4126,7 +4169,9 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
 
         for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
         {
-            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+            if (validate_key_types)
+                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+            /// Outside the guard, for the same reason as in the grouping-sets branch above.
             if (scope.group_by_use_nulls)
                 nullable_group_by_keys.push_back(group_by_elem);
         }
@@ -4265,13 +4310,13 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                         = IdentifierResolver::tryGetTableNameHint(from_table_identifier.getIdentifier(), scope.context);
                     if (!hint_database_name.empty())
                         throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                            "Unknown table expression identifier '{}'. Maybe you meant {}.{}? In scope {}",
+                            "Unknown table expression identifier '{}' in scope {}. Maybe you meant {}.{}?",
                             from_table_identifier.getIdentifier().getFullName(),
+                            scope.scope_node->formatASTForErrorMessage(),
                             backQuoteIfNeed(hint_database_name),
-                            backQuoteIfNeed(hint_table_name),
-                            scope.scope_node->formatASTForErrorMessage());
+                            backQuoteIfNeed(hint_table_name));
                     throw Exception(ErrorCodes::UNKNOWN_TABLE,
-                        "Unknown table expression identifier '{}'. In scope {}",
+                        "Unknown table expression identifier '{}' in scope {}",
                         from_table_identifier.getIdentifier().getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
                 }
@@ -4435,6 +4480,15 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     else if (table_function_node)
     {
         table_expression_data.table_expression_description = "table_function";
+
+        /// A parameterized view has a name of its own, expose it exactly like a `TableNode` does.
+        if (table_function_node->isParameterizedView())
+        {
+            const auto & table_storage_id = table_function_node->getStorageID();
+            table_expression_data.database_name = table_storage_id.database_name;
+            table_expression_data.table_name = table_storage_id.table_name;
+            table_expression_data.table_expression_name = table_storage_id.getFullNameNotQuoted();
+        }
     }
 
     if (table_expression_node->hasAlias())
@@ -5726,30 +5780,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             auto expression_types = DataTypes{result_left_table_expression->getResultType(), result_right_table_expression->getResultType()};
             DataTypePtr common_type = tryGetLeastSupertype(expression_types);
 
-            /** There can be no type that is able to hold all the values of both keys, for example, for `UInt64` and `Int64`.
-              * The result of an INNER JOIN contains only the values that both of the keys have in common,
-              * and the type of these values is enough. See `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
-              * For the other kinds of JOIN the result also contains the unmatched values, which may be out of this range.
-              * SEMI JOIN is fine as well: only the matched rows of the preserved side survive, and the result of USING
-              * takes the key of the preserved side. ANTI JOIN, on the contrary, keeps exactly the unmatched rows.
-              * For ASOF JOIN the last column in the USING list is compared by the order of the values, not by equality,
-              * so the fallback does not apply to it; the preceding columns are ordinary equality keys.
-              */
-            bool is_asof_inequality_key = join_node_typed.getStrictness() == JoinStrictness::Asof
-                && join_using_node == join_using_list.getNodes().back();
-            bool is_inner_or_semi = join_node_typed.getKind() == JoinKind::Inner
-                || join_node_typed.getStrictness() == JoinStrictness::Semi;
-            if (!common_type
-                && is_inner_or_semi
-                && !is_asof_inequality_key)
-            {
-                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(expression_types[0], expression_types[1]))
-                {
-                    bool is_nullable = isNullableOrLowCardinalityNullable(expression_types[0]) || isNullableOrLowCardinalityNullable(expression_types[1]);
-                    common_type = is_nullable ? makeNullable(subtype) : subtype;
-                }
-            }
-
             if (!common_type)
                 throw Exception(ErrorCodes::NO_COMMON_TYPE,
                     "JOIN {} cannot infer common type for {} and {} in USING for identifier '{}'. In scope {}",
@@ -5794,10 +5824,27 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Get the view's inner query AST.
     const auto & storage_snapshot = table_node->getStorageSnapshot();
 
+    auto storage_id = storage->getStorageID();
+
+    /// Inlining replaces the view's TableNode with the view body, so the SELECT check the planner
+    /// performs for a TableNode never runs for the view, and for a SQL SECURITY DEFINER view the
+    /// body is subsequently resolved and planned under the definer's identity - meaning the caller
+    /// is never checked against the view or against the tables behind it. Only inline when the
+    /// caller may already read the whole view, so that inlining cannot change the access decision;
+    /// otherwise leave the TableNode in place and let the planner apply its normal column-aware check.
+    /// Use getAll() rather than getOrdinary(): a view can expose ALIAS (and MATERIALIZED) columns,
+    /// which the planner's per-column SELECT check treats as separate privileges, so they must be
+    /// covered here too - otherwise a caller lacking SELECT on an ALIAS column would still inline.
+    if (!scope.context->getAccess()->isGranted(
+            AccessType::SELECT,
+            storage_id.getDatabaseName(),
+            storage_id.getTableName(),
+            storage_snapshot->metadata->getColumns().getAll().getNames()))
+        return;
+
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
-    auto storage_id = storage->getStorageID();
     auto row_policy_filter = scope.context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
@@ -5972,12 +6019,18 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
             QueryTreeNodePtr original_cte_node = try_get_original_cte_node(join_tree_node);
 
             if (original_cte_node)
+            {
                 ctes_in_resolve_process.insert(original_cte_node);
+                cte_definitions_in_resolve_process.insert(original_cte_node.get());
+            }
 
             resolveExpressionNode(join_tree_node, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
 
             if (original_cte_node)
+            {
                 ctes_in_resolve_process.erase(original_cte_node);
+                cte_definitions_in_resolve_process.erase(original_cte_node.get());
+            }
             break;
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
@@ -6000,19 +6053,22 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
 
                     /// Prevent recursive CTE references during subquery resolution.
                     const auto & cte_name = materialized_cte_ptr->cte_name;
-                    QueryTreeNodePtr cte_map_node;
+                    QueryTreeNodes cte_map_nodes;
                     for (auto * s = &scope; s; s = s->parent_scope)
                     {
                         auto it = s->cte_name_to_query_node.find(cte_name);
                         if (it != s->cte_name_to_query_node.end())
                         {
-                            cte_map_node = it->second;
+                            cte_map_nodes = it->second;
                             break;
                         }
                     }
 
-                    if (cte_map_node)
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
                         ctes_in_resolve_process.insert(cte_map_node);
+                        cte_definitions_in_resolve_process.insert(cte_map_node.get());
+                    }
 
                     IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(subquery, &scope);
                     subquery_scope.subquery_depth = scope.subquery_depth + 1;
@@ -6022,8 +6078,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     else
                         resolveUnion(subquery, subquery_scope);
 
-                    if (cte_map_node)
+                    for (const auto & cte_map_node : cte_map_nodes)
+                    {
                         ctes_in_resolve_process.erase(cte_map_node);
+                        cte_definitions_in_resolve_process.erase(cte_map_node.get());
+                    }
 
                     bool is_correlated = subquery->as<QueryNode>()
                         ? subquery->as<QueryNode>()->isCorrelated()
@@ -6405,14 +6464,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasQualify() && query_node_typed.isGroupByWithTotals() && is_rollup_or_cube)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WITH TOTALS and WITH ROLLUP or CUBE are not supported together in presence of QUALIFY");
 
-    /// The alias names of the top level projection nodes become the column names of the result.
-    /// They are collected before resolution: resolution can replace a projection node
-    /// with a folded constant that does not keep the alias.
-    std::unordered_set<std::string> projection_alias_names;
-    for (const auto & projection_node : query_node_typed.getProjection().getNodes())
-        if (projection_node->hasAlias())
-            projection_alias_names.insert(projection_node->getAlias());
-
     /// Initialize aliases in query node scope
     QueryExpressionsAliasVisitor visitor(scope.aliases);
 
@@ -6484,12 +6535,32 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
             continue;
         const auto & cte_name = subquery_node ? subquery_node->getCTEName() : union_node->getCTEName();
 
-        auto [_, inserted] = scope.cte_name_to_query_node.emplace(cte_name, node);
-        if (!inserted)
-            throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                "CTE with name {} already exists. In scope {}",
-                cte_name,
-                scope.scope_node->formatASTForErrorMessage());
+        auto & cte_nodes = scope.cte_name_to_query_node[cte_name];
+        if (!cte_nodes.empty())
+        {
+            if (query_node_typed.isRecursiveWith())
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists and cannot be redefined in a recursive WITH clause. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            /// A redefinition is rejected on its second registration, so only the first node can be materialized.
+            if (isMaterializedCTEDefinition(node) || isMaterializedCTEDefinition(cte_nodes.front()))
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists and cannot be redefined because it is declared as MATERIALIZED. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+
+            /// Checked last, so the hint is given only when enabling the setting would help.
+            if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_cte_redefinition])
+                throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
+                    "CTE with name {} already exists. Enable the setting analyzer_compatibility_allow_cte_redefinition "
+                    "to let a later definition shadow the earlier one. In scope {}",
+                    cte_name,
+                    scope.scope_node->formatASTForErrorMessage());
+        }
+
+        cte_nodes.push_back(node);
     }
 
     /** WITH section can be safely removed, because WITH section only can provide aliases to query expressions
@@ -6551,6 +6622,10 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
+    /// `expandGroupByAll` clears the flag, and under `group_by_use_nulls` it runs before the grouping keys
+    /// are resolved, so the ALL-ness has to be remembered here to still be known at either validation site.
+    const bool query_is_group_by_all = query_node_typed.isGroupByAll();
+
     if (!scope.group_by_use_nulls)
     {
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
@@ -6606,7 +6681,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getWhere(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasGroupBy())
-        resolveGroupByNode(query_node_typed, scope);
+        resolveGroupByNode(
+            query_node_typed,
+            scope,
+            /* validate_key_types */ !query_is_group_by_all
+                || scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types]);
 
     if (query_node_typed.hasHaving())
         resolveExpressionNode(query_node_typed.getHaving(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -6679,11 +6758,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * After scope nodes are resolved, we can compare node with duplicate alias with
       * node from scope alias table.
       */
-    /// Whether some alias with conflicting definitions was allowed because it is not used.
-    /// Only in that case can two different projection expressions end up with the same column name,
-    /// see the renaming of colliding projection columns below.
-    bool has_unused_duplicated_aliases = false;
-
     for (const auto & node_with_duplicated_alias : scope.aliases.nodes_with_duplicated_aliases)
     {
         auto node = node_with_duplicated_alias;
@@ -6697,21 +6771,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
           */
         if (node_alias.empty())
             continue;
-
-        /** Conflicting expressions for an alias are an error only if the alias is actually used:
-          * either it was looked up to resolve some identifier, or it names a projection column
-          * (and therefore becomes a column name of the result). An alias can also just give a name
-          * to a nested expression without being referenced anywhere, e.g. a name of a tuple element in
-          * SELECT tuple(1 AS x), tuple(2 AS x)
-          * (see the setting enable_named_columns_in_function_tuple), and such queries are valid.
-          * If the alias is used, the check below is preserved: whichever expression a reference
-          * resolved to, conflicting definitions make the reference ambiguous.
-          */
-        if (!scope.used_alias_names.contains(node_alias) && !projection_alias_names.contains(node_alias))
-        {
-            has_unused_duplicated_aliases = true;
-            continue;
-        }
 
         resolveExpressionNode(node, scope, true /*allow_lambda_expression*/, true /*allow_table_expression*/);
 
@@ -6786,8 +6845,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     {
         expandTuplesInList(query_node_typed.getGroupBy().getNodes());
 
-        for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
-            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+        /// Only the acceptance check is optional; the tuple expansion above is not.
+        if (scope.context->getSettingsRef()[Setting::validate_group_by_all_key_types])
+        {
+            for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+                validateGroupByKeyType(group_by_elem->getResultType(), scope);
+        }
     }
 
     tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
@@ -6827,71 +6890,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     for (auto & [_, node] : scope.aliases.alias_name_to_lambda_node)
         node->removeAlias();
-
-    /// Nested aliases can repeat between different projection expressions
-    /// (SELECT tuple(1 AS x), tuple(2 AS x) -- see the check for duplicated aliases above),
-    /// and the column name of an expression is built using the aliases of its subexpressions,
-    /// so different constant projection expressions can end up with the same column name.
-    /// Columns with identical names must have identical structure in a Block, so such columns
-    /// are renamed by appending a numeric suffix. The renaming applies only to a query that has
-    /// repeated aliases of nested expressions, and only to collisions between unequal constants,
-    /// so no previously working query changes its column names, and a collision that was an error
-    /// before (e.g. WITH 3 AS "1" SELECT 1, "1") still throws AMBIGUOUS_COLUMN_NAME.
-    /// Other collisions (e.g. same-named columns of joined tables) keep the historical behavior.
-    if (has_unused_duplicated_aliases)
-    {
-        const auto & projection_nodes = query_node_typed.getProjection().getNodes();
-        if (projection_nodes.size() == projection_columns.size())
-        {
-            std::unordered_map<std::string, size_t> name_to_first_position;
-            std::unordered_set<std::string> projection_column_names;
-            for (const auto & projection_column : projection_columns)
-                projection_column_names.insert(projection_column.name);
-
-            for (size_t i = 0; i < projection_columns.size(); ++i)
-            {
-                auto [it, inserted] = name_to_first_position.emplace(projection_columns[i].name, i);
-                if (inserted)
-                    continue;
-
-                const auto & first_column = projection_columns[it->second];
-                const auto * first_constant = projection_nodes[it->second]->as<ConstantNode>();
-                const auto * current_constant = projection_nodes[i]->as<ConstantNode>();
-
-                bool need_rename = false;
-                if (first_constant && current_constant)
-                {
-                    need_rename = !projection_columns[i].type->equals(*first_column.type)
-                        || first_constant->getValue() != current_constant->getValue();
-                }
-                else if (projection_nodes[it->second]->getNodeType() != QueryTreeNodeType::COLUMN
-                    || projection_nodes[i]->getNodeType() != QueryTreeNodeType::COLUMN)
-                {
-                    /// Unequal non-constant expressions can also collide on the column name when the name
-                    /// is built from repeated element names, e.g. SELECT tuple(a AS x), tuple(b AS x).
-                    /// They can become constants of different values during planning (e.g. when the source
-                    /// columns are constant), and columns with identical names must have identical structure
-                    /// in a Block. Collisions between two plain columns (e.g. same-named columns of joined
-                    /// tables) keep the historical behavior and are not renamed.
-                    need_rename = !projection_nodes[it->second]->isEqual(
-                        *projection_nodes[i], IQueryTreeNode::CompareOptions{.compare_aliases = false});
-                }
-
-                if (!need_rename)
-                    continue;
-
-                size_t suffix = 1;
-                std::string new_name;
-                do
-                {
-                    new_name = fmt::format("{}_{}", projection_columns[i].name, suffix);
-                    ++suffix;
-                } while (!projection_column_names.emplace(new_name).second);
-
-                projection_columns[i].name = std::move(new_name);
-            }
-        }
-    }
 
     query_node_typed.resolveProjectionColumns(std::move(projection_columns));
 }

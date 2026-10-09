@@ -54,7 +54,7 @@ FROM series LIMIT 1
         )",
         R"(
 ┌─covarSamp(x_value, y_value)─┐
-│           7.206275555555556 │
+│                         nan │
 └─────────────────────────────┘
         )"
     }

@@ -218,7 +218,6 @@
               "pages": [
                 "concepts/features/interfaces/overview",
                 "concepts/features/interfaces/http",
-                "concepts/features/interfaces/framing-formats",
                 "concepts/features/interfaces/tcp",
                 "concepts/features/interfaces/adbc",
                 "concepts/features/interfaces/jdbc",

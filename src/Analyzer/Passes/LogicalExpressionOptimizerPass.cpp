@@ -417,6 +417,8 @@ struct ExpressionFilters
     /// Excluded from the analysis: non-lossless conversions (they also veto the fold-to-false
     /// collapse), NaN constants, and everything when pruning is disabled.
     std::vector<ComparisonFilterInfo> opaque_filters;
+    /// Index in `opaque_filters` of the first `equals` on this expression; set only when pruning is disabled.
+    std::optional<size_t> first_equals_position;
 };
 
 using ComparisonFilterMap = QueryTreeNodePtrWithHashMap<ExpressionFilters>;
@@ -881,8 +883,8 @@ static void rebuildComparisonNode(ComparisonFilterInfo & filter, const ContextPt
 }
 
 /// Insert a new comparison filter for `expression` into `filter_map`.
-/// When `enable_pruning` is true, performs type conversion, boundary folding, and
-/// comparison against existing filters for the same expression.
+/// Performs type conversion; with `enable_pruning` also boundary folding and comparison against
+/// every existing filter for the expression, otherwise only against the first `equals` seen.
 /// Returns ALWAYS_FALSE if a contradiction is found, ALWAYS_TRUE if the condition holds
 /// for the column type or is implied by existing filters, or ADDED otherwise.
 static AddComparisonFilterResult addComparisonFilter(
@@ -892,13 +894,6 @@ static AddComparisonFilterResult addComparisonFilter(
     bool enable_pruning,
     const ContextPtr & context)
 {
-    /// Pruning disabled — just store the filter without analysis.
-    if (!enable_pruning)
-    {
-        filter_map[expression].opaque_filters.push_back(std::move(new_filter));
-        return AddComparisonFilterResult::ADDED;
-    }
-
     /// A comparison with a nullable result is ambiguous under NULL and must not be pruned or folded;
     /// keep it as-is. Test the comparison node's result type, not the raw operand type, so nested and
     /// carrier-hidden nullability (e.g. `LowCardinality(Nullable)`, `Dynamic`, `Variant`) is caught.
@@ -915,8 +910,11 @@ static AddComparisonFilterResult addComparisonFilter(
     new_filter.converted_value = tryConvertToColumnType(new_filter.constant_node, expr_type);
 
     /// Step 2: for integer columns, try boundary folding / float-literal rewriting.
-    if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
-        return *result;
+    if (enable_pruning)
+    {
+        if (auto result = tryFoldBoundaryOrRewriteFloatForIntColumn(new_filter, expr_type))
+            return *result;
+    }
 
     auto & filters = filter_map[expression];
 
@@ -929,6 +927,24 @@ static AddComparisonFilterResult addComparisonFilter(
     {
         filters.opaque_filters.push_back(std::move(new_filter));
         return AddComparisonFilterResult::ADDED;
+    }
+
+    if (!enable_pruning)
+    {
+        auto result = AddComparisonFilterResult::ADDED;
+        if (new_filter.function == ComparisonFunction::EQUALS)
+        {
+            if (filters.first_equals_position)
+            {
+                if (compareComparisonFilters(filters.opaque_filters[*filters.first_equals_position], new_filter)
+                    == ValueComparisonResult::ALWAYS_FALSE)
+                    result = AddComparisonFilterResult::ALWAYS_FALSE;
+            }
+            else
+                filters.first_equals_position = filters.opaque_filters.size();
+        }
+        filters.opaque_filters.push_back(std::move(new_filter));
+        return result;
     }
 
     /// Step 3: compare against the existing equals/range filters.
@@ -1889,7 +1905,7 @@ private:
     /** Optimize AND chains by analyzing comparison conditions on the same expression.
       * This method performs two things in a single pass:
       *
-      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled):
+      * (a) Comparison chain pruning (when `optimize_redundant_comparisons` is enabled, except an always-false `equals` pair):
       *     Given an AND expression where the same column appears in multiple comparisons
       *     against constants (e.g. `a = 3 AND a < 5 AND a > 1`), we collect all conditions
       *     on the same non-constant expression into a per-expression `ComparisonFilterMap`.

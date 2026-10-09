@@ -83,6 +83,15 @@ public:
         ContextPtr context,
         bool async_insert) override;
 
+    static SinkToStoragePtr createSink(
+        const StorageObjectStorageConfigurationPtr & configuration,
+        const ObjectStoragePtr & object_storage,
+        const StorageID & storage_id,
+        const std::optional<FormatSettings> & format_settings,
+        const std::shared_ptr<DataLake::ICatalog> & catalog,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & context);
+
     void truncate(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -127,8 +136,6 @@ public:
     bool prefersLargeBlocks() const override;
 
     bool parallelizeOutputAfterReading(ContextPtr context) const override;
-
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
 
     static SchemaCache & getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name);
 

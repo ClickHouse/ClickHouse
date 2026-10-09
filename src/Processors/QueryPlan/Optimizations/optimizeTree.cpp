@@ -1,6 +1,5 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -103,7 +102,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
-        optimization_settings.short_circuit_function_evaluation_disabled,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 
     while (!stack.empty())
@@ -234,6 +233,7 @@ void optimizeTreeSecondPass(
         optimization_settings.push_down_volume_reducing_functions,
         optimization_settings.make_distributed_plan,
         optimization_settings.serialize_query_plan,
+        optimization_settings.filter_push_down_below_limit_by,
     };
 
     Stack stack;
@@ -265,13 +265,10 @@ void optimizeTreeSecondPass(
 
     if (!optimization_settings.correlated_subqueries_use_in_memory_buffer)
     {
-        /// Sets taken out of the referenced subplans before they are cloned; re-attached below.
-        PreparedSets::Subqueries materialized_sets;
-
         /// Materialize subplan references before other optimizations.
         traverseQueryPlan(stack, root, [&](auto & frame_node)
         {
-            materializeQueryPlanReferences(frame_node, nodes, materialized_sets);
+            materializeQueryPlanReferences(frame_node, nodes);
         });
 
         /// Remove CommonSubplanSteps (they must be not used at that point).
@@ -279,22 +276,6 @@ void optimizeTreeSecondPass(
         {
             optimizeUnusedCommonSubplans(frame_node);
         });
-
-        /// A single builder above the root dominates every copy of a materialized subplan, so each set
-        /// is ready before any copy's `in()` is evaluated, regardless of join kind, join algorithm or
-        /// scheduling. Every extracted set must be re-attached: a set with no builder left in the plan
-        /// stays unbuilt, and `FunctionIn` then reports it as not ready.
-        if (!materialized_sets.empty())
-        {
-            auto step = std::make_unique<DelayedCreatingSetsStep>(
-                root.step->getOutputHeader(),
-                std::move(materialized_sets),
-                optimization_settings.network_transfer_limits,
-                optimization_settings.prepared_sets_cache);
-
-            auto * child = &nodes.emplace_back(std::move(root));
-            root = QueryPlan::Node{std::move(step), {child}};
-        }
     }
 
     /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
@@ -328,6 +309,11 @@ void optimizeTreeSecondPass(
     /// to move newly added runtime filter as deep in the tree as possible
     if (join_runtime_filters_were_added)
     {
+        /// The re-run passes default `ExtraSettings`, except for the `LIMIT BY` gate: this pass also pushes
+        /// filters below `LIMIT BY`, so it must follow `query_plan_filter_push_down_below_limit_by` too.
+        Optimization::ExtraSettings push_down_settings{};
+        push_down_settings.filter_push_down_below_limit_by = optimization_settings.filter_push_down_below_limit_by;
+
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
             {
@@ -337,7 +323,7 @@ void optimizeTreeSecondPass(
                     size_t changed_nodes = 0;
                     changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
                     changed_nodes += tryMergeFilters(&frame_node, nodes, {});
-                    changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+                    changed_nodes += tryPushDownFilter(&frame_node, nodes, push_down_settings);
 
                     if (!changed_nodes)
                         break;

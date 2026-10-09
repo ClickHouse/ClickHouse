@@ -218,111 +218,6 @@ DataTypePtr alignStructFieldNamesCaseInsensitive(const DataTypePtr & from, const
     return from;
 }
 
-/// Realign named tuples of the decoded column to the requested type by element name, recursively:
-/// decoded elements missing in the requested type are dropped, and requested elements without
-/// a match are filled by default values. The named-tuple CAST applied afterwards matches elements
-/// by name only when the tuples have at least one element name in common (tuples with disjoint
-/// element names are converted positionally), while the format readers always match struct fields
-/// by name, consistently with the Parquet and ORC native readers.
-ColumnWithTypeAndName realignStructFieldsToRequested(ColumnWithTypeAndName from, const DataTypePtr & to)
-{
-    if (!from.column || from.type->equals(*to))
-        return from;
-
-    if (const auto * from_null = typeid_cast<const DataTypeNullable *>(from.type.get()))
-    {
-        const auto & from_null_column = assert_cast<const ColumnNullable &>(*from.column);
-        auto realigned = realignStructFieldsToRequested(
-            {from_null_column.getNestedColumnPtr(), from_null->getNestedType(), from.name}, removeNullable(to));
-        from.column = ColumnNullable::create(realigned.column, from_null_column.getNullMapColumnPtr());
-        from.type = std::make_shared<DataTypeNullable>(realigned.type);
-        return from;
-    }
-    if (const auto * to_null = typeid_cast<const DataTypeNullable *>(to.get()))
-        return realignStructFieldsToRequested(std::move(from), to_null->getNestedType());
-
-    if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to.get()))
-    {
-        const auto * from_arr = typeid_cast<const DataTypeArray *>(from.type.get());
-        if (!from_arr)
-            return from;
-        const auto & from_arr_column = assert_cast<const ColumnArray &>(*from.column);
-        auto realigned = realignStructFieldsToRequested(
-            {from_arr_column.getDataPtr(), from_arr->getNestedType(), from.name}, to_arr->getNestedType());
-        from.column = ColumnArray::create(realigned.column, from_arr_column.getOffsetsPtr());
-        from.type = std::make_shared<DataTypeArray>(realigned.type);
-        return from;
-    }
-    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
-    {
-        const auto * from_map = typeid_cast<const DataTypeMap *>(from.type.get());
-        if (!from_map)
-            return from;
-        const auto & from_map_column = assert_cast<const ColumnMap &>(*from.column);
-        const auto & from_entries = assert_cast<const ColumnArray &>(from_map_column.getNestedColumn());
-        const auto & from_entries_tuple = assert_cast<const ColumnTuple &>(from_entries.getData());
-        auto realigned_key = realignStructFieldsToRequested(
-            {from_entries_tuple.getColumnPtr(0), from_map->getKeyType(), from.name}, to_map->getKeyType());
-        auto realigned_value = realignStructFieldsToRequested(
-            {from_entries_tuple.getColumnPtr(1), from_map->getValueType(), from.name}, to_map->getValueType());
-        from.column = ColumnMap::create(ColumnArray::create(
-            ColumnTuple::create(Columns{realigned_key.column, realigned_value.column}), from_entries.getOffsetsPtr()));
-        from.type = std::make_shared<DataTypeMap>(realigned_key.type, realigned_value.type);
-        return from;
-    }
-    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
-    {
-        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.type.get());
-        if (!from_tuple || !from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames())
-            return from;
-
-        const auto & from_tuple_column = assert_cast<const ColumnTuple &>(*from.column);
-        const auto & from_elems = from_tuple->getElements();
-        const auto & from_names = from_tuple->getElementNames();
-        const auto & to_elems = to_tuple->getElements();
-        const auto & to_names = to_tuple->getElementNames();
-
-        UnorderedMapWithMemoryTracking<String, size_t> from_positions;
-        from_positions.reserve(from_names.size());
-        for (size_t i = 0; i < from_names.size(); ++i)
-            from_positions.emplace(from_names[i], i);
-
-        Columns new_columns;
-        DataTypes new_elems;
-        Strings new_names;
-        new_columns.reserve(to_names.size());
-        new_elems.reserve(to_names.size());
-        new_names.reserve(to_names.size());
-
-        for (size_t i = 0; i < to_names.size(); ++i)
-        {
-            auto it = from_positions.find(to_names[i]);
-            if (it != from_positions.end())
-            {
-                auto realigned = realignStructFieldsToRequested(
-                    {from_tuple_column.getColumnPtr(it->second), from_elems[it->second], from.name}, to_elems[i]);
-                new_columns.push_back(realigned.column);
-                new_elems.push_back(realigned.type);
-            }
-            else
-            {
-                new_columns.push_back(to_elems[i]->createColumn()->cloneResized(from_tuple_column.size()));
-                new_elems.push_back(to_elems[i]);
-            }
-            new_names.push_back(to_names[i]);
-        }
-
-        /// An empty `Tuple()` has no element columns to carry the row count.
-        if (new_columns.empty())
-            from.column = ColumnTuple::create(from_tuple_column.size());
-        else
-            from.column = ColumnTuple::create(std::move(new_columns));
-        from.type = std::make_shared<DataTypeTuple>(std::move(new_elems), std::move(new_names));
-        return from;
-    }
-    return from;
-}
-
 /// A LowCardinality dictionary must have unique values; the library reader rejects non-unique ones.
 /// Validate the common (non-nullable, contiguously-comparable) dictionary value columns.
 void checkDictionaryUnique(const ColumnPtr & values)
@@ -932,7 +827,6 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         const DataTypePtr & nested_table_type = collected.front().type;
                         if (case_insensitive)
                             nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
-                        nested_column = realignStructFieldsToRequested(std::move(nested_column), nested_table_type);
                         nested_column.column = castColumn(nested_column, nested_table_type);
                         nested_column.type = nested_table_type;
                     }
@@ -998,8 +892,6 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
         /// column matching is enabled, so the named-tuple CAST below does not turn them into defaults.
         if (case_insensitive)
             column.type = alignStructFieldNamesCaseInsensitive(column.type, header_column.type);
-
-        column = realignStructFieldsToRequested(std::move(column), header_column.type);
 
         try
         {
@@ -1343,6 +1235,8 @@ cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMA
 | `output_format_arrow_compression_method`                                                                                 | Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, none (uncompressed) | `lz4_frame`  |
 | `output_format_arrow_fixed_string_as_fixed_byte_array`                                                                   | Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.                        | `1`          |
 | `output_format_arrow_low_cardinality_as_dictionary`                                                                      | Enable output LowCardinality type as Dictionary Arrow type                                         | `0`          |
+| `output_format_arrow_record_batch_size`                                                                                  | Target rows per record batch when combining small blocks. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the row target. | `0`          |
+| `output_format_arrow_record_batch_size_bytes`                                                                            | Target bytes of accumulated block data per record batch. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the byte target.              | `0`          |
 | `output_format_arrow_string_as_string`                                                                                   | Use Arrow String type instead of Binary for String columns                                         | `1`          |
 | `output_format_arrow_unsupported_types_as_binary`                                                                        | Output a type that has no Arrow equivalent (e.g. `BFloat16`, `AggregateFunction`) as raw binary data. If false, such a type raises an exception. | `1`          |
 | `output_format_arrow_use_64_bit_indexes_for_dictionary`                                                                  | Always use 64 bit integers for dictionary indexes in Arrow format                                  | `0`          |
@@ -1477,6 +1371,8 @@ the blog post
 | `output_format_arrow_date_as_uint16`                                         | Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32). | `0`         |
 | `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.                                                                | `1`         |
 | `output_format_arrow_low_cardinality_as_dictionary`                          | Enable output LowCardinality type as Dictionary Arrow type                                                                                 | `0`         |
+| `output_format_arrow_record_batch_size`                                      | Target rows per record batch when combining small blocks. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the row target. | `0`         |
+| `output_format_arrow_record_batch_size_bytes`                                | Target bytes of accumulated block data per record batch. Buffering can increase memory use and delay the first batch until the query finishes. `0` disables the byte target.                                                      | `0`         |
 | `output_format_arrow_string_as_string`                                       | Use Arrow String type instead of Binary for String columns                                                                                 | `1`         |
 | `output_format_arrow_unsupported_types_as_binary`                            | Output a type that has no Arrow equivalent (e.g. `BFloat16`, `AggregateFunction`) as raw binary data. If false, such a type raises an exception. | `1`         |
 | `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Always use 64 bit integers for dictionary indexes in Arrow format                                                                          | `0`         |

@@ -1516,6 +1516,17 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
                 constant_granularity->fixFromRowsCount(rows_count);
 
+            /// A patch part that holds rows names the parts it patches, so an index without source
+            /// parts is not a patch that applies to nothing - it is a file that lost its content.
+            /// Failing here is what keeps the acknowledged update recoverable: an empty index reports
+            /// data version 0, so `clearUnusedPatchParts` would find the patch materialized everywhere
+            /// and delete the only copy of it. An empty index belongs to an empty part alone (the
+            /// covering parts `cloneEmpty` creates).
+            if (info.isPatch() && rows_count > 0 && patch_part_index && patch_part_index->empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Patch part {} has {} rows, but its index in {} references no source parts",
+                    name, rows_count, PatchPartIndex::FILENAME);
+
             loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
             loadPartitionAndMinMaxIndex();
 
@@ -2001,7 +2012,15 @@ void IMergeTreeDataPart::loadPatchPartIndex()
         return;
 
     if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+    {
         patch_part_index = PatchPartIndex::readBinary(*in);
+
+        /// The file holds nothing but this index, so bytes left over mean its content is not what was
+        /// written. One corruption shape makes this check the difference between a loud and a silent
+        /// failure: a zeroed block parses as an index of format version `V1` with no source parts at
+        /// all, and everything after those nine bytes would otherwise be ignored.
+        assertEOF(*in);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }

@@ -56,10 +56,16 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
     auto & query = updated_query_ptr->as<ASTCreateSettingsProfileQuery &>();
 
     auto & access_control = getContext()->getAccessControl();
-    if (query.alter)
-        getContext()->checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
-    else
-        getContext()->checkAccess(AccessType::CREATE_SETTINGS_PROFILE);
+
+    /// `CREATE SETTINGS PROFILE OR REPLACE` throws away an existing profile of the same name - including
+    /// which roles it applies to - so it is a drop followed by a create and requires the privileges of
+    /// both. `DROP SETTINGS PROFILE` is required whether or not the profile currently exists, mirroring
+    /// `REPLACE TABLE`, so that the check does not reveal which profiles exist either.
+    AccessFlags required_access = query.alter ? AccessType::ALTER_SETTINGS_PROFILE : AccessType::CREATE_SETTINGS_PROFILE;
+    if (query.or_replace)
+        required_access |= AccessType::DROP_SETTINGS_PROFILE;
+
+    getContext()->checkAccess(required_access);
 
     std::optional<AlterSettingsProfileElements> settings_from_query;
     if (query.alter_settings)

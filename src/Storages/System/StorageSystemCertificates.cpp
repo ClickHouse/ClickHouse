@@ -15,6 +15,7 @@
     #include <Poco/Net/SSLManager.h>
     #include <Poco/Net/SSLException.h>
     #include <Common/Crypto/X509Certificate.h>
+    #include <Server/CertificateReloader.h>
 #endif
 
 #include <boost/algorithm/string/classification.hpp>
@@ -140,12 +141,19 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
         }
     };
 
+    /// The CA certificates may have been reloaded since the context was created, `CertificateReloader` knows the current ones.
+    auto current_ca_paths = [](const std::string & prefix, Poco::Net::Context::Ptr ssl_context)
+    {
+        if (auto reloaded_ca_paths = CertificateReloader::instance().getCAPaths(prefix))
+            return *reloaded_ca_paths;
+        return ssl_context->getCAPaths();
+    };
+
     const auto & config = Context::getGlobalContextInstance()->getConfigRef();
 
     try
     {
-        const auto & ca_paths = Poco::Net::SSLManager::instance().defaultServerContext()->getCAPaths();
-        process_ca_paths(ca_paths, "");
+        process_ca_paths(current_ca_paths(Poco::Net::SSLManager::CFG_SERVER_PREFIX, Poco::Net::SSLManager::instance().defaultServerContext()), "");
     }
     catch (const Poco::Net::SSLException &)
     {
@@ -162,10 +170,7 @@ void StorageSystemCertificates::fillData([[maybe_unused]] MutableColumns & res_c
             continue;
 
         if (auto ctx = Poco::Net::SSLManager::instance().getCustomServerContext(prefix))
-        {
-            const auto & ca_paths = ctx->getCAPaths();
-            process_ca_paths(ca_paths, protocol_name);
-        }
+            process_ca_paths(current_ca_paths(prefix, ctx), protocol_name);
     }
 #endif
 }

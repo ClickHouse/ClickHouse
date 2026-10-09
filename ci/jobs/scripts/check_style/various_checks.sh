@@ -125,10 +125,6 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /FunctionBaseAI.h
     -e /aiEmbed.cpp
     -e /aiSimilarity.cpp
-    # `KQLPlanBuilder` is an analysis-time helper, not a function: it is created inside
-    # `buildImpl`, uses the context only to look up the delegates it composes, and is
-    # destroyed before the resulting `FunctionKQLPlan` (which holds no context) executes.
-    -e /Kusto/KQLPlan.h
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 
@@ -156,9 +152,6 @@ FUNCTIONS_WITH_CONTEXT_EXCEPTIONS=(
     -e /getSetting.cpp
     -e /hasColumnInTable.cpp
     -e /initializeAggregation.cpp
-    # Overload resolvers for the KQL dialect: they only need the context to look up the
-    # function they delegate to, and that happens during analysis, not execution.
-    -e /Kusto/
     # Diagnostic helper, the file is disabled via `#if 0` in production builds;
     # `WithContext` is required so `trap('access context')` exercises runtime context access.
     -e /trap.cpp
@@ -217,6 +210,11 @@ tests_with_system_drop=( $(
         sort -u
 ) )
 for test_case in "${tests_with_system_drop[@]}"; do
+    # `SYSTEM DROP FILESYSTEM CACHE '<name>'` affects only the named cache, not the
+    # server-wide state, so a test which drops the cache it created itself can run in
+    # parallel. Skip a test if every `SYSTEM DROP` in it drops a cache by name.
+    grep -oiP "system\s+drop(\s+filesystem\s+cache\s+'[^']+')?" "$test_case" |
+        grep -qivP "filesystem\s+cache\s+'" || continue
     grep -qP '(--|#)\s*[Tt]ags:.*no-parallel' "$test_case" || echo "Test with SYSTEM DROP should have no-parallel tag: $test_case"
 done
 

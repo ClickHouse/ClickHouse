@@ -92,6 +92,8 @@ private:
     /// same time, so both update this set.
     mutable std::mutex committed_mutex;
     ByteRange aligned_range;
+    /// One state per writer: it owns a single append-only segment.
+    FileCacheReserveAhead reserve_ahead;
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 
