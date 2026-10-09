@@ -227,9 +227,12 @@ def test_materialized_view_over_rotated_system_log():
         node.query("SYSTEM FLUSH LOGS")
 
         assert node.query(rotated) != rotated_before
+        # Not counting the `query_log_watcher` of the CI logs export, see
+        # tests/integration/helpers/ci_logs_export.py.
         assert (
             node.query(
-                "SELECT dependencies_table FROM system.tables WHERE database = 'system' AND name = 'query_log'"
+                "SELECT arrayFilter(name -> name != 'query_log_watcher', dependencies_table) "
+                "FROM system.tables WHERE database = 'system' AND name = 'query_log'"
             )
             == "['mv_124177']\n"
         )
