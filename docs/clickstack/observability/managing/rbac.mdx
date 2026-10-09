@@ -29,7 +29,7 @@ The service authenticates through ClickHouse Cloud. Before you can assign observ
 | **SQL Console Read Only** (Read Only) | Can view observability data and create dashboards. |
 | **No access** | Can't access the service. |
 
-Once a user has Cloud access, they appear in the **Team Settings** page where you can assign an observability role.
+Once a user has Cloud access, they appear under **Team Settings** → **Members & Roles**. Select **Manage in Console** to manage organization membership in ClickHouse Cloud.
 
 <Tabs>
 <Tab title="Cloud Users and roles">
@@ -58,17 +58,17 @@ The service includes three system roles. You can't edit or delete these. The Adm
 | Manage users and invitations | ✓ | | |
 
 ## Assigning roles to team members {#assigning-roles}
-The **Team Settings** page lists all team members with their current role. To change a role, click **Edit** next to the user's name and select a new role. Each user has exactly one role.
+The **Members & Roles** tab in **Team Settings** lists team members with their current role. To change a role, click **Edit** next to the user's name and select a new role. Each user has exactly one role.
 
 ### Default new user role {#default-new-user-role}
-You can set a default role for new users under [Security policies](#security-policies). New users who auto-join the team are automatically assigned this role.
+Under **Team Settings** → **Members & Roles**, use **Default New User Role** below the roles list to choose the role assigned to users who auto-join the team. If no default is set, new users receive the **Member** role.
 
 ## Creating a custom role {#creating-a-role}
 
 <Steps>
 <Step title="Navigate to Team Settings" id="step-navigate">
 
-Open **Team Settings** and scroll to **RBAC Roles**.
+Open **Team Settings** → **Members & Roles** and find **RBAC Roles**.
 
 <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg"/>
 </Step>
@@ -102,7 +102,7 @@ The resource types you can control are:
 
 - **[Dashboards](/clickstack/observability/features/dashboards/overview)** — saved dashboard layouts and charts.
 - **[Saved searches](/clickstack/observability/features/search)** — persisted log/trace/event queries.
-- **Sources** — ingestion source configurations.
+- **Sources** — data sources used to query observability data.
 - **[Alerts](/clickstack/observability/features/alerts)** — alert rules and their notification settings.
 - **Webhooks** — outbound notification destinations (such as Slack, PagerDuty, and generic HTTP endpoints) that [alerts](/clickstack/observability/features/alerts) deliver to. This doesn't refer to the observability API.
 - **Notebooks** — collaborative investigation notebooks.
@@ -111,7 +111,7 @@ The resource types you can control are:
 
 In addition to resource permissions, each role includes two administrative settings:
 
-- **Users** (No Access · Limited Access) — controls whether the role can view team members and their roles. Only Admins can invite, remove, or update users.
+- **Users** (No Access · Read) — controls whether the role can view team members and their roles. Only Admins can invite, remove, or update users.
 - **Team** (Read · Manage) — controls whether the role can view or modify team-level settings such as security policies and RBAC configuration.
 
 ### Fine-grained access rules {#fine-grained-access-rules}
@@ -150,18 +150,16 @@ You can add multiple rules per resource type. Each rule is checked independently
 <Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="Access rules with OR logic tooltip" size="md"/>
 
 **Example**: To give a role read-only access to testing dashboards, expand Dashboards, switch to Fine-Grained Controls, and add two rules:
-- **Name** `contains` `testing` with access level **Read**                                                                                                                                   
+- **Name** `contains` `testing` with access level **Read**
 - **Tag** `is` `testing` with access level **Read**
 
- A dashboard that matches either rule is accessible.
+A dashboard that matches either rule is accessible.
 
 <Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="Two fine-grained access rules joined by OR: Name contains testing with Read access, and Tag is testing with Read access" size="md"/>
 
 ## Security policies {#security-policies}
 
 The **Security Policies** section in **Team Settings** provides additional controls.
-
-**Default New User Role** sets the role automatically assigned to new users who join the team.
 
 **Generative AI** lets you enable or disable LLM-powered features (such as natural language query generation) powered by Anthropic or Amazon Bedrock. When disabled, no data is sent to AI providers.
 

@@ -2,31 +2,20 @@
 slug: /clickstack/observability/managing/overview
 title: 'Managing ClickHouse Observability'
 sidebarTitle: 'Overview'
-description: 'Managing ClickHouse Observability'
+description: 'Manage sources, telemetry connection details, query settings, and team permissions in fully managed ClickHouse Observability.'
 doc_type: 'guide'
-keywords: ['managing ClickHouse Observability', 'performance', 'materialized views', 'admin commands']
+keywords: ['ClickHouse Observability', 'administration', 'sources', 'query settings', 'roles', 'permissions']
 ---
 
-This section describes how to manage ClickHouse Observability.
+Use **Team Settings** to manage sources, find telemetry connection details, adjust query settings, and configure team permissions in ClickHouse Observability.
 
-## Admin guides {#admin-guides}
+## Administration guides {#admin-guides}
 
-| Section | Description |
-|--------|-------------|
-| [Configuration options](/clickstack/observability/managing/config) | Configuration options available for each component. |
-| [RBAC](/clickstack/observability/managing/rbac) | Configure role-based access control to manage team permissions for dashboards, saved searches, and sources. |
+| Guide | What you can do |
+| --- | --- |
+| [Configuration options](/clickstack/observability/managing/config) | Enable or disable sources, find managed telemetry connection details, send a test log, and adjust query settings. |
+| [Role-based access control](/clickstack/observability/managing/rbac) | Review built-in roles, create custom roles, and configure permissions for dashboards, saved searches, sources, and other resources. |
 
-## Core ClickHouse concepts {#core-concepts}
+## Sending telemetry {#sending-telemetry}
 
-Most management tasks require familiarity with the underlying ClickHouse database. We recommend reviewing the following core ClickHouse concepts outlined below before performing administrative or performance-related operations.
-
-| Concept | Description |
-|---------|-------------|
-| **Tables** | How data sources map to underlying ClickHouse tables. ClickHouse tables primarily use the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) engine. |
-| **Parts** | How data is written as immutable parts and merged over time. |
-| **Partitions** | Logical groupings of table parts that simplify data management, querying, and optimization. |
-| **Merges** | The background process that combines parts to reduce the number of parts queried and maintain performance. |
-| **Granules** | The smallest unit of data read and pruned during query execution. |
-| **Primary (ordering) keys** | How the `ORDER BY` key defines on-disk data layout, compression, and query pruning behavior. |
-
-These concepts are fundamental to ClickHouse performance and will help you make informed administrative decisions when managing ClickHouse Observability.
+To connect applications and collectors, start with the connection details under **Team Settings → Data → Managed Telemetry**, then follow the [ingestion guides](/clickstack/observability/ingesting-data/overview).

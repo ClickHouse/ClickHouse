@@ -7,10 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Observability', 'MCP', 'Model Context Protocol', 'AI', 'observability', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
-<Warning>
-This guide needs review for fully managed ClickHouse Observability. It uses the existing Cloud MCP instructions from the Self Configured guide. Verify MCP availability, enablement, the endpoint and OAuth flow, service selection, and available tools for this offering before using these instructions.
-</Warning>
-
 ClickHouse Observability includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that lets AI assistants interact with your observability data. Once connected, an AI assistant can query logs, traces, and metrics; manage dashboards and alerts; explore data sources; and work with saved searches — all through natural language.
 
 This allows you to use tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Cursor](https://www.cursor.com/), or any MCP-compatible client to investigate incidents, build dashboards, and manage your observability setup without leaving your development environment.
@@ -18,7 +14,8 @@ This allows you to use tools like [Claude Code](https://docs.anthropic.com/en/do
 <Frame>
 <iframe src="https://www.youtube.com/embed/FaL5iOgNogg?si=dUbsRQe4wYuZ78zt" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 </Frame>
-## ClickHouse Observability {#managed-clickstack}
+
+## Connect to ClickHouse Observability {#managed-clickstack}
 
 ClickHouse Observability connects through the Cloud MCP endpoint at `https://mcp.clickhouse.cloud/clickstack` and authenticates with OAuth 2.0. API key authentication is not supported for this endpoint.
 
@@ -37,7 +34,9 @@ Authentication uses OAuth 2.0. When your MCP client connects for the first time,
 
 ### Connecting an MCP client {#managed-connecting-a-client}
 
-Each client handles the OAuth flow automatically on first connection.
+Open **Team Settings → API & Agents** in your ClickHouse Observability service to copy a configuration for your MCP client. The generated configuration includes the service ID so requests target that service.
+
+Alternatively, use one of the examples below. Your client prompts you to complete OAuth authentication when you connect.
 
 <Tabs>
 <Tab title="Claude Code">
