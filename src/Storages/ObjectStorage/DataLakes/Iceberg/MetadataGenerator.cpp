@@ -179,11 +179,6 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
     return nullptr;
 }
 
-Int64 MetadataGenerator::generateSnapshotId()
-{
-    return static_cast<Int64>(dis(gen));
-}
-
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathFromMetadata & metadata_file_path,
@@ -227,7 +222,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = user_defined_snapshot_id.value_or(generateSnapshotId());
+    Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
@@ -361,7 +356,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
         new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
-    Int64 snapshot_id = generateSnapshotId();
+    Int64 snapshot_id = static_cast<Int64>(dis(gen));
 
     auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);

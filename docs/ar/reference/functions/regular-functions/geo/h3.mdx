@@ -6,7 +6,9 @@ title: 'دوال للعمل مع فهارس H3'
 doc_type: 'reference'
 ---
 
-## فهرس H3 {#h3-index}
+<div id="h3-index">
+  ## فهرس H3
+</div>
 
 يُعد [H3](https://h3geo.org/) نظام فهرسة جغرافية تُقسَّم فيه سطح الأرض إلى شبكة من الخلايا السداسية المتساوية. وهذا النظام هرمي، أي إن كل سداسي في المستوى الأعلى (&quot;الأصل&quot;) يمكن تقسيمه إلى سبعة سداسيات متساوية أصغر حجمًا (&quot;الفروع&quot;)، وهكذا.
 
@@ -18,7 +20,9 @@ doc_type: 'reference'
 
 يتوفر الوصف الكامل لنظام H3 على [موقع Uber Engineering](https://www.uber.com/blog/h3/).
 
-## h3IsValid {#h3isvalid}
+<div id="h3isvalid">
+  ## h3IsValid
+</div>
 
 يتحقق مما إذا كان الرقم يمثّل فهرس [H3](#h3-index) صالحًا.
 
@@ -49,7 +53,9 @@ SELECT h3IsValid(630814730351855103) AS h3IsValid;
 └───────────┘
 ```
 
-## h3GetResolution {#h3getresolution}
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
 
 يحدّد مستوى الدقة لفهرس [H3](#h3-index) المُعطى.
 
@@ -80,7 +86,9 @@ SELECT h3GetResolution(639821929606596015) AS resolution;
 └────────────┘
 ```
 
-## h3EdgeAngle {#h3edgeangle}
+<div id="h3edgeangle">
+  ## h3EdgeAngle
+</div>
 
 يحسب متوسط طول ضلع السداسي في [H3](#h3-index) بوحدة الغراد.
 
@@ -110,7 +118,9 @@ SELECT h3EdgeAngle(10) AS edgeAngle;
 └───────────────────────┘
 ```
 
-## h3EdgeLengthM {#h3edgelengthm}
+<div id="h3edgelengthm">
+  ## h3EdgeLengthM
+</div>
 
 يحسب متوسط طول حافة السداسي [H3](#h3-index) بالأمتار.
 
@@ -140,7 +150,9 @@ SELECT h3EdgeLengthM(15) AS edgeLengthM;
 └─────────────┘
 ```
 
-## h3EdgeLengthKm {#h3edgelengthkm}
+<div id="h3edgelengthkm">
+  ## h3EdgeLengthKm
+</div>
 
 يحسب متوسط طول ضلع الخلية السداسية [H3](#h3-index) بالكيلومترات.
 
@@ -170,7 +182,9 @@ SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
 └──────────────┘
 ```
 
-## geoToH3 {#geotoh3}
+<div id="geotoh3">
+  ## geoToH3
+</div>
 
 يعيد فهرس نقطة [H3](#h3-index) للإحداثيات `(lat, lon)` عند مستوى الدقة المحدد.
 
@@ -205,7 +219,9 @@ SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
 └────────────────────┘
 ```
 
-## h3ToGeo {#h3togeo}
+<div id="h3togeo">
+  ## h3ToGeo
+</div>
 
 يعيد خطَّي العرض والطول للمركز الهندسي المقابلَين لفهرس [H3](#h3-index) المُقدَّم.
 
@@ -237,7 +253,9 @@ SELECT h3ToGeo(644325524701193974) AS coordinates;
 └───────────────────────────────────────┘
 ```
 
-## h3ToGeoBoundary {#h3togeoboundary}
+<div id="h3togeoboundary">
+  ## h3ToGeoBoundary
+</div>
 
 يعيد مصفوفة من الأزواج `(lat, lon)` تمثل حدود فهرس H3 المُدخل.
 
@@ -267,7 +285,9 @@ SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3kRing {#h3kring}
+<div id="h3kring">
+  ## h3kRing
+</div>
 
 يسرد جميع سداسيات [H3](#h3-index) الواقعة ضمن نطاق نصف القطر `k` انطلاقًا من السداسي المحدد، بترتيب عشوائي.
 
@@ -304,13 +324,13 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
 └────────────────────┘
 ```
 
-## h3PolygonToCells {#h3polygontocells}
+<div id="h3polygontocells">
+  ## h3PolygonToCells
+</div>
 
-يُرجع السداسيات (عند مستوى الدقة المحدد) الواقعة ضمن الشكل الهندسي المُقدَّم، سواء كان حلقة أو مضلعًا (أو متعدد المضلعات). يُعد السداسي واقعًا ضمن الشكل عندما يحتوي الشكل الهندسي على مركزه، وهو وضع الاحتواء `0` في [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
+يُرجع السداسيات (عند مستوى الدقة المحدد) الواقعة ضمن الشكل الهندسي المُقدَّم، سواء كان حلقة أو مضلعًا (أو متعدد المضلعات).
 
-يجب أن تقع كل قمة من قمم الشكل الهندسي على الكرة: ضمن نطاق خط الطول `[-180, 180]` وخط العرض `[-90, 90]` بالدرجات. لا يُضمن ترتيب الخلايا المُعادة، لذا رتّب المصفوفة عندما يكون الترتيب مهمًا.
-
-**الصيغة**
+**البنية**
 
 ```sql
 h3PolygonToCells(geometry, resolution)
@@ -336,21 +356,21 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
+│ 608692970769612799 │
+│ 608692971927240703 │
 │ 608692970585063423 │
+│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
-│ 608692970769612799 │
-│ 608692970819944447 │
-│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
 
-## h3PolygonToCellsWithContainment {#h3polygontocellswithcontainment}
+<div id="h3polygontocellswithcontainment">
+  ## h3PolygonToCellsWithContainment
+</div>
 
 يعيد الخلايا السداسية (عند مستوى الدقة المحدد) التي تغطي الشكل الهندسي المُدخل، سواء كان حلقة أو مضلعًا (أو متعدد المضلعات)، باستخدام أوضاع الاحتواء التجريبية في H3.
-
-يجب أن تكون كل قمة في الشكل الهندسي على الكرة: خط الطول ضمن النطاق `[-180, 180]` وخط العرض ضمن النطاق `[-90, 90]` درجة. لا يُضمن ترتيب الخلايا المُعادة، لذا رتّب المصفوفة عندما يكون الترتيب مهمًا.
 
 تربط هذه الدالة `flags` بأوضاع الاحتواء في H3:
 
@@ -365,9 +385,9 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 h3PolygonToCellsWithContainment(geometry, resolution, flags)
 ```
 
-**الوسائط**
+**المعاملات**
 
-* يمكن أن تكون `geometry` أحد [أنواع البيانات الجغرافية](/ar/reference/data-types/geo) التالية أو أنواعها الأولية الأساسية:
+* يمكن أن تكون `geometry` أحد [أنواع البيانات الجغرافية](/ar/reference/data-types/geo) التالية أو أنواعها الأولية المقابلة:
   * [Ring](/ar/reference/data-types/geo#ring)
   * [Polygon](/ar/reference/data-types/geo#polygon)
   * [MultiPolygon](/ar/reference/data-types/geo#multipolygon)
@@ -392,7 +412,9 @@ SELECT
    └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetBaseCell {#h3getbasecell}
+<div id="h3getbasecell">
+  ## h3GetBaseCell
+</div>
 
 يعيد رقم الخلية الأساسية لفهرس [H3](#h3-index).
 
@@ -422,7 +444,9 @@ SELECT h3GetBaseCell(612916788725809151) AS basecell;
 └──────────┘
 ```
 
-## h3HexAreaM2 {#h3hexaream2}
+<div id="h3hexaream2">
+  ## h3HexAreaM2
+</div>
 
 يُرجع متوسط مساحة الخلية السداسية بالمتر المربع عند مستوى الدقة المحدد.
 
@@ -452,7 +476,9 @@ SELECT h3HexAreaM2(13) AS area;
 └──────┘
 ```
 
-## h3HexAreaKm2 {#h3hexareakm2}
+<div id="h3hexareakm2">
+  ## h3HexAreaKm2
+</div>
 
 يعيد متوسط مساحة الخلية السداسية بالكيلومترات المربعة عند مستوى الدقة المحدد.
 
@@ -482,7 +508,9 @@ SELECT h3HexAreaKm2(13) AS area;
 └───────────┘
 ```
 
-## h3IndexesAreNeighbors {#h3indexesareneighbors}
+<div id="h3indexesareneighbors">
+  ## h3IndexesAreNeighbors
+</div>
 
 يُعيد ما إذا كانت فهارس [H3](#h3-index) المعطاة متجاورة أم لا.
 
@@ -514,7 +542,9 @@ SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
 └───┘
 ```
 
-## h3ToChildren {#h3tochildren}
+<div id="h3tochildren">
+  ## h3ToChildren
+</div>
 
 تُرجِع مصفوفة من الفهارس الفرعية للفهرس [H3](#h3-index) المحدَّد.
 
@@ -545,7 +575,9 @@ SELECT h3ToChildren(599405990164561919, 6) AS children;
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3ToParent {#h3toparent}
+<div id="h3toparent">
+  ## h3ToParent
+</div>
 
 يعيد الفهرس الأب (الأقل دقة) الذي يحتوي على فهرس [H3](#h3-index) المحدد.
 
@@ -576,7 +608,9 @@ SELECT h3ToParent(599405990164561919, 3) AS parent;
 └────────────────────┘
 ```
 
-## h3ToString {#h3tostring}
+<div id="h3tostring">
+  ## h3ToString
+</div>
 
 يحوّل تمثيل `H3Index` الخاص بالفهرس إلى تمثيله النصي.
 
@@ -604,7 +638,9 @@ SELECT h3ToString(617420388352917503) AS h3_string;
 └─────────────────┘
 ```
 
-## stringToH3 {#stringtoh3}
+<div id="stringtoh3">
+  ## stringToH3
+</div>
 
 يحوّل التمثيل النصي إلى تمثيل `H3Index` ‏(UInt64).
 
@@ -634,7 +670,9 @@ SELECT stringToH3('89184926cc3ffff') AS index;
 └────────────────────┘
 ```
 
-## h3GetResolution {#h3getresolution-1}
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
 
 يعيد مستوى الدقة لفهرس [H3](#h3-index).
 
@@ -664,7 +702,9 @@ SELECT h3GetResolution(617420388352917503) AS res;
 └─────┘
 ```
 
-## h3IsResClassIII {#h3isresclassiii}
+<div id="h3isresclassiii">
+  ## h3IsResClassIII
+</div>
 
 تُرجِع ما إذا كان لفهرس [H3](#h3-index) درجة دقة ذات اتجاه من الفئة III.
 
@@ -695,7 +735,9 @@ SELECT h3IsResClassIII(617420388352917503) AS res;
 └─────┘
 ```
 
-## h3IsPentagon {#h3ispentagon}
+<div id="h3ispentagon">
+  ## h3IsPentagon
+</div>
 
 يُرجع ما إذا كان فهرس [H3](#h3-index) هذا يمثّل خلية خماسية الأضلاع.
 
@@ -726,7 +768,9 @@ SELECT h3IsPentagon(644721767722457330) AS pentagon;
 └──────────┘
 ```
 
-## h3GetFaces {#h3getfaces}
+<div id="h3getfaces">
+  ## h3GetFaces
+</div>
 
 يعيد أوجه عشروني السطوح التي يتقاطع معها مؤشر [H3](#h3-index) معيّن.
 
@@ -756,7 +800,9 @@ SELECT h3GetFaces(599686042433355775) AS faces;
 └───────┘
 ```
 
-## h3CellAreaM2 {#h3cellaream2}
+<div id="h3cellaream2">
+  ## h3CellAreaM2
+</div>
 
 تُرجِع المساحة الدقيقة، بالمتر المربع، لخلية محددة تقابل قيمة H3 index المُدخلة.
 
@@ -786,7 +832,9 @@ SELECT h3CellAreaM2(579205133326352383) AS area;
 └────────────────────┘
 ```
 
-## h3CellAreaRads2 {#h3cellarearads2}
+<div id="h3cellarearads2">
+  ## h3CellAreaRads2
+</div>
 
 يعيد المساحة الدقيقة لخلية محددة، مقاسةً بالراديان المربع، والمطابقة لفهرس H3 المُدخل.
 
@@ -816,7 +864,9 @@ SELECT h3CellAreaRads2(579205133326352383) AS area;
 └─────────────────────┘
 ```
 
-## h3ToCenterChild {#h3tocenterchild}
+<div id="h3tocenterchild">
+  ## h3ToCenterChild
+</div>
 
 تُرجِع فهرس [H3](#h3-index) الابن المركزي (الأدق) الواقع ضمن فهرس [H3](#h3-index) المُعطى عند درجة الدقة المحددة.
 
@@ -847,7 +897,9 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
 └────────────────────┘
 ```
 
-## h3ExactEdgeLengthM {#h3exactedgelengthm}
+<div id="h3exactedgelengthm">
+  ## h3ExactEdgeLengthM
+</div>
 
 يعيد الطول الدقيق للحافة أحادية الاتجاه التي يمثّلها فهرس H3 المُدخل، بالأمتار.
 
@@ -877,7 +929,9 @@ SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 └──────────────────┘
 ```
 
-## h3ExactEdgeLengthKm {#h3exactedgelengthkm}
+<div id="h3exactedgelengthkm">
+  ## h3ExactEdgeLengthKm
+</div>
 
 يُرجِع الطول الدقيق للحافة أحادية الاتجاه التي يمثّلها `فهرس H3` المُدخَل، بالكيلومترات.
 
@@ -907,7 +961,9 @@ SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 └───────────────────┘
 ```
 
-## h3ExactEdgeLengthRads {#h3exactedgelengthrads}
+<div id="h3exactedgelengthrads">
+  ## h3ExactEdgeLengthRads
+</div>
 
 تعيد الطول الدقيق للحافة أحادية الاتجاه التي يمثّلها فهرس h3 المُدخل، بالراديان.
 
@@ -937,7 +993,9 @@ SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthR
 └─────────────────────┘
 ```
 
-## h3NumHexagons {#h3numhexagons}
+<div id="h3numhexagons">
+  ## h3NumHexagons
+</div>
 
 يعيد عدد فهارس H3 الفريدة عند مستوى الدقة المحدد.
 
@@ -967,7 +1025,9 @@ SELECT h3NumHexagons(3) AS numHexagons;
 └─────────────┘
 ```
 
-## h3PointDistM {#h3pointdistm}
+<div id="h3pointdistm">
+  ## h3PointDistM
+</div>
 
 تعيد مسافة &quot;الدائرة العظمى&quot; أو &quot;هافرسين&quot; بين كل زوج من نقاط GeoCoord ‏(خط العرض/خط الطول)، بالمتر.
 
@@ -998,7 +1058,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 └────────────────────┘
 ```
 
-## h3PointDistKm {#h3pointdistkm}
+<div id="h3pointdistkm">
+  ## h3PointDistKm
+</div>
 
 يعيد مسافة &quot;الدائرة العظمى&quot; أو مسافة &quot;هافرسين&quot; بين أزواج من نقاط GeoCoord (خط العرض/خط الطول) بالكيلومترات.
 
@@ -1029,7 +1091,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 └────────────────────┘
 ```
 
-## h3PointDistRads {#h3pointdistrads}
+<div id="h3pointdistrads">
+  ## h3PointDistRads
+</div>
 
 تعيد مسافة &quot;الدائرة العظمى&quot; أو مسافة &quot;هافرسين&quot; بين أزواج من نقاط GeoCoord ‏(خط العرض/خط الطول) بوحدة الراديان.
 
@@ -1060,7 +1124,9 @@ SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
 └────────────────────┘
 ```
 
-## h3GetRes0Indexes {#h3getres0indexes}
+<div id="h3getres0indexes">
+  ## h3GetRes0Indexes
+</div>
 
 يعيد مصفوفة تضم جميع فهارس H3 عند مستوى الدقة 0.
 
@@ -1086,7 +1152,9 @@ SELECT h3GetRes0Indexes AS indexes ;
 └─────────────────────────────────────────────┘
 ```
 
-## h3GetPentagonIndexes {#h3getpentagonindexes}
+<div id="h3getpentagonindexes">
+  ## h3GetPentagonIndexes
+</div>
 
 يعيد جميع فهارس H3 الخماسية عند مستوى الوضوح المحدد.
 
@@ -1116,7 +1184,9 @@ SELECT h3GetPentagonIndexes(3) AS indexes;
 └────────────────────────────────────────────────────────────────┘
 ```
 
-## h3Line {#h3line}
+<div id="h3line">
+  ## h3Line
+</div>
 
 يعيد الخط الواصل بين الفهرسين المُعطيين.
 
@@ -1147,7 +1217,9 @@ h3Line(start,end)
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3Distance {#h3distance}
+<div id="h3distance">
+  ## h3Distance
+</div>
 
 تعيد المسافة، بوحدة خلايا الشبكة، بين الفهرسين المُقدَّمين.
 
@@ -1180,7 +1252,9 @@ h3Distance(start,end)
 └──────────┘
 ```
 
-## h3HexRing {#h3hexring}
+<div id="h3hexring">
+  ## h3HexRing
+</div>
 
 تُرجع الفهارس الخاصة بالحلقة السداسية المتمركزة حول `origin` ‏h3Index المُعطى وبطول k.
 
@@ -1213,7 +1287,9 @@ h3HexRing(index, k)
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdge {#h3getunidirectionaledge}
+<div id="h3getunidirectionaledge">
+  ## h3GetUnidirectionalEdge
+</div>
 
 يعيد فهرس H3 لحافة أحادية الاتجاه لفهرسي خليتي H3 متجاورتين (الأصل والوجهة). يطرح استثناءً إذا لم يكن أيٌّ من الإدخالين خلية H3 صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`). بالنسبة إلى الخلايا الصالحة غير المتجاورة (بما في ذلك الخلية نفسها مرتين)، يعيد `0`.
 
@@ -1244,7 +1320,9 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 └─────────────────────┘
 ```
 
-## h3UnidirectionalEdgeIsValid {#h3unidirectionaledgeisvalid}
+<div id="h3unidirectionaledgeisvalid">
+  ## h3UnidirectionalEdgeIsValid
+</div>
 
 يحدِّد ما إذا كان `H3Index` المُقدَّم فهرس حافة أحادية الاتجاه صالحًا. يعيد القيمة 1 إذا كان حافة أحادية الاتجاه، و0 بخلاف ذلك.
 
@@ -1275,7 +1353,9 @@ h3UnidirectionalEdgeIsValid(index)
 └────────────┘
 ```
 
-## h3GetOriginIndexFromUnidirectionalEdge {#h3getoriginindexfromunidirectionaledge}
+<div id="h3getoriginindexfromunidirectionaledge">
+  ## h3GetOriginIndexFromUnidirectionalEdge
+</div>
 
 يعيد مؤشر السداسي الأصلي من H3Index الخاص بالحافة أحادية الاتجاه. يطرح استثناءً إذا لم يكن الإدخال حافة موجهة صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا يعيد `0` إلا عند تمكين هذا الإعداد.
 
@@ -1306,7 +1386,9 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-## h3GetDestinationIndexFromUnidirectionalEdge {#h3getdestinationindexfromunidirectionaledge}
+<div id="h3getdestinationindexfromunidirectionaledge">
+  ## h3GetDestinationIndexFromUnidirectionalEdge
+</div>
 
 يعيد فهرس الخلية السداسية للوجهة من H3Index للحافة أحادية الاتجاه. يطرح استثناءً إذا لم يكن الإدخال حافة موجهة صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا يعيد `0` إلا عند تمكين هذا الإعداد.
 
@@ -1337,7 +1419,9 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 └────────────────────┘
 ```
 
-## h3GetIndexesFromUnidirectionalEdge {#h3getindexesfromunidirectionaledge}
+<div id="h3getindexesfromunidirectionaledge">
+  ## h3GetIndexesFromUnidirectionalEdge
+</div>
 
 يعيد فهارس السداسيات عند نقطتَي المنشأ والوجهة من H3Index للحافة أحادية الاتجاه المحددة.
 
@@ -1372,7 +1456,9 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 └─────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdgesFromHexagon {#h3getunidirectionaledgesfromhexagon}
+<div id="h3getunidirectionaledgesfromhexagon">
+  ## h3GetUnidirectionalEdgesFromHexagon
+</div>
 
 يوفّر جميع الحواف أحادية الاتجاه الخارجة من قيمة H3Index المقدَّمة. يُطلق استثناءً إذا لم يكن الإدخال خلية H3 صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا يعيد مصفوفة فارغة إلا عند تفعيل هذا الإعداد.
 
@@ -1403,7 +1489,9 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 └───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## h3GetUnidirectionalEdgeBoundary {#h3getunidirectionaledgeboundary}
+<div id="h3getunidirectionaledgeboundary">
+  ## h3GetUnidirectionalEdgeBoundary
+</div>
 
 تُرجِع الإحداثيات التي تُعرِّف الحافة أحادية الاتجاه. تطرح استثناءً إذا لم يكن الإدخال حافة موجّهة صالحة (يتحكم في ذلك الإعداد `functions_h3_default_if_invalid`)؛ ولا تُرجِع مصفوفة فارغة إلا عندما يكون هذا الإعداد مُفعّلًا.
 

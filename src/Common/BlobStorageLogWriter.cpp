@@ -22,47 +22,6 @@ void BlobStorageLogWriter::addEvent(
     const String & error_message,
     BlobStorageLogElement::EvenTime time_now)
 {
-    addEventImpl(
-        event_type, bucket, remote_path, local_path_, {}, {}, data_size, elapsed_microseconds, error_code, error_message, time_now);
-}
-
-void BlobStorageLogWriter::addCopyEvent(
-    const String & source_bucket,
-    const String & source_remote_path,
-    const String & bucket,
-    const String & remote_path,
-    size_t data_size,
-    size_t elapsed_microseconds,
-    Int32 error_code,
-    const String & error_message)
-{
-    addEventImpl(
-        BlobStorageLogElement::EventType::Copy,
-        bucket,
-        remote_path,
-        {},
-        source_bucket,
-        source_remote_path,
-        data_size,
-        elapsed_microseconds,
-        error_code,
-        error_message,
-        {});
-}
-
-void BlobStorageLogWriter::addEventImpl(
-    BlobStorageLogElement::EventType event_type,
-    const String & bucket,
-    const String & remote_path,
-    const String & local_path_,
-    const String & source_bucket,
-    const String & source_remote_path,
-    size_t data_size,
-    size_t elapsed_microseconds,
-    Int32 error_code,
-    const String & error_message,
-    BlobStorageLogElement::EvenTime time_now)
-{
     if (!log)
     {
         LOG_TEST(getLogger("BlobStorageLogWriter"), "No log, skipping {}", remote_path);
@@ -90,8 +49,6 @@ void BlobStorageLogWriter::addEventImpl(
         element.bucket = bucket;
         element.remote_path = remote_path;
         element.local_path = local_path_.empty() ? local_path : local_path_;
-        element.source_bucket = source_bucket;
-        element.source_remote_path = source_remote_path;
         element.data_size = data_size;
         element.elapsed_microseconds = elapsed_microseconds;
         element.error_code = error_code;
