@@ -750,14 +750,33 @@ void PaimonMetadata::runBackgroundRefresh()
     refresh_task->scheduleAfter(refresh_interval_sec * 1000);
 }
 
-void PaimonMetadata::checkNoDeletionVectors(const PaimonTableState & state) const
+void PaimonMetadata::checkNoDeletionVectors(const PaimonTableState & state, std::optional<Int64> incremental_cursor) const
 {
-    if (state.index_manifest && getIndexManifest(*state.index_manifest).has_deletion_vectors)
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Reading Paimon snapshot {} with deletion vectors is not supported: "
-            "deletion vectors are not applied, so the result would contain rows removed by later deletes and updates.",
-            state.snapshot_id);
+    if (!state.index_manifest || !getIndexManifest(*state.index_manifest).has_deletion_vectors)
+        return;
+
+    String recovery;
+    if (incremental_cursor && persistent_components.hasStreamState())
+        recovery = fmt::format(
+            "This incremental read, with its cursor at snapshot {}, cannot move past snapshot {} even after a full compaction: every "
+            "snapshot up to that compaction lists the same deletion vectors. It resumes once Paimon expires those snapshots, "
+            "or once they are abandoned by moving the cursor to the snapshot of the full compaction, which drops every "
+            "snapshot not yet consumed up to it: clickhouse-keeper-client -q \"set '{}/committed_snapshot' "
+            "'<snapshot id of the full compaction>'\"",
+            *incremental_cursor,
+            state.snapshot_id,
+            persistent_components.stream_state->getKeeperPath());
+    else
+        recovery = "A full compaction of the table in Paimon (compact_strategy 'full') applies the deletion vectors, "
+                   "and the snapshots created after it can be read";
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Reading Paimon snapshot {} of '{}' is not supported: its index manifest lists deletion vectors, and deletion "
+        "vectors are not applied, so the result would contain rows removed by later deletes and updates. {}.",
+        state.snapshot_id,
+        persistent_components.table_path,
+        recovery);
 }
 
 PaimonTableStatePtr PaimonMetadata::loadStateForSnapshot(Int64 snapshot_id) const
@@ -924,7 +943,7 @@ std::vector<PaimonTableStatePtr> PaimonMetadata::getSnapshotsBetween(
         if (skip_compact && state->isCompact())
         {
             /// The watermark moves past a skipped compaction, which can add deletion vectors.
-            checkNoDeletionVectors(*state);
+            checkNoDeletionVectors(*state, from_snapshot_id);
             LOG_TRACE(log, "Skipping Compact snapshot_id={} in incremental read", snapshot_id);
             continue;
         }
@@ -1037,7 +1056,8 @@ Strings PaimonMetadata::collectIncrementalDataFiles(
             return {};
         }
 
-        data_files = collectDataFilesFromManifests(snapshots, ManifestKind::Delta, partition_pruner, true, true);
+        data_files = collectDataFilesFromManifests(
+            snapshots, ManifestKind::Delta, partition_pruner, true, true, committed_snapshot_id);
         /// Use last_scanned (not snapshots.back()) to advance past trailing compact/missing snapshots.
         last_consumed_snapshot_id = last_scanned_snapshot_id.value_or(snapshots.back()->snapshot_id);
     }
@@ -1050,11 +1070,12 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
     ManifestKind kind,
     const std::optional<PartitionPruner> & partition_pruner,
     bool deduplicate,
-    bool track_deletes) const
+    bool track_deletes,
+    std::optional<Int64> incremental_cursor) const
 {
     for (const auto & snapshot_state : snapshots)
         if (snapshot_state)
-            checkNoDeletionVectors(*snapshot_state);
+            checkNoDeletionVectors(*snapshot_state, incremental_cursor);
 
     Strings data_files;
     std::unordered_set<String> seen_files;

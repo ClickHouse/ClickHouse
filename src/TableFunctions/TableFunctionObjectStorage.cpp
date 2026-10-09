@@ -2297,6 +2297,8 @@ declares `primary-key` therefore throws.
 Deletion vectors are not applied, so **snapshots with deletion vectors cannot be read**: the result would still
 contain the rows that later `DELETE` and `UPDATE` statements removed. Reading a snapshot whose index manifest lists
 deletion vectors therefore throws, even after `deletion-vectors.enabled` is turned off.
+A full compaction in Paimon (`compact_strategy => 'full'`) applies the deletion vectors, and the snapshots created after
+it can be read again.
 
 ## Defining a named collection {#defining-a-named-collection}
 

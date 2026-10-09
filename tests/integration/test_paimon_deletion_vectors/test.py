@@ -78,10 +78,19 @@ def upload(node, name):
     return table_dir
 
 
-def assert_refused(node, query, settings=None):
+FULL_COMPACTION_HINT = "A full compaction of the table in Paimon"
+
+
+def cursor_hint(table):
+    return f"set '/clickhouse/paimon/{table}/committed_snapshot'"
+
+
+def assert_refused(node, query, settings=None, hint=FULL_COMPACTION_HINT):
     error = node.query_and_get_error(query, settings=settings)
     assert (
-        "NOT_IMPLEMENTED" in error and "deletion vectors are not applied" in error
+        "NOT_IMPLEMENTED" in error
+        and "deletion vectors are not applied" in error
+        and hint in error
     ), error
 
 
@@ -173,7 +182,7 @@ def test_table_engine_read_modes(started_cluster):
     upload(node, name)
 
     # The incremental read moves past the COMPACT snapshot 3 that added the deletion vector.
-    assert_refused(node, f"SELECT count() FROM {resumed}")
+    assert_refused(node, f"SELECT count() FROM {resumed}", hint=cursor_hint(resumed))
     assert committed_snapshot(resumed) == "1\n"
 
     assert_refused(
@@ -189,6 +198,25 @@ def test_table_engine_read_modes(started_cluster):
     create_engine_table(first)
     assert_refused(node, f"SELECT count() FROM {first}")
     assert committed_snapshot(first) == ""
+
+    # A full compaction does not unblock the incremental read; moving the cursor to its snapshot does.
+    spark.sql(
+        f"CALL paimon.sys.compact(table => 'default.{name}', compact_strategy => 'full')"
+    )
+    upload(node, name)
+    assert_refused(node, f"SELECT count() FROM {resumed}", hint=cursor_hint(resumed))
+    assert committed_snapshot(resumed) == "1\n"
+
+    compaction = spark.sql(
+        f"SELECT max(snapshot_id) FROM paimon.default.`{name}$snapshots`"
+    ).collect()[0][0]
+    zk = started_cluster.get_kazoo_client("zoo1")
+    zk.set(f"/clickhouse/paimon/{resumed}/committed_snapshot", str(compaction).encode())
+    zk.stop()
+    spark.sql(f"INSERT INTO paimon.default.{name} VALUES (5, 'five')")
+    upload(node, name)
+    assert node.query(f"SELECT * FROM {resumed}") == "5\tfive\n"
+    assert committed_snapshot(resumed) == f"{compaction + 1}\n"
 
     node.query(f"DROP TABLE {resumed} SYNC")
     node.query(f"DROP TABLE {first} SYNC")
