@@ -252,7 +252,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
     LoadingStrictnessLevel mode,
-    bool attach_short_syntax)
+    bool attach_short_syntax,
+    bool is_replayed_definition)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -283,7 +284,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     /// from result.settings_changes to drive implicit-minmax skip-index creation.
     auto merge_tree_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
     /// The pre-override settings, kept as the baseline the sanitization below restores from.
-    const bool is_metadata_load = !isFreshTableDefinition(mode, attach_short_syntax);
+    const bool is_fresh_definition = isFreshTableDefinition(mode, attach_short_syntax) && !is_replayed_definition;
+    const bool is_metadata_load = !is_fresh_definition;
     std::shared_ptr<const MergeTreeSettings> baseline_settings;
     if (is_metadata_load)
         baseline_settings = std::make_shared<MergeTreeSettings>(*merge_tree_settings);
@@ -344,7 +346,7 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     }
 
     /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
-    if (isFreshTableDefinition(mode, attach_short_syntax))
+    if (is_fresh_definition)
     {
         /// `arrayJoin` is the one function that changes the number of rows, while a projection part is
         /// written alongside the parent part row by row: `ProjectionDataSink` rejects a block with more

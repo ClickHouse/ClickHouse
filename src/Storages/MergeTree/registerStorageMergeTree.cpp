@@ -934,8 +934,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// from the codec checks; `allow_suspicious_ttl_expressions` must not by itself
         /// be treated as a metadata load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec
         /// instead of having it silently normalized. See `TTLDescription::getTTLFromAST`.
+        /// A replay of a definition committed elsewhere (`Replicated`-database DDL, recovery from metadata
+        /// stored in Keeper or a backup) is a metadata load too, even when it runs as a plain `CREATE`:
+        /// a replica refusing it would retry the same entry forever.
+        const bool is_replayed_definition = !is_fresh_definition || is_ddl_replay || is_stored_definition;
         TTLValidationMode ttl_validation_mode = TTLValidationMode::Validate;
-        if (!is_fresh_definition)
+        if (is_replayed_definition)
             ttl_validation_mode = TTLValidationMode::Attach;
         else if (local_settings[Setting::allow_suspicious_ttl_expressions])
             ttl_validation_mode = TTLValidationMode::SkipValidation;
@@ -945,7 +949,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// double as a way to use an experimental codec in `TTL ... RECOMPRESS`.
         /// The validation settings must come from the *local* (session) context: `context` is the global one.
         const CodecValidationSettings ttl_codec_validation_settings
-            = is_fresh_definition ? CodecValidationSettings(local_settings) : CodecValidationSettings::trusted();
+            = is_replayed_definition ? CodecValidationSettings::trusted() : CodecValidationSettings(local_settings);
 
         if (args.storage_def->ttl_table)
         {
@@ -1202,7 +1206,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 try
                 {
                     auto projection = ProjectionDescription::getProjectionFromAST(
-                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax,
+                        /*is_replayed_definition=*/ is_ddl_replay || is_stored_definition);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)

@@ -103,7 +103,10 @@ struct ProjectionDescription
         const ContextPtr & query_context,
         LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH,
         /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
-        bool attach_short_syntax = true);
+        bool attach_short_syntax = true,
+        /// The definition replays one already committed elsewhere (a secondary `Replicated`-database replica,
+        /// recovery from metadata stored in Keeper or a backup) even though `mode` looks like a fresh `CREATE`.
+        bool is_replayed_definition = false);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,

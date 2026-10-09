@@ -1009,7 +1009,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
-                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
+                    projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax,
+                    /*is_replayed_definition=*/ isSecondaryDDLReplay(getContext()) || getContext()->isRecoveryFromStoredMetadata());
                 properties.projections.add(std::move(projection));
             }
         }
