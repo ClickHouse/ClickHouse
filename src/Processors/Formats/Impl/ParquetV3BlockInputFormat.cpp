@@ -302,6 +302,17 @@ UInt64 ParquetV3BlockInputFormat::getFileMetadataDigest() const
     return computeParquetFooterDigest(reader->reader.file_metadata);
 }
 
+std::vector<std::pair<size_t, Field>> ParquetV3BlockInputFormat::getTopKBestValuesOfBuckets() const
+{
+    std::vector<std::pair<size_t, Field>> res;
+    if (!reader)
+        return res;
+    for (const auto & row_group : reader->reader.row_groups)
+        if (row_group.need_to_process && row_group.top_k_best_value)
+            res.emplace_back(row_group.row_group_idx, (*row_group.top_k_best_value)[0]);
+    return res;
+}
+
 bool ParquetV3BlockInputFormat::isTopKFilterApplied() const
 {
     /// The reader installs `__topKFilter` only for a file that stores the sort column.
