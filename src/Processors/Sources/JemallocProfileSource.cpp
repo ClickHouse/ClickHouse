@@ -1,4 +1,6 @@
 #include <Common/VectorWithMemoryTracking.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/ListWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Processors/Sources/JemallocProfileSource.h>
 
@@ -151,13 +153,10 @@ UInt64 applySamplingCorrection(UInt64 count, UInt64 bytes, UInt64 sampling_inter
 /// Key includes both the address and the symbolize_with_inline flag so that queries
 /// with different inline settings don't silently reuse each other's results.
 /// Value is a shared_ptr to avoid copying the symbol vector on every cache hit.
-/// Process-wide and filled at runtime by whichever query symbolizes first, so its containers stay `std::`:
-/// a tracked container would charge that query, and could fail it against its own limit, for memory
-/// that every query shares.
 struct SymbolizationLRUCache
 {
     using Key = std::pair<UInt64, bool>;
-    using Value = std::shared_ptr<const std::vector<std::string>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using Value = std::shared_ptr<const VectorWithMemoryTracking<std::string>>;
 
     struct KeyHash
     {
@@ -170,7 +169,7 @@ struct SymbolizationLRUCache
         }
     };
 
-    using List = std::list<std::pair<Key, Value>>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using List = ListWithMemoryTracking<std::pair<Key, Value>>;
 
     explicit SymbolizationLRUCache(size_t max_size_) : max_size(max_size_) {}
 
@@ -186,10 +185,11 @@ struct SymbolizationLRUCache
     }
 
     /// Inserts a new entry (or updates existing) and returns the stored shared_ptr.
-    Value put(const Key & key, std::vector<std::string> value) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    Value put(const Key & key, VectorWithMemoryTracking<std::string> value)
     {
+        /// The cache is shared by all queries, so its entries are charged to the global tracker only.
         MemoryTrackerSwitcher switcher(&total_memory_tracker);
-        auto shared = std::make_shared<const std::vector<std::string>>(std::move(value)); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        auto shared = std::make_shared<const VectorWithMemoryTracking<std::string>>(std::move(value));
         std::lock_guard lock(mutex);
         auto it = index.find(key);
         if (it != index.end())
@@ -199,7 +199,16 @@ struct SymbolizationLRUCache
             return shared;
         }
         lru.emplace_front(key, shared);
-        index.emplace(key, lru.begin());
+        try
+        {
+            index.emplace(key, lru.begin());
+        }
+        catch (...)
+        {
+            /// Keep `lru` and `index` in step, otherwise the entry would stay in `lru` unreachable.
+            lru.pop_front();
+            throw;
+        }
         if (lru.size() > max_size)
         {
             index.erase(lru.back().first);
@@ -213,7 +222,7 @@ private:
 
     mutable std::mutex mutex;
     List lru TSA_GUARDED_BY(mutex);
-    std::unordered_map<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    UnorderedMapWithMemoryTracking<Key, List::iterator, KeyHash> index TSA_GUARDED_BY(mutex);
 };
 
 SymbolizationLRUCache symbolization_cache(/*max_size=*/ 100'000);
@@ -229,7 +238,7 @@ SymbolizationLRUCache::Value resolveAddress(UInt64 address, bool symbolize_with_
 
     FramePointers fp;
     fp[0] = reinterpret_cast<void *>(address);
-    std::vector<std::string> frame_symbols; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- moved into the process-wide `symbolization_cache`
+    VectorWithMemoryTracking<std::string> frame_symbols;
     StackTrace::forEachFrame(
         fp, 0, 1,
         [&](const StackTrace::Frame & frame)
