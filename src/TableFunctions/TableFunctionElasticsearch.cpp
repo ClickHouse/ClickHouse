@@ -123,7 +123,8 @@ void registerTableFunctionElasticsearch(TableFunctionFactory & factory)
         {
             .description = R"DOCS_MD(Table function for elasticsearch)DOCS_MD",
             .category = FunctionDocumentation::Category::TableFunction
-        });
+        },
+        SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password", "bearer_token", "api_key"}});
 }
 
 }

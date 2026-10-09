@@ -269,6 +269,7 @@ void registerStorageElasticsearch(StorageFactory & factory)
             return std::make_shared<StorageElasticsearch>(
                 args.table_id, std::move(configuration), args.columns, args.constraints, args.comment, std::move(settings));
         },
+        SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password", "bearer_token", "api_key"}},
         {
             .supports_settings = true,
             .supports_schema_inference = true,
