@@ -625,6 +625,11 @@ void DatabaseMySQL::attachTable(ContextPtr local_context, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{} because it already exists.",
             backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
+    /// Not `storage`: it is built from the table definition, which has no `SETTINGS`. Created before the
+    /// disk work, which may be followed only by statements that cannot throw.
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
+    auto database_storage = createStorage(table_name, metadata_snapshot->getColumns());
+
     /// The disk work runs first, so a failed `ATTACH TABLE` stays retryable. The two statements
     /// below cannot throw: the cache key is known to exist and erasing a present name allocates
     /// nothing.
@@ -643,9 +648,7 @@ void DatabaseMySQL::attachTable(ContextPtr local_context, const String & table_n
         db_disk->removeFileIfExists(remove_flag);
     }
 
-    /// We use the new storage to replace the original storage, because the original storage may have been dropped
-    /// Although we still keep its
-    local_tables_cache[table_name].second = storage;
+    local_tables_cache[table_name].second = std::move(database_storage);
 
     remove_or_detach_tables.erase(table_name);
 }
@@ -931,6 +934,12 @@ CREATE DATABASE mysql_db
 ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
+
+### `connection_auto_close` {#connection-auto-close}
+
+Closes the connection after each query to a table of the database, i.e. disables connection reuse. When set to `0`, each table of the database keeps its connections in its own pool for the next query.
+
+Default value: `1`.
 
 ## TLS/SSL {#tls-ssl}
 
