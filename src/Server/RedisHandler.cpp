@@ -333,11 +333,23 @@ bool RedisHandler::processRequest(RedisProtocol::RedisRequest & req)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HMGET command can only be applied to a database of type hash");
 
             auto [table, table_lock] = resolveTable(db, mapping);
-            Strings columns_to_check{mapping.key_column};
-            columns_to_check.insert(columns_to_check.end(), hmget_request.getFields().begin(), hmget_request.getFields().end());
+
+            /// The access check takes views of the fields, so that only the column names passed to the
+            /// lookup are a copy of the fields buffered in the request.
+            std::vector<std::string_view> columns_to_check;
+            columns_to_check.reserve(hmget_request.getFieldsCount() + 1);
+            columns_to_check.push_back(mapping.key_column);
+            for (size_t i = 0; i < hmget_request.getFieldsCount(); ++i)
+                columns_to_check.push_back(hmget_request.getField(i));
             query_context->checkAccess(AccessType::SELECT, table->getStorageID(), columns_to_check);
+
+            Names fields;
+            fields.reserve(hmget_request.getFieldsCount());
+            for (size_t i = 0; i < hmget_request.getFieldsCount(); ++i)
+                fields.push_back(hmget_request.getField(i));
+
             std::vector<std::vector<Field>> keys{{hmget_request.getKey()}};
-            auto result_block = table->getBlockByKeys(keys, hmget_request.getFields(), query_context);
+            auto result_block = table->getBlockByKeys(keys, fields, query_context);
 
             std::vector<std::optional<String>> result;
             result.reserve(result_block.columns());

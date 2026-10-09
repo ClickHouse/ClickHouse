@@ -312,20 +312,17 @@ public:
     {
         if (request.getCommandLen() < 3)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'hmget' command");
-        key = request.getArgument(1);
-        fields.reserve(request.getCommandLen() - 2);
-        for (Int64 i = 2; i < request.getCommandLen(); ++i)
-            fields.push_back(request.getArgument(i));
     }
 
-    const String & getKey() const { return key; }
+    const String & getKey() const { return request.getArgument(1); }
 
-    const std::vector<String> & getFields() const { return fields; }
+    /// The fields are not copied out of the request, as for `MGetRequest`.
+    size_t getFieldsCount() const { return static_cast<size_t>(request.getCommandLen()) - 2; }
+
+    const String & getField(size_t index) const { return request.getArgument(index + 2); }
 
 private:
     RedisRequest & request;
-    String key;
-    std::vector<String> fields;
 };
 
 /// AUTH password | AUTH username password
