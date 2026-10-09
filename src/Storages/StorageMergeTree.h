@@ -399,6 +399,10 @@ private:
     };
     void startBackgroundWorkers(StartedBackgroundWorkers * started = nullptr);
     void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
+    /// Stops every background task of the table: the periodic refresh tasks, the part loaders, the cleanup
+    /// thread and all assignees. Idempotent. Used after `shutdown_called` is set, both by `shutdown` and by a
+    /// `startup` or an `ALTER` that armed some tasks and then observed a concurrent `shutdown`.
+    void stopAllBackgroundTasks();
     void enableBackgroundWorkers() noexcept;
     void disableBackgroundWorkers() noexcept;
     /// Schedules the merge/mutate and move assignees, the cleanup thread, and the outdated and
