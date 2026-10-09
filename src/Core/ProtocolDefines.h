@@ -329,6 +329,9 @@ static constexpr auto DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATI
 /// Version 1 of the `uniq` aggregate function state (64-bit hashes instead of 32-bit ones).
 static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 
+/// Version 1 of the `sequenceNextNode` state with a `UInt64` timestamp (full 8-byte event times).
+static constexpr auto DBMS_MIN_REVISION_WITH_SEQUENCE_NEXT_NODE_FULL_TIMESTAMPS = 54494;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -337,5 +340,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_UNIQ_STATE_VERSION_1 = 54493;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54493;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54494;
 }
