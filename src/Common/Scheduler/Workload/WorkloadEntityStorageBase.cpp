@@ -345,7 +345,20 @@ WorkloadEntityStorageBase::WorkloadEntityStorageBase(ContextPtr global_context_,
                     {
                         for (const auto & local_event : change.toEvents())
                         {
-                            // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
+                            // The next storage has already applied the change, so it cannot be rejected here.
+                            // It validates references between its own entities, so a remaining referencer
+                            // is an entity of this storage.
+                            if (!local_event.entity)
+                            {
+                                if (auto ref_it = references.find(local_event.name); ref_it != references.end())
+                                {
+                                    String names;
+                                    for (const String & name : ref_it->second)
+                                        names += " " + name;
+                                    LOG_ERROR(log, "Workload entity '{}' was removed from {} storage, but it is still referenced by:{}",
+                                        local_event.name, next_storage->getName(), names);
+                                }
+                            }
                             applyEvent(lock, local_event);
                             local_tx.push_back(local_event);
                         }
@@ -751,6 +764,52 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
                 change.name);
     }
 
+    // Validate every reference that this update adds or affects: references of new and changed
+    // entities, and references of unchanged entities to a dropped or changed one. This is the contract
+    // `storeEntity` and `removeEntity` enforce on the SQL path. The last storage in the chain does not
+    // see the entities of the storages above it, so there a parent it never had is allowed: it may be
+    // defined in another storage.
+    std::unordered_set<String> changed_names;
+    for (const auto & change : changes)
+        changed_names.insert(change.name);
+    for (const auto & [entity_name, entity] : merged_new_entities)
+    {
+        forEachReference(entity,
+            [&] (const String & target, const String & source, ReferenceType type)
+            {
+                if (!changed_names.contains(source) && !changed_names.contains(target))
+                    return;
+
+                auto target_it = merged_new_entities.find(target);
+                if (target_it == merged_new_entities.end())
+                {
+                    if (entities.contains(target))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Workload entity '{}' cannot be dropped. It is referenced by: {}", target, source);
+                    if (type == ReferenceType::Parent && !next_storage)
+                        return;
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Workload entity '{}' references another workload entity '{}' that doesn't exist", source, target);
+                }
+
+                switch (type)
+                {
+                    case ReferenceType::Parent:
+                    {
+                        if (typeid_cast<ASTCreateWorkloadQuery *>(target_it->second.get()) == nullptr)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload parent should reference another workload, not '{}'.", target);
+                        break;
+                    }
+                    case ReferenceType::ForResource:
+                    {
+                        if (typeid_cast<ASTCreateResourceQuery *>(target_it->second.get()) == nullptr)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
+                        break;
+                    }
+                }
+            });
+    }
+
     // Validate new/changed workloads' setting VALUES on the config/Keeper/disk load path (which
     // bypasses storeEntity) — otherwise a bad value (e.g. scheduler = 'bogus', a negative weight, or
     // such a value inside a `... FOR <resource>` clause) is accepted here and only surfaces later,
@@ -775,18 +834,6 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
             {
                 if (!setting_change.resource.empty() && validated_resources.insert(setting_change.resource).second)
                 {
-                    // A `... FOR <resource>` clause must reference an existing resource (not a
-                    // workload, not a missing entity) — the same contract storeEntity enforces via
-                    // forEachReference.
-                    auto ref = merged_new_entities.find(setting_change.resource);
-                    if (ref == merged_new_entities.end())
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Workload entity '{}' references another workload entity '{}' that doesn't exist",
-                            workload->getWorkloadName(), setting_change.resource);
-                    if (typeid_cast<ASTCreateResourceQuery *>(ref->second.get()) == nullptr)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Workload settings should reference resource in FOR clause, not '{}'.",
-                            setting_change.resource);
                     WorkloadSettings resource_validator;
                     resource_validator.initFromChanges(workload->changes, setting_change.resource, /*throw_on_unknown_setting=*/false);
                 }
@@ -803,7 +850,6 @@ void WorkloadEntityStorageBase::setLocalEntities(const std::vector<std::pair<Str
     {
         for (const auto & event : change.toEvents())
         {
-            // TODO(serxa): do validation and throw LOGICAL_ERROR if failed
             applyEvent(lock, event);
             tx.push_back(event);
         }

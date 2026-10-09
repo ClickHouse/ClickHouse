@@ -82,8 +82,8 @@ namespace CurrentMetrics
 class WorkloadEntityTestStorage : public WorkloadEntityStorageBase
 {
 public:
-    WorkloadEntityTestStorage()
-        : WorkloadEntityStorageBase(Context::getGlobalContextInstance())
+    explicit WorkloadEntityTestStorage(std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {})
+        : WorkloadEntityStorageBase(Context::getGlobalContextInstance(), std::move(next_storage_))
     {}
 
     std::string_view getName() const override { return "test"; }
@@ -3851,6 +3851,80 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadValidatesWorkloadSettings)
             t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR missing_resource"),
             DB::Exception);
     }
+}
+
+// A reload must not drop or retype an entity that an unchanged entity still references. The whole
+// reload is rejected and the previous state is kept.
+TEST(SchedulerWorkloadResourceManager, ConfigLoadRejectsDroppingReferencedEntity)
+{
+    {
+        ResourceTest t;
+        t.storage.loadFromString("CREATE WORKLOAD all;\nCREATE WORKLOAD child IN all");
+        EXPECT_THROW(t.storage.loadFromString("CREATE WORKLOAD child IN all"), DB::Exception);
+        EXPECT_TRUE(t.storage.has("all"));
+        EXPECT_TRUE(t.storage.has("child"));
+
+        // Dropping the parent together with its child is fine.
+        EXPECT_NO_THROW(t.storage.loadFromString(""));
+        EXPECT_FALSE(t.storage.has("all"));
+        EXPECT_FALSE(t.storage.has("child"));
+    }
+    {
+        ResourceTest t;
+        t.storage.loadFromString(
+            "CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD);\n"
+            "CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu");
+        EXPECT_THROW(t.storage.loadFromString("CREATE WORKLOAD all SETTINGS scheduler = 'fair' FOR cpu"), DB::Exception);
+        EXPECT_TRUE(t.storage.has("cpu"));
+    }
+    {
+        ResourceTest t;
+        t.storage.loadFromString("CREATE WORKLOAD all;\nCREATE WORKLOAD child IN all");
+        EXPECT_THROW(
+            t.storage.loadFromString("CREATE RESOURCE all (MASTER THREAD);\nCREATE WORKLOAD child IN all"),
+            DB::Exception);
+        EXPECT_NE(typeid_cast<ASTCreateWorkloadQuery *>(t.storage.get("all").get()), nullptr);
+    }
+    {
+        ResourceTest t;
+        // Moving the child to another parent and dropping the old one in the same reload is fine.
+        t.storage.loadFromString("CREATE WORKLOAD all;\nCREATE WORKLOAD other;\nCREATE WORKLOAD child IN all");
+        EXPECT_NO_THROW(t.storage.loadFromString("CREATE WORKLOAD other;\nCREATE WORKLOAD child IN other"));
+        EXPECT_FALSE(t.storage.has("all"));
+    }
+}
+
+// The last storage in the chain (the configuration) does not see entities of the storage above it,
+// so a parent it never had is allowed there. The storage above sees both and enforces references.
+TEST(SchedulerWorkloadResourceManager, ConfigLoadAllowsParentFromAnotherStorage)
+{
+    ResourceTest t;
+    auto next = std::make_unique<WorkloadEntityTestStorage>();
+    auto & config = *next;
+    WorkloadEntityTestStorage sql(std::move(next));
+
+    EXPECT_NO_THROW(config.loadFromString("CREATE WORKLOAD cfg_child IN sql_parent"));
+    EXPECT_NO_THROW(sql.loadFromString("CREATE WORKLOAD sql_parent"));
+    EXPECT_TRUE(sql.has("cfg_child"));
+    EXPECT_TRUE(sql.has("sql_parent"));
+
+    // `sql_parent` is still referenced by `cfg_child` from the configuration.
+    EXPECT_THROW(sql.loadFromString(""), DB::Exception);
+    EXPECT_TRUE(sql.has("sql_parent"));
+
+    // The storage above the configuration sees every storage, so a missing parent is an error there.
+    EXPECT_THROW(sql.loadFromString("CREATE WORKLOAD sql_parent;\nCREATE WORKLOAD sql_child IN missing"), DB::Exception);
+
+    // The configuration still rejects dropping a parent it had while it is referenced.
+    config.loadFromString("CREATE WORKLOAD cfg_parent;\nCREATE WORKLOAD cfg_child IN cfg_parent");
+    EXPECT_THROW(config.loadFromString("CREATE WORKLOAD cfg_child IN cfg_parent"), DB::Exception);
+    EXPECT_TRUE(sql.has("cfg_parent"));
+
+    // A change already applied by the configuration cannot be rejected by the storage above it: it is
+    // applied, and the dangling reference is logged.
+    sql.loadFromString("CREATE WORKLOAD sql_child IN cfg_parent");
+    EXPECT_NO_THROW(config.loadFromString(""));
+    EXPECT_FALSE(sql.has("cfg_parent"));
 }
 
 // Unit-test coverage for the lazy-allocation path in CPULeaseAllocation
