@@ -104,30 +104,27 @@ void unpackFixedKeyIntoColumns(const Key & key, const std::vector<size_t> * unpa
         const size_t i = unpack_order ? (*unpack_order)[j] : j;
 
         IColumn * observed_column = key_columns[i];
-        ColumnUInt8 * null_map = nullptr;
 
         bool column_nullable = false;
         if constexpr (has_nullable_keys)
             column_nullable = isColumnNullable(*key_columns[i]);
-
-        /// If we have a nullable column, get its nested column and its null map.
-        if (column_nullable)
-        {
-            auto & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
-            observed_column = &nullable_col.getNestedColumn();
-            null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
-        }
 
         bool is_null = false;
         if (column_nullable)
         {
             /// The current column is nullable. Check if the value of the
             /// corresponding key is nullable. Update the null map accordingly.
+            /// The null map is created only when the first NULL is inserted.
+            auto & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
             size_t bucket = i / 8;
             size_t offset = i % 8;
             UInt8 val = (reinterpret_cast<const UInt8 *>(&key)[bucket] >> offset) & 1;
-            null_map->insertValue(val);
             is_null = val == 1;
+            if (is_null)
+                nullable_col.materializeNullMap();
+            if (nullable_col.hasNullMap())
+                nullable_col.getNullMapColumn().insertValue(val);
+            observed_column = &nullable_col.getNestedColumnNoMaterialize();
         }
 
         if (has_nullable_keys && is_null)

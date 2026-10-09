@@ -1142,21 +1142,29 @@ private:
           */
         ColumnPtr result_null_mask;
 
+        /// A `Nullable` column without a null map has no NULLs.
+        auto has_no_null_map = [](const ColumnPtr & column)
+        {
+            const auto * nullable = checkAndGetColumn<ColumnNullable>(&*column);
+            return nullable && !nullable->hasNullMap();
+        };
+
+        ColumnPtr then_null_mask = then_is_nullable && !has_no_null_map(arg_then.column) ? recursiveGetNullMapFromNullable(arg_then.column) : nullptr;
+        ColumnPtr else_null_mask = else_is_nullable && !has_no_null_map(arg_else.column) ? recursiveGetNullMapFromNullable(arg_else.column) : nullptr;
+
+        /// If neither branch has NULLs, the result has no NULLs and does not need a null map.
+        if (then_null_mask || else_null_mask)
         {
             ColumnsWithTypeAndName temporary_columns(
             {
                 arg_cond,
                 {
-                    then_is_nullable
-                        ? recursiveGetNullMapFromNullable(arg_then.column)
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
+                    then_null_mask ? then_null_mask : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
-                    else_is_nullable
-                        ? recursiveGetNullMapFromNullable(arg_else.column)
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
+                    else_null_mask ? else_null_mask : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 }
@@ -1185,6 +1193,9 @@ private:
 
             result_nested_column = executeImpl(temporary_columns, removeNullable(result_type), temporary_columns.front().column->size());
         }
+
+        if (!result_null_mask)
+            return ColumnNullable::create(materializeColumnIfConst(result_nested_column));
 
         return ColumnNullable::create(
             materializeColumnIfConst(result_nested_column), materializeColumnIfConst(result_null_mask));

@@ -87,8 +87,8 @@ bool anyArgumentHasNullRows(const ColumnsWithTypeAndName & args, size_t input_ro
             continue;
         }
 
-        const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
-        if (!memoryIsZero(null_map.data(), 0, input_rows_count))
+        const auto * null_map = assert_cast<const ColumnNullable &>(*arg.column).tryGetNullMapData();
+        if (null_map && !memoryIsZero(null_map->data(), 0, input_rows_count))
             return true;
     }
 
@@ -270,7 +270,10 @@ void patchNullSlots(
             continue;
         }
 
-        const auto & null_map = assert_cast<const ColumnNullable &>(*args[i].column).getNullMapData();
+        const auto * null_map_ptr = assert_cast<const ColumnNullable &>(*args[i].column).tryGetNullMapData();
+        if (!null_map_ptr)
+            continue;
+        const auto & null_map = *null_map_ptr;
 
         bool has_any_null = false;
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -416,11 +419,16 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         {
             if (arg.type->isNullable() && !isColumnConst(*arg.column))
             {
+                /// The arguments without a null map have no NULLs.
+                const auto & arg_nullable = assert_cast<const ColumnNullable &>(*arg.column);
+                if (!arg_nullable.hasNullMap())
+                    continue;
+
                 if (result_null_map)
                 {
                     MutableColumnPtr mut = IColumn::mutate(std::move(result_null_map));
                     auto & result_null_map_data = assert_cast<ColumnUInt8 &>(*mut).getData();
-                    const auto & null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapData();
+                    const auto & null_map = arg_nullable.getNullMapData();
                     for (size_t i = 0; i < input_rows_count; ++i)
                         result_null_map_data[i] |= null_map[i];
                     result_null_map = std::move(mut);
@@ -428,7 +436,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
                 else
                 {
                     /// If only one arg is nullable, share its null map between the arg and the result.
-                    result_null_map = assert_cast<const ColumnNullable &>(*arg.column).getNullMapColumnPtr();
+                    result_null_map = arg_nullable.getNullMapColumnPtr();
                 }
             }
         }
