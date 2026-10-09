@@ -3252,6 +3252,10 @@ Number of primary index files loaded.
 
 Number of rows of primary key loaded.
 
+### LoadedStatistics {#loadedstatistics}
+
+Number of data parts for which column statistics were loaded
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 Elapsed time of loading statistics from parts
@@ -4575,6 +4579,10 @@ Time spent on reading from Azure.
 ### ReadBufferFromAzureRequestsErrors {#readbufferfromazurerequestserrors}
 
 Number of exceptions while reading from Azure
+
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+Number of bytes read from file descriptors with the synchronous `pread` that were detected to be served from the OS page cache (this is done only for the reads with a bandwidth throttler).
 
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
@@ -6247,6 +6255,10 @@ Total time spent performing TLS handshakes for incoming (server) connections, in
 ### TLSServerHandshakes {#tlsserverhandshakes}
 
 Number of TLS handshakes completed for incoming (server) connections, across the server protocols that use the Poco TLS implementation: native TCP, HTTPS, MySQL and PostgreSQL. gRPC carries its own TLS stack and is not counted. Session resumption still performs a handshake and is counted here.
+
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).
 
 ### UncompressedCacheHits {#uncompressedcachehits}
 
