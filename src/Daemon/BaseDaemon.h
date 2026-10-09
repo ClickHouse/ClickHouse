@@ -211,4 +211,8 @@ std::optional<std::reference_wrapper<Daemon>> BaseDaemon::tryGetInstance()
 /// Sends notification (e.g. "server is ready") to systemd, analogous to sd_notify from libsystemd.
 /// See https://www.freedesktop.org/software/systemd/man/sd_notify.html for more information on the supported notifications.
 void systemdNotify(const std::string_view & command);
+
+/// Makes the socket `systemdNotify` sends through, if the process runs under `systemd`. Must be
+/// called before the seccomp filter is installed, since the filter refuses to make that socket.
+void openSystemdNotifySocket();
 #endif

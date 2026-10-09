@@ -92,7 +92,8 @@ def run_probe(node):
     return node.query(
         "SELECT * FROM executable('seccomp_status.py', 'TabSeparated', "
         "'mode String, getxattr_result String, clone_result String, clone3_result String, "
-        "thread_result String, mknod_device_result String, mkfifo_result String')"
+        "thread_result String, mknod_device_result String, mkfifo_result String, "
+        "unix_socket_result String, inet_socket_result String')"
     ).split()
 
 
@@ -158,6 +159,8 @@ def test_no_filter_when_disabled(started_cluster):
         thread_result,
         mknod_device_result,
         mkfifo_result,
+        unix_socket_result,
+        inet_socket_result,
     ) = run_probe(disabled_node)
     assert mode == SECCOMP_MODE_DISABLED
     assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
@@ -168,6 +171,8 @@ def test_no_filter_when_disabled(started_cluster):
     assert thread_result == "OK"
     assert mknod_device_result == "ENOENT"
     assert mkfifo_result == "0"
+    assert unix_socket_result == "0"
+    assert inet_socket_result == "0"
 
 
 def check_policy_is_enforced(node):
@@ -179,6 +184,8 @@ def check_policy_is_enforced(node):
         thread_result,
         mknod_device_result,
         mkfifo_result,
+        unix_socket_result,
+        inet_socket_result,
     ) = run_probe(node)
     assert mode == SECCOMP_MODE_FILTER
     assert getxattr_result == "EPERM"
@@ -187,6 +194,8 @@ def check_policy_is_enforced(node):
     assert thread_result == "OK"
     assert mknod_device_result == "EPERM"
     assert mkfifo_result == "0"
+    assert unix_socket_result == "EAFNOSUPPORT"
+    assert inet_socket_result == "0"
 
 
 def test_system_call_outside_the_policy_is_refused(started_cluster):
@@ -194,7 +203,8 @@ def test_system_call_outside_the_policy_is_refused(started_cluster):
     # makes the filter more than a formality. A `clone` that asks for a user namespace is refused
     # by its flags, and `clone3`, whose arguments a filter cannot read, is refused as a whole with
     # `ENOSYS` - and making a thread keeps working, because `ENOSYS` is what sends the libc back to
-    # `clone`. `mknod` is refused for a device node, but a FIFO is still made.
+    # `clone`. `mknod` is refused for a device node, but a FIFO is still made. A Unix domain socket
+    # is refused with `EAFNOSUPPORT`, as if the kernel had none, while an Internet socket is made.
     check_policy_is_enforced(errno_node)
 
 
@@ -226,6 +236,8 @@ def test_log_mode_refuses_nothing(started_cluster):
         thread_result,
         mknod_device_result,
         mkfifo_result,
+        unix_socket_result,
+        inet_socket_result,
     ) = run_probe(log_node)
     assert mode == SECCOMP_MODE_FILTER
     assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
@@ -234,6 +246,8 @@ def test_log_mode_refuses_nothing(started_cluster):
     assert thread_result == "OK"
     assert mknod_device_result == "ENOENT"
     assert mkfifo_result == "0"
+    assert unix_socket_result == "0"
+    assert inet_socket_result == "0"
 
 
 def test_server_works_under_the_filter(started_cluster):

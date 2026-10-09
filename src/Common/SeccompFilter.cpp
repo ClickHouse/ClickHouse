@@ -75,6 +75,7 @@ std::optional<SeccompMode> getInstalledSeccompMode()
 #include <linux/seccomp.h>
 #include <sched.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -116,7 +117,9 @@ namespace DB
 /// `vmsplice` (both standard exploitation primitives), file handles (`open_by_handle_at`),
 /// `fanotify`, swap and quota control, setting the system clock and the host name, System V and
 /// POSIX IPC, and the extended-attribute calls. Making a device node with `mknodat` is refused too,
-/// while its other uses - a FIFO for an executable user defined function among them - are not.
+/// while its other uses - a FIFO for an executable user defined function among them - are not. So is
+/// making a Unix domain socket, which is how a process reaches the daemons of the host it runs on -
+/// see `unix_socket_errno`.
 ///
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
@@ -153,7 +156,8 @@ namespace DB
     M(eventfd2) M(signalfd4) M(timerfd_create) M(timerfd_settime) M(timerfd_gettime) \
     M(inotify_init1) M(inotify_add_watch) M(inotify_rm_watch) \
     \
-    /* Networking. */ \
+    /* Networking. Which address families `socket` may make sockets of is decided separately, in */ \
+    /* a block of the program of its own, so this entry does not go into the table of numbers. */ \
     M(socket) M(socketpair) M(bind) M(listen) M(accept) M(accept4) M(connect) M(shutdown) \
     M(getsockname) M(getpeername) M(setsockopt) M(getsockopt) M(sendto) M(recvfrom) \
     M(sendmsg) M(recvmsg) M(sendmmsg) M(recvmmsg) \
@@ -302,6 +306,25 @@ constexpr UInt32 denied_clone_flags
 /// with `openat` and `bind`.
 constexpr UInt32 denied_mknod_file_types[] = {S_IFCHR, S_IFBLK};
 
+/// A Unix domain socket is how a process talks to the other processes of the host: the container
+/// runtime (`/var/run/docker.sock`), `systemd` and `dbus`, `nscd`, the SSH agent, a local database.
+/// Those trust their peer by its user id, which is the server's, and some of them hand out root -
+/// so `socket` is refused for `AF_UNIX`, and a compromised server has to stay with the network it
+/// already reaches over TCP. The server itself needs such a socket for one thing only, notifying
+/// `systemd` that it has started, and it opens that one before the filter is installed - see
+/// `openSystemdNotifySocket`.
+///
+/// It is refused with an error code rather than with the configured action, because there is code
+/// that tries a Unix domain socket and does without when it cannot have one: the libc looks for
+/// `nscd` before resolving a host name or a user, and its `syslog` reconnects to `/dev/log` when
+/// the connection breaks. Under the `trap` or the `kill` mode those would take the server down
+/// instead. `EAFNOSUPPORT` is what the kernel itself answers when it is built without Unix domain
+/// sockets, so that is the case such code is ready for.
+///
+/// `socketpair` is allowed whatever it is asked for, though it makes nothing but Unix domain
+/// sockets: a pair of connected sockets reaches no other process, any more than a pipe does.
+constexpr UInt32 unix_socket_errno = EAFNOSUPPORT;
+
 #if defined(__x86_64__)
 constexpr UInt32 expected_audit_arch = AUDIT_ARCH_X86_64;
 #else
@@ -316,6 +339,8 @@ constexpr UInt32 offset_arch = offsetof(struct seccomp_data, arch);
 /// half comes first. Looking at the low half alone is also what makes the check unavoidable:
 /// passing `TIOCSTI` with junk in the high bits still reaches `TIOCSTI`, and still matches here.
 constexpr UInt32 offset_ioctl_request = offsetof(struct seccomp_data, args) + sizeof(UInt64);
+/// The `domain` argument of `socket`, which the kernel narrows to `int` in the same way.
+constexpr UInt32 offset_socket_domain = offsetof(struct seccomp_data, args);
 /// The `flags` argument of `clone`. The kernel takes the low half of it twice - once for the
 /// flags and once for the exit signal in the lowest byte - and never looks at the high half, so
 /// matching on the low half, which comes first on a little-endian machine, is exact.
@@ -357,6 +382,8 @@ constexpr UInt32 jump_to_clone_check = 0xFFFFFFFBU;
 constexpr UInt32 jump_to_clone3 = 0xFFFFFFFAU;
 constexpr UInt32 jump_to_mknodat_check = 0xFFFFFFF9U;
 constexpr UInt32 jump_to_mknod_check = 0xFFFFFFF8U;
+constexpr UInt32 jump_to_socket_check = 0xFFFFFFF7U;
+constexpr UInt32 jump_to_unix_socket = 0xFFFFFFF6U;
 
 /// A maximal run of consecutive allowed system call numbers, `[first, last]`.
 struct Range
@@ -440,6 +467,8 @@ struct Blocks
     size_t mknodat_check;
     /// Only on x86-64, which has the legacy `mknod`; nothing jumps here elsewhere.
     size_t mknod_check;
+    size_t socket_check;
+    size_t unix_socket;
     size_t allow;
     size_t deny;
 };
@@ -470,6 +499,10 @@ void link(Program & program, const Blocks & blocks)
             target = blocks.mknodat_check;
         else if (instruction.k == jump_to_mknod_check)
             target = blocks.mknod_check;
+        else if (instruction.k == jump_to_socket_check)
+            target = blocks.socket_check;
+        else if (instruction.k == jump_to_unix_socket)
+            target = blocks.unix_socket;
         else
             continue;
 
@@ -486,7 +519,7 @@ void link(Program & program, const Blocks & blocks)
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 clone3_action)
+Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 clone3_action, UInt32 unix_socket_action)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -521,6 +554,8 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_mknod, 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_mknod_check));
 #endif
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_socket_check));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
 
     /// The blocks that look at an argument come before the terminal ones because they jump to them.
@@ -561,8 +596,17 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     const size_t mknod_check_index = 0;
 #endif
 
+    const size_t socket_check_index = program.size();
+    program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_socket_domain));
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_unix_socket));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
+
     const size_t clone3_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, clone3_action));
+
+    const size_t unix_socket_index = program.size();
+    program.push_back(statement(BPF_RET | BPF_K, unix_socket_action));
 
     const size_t allow_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
@@ -577,6 +621,8 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
          .clone3 = clone3_index,
          .mknodat_check = mknodat_check_index,
          .mknod_check = mknod_check_index,
+         .socket_check = socket_check_index,
+         .unix_socket = unix_socket_index,
          .allow = allow_index,
          .deny = deny_index});
     return program;
@@ -630,7 +676,11 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
 }
 
 void verifyProgram(
-    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 clone3_action)
+    const Program & program,
+    const std::unordered_set<int> & allowed,
+    UInt32 default_action,
+    UInt32 clone3_action,
+    UInt32 unix_socket_action)
 {
     auto check = [&](const struct seccomp_data & data, UInt32 expected)
     {
@@ -653,7 +703,7 @@ void verifyProgram(
     /// Every number the running kernel could put into `nr`, and then some, so that a range which
     /// is off by one on either end cannot go unnoticed. The calls that are decided by an argument
     /// are in `allowed`, and with every argument zero that is indeed the answer they get - for
-    /// `mknodat`, a zero mode makes a regular file.
+    /// `mknodat`, a zero mode makes a regular file, and for `socket`, a zero domain is `AF_UNSPEC`.
     for (int nr = -4096; nr < 8192; ++nr)
     {
         UInt32 expected = allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action;
@@ -749,6 +799,17 @@ void verifyProgram(
             for (UInt64 mode : {UInt64{file_type}, UInt64{file_type | 0600}, UInt64{1} << 32 | file_type, UInt64{0x10000} | file_type})
                 check(mknod_data(mode), default_action);
     }
+
+    /// `socket` makes an Internet or a Netlink socket, but not a Unix domain one - also with junk in
+    /// the half of the argument the kernel does not look at.
+    auto socket_data = [](UInt64 domain)
+    {
+        return seccomp_data{.nr = __NR_socket, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {domain, 0, 0, 0, 0, 0}};
+    };
+    for (UInt64 domain : {UInt64{AF_INET}, UInt64{AF_INET6}, UInt64{AF_NETLINK}, UInt64{1} << 32})
+        check(socket_data(domain), SECCOMP_RET_ALLOW);
+    for (UInt64 domain : {UInt64{AF_UNIX}, UInt64{1} << 32 | AF_UNIX})
+        check(socket_data(domain), unix_socket_action);
 }
 
 UInt32 getDefaultAction(SeccompMode mode)
@@ -897,9 +958,11 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 
     const std::unordered_set<int> allowed(numbers.begin(), numbers.end());
 
-    /// `ioctl` is decided by its request, `clone` by its flags and `mknodat` by its file type, in
-    /// blocks of their own, so none of them must also be in the table.
+    /// `ioctl` is decided by its request, `clone` by its flags, `mknodat` by its file type and
+    /// `socket` by its address family, in blocks of their own, so none of them must also be in the
+    /// table.
     std::erase(numbers, __NR_ioctl);
+    std::erase(numbers, __NR_socket);
     std::erase(numbers, __NR_clone);
     std::erase(numbers, __NR_mknodat);
 #if defined(__x86_64__)
@@ -911,8 +974,11 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
     /// falls back to `clone` instead of failing to make a thread. Nothing is refused in the `log`
     /// mode, so there the call gets the same treatment as the rest of the policy.
     const UInt32 clone3_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
-    Program program = buildProgram(toRanges(numbers), default_action, clone3_action);
-    verifyProgram(program, allowed, default_action, clone3_action);
+    /// The same goes for a Unix domain socket, which is refused with an error code that the code
+    /// trying to make one is ready for - see `unix_socket_errno`.
+    const UInt32 unix_socket_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | unix_socket_errno);
+    Program program = buildProgram(toRanges(numbers), default_action, clone3_action, unix_socket_action);
+    verifyProgram(program, allowed, default_action, clone3_action, unix_socket_action);
 
     if (program.size() > size_t{BPF_MAXINSNS})
         throw Exception(

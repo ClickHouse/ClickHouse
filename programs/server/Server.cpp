@@ -1874,6 +1874,11 @@ try
     /// reported the value from ZooKeeper. `TSYNC` extends the filter to the threads that already
     /// exist, so everything that runs from here on - including the processes the server forks
     /// later, which inherit it - is covered.
+#if defined(OS_LINUX)
+    /// The filter refuses to make a Unix domain socket, and `systemdNotify` needs one to report that
+    /// the server is ready, so it is made now.
+    openSystemdNotifySocket();
+#endif
     const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
     if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
         LOG_INFO(

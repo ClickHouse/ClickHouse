@@ -1923,6 +1923,8 @@ At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/ma
 
 Creating a namespace is refused in every form it takes: `unshare` and `setns` are not allowed at all, a `clone` that asks for a namespace among its flags is refused, and `clone3` - whose arguments live in a structure that a filter cannot read, so that a namespace cannot be told from a thread - is refused as a whole, with `ENOSYS`. That is how a libc discovers that it has to use `clone` instead, so making threads and processes keeps working; `docker` and `systemd` refuse `clone3` the same way in their own policies.
 
+Making a Unix domain socket (`socket` with `AF_UNIX`) is refused as well, so that a compromised server cannot reach the local daemons that trust a peer by its user id, such as the container runtime, `systemd`, `dbus` or the SSH agent. It is refused with `EAFNOSUPPORT` in every mode but `log`, as if the kernel had no Unix domain sockets at all, because the libc tries such a socket and does without it when looking for `nscd` and when reconnecting to the local `syslog`. The one Unix domain socket the server needs, to notify `systemd` that it is ready, is made before the filter is installed. Connecting to an external database through a Unix domain socket, such as the `socket` parameter of a `MySQL` dictionary, does not work while the policy is enforced; connect over TCP instead. `socketpair` is still allowed, because a pair of connected sockets reaches no other process.
+
 Possible values:
 
 - `trap` - the kernel sends `SIGSYS` to the offending thread. ClickHouse treats it as any other fatal signal: the system call number and a stack trace go to the log, and the server terminates.

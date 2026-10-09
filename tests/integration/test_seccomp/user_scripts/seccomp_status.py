@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# Reports what a process the server started sees of the policy, as a single row of seven fields:
+# Reports what a process the server started sees of the policy, as a single row of nine fields:
 #  - the seccomp mode it inherited across `fork` and `execve`: 0 is no filter, 2 is a BPF filter;
 #  - what `getxattr`, which the policy does not allow, does here. Without a filter the attribute is
 #    simply missing (`ENODATA`); under the `errno` mode the call is refused (`EPERM`);
@@ -17,13 +17,17 @@
 #    probe safe to run and tells the two answers apart: without a filter the kernel looks the path
 #    up before it checks for `CAP_MKNOD`, and answers `ENOENT`;
 #  - whether `mkfifo`, which is `mknod` of a FIFO, still works: executable user defined functions
-#    pass their arguments through FIFOs.
+#    pass their arguments through FIFOs;
+#  - what making a Unix domain socket does. The policy refuses it, with `EAFNOSUPPORT` in every mode
+#    but `log`, as if the kernel had no Unix domain sockets;
+#  - whether making an Internet socket still works.
 
 import ctypes
 import errno
 import os
 import platform
 import shutil
+import socket
 import stat
 import tempfile
 import threading
@@ -93,6 +97,16 @@ if __name__ == "__main__":
     finally:
         shutil.rmtree(directory)
 
+    def socket_result(family):
+        try:
+            socket.socket(family, socket.SOCK_STREAM).close()
+            return "0"
+        except OSError as e:
+            return errno.errorcode.get(e.errno, str(e.errno))
+
+    unix_socket_result = socket_result(socket.AF_UNIX)
+    inet_socket_result = socket_result(socket.AF_INET)
+
     print(
         "\t".join(
             [
@@ -103,6 +117,8 @@ if __name__ == "__main__":
                 thread_result,
                 mknod_device_result,
                 mkfifo_result,
+                unix_socket_result,
+                inet_socket_result,
             ]
         )
     )

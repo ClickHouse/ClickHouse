@@ -31,7 +31,6 @@
 #include <Common/SignalHandlers.h>
 #include <base/argsToConfig.h>
 #include <base/coverage.h>
-#include <base/scope_guard.h>
 
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/ReadHelpers.h>
@@ -839,6 +838,27 @@ String BaseDaemon::getStoredBinaryHash() const
 }
 
 #if defined(OS_LINUX)
+/// Made on the first use and kept open for the lifetime of the process, because the seccomp filter
+/// refuses to make a Unix domain socket, and the server notifies `systemd` that it is ready long
+/// after the filter is installed.
+static int getSystemdNotifySocket()
+{
+    static const int s = []
+    {
+        int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+        if (fd == -1)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Can't create UNIX socket for systemd notify");
+        return fd;
+    }();
+    return s;
+}
+
+void openSystemdNotifySocket()
+{
+    if (getenv("NOTIFY_SOCKET"))  // NOLINT(concurrency-mt-unsafe)
+        getSystemdNotifySocket();
+}
+
 void systemdNotify(const std::string_view & command)
 {
     const char * path = getenv("NOTIFY_SOCKET");  // NOLINT(concurrency-mt-unsafe)
@@ -846,12 +866,7 @@ void systemdNotify(const std::string_view & command)
     if (path == nullptr)
         return; /// not using systemd
 
-    int s = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-
-    if (s == -1)
-        throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Can't create UNIX socket for systemd notify");
-
-    SCOPE_EXIT({ close(s); });
+    const int s = getSystemdNotifySocket();
 
     const size_t len = strlen(path);
 
