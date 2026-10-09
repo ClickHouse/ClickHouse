@@ -142,6 +142,41 @@ extern const int INCOMPATIBLE_COLUMNS;
 namespace
 {
 
+/// The tables of `nested` whose names `match` accepts. `Merge` reads only the tables its regexp or table list names,
+/// whether or not the database applied the name filter passed to its `getTablesIterator`.
+class MatchingTablesIterator final : public IDatabaseTablesIterator
+{
+public:
+    MatchingTablesIterator(DatabaseTablesIteratorPtr nested_, IDatabase::FilterByNameFunction match_)
+        : IDatabaseTablesIterator(nested_->databaseName())
+        , nested(std::move(nested_))
+        , match(std::move(match_))
+    {
+        skipNotMatching();
+    }
+
+    void next() override
+    {
+        nested->next();
+        skipNotMatching();
+    }
+
+    bool isValid() const override { return nested->isValid(); }
+    const String & name() const override { return nested->name(); }
+    const StoragePtr & table() const override { return nested->table(); }
+    UUID uuid() const override { return nested->uuid(); }
+
+private:
+    void skipNotMatching()
+    {
+        while (nested->isValid() && !match(nested->name()))
+            nested->next();
+    }
+
+    DatabaseTablesIteratorPtr nested;
+    IDatabase::FilterByNameFunction match;
+};
+
 bool queryHasOrderBy(const SelectQueryInfo & query_info)
 {
     if (query_info.query_tree)
@@ -2207,7 +2242,9 @@ DatabaseTablesIteratorPtr StorageMerge::DatabaseNameOrRegexp::getDatabaseIterato
         return source_table_regexp->match(table_name_);
     };
 
-    return database->getTablesIterator(local_context, table_name_match);
+    /// The database gets the filter so that it can skip the tables early, e.g. without fetching their structure from a
+    /// remote server; the names are checked again in case it does not apply it.
+    return std::make_unique<MatchingTablesIterator>(database->getTablesIterator(local_context, table_name_match), table_name_match);
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDatabaseIterators(ContextPtr local_context) const
