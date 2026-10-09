@@ -4559,15 +4559,18 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             if (select_merge_result.has_value())
             {
                 chassert(select_merge_result.value().size() == 1);
-                future_merged_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
-                if (!future_merged_part)
+                auto constructed_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
+                if (!constructed_part)
                 {
                     LOG_DEBUG(log,
-                        "Can't construct future part from source parts. "
-                        "Probably there was a drop part/partition user query or another replica has already executed merge.");
+                        "Can't construct future part from source parts ({}). "
+                        "Probably there was a drop part/partition user query or another replica has already executed merge.",
+                        constructed_part.error().text);
 
                     return AttemptStatus::NeedRetry;
                 }
+
+                future_merged_part = std::move(*constructed_part);
 
                 bool cleanup = future_merged_part->final
                     && (*storage_settings_ptr)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
@@ -6719,13 +6722,14 @@ bool StorageReplicatedMergeTree::optimize(
                 chassert(choices.size() == 1);
                 MergeSelectorChoice choice = std::move(choices[0]);
 
-                auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
-                if (!future_part)
+                auto constructed_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
+                if (!constructed_part)
                     return std::unexpected(SelectMergeFailure{
                         .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                        .explanation = PreformattedMessage::create("Can't construct future part from source parts. Probably there was a drop part/partition user query."),
+                        .explanation = PreformattedMessage::create("Can't construct future part from source parts ({}). Probably there was a drop part/partition user query.", constructed_part.error().text),
                     });
 
+                auto future_part = std::move(*constructed_part);
                 if ((*storage_settings.get())[MergeTreeSetting::assign_part_uuids])
                     future_part->uuid = UUIDHelpers::generateV4();
 
@@ -11779,7 +11783,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         {
             const auto & source_part = *parts_in_partition.begin();
             partition = source_part->partition;
-            metadata_snapshot = source_part->getMetadataSnapshot();
+            metadata_snapshot = getMetadataSnapshotForEmptyPart(*source_part);
 
             if (source_part->info.isPatch())
                 patch_part_index = source_part->getPatchPartIndex().cloneEmpty();
@@ -12152,6 +12156,16 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
         auto zookeeper = getZooKeeper();
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
         auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+
+        /// Comment ALTERs are not replicated through ZooKeeper, so the backup keeps the comments this replica has
+        /// applied, except for columns it does not have yet or has with another type than the snapshot.
+        for (const auto & column : current_metadata->columns)
+        {
+            const auto * entry_column = columns_from_entry.tryGet(column.name);
+            if (entry_column && entry_column->comment != column.comment && entry_column->type->equals(*column.type))
+                columns_from_entry.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
+        }
+
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
             zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
             current_metadata->add_minmax_index_for_numeric_columns,
@@ -12317,7 +12331,7 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 }
 
 void StorageReplicatedMergeTree::attachRestoredParts(
-    MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info)
+    MutableDataPartsVector && parts, const ContextPtr & /* query_context */, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::attachRestoredParts");
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);

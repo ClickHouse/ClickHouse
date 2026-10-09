@@ -91,6 +91,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    REGULAR(file_top_k_query_condition_cache_inject_file_change) \
     ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
@@ -191,6 +192,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
     PAUSEABLE(smt_create_table_pause_before_replicas_check) \
     PAUSEABLE(dummy_pausable_failpoint) \
+    PAUSEABLE_ONCE(paimon_incremental_read_pause_before_processing_lock) \
+    PAUSEABLE_ONCE(paimon_incremental_read_pause_before_watermark_commit) \
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
     ONCE(framing_finalize_throw) \
@@ -332,6 +335,7 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     ONCE(mt_alter_throw_in_start_mutation) \
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
+    ONCE(mt_throw_after_renaming_empty_parts) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
     PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
@@ -357,6 +361,7 @@ static struct InitFiu
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
+    ONCE(disk_set_builder_stop_before_finish) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
@@ -437,6 +442,8 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_pause) \
+    PAUSEABLE_ONCE(totals_having_transform_drop_cancelled_chunk) \
     PAUSEABLE_ONCE(storage_url_pause_before_empty_file_probe) \
     PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes) \
     PAUSEABLE_ONCE(storage_url_pause_before_read_buffer_creation) \
