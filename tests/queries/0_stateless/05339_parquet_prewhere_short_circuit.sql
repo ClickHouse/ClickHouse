@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-replicated-database
 -- no-fasttest: needs the Parquet format and IcebergLocal.
+-- no-replicated-database: the replicated DDL worker evaluates the IcebergLocal path without the session's temporary table.
 -- Random settings limits: optimize_move_to_prewhere=(1, 1)
 
 -- A predicate evaluated while reading Parquet (PREWHERE, row policy) and the filters a data lake read applies
