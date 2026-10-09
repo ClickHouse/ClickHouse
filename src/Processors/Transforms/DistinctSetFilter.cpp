@@ -11,7 +11,6 @@
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
 
-#include <algorithm>
 #include <limits>
 #include <unordered_map>
 
@@ -259,39 +258,6 @@ void buildDistinctFilter(
     }
 }
 
-/// Keep checked insertion out of line to leave the bulk-insertion loop's generated code compact.
-template <typename Method>
-NO_INLINE size_t buildDistinctFilterWithInsertionCheck(
-    Method & method,
-    const ColumnRawPtrs & key_columns,
-    const Sizes & key_sizes,
-    IColumn::Filter & filter,
-    const size_t rows,
-    SetVariants & variants,
-    const DistinctSetFilter::InsertionCheck & can_insert)
-{
-    typename Method::State state(key_columns, key_sizes, /*context=*/ nullptr);
-    for (size_t i = 0; i < rows; ++i)
-    {
-        if (state.findKey(method.data, i, variants.string_pool).isFound())
-        {
-            filter[i] = 0;
-            continue;
-        }
-
-        if (!can_insert(variants.estimateGrowthMemory(key_columns, i, 1)))
-        {
-            std::fill(filter.begin() + i, filter.end(), 0);
-            return i;
-        }
-
-        const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
-        chassert(emplace_result.isInserted());
-        filter[i] = 1;
-    }
-    return rows;
-}
-
 /// Mark rows whose `LowCardinality` index is the dictionary's `NULL` entry with 0 in `keep`, allocating the
 /// filter lazily on the first such row.
 void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Filter & keep, size_t num_rows)
@@ -328,7 +294,6 @@ void markLowCardinalityNullRows(const ColumnLowCardinality & column, IColumn::Fi
 DistinctSetFilter::DistinctSetFilter(
     const Block & header, const Names & columns, const SizeLimits & set_size_limits_, bool skip_null_keys_)
     : key_columns_pos(calculateDistinctKeyColumnsPositions(header, columns))
-    , non_constant_columns_pos(calculateDistinctKeyColumnsPositions(header, {}))
     , data(std::make_unique<SetVariants>())
     , set_size_limits(set_size_limits_)
     , skip_null_keys(skip_null_keys_)
@@ -493,14 +458,14 @@ void DistinctSetFilter::prepareForInsert(Chunk & chunk)
     chassert(hasKeyColumns());
     chassert(!skip_null_keys);
 
-    materializeChunk(chunk, non_constant_columns_pos);
+    materializeChunk(chunk);
     if (data->empty())
         initialize(getKeyColumns(chunk.getColumns()));
 }
 
 size_t DistinctSetFilter::estimateGrowthMemory(const Chunk & chunk) const
 {
-    size_t growth_memory = data->estimateGrowthMemory(getKeyColumns(chunk.getColumns()), 0, chunk.getNumRows());
+    size_t growth_memory = data->estimateGrowthMemory(getKeyColumns(chunk.getColumns()), chunk.getNumRows());
     if (key_columns_pos.size() == 1)
     {
         const size_t bitmap_growth = lc_filter.estimateGrowthMemory(*chunk.getColumns()[key_columns_pos.front()]);
@@ -518,38 +483,13 @@ size_t DistinctSetFilter::estimateFilteringMemory(const Chunk & chunk) const
     /// Round up both masks to cover the allocation rounding used when the latter is resized.
     const size_t mask_bytes = roundUpToPowerOfTwoOrZero(
         chunk.getNumRows() * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right);
-    /// Packed keys live through insertion but are released before filtering copies the columns.
-    const size_t prepared_keys_bytes = data->estimatePreparedKeysMemory(chunk.getNumRows(), key_sizes);
-    return std::max<size_t>(chunk.allocatedBytes(), prepared_keys_bytes) + 2 * mask_bytes;
+    return chunk.allocatedBytes() + 2 * mask_bytes;
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)
 {
-    return filterImpl(std::move(chunk), nullptr).chunk;
-}
-
-DistinctSetFilter::FilterResult DistinctSetFilter::filterWithInsertionCheck(Chunk chunk, const InsertionCheck & can_insert)
-{
-    chassert(!skip_null_keys);
-    chassert(!data->empty());
-    return filterImpl(std::move(chunk), &can_insert);
-}
-
-/// `ExternalDistinctTransform` uses `can_insert` when the estimate for inserting a whole chunk would
-/// exceed the spill threshold. That estimate assumes every row adds a new key, but duplicates need
-/// no set growth. Checking actual new keys one at a time can therefore postpone or avoid spilling.
-/// Before each new key is inserted, the callback receives the estimated additional bytes for hash
-/// table growth and storage of string keys. The caller checks whether this fits the remaining memory
-/// budget while leaving room for temporary allocations and starting a spill. Existing keys skip the
-/// callback. Returning `true` permits insertion; `false` stops before that row so the caller can emit
-/// the accepted prefix and spill the unprocessed suffix. The result contains the newly inserted rows
-/// and the number of input rows processed, including duplicates. A null pointer selects bulk insertion
-/// of the whole chunk without per-key budget checks.
-DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const InsertionCheck * can_insert)
-{
-    /// The hash-set methods require materialized keys. Header constants are excluded from the keys
-    /// and can remain compact when filtering the output.
-    materializeChunk(chunk, non_constant_columns_pos);
+    /// The hash-set methods require materialized columns.
+    materializeChunk(chunk);
 
     const auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -588,13 +528,13 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
 
     std::optional<IColumn::Filter> lc_mask;
 
-    if (!can_insert && key_columns_pos.size() == 1)
+    if (key_columns_pos.size() == 1)
     {
         lc_mask = lc_filter.buildMaskIfApplicable(*column_ptrs[0], num_rows);
 
         /// An empty mask means that this chunk contains no candidate rows.
         if (lc_mask && lc_mask->empty())
-            return {{}, num_rows};
+            return {};
     }
 
     /// The `NULL`-key rows and the rows that are known duplicates by their `LowCardinality` index are
@@ -616,19 +556,14 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
 
     const auto old_set_size = data->getTotalRowCount();
     IColumn::Filter filter_values(num_rows);
-    size_t processed_rows = num_rows;
 
     switch (data->type)
     {
         case SetVariants::Type::EMPTY:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot filter DISTINCT with an uninitialized set");
+            break;
 #define M(NAME) \
         case SetVariants::Type::NAME: \
-            if (can_insert) \
-                processed_rows = buildDistinctFilterWithInsertionCheck( \
-                    *data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, *can_insert); \
-            else \
-                buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); \
+            buildDistinctFilter(*data->NAME, column_ptrs, key_sizes, filter_values, num_rows, *data, mask); \
         break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
@@ -645,7 +580,7 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
         limit_reached = true;
 
     if (num_selected == 0)
-        return {{}, processed_rows};
+        return {};
 
     /// When every row is a new distinct value, the columns are kept unchanged, without copying.
     if (num_selected != num_rows)
@@ -655,7 +590,7 @@ DistinctSetFilter::FilterResult DistinctSetFilter::filterImpl(Chunk chunk, const
     }
 
     chunk.setColumns(std::move(columns), num_selected);
-    return {std::move(chunk), processed_rows};
+    return chunk;
 }
 
 }
