@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-distributed-cache, no-random-detach, no-flaky-check
+# Tags: no-fasttest, no-random-settings, no-distributed-cache, no-parallel-replicas, no-random-detach, no-flaky-check
+# Tag no-parallel-replicas: asserts on `ProfileEvents` of the initial query, but with parallel replicas the read may run on a remote replica
 # no-random-detach: test checks profile events
 # no-flaky-check: consistently exceeds the 180 s per-run budget of the flaky check under TSan;
 # the S3-backed insert of 1M rows alone dominates the run time

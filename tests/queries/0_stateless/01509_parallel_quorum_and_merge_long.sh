@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database, no-random-detach
+# Tags: long, no-replicated-database, no-shared-merge-tree, no-random-detach
 # no-random-detach: test checks system.parts
 # Tag no-replicated-database: Fails due to additional replicas or shards
+# no-shared-merge-tree: depend on download part
+
 
 set -e
 

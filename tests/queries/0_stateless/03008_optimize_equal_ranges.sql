@@ -1,4 +1,5 @@
--- Tags: no-random-detach, no-flaky-check
+-- Tags: no-parallel-replicas, no-random-detach, no-flaky-check
+-- Tag no-parallel-replicas: the ProfileEvents of the replicas are missing in the initiator's `query_log`, https://github.com/ClickHouse/ClickHouse/issues/123994
 -- no-random-detach: attach of a table affects
 -- used_aggregate_functions because of building minmax projection
 -- no-flaky-check: takes 158 s on its own and exceeds the 180 s per-run budget of the flaky check
@@ -13,6 +14,8 @@ SET max_bytes_before_external_group_by = 0;
 SET max_bytes_ratio_before_external_group_by = 0;
 SET optimize_aggregation_in_order = 0;
 SET optimize_use_projections = 0;
+-- query_log keeps only the initiator's ProfileEvents; remote parallel replicas' events are not merged into it.
+SET enable_parallel_replicas = 0;
 
 INSERT INTO t_optimize_equal_ranges SELECT 0, toString(number), number FROM numbers(30000);
 INSERT INTO t_optimize_equal_ranges SELECT 1, toString(number), number FROM numbers(30000);
