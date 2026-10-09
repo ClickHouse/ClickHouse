@@ -7,6 +7,8 @@ SET use_query_condition_cache = 0;
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 SET use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 1000;
 SET use_skip_indexes_for_top_k = 1, use_skip_indexes_on_data_read = 1;
+-- The stateless-test profile sets max_rows_to_read, and a throwing row limit disables skip indexes on data read.
+SET max_rows_to_read = 0, max_rows_to_read_leaf = 0;
 SET allow_prefetched_read_pool_for_local_filesystem = 0, allow_prefetched_read_pool_for_remote_filesystem = 0;
 SET max_bytes_before_remerge_sort = 1000000000, max_bytes_before_external_sort = 0, max_bytes_ratio_before_external_sort = 0;
 
