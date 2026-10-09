@@ -24,6 +24,13 @@ std::optional<uint64_t> parquetTryHashField(const Field & field, const parquet::
  * */
 std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_column, const parquet::ColumnDescriptor * parquet_column_descriptor);
 
+/*
+ * The INT32/INT64 physical value that `parquetTryHashField` hashes for an integer constant, sign-extended
+ * to 64 bits for INT32; nullopt if it would not hash the constant as an integer. Lets a reader compare the
+ * stored values of an integer dictionary with query constants directly instead of hashing every value.
+ * */
+std::optional<int64_t> parquetTryPhysicalInteger(const Field & field, const parquet::ColumnDescriptor * parquet_column_descriptor);
+
 }
 
 #endif

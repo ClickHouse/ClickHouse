@@ -7,6 +7,7 @@
 # group's dictionary can be checked up to 20 times, with the matching value in an early or in a late
 # condition. Each query is compared with the same query with the dictionary filter disabled, and
 # `rows_read` shows which row groups were pruned.
+# The checks run on an Int32 and a String column, whose dictionaries are matched by value and by hash.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -14,27 +15,28 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 
-# 4 row groups of 8192 distinct Int32 values each: row group `g` holds `g * 100000 + [0, 8192)`.
+# 4 row groups of 8192 distinct Int32 values each: row group `g` holds `g * 100000 + [0, 8192)`; `s` holds
+# the same values as strings.
 ${CLICKHOUSE_CLIENT} --query="
     insert into function file('${DATA_FILE}', Parquet)
-    select number as n, toInt32(intDiv(number, 8192) * 100000 + (number % 8192)) as category
+    select number as n, toInt32(intDiv(number, 8192) * 100000 + (number % 8192)) as category, toString(category) as s
     from numbers(32768)
     settings output_format_parquet_row_group_size = 8192, output_format_parquet_max_dictionary_size = 100000000, engine_file_truncate_on_insert = 1, max_block_size = 1000000;
 "
 
 CH="${CLICKHOUSE_CLIENT} --input_format_parquet_filter_push_down=0 --input_format_parquet_page_filter_push_down=0 --input_format_parquet_bloom_filter_push_down=0 --optimize_move_to_prewhere=0 --query_plan_optimize_prewhere=0 --use_cache_for_count_from_files=0 --max_threads=1 --max_parsing_threads=1"
 
-# Comma-separated values `1000000 + [$1, $2]`, which no row group holds.
+# Comma-separated values `1000000 + [$1, $2]`, which no row group holds, quoted with `$Q`.
 absent() {
-    seq -s ', ' $((1000000 + $1)) $((1000000 + $2))
+    seq -f "${Q}%.0f${Q}" -s ', ' $((1000000 + $1)) $((1000000 + $2))
 }
 
-# `category = v1 or category = v2 or ...` for the given values.
+# `$C = v1 or $C = v2 or ...` for the given values.
 equalities() {
     local condition=""
     local value
     for value in "$@"; do
-        condition="${condition:+${condition} or }category = ${value}"
+        condition="${condition:+${condition} or }${C} = ${Q}${value}${Q}"
     done
     echo "${condition}"
 }
@@ -55,20 +57,25 @@ check() {
     fi
 }
 
-echo "one equality on a value of row group 1: only that row group is read"
-check "category = 100005"
+for C in category s; do
+    Q=$([ "${C}" = s ] && echo "'")
+    echo "column ${C}"
 
-echo "one equality on a value that no row group holds: every row group is pruned"
-check "category = 1000001"
+    echo "one equality on a value of row group 1: only that row group is read"
+    check "${C} = ${Q}100005${Q}"
 
-echo "two IN sets of 10 values, the second one holding a value of row group 2: only that row group is read"
-check "category in ($(absent 1 10)) or category in ($(absent 11 19), 200077)"
+    echo "one equality on a value that no row group holds: every row group is pruned"
+    check "${C} = ${Q}1000001${Q}"
 
-echo "two IN sets of 10 values, the first one holding a value of row group 3: only that row group is read"
-check "category in ($(absent 1 9), 300123) or category in ($(absent 11 20))"
+    echo "two IN sets of 10 values, the second one holding a value of row group 2: only that row group is read"
+    check "${C} in ($(absent 1 10)) or ${C} in ($(absent 11 19), ${Q}200077${Q})"
 
-echo "20 equalities, the last one on a value of row group 0: only that row group is read"
-check "$(equalities $(seq 1000001 1000019) 8191)"
+    echo "two IN sets of 10 values, the first one holding a value of row group 3: only that row group is read"
+    check "${C} in ($(absent 1 9), ${Q}300123${Q}) or ${C} in ($(absent 11 20))"
 
-echo "20 equalities on values that no row group holds: every row group is pruned"
-check "$(equalities $(seq 1000001 1000020))"
+    echo "20 equalities, the last one on a value of row group 0: only that row group is read"
+    check "$(equalities $(seq 1000001 1000019) 8191)"
+
+    echo "20 equalities on values that no row group holds: every row group is pruned"
+    check "$(equalities $(seq 1000001 1000020))"
+done
