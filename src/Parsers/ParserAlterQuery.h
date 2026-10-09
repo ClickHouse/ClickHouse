@@ -32,6 +32,9 @@ namespace DB
 
 class ParserAlterQuery : public IParserBase
 {
+public:
+    std::map<String, Documentation> getDocumentation() const override;
+
 protected:
     const char * getName() const  override{ return "ALTER query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

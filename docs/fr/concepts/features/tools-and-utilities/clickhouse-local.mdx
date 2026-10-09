@@ -6,9 +6,7 @@ title: 'clickhouse-local'
 doc_type: 'reference'
 ---
 
-<div id="when-to-use-clickhouse-local-vs-clickhouse">
-  ## Quand utiliser clickhouse-local plutôt que ClickHouse
-</div>
+## Quand utiliser clickhouse-local plutôt que ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
 `clickhouse-local` est une version de ClickHouse facile à utiliser, idéale pour les développeurs qui ont besoin d’effectuer rapidement des traitements sur des fichiers locaux et distants avec SQL, sans devoir installer un serveur de base de données complet. Avec `clickhouse-local`, les développeurs peuvent exécuter des commandes SQL (en utilisant directement le [dialecte SQL de ClickHouse](/fr/reference/home)) depuis la ligne de commande, ce qui constitue un moyen simple et efficace d’accéder aux fonctionnalités de ClickHouse sans avoir à effectuer une installation complète. L’un des principaux avantages de `clickhouse-local` est qu’il est déjà inclus lors de l’installation de [clickhouse-client](/fr/concepts/features/tools-and-utilities/clickhouse-local). Les développeurs peuvent donc commencer à utiliser `clickhouse-local` rapidement, sans passer par un processus d’installation complexe.
 
@@ -16,9 +14,7 @@ Bien que `clickhouse-local` soit un excellent outil pour le développement, les 
 
 Veuillez consulter la documentation ci-dessous, qui présente des exemples de cas d’usage de `clickhouse-local`, comme [interroger un fichier local](#query_data_in_file) ou [lire un fichier Parquet dans S3](#query-data-in-a-parquet-file-in-aws-s3).
 
-<div id="download-clickhouse-local">
-  ## Télécharger clickhouse-local
-</div>
+## Télécharger clickhouse-local {#download-clickhouse-local}
 
 `clickhouse-local` s’exécute avec le même binaire `clickhouse` que celui utilisé pour le serveur ClickHouse et `clickhouse-client`. Le moyen le plus simple de télécharger la dernière version consiste à utiliser la commande suivante :
 
@@ -30,9 +26,7 @@ curl https://clickhouse.com/ | sh
   Le binaire que vous venez de télécharger permet d’exécuter toutes sortes d’outils et d’utilitaires ClickHouse. Si vous souhaitez utiliser ClickHouse comme serveur de base de données, consultez le [Démarrage rapide](/fr/get-started/setup/install).
 </Note>
 
-<div id="query_data_in_file">
-  ## Interroger des données dans un fichier avec SQL
-</div>
+## Interroger des données dans un fichier avec SQL {#query_data_in_file}
 
 Une utilisation courante de `clickhouse-local` consiste à exécuter des requêtes ad hoc sur des fichiers, sans avoir à insérer les données dans une table. `clickhouse-local` peut lire les données d&#39;un fichier dans une table temporaire et exécuter votre SQL.
 
@@ -110,9 +104,7 @@ FROM file('reviews.tsv')"
 Monopoly Junior Board Game    5
 ```
 
-<div id="query-data-in-a-parquet-file-in-aws-s3">
-  ## Interroger les données d’un fichier Parquet dans AWS S3
-</div>
+## Interroger les données d’un fichier Parquet dans AWS S3 {#query-data-in-a-parquet-file-in-aws-s3}
 
 Si vous avez un fichier dans S3, utilisez `clickhouse-local` et la fonction de table `s3` pour interroger directement le fichier (sans insérer les données dans une table ClickHouse). Nous avons un fichier nommé `house_0.parquet` dans un bucket public qui contient les prix des biens immobiliers vendus au Royaume-Uni. Voyons combien de lignes il contient :
 
@@ -187,9 +179,7 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
   Lorsque vous êtes prêt à insérer vos fichiers dans ClickHouse, démarrez un serveur ClickHouse et insérez les résultats des fonctions de table `file` et `s3` dans une table `MergeTree`. Consultez le [Démarrage rapide](/fr/get-started/setup/install) pour plus de détails.
 </Tip>
 
-<div id="format-conversions">
-  ## Conversion de formats
-</div>
+## Conversion de formats {#format-conversions}
 
 Vous pouvez utiliser `clickhouse-local` pour convertir des données d’un format à un autre. Exemple :
 
@@ -209,9 +199,7 @@ Pour aller plus vite, vous pouvez l’écrire avec l’argument `--copy` :
 $ clickhouse-local --copy < data.json > data.csv
 ```
 
-<div id="usage">
-  ## Utilisation
-</div>
+## Utilisation {#usage}
 
 Par défaut, `clickhouse-local` a accès aux données d’un serveur ClickHouse situé sur le même hôte et ne dépend pas de la configuration du serveur. Il prend également en charge le chargement de la configuration du serveur à l’aide de l’argument `--config-file`. Pour les données temporaires, un répertoire temporaire de données unique est créé par défaut.
 
@@ -261,13 +249,44 @@ Arguments :
 
 Il existe également des arguments pour chaque variable de configuration de ClickHouse, plus couramment utilisés à la place de `--config-file`.
 
-<div id="commands">
-  ## Commandes
-</div>
+### Fichiers de configuration {#configuration-files}
 
-<div id="ls-command">
-  ### Commande LS
-</div>
+`clickhouse-local` n&#39;utilise pas la configuration d&#39;un serveur ClickHouse installé sur le même
+hôte : il recherche son propre fichier de configuration principal et utilise le premier existant parmi les suivants :
+
+1. le chemin passé avec `--config-file` ;
+2. `./config.xml` ;
+3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` ou `./clickhouse-local.yml` ;
+4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` ou `~/.clickhouse-local/config.yml` ;
+5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` ou `/etc/clickhouse-local/config.yml`.
+
+Comme pour `clickhouse-server`, les fichiers `.xml`, `.yaml`, `.yml` et `.conf` des répertoires
+de fusion situés à côté du fichier de configuration principal y sont fusionnés : `config.d` et `conf.d` pour
+`config.xml`, `clickhouse-local.d` et `conf.d` pour `clickhouse-local.yaml`, et ainsi de suite.
+
+Les répertoires de fusion du répertoire courant s&#39;appliquent même en l&#39;absence de fichier de configuration principal :
+`./config.d` et `./conf.d` sont fusionnés dans une configuration minimale intégrée au binaire. Un répertoire devient
+ainsi auto-descriptif — par exemple, avec
+
+```yaml title="config.d/datasets.yaml"
+storage_configuration:
+  disks:
+    datasets:
+      type: object_storage
+      object_storage_type: s3
+      metadata_type: plain_rewritable
+      endpoint: https://data.clickhouse.com/public-datasets/db/
+      no_sign_request: true
+      readonly: true
+      skip_access_check: true
+```
+
+chaque `clickhouse-local` démarré dans ce répertoire dispose du disque `datasets`, et aucun `config.xml`
+n&#39;a besoin d&#39;être créé pour cela.
+
+## Commandes {#commands}
+
+### Commande LS {#ls-command}
 
 Liste tous les fichiers du répertoire de travail courant accessibles à clickhouse-local.
 
@@ -303,9 +322,7 @@ file2.json
 file3.xml
 ```
 
-<div id="clear-command">
-  ### Commande CLEAR
-</div>
+### Commande CLEAR {#clear-command}
 
 Efface l’écran du terminal (comme la commande `clear` sous Linux ou Ctrl+L dans de nombreux terminaux). Il s’agit d’une action côté client : elle n’est pas envoyée au moteur SQL.
 
@@ -321,9 +338,7 @@ Avec `clickhouse-local` et `-q` :
 ./clickhouse-local -q clear
 ```
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 ```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
@@ -381,9 +396,7 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-<div id="starting-listeners">
-  ## Démarrer les écouteurs TCP et HTTP
-</div>
+## Démarrer les écouteurs TCP et HTTP {#starting-listeners}
 
 `clickhouse-local` peut être utilisé comme un serveur léger qui accepte les connexions TCP (protocole natif) et HTTP. C&#39;est utile si vous souhaitez permettre à d&#39;autres outils ou applications ClickHouse d&#39;accéder aux bases de données et aux tables d&#39;une instance `clickhouse-local` active. Notez que chaque connexion entrante dispose de sa propre session : les tables temporaires et les paramètres de session de la session interactive `clickhouse-local` ne sont pas visibles depuis les connexions externes.
 
@@ -415,9 +428,7 @@ L’écouteur HTTP répond aux requêtes préliminaires CORS avec les mêmes en-
   Notez qu’une adresse de bouclage reste accessible depuis le navigateur : tant qu’un écouteur HTTP est ouvert, toute page web que vous consultez peut interroger l’instance locale et, grâce aux en-têtes CORS par défaut, lire les résultats.
 </Warning>
 
-<div id="related-content-1">
-  ## Contenus associés
-</div>
+## Contenus associés {#related-content-1}
 
 * [Extraire, convertir et interroger des données dans des fichiers locaux avec clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 * [Importer des données dans ClickHouse - Partie 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
