@@ -85,7 +85,7 @@ public:
         return getAlgorithm();
     }
 
-    bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
+    bool addBlockToJoin(const Block & /* block */, size_t /* num_rows */, JoinBuildContext /* context */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::addBlockToJoin should not be called");
     }
