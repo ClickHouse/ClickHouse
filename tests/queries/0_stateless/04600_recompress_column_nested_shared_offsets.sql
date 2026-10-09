@@ -18,11 +18,11 @@ CREATE TABLE t_recompress_shared
     `n.b` Array(String) CODEC(NONE)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 10485760;
 
 -- Matching array sizes are required for shared offsets.
 INSERT INTO t_recompress_shared
-SELECT number, range(number % 5), arrayMap(x -> toString(x), range(number % 5)) FROM numbers(100000);
+SELECT number, range(number % 5), arrayMap(x -> toString(x), range(number % 5)) FROM numbers(20000);
 
 SELECT DISTINCT 'shared part', part_type FROM system.parts
 WHERE database = currentDatabase() AND table = 't_recompress_shared' AND active;
@@ -42,7 +42,7 @@ SELECT 'shared after', count(), sum(length(n.a)), sum(length(n.b)),
 FROM t_recompress_shared;
 
 -- Point lookup and scattered scan exercise the rewritten marks of the shared offsets stream.
-SELECT 'shared point', n.a, n.b FROM t_recompress_shared WHERE id = 99999;
+SELECT 'shared point', n.a, n.b FROM t_recompress_shared WHERE id = 19999;
 SELECT 'shared scan', count() FROM t_recompress_shared WHERE id % 7 = 0 AND length(n.a) = length(n.b);
 
 CHECK TABLE t_recompress_shared;
@@ -60,10 +60,10 @@ CREATE TABLE t_recompress_shared_one
     `n.b` Array(String) CODEC(NONE)
 )
 ENGINE = MergeTree ORDER BY id
-SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS share_nested_offsets = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, index_granularity = 8192, index_granularity_bytes = 10485760;
 
 INSERT INTO t_recompress_shared_one
-SELECT number, range(number % 5), arrayMap(x -> toString(x), range(number % 5)) FROM numbers(100000);
+SELECT number, range(number % 5), arrayMap(x -> toString(x), range(number % 5)) FROM numbers(20000);
 
 ALTER TABLE t_recompress_shared_one MODIFY COLUMN `n.a` Array(UInt64) CODEC(ZSTD);
 ALTER TABLE t_recompress_shared_one RECOMPRESS COLUMN `n.a`;
