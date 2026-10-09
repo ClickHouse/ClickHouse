@@ -522,6 +522,8 @@ void SortingStep::mergeSorting(
                 tmp_data_on_disk,
                 sort_settings.min_free_disk_space,
                 threshold_tracker,
+                MergeSorter::Mode::PreserveRows,
+                ProfileEvents::ExternalSortMerge,
                 query_result_previews);
         });
 }

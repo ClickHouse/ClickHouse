@@ -115,7 +115,9 @@ SELECT * FROM arrowFlight(named_collection_name);
 - [ArrowFlight table engine](/reference/engines/table-engines/integrations/arrowflight)
 - [Arrow Flight Interface](/concepts/features/interfaces/arrowflight)
 - [Apache Arrow Flight SQL specification](https://arrow.apache.org/docs/format/FlightSql.html)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        /// arrowFlight('host:port', 'dataset', 'username', 'password')
+        SecretArgumentsSpec{.positional_secret_slots = {3}, .secret_keys = {"password"}}, {});
 
     /// "arrowflight" is an obsolete name.
     factory.registerAlias("arrowflight", "arrowFlight");
