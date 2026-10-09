@@ -89,19 +89,25 @@ protected:
 
     ZooKeeperWithFaultInjectionPtr createKeeper(String name);
 
-    std::vector<DeduplicationHash> detectConflictsInCache(const std::vector<DeduplicationHash> & deduplication_hashes);
-
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
 
+    struct CommitPartResult
+    {
+        /// Conflicting blocks and their actual part names if the block has to be deduplicated.
+        std::vector<DeduplicationHash> conflicts;
+        /// Version of the deduplication cache snapshot that missed the conflict found in Keeper, otherwise 0.
+        UInt64 stale_cache_version = 0;
+    };
 
     /// Rename temporary part and commit to ZooKeeper.
-    /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
-    std::vector<DeduplicationHash> commitPart(
+    /// An async insert checks the deduplication cache first, with a snapshot newer than `deduplication_cache_wait_newer_than`.
+    CommitPartResult commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const std::vector<DeduplicationHash> & deduplication_hashes,
-        const std::vector<String> & deduplication_block_ids);
+        const std::vector<String> & deduplication_block_ids,
+        UInt64 deduplication_cache_wait_newer_than = 0);
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -139,8 +145,6 @@ protected:
     size_t total_replicas_count = 0;
     size_t quorum_timeout_ms;
     size_t max_parts_per_block;
-
-    UInt64 deduplication_cache_version = 0;
 
     /// The result of the "too many parts" check, evaluated on the query thread at sink
     /// construction and thrown from onStart, when the sink starts executing.
