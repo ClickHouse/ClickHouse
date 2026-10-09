@@ -519,6 +519,16 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
             with_element_ast->children.push_back(with_element_ast->subquery);
             with_element_ast->is_materialized = with_query_node ? with_query_node->isMaterialized() : with_union_node->isMaterialized();
 
+            /// Like `aliases`, `ASTWithElement::key_columns` is not a child.
+            if (with_union_node && with_union_node->hasRecursiveCTEKeyColumns())
+            {
+                auto key_columns_ast = make_intrusive<ASTExpressionList>();
+                for (const auto & key_column_name : with_union_node->getRecursiveCTEKeyColumns())
+                    key_columns_ast->children.push_back(make_intrusive<ASTIdentifier>(key_column_name));
+
+                with_element_ast->key_columns = std::move(key_columns_ast);
+            }
+
             /// The parser leaves `ASTWithElement::aliases` out of `children`, so match it here.
             const auto & cte_column_aliases = getColumnAliasesToRestore(with_node);
             if (!cte_column_aliases.empty())
