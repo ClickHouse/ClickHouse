@@ -202,12 +202,13 @@ private:
     std::unordered_set<std::string> remote_directories_of_pending_replaces;
     AtomicStopwatch previous_refresh;
 
-    /// Set after every change of the state, cleared when the snapshot write starts.
-    std::atomic<bool> snapshot_dirty = false;
+    /// The version of `fs` after the latest change that has to be written to the snapshot.
+    std::atomic<UInt64> snapshot_dirty_generation = 0;
     /// Serializes the snapshot writes.
     std::mutex snapshot_write_mutex;
-    /// The version of `fs` in the last successfully written snapshot. Protected by `snapshot_write_mutex`.
-    UInt64 snapshot_written_generation = 0;
+    /// The version of `fs` in the last successfully written snapshot. The snapshot is dirty while it is less than
+    /// `snapshot_dirty_generation`. Modified under `snapshot_write_mutex`.
+    std::atomic<UInt64> snapshot_written_generation = 0;
     /// Must be the last member: it is deactivated first in the destructor, and the task uses the other members.
     BackgroundSchedulePoolTaskHolder snapshot_write_task;
 };

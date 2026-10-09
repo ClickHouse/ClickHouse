@@ -1105,7 +1105,10 @@ void MetadataStorageFromPlainRewritableObjectStorage::onLayoutChanged()
 
     /// The change was already applied to `fs`, so its version is not greater than the current one.
     const UInt64 generation = fs.getVersion();
-    snapshot_dirty = true;
+    UInt64 dirty_generation = snapshot_dirty_generation.load();
+    while (dirty_generation < generation && !snapshot_dirty_generation.compare_exchange_weak(dirty_generation, generation))
+    {
+    }
 
     /// When everything was removed from the disk, the snapshot is removed right away regardless of the delay:
     /// this is a single cheap request, and nothing should be left behind in the object storage after the last `DROP`.
@@ -1124,8 +1127,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::writeSnapshotIfDirty(UInt6
     if (required_generation && snapshot_written_generation >= required_generation)
         return;
 
-    /// The flag is cleared before taking the state: a change applied after this point sets it again and is written next time.
-    if (!snapshot_dirty.exchange(false))
+    /// Nothing changed since the last write. A change applied while the previous write was in progress may have been
+    /// included in it already, then the delayed write that it scheduled does nothing.
+    if (snapshot_written_generation >= snapshot_dirty_generation.load())
         return;
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
@@ -1159,8 +1163,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::writeSnapshotIfDirty(UInt6
             out->cancel();
 
         /// The state in memory is correct, only its copy in the object storage is stale, so a transaction commit
-        /// must not fail because of this. The write is retried later.
-        snapshot_dirty = true;
+        /// must not fail because of this. The write is retried later: `snapshot_written_generation` is not advanced.
         ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotWriteFailed);
         tryLogCurrentException(log, fmt::format("Cannot write the snapshot file '{}', will retry", key));
         snapshot_write_task->scheduleAfter(std::max(snapshot_settings.write_delay_ms, SNAPSHOT_WRITE_RETRY_DELAY_MS), /*overwrite=*/ false);
@@ -1172,7 +1175,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::snapshotWriteTask()
     writeSnapshotIfDirty();
 
     /// The changes that happened during the write are written after the next delay.
-    if (snapshot_dirty && snapshot_settings.write_delay_ms > 0)
+    if (snapshot_written_generation < snapshot_dirty_generation.load() && snapshot_settings.write_delay_ms > 0)
         snapshot_write_task->scheduleAfter(snapshot_settings.write_delay_ms, /*overwrite=*/ false);
 }
 
