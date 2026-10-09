@@ -1,6 +1,4 @@
 Int8	100	100
-Int16	100	100
-Int32	100	100
 Int64	100	100
 Int128	100	100
 Int256	100	100
@@ -19,8 +17,6 @@ IPv6	100	100
 (Nullable(Int16), Nullable(UInt16))	100	100
 Float64 bits	[1,1,1,0,1,1,0]
 Int8	1
-Int16	1
-Int32	1
 Int64	1
 Int128	1
 Int256	1

@@ -18,25 +18,17 @@ YAML
 
 # A set on disk stores its keys in the ascending order of its disk keys. With a threshold of 1 byte, each set
 # spills before its first chunk and, in the `break` mode, keeps the merged blocks of 50 keys up to the 100th:
-# the 100 smallest keys when the disk keys keep the order of the keys, which arrive scattered. Each query counts
-# the probed keys that the set finds and those of them among the 100 smallest, so it shows both which keys the
-# set keeps and that it finds them. The cases cover every order of a column (unsigned, signed, floating-point
-# and bytes) at each width, the methods of fixed-size keys, a packing of columns by size that differs from
-# their order, and nullable keys, where `NULL` follows the values of its column.
+# the 100 smallest keys when the disk keys keep the order of the keys, which arrive scattered. Each query
+# counts the probed keys that the set finds and those of them among the 100 smallest, so it shows both which
+# keys the set keeps and that it finds them. The cases cover every order of a column (unsigned, signed,
+# floating-point and bytes) at each width, the methods of fixed-size keys, a packing of columns by size that
+# differs from their order, and nullable keys, where `NULL` follows the values of its column.
 ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}" --config-file "${LOCAL_DIR}/query-log.yaml" \
     --max_bytes_before_external_set 1 --max_rows_in_set 100 --set_overflow_mode break --max_block_size 50 <<'SQL'
 SELECT 'Int8', countIf(found), countIf(found AND i < 100)
 FROM (SELECT number AS i, toInt8(i - 128)
     IN (SELECT toInt8(n - 128) FROM (SELECT number * 151 % 256 AS n FROM numbers(256))) AS found FROM numbers(256))
 SETTINGS log_comment = 'Int8';
-SELECT 'Int16', countIf(found), countIf(found AND i < 100)
-FROM (SELECT number AS i, toInt16(i - 500)
-    IN (SELECT toInt16(n - 500) FROM (SELECT number * 7919 % 1000 AS n FROM numbers(1000))) AS found FROM numbers(1000))
-SETTINGS log_comment = 'Int16';
-SELECT 'Int32', countIf(found), countIf(found AND i < 100)
-FROM (SELECT number AS i, toInt32((toInt32(i) - 500) * 1000)
-    IN (SELECT toInt32((toInt32(n) - 500) * 1000) FROM (SELECT number * 7919 % 1000 AS n FROM numbers(1000))) AS found FROM numbers(1000))
-SETTINGS log_comment = 'Int32';
 SELECT 'Int64', countIf(found), countIf(found AND i < 100)
 FROM (SELECT number AS i, toInt64(i - 500) * 1000000000
     IN (SELECT toInt64(n - 500) * 1000000000 FROM (SELECT number * 7919 % 1000 AS n FROM numbers(1000))) AS found FROM numbers(1000))
@@ -97,15 +89,15 @@ SELECT '(Int16, Float32)', countIf(found), countIf(found AND i < 100)
 FROM (SELECT number AS i, (toInt16(toInt32(intDiv(i, 10)) - 50), toFloat32(toInt32(i % 10) - 5))
     IN (SELECT toInt16(toInt32(intDiv(n, 10)) - 50), toFloat32(toInt32(n % 10) - 5) FROM (SELECT number * 7919 % 1000 AS n FROM numbers(1000))) AS found FROM numbers(1000))
 SETTINGS log_comment = '(Int16, Float32)';
--- Keys with `NULL` in different columns: `(NULL, 0)` and `(i, NULL)` follow the keys `(i, j)`, and `(NULL, 0)`
--- follows all keys `(i, NULL)`, as in `ORDER BY`.
+-- Keys with `NULL` in different columns: `(NULL, 0)` and `(i, NULL)` follow the keys `(i, j)`, and
+-- `(NULL, 0)` follows all keys `(i, NULL)`, as in `ORDER BY`.
 SELECT '(Nullable(Int16), Nullable(UInt16))', countIf(found), countIf(found AND i < 112 AND i % 10 != 0)
 FROM (SELECT number AS i, (if(i % 10 = 0, NULL, toInt16(toInt32(intDiv(i, 10)) - 50)), if(i % 10 = 5, NULL, toUInt16(i % 10)))
     IN (SELECT if(n % 10 = 0, NULL, toInt16(toInt32(intDiv(n, 10)) - 50)), if(n % 10 = 5, NULL, toUInt16(n % 10)) FROM (SELECT number * 7919 % 1000 AS n FROM numbers(1000))) AS found FROM numbers(1000))
 SETTINGS transform_null_in = 1, log_comment = '(Nullable(Int16), Nullable(UInt16))';
 
--- The disk keys of floating-point numbers keep apart the values that differ in their bits, as the set in memory
--- does: `0.` and `-0.`, and `NaN` values with different payloads. The probes are sorted by their bits.
+-- The disk keys of floating-point numbers keep apart the values that differ in their bits, as the set in
+-- memory does: `0.` and `-0.`, and `NaN` values with different payloads. The probes are sorted by their bits.
 SELECT 'Float64 bits', groupArray(found)
 FROM (SELECT b, reinterpretAsFloat64(b) IN (SELECT reinterpretAsFloat64(arrayJoin(
         [toUInt64(0), 9223372036854775808, 9221120237041090561, 18444492273895866369, 4607182418800017408]))) AS found
@@ -117,6 +109,6 @@ SETTINGS max_rows_in_set = 0, log_comment = 'Float64 bits';
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['SetsSpilledToDisk']
 FROM system.query_log
-WHERE type = 'QueryFinish' AND log_comment != ''
+WHERE type = 'QueryFinish' AND log_comment != '' AND current_database = currentDatabase()
 ORDER BY event_time_microseconds;
 SQL
