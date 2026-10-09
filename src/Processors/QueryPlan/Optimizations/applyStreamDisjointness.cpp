@@ -122,6 +122,10 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
         const bool can_scatter
             = settings.parallel_distinct && distinct->getSortDescription().empty() && !isPreliminaryDistinctInOrder(node);
 
+        /// An empty list of `DISTINCT` columns means all columns of the input.
+        const auto & header = *distinct->getInputHeaders().front();
+        const Names keys = distinct->getColumnNames().empty() ? header.getNames() : distinct->getColumnNames();
+
         /// Disjoint inputs can be deduplicated independently. `DistinctStep` enforces size limits on
         /// their combined set while keeping stream assignments intact for downstream consumers.
         /// Reusing table partitions is always better than merging into a single stream. Against the
@@ -129,7 +133,7 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
         /// skew, so it must pass the `DISTINCT` cost heuristic even when another step requested
         /// per-partition reading, as for window functions.
         if (property && settings.distinct_partitions_independently
-            && partitionDeterminedByKeys(*property, distinct->getColumnNames())
+            && partitionDeterminedByKeys(*property, keys)
             && (!can_scatter || !property->reading || settings.force_distinct_partitions_independently
                 || property->reading->isPartitionIndependentProcessingProfitable(ReadFromMergeTree::ProcessorKind::Distinct)))
         {
@@ -142,11 +146,9 @@ static std::optional<StreamDisjointnessProperty> applyStreamDisjointness(
 
         distinct->enableParallelDistinct();
         coalescePreliminaryDistinctOutput(node);
-        const auto & header = *distinct->getInputHeaders().front();
-        const auto & keys = distinct->getColumnNames();
         /// Hash partitioning keeps equal keys in one stream. A single-stream result without scattering
         /// satisfies the same property.
-        return makeHashPartitionedProperty(header, keys.empty() ? header.getNames() : keys);
+        return makeHashPartitionedProperty(header, keys);
     }
 
     if (auto * sorting = typeid_cast<SortingStep *>(&step))

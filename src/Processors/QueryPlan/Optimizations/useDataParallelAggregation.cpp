@@ -237,8 +237,11 @@ void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, co
     if (!dag)
         return;
 
+    /// An empty list of `DISTINCT` columns means all columns of the input.
+    const Names keys = distinct_step->getColumnNames().empty() ? distinct_step->getInputHeaders().front()->getNames()
+                                                               : distinct_step->getColumnNames();
     if (!reading->willOutputEachPartitionThroughSeparatePort()
-        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, distinct_step->getColumnNames()))
+        && isPartitionKeyFunctionOfKeys(reading->getStorageMetadata()->getPartitionKey(), *dag, keys))
     {
         reading->requestOutputEachPartitionThroughSeparatePortForDistinct();
     }
