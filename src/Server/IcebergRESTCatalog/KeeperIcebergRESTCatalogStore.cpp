@@ -5,6 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
+#include <base/unit.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogJSON.h>
 
 #include <algorithm>
@@ -14,7 +15,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace
@@ -22,6 +25,37 @@ namespace
 
 /// Data of the root node. Bump on any layout change so old data is refused, not misread.
 constexpr auto FORMAT_MARKER = "IcebergRESTCatalog\nformat_version: 1";
+
+constexpr size_t MAX_UPDATE_RETRIES = 10;
+
+/// Keeper limits path depth and node data size. The handler maps `BAD_ARGUMENTS` to a 400 response.
+constexpr size_t MAX_NAMESPACE_LEVELS = 16;
+constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
+constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
+
+void validateNamespace(const IcebergNamespaceName & name)
+{
+    if (name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace must have at least one level");
+    if (name.size() > MAX_NAMESPACE_LEVELS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace must have at most {} levels", MAX_NAMESPACE_LEVELS);
+    for (const auto & level : name)
+    {
+        if (level.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be non-empty");
+        if (level.size() > MAX_NAMESPACE_LEVEL_LENGTH)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Namespace levels must be at most {} bytes", MAX_NAMESPACE_LEVEL_LENGTH);
+    }
+}
+
+void checkPropertiesSize(const std::map<String, String> & properties)
+{
+    size_t size = 0;
+    for (const auto & [key, value] : properties)
+        size += key.size() + value.size();
+    if (size > MAX_NAMESPACE_PROPERTIES_SIZE)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'properties' must be at most {} bytes in total", MAX_NAMESPACE_PROPERTIES_SIZE);
+}
 
 String propertiesToJSON(const std::map<String, String> & properties)
 {
@@ -93,6 +127,8 @@ void KeeperIcebergRESTCatalogStore::initRoot(const zkutil::ZooKeeperPtr & zookee
 
 String KeeperIcebergRESTCatalogStore::namespacePath(const IcebergNamespaceName & name) const
 {
+    /// Every method builds its path here, so this is the one place that checks the name.
+    validateNamespace(name);
     String path = root_path;
     for (const auto & level : name)
         path += "/namespaces/" + escapeForFileName(level);
@@ -101,6 +137,8 @@ String KeeperIcebergRESTCatalogStore::namespacePath(const IcebergNamespaceName &
 
 String KeeperIcebergRESTCatalogStore::childNamespacesPath(const IcebergNamespaceName & name) const
 {
+    if (name.empty())
+        return root_path + "/namespaces";
     return namespacePath(name) + "/namespaces";
 }
 
@@ -122,15 +160,18 @@ String KeeperIcebergRESTCatalogStore::tableUuidPath(const IcebergNamespaceName &
 bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName & name, const std::map<String, String> & properties)
 {
     auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::createNamespace");
+    /// Validates the whole name before any parent is created.
+    const auto path = namespacePath(name);
+    checkPropertiesSize(properties);
     auto zookeeper = getZooKeeper();
 
     /// Each namespace is three nodes. Create them atomically so a crash cannot leave a partial namespace.
-    const auto try_create = [&](const String & path, const std::map<String, String> & props)
+    const auto try_create = [&](const String & node_path, const std::map<String, String> & props)
     {
         Coordination::Requests ops;
-        ops.emplace_back(zkutil::makeCreateRequest(path, propertiesToJSON(props), zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(path + "/namespaces", "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(path + "/tables", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(node_path, propertiesToJSON(props), zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/namespaces", "", zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/tables", "", zkutil::CreateMode::Persistent));
         Coordination::Responses responses;
         const auto code = zookeeper->tryMulti(ops, responses);
         if (code == Coordination::Error::ZNODEEXISTS)
@@ -148,7 +189,7 @@ bool KeeperIcebergRESTCatalogStore::createNamespace(const IcebergNamespaceName &
             try_create(parent_path, {});
     }
 
-    return try_create(namespacePath(name), properties);
+    return try_create(path, properties);
 }
 
 bool KeeperIcebergRESTCatalogStore::namespaceExists(const IcebergNamespaceName & name) const
@@ -165,6 +206,50 @@ std::optional<std::map<String, String>> KeeperIcebergRESTCatalogStore::getNamesp
     if (!getZooKeeper()->tryGet(path, data))
         return std::nullopt;
     return propertiesFromJSON(data, path);
+}
+
+std::optional<UpdateNamespacePropertiesResult> KeeperIcebergRESTCatalogStore::updateNamespaceProperties(
+    const IcebergNamespaceName & name, const std::map<String, String> & updates, const std::set<String> & removals)
+{
+    auto component_guard = Coordination::setCurrentComponent("KeeperIcebergRESTCatalogStore::updateNamespaceProperties");
+    auto zookeeper = getZooKeeper();
+    const auto path = namespacePath(name);
+
+    /// The version check keeps concurrent updates from losing keys.
+    for (size_t attempt = 0; attempt < MAX_UPDATE_RETRIES; ++attempt)
+    {
+        Coordination::Stat stat;
+        String data;
+        if (!zookeeper->tryGet(path, data, &stat))
+            return std::nullopt;
+
+        auto properties = propertiesFromJSON(data, path);
+        UpdateNamespacePropertiesResult result;
+        for (const auto & key : removals)
+        {
+            if (properties.erase(key) > 0)
+                result.removed.push_back(key);
+            else
+                result.missing.push_back(key);
+        }
+        for (const auto & [key, value] : updates)
+        {
+            properties[key] = value;
+            result.updated.push_back(key);
+        }
+
+        checkPropertiesSize(properties);
+
+        const auto code = zookeeper->trySet(path, propertiesToJSON(properties), stat.version);
+        if (code == Coordination::Error::ZOK)
+            return result;
+        if (code == Coordination::Error::ZNONODE)
+            return std::nullopt;
+        if (code != Coordination::Error::ZBADVERSION)
+            throw zkutil::KeeperException::fromPath(code, path);
+    }
+
+    throw Exception(ErrorCodes::KEEPER_EXCEPTION, "Cannot update properties of namespace at {}: too many concurrent updates", path);
 }
 
 std::vector<IcebergNamespaceName> KeeperIcebergRESTCatalogStore::listNamespaces(const IcebergNamespaceName & parent) const

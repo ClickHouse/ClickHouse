@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace DB
@@ -20,6 +21,14 @@ struct IcebergTablePointer
 {
     String uuid;
     String metadata_location;
+};
+
+struct UpdateNamespacePropertiesResult
+{
+    Strings updated;
+    Strings removed;
+    /// Keys from `removals` that were not present.
+    Strings missing;
 };
 
 /// Storage backend of the native Iceberg REST catalog (RFC: issue #114697), backed by Keeper.
@@ -43,6 +52,10 @@ public:
     bool namespaceExists(const IcebergNamespaceName & name) const;
 
     std::optional<std::map<String, String>> getNamespaceProperties(const IcebergNamespaceName & name) const;
+
+    /// Applies `removals` first, then `updates`. nullopt if the namespace does not exist.
+    std::optional<UpdateNamespacePropertiesResult> updateNamespaceProperties(
+        const IcebergNamespaceName & name, const std::map<String, String> & updates, const std::set<String> & removals);
 
     /// Lists direct children of `parent` or top-level namespaces when `parent` is empty.
     std::vector<IcebergNamespaceName> listNamespaces(const IcebergNamespaceName & parent) const;
