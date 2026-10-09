@@ -8,6 +8,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
@@ -16,6 +17,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -37,9 +39,37 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int ACCESS_DENIED;
 }
 namespace
 {
+    /// Only credential replacement, addition and reset qualify, without any explicit expiry.
+    /// Inspect the final AST; new account mutation fields must be excluded here as well.
+    bool isAuthenticationOnlyAlter(const ASTCreateUserQuery & query)
+    {
+        if (!query.alter || query.attach)
+            return false;
+
+        /// Clause presence requires full `ALTER_USER`, including empty clauses and `NONE`.
+        if (query.new_name
+            || query.hosts || query.add_hosts || query.remove_hosts
+            || query.roles || query.default_roles
+            || query.settings || query.alter_settings
+            || query.grantees || query.default_database
+            || query.global_valid_until)
+        {
+            return false;
+        }
+
+        for (const auto & method : query.authentication_methods)
+        {
+            if (method->valid_until)
+                return false;
+        }
+
+        return !query.authentication_methods.empty() || query.reset_authentication_methods_to_new;
+    }
+
     void updateUserFromQueryImpl(
         User & user,
         const ASTCreateUserQuery & query,
@@ -227,8 +257,34 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
-    for (const auto & name : query.names->toStrings())
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+    const Strings names = query.names->toStrings();
+    const auto authenticated_user_id = getContext()->getUserID();
+    const bool self_service = isAuthenticationOnlyAlter(query)
+        && names.size() == 1 && query.cluster.empty() && query.storage_name.empty()
+        && authenticated_user_id && names.front() == getContext()->getUserName();
+
+    const auto required_access = !query.alter
+        ? AccessType::CREATE_USER
+        : (self_service ? AccessType::ALTER_USER_AUTHENTICATION : AccessType::ALTER_USER);
+
+    /// Authorize every target before credential conversion, cluster dispatch, or storage updates.
+    /// `IF EXISTS` and storage selection do not bypass these checks.
+    for (const auto & name : names)
+        access->checkAccess(required_access, name);
+
+    std::optional<UUID> self_service_user_id;
+    if (self_service)
+    {
+        /// Resolve after authorization. `IF EXISTS` may skip a missing target, but a recreated
+        /// account must match the authenticated ID. Retain that ID through the storage update.
+        self_service_user_id = query.if_exists
+            ? access_control.find<User>(names.front())
+            : std::optional<UUID>{access_control.getID<User>(names.front())};
+        if (!self_service_user_id)
+            return {};
+        if (*self_service_user_id != *authenticated_user_id)
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Self-service authentication requires the authenticated account");
+    }
 
     if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);
@@ -291,7 +347,6 @@ BlockIO InterpreterCreateUserQuery::execute()
         storage = storage_ptr.get();
     }
 
-    Strings names = query.names->toStrings();
     if (query.alter)
     {
         std::optional<RolesOrUsersSet> grantees_from_query;
@@ -300,6 +355,11 @@ BlockIO InterpreterCreateUserQuery::execute()
 
         auto update_func = [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
+            /// Check inside the storage callback, including retries, before applying changes.
+            /// `updateUserFromQueryImpl` must not rename the account back to a stale query name.
+            if (self_service_user_id && entity->getName() != names.front())
+                throw Exception(ErrorCodes::ACCESS_DENIED, "Self-service authentication target changed during alteration");
+
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
                 *updated_user, query, authentication_methods, {}, roles_from_query, default_roles_from_query, settings_from_query, grantees_from_query,
@@ -309,7 +369,12 @@ BlockIO InterpreterCreateUserQuery::execute()
             return updated_user;
         };
 
-        if (query.if_exists)
+        if (self_service_user_id)
+        {
+            /// `IF EXISTS` can skip a dropped ID but never follows a replacement account by name.
+            storage->update(*self_service_user_id, update_func, /* throw_if_not_exists = */ !query.if_exists);
+        }
+        else if (query.if_exists)
         {
             auto ids = storage->find<User>(names);
             storage->tryUpdate(ids, update_func);
