@@ -170,16 +170,32 @@ class Workflow:
                         res.append(job)
             return res
 
-        def get_secret(self, name) -> Optional[Secret.Config]:
+        def get_secret(self, name, job_name: Optional[str] = None) -> Optional[Secret.Config]:
             name = str(name)
             names = []
             for secret in self.secrets:
                 if secret.name == name:
                     return secret
                 names.append(secret.name)
+
+            # AWS-backed secrets are resolved by the job runner instead of
+            # being written into the workflow YAML. Honour the same per-job
+            # visibility boundary that GitHub-backed secrets use: a job may
+            # resolve its own declared secrets, but not credentials declared
+            # for another job in the workflow.
+            if job_name:
+                for job in self.jobs:
+                    if job.name != job_name:
+                        continue
+                    for secret in job.secrets:
+                        if secret.name == name:
+                            return secret
+                        names.append(secret.name)
+                    break
             message = (
-                f"Failed to find secret [{name}] in workflow [{self.name}]. "
-                f"Available workflow secrets: [{names}]"
+                f"Failed to find secret [{name}] in workflow [{self.name}]"
+                + (f", job [{job_name}]" if job_name else "")
+                + f". Available secrets: [{names}]"
             )
             print(f"ERROR: {message}")
             raise RuntimeError(message)

@@ -5,7 +5,6 @@ from praktika import Workflow
 from ci.defs.defs import (
     BASE_BRANCH,
     DOCKERS,
-    REFERENCE_SNAPSHOT_PUBLISH_SECRETS,
     SECRETS,
     ArtifactConfigs,
     ArtifactNames,
@@ -35,10 +34,10 @@ workflow = Workflow.Config(
         ArtifactConfigs.reference_snapshot,
     ],
     dockers=DOCKERS,
-    # The additional writer secret exists only in this trusted scheduled/manual
-    # workflow. Praktika emits workflow_dispatch for scheduled workflows, so
-    # this is also manually runnable from the Actions UI.
-    secrets=SECRETS + REFERENCE_SNAPSHOT_PUBLISH_SECRETS,
+    # Praktika emits workflow_dispatch for scheduled workflows, so this is also
+    # manually runnable from the Actions UI. The writer credential is attached
+    # only to publish_reference_snapshot_job above.
+    secrets=SECRETS,
     enable_report=True,
     enable_cidb=False,
     cron_schedules=["23 5 * * *"],
