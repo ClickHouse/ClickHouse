@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
@@ -83,6 +84,9 @@ private:
     void initialize(size_t attempt);
     void setMetadataFromResponse(const Azure::Storage::Blobs::Models::DownloadBlobDetails & details, size_t blob_size) const;
 
+    /// Creates the client on first use. Thread-safe.
+    const AzureBlobStorage::BlobClient & getBlobClient() const;
+
     /// The offset just past the last byte that the current download is allowed to deliver.
     /// `reported_length` is the length of the response body as reported by the remote endpoint,
     /// and is not trusted: it is bounded by `read_until_position_`, which is set locally.
@@ -103,7 +107,8 @@ private:
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     ContainerClientPtr blob_container_client;
-    BlobClientPtr blob_client;
+    mutable BlobClientPtr blob_client;
+    mutable std::once_flag blob_client_created;
 
     const String path;
     size_t max_single_read_retries;
