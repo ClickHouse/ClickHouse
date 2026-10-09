@@ -58,6 +58,14 @@ SELECT sum(cityHash64(p, v, round(finalizeAggregation(s), 6)))
 FROM (SELECT p, v, contingencyState(b, c) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather)
 SETTINGS make_distributed_plan = 0;
 
+-- The -Map combinator keeps one nested state per key, and each of them must be converted.
+SELECT '-- contingencyMap: distributed then local';
+SELECT sum(cityHash64(p, v, mapApply((k, x) -> (k, round(x, 6)), finalizeAggregation(s))))
+FROM (SELECT p, v, contingencyMapState(b, c, p) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather);
+SELECT sum(cityHash64(p, v, mapApply((k, x) -> (k, round(x, 6)), finalizeAggregation(s))))
+FROM (SELECT p, v, contingencyMapState(b, c, p) OVER (PARTITION BY p ORDER BY v) AS s FROM t_window_state_variant_gather)
+SETTINGS make_distributed_plan = 0;
+
 -- theilsU is the negative control: its window state keeps the ordinary state's leading members, so
 -- reading it as the ordinary state never crashed and it must keep working either way.
 SELECT '-- theilsU control: distributed then local';
