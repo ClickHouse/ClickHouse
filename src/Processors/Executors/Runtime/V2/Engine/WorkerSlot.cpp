@@ -8,12 +8,7 @@ namespace DB
 namespace Runtime::V2
 {
 
-namespace
-{
-
-constexpr UInt64 renew_period_ns = 1'000'000;
-
-}
+static constexpr UInt64 check_period_ns = 1'000'000;
 
 WorkerSlot::WorkerSlot(AcquiredSlotPtr slot_, MemoryReservation * reservation_, MemoryTracker * tracker_)
     : slot(std::move(slot_))
@@ -27,16 +22,16 @@ WorkerSlot::WorkerSlot(AcquiredSlotPtr slot_, MemoryReservation * reservation_, 
 
 bool WorkerSlot::keepGoing()
 {
-    if (lease)
-    {
-        const UInt64 now_ns = clock_gettime_ns();
-        if (now_ns - last_renew_ns >= renew_period_ns)
-        {
-            last_renew_ns = now_ns;
-            if (!lease->renew())
-                return false;
-        }
-    }
+    if (!lease && !reservation)
+        return true;
+
+    const UInt64 now_ns = clock_gettime_ns();
+    if (now_ns - last_check_ns < check_period_ns)
+        return true;
+    last_check_ns = now_ns;
+
+    if (lease && !lease->renew())
+        return false;
 
     if (reservation && tracker)
         reservation->syncWithMemoryTracker(tracker);

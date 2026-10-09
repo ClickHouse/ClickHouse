@@ -24,7 +24,7 @@ private:
 
     /// Lease workloads
     ISlotLease * lease;
-    UInt64 last_renew_ns = 0;
+    UInt64 last_check_ns = 0;
 
     /// Memory synchronization
     MemoryReservation * reservation;
