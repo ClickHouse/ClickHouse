@@ -1235,7 +1235,7 @@ void AlterCommand::apply(
         };
 
         const auto & old_projection = metadata.projections.get(projection_name);
-        if (!without_settings(old_projection).isEquivalentForSettingsOnlyAlter(without_settings(new_projection)))
+        if (without_settings(old_projection) != without_settings(new_projection))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot modify projection {}: only the WITH SETTINGS clause may be changed, "
@@ -1243,8 +1243,7 @@ void AlterCommand::apply(
                 "Use DROP PROJECTION and ADD PROJECTION to change the query",
                 projection_name);
 
-        /// The restated codec may have an explicit argument equivalent to an omitted one today.
-        /// Keep the old spelling so an omitted type-dependent width still follows later type changes.
+        /// Keep the original declaration order while changing only the settings.
         auto preserved_definition = old_projection.definition_ast->clone();
         auto & preserved_decl = preserved_definition->as<ASTProjectionDeclaration &>();
         const auto & new_decl = new_projection.definition_ast->as<const ASTProjectionDeclaration &>();

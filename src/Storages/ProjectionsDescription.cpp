@@ -12,7 +12,6 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
@@ -219,64 +218,15 @@ ProjectionsDescription ProjectionsDescription::clone() const
 namespace
 {
 
-/// Compare the codec that a writer actually uses for each serialized substream, while retaining
-/// the original declarations in metadata. In particular, `DoubleDelta`'s description omits its
-/// effective width, so comparing preprocessed `CODEC` ASTs would still conflate different codecs.
-String projectionDefinitionForComparison(const ProjectionDescription & projection, bool preserve_implicit_width)
+/// Codec declarations are bound to output names, regardless of their order in the list.
+String projectionDefinitionForComparison(const ProjectionDescription & projection)
 {
     auto definition = projection.definition_ast->clone();
     auto & declaration = definition->as<ASTProjectionDeclaration &>();
     if (!declaration.columns)
         return definition->formatIgnoringRedundantParentheses();
 
-    for (auto & column_ast : declaration.columns->children)
-    {
-        auto & column = column_ast->as<ASTColumnDeclaration &>();
-        const String output_name = projection.with_parent_part_offset && column.name == "_part_offset"
-            ? "_parent_part_offset" : column.name;
-        const auto * output = projection.sample_block.findByName(output_name);
-        if (!output)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} has no output column {}", projection.name, column.name);
-
-        auto codec_hashes = make_intrusive<ASTFunction>();
-        codec_hashes->name = "CODEC";
-        codec_hashes->arguments = make_intrusive<ASTExpressionList>();
-        codec_hashes->children.push_back(codec_hashes->arguments);
-        const ASTPtr codec_ast = column.getCodec();
-        ISerialization::StreamCallback collect_hashes = [&](const auto & path)
-        {
-            if (ISerialization::isSpecialCompressionAllowed(path))
-            {
-                const auto & stream_type = path.back().data.type;
-                const auto codec = CompressionCodecFactory::instance().get(codec_ast, stream_type);
-                codec_hashes->arguments->children.push_back(make_intrusive<ASTLiteral>(codec->getHash()));
-            }
-        };
-        output->type->getDefaultSerialization()->enumerateStreams(collect_hashes, output->type);
-        if (codec_hashes->arguments->children.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Projection {} has no compressible stream for {}", projection.name, column.name);
-
-        if (preserve_implicit_width)
-        {
-            /// `Delta` and `DoubleDelta` without an argument follow the output type on a later
-            /// `MODIFY COLUMN`. An explicit width can match now but diverge after that ALTER.
-            const auto & families = codec_ast->as<ASTFunction &>().arguments->children;
-            for (size_t family_index = 0; family_index < families.size(); ++family_index)
-            {
-                const auto * identifier = families[family_index]->as<ASTIdentifier>();
-                const auto * function = families[family_index]->as<ASTFunction>();
-                const String family_name = identifier ? identifier->name() : function->name;
-                const bool width_omitted = identifier || !function->arguments || function->arguments->children.empty();
-                if (width_omitted && (Poco::icompare(family_name, "Delta") == 0 || Poco::icompare(family_name, "DoubleDelta") == 0))
-                    codec_hashes->arguments->children.push_back(make_intrusive<ASTLiteral>("implicit_width_" + std::to_string(family_index)));
-            }
-        }
-
-        column.setCodec(std::move(codec_hashes));
-    }
-
-    /// A codec declaration is bound to its output name, not its position in the list. Sort only
-    /// the comparison clone; the stored declaration keeps its original order and spelling.
+    /// Sort only the comparison clone; the stored declaration keeps its original order.
     ::sort(declaration.columns->children.begin(), declaration.columns->children.end(), [](const ASTPtr & lhs, const ASTPtr & rhs)
     {
         return lhs->as<const ASTColumnDeclaration &>().name < rhs->as<const ASTColumnDeclaration &>().name;
@@ -290,15 +240,7 @@ String projectionDefinitionForComparison(const ProjectionDescription & projectio
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
     return name == other.name
-        && projectionDefinitionForComparison(*this, /*preserve_implicit_width=*/ true)
-            == projectionDefinitionForComparison(other, /*preserve_implicit_width=*/ true);
-}
-
-bool ProjectionDescription::isEquivalentForSettingsOnlyAlter(const ProjectionDescription & other) const
-{
-    return name == other.name
-        && projectionDefinitionForComparison(*this, /*preserve_implicit_width=*/ false)
-            == projectionDefinitionForComparison(other, /*preserve_implicit_width=*/ false);
+        && projectionDefinitionForComparison(*this) == projectionDefinitionForComparison(other);
 }
 
 bool hasProjectionColumnCodecs(const IAST & ast)

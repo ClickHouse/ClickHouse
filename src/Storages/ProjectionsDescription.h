@@ -135,8 +135,6 @@ struct ProjectionDescription
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
-    /// `MODIFY PROJECTION` retains the old codec declaration, so only the current writer codec must match.
-    bool isEquivalentForSettingsOnlyAlter(const ProjectionDescription & other) const;
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
 

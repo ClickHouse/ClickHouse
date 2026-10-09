@@ -2,7 +2,6 @@
 #include <Parsers/IAST.h>
 
 #include <Core/Defines.h>
-#include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <limits>
@@ -78,9 +77,7 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/Lexer.h>
-#include <Parsers/ParserProjectionSelectQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/parseQuery.h>
 
 #include <Common/Exception.h>
 #include <Common/checkStackSize.h>
@@ -235,42 +232,6 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
     };
 
     return factory;
-}
-
-/// The projection `SELECT` owns expression slots whose JSON representation can contain nodes the
-/// SQL parser never emits. Check that its formatted SQL returns the same tree, then use the
-/// parser's AST for execution. The declaration's other children are validated in `readJSON`; do
-/// not reparse the whole declaration here because embedded `ASTSetQuery` flags are significant
-/// JSON state even when their SQL spelling is not parser-produced.
-ASTPtr canonicalizeProjectionSelectJSON(ASTPtr node)
-{
-    if (!node->as<ASTProjectionSelectQuery>())
-        return node;
-
-    try
-    {
-        /// `count` without an `arguments` member can format as `count()` and be normalized
-        /// away by the parser, so screen the original tree before comparing hashes.
-        JSONObjectReader::screenArgumentlessFunctions(*node, "query");
-
-        WriteBufferFromOwnString out;
-        node->format(out, IAST::FormatSettings(/*one_line=*/true));
-        const String sql = out.str();
-        ParserProjectionSelectQuery parser;
-        ASTPtr parsed = parseQuery(parser, sql, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-        /// A malformed expression can format as valid SQL while carrying different JSON AST
-        /// semantics. Accept only the exact parser-produced `SELECT` tree.
-        if (node->getTreeHash(/*ignore_aliases=*/false) != parsed->getTreeHash(/*ignore_aliases=*/false))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Projection AST JSON differs from its SQL parser result");
-        return parsed;
-    }
-    catch (const Exception & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Projection AST JSON does not form a valid SQL projection: {}", e.message());
-    }
 }
 
 }
@@ -458,7 +419,7 @@ ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
     /// readJSON may recursively call createFromJSON for child nodes.
     node->readJSON(json);
 
-    return canonicalizeProjectionSelectJSON(std::move(node));
+    return node;
 }
 
 

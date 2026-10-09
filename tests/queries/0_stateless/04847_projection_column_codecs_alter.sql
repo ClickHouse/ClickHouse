@@ -12,13 +12,21 @@ SELECT count() = 1 FROM system.projection_parts_columns
 WHERE database = currentDatabase() AND table = 't_projection_codecs_alter' AND name = 'p'
     AND active AND column = 'k' AND column_data_compressed_bytes > column_data_uncompressed_bytes;
 
--- A settings-only ALTER accepts equal effective codecs but keeps the original declarations.
+-- A settings-only ALTER keeps the codec declarations unchanged.
 ALTER TABLE t_projection_codecs_alter MODIFY PROJECTION p
-    (k CODEC(NONE), ts CODEC(DoubleDelta(8), ZSTD(1))) AS (SELECT k, ts ORDER BY k)
+    (k CODEC(NONE), ts CODEC(DoubleDelta, ZSTD)) AS (SELECT k, ts ORDER BY k)
     WITH SETTINGS (index_granularity = 128);
 SELECT position(create_table_query, 'CODEC(DoubleDelta, ZSTD)') > 0
     AND position(create_table_query, 'index_granularity = 128') > 0
 FROM system.tables WHERE database = currentDatabase() AND name = 't_projection_codecs_alter';
+
+-- Equivalent writer codecs with different declarations are still a codec change.
+ALTER TABLE t_projection_codecs_alter MODIFY PROJECTION p
+    (k CODEC(NONE), ts CODEC(DoubleDelta, ZSTD(1))) AS (SELECT k, ts ORDER BY k)
+    WITH SETTINGS (index_granularity = 128); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t_projection_codecs_alter MODIFY PROJECTION p
+    (k CODEC(NONE), ts CODEC(DoubleDelta(8), ZSTD)) AS (SELECT k, ts ORDER BY k)
+    WITH SETTINGS (index_granularity = 128); -- { serverError BAD_ARGUMENTS }
 
 -- Omitted codec widths follow a valid change to the SELECT output type.
 ALTER TABLE t_projection_codecs_alter MODIFY COLUMN ts UInt32 SETTINGS mutations_sync = 2;
