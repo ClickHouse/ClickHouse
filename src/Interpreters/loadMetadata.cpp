@@ -153,7 +153,7 @@ static void checkIncompleteOrdinaryToAtomicConversion(ContextPtr context, const 
     if (context->getConfigRef().has("allow_reserved_database_name_tmp_convert"))
         return;
 
-    auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
+    auto convert_flag_path = pathFromString(context->getFlagsPath()) / "convert_ordinary_to_atomic";
     if (!fs::exists(convert_flag_path))
         return;
 
@@ -216,7 +216,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
     /// There may exist 'force_restore_data' file, which means skip safety threshold
     /// on difference of data parts while initializing tables.
     /// This file is immediately deleted i.e. "one-shot".
-    auto force_restore_data_flag_file = fs::path(context->getFlagsPath()) / "force_restore_data";
+    auto force_restore_data_flag_file = pathFromString(context->getFlagsPath()) / "force_restore_data";
     bool has_force_restore_data_flag = fs::exists(force_restore_data_flag_file);
     if (has_force_restore_data_flag)
     {
@@ -240,15 +240,15 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
 
     for (const auto it = default_db_disk->iterateDirectory(pathToGenericString(metadata_dir_path)); it->isValid(); it->next())
     {
-        auto sub_path = fs::path(it->path());
+        auto sub_path = pathFromString(it->path());
         if (sub_path.filename().empty())
             sub_path = sub_path.parent_path();
 
         if (default_db_disk->isSymlinkSupported() && default_db_disk->isSymlink(pathToGenericString(sub_path)))
         {
-            String db_name = sub_path.filename().string();
+            String db_name = pathToGenericString(sub_path.filename());
             if (!isSystemOrInformationSchema(db_name))
-                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), fs::path(sub_path.string() + ".sql"));
+                orphan_directories_and_symlinks.emplace(unescapeForFileName(db_name), pathFromString(pathToGenericString(sub_path) + ".sql"));
             continue;
         }
 
@@ -266,7 +266,7 @@ LoadTaskPtrs loadMetadata(ContextMutablePtr context, const String & default_data
         /// Temporary fails may be left from previous server runs.
         if (sub_path.extension() == ".tmp")
         {
-            LOG_WARNING(log, "Removing temporary file {}", sub_path.string());
+            LOG_WARNING(log, "Removing temporary file {}", pathToGenericString(sub_path));
             try
             {
                 default_db_disk->removeFileIfExists(pathToGenericString(sub_path));
@@ -561,7 +561,7 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
         for (const auto & uuid : tables_uuids)
             DatabaseCatalog::instance().removeUUIDMappingFinally(uuid);
 
-        auto metadata_file_path = fs::path(context->getPath()) / DatabaseCatalog::getMetadataFilePath(database_name);
+        auto metadata_file_path = pathFromString(context->getPath()) / DatabaseCatalog::getMetadataFilePath(database_name);
         /// force_restore_data is needed to re-create metadata symlinks
         loadDatabase(context, database_name, metadata_file_path, /* force_restore_data */ true);
 
@@ -594,7 +594,7 @@ void maybeConvertSystemDatabase(ContextMutablePtr context, LoadTaskPtrs & load_s
 
 void convertDatabasesEnginesIfNeed(const LoadTaskPtrs & load_metadata, ContextMutablePtr context)
 {
-    auto convert_flag_path = fs::path(context->getFlagsPath()) / "convert_ordinary_to_atomic";
+    auto convert_flag_path = pathFromString(context->getFlagsPath()) / "convert_ordinary_to_atomic";
     if (!fs::exists(convert_flag_path))
         return;
 
