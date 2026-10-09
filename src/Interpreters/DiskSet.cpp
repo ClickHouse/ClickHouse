@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <base/sort.h>
 #include <Common/ProfileEvents.h>
@@ -64,6 +65,15 @@ private:
 };
 
 template <typename Key>
+DiskSetImpl<Key>::DiskSetImpl(TemporaryDataOnDiskScopePtr tmp_data, size_t min_free_disk_space)
+    : file(std::make_unique<TemporaryDataBuffer>(std::move(tmp_data), min_free_disk_space))
+    , encoder(std::in_place)
+    , compressible_block_codec(file->getCompressedWriteBuffer().getCodec())
+    , incompressible_block_codec(CompressionCodecFactory::instance().get("NONE"))
+{
+}
+
+template <typename Key>
 void DiskSetImpl<Key>::add(std::span<const Key> keys)
 {
     chassert(file && !keys.empty());
@@ -76,10 +86,15 @@ void DiskSetImpl<Key>::add(std::span<const Key> keys)
 }
 
 template <typename Key>
-WriteBuffer & DiskSetImpl<Key>::startBlock(const Key & first_key)
+WriteBuffer & DiskSetImpl<Key>::startBlock(const Key & first_key, bool compressible)
 {
+    /// `next` must end the frame of the previous block before `setCodec` picks the codec of this one. The
+    /// file writes into the memory of its compressed buffer but keeps its own position there, so only `next`
+    /// hands the bytes of the previous block to the compressed buffer.
     file->next();
-    directory.addBlock(first_key, file->getCompressedWriteBuffer().getCompressedBytes());
+    auto & compressed = file->getCompressedWriteBuffer();
+    compressed.setCodec(compressible ? compressible_block_codec : incompressible_block_codec);
+    directory.addBlock(first_key, compressed.getCompressedBytes());
     return *file;
 }
 

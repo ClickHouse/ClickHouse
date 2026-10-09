@@ -41,8 +41,10 @@ public:
         virtual ~BlockSink() = default;
 
         /// Starts a block whose smallest key is `first_key`. Returns the buffer to write the bytes of the
-        /// block into until the next block starts.
-        virtual WriteBuffer & startBlock(const Key & first_key) = 0;
+        /// block into until the next block starts. `compressible` tells the sink whether a general-purpose
+        /// codec can shrink the block. The keys of an unpacked block can repeat bytes, but packed gaps are
+        /// already dense.
+        virtual WriteBuffer & startBlock(const Key & first_key, bool compressible) = 0;
     };
 
     class Encoder;

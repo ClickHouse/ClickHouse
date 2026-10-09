@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Compression/ICompressionCodec.h>
 #include <Interpreters/DiskSet.h>
 #include <Interpreters/DiskSetBlockFormat.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -25,11 +26,7 @@ public:
 
     /// Creates the file of the set in `tmp_data`. The number of distinct keys is unknown until the merge
     /// ends, so creating the file checks only that `min_free_disk_space` is free.
-    DiskSetImpl(TemporaryDataOnDiskScopePtr tmp_data, size_t min_free_disk_space)
-        : file(std::make_unique<TemporaryDataBuffer>(std::move(tmp_data), min_free_disk_space))
-        , encoder(std::in_place)
-    {
-    }
+    DiskSetImpl(TemporaryDataOnDiskScopePtr tmp_data, size_t min_free_disk_space);
 
     /// Adds `keys`, which ascend and are greater than the keys added before.
     void add(std::span<const Key> keys);
@@ -51,8 +48,11 @@ private:
 
     /// The encoder calls this before it writes each block, and writes the block into the returned buffer. It
     /// ends the frame of the previous block, so that a lookup can seek to each block and decompress it
-    /// alone. It also records the first key of the block and the position of its frame in the directory.
-    WriteBuffer & startBlock(const Key & first_key) override;
+    /// alone. It also records the first key of the block and the position of its frame in the directory. An
+    /// unpacked block holds the keys as they are, so its frame uses the codec of the file, which can shrink
+    /// them. A block of packed gaps is already dense, so its frame is not compressed, which saves the lookups
+    /// the work of decompressing it.
+    WriteBuffer & startBlock(const Key & first_key, bool compressible) override;
 
     /// The file holds the blocks in ascending order of their keys, one frame per block.
     TemporaryDataBufferPtr file;
@@ -98,6 +98,11 @@ private:
     Directory directory;
 
     std::optional<typename BlockFormat::Encoder> encoder;
+
+    /// The frames of the blocks that a codec can shrink use the codec of the temporary data scope of the
+    /// file. The frames of the other blocks use `NONE`.
+    CompressionCodecPtr compressible_block_codec;
+    CompressionCodecPtr incompressible_block_codec;
 
     /// Reads the blocks of the file for one lookup call.
     class BlockReader;
