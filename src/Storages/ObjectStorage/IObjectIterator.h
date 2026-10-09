@@ -19,6 +19,7 @@ extern const int LOGICAL_ERROR;
 
 struct FileBucketInfo;
 using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+class ParquetPrefetchedFooter;
 
 struct ObjectInfo
 {
@@ -58,6 +59,9 @@ struct ObjectInfo
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
     std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
+
+    /// Set by the iterator that reads footers ahead (`createIteratorWithParquetFooterPrefetch`), taken by the source that opens the object.
+    std::shared_ptr<ParquetPrefetchedFooter> prefetched_footer;
 
     String getIdentifier(bool include_file_bucket_info = true) const;
     String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
@@ -144,6 +148,19 @@ private:
     std::queue<ObjectInfoPtr> pending_objects_info;
     const LoggerPtr log = getLogger("GlobIterator");
 };
+
+/// Hands out the objects of `inner` in the same order, and reads the footers of the next Parquet objects in the
+/// background on the IO thread pool, so that a source opening an object does not have to wait for its footer.
+ObjectIterator createIteratorWithParquetFooterPrefetch(
+    ObjectIterator inner,
+    ObjectStoragePtr object_storage,
+    StorageObjectStorageConfigurationPtr configuration,
+    StorageID storage_id,
+    std::optional<FormatSettings> format_settings,
+    FormatFilterInfoPtr format_filter_info,
+    ContextPtr context,
+    bool need_only_count,
+    size_t num_streams);
 
 
 }

@@ -1098,20 +1098,40 @@ Chunk StorageObjectStorageSource::generate()
     return {};
 }
 
-void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
+std::optional<SchemaCache::Key> StorageObjectStorageSource::getKeyForNumRowsCache(
+    const StorageObjectStorageConfiguration & configuration,
+    const ObjectInfo & object_info,
+    const std::optional<FormatSettings> & format_settings,
+    const ContextPtr & context)
 {
     /// The cache key does not include the compression method. Under an explicit `compression_method` the
     /// same object can decode differently (or fail) through another definition with a different codec,
     /// so only row counts read with the codec derived from the path are cached.
-    if (!isCompressionMethodHintAuto(configuration->compression_method))
-        return;
+    if (!isCompressionMethodHintAuto(configuration.compression_method))
+        return std::nullopt;
 
-    const auto cache_key = getKeyForSchemaCache(
-        getUniqueStoragePathIdentifier(*configuration, object_info),
-        object_info.getFileFormat().value_or(configuration->format),
+    return getKeyForSchemaCache(
+        getUniqueStoragePathIdentifier(configuration, object_info),
+        object_info.getFileFormat().value_or(configuration.format),
         format_settings,
-        read_context);
-    schema_cache.addNumRows(cache_key, num_rows);
+        context);
+}
+
+std::optional<time_t> StorageObjectStorageSource::getLastModificationTime(const ObjectInfo & object_info)
+{
+    const auto metadata = object_info.getObjectMetadata();
+    /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
+    /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
+    /// it as unavailable makes the count cache re-read the file instead.
+    if (!metadata || !metadata->is_last_modified_known)
+        return std::nullopt;
+    return std::optional<time_t>(metadata->last_modified.epochTime());
+}
+
+void StorageObjectStorageSource::addNumRowsToCache(const ObjectInfo & object_info, size_t num_rows)
+{
+    if (auto cache_key = getKeyForNumRowsCache(*configuration, object_info, format_settings, read_context))
+        schema_cache.addNumRows(*cache_key, num_rows);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader()
@@ -1194,12 +1214,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     if (format_filter_info && format_filter_info->condition_hash)
         query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 
+    std::shared_ptr<ParquetPrefetchedFooter> prefetched_footer;
     while (true)
     {
         object_info = file_iterator->next(processor);
 
         if (!object_info || object_info->getPath().empty())
             return {};
+        /// Moved out because the object info can outlive the reader, and the footer must not.
+        prefetched_footer = std::move(object_info->prefetched_footer);
         if (!object_info->getObjectMetadata())
         {
             bool with_tags = read_from_format_info.requested_virtual_columns.contains("_tags");
@@ -1282,26 +1305,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// the object. It is only valid when the codec follows from the path (see `addNumRowsToCache`), so an
         /// explicit `compression_method` (including a misspelled one on a table loaded by `ATTACH`, where it is
         /// not rejected) always reads the object as the actual read would.
-        if (!isCompressionMethodHintAuto(configuration->compression_method))
+        const auto cache_key = getKeyForNumRowsCache(*configuration, *object_info, format_settings, context_);
+        if (!cache_key)
             return std::nullopt;
 
-        const auto cache_key = getKeyForSchemaCache(
-            getUniqueStoragePathIdentifier(*configuration, *object_info),
-            object_info->getFileFormat().value_or(configuration->format),
-            format_settings,
-            context_);
-
-        auto get_last_mod_time = [&]() -> std::optional<time_t>
-        {
-            const auto metadata = object_info->getObjectMetadata();
-            /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
-            /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
-            /// it as unavailable makes the count cache re-read the file instead.
-            if (!metadata || !metadata->is_last_modified_known)
-                return std::nullopt;
-            return std::optional<time_t>(metadata->last_modified.epochTime());
-        };
-        return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
+        auto get_last_mod_time = [&] { return getLastModificationTime(*object_info); };
+        return schema_cache->tryGetNumRows(*cache_key, get_last_mod_time);
     };
 
     /// Row-level delete transformers need real row values: an equality-delete FilterTransform
@@ -1623,6 +1632,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         }
 
         input_format->setBucketsToRead(object_info->file_bucket_info);
+        input_format->setPrefetchedFooter(std::move(prefetched_footer));
         input_format->setSerializationHints(read_from_format_info.serialization_hints);
 
         if (need_only_count)

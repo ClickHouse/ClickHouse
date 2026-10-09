@@ -16,9 +16,11 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/typeid_cast.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <algorithm>
@@ -164,6 +166,15 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
 
+    /// `_headers` are the response headers of the reader's own request, which a reader of a prefetched footer may not make.
+    ObjectIterator iterator = iterator_wrapper;
+    if (!distributed_processing && estimated_keys_count > 1 && boost::iequals(configuration->format, "Parquet")
+        && typeid_cast<const StorageObjectStorageSource::GlobIterator *>(iterator_wrapper.get()) && object_storage->isRemote()
+        && context->getReadSettings().remote_fs_settings.prefetch && !info.requested_virtual_columns.contains("_headers")
+        && getIOThreadPool().isInitialized() && (format_settings ? *format_settings : getFormatSettings(context)).seekable_read)
+        iterator = createIteratorWithParquetFooterPrefetch(
+            iterator_wrapper, object_storage, configuration, storage_id, format_settings, format_filter_info, context, need_only_count, num_streams);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageObjectStorageSource>(
@@ -176,7 +187,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             format_settings,
             context,
             max_block_size,
-            iterator_wrapper,
+            iterator,
             parser_shared_resources,
             format_filter_info,
             need_only_count,
