@@ -84,7 +84,7 @@ void SerializationInfoSettings::updateHash(SipHash & hash) const
     hash.update(propagate_types_serialization_versions_to_nested_types);
 }
 
-SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations(bool with_string_size_stream)
+SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializations(bool with_string_size_stream, bool with_compact_null_map)
 {
     SerializationInfoSettings settings;
     settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
@@ -92,6 +92,11 @@ SerializationInfoSettings SerializationInfoSettings::enableAllSupportedSerializa
     if (with_string_size_stream)
     {
         settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+        settings.propagate_types_serialization_versions_to_nested_types = true;
+    }
+    if (with_compact_null_map)
+    {
+        settings.nullable_serialization_version = MergeTreeNullableSerializationVersion::COMPACT_NULL_MAP;
         settings.propagate_types_serialization_versions_to_nested_types = true;
     }
     return settings;

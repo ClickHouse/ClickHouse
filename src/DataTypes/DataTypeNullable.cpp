@@ -98,9 +98,10 @@ MutableColumnConstPtr DataTypeNullable::createColumnConst(size_t size, const Fie
 
 SerializationPtr DataTypeNullable::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    bool compact_null_map = settings.nullable_serialization_version >= MergeTreeNullableSerializationVersion::COMPACT_NULL_MAP;
     if (settings.propagate_types_serialization_versions_to_nested_types)
-        return SerializationNullable::create(nested_data_type->getSerialization(settings));
-    return SerializationNullable::create(nested_data_type->getDefaultSerialization());
+        return SerializationNullable::create(nested_data_type->getSerialization(settings), /*use_default_null_map_=*/ false, compact_null_map);
+    return SerializationNullable::create(nested_data_type->getDefaultSerialization(), /*use_default_null_map_=*/ false, compact_null_map);
 }
 
 DataTypePtr DataTypeNullable::doCloneWithChildren(const DataTypes & new_children) const
@@ -121,7 +122,9 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnI
     if (!nested_subcolumn_info)
         return nullptr;
 
-    auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).tryGetNullMapColumnPtr() : nullptr);
+    auto creator = NullableSubcolumnCreator(
+        data.column ? assert_cast<const ColumnNullable &>(*data.column).tryGetNullMapColumnPtr() : nullptr,
+        nullable_serialization.isCompactNullMap());
     auto res = std::make_unique<SubcolumnInfo>();
     res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
     res->data.type = creator.create(nested_subcolumn_info->data.type);
