@@ -5,6 +5,7 @@
 #include <QueryPipeline/printPipeline.h>
 #include <Common/Exception.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/Scheduler/MemoryReservation.h>
 
 namespace DB
 {
@@ -96,6 +97,14 @@ void PipelineExecutor::finalize()
 
     if (read_progress_callback)
         pipeline->reportReadProgress(*read_progress_callback);
+
+    if (process_list_element)
+    {
+        auto * reservation = process_list_element->getMemoryReservation();
+        auto * tracker = process_list_element->getMemoryTracker();
+        if (reservation && tracker)
+            reservation->syncWithMemoryTracker(tracker);
+    }
 }
 
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
