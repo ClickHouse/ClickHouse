@@ -2,7 +2,7 @@
 
 # A mutation part task that builds the set of an `IN (subquery)`, or waits for the set another part task
 # builds, must observe its own cancellation even when the subquery does a lot of work without reading
-# data (here a cross join), so `KILL MUTATION` and `REPLACE PARTITION` do not wait for the set.
+# data or returning rows (here a cross join), so `KILL MUTATION` and `REPLACE PARTITION` do not wait for the set.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,6 +10,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # 10M rows with a one second sleep per block: minutes of work, none of it reading from a table.
 subquery="SELECT a.number + b.number + sleep(1) FROM numbers(2000) AS a, numbers(5000) AS b"
+# The same work, but every row is filtered out, so no block reaches the set.
+filtered_subquery="SELECT a.number FROM numbers(2000) AS a, numbers(5000) AS b WHERE a.number + b.number + sleep(1) = 1000000"
 
 function wait_merges_gone()
 {
@@ -28,7 +30,7 @@ CREATE TABLE t_main (id UInt64, v UInt8) ENGINE = MergeTree ORDER BY id
 SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0"
 $CLICKHOUSE_CLIENT --query "INSERT INTO t_main VALUES (0, 0), (1, 0), (2, 0)"
 $CLICKHOUSE_CLIENT --query "
-ALTER TABLE t_main UPDATE v = (id IN ($subquery)) WHERE 1 SETTINGS mutations_sync = 0"
+ALTER TABLE t_main UPDATE v = (id IN ($filtered_subquery)) WHERE 1 SETTINGS mutations_sync = 0"
 
 started=0
 deadline=$((SECONDS + 60))

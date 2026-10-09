@@ -237,21 +237,6 @@ void CreatingSetsTransform::init()
 
 void CreatingSetsTransform::consume(Chunk chunk)
 {
-    try
-    {
-        CurrentThread::checkIfNotCancelled();
-    }
-    catch (...)
-    {
-        /// A cancelled build is abandoned, not failed: the tasks waiting for this set build it themselves.
-        if (promise_to_build)
-        {
-            promise_to_build->set_value(nullptr);
-            promise_to_build.reset();
-        }
-        throw;
-    }
-
     read_rows += chunk.getNumRows();
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
