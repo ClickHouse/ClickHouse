@@ -30,10 +30,7 @@ namespace ErrorCodes
 namespace Runtime::V2
 {
 
-namespace
-{
-
-SlotAllocationPtr allocateCPU(size_t max_threads, bool concurrency_control, SlotCount initial_max, WorkersCoordinator & coordinator)
+SlotAllocationPtr WorkerPool::allocateCPU(bool concurrency_control, SlotCount initial_max)
 {
     const SlotCount master_threads = 1;
     const SlotCount worker_threads = max_threads - master_threads;
@@ -79,14 +76,12 @@ SlotAllocationPtr allocateCPU(size_t max_threads, bool concurrency_control, Slot
             .quantum_ns = static_cast<ResourceCost>(quantum_ns),
             .report_ns = static_cast<ResourceCost>(quantum_ns / 10),
             .preemption_timeout = std::chrono::milliseconds(query_context->getCPUSlotPreemptionTimeout()),
-            .on_preempt = [&coordinator](size_t slot_id) { coordinator.leave(slot_id); },
-            .on_resume = [&coordinator](size_t slot_id) { coordinator.enter(slot_id); },
+            .on_preempt = [this](size_t slot_id) { preempt(slot_id); },
+            .on_resume = [this](size_t slot_id) { resume(slot_id); },
             .workload = query_context->getSettingsRef()[Setting::workload],
             .trace_cpu_scheduling = query_context->getSettingsRef()[Setting::opentelemetry_trace_cpu_scheduling],
         },
         initial_max);
-}
-
 }
 
 WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control)
@@ -94,7 +89,7 @@ WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool 
     , max_threads(max_threads_)
     , coordinator(*this, max_threads)
     , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
-    , cpu_slots(allocateCPU(max_threads, concurrency_control, requested_threads, coordinator))
+    , cpu_slots(allocateCPU(concurrency_control, requested_threads))
     , threads(max_threads)
 {
     for (size_t worker_id = 0; worker_id < max_threads; ++worker_id)
@@ -130,9 +125,24 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
     coordinator.leave(worker_id);
 }
 
-void WorkerPool::push(const Task & task)
+void WorkerPool::initializeExecution()
 {
-    global_tasks.push(task);
+    for (auto * sink : pipeline.sinks())
+    {
+        sink->lock.setExecuting();
+        global_tasks.push(Task::create(*sink, Task::Step::Prepare));
+    }
+}
+
+void WorkerPool::preempt(size_t worker_id)
+{
+    workers[worker_id].handOverTasks();
+    coordinator.leave(worker_id);
+}
+
+void WorkerPool::resume(size_t worker_id)
+{
+    coordinator.enter(worker_id);
 }
 
 void WorkerPool::run()
@@ -142,6 +152,7 @@ void WorkerPool::run()
 
     try
     {
+        initializeExecution();
         if (const size_t initial_tasks = global_tasks.size(); initial_tasks > 1)
             grow(initial_tasks - 1);
     }
@@ -161,7 +172,10 @@ void WorkerPool::runUntil(std::atomic_bool * yield_flag)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Step by step execution needs a pool of one thread, got {}", max_threads);
 
     if (!single_slot)
+    {
+        initializeExecution();
         single_slot = cpu_slots->acquire();
+    }
 
     workers_count.fetch_add(1);
     runSlot(single_slot, yield_flag);
@@ -170,19 +184,19 @@ void WorkerPool::runUntil(std::atomic_bool * yield_flag)
 
 void WorkerPool::grow(size_t threads_needed)
 {
-    if (max_threads == 1 || threads_needed == 0 || workers_count >= max_threads)
+    if (max_threads == 1 || threads_needed == 0 || workers_count.load() >= max_threads)
         return;
 
     std::lock_guard lock(spawn_mutex);
 
-    const size_t target = std::min(max_threads, workers_count + threads_needed);
+    const size_t target = std::min(max_threads, workers_count.load() + threads_needed);
     if (requested_threads < target)
     {
         requested_threads = target;
         cpu_slots->setMax(requested_threads);
     }
 
-    while (workers_count < target)
+    while (workers_count.load() < target)
     {
         if (auto slot = cpu_slots->tryAcquire())
             spawn(std::move(slot));
@@ -222,9 +236,9 @@ void WorkerPool::stop()
     coordinator.stop();
 }
 
-bool WorkerPool::stopped() const
+bool WorkerPool::isStopped() const
 {
-    return coordinator.stopped();
+    return coordinator.isStopped();
 }
 
 void WorkerPool::join()

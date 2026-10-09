@@ -30,19 +30,22 @@ class WorkerPool
     friend class Worker;
     friend class WorkersCoordinator;
 
+    SlotAllocationPtr allocateCPU(bool concurrency_control, SlotCount initial_max);
+    void initializeExecution();
     void runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag);
     void spawn(AcquiredSlotPtr slot);
+    void grow(size_t threads_needed);
+    void preempt(size_t worker_id);
+    void resume(size_t worker_id);
 
 public:
     WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control);
     ~WorkerPool();
 
-    void push(const Task & task);
     void run();
     void runUntil(std::atomic_bool * yield_flag);
-    void grow(size_t threads_needed);
     void stop();
-    bool stopped() const;
+    bool isStopped() const;
     void join();
 
 private:
@@ -51,9 +54,9 @@ private:
 
     /// Scheduling state
     std::deque<Worker> workers;
+    WorkersCoordinator coordinator;
     GlobalTasks global_tasks;
     Poller poller;
-    WorkersCoordinator coordinator;
 
     /// CPU slots
     size_t requested_threads;

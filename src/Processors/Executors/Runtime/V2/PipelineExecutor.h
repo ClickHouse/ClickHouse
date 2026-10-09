@@ -19,7 +19,6 @@ namespace Runtime::V2
 class PipelineExecutor : public IExecutor
 {
     void start(size_t num_threads, bool concurrency_control);
-    void pushInitialTasks();
     void finalize();
 
 public:

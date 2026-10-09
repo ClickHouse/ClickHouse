@@ -62,26 +62,11 @@ void PipelineExecutor::start(size_t num_threads, bool concurrency_control)
         throw;
     }
 
-    pushInitialTasks();
-
     if (cancel_before_start)
         pipeline->cancel(*cancel_before_start);
 
     if (pipeline->cancelled())
         pool->stop();
-}
-
-void PipelineExecutor::pushInitialTasks()
-{
-    for (auto * sink : pipeline->sinks())
-    {
-        auto round_lock = sink->lock.lockRound();
-        if (sink->lock.status() != ProcessorLock::Status::Idle)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is locked before the execution started", sink->processor->getName());
-
-        sink->lock.setExecuting();
-        pool->push(Task::create(*sink, Task::Step::Prepare));
-    }
 }
 
 void PipelineExecutor::finalize()
@@ -142,7 +127,7 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
 
     pool->runUntil(yield_flag);
 
-    if (!pool->stopped())
+    if (!pool->isStopped())
         return true;
 
     pool->join();
