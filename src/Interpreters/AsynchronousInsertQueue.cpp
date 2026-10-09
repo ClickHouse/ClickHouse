@@ -110,6 +110,7 @@ namespace Setting
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsBool wait_for_async_insert;
 }
 
 namespace ErrorCodes
@@ -1248,6 +1249,12 @@ try
 
     bool internal = true;
     bool async_insert = true;
+    /// The flush is internal, so normally it is not audited: with `wait_for_async_insert = 1` the
+    /// original `INSERT` waits for the flush and its own audit record carries the outcome. With
+    /// `wait_for_async_insert = 0` the original `INSERT` is audited as soon as the data is queued, so
+    /// the flush is audited by itself to record whether the rows were actually written. The setting is
+    /// part of the batching key, so all entries of the batch share it.
+    const bool audit_flush = !(*key.settings)[Setting::wait_for_async_insert];
 
     /// Disabled query spans. Could be activated by initializing this to a SpanHolder
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span{nullptr};
@@ -1475,7 +1482,16 @@ try
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
+        logExceptionBeforeStart(
+            query_for_logging,
+            normalized_query_hash,
+            insert_context,
+            key.query,
+            query_span,
+            start_watch.elapsedMilliseconds(),
+            internal,
+            /*log_as_internal=*/ internal,
+            decideAuditLog(insert_context, key.query, internal, /*audit_internal=*/ audit_flush));
 
         if (async_insert_log)
         {
@@ -1501,7 +1517,17 @@ try
         queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
-        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);
+        logQueryFinish(
+            query_log_elem,
+            insert_context,
+            key.query,
+            std::move(pileline_),
+            /*pulling_pipeline=*/ false,
+            query_span,
+            QueryResultCacheUsage::None,
+            internal,
+            /*log_as_internal=*/ internal,
+            decideAuditLog(insert_context, key.query, internal, /*audit_internal=*/ audit_flush));
 
         /// Finish entries (and notify waiting clients) after logging,
         /// so that SYSTEM FLUSH LOGS issued right after the async insert
@@ -1552,7 +1578,16 @@ try
     catch (...)
     {
         bool log_error = true;
-        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, /*log_as_internal=*/ internal, log_error);
+        logQueryException(
+            query_log_elem,
+            insert_context,
+            start_watch,
+            key.query,
+            query_span,
+            internal,
+            /*log_as_internal=*/ internal,
+            log_error,
+            decideAuditLog(insert_context, key.query, internal, /*audit_internal=*/ audit_flush));
         if (!log_elements.empty())
         {
             auto exception = getCurrentExceptionMessage(false);

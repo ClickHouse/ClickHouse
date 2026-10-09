@@ -122,10 +122,13 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
+    /// The subqueries are internal (they are parts of the caller's query), but each of them must still
+    /// be audited on its own, with its own text and outcome. That is why the subquery's `BlockIO`
+    /// callbacks are also triggered below for the subqueries that never make it into the combined pipeline.
     /// The subqueries are nested, hence `internal`, but their text comes from the user, hence `user_initiated`:
     /// without it the access checks of `CREATE` subqueries would be skipped.
     auto query_io = executeQuery(
-        subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true, .user_initiated = true })
+        subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true, .user_initiated = true, .audit_internal = true })
         .second;
 
     auto & pipeline = query_io.pipeline;
@@ -133,6 +136,7 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
     if (!pipeline.initialized())
     {
         /// The subquery interpreter (called by executeQuery()) has already done all the work.
+        query_io.onFinish();
         return;
     }
 
@@ -151,9 +155,18 @@ void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutab
         if (subquery->getQueryKind() == IAST::QueryKind::Select)
             reason += " (Use UNION to combine select queries)";
 
-        throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "Query {} can't be combined with other queries using PARALLEL WITH clause because this query {}",
-                        subquery->formatForLogging(), reason);
+        try
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                            "Query {} can't be combined with other queries using PARALLEL WITH clause because this query {}",
+                            subquery->formatForLogging(), reason);
+        }
+        catch (...)
+        {
+            /// The subquery is rejected without running; record that as its outcome.
+            query_io.onException();
+            throw;
+        }
     }
 
     chassert(pipeline.completed());
