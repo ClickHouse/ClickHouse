@@ -1,5 +1,6 @@
 #include <Dictionaries/ClickHouseDictionarySource.h>
 
+#include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <Interpreters/Context.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -56,7 +57,7 @@ ClickHouseDictionarySource::Configuration ClickHouseDictionarySource::resolveCon
             .update_field = named_collection->getOrDefault<String>("update_field", ""),
             .update_lag = named_collection->getOrDefault<UInt64>("update_lag", 1),
             .port = port,
-            .is_local = isLocalAddress({host, port}, default_port),
+            .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
             .secure = secure,
         };
     }
@@ -81,7 +82,7 @@ ClickHouseDictionarySource::Configuration ClickHouseDictionarySource::resolveCon
         .update_field = config.getString(settings_config_prefix + ".update_field", ""),
         .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
         .port = port,
-        .is_local = isLocalAddress({host, port}, default_port),
+        .is_local = isLocalAddress(DNSResolver::instance().resolveAddress(host, port), default_port),
         .secure = secure,
     };
 }

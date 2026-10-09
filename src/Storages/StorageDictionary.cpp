@@ -25,6 +25,7 @@
 #endif
 #include <Storages/AlterCommands.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Core/ServerSettings.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -52,6 +53,7 @@ namespace ErrorCodes
     extern const int DICTIONARY_ALREADY_EXISTS;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -424,6 +426,20 @@ void registerStorageDictionary(StorageFactory & factory)
 
             /// Create dictionary storage that owns underlying dictionary
             auto abstract_dictionary_configuration = getDictionaryConfigurationFromAST(args.query, local_context, dictionary_id.database_name);
+
+            /// The overrides of stored keys of a named collection need the same privilege as in table engines.
+            /// The dictionary is loaded later with the global context, so the user's privileges are checked here.
+            Poco::Util::AbstractConfiguration::Keys source_keys;
+            abstract_dictionary_configuration->keys("dictionary.source", source_keys);
+            if (source_keys.empty() || source_keys.size() > 2)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected one or two child elements in the source of dictionary {}",
+                    dictionary_id.getNameForLogs());
+            /// The source type is chosen as in `DictionarySourceFactory::create`.
+            const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
+            checkNamedCollectionOverridesInDictionarySource(
+                *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
             /// A dictionary that never finishes being created reaches neither `drop` nor the destructor,
@@ -441,7 +457,7 @@ void registerStorageDictionary(StorageFactory & factory)
                 }
             }};
 
-            bool lazy_load = external_dictionaries_loader.isObjectLazy(*abstract_dictionary_configuration, "dictionary")
+            bool lazy_load = external_dictionaries_loader.getObjectLazyLoadOverride(*abstract_dictionary_configuration, "dictionary")
                 .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
@@ -473,6 +489,7 @@ void registerStorageDictionary(StorageFactory & factory)
         return std::make_shared<StorageDictionary>(
             args.table_id, dictionary_name, args.columns, args.comment, StorageDictionary::Location::Custom, local_context);
     },
+    SecretArgumentsSpec{},
     {},
     Documentation{
         .description = R"DOCS_MD(
