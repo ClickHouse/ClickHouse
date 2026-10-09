@@ -14,21 +14,12 @@ DROP TABLE IF EXISTS t_tuple;
 CREATE TABLE t_tuple (p Tuple(a Int32, b String)) ENGINE = Memory;
 INSERT INTO t_tuple VALUES ((1, 'x')), ((2, 'y'));
 
--- Positional access on the outer column: `o.p.1` (the reported case).
-SELECT count() FROM t_tuple AS o WHERE EXISTS (SELECT 1 FROM t_tuple AS i WHERE i.p.a = o.p.1);
--- Positional via the `tupleElement` function.
-SELECT count() FROM t_tuple AS o WHERE EXISTS (SELECT 1 FROM t_tuple AS i WHERE i.p.a = tupleElement(o.p, 1));
--- Named access via the `tupleElement` function (also went through the function path).
+-- Named access via the `tupleElement` function on the outer column; the positional, named-identifier
+-- and scalar `Tuple` forms are covered by `05090_correlated_positional_tuple_element`.
 SELECT count() FROM t_tuple AS o WHERE EXISTS (SELECT 1 FROM t_tuple AS i WHERE i.p.a = tupleElement(o.p, 'a'));
--- Named identifier access: worked before, must keep working.
-SELECT count() FROM t_tuple AS o WHERE EXISTS (SELECT 1 FROM t_tuple AS i WHERE i.p.a = o.p.a);
--- Positional on the inner side only: worked before, must keep working.
-SELECT count() FROM t_tuple AS o WHERE EXISTS (SELECT 1 FROM t_tuple AS i WHERE i.p.1 = o.p.a);
--- Scalar correlated subquery variant.
-SELECT count() FROM t_tuple AS o WHERE 1 = (SELECT count() FROM t_tuple AS i WHERE i.p.1 = o.p.1);
 
 -- The same outer table's other, non-correlated column must still be optimized to a subcolumn:
--- `tupleElement(o.q, 1)` in the outer WHERE is rewritten to `o.q.a` while `o.p.1` inside EXISTS is left
+-- `tupleElement(o.q, 1)` in the outer `WHERE` is rewritten to `o.q.a` while `o.p.1` inside `EXISTS` is left
 -- alone. Result must match the reference (the fix must not over-suppress).
 DROP TABLE IF EXISTS t_two_tuples;
 CREATE TABLE t_two_tuples (p Tuple(a Int32, b String), q Tuple(a Int32, b String)) ENGINE = Memory;
@@ -49,14 +40,14 @@ FROM (
     SELECT count() FROM t_two_tuples AS o WHERE EXISTS (SELECT 1 FROM t_two_tuples AS i WHERE tupleElement(i.q, 1) = 5 AND i.p.a = o.p.1)
 );
 
--- End-to-end coverage for a correlated subquery whose body is a UNION: each arm is its own
+-- End-to-end coverage for a correlated subquery whose body is a `UNION`: each arm is its own
 -- `QueryNode`, so both arms independently reference the outer `o.p.1` and must keep it as a function.
 SELECT count() FROM t_tuple AS o WHERE EXISTS (
     SELECT 1 FROM t_tuple AS i WHERE i.p.a = o.p.1
     UNION ALL
     SELECT 1 FROM t_tuple AS i WHERE i.p.a = tupleElement(o.p, 1)
 );
--- Scope selectivity across both UNION arms: the inner-local `tupleElement(i.q, 1)` is rewritten to
+-- Scope selectivity across both `UNION` arms: the inner-local `tupleElement(i.q, 1)` is rewritten to
 -- `q.a` in each arm (2) while the correlated `tupleElement(o.p, 1)` is kept as a function in each arm (2).
 SELECT
     countIf(explain ILIKE '%column_name: q.a%') AS inner_local_optimized_both_arms,
