@@ -26,4 +26,4 @@ output=$($CLICKHOUSE_CLIENT "${settings[@]}" --enable_adaptive_memory_spill_sche
     --print-profile-events --profile-events-delay-ms=-1 -q "$query" 2>&1)
 echo "$output" | grep -E '^[0-9]'
 echo "$output" | grep -oE '\[ 0 \] JoinSpillingHashJoinSwitchedToGraceJoin: [0-9]+' | sed 's/\[ 0 \] //'
-echo "$output" | grep -qE '\[ 0 \] ExternalJoinWritePart: [1-9]' && echo 'ExternalJoinWritePart > 0'
+echo "$output" | grep -qE '\[ 0 \] ExternalJoinUncompressedBytes: [1-9]' && echo 'ExternalJoinUncompressedBytes > 0'
