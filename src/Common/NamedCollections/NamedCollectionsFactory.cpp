@@ -814,7 +814,13 @@ void NamedCollectionFactory::renameDatabaseDependencies(const String & from_data
     std::vector<NamedCollectionDependency> moved;
     for (auto it = dependencies.begin(); it != dependencies.end();)
     {
-        if (it->table_id.database_name == from_database_name)
+        /// Only databases of the `Atomic` family can be renamed, and every table and DDL dictionary in them
+        /// has a UUID. An entry with a table name but without a UUID belongs to a dictionary defined in
+        /// the configuration files, whose `<database>` merely happens to match: the dictionary is not
+        /// part of the database, the loader keeps it under its original name, so its entry must stay.
+        /// An entry without a table name belongs to the database engine itself and follows the rename.
+        const bool belongs_to_database = it->table_id.hasUUID() || it->table_id.table_name.empty();
+        if (it->table_id.database_name == from_database_name && belongs_to_database)
         {
             moved.push_back(*it);
             moved.back().table_id.database_name = to_database_name;

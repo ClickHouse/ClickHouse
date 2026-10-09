@@ -1625,6 +1625,14 @@ def test_drop_while_used_by_database_qualified_config_dictionary(cluster):
         "SYSTEM RELOAD DICTIONARY 'config_dict_db.config_dict_in_database'"
     )
 
+    # A database that happens to have the name from the `<database>` of the definition does not own
+    # the dictionary: renaming it must not move the dependency of the dictionary along with it.
+    node.query("DROP DATABASE IF EXISTS config_dict_db")
+    node.query("DROP DATABASE IF EXISTS config_dict_db_renamed")
+    node.query("CREATE DATABASE config_dict_db ENGINE = Atomic")
+    node.query("RENAME DATABASE config_dict_db TO config_dict_db_renamed")
+    node.query("DROP DATABASE config_dict_db_renamed")
+
     # Two attempts: the first one must not prune the dependency and let the second one through.
     for _ in range(2):
         assert "NAMED_COLLECTION_IS_USED" in node.query_and_get_error(
