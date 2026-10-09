@@ -1,0 +1,14 @@
+<test>
+    <!-- The set of `IN` spills to disk, where it stores its keys in the ascending order of their disk keys. The
+         probe side of each query is sorted by the key, so when the disk keys keep the order of the keys, the
+         lookups read the blocks of the set in order. -->
+    <settings>
+        <max_bytes_before_external_set>16777216</max_bytes_before_external_set>
+        <max_bytes_ratio_before_external_set>0</max_bytes_ratio_before_external_set>
+    </settings>
+
+    <!-- Packed numbers. -->
+    <query>SELECT count() FROM numbers_mt(10000000) WHERE (intDiv(number, 1000000), toUInt32(number % 1000000)) IN (SELECT intDiv(number, 1000000), toUInt32(number % 1000000) FROM numbers(5000000))</query>
+    <!-- A packed `FixedString` of at most 32 bytes. -->
+    <query>SELECT count() FROM numbers_mt(10000000) WHERE toFixedString(leftPad(toString(number), 16, '0'), 16) IN (SELECT toFixedString(leftPad(toString(number * 2), 16, '0'), 16) FROM numbers(5000000))</query>
+</test>
