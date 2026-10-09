@@ -149,6 +149,7 @@ def _runner_s3_prefixes(name):
 _RUNNER_SSM_PARAMETERS = [
     "clickhouse-dockerhub-registry",
     "clickhouse-test-stat-connection",
+    "clickhouse-vercel-reference-blob-read-write-token",
     "arn:aws:ssm:*:*:parameter/azure_connection_string",
     "arn:aws:ssm:*:*:parameter/chcache_password",
     # CI logs cluster credentials (host/password/etc.).
