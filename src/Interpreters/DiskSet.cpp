@@ -162,7 +162,9 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     if (!rows)
         return;
 
-    /// The rows with keys in the range of the set are probed.
+    /// The rows with keys in the range of the set are probed, except a row with the key of the previous row,
+    /// which takes the answer of that row at the end. So a run of equal keys, as in a sorted column, takes
+    /// one probe.
     struct Probe
     {
         Key key;
@@ -175,7 +177,7 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
     for (size_t row = 0; row < keys.size(); ++row)
     {
         const auto & key = keys[row];
-        if (first_key <= key && key <= last_key)
+        if ((row == 0 || key != keys[row - 1]) && first_key <= key && key <= last_key)
             probes.push_back({key, row});
     }
 
@@ -222,6 +224,11 @@ void DiskSetImpl<Key>::containsBatch(const IColumn & keys_column, std::span<UInt
                 found[probes[i].row] = 1;
         begin = lookup.probes_end;
     }
+
+    /// The rows that repeat the key of the previous row take its answer.
+    for (size_t row = 1; row < keys.size(); ++row)
+        if (keys[row] == keys[row - 1])
+            found[row] = found[row - 1];
 }
 
 template class DiskSetImpl<UInt8>;
