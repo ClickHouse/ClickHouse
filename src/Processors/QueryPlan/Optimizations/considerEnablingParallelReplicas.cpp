@@ -914,11 +914,21 @@ static bool cachedStatisticsDeclineParallelReplicas(
         return false;
 
     const auto estimate = estimateReplicasCost(*stats, boundary->step.get(), optimization_settings);
-    if (estimate.replicasWin()
-        && !(optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
-             && stats->input_bytes / optimization_settings.max_parallel_replicas
-                 < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica))
+    const bool below_min_bytes_per_replica = optimization_settings.automatic_parallel_replicas_min_bytes_per_replica
+        && stats->input_bytes / optimization_settings.max_parallel_replicas
+            < optimization_settings.automatic_parallel_replicas_min_bytes_per_replica;
+    if (estimate.replicasWin() && !below_min_bytes_per_replica)
         return false;
+
+    /// A decision taken here is still a decision of the cost model, so it is accounted exactly as the full path
+    /// accounts the same outcome: otherwise the queries declined without a plan would vanish from the funnel
+    /// that `AutoParallelReplicasCostModelEvaluated` and the rejection events describe.
+    ProfileEvents::increment(ProfileEvents::AutoParallelReplicasCostModelEvaluated);
+    ProfileEvents::increment(
+        ProfileEvents::AutoParallelReplicasBytesPerReplica, stats->input_bytes / optimization_settings.max_parallel_replicas);
+    ProfileEvents::increment(
+        estimate.replicasWin() ? ProfileEvents::AutoParallelReplicasRejectedByThreshold
+                               : ProfileEvents::AutoParallelReplicasRejectedByCostModel);
 
     logReplicasCostFormula(*stats, estimate, optimization_settings);
     LOG_TRACE(
