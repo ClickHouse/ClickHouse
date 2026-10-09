@@ -8,7 +8,7 @@
 -- `ai_function_max_retries` from 0 to 1 in 26.9, and `ai_function_max_api_calls_per_query`
 -- back to 0 (unlimited) in 26.10. `compatibility = 26.6` predates all of them and
 -- `compatibility = 26.9` reverts only the last one, which pins the previous_value/new_value
--- pairs in `SettingsChangesHistory`.
+-- pairs in the history records of these settings.
 --
 -- The endpoint check runs in `resolveAIParams`, before the zero-row early return
 -- in `executeImpl`, so an empty source table exercises it without any real HTTP
