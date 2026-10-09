@@ -6510,6 +6510,8 @@ namespace
 
 thread_local size_t num_unevaluable_chain_applications = 0;
 
+}
+
 /// A broken invariant, a memory limit, a deadline or a cancellation is not something the index analysis
 /// may decide to ignore: these are the outer guards of the query, and `applyFunction` runs the function on
 /// a whole boundary column, so a conversion with a cancellation budget can hit `max_execution_time` there.
@@ -6526,8 +6528,6 @@ bool isQueryOuterGuardError(int code)
         || code == ErrorCodes::TIMEOUT_EXCEEDED
         || code == ErrorCodes::TOO_SLOW
         || code == ErrorCodes::ABORTED;
-}
-
 }
 
 size_t KeyCondition::getNumUnevaluableChainApplications()
