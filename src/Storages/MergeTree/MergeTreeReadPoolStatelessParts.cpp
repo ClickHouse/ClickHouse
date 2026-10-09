@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReadPoolStatelessParts.h>
 
+#include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Disks/IDisk.h>
@@ -383,6 +384,14 @@ MergeTreeReadTaskInfoPtr MergeTreeReadPoolStatelessParts::buildTaskInfoForPart(c
         pool_settings.threads);
 
     auto disk = read_from_parts_info.disk;
+
+    /// The part path was checked to be inside the root of the disk when it was parsed, but only lexically,
+    /// and a local disk follows symlinks, so check where the path actually leads.
+    if (disk->getDataSourceDescription().type == DataSourceType::Local
+        && !pathStartsWith(fs::path(disk->getPath()) / part_relative_path, fs::path(disk->getPath())))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The path of part {} leads outside of the root of disk {}", part.relative_path, disk->getName());
+
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     auto info_for_reader = buildReaderInfoFromDisk(part, single_disk_volume, part_relative_root_path, part_name);

@@ -38,6 +38,7 @@ public:
         using ReadFromParts = std::vector<ReadFromPart>;
 
         ReadFromParts parts;
+        /// Not created when there are no marks to read.
         DiskPtr disk;
 
         /// The `index_granularity_bytes` and `index_granularity` of the table that wrote the parts.

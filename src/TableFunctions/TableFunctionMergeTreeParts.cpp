@@ -97,14 +97,25 @@ StoragePtr TableFunctionMergeTreeParts::executeImpl(
     /// registered in the context: it lives only as long as the storage, so a query cannot grow the
     /// global disk map or leave directories behind by merely being parsed.
     auto info = read_from_parts_info;
-    info.disk = DiskFromAST::createTransientDisk(disk_function_ast, context);
 
-    /// The access check trusted the literal `type` of the disk description; make sure the disk that
-    /// came out of it reads from the same kind of source.
-    if (getSourceForDataSource(info.disk->getDataSourceDescription()) != source_access)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "The disk of table function `{}` reads from a different kind of source ({}) than access was checked for",
-                        getName(), info.disk->getDataSourceDescription().toString());
+    /// `StorageMergeTreeParts::read` does not touch the disk when there are no marks to read, and creating
+    /// the disk is not free of side effects (a local disk creates its directory), so a query that reads
+    /// nothing only validates the disk description.
+    if (std::ranges::none_of(info.parts, [](const auto & part) { return part.ranges.getNumberOfMarks() > 0; }))
+    {
+        DiskFromAST::validateTransientDisk(disk_function_ast, context);
+    }
+    else
+    {
+        info.disk = DiskFromAST::createTransientDisk(disk_function_ast, context);
+
+        /// The access check trusted the literal `type` of the disk description; make sure the disk that
+        /// came out of it reads from the same kind of source.
+        if (getSourceForDataSource(info.disk->getDataSourceDescription()) != source_access)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "The disk of table function `{}` reads from a different kind of source ({}) than access was checked for",
+                            getName(), info.disk->getDataSourceDescription().toString());
+    }
 
     auto storage = std::make_shared<StorageMergeTreeParts>(
         info,
