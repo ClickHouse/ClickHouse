@@ -49,5 +49,6 @@
 -- or, range: the materialized left side is read inside an IN set built at runtime
 2
 1
+2	1
 -- explicitly disabling the setting restores the inlined plan: the left side of `or` is read twice again
 3	0
