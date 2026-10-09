@@ -28,6 +28,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -1310,6 +1311,53 @@ void collectAliasDependenciesFromAST(
     throw Exception(ErrorCodes::CYCLIC_ALIASES, "Cyclic alias detected in column DEFAULT expressions: {}", message);
 }
 
+/// Throws `CYCLIC_ALIASES` with the path of the first cycle reachable from `roots`.
+void throwOnDependencyCycle(const Strings & roots, const std::function<NameSet(const String &)> & get_dependencies)
+{
+    enum class Color
+    {
+        White,
+        Gray,
+        Black,
+    };
+
+    std::unordered_map<String, Color> colors;
+    colors.reserve(roots.size());
+
+    Strings dfs_stack;
+    dfs_stack.reserve(roots.size());
+
+    std::function<void(const String &)> dfs = [&](const String & vertex)
+    {
+        auto & color = colors[vertex];
+        if (color == Color::Black)
+            return;
+        if (color == Color::Gray)
+        {
+            auto it = std::find(dfs_stack.begin(), dfs_stack.end(), vertex);
+            Strings cycle;
+            if (it != dfs_stack.end())
+                cycle.assign(it, dfs_stack.end());
+            else
+                cycle.emplace_back(vertex);
+            throwDefaultCycleException(cycle);
+        }
+
+        color = Color::Gray;
+        dfs_stack.push_back(vertex);
+
+        for (const auto & dependency : get_dependencies(vertex))
+            dfs(dependency);
+
+        dfs_stack.pop_back();
+        color = Color::Black;
+    };
+
+    for (const auto & root : roots)
+        if (colors[root] != Color::Black)
+            dfs(root);
+}
+
 /**
  * Build a dependency graph between all aliases present in the DEFAULT expression list.
  * The additional alias map is required because typed defaults are rewritten into temporary
@@ -1347,58 +1395,18 @@ void detectRecursiveDefaultCycles(
         alias_to_expression.emplace(alias, child);
     }
 
-    enum class Color
+    Strings roots;
+    for (const auto & column_name : default_column_names)
+        if (alias_names.contains(column_name))
+            roots.push_back(column_name);
+
+    throwOnDependencyCycle(roots, [&](const String & vertex)
     {
-        White,
-        Gray,
-        Black,
-    };
-
-    std::unordered_map<String, Color> colors;
-    colors.reserve(alias_to_expression.size());
-
-    Strings dfs_stack;
-    dfs_stack.reserve(alias_to_expression.size());
-
-    std::function<void(const String &)> dfs = [&](const String & vertex)
-    {
-        auto & color = colors[vertex];
-        if (color == Color::Black)
-            return;
-        if (color == Color::Gray)
-        {
-            auto it = std::find(dfs_stack.begin(), dfs_stack.end(), vertex);
-            Strings cycle;
-            if (it != dfs_stack.end())
-                cycle.assign(it, dfs_stack.end());
-            else
-                cycle.emplace_back(vertex);
-            throwDefaultCycleException(cycle);
-        }
-
-        color = Color::Gray;
-        dfs_stack.push_back(vertex);
-
         NameSet dependencies;
         if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
-        {
             collectAliasDependenciesFromAST(it->second, alias_names, dependencies);
-            for (const auto & dependency : dependencies)
-                dfs(dependency);
-        }
-
-        dfs_stack.pop_back();
-        color = Color::Black;
-    };
-
-    for (const auto & column_name : default_column_names)
-    {
-        if (!alias_names.contains(column_name))
-            continue;
-
-        if (colors[column_name] != Color::Black)
-            dfs(column_name);
-    }
+        return dependencies;
+    });
 }
 
 /// Reject a DEFAULT/MATERIALIZED column whose resolved expression reads a virtual column of the dummy
@@ -1593,6 +1601,41 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     auto result = validateColumnsDefaultsAndGetSampleBlockImpl(default_expr_list, all_columns, context, /*get_sample_block=*/true, insert_time_default_columns);
     chassert(result.has_value());
     return std::move(*result);
+}
+
+void ColumnsDescription::checkAliasColumnsAreNotCyclic() const
+{
+    Strings alias_columns;
+    for (const auto & column : columns)
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            alias_columns.push_back(column.name);
+
+    if (alias_columns.empty())
+        return;
+
+    /// Binds a name the way the analyzer resolves an identifier in an ALIAS expression: a column of
+    /// that name, else the first `.`-prefix column whose type has the rest as a subcolumn.
+    auto bind_to_column = [this](const String & name) -> const ColumnDescription *
+    {
+        if (const auto * column = tryGet(name))
+            return column;
+        for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(name))
+            if (const auto * column = tryGet(String(column_name)); column && column->type->tryGetSubcolumnType(subcolumn_name))
+                return column;
+        return nullptr;
+    };
+
+    throwOnDependencyCycle(alias_columns, [&](const String & alias_column)
+    {
+        RequiredSourceColumnsVisitor::Data data;
+        RequiredSourceColumnsVisitor(data).visit(get(alias_column).default_desc.expression);
+
+        NameSet dependencies;
+        for (const auto & name : data.requiredColumns())
+            if (const auto * column = bind_to_column(name); column && column->default_desc.kind == ColumnDefaultKind::Alias)
+                dependencies.insert(column->name);
+        return dependencies;
+    });
 }
 
 bool prewhereSupportedColumnsContain(
