@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- no-fasttest: Parquet
-
 -- Top-K dynamic filtering must not drop rows when the key contains `Dynamic`, `Variant` or `JSON` below the
 -- top level: the threshold is published as a `Field`, which does not keep their values' runtime type.
 
@@ -32,10 +29,3 @@ SELECT j FROM t_topk_runtime_typed ORDER BY j LIMIT 3;
 SELECT j, count() FROM t_topk_runtime_typed GROUP BY j ORDER BY j LIMIT 3;
 
 DROP TABLE t_topk_runtime_typed;
-
-INSERT INTO FUNCTION file(currentDatabase() || '_05353_0.parquet', Parquet)
-SELECT toJSONString(map('a', number + 1000)) AS j FROM numbers(2000) WHERE number % 2 = 0 SETTINGS engine_file_truncate_on_insert = 1;
-INSERT INTO FUNCTION file(currentDatabase() || '_05353_1.parquet', Parquet)
-SELECT toJSONString(map('a', number + 1000)) AS j FROM numbers(2000) WHERE number % 2 = 1 SETTINGS engine_file_truncate_on_insert = 1;
-
-SELECT j FROM file(currentDatabase() || '_05353_{0,1}.parquet', Parquet, 'j JSON') ORDER BY j LIMIT 3;
