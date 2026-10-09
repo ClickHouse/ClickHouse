@@ -46,6 +46,12 @@ $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_renamed"
 insert_and_check t_renamed "> 8"
 $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 SELECT id FROM t_renamed ORDER BY L2Distance(vec, [1., 2., 3., 4.]) LIMIT 5 SETTINGS ivf_nprobe = 2" | grep -o "cid in [0-9]*-element set"
 
+echo "A reference to the table itself set by ALTER also survives RENAME"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t_renamed MODIFY COLUMN cid DEFAULT assignCentroid(vec, '${CLICKHOUSE_DATABASE}.t_renamed')"
+$CLICKHOUSE_CLIENT -q "RENAME TABLE t_renamed TO t_altered"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t_altered"
+insert_and_check t_altered "> 8"
+
 echo "Moving to another database is rejected"
 $CLICKHOUSE_CLIENT -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_other"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${CLICKHOUSE_DATABASE}_other.plain (id UInt64, vec Array(Float32), cid UInt64) ENGINE = MergeTree ORDER BY (cid, id)"
@@ -53,4 +59,4 @@ $CLICKHOUSE_CLIENT -q "RENAME TABLE t16 TO ${CLICKHOUSE_DATABASE}_other.t16" 2>&
 $CLICKHOUSE_CLIENT -q "EXCHANGE TABLES t16 AND ${CLICKHOUSE_DATABASE}_other.plain" 2>&1 | grep -o -m1 "NOT_IMPLEMENTED"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE}_other"
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE t_renamed; DROP TABLE t16; DROP TABLE samples;"
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_altered; DROP TABLE t16; DROP TABLE samples;"

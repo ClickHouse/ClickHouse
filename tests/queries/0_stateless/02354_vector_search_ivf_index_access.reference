@@ -6,3 +6,5 @@ ACCESS_DENIED
 CREATE TABLE requires SELECT on the samples table
 ACCESS_DENIED
 0
+Training reads the samples with the row policies of the user who created the table
+produced no centroids

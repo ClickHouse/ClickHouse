@@ -28,6 +28,8 @@
 #include <Interpreters/executeQuery.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Interpreters/castColumn.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -585,6 +587,58 @@ void executeInternalQuery(const String & query, ContextPtr context)
     executeTrivialBlockIO(io, query_context);
 }
 
+/// Runs select_query with select_context and inserts its result block by block with insert_query (an INSERT without data) and
+/// insert_context. The result columns are converted to the types of the inserted columns, by position.
+void executeInternalInsertSelect(const String & select_query, ContextPtr select_context, const String & insert_query, ContextPtr insert_context)
+{
+    auto select_query_context = Context::createCopy(select_context);
+    select_query_context->makeQueryContext();
+    select_query_context->setCurrentQueryId({});
+    auto insert_query_context = Context::createCopy(insert_context);
+    insert_query_context->makeQueryContext();
+    insert_query_context->setCurrentQueryId({});
+
+    auto select_thread_group = ThreadGroup::createForQuery(select_query_context);
+    ThreadGroupSwitcher select_switcher(select_thread_group, ThreadName::BACKGROUND_QUERY, /*allow_existing_group=*/ true);
+    auto select_io = executeQuery(select_query, select_query_context, QueryFlags{.internal = true}).second;
+    PullingPipelineExecutor select_executor(select_io.pipeline);
+
+    BlockIO insert_io;
+    try
+    {
+        insert_io = executeQuery(insert_query, insert_query_context, QueryFlags{.internal = true}).second;
+        PushingPipelineExecutor insert_executor(insert_io.pipeline);
+        insert_executor.start();
+        const Block header = insert_executor.getHeader();
+
+        Block block;
+        while (select_executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+            if (block.columns() != header.columns())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal INSERT expects {} columns, the SELECT returns {}", header.columns(), block.columns());
+            Block converted;
+            for (size_t i = 0; i < header.columns(); ++i)
+            {
+                const auto & target = header.getByPosition(i);
+                converted.insert({castColumn(block.getByPosition(i), target.type), target.type, target.name});
+            }
+            insert_executor.push(std::move(converted));
+        }
+        insert_executor.finish();
+    }
+    catch (...)
+    {
+        /// Both queries are logged as failed, like other internal queries.
+        select_io.onException();
+        insert_io.onException();
+        throw;
+    }
+    select_io.onFinish();
+    insert_io.onFinish();
+}
+
 }
 
 StorageID getVectorSimilarityIvfCentroidsTableID(const StorageID & table_id, const String & index_name)
@@ -796,8 +850,7 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
         const UInt64 num_clusters = arguments.clustering_parameters[0].safeGet<UInt64>();
         const UInt64 max_cluster_id = static_cast<UInt64>(std::numeric_limits<Int64>::max());
         const UInt64 leaf_range = max_cluster_id / num_clusters;
-        const String insert_query = fmt::format(
-            "INSERT INTO {0} (level, cid, cid_end, parent, vec, active, radius, generation, generation_size) "
+        const String select_query = fmt::format(
             "SELECT node.2, if(node.2 = 0, 1 + (leaf - 1) * {9}, node.3), "
             "if(node.2 = 0, if(leaf = {8}, {10}, 1 + leaf * {9}), 0), node.4, {1}, true, node.5, 0, length(nodes) "
             "FROM (SELECT nodes, node, row_number() OVER (PARTITION BY node.2 ORDER BY node.4, node.3) AS leaf "
@@ -817,17 +870,29 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
             backQuoteIfNeed(arguments.clustering_function), fmt::join(clustering_parameters, ", "),
             backQuoteIfNeed(index.column_names[0]), samples_storage->getStorageID().getFullTableName(),
             arguments.dimensions, num_clusters, leaf_range, max_cluster_id);
+        const String insert_query = fmt::format(
+            "INSERT INTO {} (level, cid, cid_end, parent, vec, active, radius, generation, generation_size) VALUES",
+            centroids_table_id.getFullTableName());
         const String reload_query = fmt::format("SYSTEM RELOAD DICTIONARY {}", centroids_dictionary_id.getFullTableName());
 
-        /// The training runs after CREATE returns and outlives the session, so it gets a context of its own, with the settings
-        /// of the query which created the table. It writes the hidden objects, which need no grants of the user (see
-        /// createVectorSimilarityIvfInnerObjects, which also checks that the user may read the samples).
+        /// The training runs after CREATE returns and outlives the session, so it gets contexts of its own, with the settings of
+        /// the query which created the table. The samples are read with the user, roles and therefore row policies of the user who
+        /// created the table; the hidden objects are written internally, since they need no grants of the user.
         auto training_context = Context::createCopy(context->getGlobalContext());
         training_context->applySettingsChanges(context->getSettingsRef().changes());
+        auto samples_context = Context::createCopy(training_context);
+        if (auto user_id = context->getUserID())
+        {
+            samples_context->setUser(*user_id);
+            samples_context->setCurrentRoles(context->getCurrentRoles());
+            samples_context->setCurrentUserName(context->getClientInfo().current_user);
+            samples_context->setInitialUserName(context->getClientInfo().current_user);
+        }
         const String index_name = index.name;
         const String table_name = table_id.getNameForLogs();
 
-        context->getBackgroundQueryPool().scheduleOrThrow([training_context, insert_query, reload_query, index_name, table_name]
+        context->getBackgroundQueryPool().scheduleOrThrow(
+            [training_context, samples_context, select_query, insert_query, reload_query, index_name, table_name]
         {
             auto log = getLogger("VectorSimilarityIvfTraining");
             try
@@ -835,9 +900,9 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
                 auto thread_group = ThreadGroup::createForQuery(training_context);
                 ThreadGroupSwitcher switcher(thread_group, ThreadName::BACKGROUND_QUERY);
 
-                LOG_INFO(log, "Training centroids of IVF index {} of table {}: {}", index_name, table_name, insert_query);
+                LOG_INFO(log, "Training centroids of IVF index {} of table {}: {}", index_name, table_name, select_query);
                 Stopwatch watch;
-                executeInternalQuery(insert_query, training_context);
+                executeInternalInsertSelect(select_query, samples_context, insert_query, training_context);
                 executeInternalQuery(reload_query, training_context);
                 LOG_INFO(log, "Trained centroids of IVF index {} of table {} in {:.3f} sec", index_name, table_name, watch.elapsedSeconds());
             }
