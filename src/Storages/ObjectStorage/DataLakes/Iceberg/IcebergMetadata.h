@@ -176,7 +176,7 @@ public:
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr local_context,
-        RowRangeToReadGetter row_range_getter) const override;
+        InputFormatPtr data_input_format) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
     void checkAlterPartitionIsPossible(const PartitionCommands & commands) const override;
     void alter(

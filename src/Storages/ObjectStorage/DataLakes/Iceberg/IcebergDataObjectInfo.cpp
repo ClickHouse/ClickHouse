@@ -99,15 +99,15 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
     const std::optional<FormatSettings> & format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr context_,
-    RowRangeToReadGetter row_range_getter)
+    InputFormatPtr data_input_format)
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
     /// A deletion vector is already a bitmap, so there is nothing to stream.
     if (info.deletion_vector.has_value() || context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
         return std::make_shared<IcebergBitmapPositionDeleteTransform>(
-            header, self, object_storage, format_settings, parser_shared_resources, context_, std::move(row_range_getter));
+            header, self, object_storage, format_settings, parser_shared_resources, context_, std::move(data_input_format));
     return std::make_shared<IcebergStreamingPositionDeleteTransform>(
-        header, self, object_storage, format_settings, parser_shared_resources, context_, std::move(row_range_getter));
+        header, self, object_storage, format_settings, parser_shared_resources, context_, std::move(data_input_format));
 }
 
 namespace

@@ -1649,12 +1649,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             format_settings,
             parser_shared_resources,
             context_,
-            [weak_input_format = std::weak_ptr<IInputFormat>(input_format)]() -> std::optional<std::pair<size_t, size_t>>
-            {
-                if (auto format = weak_input_format.lock())
-                    return format->getRowRangeToRead();
-                return std::nullopt;
-            });
+            input_format);
 
         if (object_info->data_lake_metadata
             && object_info->data_lake_metadata->excluded_rows

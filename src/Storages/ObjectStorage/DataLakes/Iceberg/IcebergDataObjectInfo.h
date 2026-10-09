@@ -1,5 +1,4 @@
 #pragma once
-#include <Processors/Formats/RowRangeToReadGetter.h>
 #include "config.h"
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -59,6 +58,9 @@ private:
 namespace DB
 {
 
+class IInputFormat;
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
+
 class ISimpleTransform;
 
 struct FormatParserSharedResources;
@@ -86,7 +88,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_,
-        RowRangeToReadGetter row_range_getter = {});
+        InputFormatPtr data_input_format = nullptr);
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
 

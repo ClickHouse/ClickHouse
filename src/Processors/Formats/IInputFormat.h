@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Formats/RowRangeToReadGetter.h>
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>

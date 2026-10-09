@@ -65,8 +65,8 @@ void IcebergPositionDeleteTransform::ensureInitialized()
         return;
     initialized = true;
 
-    if (row_range_getter)
-        row_range = row_range_getter();
+    if (data_input_format)
+        row_range = data_input_format->getRowRangeToRead();
 
     initializeDeleteSources();
     initializeDeletes();

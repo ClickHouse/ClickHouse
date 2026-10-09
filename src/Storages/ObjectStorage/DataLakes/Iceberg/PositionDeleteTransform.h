@@ -29,7 +29,7 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_,
-        RowRangeToReadGetter row_range_getter_ = {})
+        InputFormatPtr data_input_format_ = nullptr)
         : ISimpleTransform(header_, header_, false)
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
@@ -37,7 +37,7 @@ public:
         , format_settings(format_settings_)
         , context(context_)
         , parser_shared_resources(parser_shared_resources_)
-        , row_range_getter(std::move(row_range_getter_))
+        , data_input_format(std::move(data_input_format_))
     {
     }
 
@@ -72,7 +72,7 @@ protected:
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
     std::vector<std::shared_ptr<IInputFormat>> position_delete_files;
 
-    RowRangeToReadGetter row_range_getter;
+    InputFormatPtr data_input_format;
     std::optional<std::pair<size_t, size_t>> row_range;
     bool initialized = false;
 };
@@ -89,9 +89,9 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_,
-        RowRangeToReadGetter row_range_getter_ = {})
+        InputFormatPtr data_input_format_ = nullptr)
         : IcebergPositionDeleteTransform(
-              header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, std::move(row_range_getter_))
+              header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, std::move(data_input_format_))
     {
     }
 
@@ -116,9 +116,9 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         ContextPtr context_,
-        RowRangeToReadGetter row_range_getter_ = {})
+        InputFormatPtr data_input_format_ = nullptr)
         : IcebergPositionDeleteTransform(
-              header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, std::move(row_range_getter_))
+              header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, std::move(data_input_format_))
     {
     }
 

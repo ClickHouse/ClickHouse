@@ -453,9 +453,9 @@ public:
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr local_context,
-        RowRangeToReadGetter row_range_getter) const override
+        InputFormatPtr data_input_format) const override
     {
-        getMetadata()->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context, std::move(row_range_getter));
+        getMetadata()->addDeleteTransformers(object_info, builder, format_settings, parser_shared_resources, local_context, std::move(data_input_format));
     }
 
     void fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure) override

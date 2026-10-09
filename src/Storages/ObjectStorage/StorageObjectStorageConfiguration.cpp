@@ -487,7 +487,7 @@ void StorageObjectStorageConfiguration::addDeleteTransformers(
     const std::optional<FormatSettings> &,
     FormatParserSharedResourcesPtr,
     ContextPtr,
-    RowRangeToReadGetter) const
+    InputFormatPtr) const
 {
 }
 

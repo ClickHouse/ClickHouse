@@ -1,5 +1,4 @@
 #pragma once
-#include <Processors/Formats/RowRangeToReadGetter.h>
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <fmt/format.h>
@@ -26,6 +25,9 @@ class ICatalog;
 
 namespace DB
 {
+
+class IInputFormat;
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 namespace ErrorCodes
 {
@@ -173,7 +175,7 @@ public:
 
     virtual void checkMutationIsPossible(const MutationCommands & /*commands*/) { throwNotImplemented("mutations"); }
 
-    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr, RowRangeToReadGetter) const { }
+    virtual void addDeleteTransformers(ObjectInfoPtr, QueryPipelineBuilder &, const std::optional<FormatSettings> &, FormatParserSharedResourcesPtr, ContextPtr, InputFormatPtr) const { }
     virtual void checkAlterIsPossible(const AlterCommands & /*commands*/) { throwNotImplemented("alter"); }
     virtual void checkAlterPartitionIsPossible(const PartitionCommands & /*commands*/) const { throwNotImplemented("alterPartition"); }
     virtual void alter(

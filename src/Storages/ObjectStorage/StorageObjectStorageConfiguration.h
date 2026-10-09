@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Processors/Formats/RowRangeToReadGetter.h>
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -23,6 +22,9 @@
 
 namespace DB
 {
+
+class IInputFormat;
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 class StorageObjectStorage;
 class NamedCollection;
@@ -181,7 +183,7 @@ public:
         const std::optional<FormatSettings> & format_settings,
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr local_context,
-        RowRangeToReadGetter row_range_getter) const;
+        InputFormatPtr data_input_format) const;
 
     virtual ReadFromFormatInfo prepareReadingFromFormat(
         ObjectStoragePtr object_storage,

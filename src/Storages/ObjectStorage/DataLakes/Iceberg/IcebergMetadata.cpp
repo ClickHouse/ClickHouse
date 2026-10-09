@@ -1509,7 +1509,7 @@ void IcebergMetadata::addDeleteTransformers(
     const std::optional<FormatSettings> & format_settings,
     FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr local_context,
-    RowRangeToReadGetter row_range_getter) const
+    InputFormatPtr data_input_format) const
 {
     auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
     if (!iceberg_object_info)
@@ -1521,7 +1521,7 @@ void IcebergMetadata::addDeleteTransformers(
             [&](const SharedHeader & header)
             {
                 return iceberg_object_info->getPositionDeleteTransformer(
-                    object_storage, header, format_settings, parser_shared_resources, local_context, row_range_getter);
+                    object_storage, header, format_settings, parser_shared_resources, local_context, data_input_format);
             });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
