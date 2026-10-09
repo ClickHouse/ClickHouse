@@ -4554,8 +4554,15 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 }
 
 
-void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
+void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const ContextPtr & query_context, const std::optional<ZooKeeperRetriesInfo> &)
 {
+    /// The parts are committed one by one, so check the size limits of a temporary table for all of them beforehand,
+    /// with the settings of the `RESTORE` query: a restore that does not fit is rejected as a whole, as `ATTACH PARTITION`.
+    {
+        auto lock = lockParts();
+        throwIfTemporaryTableSizeLimitsExceededForReplacement(query_context, lock, parts, std::nullopt);
+    }
+
     for (auto part : parts)
     {
         /// It's important to create it outside of lock scope because
