@@ -60,6 +60,10 @@ public:
         /// True when the definition comes from a backup being restored. Weaker than `is_metadata_replay`:
         /// a backup may be crafted by the user, so it must not skip safety checks.
         bool is_restore_from_backup = false;
+
+        /// The definition was stored by this server: startup replay, FORCE_ATTACH / FORCE_RESTORE,
+        /// or a short `ATTACH DATABASE db` that reads it back. Not a user `ATTACH DATABASE ... ENGINE = ...`.
+        bool isLoadingFromExistingMetadata() const;
     };
 
     struct EngineFeatures
