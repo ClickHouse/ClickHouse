@@ -21,16 +21,17 @@ SELECT 'qualify, Distributed';
 SELECT count(), max(c) FROM (SELECT count() OVER () AS c FROM d_hint_only QUALIFY indexHint(k = 7));
 SELECT 'row_number';
 SELECT count(), max(c) FROM (SELECT row_number() OVER () AS c FROM remote('127.0.0.{1,2}', currentDatabase(), t_hint_only) QUALIFY indexHint(k = 7));
+-- A serialized plan does not prune granules by indexHint on the shards; these two compare against a local read.
 SELECT 'where';
 SELECT
     (SELECT count() FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', currentDatabase(), t_hint_only) WHERE indexHint(k = 7)))
         = 2 * (SELECT count() FROM (SELECT count() OVER () AS c FROM t_hint_only WHERE indexHint(k = 7)))
-    AND (SELECT count() FROM (SELECT count() OVER () AS c FROM t_hint_only WHERE indexHint(k = 7))) > 0;
+    AND (SELECT count() FROM (SELECT count() OVER () AS c FROM t_hint_only WHERE indexHint(k = 7))) > 0 SETTINGS serialize_query_plan = 0;
 SELECT 'prewhere';
 SELECT
     (SELECT count() FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', currentDatabase(), t_hint_only) PREWHERE indexHint(k = 7)))
         = 2 * (SELECT count() FROM (SELECT count() OVER () AS c FROM t_hint_only PREWHERE indexHint(k = 7)))
-    AND (SELECT count() FROM (SELECT count() OVER () AS c FROM t_hint_only PREWHERE indexHint(k = 7))) > 0;
+    AND (SELECT count() FROM (SELECT count() OVER () AS c FROM t_hint_only PREWHERE indexHint(k = 7))) > 0 SETTINGS serialize_query_plan = 0;
 SELECT 'Memory';
 SELECT count(), max(c) FROM (SELECT count() OVER () AS c FROM remote('127.0.0.{1,2}', currentDatabase(), t_hint_only_mem) QUALIFY indexHint(k = 7));
 SELECT 'view';
