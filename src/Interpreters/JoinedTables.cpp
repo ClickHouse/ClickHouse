@@ -26,7 +26,6 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
-#include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
 
 namespace DB
