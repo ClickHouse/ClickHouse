@@ -70,6 +70,8 @@ struct ChooseContext
     const PartitionIdToTTLs & next_recompress_times;
     const time_t current_time;
     const bool aggressive;
+    /// `SYSTEM STOP TTL MERGES` is not in effect.
+    const bool can_use_ttl_merges;
 };
 
 /// A merge keeps one block from every source part alive at the same time, and every column of every one
@@ -200,10 +202,26 @@ NameSet getMinMaxIndexColumns(const ChooseContext & ctx)
     return columns;
 }
 
-/// Whether the table can merge vertically at all when the horizontal stage merges `key_columns` (see
-/// `getColumnsMergedOnHorizontalStageOfVerticalMergeSet`): the more columns move to the horizontal stage, the
-/// fewer are left to gather. The rest of the decision depends on the range itself, see `predictVerticalMerge`.
-bool tableCanMergeVertically(const ChooseContext & ctx, const NameSet & key_columns)
+/// The storage columns that `key_columns` keep on the horizontal stage, like `MergeTask` does: the alias and
+/// ephemeral columns are not merged at all, and a key column that is a subcolumn keeps its whole storage column,
+/// so several subcolumns of one column count once.
+NameSet getKeyColumnsInStorage(const ChooseContext & ctx, const NameSet & key_columns)
+{
+    const auto physical_columns = ctx.metadata_snapshot.getColumns().getAllPhysical().getNameSet();
+    NameSet key_columns_in_storage;
+    for (const auto & column : key_columns)
+    {
+        if (auto name_in_storage = Nested::tryGetColumnNameInStorage(column, physical_columns))
+            key_columns_in_storage.insert(std::move(*name_in_storage));
+    }
+    return key_columns_in_storage;
+}
+
+/// Whether the table can merge vertically at all when the horizontal stage merges `num_key_columns` storage
+/// columns (see `getColumnsMergedOnHorizontalStageOfVerticalMergeSet` and `getKeyColumnsInStorage`): the more
+/// columns move to the horizontal stage, the fewer are left to gather. The rest of the decision depends on the
+/// range itself, see `predictVerticalMerge`.
+bool tableCanMergeVertically(const ChooseContext & ctx, size_t num_key_columns)
 {
     const auto & settings = ctx.merge_tree_settings;
     const auto & metadata = ctx.metadata_snapshot;
@@ -222,19 +240,9 @@ bool tableCanMergeVertically(const ChooseContext & ctx, const NameSet & key_colu
     if (!supported_mode)
         return false;
 
-    /// Like `MergeTask`, split only the physical columns: the alias and ephemeral columns are not merged at all.
-    /// A key column that is a subcolumn keeps its whole storage column on the horizontal stage.
-    const auto physical_columns = metadata.getColumns().getAllPhysical().getNameSet();
-    NameSet key_columns_in_storage;
-    for (const auto & column : key_columns)
-    {
-        if (auto name_in_storage = Nested::tryGetColumnNameInStorage(column, physical_columns))
-            key_columns_in_storage.insert(std::move(*name_in_storage));
-    }
-
-    /// An empty key still merges the first column on the horizontal stage, see `extractMergingAndGatheringColumns`.
-    const size_t num_key_columns = std::max<size_t>(1, key_columns_in_storage.size());
-    const size_t gathering_columns = physical_columns.size() > num_key_columns ? physical_columns.size() - num_key_columns : 0;
+    /// Like `MergeTask`, split only the physical columns.
+    const size_t num_physical_columns = metadata.getColumns().getAllPhysical().size();
+    const size_t gathering_columns = num_physical_columns > num_key_columns ? num_physical_columns - num_key_columns : 0;
     return gathering_columns >= settings[MergeTreeSetting::vertical_merge_algorithm_min_columns_to_activate];
 }
 
@@ -292,10 +300,11 @@ bool rangeCanMergeVerticallyWhileRemovingExpiredValues(const ChooseContext & ctx
 /// has TTL values that were not calculated, or the earliest unfinished TTL of the merged part is due.
 /// A merge that turns out to remove expired values although this says it does not is priced too low only
 /// in the narrow window of a TTL that becomes due between the selection and the merge.
+/// While TTL merges are stopped, `prepare` runs every merge without removing expired values.
 bool rangeRemovesExpiredValues(const ChooseContext & ctx, PartsRangeView range)
 {
     const auto & metadata = ctx.metadata_snapshot;
-    if (!metadata.hasAnyTTL())
+    if (!metadata.hasAnyTTL() || !ctx.can_use_ttl_merges)
         return false;
 
     time_t min_ttl = 0;
@@ -435,10 +444,12 @@ NameSet getColumnsOfProjectionsRebuiltByMerge(const ChooseContext & ctx, PartsRa
 /// so many columns are merged there that the merge does not run vertically at all.
 size_t getAffordablePartsToMergeVertically(const ChooseContext & ctx, const NameSet & key_columns, size_t affordable_horizontal)
 {
-    if (!tableCanMergeVertically(ctx, key_columns))
+    /// The merge merges at least one column even when the key is empty (`ORDER BY tuple()`), see
+    /// `extractMergingAndGatheringColumns`.
+    const size_t num_key_columns = std::max<size_t>(1, getKeyColumnsInStorage(ctx, key_columns).size());
+    if (!tableCanMergeVertically(ctx, num_key_columns))
         return affordable_horizontal;
-    /// The merge merges at least one column even when the key is empty (`ORDER BY tuple()`).
-    return getAffordablePartsToMergeAtOnce(ctx, std::max<size_t>(1, key_columns.size()));
+    return getAffordablePartsToMergeAtOnce(ctx, num_key_columns);
 }
 
 /// The memory-derived cap for the selectors that can shrink a candidate range (`SimpleMergeSelector`
@@ -716,6 +727,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .next_recompress_times = next_recompress_times,
         .current_time = current_time,
         .aggressive = aggressive,
+        .can_use_ttl_merges = can_use_ttl_merges,
     };
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
