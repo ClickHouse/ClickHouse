@@ -149,7 +149,7 @@ struct RuntimeFilterSealInfo : public ChunkInfoCloneable<RuntimeFilterSealInfo>
 class FillingRightJoinSideTransform final : public IProcessor
 {
 public:
-    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_);
+    FillingRightJoinSideTransform(SharedHeader input_header, JoinPtr join_, FinishCounterPtr finish_counter_, JoinBuildContext build_context_);
     String getName() const override { return "FillingRightJoinSide"; }
 
     InputPort * addTotalsPort();
@@ -177,6 +177,7 @@ private:
 
     JoinPtr join;
     FinishCounterPtr finish_counter;
+    const JoinBuildContext build_context;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;
