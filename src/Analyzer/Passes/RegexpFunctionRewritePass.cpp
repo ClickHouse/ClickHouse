@@ -120,6 +120,12 @@ private:
         return true;
     }
 
+    /// Whether a quantifier starts at `pos`.
+    static bool isQuantifierAt(const std::string & regexp, size_t pos)
+    {
+        return pos < regexp.size() && (regexp[pos] == '*' || regexp[pos] == '?' || regexp[pos] == '+' || regexp[pos] == '{');
+    }
+
     /// Split a pattern into its top-level elements. Deliberately conservative: an element that is
     /// not recognized, as well as anything that makes the shape of the pattern unclear, yields a
     /// single nullable atom, which only makes the caller decline the rewrite.
@@ -152,6 +158,11 @@ private:
                 }
                 atom.zero_width = body_size == 0;
                 i = j;
+
+                /// re2 pushes no element at all for an empty `\Q\E`, so a quantifier right after it
+                /// binds to the previous element: `a\Q\E?$` is `a?$`. Such a pattern is not analyzed.
+                if (atom.zero_width && isQuantifierAt(regexp, i))
+                    return giveUp();
             }
             else if (c == '\\' && i + 1 < regexp.size() && regexp[i + 1] == 'E')
             {
@@ -260,6 +271,12 @@ private:
                 atom.zero_width = isInlineFlagGroup(regexp, i, j);
                 atom.nullable = !atom.zero_width;
                 i = j;
+
+                /// An inline flag group only changes the parser flags, and re2 pushes no element for
+                /// it, so a quantifier right after it binds to the previous element: `a(?i)?$` is
+                /// `a?$`. Such a pattern is not analyzed.
+                if (atom.zero_width && isQuantifierAt(regexp, i))
+                    return giveUp();
             }
             else if (c == '|' || c == ')' || c == '*' || c == '+' || c == '?' || c == '{')
             {

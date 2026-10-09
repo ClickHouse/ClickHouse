@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-<div id="resource-organization">
-  ## Organização dos recursos
-</div>
+## Organização dos recursos {#resource-organization}
 
 A forma como os recursos são organizados no ClickHouse Cloud é semelhante à [hierarquia de recursos do BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). Abaixo, descrevemos as diferenças específicas com base no diagrama a seguir, que mostra a hierarquia de recursos do ClickHouse Cloud:
 
@@ -62,7 +60,7 @@ Por fim, o escalonamento de E/S permite restringir acessos a disco locais e remo
   ### Permissões
 </div>
 
-O ClickHouse Cloud controla o acesso dos usuários em dois lugares: pelo [Cloud Console](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) e pelo [banco de dados](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users). O acesso ao Console é gerenciado pela interface do usuário do [clickhouse.cloud](https://console.clickhouse.cloud). O acesso ao banco de dados é gerenciado por contas de usuários do banco de dados e funções. Além disso, usuários do Console podem receber funções no banco de dados que permitem interagir com ele por meio do nosso [SQL Console](/pt-BR/integrations/connectors/sql-clients/sql-console).
+O ClickHouse Cloud controla o acesso dos usuários em dois lugares: pelo [Cloud Console](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users) e pelo [banco de dados](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users). O acesso ao Console é gerenciado pela interface do usuário do [clickhouse.cloud](https://console.clickhouse.cloud). O acesso ao banco de dados é gerenciado por contas de usuários do banco de dados e funções. Além disso, usuários do Console podem receber funções no banco de dados que permitem interagir com ele por meio do nosso [SQL Console](/pt-BR/integrations/connectors/sql-clients/sql-console).
 
 <div id="data-types">
   ## Tipos de dados
