@@ -84,6 +84,12 @@ namespace
         if (table_name.database != DatabaseCatalog::SYSTEM_DATABASE)
             return false;
 
+#if CLICKHOUSE_CLOUD
+        /// `system.masking_policies` backs an access entity, so it belongs to this list.
+        if (table_name.table == "masking_policies")
+            return true;
+#endif
+
         return (table_name.table == "users") || (table_name.table == "roles") || (table_name.table == "settings_profiles")
             || (table_name.table == "row_policies") || (table_name.table == "quotas");
     }
