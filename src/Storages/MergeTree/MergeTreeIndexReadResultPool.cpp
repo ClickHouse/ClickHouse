@@ -606,8 +606,7 @@ ProjectionIndexBitmapPtr SingleProjectionIndexReader::read(const RangesInDataPar
     }
     catch (const Exception & e)
     {
-        /// The filter also runs on projection rows whose parent rows the query does not read, so it can fail on a
-        /// row the query never evaluates. Then the part is read without the projection index.
+        /// The filter also runs on rows the query does not read, so a failure only disables the projection index for this part.
         if (isQueryOuterGuardError(e.code()))
             throw;
         return nullptr;
