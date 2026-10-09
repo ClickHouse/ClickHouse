@@ -1,5 +1,7 @@
 #include <Interpreters/QueryLog.h>
 
+#include <limits>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
@@ -173,6 +175,11 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"asynchronous_read_counters", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeUInt64>()), "Metrics for asynchronous reading."},
 
         {"is_internal", std::make_shared<DataTypeUInt8>(), "Indicates whether it is an auxiliary query executed internally."},
+
+        {"abr_duration_ms", std::make_shared<DataTypeUInt64>(), "Total wall-clock time in milliseconds spent by the `ABR` table engine choosing the underlying table and executing the query on it, across all attempts. 0 for queries that do not read from an `ABR` table."},
+        {"abr_exception_codes", std::make_shared<DataTypeMap>(std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeInt32>()), "Per sample interval, the error code that explains why the `ABR` table engine did not serve the query from that underlying table: `NO_AVAILABLE_DATA` if, when the table was chosen, its data did not reach back to the lower bound of the query on the time column, or the error that made the attempt on it fail (e.g. `TOO_MANY_ROWS` or `TIMEOUT_EXCEEDED`). Empty if no underlying table was skipped and no attempt failed, or for queries that do not read from an `ABR` table."},
+        {"abr_interval", std::make_shared<DataTypeUInt64>(), "The sample interval (table suffix) of the underlying table that ultimately served the query through the `ABR` table engine. 0 for queries that do not read from an `ABR` table."},
+        {"abr_min_date", std::make_shared<DataTypeDateTime>(), "The lower bound of the query on the time column, which the `ABR` table engine used to choose the underlying table. Zero for queries that do not read from an `ABR` table."},
     };
 }
 
@@ -393,6 +400,27 @@ void QueryLogElement::appendToBlock(MutableColumns & columns) const
     }
 
     typeid_cast<ColumnUInt8 &>(*columns[i++]).getData().push_back(is_internal);
+
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(abr_duration_ms);
+    {
+        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets = column_map.getNestedColumn().getOffsets();
+        auto & tuple_column = column_map.getNestedData();
+        auto & key_column = typeid_cast<ColumnUInt64 &>(tuple_column.getColumn(0));
+        auto & value_column = typeid_cast<ColumnInt32 &>(tuple_column.getColumn(1));
+
+        for (const auto & [interval, code] : abr_exception_codes)
+        {
+            key_column.getData().push_back(interval);
+            value_column.getData().push_back(code);
+        }
+
+        offsets.push_back(offsets.back() + abr_exception_codes.size());
+    }
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(abr_interval);
+    /// `DateTime` covers timestamps up to 2106; a later bound (only possible with a `DateTime64` time column) saturates.
+    typeid_cast<ColumnDateTime &>(*columns[i++]).getData().push_back(
+        static_cast<UInt32>(std::min<UInt64>(abr_min_date, std::numeric_limits<UInt32>::max())));
 }
 
 void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i)

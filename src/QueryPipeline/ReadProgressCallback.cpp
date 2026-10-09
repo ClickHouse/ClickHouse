@@ -44,6 +44,8 @@ void ReadProgressCallback::setProcessListElement(QueryStatusPtr elem)
 
         progress_callback(total_rows_progress);
         process_list_elem->updateProgressIn(total_rows_progress);
+        if (check_limits_on_own_progress)
+            own_progress.incrementPiecewiseAtomically(total_rows_progress);
     }
 }
 
@@ -65,9 +67,19 @@ bool ReadProgressCallback::onProgress(uint64_t read_rows, uint64_t read_bytes, c
         if (!process_list_elem->updateProgressIn(value))
             return false;
 
-        /// The total amount of data processed or intended for processing in all sources, possibly on remote servers.
+        /// The total amount of data processed or intended for processing in all sources, possibly on remote servers,
+        /// or only by this pipeline, if `checkLimitsOnOwnProgress` was called.
 
-        ProgressValues progress = process_list_elem->getProgressIn();
+        ProgressValues progress;
+        if (check_limits_on_own_progress)
+        {
+            own_progress.incrementPiecewiseAtomically(value);
+            progress = own_progress.getValues();
+        }
+        else
+        {
+            progress = process_list_elem->getProgressIn();
+        }
 
         for (const auto & limits : storage_limits)
         {
