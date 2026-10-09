@@ -151,6 +151,9 @@ SELECT uniqExact(toString(x)) FROM (SELECT arrayJoin([reinterpretAsFloat64(toUIn
 SELECT uniqExact(toString(x)) FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) SETTINGS optimize_injective_functions_inside_uniq = 0;
 SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x));
 SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x)) SETTINGS optimize_injective_functions_in_group_by = 0;
+-- The same holds for the elements of a `QBit`.
+SELECT uniqExact(toString(q)) FROM (SELECT CAST(arrayJoin([[reinterpretAsFloat32(toUInt32(2143289345))], [reinterpretAsFloat32(toUInt32(2143289346))]]), 'QBit(Float32, 1)') AS q) SETTINGS optimize_injective_functions_inside_uniq = 1;
+SELECT uniqExact(toString(q)) FROM (SELECT CAST(arrayJoin([[reinterpretAsFloat32(toUInt32(2143289345))], [reinterpretAsFloat32(toUInt32(2143289346))]]), 'QBit(Float32, 1)') AS q) SETTINGS optimize_injective_functions_inside_uniq = 0;
 
 
 SELECT 'coinciding boolean representations';
