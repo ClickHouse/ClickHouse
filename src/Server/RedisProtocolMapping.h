@@ -37,6 +37,8 @@ struct MapDescription
 };
 
 /// Reads the binding of a single Redis database number. Returns nullopt if the database is not configured.
+/// The whole `redis.db` section is validated as by `parseConfig`, because it may have been changed by
+/// `SYSTEM RELOAD CONFIG` after the startup validation.
 std::optional<MapDescription> parseDBDescription(const Poco::Util::AbstractConfiguration & config, UInt32 db_num);
 
 /// Reads the bindings of all the configured Redis databases. Used to validate the configuration.

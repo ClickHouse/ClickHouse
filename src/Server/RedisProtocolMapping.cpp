@@ -62,20 +62,44 @@ MapDescription parseDescription(const Poco::Util::AbstractConfiguration & config
     return description;
 }
 
+UInt32 parseDBKey(const String & key)
+{
+    if (!key.starts_with('_'))
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Unexpected key redis.db.{}: a Redis database number has to be written with a leading underscore, e.g. `_0`",
+            key);
+
+    UInt32 db_num = parse<UInt32>(key.substr(1));
+
+    /// Only the canonical spelling is accepted: a key such as `_01` would otherwise pass the validation
+    /// as database 1, but would never be found by the lookup of a single database.
+    if (key != fmt::format("_{}", db_num))
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Unexpected key redis.db.{}: a Redis database number has to be written without leading zeros, e.g. `_{}`",
+            key, db_num);
+
+    if (db_num >= DB_MAX_NUM)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Redis database number {} is out of range, the maximum allowed value is {}",
+            db_num, DB_MAX_NUM - 1);
+
+    return db_num;
+}
+
 }
 
 std::optional<MapDescription> parseDBDescription(const Poco::Util::AbstractConfiguration & config, UInt32 db_num)
 {
-    /// Config keys cannot start with a digit, so the database number is written as e.g. `_0`.
-    const String prefix = fmt::format("redis.db._{}", db_num);
-
-    /// `has` does not work for a section without a value of its own, so look at its keys instead.
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(prefix, keys);
-    if (keys.empty())
+    /// Validate the whole section with the same rules as at startup: the configuration may have been
+    /// changed by `SYSTEM RELOAD CONFIG` since then.
+    auto db_mapping = parseConfig(config);
+    auto it = db_mapping.find(db_num);
+    if (it == db_mapping.end())
         return {};
-
-    return parseDescription(config, prefix, db_num);
+    return std::move(it->second);
 }
 
 std::map<UInt32, MapDescription> parseConfig(const Poco::Util::AbstractConfiguration & config)
@@ -86,19 +110,7 @@ std::map<UInt32, MapDescription> parseConfig(const Poco::Util::AbstractConfigura
     config.keys("redis.db", keys);
     for (const auto & key : keys)
     {
-        if (!key.starts_with('_'))
-            throw Exception(
-                ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "Unexpected key redis.db.{}: a Redis database number has to be written with a leading underscore, e.g. `_0`",
-                key);
-
-        UInt32 db_num = parse<UInt32>(key.substr(1));
-        if (db_num >= DB_MAX_NUM)
-            throw Exception(
-                ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "Redis database number {} is greater than the maximum allowed value {}",
-                db_num, DB_MAX_NUM);
-
+        UInt32 db_num = parseDBKey(key);
         db_mapping[db_num] = parseDescription(config, fmt::format("redis.db.{}", key), db_num);
     }
 

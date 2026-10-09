@@ -321,9 +321,25 @@ def test_mapping_is_reread_after_reload_config(started_cluster, redis_client):
         with pytest.raises(exceptions.ResponseError) as resp_err:
             redis_client.get("Alice")
         assert "Redis database 4 is not configured" in str(resp_err.value)
+
+        # A configuration changed at runtime is validated with the same rules as at startup.
+        node.replace_in_config(config_path, "<_200>", "<_04>")
+        node.replace_in_config(config_path, "</_200>", "</_04>")
+        node.query("SYSTEM RELOAD CONFIG")
+        with pytest.raises(exceptions.ResponseError) as resp_err:
+            redis_client.select(1)
+        assert "without leading zeros" in str(resp_err.value)
+
+        node.replace_in_config(config_path, "<_04>", "<_256>")
+        node.replace_in_config(config_path, "</_04>", "</_256>")
+        node.query("SYSTEM RELOAD CONFIG")
+        with pytest.raises(exceptions.ResponseError) as resp_err:
+            redis_client.select(1)
+        assert "out of range" in str(resp_err.value)
     finally:
-        node.replace_in_config(config_path, "<_200>", "<_4>")
-        node.replace_in_config(config_path, "</_200>", "</_4>")
+        for tag in ("_200", "_04", "_256"):
+            node.replace_in_config(config_path, f"<{tag}>", "<_4>")
+            node.replace_in_config(config_path, f"</{tag}>", "</_4>")
         node.replace_in_config(config_path, "reload_map_after", "reload_map_before")
         node.query("SYSTEM RELOAD CONFIG")
         for table in ("reload_map_before", "reload_map_after"):

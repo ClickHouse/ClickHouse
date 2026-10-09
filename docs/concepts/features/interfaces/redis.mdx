@@ -55,7 +55,7 @@ To enable the Redis protocol server, add the `redis` section with a `port` and a
 </clickhouse>
 ```
 
-The element name inside `db` sets the Redis database number: `<_0>` is database `0`, `<_1>` is database `1`, and so on (up to 256 databases). Each database mapping accepts:
+The element name inside `db` sets the Redis database number: `<_0>` is database `0`, `<_1>` is database `1`, and so on, up to `<_255>`. The number is written without leading zeros. Each database mapping accepts:
 
 | Parameter          | Description                                                                              |
 |--------------------|------------------------------------------------------------------------------------------|
