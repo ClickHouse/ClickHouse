@@ -1190,6 +1190,10 @@ A setting that a table takes from elsewhere unless its definition states it has 
 
 A setting whose empty or default value makes the engine generate or detect one when the table starts, such as the client id and the AWS region of `Kafka`, the queue group of `NATS`, `processing_threads_num` of `S3Queue` and `AzureQueue`, or the replication slot of `MaterializedPostgreSQL`, is listed with that stored value.
 
+A setting that a new table of the engine cannot use, because the table rejects or overwrites it, is not listed: `materialized_postgresql_use_extended_date_and_time_types`, `materialized_postgresql_schema_list` and `materialized_postgresql_tables_list` of `MaterializedPostgreSQL`, which only the database engine of the same name takes, and the deprecated `storage_catalog_type`, `storage_catalog_url` and `storage_aws_access_key_id` of the data lake engines.
+
+A setting that a new table must state is listed with its compiled-in default, which a new table cannot rely on: `mode` of `S3Queue` and `AzureQueue`, required since ClickHouse 24.6, whose default `ordered` applies only to `S3Queue` tables created by earlier releases; `kafka_broker_list`, `kafka_topic_list`, `kafka_group_name` and `kafka_format` of `Kafka`, unless the engine arguments or a named collection give them; `nats_url` or `nats_server_list`, `nats_format` and `nats_subjects` of `NATS`; and `rabbitmq_host_port` or `rabbitmq_address`, and `rabbitmq_format` of `RabbitMQ`.
+
 Two values are not what a new table uses in every configuration: `ExecutablePool` lowers `max_command_execution_time` to the server's `max_execution_time` when that is set and smaller, and `RabbitMQ` uses the `vhost` of the `rabbitmq` section of the server configuration, when set, instead of `rabbitmq_vhost`.
 
 .columns_notes
