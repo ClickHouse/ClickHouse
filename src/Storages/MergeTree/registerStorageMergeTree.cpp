@@ -1069,8 +1069,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     /// definition the initiator already committed (`Replicated`-database DDL, recovery from
                     /// metadata stored in Keeper, Shared Catalog) are not judged against the replaying
                     /// session either: a secondary refusing it would retry its queue entry forever.
-                    if (!isLoadingFromExistingMetadata(args.mode) && !is_ddl_replay && !is_stored_definition
-                        && !is_shared_catalog_replay)
+                    if (!isLoadingFromExistingMetadata(args.mode) && !is_ddl_replay && !is_stored_definition)
                         CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
 
                     try

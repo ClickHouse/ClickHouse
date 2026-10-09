@@ -1782,8 +1782,10 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     /// A table is loaded with its TTL analyzed in the global context, where nothing that exists only for a query or
     /// a session (a table function, a temporary table) resolves, so a TTL that is going to be stored must analyze there.
     /// A replica replaying a DDL that the initiator already committed does not judge it again, or its DDL queue would stall.
+    /// The `RECOMPRESS` codecs were already judged above, so this pass does not gate them again.
     if (validation_mode != TTLValidationMode::Attach && !context->isGlobalContext() && !isSecondaryDDLReplay(context))
-        getTTLForTableFromAST(definition_ast, columns, context->getGlobalContext(), primary_key, TTLValidationMode::Attach);
+        getTTLForTableFromAST(
+            definition_ast, columns, context->getGlobalContext(), primary_key, TTLValidationMode::Attach, CodecValidationSettings::trusted());
 
     return result;
 }
