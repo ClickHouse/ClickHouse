@@ -36,6 +36,16 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
     quota = quota_;
     quota_id = quota_id_;
     roles = &quota->to_roles;
+
+    /// The quota may have been written by a version with a different set of profile events.
+    /// The unknown limit is preserved in the definition but has no effect. Report it here, once per
+    /// publication of the quota, rather than in `rebuildIntervals`, which runs for every new quota key.
+    for (const auto & limits : quota->all_limits)
+        for (const auto & event_name : limits.profile_events_max | boost::adaptors::map_keys)
+            if (!ProfileEvents::tryGetByName(event_name))
+                LOG_WARNING(getLogger("QuotaCache"), "Quota {} defines a limit over an unknown profile event {}; this limit is ignored",
+                    backQuote(quota->getName()), backQuote(event_name));
+
     rebuildAllIntervals();
 }
 
@@ -198,15 +208,10 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         interval.profile_event_limits.reserve(limits.profile_events_max.size());
         for (const auto & [event_name, event_max] : limits.profile_events_max)
         {
+            /// An unknown profile event (reported once in `setQuota`) is skipped: its limit has no effect.
             auto event = ProfileEvents::tryGetByName(event_name);
             if (!event)
-            {
-                /// The quota may have been written by a version with a different set of profile
-                /// events. The unknown limit is preserved in the definition but has no effect.
-                LOG_WARNING(getLogger("QuotaCache"), "Quota {} defines a limit over an unknown profile event {}; this limit is ignored",
-                    backQuote(quota->getName()), backQuote(event_name));
                 continue;
-            }
             auto & entry = interval.profile_event_limits.emplace_back();
             entry.event = *event;
             entry.max = event_max;
