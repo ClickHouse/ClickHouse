@@ -161,6 +161,35 @@ SerializationPtr SerializationMap::create(
     return ISerialization::pooled(getHash(nested_serialization_, serialization_version_), [&] { return new SerializationMap(key_serialization_, value_serialization_, nested_serialization_, serialization_version_); });
 }
 
+namespace
+{
+
+bool isMapNestedTupleElementSubcolumn(const ISerialization::SubstreamPath & path, std::string_view element_name)
+{
+    using Substream = ISerialization::Substream;
+    return path.size() >= 2
+        && path[path.size() - 2].type == Substream::ArrayElements
+        && path.back().type == Substream::TupleElement
+        && path.back().name_of_substream == element_name;
+}
+
+}
+
+bool SerializationMap::isKeysSubcolumn(const SubstreamPath & path)
+{
+    return isMapNestedTupleElementSubcolumn(path, "keys");
+}
+
+bool SerializationMap::isValuesSubcolumn(const SubstreamPath & path)
+{
+    return isMapNestedTupleElementSubcolumn(path, "values");
+}
+
+bool SerializationMap::isKeyValueSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::MapKeyValue;
+}
+
 template <typename KeyWriter, typename ValueWriter>
 void SerializationMap::serializeTextImpl(
     const IColumn & column,

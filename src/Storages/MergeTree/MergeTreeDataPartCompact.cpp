@@ -25,7 +25,7 @@ namespace ErrorCodes
 
 namespace MergeTreeSetting
 {
-    extern MergeTreeSettingsBool enable_index_granularity_compression;
+    extern const MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 MergeTreeDataPartCompact::MergeTreeDataPartCompact(

@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Strictnesses that must never route to IEJoin even with `ie_join` listed first: ANY with
 -- only inequality conditions keeps the pre-existing error, ASOF stays on the ASOF path.
 

@@ -160,7 +160,7 @@ MongoDBSource::MongoDBSource(
     const mongocxx::options::find & options,
     SharedHeader sample_block_,
     const UInt64 & max_block_size_)
-    : ISource{sample_block_}
+    : ISource{std::make_shared<const Block>(sample_block_->cloneEmpty())}
     , client{uri}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}

@@ -114,6 +114,19 @@
             <!-- User can manipulate named collections. -->
             <named_collection_control>1</named_collection_control>
 
+            <!-- User can see the values stored in named collections, e.g. in the `system.named_collections` table.
+                 It is disabled by default: being able to manage named collections does not mean
+                 being able to read back the credentials that are already stored in them.
+
+                 Note that a user without this permission does not have the complete set of privileges,
+                 and therefore cannot pass the complete set on to somebody else: a query such as
+                 `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` will be rejected with
+                 `Not enough privileges. ... (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)`,
+                 because a user can only grant the privileges that they have themselves.
+                 Uncomment the setting below to make this user a complete administrator.
+            -->
+            <!-- <show_named_collections_secrets>1</show_named_collections_secrets> -->
+
             <!-- User permissions can be granted here -->
             <!--
             <grants>

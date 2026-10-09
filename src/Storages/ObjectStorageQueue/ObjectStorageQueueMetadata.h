@@ -1,8 +1,9 @@
 #pragma once
 
 #include <filesystem>
-#include <mutex>
 #include <optional>
+#include <mutex>
+#include <unordered_set>
 #include <unordered_map>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
@@ -82,6 +83,7 @@ public:
         size_t cleanup_interval_max_ms_,
         bool use_persistent_processing_nodes_,
         size_t persistent_processing_nodes_ttl_seconds_,
+        size_t processing_state_cache_ttl_seconds_,
         size_t keeper_multiread_batch_size_,
         size_t metadata_cache_size_bytes_,
         size_t metadata_cache_size_elements_);
@@ -133,6 +135,9 @@ public:
     FileMetadataPtr getFileMetadata(
         const std::string & path,
         ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info = {});
+
+    bool tryAcquireExclusiveProcessing(const std::string & path);
+    void releaseExclusiveProcessing(const std::string & path);
 
     /// Register table in keeper metadata.
     /// active = false:
@@ -197,6 +202,7 @@ public:
 
     bool usePersistentProcessingNode() const { return use_persistent_processing_nodes; }
     size_t getPersistentProcessingNodeTTLSeconds() const { return persistent_processing_node_ttl_seconds; }
+    size_t getProcessingStateCacheTTLSeconds() const { return processing_state_cache_ttl_seconds; }
 
     size_t getKeeperMultireadBatchSize() const { return keeper_multiread_batch_size; }
 
@@ -242,6 +248,7 @@ private:
     std::atomic<size_t> cleanup_interval_max_ms;
     std::atomic<bool> use_persistent_processing_nodes;
     std::atomic<size_t> persistent_processing_node_ttl_seconds;
+    std::atomic<size_t> processing_state_cache_ttl_seconds;
 
     /// Watermarks for the pipeline-lag metrics, see updateNewestSeenTimestamp().
     /// Keyed by `StorageID::getFullTableName()`, because this metadata object can be
@@ -264,6 +271,8 @@ private:
     BackgroundSchedulePoolTaskHolder cleanup_task;
 
     FileStatusesCache local_file_statuses;
+    std::mutex exclusive_processing_paths_mutex;
+    std::unordered_set<UInt128, UInt128TrivialHash> exclusive_processing_paths TSA_GUARDED_BY(exclusive_processing_paths_mutex);
 
     /// A set of currently known "active" servers.
     /// The set is updated by updateRegistryFunc().

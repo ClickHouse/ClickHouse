@@ -74,8 +74,14 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
     if (dictionary_structure.id)
     {
-        if (validate_id_type && dictionary_structure.id->type->getTypeId() != TypeIndex::UInt64)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", dictionary_structure.id->type->getFamilyName());
+        if (validate_id_type)
+        {
+            /// A simple key is always materialized as `UInt64`, so a `LowCardinality` wrapper around it is equivalent.
+            const auto & id_type = removeLowCardinality(dictionary_structure.id->type);
+
+            if (id_type->getTypeId() != TypeIndex::UInt64)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type of ID column: must be UInt64, but it is {}", id_type->getFamilyName());
+        }
 
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
     }
@@ -328,9 +334,9 @@ void StorageDictionary::checkAlterIsPossible(const AlterCommands & commands, Con
     }
 }
 
-void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder)
+void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder & lock_holder, DDLGuardPtr & ddl_guard)
 {
-    IStorage::alter(params, alter_context, lock_holder);
+    IStorage::alter(params, alter_context, lock_holder, ddl_guard);
 
     if (location == Location::Custom)
         return;

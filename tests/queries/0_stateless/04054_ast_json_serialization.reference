@@ -161,7 +161,7 @@ RefreshStrategy	1
 TimeInterval	3600
 Assignment	a	1
 TableOverride	1
-ForeignKeyDeclaration	1
+ForeignKeyDeclaration	0
 RT_select	SELECT 1
 RT_select_full	SELECT DISTINCT a, sum(b) AS s FROM t PREWHERE c > 0 WHERE d = 1 GROUP BY a WITH TOTALS HAVING s > 10 ORDER BY s DESC LIMIT 5 BY a LIMIT 2, 10
 RT_union	SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3

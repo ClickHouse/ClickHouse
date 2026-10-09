@@ -1,7 +1,7 @@
 /// Microbenchmark for IColumn::computeHashInto.
 ///
 /// Measures per-row throughput for the hash-production step used by
-/// hash-partitioning operators (e.g. BufferedShardByHashTransform).
+/// hash-partitioning operators (e.g. ScatterByPartitionTransform).
 ///
 /// Each benchmark name encodes: <ColumnType>_K<K>_B<batch>
 ///   K = number of key columns chained
@@ -17,7 +17,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/MapToRange.h>
 #include <Common/PODArray.h>
-#include <Common/randomSeed.h>
 
 #include <benchmark/benchmark.h>
 
@@ -31,11 +30,13 @@ using namespace DB;
 namespace
 {
 
+constexpr UInt32 rng_seed = 42;
+
 /// ─── Data generators ──────────────────────────────────────────────────────
 
 std::vector<ColumnPtr> makeUInt32Columns(size_t K, size_t n)
 {
-    std::mt19937 rng(randomSeed());
+    std::mt19937 rng(rng_seed); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic benchmark data
     std::vector<ColumnPtr> cols;
     for (size_t k = 0; k < K; ++k)
     {
@@ -49,7 +50,7 @@ std::vector<ColumnPtr> makeUInt32Columns(size_t K, size_t n)
 
 std::vector<ColumnPtr> makeUInt64Columns(size_t K, size_t n)
 {
-    std::mt19937_64 rng(randomSeed());
+    std::mt19937_64 rng(rng_seed); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic benchmark data
     std::vector<ColumnPtr> cols;
     for (size_t k = 0; k < K; ++k)
     {
@@ -63,7 +64,7 @@ std::vector<ColumnPtr> makeUInt64Columns(size_t K, size_t n)
 
 std::vector<ColumnPtr> makeStringColumns(size_t K, size_t n, size_t avg_len = 16)
 {
-    std::mt19937 rng(randomSeed());
+    std::mt19937 rng(rng_seed); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic benchmark data
     std::uniform_int_distribution<size_t> len_dist(4, 2 * avg_len);
     std::vector<ColumnPtr> cols;
     for (size_t k = 0; k < K; ++k)
@@ -82,7 +83,7 @@ std::vector<ColumnPtr> makeStringColumns(size_t K, size_t n, size_t avg_len = 16
 
 std::vector<ColumnPtr> makeNullableUInt32Columns(size_t K, size_t n)
 {
-    std::mt19937 rng(randomSeed());
+    std::mt19937 rng(rng_seed); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic benchmark data
     std::vector<ColumnPtr> cols;
     for (size_t k = 0; k < K; ++k)
     {
@@ -106,7 +107,7 @@ void BM_ComputeHashInto(benchmark::State & state, const std::vector<ColumnPtr> &
     const size_t ncols = cols.size();
     PaddedPODArray<UInt32> hash_buf(n);
 
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         bool initial = true;
         for (size_t k = 0; k < ncols; ++k)
@@ -125,7 +126,7 @@ void BM_ComputeHashInto(benchmark::State & state, const std::vector<ColumnPtr> &
 /// ─── End-to-end hash → selector benchmark ────────────────────────────────
 ///
 /// Captures the full pipeline exactly as executed by
-/// BufferedShardByHashTransform::generateOutputChunks:
+/// ScatterByPartitionTransform::generateOutputChunks:
 /// seed hash_buffer with WEAK_HASH32_INITIAL_VALUE, chain computeHashInto with
 /// initial=false over every key column (0 allocations), then mapToRange SIMD.
 ///
@@ -141,7 +142,7 @@ void BM_HashAndFastrange_New(benchmark::State & state, const std::vector<ColumnP
     PaddedPODArray<UInt32> hash_buf(n);
     PaddedPODArray<UInt64> pids(n); // mapToRange writes a UInt64 selector
     const UInt32 p32 = static_cast<UInt32>(num_shards);
-    for (auto _ : state)
+    for (auto _ [[maybe_unused]] : state)
     {
         std::fill(hash_buf.begin(), hash_buf.end(), WEAK_HASH32_INITIAL_VALUE);
         for (size_t k = 0; k < ncols; ++k)

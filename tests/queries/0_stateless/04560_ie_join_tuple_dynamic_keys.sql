@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Keys whose SQL comparison diverges from the compareAt total order the IEJoin operator
 -- matches by (Tuple, Dynamic, Variant) must not become IEJoin conditions. INNER falls back
 -- to a cross join with a filter and keeps SQL semantics; as a residual conjunct beyond two

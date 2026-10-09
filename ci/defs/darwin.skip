@@ -26,3 +26,12 @@
 
 # Flaky on CI (stuck timeout)
 04319_skip_unavailable_shards_mode_table_missing
+
+# Times out on the macOS CI runner. The cancellation under test works there (the initiator INSERT
+# returns `QUERY_WAS_CANCELLED` at once), but the test then waits for the shard-side (remote) INSERT
+# to appear in `system.query_log`. On the CI runner the cancelled initiator's connection close is not
+# observed promptly, so that query blocks in its socket read until `max_execution_time` (60s on the
+# fast test) instead of ending at once with `ATTEMPT_TO_READ_AFTER_EOF` as it does on Linux and on a
+# local Mac. The verification loop therefore cannot finish before the 60s per-test timeout and the
+# job reports it as hung. Passes in ~1s on the Linux fast test. Re-verify or fix the test's wait.
+05060_distributed_sync_insert_cancel_does_not_wait

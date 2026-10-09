@@ -276,10 +276,10 @@ has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` v
 The order of nested types doesn't matter: Variant(T1, T2) = Variant(T2, T1).
 Nested types can be arbitrary types except Nullable(...), LowCardinality(Nullable(...)) and Variant(...) types.
 
-:::note
+<Note>
 It's not recommended to use similar types as variants (for example different numeric types like `Variant(UInt32, Int64)` or different date types like `Variant(Date, DateTime)`),
 because working with values of such types can lead to ambiguity. By default, creating such `Variant` type will lead to an exception, but can be enabled using setting `allow_suspicious_variant_types`
-:::
+</Note>
 
 ## Creating Variant {#creating-variant}
 
@@ -821,11 +821,11 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
 └────────┴─────────────────────────┘
 ```
 
-:::note
+<Note>
 **Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT,
 TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like
 division by zero or out of memory are raised normally to prevent silently hiding real problems.
-:::
+</Note>
 
 ### Type mismatch behavior {#variant-type-mismatch-behavior}
 

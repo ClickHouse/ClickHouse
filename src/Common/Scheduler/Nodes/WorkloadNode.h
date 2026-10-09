@@ -779,6 +779,7 @@ private:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
+            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }
@@ -805,8 +806,10 @@ private:
         if (request)
         {
             SCHED_DBG("{} -- dequeue(cost={})", this->getPath(), request->cost);
-            incrementDequeued(request->cost);
+            incrementDequeued(request->cost, child_active);
         }
+        else if (!child_active)
+            flushThroughputOnDeactivation();
 
         return {request, child_active};
     }

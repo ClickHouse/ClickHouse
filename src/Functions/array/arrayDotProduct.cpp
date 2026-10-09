@@ -469,9 +469,9 @@ REGISTER_FUNCTION(ArrayDotProduct)
     FunctionDocumentation::Description description = R"(
 Returns the dot product of two arrays.
 
-:::note
+<Note>
 The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "arrayDotProduct(v1, v2)";
     FunctionDocumentation::Arguments arguments = {
@@ -482,10 +482,10 @@ The sizes of the two vectors must be equal. Arrays and Tuples may also contain m
         = {R"(
 The dot product of the two vectors.
 
-:::note
+<Note>
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
 Two `BFloat16` arrays accumulate in and return `Float32` (the same rule as two `Float32` arrays).
-:::
+</Note>
 
 )",
            {"(U)Int*", "Float*", "Decimal"}};

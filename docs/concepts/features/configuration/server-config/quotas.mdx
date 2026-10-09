@@ -44,6 +44,7 @@ Let's look at the section of the 'users.xml' file that defines quotas.
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 By default, the quota tracks resource consumption for each hour, without limiting usage.
@@ -115,6 +116,18 @@ Here are the amounts that can be restricted:
 
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
+<Note>
+**Queries excluded from quota accounting**
+
+To allow quota configuration and usage to be inspected even when a quota is exhausted, `SELECT` queries that exclusively read from one of the following system tables are not charged to quotas and are not subject to query-complexity limits:
+
+- `system.quotas`
+- `system.quota_limits`
+- `system.quota_usage`
+- `system.quotas_usage`
+- `system.one`
+</Note>
+
 Quotas can use the "quota key" feature to report on resources for multiple keys independently. Here is an example of this:
 
 ```xml
@@ -141,6 +154,7 @@ Quotas can use the "quota key" feature to report on resources for multiple keys 
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 You can also key quotas by normalized query hash, so that each distinct query pattern gets its own independent quota bucket. In the XML configuration this is written as `<keyed_by_normalized_query_hash />`:

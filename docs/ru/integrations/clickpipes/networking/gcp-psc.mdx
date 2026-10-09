@@ -1,40 +1,41 @@
 ---
-sidebarTitle: 'GCP Private Service Connect'
-description: 'Установите защищённое соединение между ClickPipes и источником данных, размещённым в GCP, с помощью Private Service Connect (PSC).'
-slug: /integrations/clickpipes/networking/gcp-psc
-title: 'GCP Private Service Connect для ClickPipes'
-doc_type: 'guide'
-keywords: ['gcp psc', 'private service connect', 'безопасность ClickPipes', 'обратная частная конечная точка', 'частная связность']
+title: "GCP Private Service Connect для ClickPipes"
+sidebarTitle: "GCP Private Service Connect"
+icon: "/images/icons/cloud-providers/google-cloud-color.svg"
+description: "Установите защищённое соединение между ClickPipes и источником данных, размещённым в GCP, с помощью Private Service Connect (PSC)."
+slug: "/integrations/clickpipes/networking/gcp-psc"
+doc_type: "guide"
+keywords: ["gcp psc", "private service connect", "безопасность ClickPipes", "обратная частная конечная точка", "частная связность"]
 integration:
-   - support_level: 'core'
-   - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 Вы можете использовать GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect), чтобы установить защищённое соединение между ClickPipes и источником данных, размещённым в GCP. ClickPipes создаёт **обратную частную конечную точку (RPE)** в своей VPC и связывает её с сервисом конечной точки, опубликованным для вашего источника данных, поэтому трафик никогда не передаётся через публичный интернет.
 
-<Note>
-  Подключение через GCP PSC доступно только при развёртывании сервиса ClickPipes в GCP. Перед началом работы проверьте [список регионов GCP, в которых размещён ClickPipes](/ru/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips).
-</Note>
+<Check>
+  ClickPipes поддерживает **межрегиональную** связность PSC через [глобальный доступ](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access). Глобальный доступ требуется для конечных точек, расположенных в регионе, отличном от региона, в котором работает инфраструктура ClickPipes. Подробнее см. в [документации ClickPipes по регионам GCP](/ru/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips).
+</Check>
 
 <div id="supported-patterns">
   ## Поддерживаемые схемы
 </div>
 
-| Схема                           | Когда применяется                                                                                                                                         | Подключение сервиса GCP                                   |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| **Нативный PSC**                | Управляемые сервисы, автоматически публикующие подключение сервиса PSC, например AlloyDB.                                                                 | Автоматически создаётся при включении PSC для экземпляра. |
-| **PSC, принадлежащий producer** | Источники данных, не публикующие подключение сервиса, например Postgres на Compute Engine или управляемый сервис, доступный только по частному IP-адресу. | Создаётся и управляется вами.                             |
+| Схема                           | Когда применяется                                                                                                                                              | Подключение сервиса GCP                                   |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| **Нативный PSC**                | Управляемые сервисы, автоматически публикующие подключение сервиса PSC (*например,* Google Cloud SQL, AlloyDB, Google Cloud Managed Service for Apache Kafka). | Автоматически создаётся при включении PSC для экземпляра. |
+| **PSC, принадлежащий producer** | Источники данных, не публикующие подключение сервиса, например Postgres на Compute Engine или управляемый сервис, доступный только по частному IP-адресу.      | Создаётся и управляется вами.                             |
 
 <div id="prerequisites">
   ## Предварительные требования
 </div>
 
-* Сервис ClickHouse Cloud, размещённый в GCP в [регионе, где доступен ClickPipes](/ru/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips).
+* Сервис ClickHouse Cloud, размещённый в GCP. ClickPipes работает в том же регионе, что и ваш сервис ClickHouse Cloud ([за некоторыми исключениями](/ru/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)).
 * Права IAM для включения PSC для вашего источника и управления подключениями сервиса GCP (`roles/compute.networkAdmin`).
-* **Проект-потребитель ClickPipes**, которому разрешено подключаться к вашему подключению сервиса GCP. В продакшне ClickPipes это `clickpipes-production`.
-* API key/secret ClickHouse Cloud для организации, которой принадлежит сервис (требуется только при настройке через Terraform или API).
+* **Проект-потребитель ClickPipes**, которому разрешено подключаться к вашему подключению сервиса GCP (`clickpipes-production`).
+* Если вы настраиваете ClickPipes программно: ключ API ClickHouse Cloud для организации, которой принадлежит сервис.
 
 <div id="create-rpe">
   ## Создайте обратную частную конечную точку
@@ -97,19 +98,19 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ### Пользовательские имена private DNS
 </div>
 
-Поскольку GCP PSC не передаёт записи DNS, сопоставление пользовательского private DNS необходимо для каждой конечной точки GCP PSC: таким образом вы всегда указываете имя private DNS источника, а ClickPipes разрешает его в статический внутренний IP-адрес конечной точки.
+Поскольку GCP PSC не передаёт записи DNS, для каждой конечной точки GCP PSC необходимо сопоставление пользовательского private DNS, чтобы ClickPipes мог разрешать его в статический внутренний IP-адрес конечной точки.
 
-Применяются стандартные [правила именования пользовательского private DNS в ClickPipes](/ru/integrations/clickpipes/networking/aws-privatelink#custom-private-dns): поддержка подстановочных шаблонов, уникальность среди обратных частных конечных точек сервиса и ограничения для зарезервированных суффиксов одинаковы для всех провайдеров. Подстановочные шаблоны особенно полезны в GCP: одно сопоставление, например `*.<cluster>.<region>.managedkafka.<project>.cloud.goog`, охватывает всех брокеров кластера Managed Kafka.
+Применяются стандартные [правила именования пользовательского private DNS в ClickPipes](/ru/integrations/clickpipes/networking/aws-privatelink#custom-private-dns): поддержка подстановочных шаблонов, уникальность среди обратных частных конечных точек сервиса и ограничения для зарезервированных суффиксов одинаковы для всех провайдеров. Подстановочные шаблоны особенно полезны: например, одно сопоставление `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` охватывает всех брокеров кластера Managed Kafka.
 
 Для GCP PSC используется только значение `privateDnsName` сопоставления. Поле `internalDNSName` не поддерживается, поскольку конечная точка PSC предоставляет статический IP-адрес без DNS-имени, к которому можно привязаться: сопоставления всегда разрешаются в этот IP-адрес.
 
 <div id="producer-owned">
-  ## Подтверждение подключений, принадлежащих producer
+  ## Подтверждение подключений для PSC, принадлежащего producer
 </div>
 
-Для PSC, принадлежащего producer, добавьте проект-потребитель ClickPipes в список автоматического принятия подключения сервиса GCP, чтобы подключение принималось автоматически. В противном случае RPE останется в состоянии `PendingAcceptance`, пока вы не подтвердите его вручную.
+Для PSC, принадлежащего producer, добавьте проект-потребитель ClickPipes (`clickpipes-production`) в список автоматического принятия подключения сервиса GCP, чтобы подключение принималось автоматически. Если этого не сделать, RPE останется в состоянии `PendingAcceptance`, пока вы не подтвердите его вручную.
 
-Чтобы принять подключение, список разрешённых consumer для подключения сервиса GCP должен содержать URI конечной точки с числовым ID (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`). Это значение `endpointWithId` ожидающего подключения в подключении сервиса GCP — выполните его описание, чтобы найти:
+Чтобы принять подключение, список потребителей подключения сервиса GCP должен содержать URI конечной точки с числовым ID (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`). Чтобы получить значение `endpointWithId` для ожидающего подключения к подключению сервиса GCP, выполните:
 
 ```bash
 gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
@@ -117,7 +118,11 @@ gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
   --format='json(connectedEndpoints)'
 ```
 
-Возьмите `endpointWithId` записи со значением `PENDING` в поле `status`, удалите префикс `https://www.googleapis.com/compute/beta/` и передайте результат в `--consumer-accept-list`:
+Возьмите `endpointWithId` записи, у которой `status` имеет значение `PENDING`, удалите префикс `https://www.googleapis.com/compute/beta/` и передайте результат в `--consumer-accept-list`:
+
+<Danger>
+  `--consumer-accept-list` перезаписывает список разрешённых подключений, а не добавляет в него новый проект-потребитель. Если подключение сервиса GCP уже разрешает доступ другим проектам или конечным точкам, передайте их все в той же команде, иначе неуказанные потеряют доступ.
+</Danger>
 
 ```bash
 gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
@@ -127,36 +132,27 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 ```
 
 <Warning>
-  Не используйте здесь `endpoint_id` из ответа ClickPipes API/Terraform: это *имя* правила перенаправления, а не числовой идентификатор, требуемый GCP, поэтому список разрешённых подключений не будет соответствовать. Всегда используйте числовой идентификатор из ожидающего `endpointWithId` подключения сервиса GCP.
-
-  Параметр `--consumer-accept-list` также перезаписывает список разрешённых подключений, а не дополняет его. Если подключение сервиса GCP уже принимает другие проекты или конечные точки, укажите их все в той же команде, иначе те, которые вы не укажете, потеряют доступ.
+  Не используйте здесь `endpoint_id` из ответа ClickPipes API/Terraform: это *имя* правила перенаправления, а не числовой ID, необходимый GCP, поэтому он не будет соответствовать списку разрешённых подключений. Всегда берите числовой ID из ожидающего `endpointWithId` подключения сервиса GCP.
 </Warning>
 
 <div id="managing-rpes">
   ## Управление обратными частными конечными точками
 </div>
 
-Вы можете управлять существующими обратными частными конечными точками в настройках сервиса ClickHouse Cloud:
+Существующими обратными частными конечными точками можно управлять в настройках сервиса ClickHouse Cloud:
 
-1. На боковой панели найдите кнопку `Settings` и нажмите её.
+1. На боковой панели консоли ClickHouse Cloud перейдите в раздел `Settings`.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="Настройки ClickHouse Cloud" size="lg" border />
+В разделе `ClickPipe reverse private endpoints` нажмите `Reverse private endpoints`.
 
-2. В разделе `ClickPipe reverse private endpoints` нажмите `Reverse private endpoints`.
+Подробная информация об обратной частной конечной точке отображается в выдвижной панели. Здесь можно удалить RPE: нажмите `×` рядом с конечной точкой и подтвердите удаление. Удаление **необратимо** и нарушит работу всех ClickPipe, использующих эту конечную точку.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="Настройки ClickHouse Cloud" size="md" border />
+Чтобы изменить сопоставления пользовательского private DNS для конечной точки, используйте [Cloud API](/ru/integrations/clickpipes/programmatic-access/openapi) или [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform). При обновлении заменяется весь список сопоставлений, а не добавляются новые.
 
-   Подробная информация об обратной частной конечной точке отображается в выдвижной панели.
-
-   В этом представлении доступен только просмотр, за исключением удаления: нажмите `×` у конечной точки и подтвердите удаление. Удаление необратимо и нарушает работу всех ClickPipe, которые в данный момент используют эту конечную точку.
-
-   Чтобы изменить сопоставления пользовательского private DNS для конечной точки, используйте API или Terraform. При обновлении заменяется весь список сопоставлений, а не добавляются новые.
-
-Если для конечной точки отображается `Rejected` или `Failed`, прочитайте сообщение под её статусом: оно позволяет отличить подключение, отклонённое производителем, от закрытого подключения или подключения, требующего внимания. В обоих случаях обычно список разрешённых проектов подключения сервиса GCP не содержит проекта-потребителя ClickPipes. Чтобы увидеть статус конечной точки, сообщаемый GCP, выполните команду `describe` для `connectedEndpoints` вашего подключения сервиса GCP.
+Если для конечной точки отображается статус `Rejected` или `Failed`, прочитайте сообщение под статусом: оно позволяет отличить подключение, отклонённое producer, от подключения, которое было закрыто или требует внимания. В обоих случаях это обычно означает, что список разрешённых подключений подключения сервиса GCP не включает проект-потребитель ClickPipes. Чтобы увидеть статус конечной точки, сообщаемый GCP, опишите `connectedEndpoints` для подключения сервиса GCP.
 
 <div id="limitations">
-  ## Ограничения
+  ## Известные ограничения
 </div>
 
-* Конечная точка RPE и подключение сервиса GCP должны находиться в **одном регионе GCP**. Межрегиональный PSC через [глобальный доступ](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) пока не поддерживается. Если ваш источник находится в другом регионе, используйте [SSH-туннелирование](/ru/integrations/clickpipes/networking/index#ssh-tunneling).
 * Подключение сервиса GCP PSC может быть закреплено только за одним сервисом ClickHouse Cloud одновременно; его нельзя использовать для нескольких сервисов. Чтобы перенести подключение сервиса GCP в другой сервис, [обратитесь в службу поддержки ClickHouse](https://clickhouse.com/support/program), чтобы снять существующее закрепление.

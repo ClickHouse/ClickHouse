@@ -341,6 +341,15 @@ void ColumnsSubstreams::internColumnEntries(const std::function<ColumnEntryPtr(c
         entry = intern(entry);
 }
 
+std::vector<String> ColumnsSubstreams::getColumnNames() const
+{
+    std::vector<String> columns;
+    columns.reserve(columns_substreams.size());
+    for (const auto & entry : columns_substreams)
+        columns.push_back(entry->column);
+    return columns;
+}
+
 void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) const
 {
     if (columns.size() != columns_substreams.size())

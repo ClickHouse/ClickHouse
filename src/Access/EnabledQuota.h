@@ -73,6 +73,10 @@ public:
     void checkExceeded() const;
     void checkExceeded(QuotaType quota_type) const;
 
+    /// Throws if a governing quota is keyed by `client_key` and this context supplied none. Authentication
+    /// is metered before a client key can exist, so only the query path calls this.
+    void checkClientKeySupplied() const;
+
     /// Same as `checkExceeded(quota_type)`, but for `NORMALIZED_QUERY_HASH` quotas the check is
     /// performed against the intervals resolved for `normalized_query_hash`.
     void checkExceededForQuery(UInt64 normalized_query_hash, QuotaType quota_type) const;
@@ -138,6 +142,11 @@ private:
 
         /// Non-null only for `NORMALIZED_QUERY_HASH` quotas: resolves intervals per query hash.
         IntervalResolver interval_resolver;
+
+        /// This quota is keyed by `client_key` and the context supplied none, so it cannot be metered.
+        /// Published with the set, so it is refreshed in place whenever quota definitions change;
+        /// see `checkClientKeySupplied`.
+        bool requires_client_key = false;
 
         /// Cache of resolved intervals per normalized query hash.
         mutable std::mutex resolved_intervals_mutex;

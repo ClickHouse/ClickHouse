@@ -197,6 +197,8 @@ template <bool need_offset>
 class FindResultImpl<void, need_offset> : public FindResultImplBase, public FindResultImplOffsetBase<need_offset>
 {
 public:
+    FindResultImpl() : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0) {}
+
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 

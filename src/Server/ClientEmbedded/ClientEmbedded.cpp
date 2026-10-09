@@ -59,12 +59,11 @@ void ClientEmbedded::printHelpMessage(const OptionsDescription & options_descrip
 }
 
 
-void ClientEmbedded::processError(std::string_view) const
+void ClientEmbedded::processError(std::string_view query) const
 {
-    if (ignore_error)
-        return;
-
-    if (is_interactive)
+    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
+    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
+    if (is_interactive || ignore_error)
     {
         String message;
         if (server_exception)
@@ -76,7 +75,10 @@ void ClientEmbedded::processError(std::string_view) const
             message = client_exception->message();
         }
 
-        error_stream << fmt::format("Received exception\n{}\n\n", message);
+        if (is_interactive)
+            error_stream << fmt::format("Received exception\n{}\n\n", message);
+        else
+            error_stream << fmt::format("Received exception\n{}\n(query: {})\n", message, query);
     }
     else
     {

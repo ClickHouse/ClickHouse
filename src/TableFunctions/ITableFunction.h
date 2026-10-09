@@ -83,6 +83,13 @@ public:
 
     virtual bool canBeUsedToCreateTable() const { return true; }
 
+    /// Whether the storage this table function returns is chosen by the current user's grants
+    /// (e.g. `viewIfPermitted`). Such a function cannot appear anywhere in a persisted table
+    /// definition, not even nested in an argument of another table function such as `remote`:
+    /// the persisted definition is later resolved with no user or under the connection's
+    /// credentials, so the branch that must depend on the reader's grants cannot be decided.
+    virtual bool dependsOnCurrentUserGrants() const { return false; }
+
     /// The name of the named collection the table function arguments were resolved from, or an empty
     /// string. When a permanent table is created from the table function (`CREATE TABLE ... AS f(...)`),
     /// the table is registered as a dependency of the collection so that `DROP NAMED COLLECTION` is
@@ -122,6 +129,9 @@ public:
         return empty;
     }
 
+    /// Check the `TABLE ENGINE` grant, for engines that opt in via `requiresTableEngineGrant`.
+    void checkEngineAccess(ContextPtr context) const;
+
     virtual ~ITableFunction() = default;
 
 protected:
@@ -139,6 +149,11 @@ private:
     /// This name is registered in the storage factory and used
     /// to check privileges.
     virtual const char * getStorageEngineName() const = 0;
+
+    /// Opt in only for engines exposing a server-side capability with no other access gate
+    /// (`Executable` runs a user-provided script). Wrapper engines such as `Merge` or `Loop` are
+    /// gated by their delegated data access, source engines by `checkSourceAccess`.
+    virtual bool requiresTableEngineGrant() const { return false; }
     /// The database storage name is used to check privileges.
     /// For example for s3Cluster the database storage name is S3Cluster, and we need to check
     /// privileges as if it was S3.

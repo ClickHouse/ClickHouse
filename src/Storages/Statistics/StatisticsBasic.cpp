@@ -78,7 +78,7 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
     : IStatistics(description)
     , data_type(removeLowCardinalityAndNullable(removeNullable(data_type_)))
 {
-    tracks_numeric = data_type->isValueRepresentedByNumber();
+    tracks_numeric = canStatisticsTrackMinMax(data_type);
     tracks_string = isStringOrFixedString(data_type);
 
     /// Compute the column-level default once so `estimateEqual` can compare against the same
@@ -107,10 +107,8 @@ void StatisticsBasic::build(const ColumnPtr & column)
         Field max_field;
         column->getExtremes(min_field, max_field, 0, column_size);
 
-        if (!min_field.isNull() && (min.isNull() || min_field < min))
-            min = min_field;
-        if (!max_field.isNull() && (max.isNull() || max_field > max))
-            max = max_field;
+        StatisticsUtils::updateMin(min, min_field);
+        StatisticsUtils::updateMax(max, max_field);
     }
 
     if (tracks_string)
@@ -127,10 +125,8 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
 
     if (tracks_numeric)
     {
-        if (!other->min.isNull() && (min.isNull() || other->min < min))
-            min = other->min;
-        if (!other->max.isNull() && (max.isNull() || other->max > max))
-            max = other->max;
+        StatisticsUtils::updateMin(min, other->min);
+        StatisticsUtils::updateMax(max, other->max);
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;

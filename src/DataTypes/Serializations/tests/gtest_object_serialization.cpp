@@ -107,7 +107,7 @@ TEST(ObjectSerialization, JSONSerialization)
 
 }
 
-/// SharedDataBucketsSplitter::flattenBucket must densify each shared-data path into a column that has one
+/// flattenSharedDataPathsForBucket must densify each shared-data path into a column that has one
 /// entry per row (the stored value where the path is present, a default where it is absent), for an
 /// arbitrary subrange [start, end). This exercises rows with different, overlapping and missing paths,
 /// empty rows and trailing gaps -- the exact shape the merge/serialization path produces.
@@ -121,8 +121,7 @@ void checkFlattenedSharedData(
     size_t end,
     const std::map<String, DensePath> & expected)
 {
-    SharedDataBucketsSplitter splitter(*col_object.getSharedDataPtr(), start, end, 1);
-    auto bucket = splitter.flattenBucket(0, col_object.getDynamicType());
+    auto bucket = flattenSharedDataPathsForBucket(*col_object.getSharedDataPtr(), start, end, col_object.getDynamicType(), 0, 1);
 
     std::map<String, ColumnPtr> path_to_column;
     for (const auto & [path, column] : bucket)
@@ -335,7 +334,7 @@ TEST(ObjectSerialization, InvalidNumberOfSharedDataBuckets)
 
 /// The per-granule `num_paths` count in the `ADVANCED` (V3) shared-data structure stream is another
 /// raw count read from a possibly-untrusted on-disk part and used to size `all_paths` before any path
-/// bytes are read (`SerializationObjectSharedData::deserializeStructureGranulePrefix`). Unlike the
+/// bytes are read (`SerializationObjectSharedData::deserializeChunkStructurePrefix`). Unlike the
 /// outer-prefix counts (covered above and by `04350_json_native_too_many_paths`), this one is reached
 /// only when reading a MergeTree part, not through the `Native` input format, so it needs its own
 /// coverage. A `SIZE_MAX`-family count must be rejected up front as `INCORRECT_DATA` "too many paths";
