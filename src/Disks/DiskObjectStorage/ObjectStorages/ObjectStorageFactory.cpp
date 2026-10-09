@@ -218,11 +218,17 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         if (run_remote_host_filter_check)
         {
-            const auto & remote_host_filter = context->getRemoteHostFilter();
-            remote_host_filter.checkURL(Poco::URI(params.getConnectionURL()));
+            auto check_host = [&](const String & url)
+            {
+                Poco::URI uri(url);
+                /// The query can carry a SAS token, which the error must not quote.
+                uri.setPathEtc("");
+                context->getRemoteHostFilter().checkURL(uri);
+            };
+            check_host(params.getConnectionURL());
             /// Writes to an ADLS Gen2 (OneLake) endpoint go to another host.
             if (isAdlsGen2Endpoint(params.endpoint))
-                remote_host_filter.checkURL(Poco::URI(getAdlsGen2Url(params.endpoint, params.auth_method)));
+                check_host(getAdlsGen2Url(params.endpoint, params.auth_method));
         }
 
         return std::make_shared<AzureObjectStorage>(
