@@ -51,8 +51,7 @@ SecretArgumentsResult SecretArgumentsRegistry::find(ASTFunction::Kind kind, cons
                 spec = FunctionFactory::instance().tryGetSecretArgumentsSpec(name);
                 generic_rules = false;
             }
-            /// Every table function has a spec, so an unknown function has no secrets, unless it differs only in case from one
-            /// that has them (`S3(...)` for `s3(...)`): that call is rejected after the statement is logged, so fail closed.
+            /// Every table function has a spec, so an unknown function has no secrets, unless it is one with secrets in the wrong case.
             if (!spec && !differsOnlyInCaseFromFunctionWithSecrets(name))
                 return {};
             break;
