@@ -29,6 +29,9 @@ public:
     /// The preprocessor expression as an AST reading from an identifier named `col_name`, to splice into a larger expression.
     ASTPtr getExpressionAST(const String & col_name) const;
 
+    /// The preprocessor expression over an input column `col_name` of type `col_type`, to merge into a larger DAG.
+    ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
+
     bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
 
 private:
