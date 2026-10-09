@@ -85,24 +85,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-static Names collectColumnAliases(const ASTExpressionList & column_aliases)
-{
-    Names column_alias_names;
-    column_alias_names.reserve(column_aliases.children.size());
-
-    std::unordered_set<std::string> seen_aliases;
-    for (const auto & column_alias : column_aliases.children)
-    {
-        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
-        if (!seen_aliases.insert(alias_name).second)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Duplicate column alias '{}' in table expression column list", alias_name);
-        column_alias_names.push_back(alias_name);
-    }
-
-    return column_alias_names;
-}
-
 namespace
 {
 
@@ -391,7 +373,20 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
 
     // Apply the override aliases to the projection nodes
     if (aliases)
-        current_query_tree->setProjectionAliasesToOverride(collectColumnAliases(aliases->as<ASTExpressionList &>()));
+    {
+        // Collect the aliases into a vector of strings
+        Names collected_aliases;
+        auto & override_aliases_children = aliases->as<ASTExpressionList &>().children;
+        collected_aliases.reserve(override_aliases_children.size());
+
+        for (const auto & child : override_aliases_children)
+        {
+            const auto & alias_ast = child->as<ASTIdentifier &>();
+            collected_aliases.push_back(alias_ast.name());
+        }
+
+        current_query_tree->setProjectionAliasesToOverride(collected_aliases);
+    }
 
     auto prewhere_expression = select_query_typed.prewhere();
     if (prewhere_expression)
@@ -995,7 +990,19 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 /// Apply column aliases from AS alias(col1, col2, ...) syntax
                 if (table_expression.column_aliases)
                 {
-                    Names column_alias_names = collectColumnAliases(table_expression.column_aliases->as<ASTExpressionList &>());
+                    const auto & column_aliases_list = table_expression.column_aliases->as<ASTExpressionList &>();
+                    Names column_alias_names;
+                    column_alias_names.reserve(column_aliases_list.children.size());
+
+                    std::unordered_set<std::string> seen_aliases;
+                    for (const auto & column_alias : column_aliases_list.children)
+                    {
+                        const auto & alias_name = column_alias->as<ASTIdentifier &>().name();
+                        if (!seen_aliases.insert(alias_name).second)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Duplicate column alias '{}' in table expression column list", alias_name);
+                        column_alias_names.push_back(alias_name);
+                    }
 
                     if (auto * query_node = node->as<QueryNode>())
                     {
