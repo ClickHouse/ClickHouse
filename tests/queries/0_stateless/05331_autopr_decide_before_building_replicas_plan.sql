@@ -2,7 +2,7 @@
 -- without building the plan with parallel replicas at all. Building that plan is the expensive half of the
 -- optimization, and on a declined query it used to be built only to be discarded.
 --
--- `ParallelReplicasPlanNotBuilt` fires only on that path, so it separates "declined after building the
+-- `AutomaticParallelReplicasDecidedWithoutBuildingPlan` fires only on that path, so it separates "declined after building the
 -- plan" from "declined without building it" - which is the point of the change and is otherwise invisible
 -- from SQL.
 
@@ -47,7 +47,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     log_comment,
-    ProfileEvents['ParallelReplicasPlanNotBuilt'] > 0 AS decided_without_building_the_plan,
+    ProfileEvents['AutomaticParallelReplicasDecidedWithoutBuildingPlan'] > 0 AS decided_without_building_the_plan,
     ProfileEvents['ParallelReplicasUsedCount'] > 0 AS used_parallel_replicas
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - toIntervalMinute(15)

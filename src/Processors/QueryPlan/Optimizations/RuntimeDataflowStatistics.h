@@ -34,11 +34,6 @@ struct RuntimeDataflowStatistics
     size_t input_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
-    /// The rows the tables below the boundary hold. The decision taken before a plan with parallel replicas
-    /// exists cannot tell which read the replicas would coordinate, so it cannot compare
-    /// `total_rows_to_read` against anything; this is a quantity it can recompute without knowing, so it is
-    /// recorded here as its drift reference.
-    size_t table_rows_below_boundary = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -55,6 +50,7 @@ public:
 
     RuntimeDataflowStatisticsCache()
         : stats_cache(std::make_shared<Cache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
+        , boundary_cache(std::make_shared<BoundaryCache>(CurrentMetrics::end(), CurrentMetrics::end(), 1024 * 1024 * 1024, 0))
     {
     }
 
@@ -62,8 +58,17 @@ public:
 
     void update(size_t key, RuntimeDataflowStatistics stats);
 
+    /// The key of the boundary an earlier execution of the plan with this root matched, so that a later one
+    /// can find its statistics without building a plan with parallel replicas to match against.
+    std::optional<UInt64> getBoundaryHash(UInt64 root_hash) const;
+
+    void setBoundaryHash(UInt64 root_hash, UInt64 boundary_hash);
+
 private:
+    using BoundaryCache = DB::CacheBase<UInt64, UInt64>;
+
     CachePtr stats_cache;
+    std::shared_ptr<BoundaryCache> boundary_cache;
 };
 
 RuntimeDataflowStatisticsCache & getRuntimeDataflowStatisticsCache();
@@ -108,10 +113,9 @@ class RuntimeDataflowStatisticsCacheUpdater
     };
 
 public:
-    RuntimeDataflowStatisticsCacheUpdater(size_t cache_key_, size_t total_rows_to_read_, size_t table_rows_below_boundary_ = 0)
+    RuntimeDataflowStatisticsCacheUpdater(size_t cache_key_, size_t total_rows_to_read_)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
-        , table_rows_below_boundary(table_rows_below_boundary_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsCacheUpdater cannot be zero");
@@ -175,7 +179,6 @@ private:
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
-    const size_t table_rows_below_boundary = 0;
 
     std::atomic_bool unsupported_case{false};
 

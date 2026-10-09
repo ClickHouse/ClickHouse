@@ -1407,7 +1407,6 @@ The server successfully detected this situation and will download merged part fr
     M(InterfacePostgreSQLReceiveBytes, "Number of bytes received through PostgreSQL interfaces", ValueType::Bytes) \
     \
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas", ValueType::Number) \
-    M(ParallelReplicasPlanNotBuilt, "Number of queries where automatic parallel replicas decided against distributing the query from the statistics of a previous execution, so no plan with parallel replicas was built at all. Counts the planning work this saves: building that plan re-derives the query tree and optimizes a second plan, and on a declined query it was discarded unused.", ValueType::Number) \
     M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas", ValueType::Number) \
     M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas", ValueType::Number) \
     \
@@ -1696,6 +1695,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
     \
     M(AutomaticParallelReplicasProbePlansBuilt, "Number of times automatic parallel replicas built a candidate plan with parallel replicas to compare against the single-node plan. Not every such plan is used: it is built to be costed, and is discarded when the single-node plan wins", ValueType::Number) \
+    M(AutomaticParallelReplicasDecidedWithoutBuildingPlan, "Number of times automatic parallel replicas decided against parallel replicas from the statistics of an earlier execution, without building a candidate plan with parallel replicas to cost", ValueType::Number) \
     \
     M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
     M(DistributedConnectionConnectCount, "Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.", ValueType::Number) \

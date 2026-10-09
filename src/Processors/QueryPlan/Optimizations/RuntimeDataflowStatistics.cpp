@@ -32,6 +32,18 @@ std::optional<RuntimeDataflowStatisticsCache::Entry> RuntimeDataflowStatisticsCa
     return std::nullopt;
 }
 
+std::optional<UInt64> RuntimeDataflowStatisticsCache::getBoundaryHash(UInt64 root_hash) const
+{
+    if (const auto boundary_hash = boundary_cache->get(root_hash))
+        return *boundary_hash;
+    return std::nullopt;
+}
+
+void RuntimeDataflowStatisticsCache::setBoundaryHash(UInt64 root_hash, UInt64 boundary_hash)
+{
+    boundary_cache->set(root_hash, std::make_shared<UInt64>(boundary_hash));
+}
+
 void RuntimeDataflowStatisticsCache::update(size_t key, RuntimeDataflowStatistics stats)
 {
     ProfileEvents::increment(ProfileEvents::RuntimeDataflowStatisticsInputBytes, stats.input_bytes);
@@ -60,7 +72,7 @@ RuntimeDataflowStatisticsCacheUpdater::~RuntimeDataflowStatisticsCacheUpdater()
             stats.elapsed_microseconds);
     };
 
-    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read, .table_rows_below_boundary = table_rows_below_boundary};
+    RuntimeDataflowStatistics res{.total_rows_to_read = total_rows_to_read};
     for (size_t i = 0; i < InputStatisticsType::MaxInputType; ++i)
     {
         const auto & stats = input_bytes_statistics[i];
