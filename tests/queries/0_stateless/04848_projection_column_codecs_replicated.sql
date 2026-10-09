@@ -48,14 +48,19 @@ CREATE TABLE t_projection_codecs_r1
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04848_projection_codecs', 'r1') ORDER BY k;
 
--- Equivalent codec spellings must pass the replicated metadata comparison.
+-- Replicas must use the same codec declaration for each projection column.
 CREATE TABLE t_projection_codecs_r2
 (
     k UInt64,
     v UInt64,
-    PROJECTION p (v CODEC(Delta, ZSTD(1))) AS (SELECT k, v ORDER BY k)
+    PROJECTION p (v CODEC(Delta, ZSTD)) AS (SELECT k, v ORDER BY k)
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04848_projection_codecs', 'r2') ORDER BY k;
+
+-- Equivalent writer codecs with different declarations must not pass metadata comparison.
+CREATE TABLE t_projection_codecs_r3
+    (k UInt64, v UInt64, PROJECTION p (v CODEC(Delta, ZSTD(1))) AS (SELECT k, v ORDER BY k))
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/04848_projection_codecs', 'r3') ORDER BY k; -- { serverError METADATA_MISMATCH }
 
 -- The omitted Delta width must retain its intent across a later output-type change.
 CREATE TABLE t_projection_codecs_r3

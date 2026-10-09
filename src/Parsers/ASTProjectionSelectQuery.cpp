@@ -242,7 +242,7 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
 
     /// `formatImpl` always formats the SELECT expression list and unconditionally
     /// casts it to `ASTExpressionList`, so it must be present and of the right type.
-    auto select_child = r.readCommaSeparatedExpressionListChild("select", /* require_nonempty = */ true);
+    auto select_child = r.readCommaSeparatedExpressionListChild("select", /* require_nonempty = */ true, /* screen_expressions = */ true);
     if (!select_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'select' during AST JSON deserialization");
     setExpression(Expression::SELECT, std::move(select_child));
