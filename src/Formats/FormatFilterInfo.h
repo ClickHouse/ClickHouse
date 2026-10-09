@@ -20,6 +20,10 @@ using FilterDAGInfoPtr = std::shared_ptr<FilterDAGInfo>;
 class ITopKThresholdTracker;
 using TopKThresholdTrackerPtr = std::shared_ptr<ITopKThresholdTracker>;
 
+/// The settings of the file format readers that change which row groups a read prunes or which
+/// physical column it binds a column to. They are folded into the query condition cache keys of files.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings);
+
 /// TopN dynamic filtering (`ORDER BY x LIMIT n`, see `tryOptimizeTopK`): the format may drop rows
 /// that cannot enter the query's top-K, and skip whole row groups / pages whose statistics prove
 /// the same, by comparing the sort column against the running threshold of the top-K heap

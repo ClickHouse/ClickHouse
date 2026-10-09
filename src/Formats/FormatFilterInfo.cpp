@@ -41,9 +41,6 @@ namespace Setting
     extern const SettingsBool input_format_arrow_allow_missing_columns;
 }
 
-namespace
-{
-
 /// The entries for files are written from the row groups the reader pruned, not from evaluating the
 /// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
 /// still has rows the query returns when it is not pruned, so a read with another set of enabled
@@ -66,8 +63,6 @@ UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
     hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
     return hash.get64();
-}
-
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
