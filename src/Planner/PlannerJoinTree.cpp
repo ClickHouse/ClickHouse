@@ -926,7 +926,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
     }
     else if (!table_expression_data.hasColumnReferencedOutsideIndexHint())
     {
-        /// Read only for `indexHint`, which never evaluates its arguments; a MergeTree source synthesizes a column instead.
+        /// Read only for `indexHint`, which never evaluates its arguments.
         for (const auto & column_name : columns_names)
             table_expression_data.addRowCountOnlyColumnIdentifier(table_expression_data.getColumnIdentifierOrThrow(column_name));
     }
