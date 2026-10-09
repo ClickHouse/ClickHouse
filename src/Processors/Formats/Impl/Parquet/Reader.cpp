@@ -1,5 +1,6 @@
 
 #include <Common/logger_useful.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -1883,7 +1884,7 @@ bool Reader::BloomFilterLookup::probe(const std::vector<uint64_t> & hashes)
         bool miss = false;
         for (size_t i = 0; i < 8; ++i)
         {
-            size_t bit_idx = (UInt32(h) * salt[i]) >> 27;
+            size_t bit_idx = common::mulIgnoreOverflow(UInt32(h), salt[i]) >> 27;
             UInt32 word = unalignedLoad<UInt32>(data.data() + i * 4);
             if (!(word & (1u << bit_idx)))
             {
