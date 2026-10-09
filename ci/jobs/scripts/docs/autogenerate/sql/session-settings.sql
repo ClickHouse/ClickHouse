@@ -82,7 +82,10 @@ WITH
             ''
         ),
         if(rows != '', printf('\n\n<VersionHistory rows={%s}/>\n\n', rows), ''),
-        replaceOne(trim(BOTH '\\n' FROM description), ' and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)',''))
+        -- `system.settings` already trims the newlines surrounding a description, so no
+        -- trimming is needed here. `trim(BOTH ...)` takes a set of characters rather than a
+        -- suffix, so trimming '\n' would strip trailing `n` and `\` from the text itself.
+        replaceOne(description, ' and [MaterializedMySQL](../../engines/database-engines/materialized-mysql.md)',''))
     FROM settings_with_change_history
     LEFT JOIN setting_aliases sa ON settings_with_change_history.name = sa.alias_for
     ORDER BY name

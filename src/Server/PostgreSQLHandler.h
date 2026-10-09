@@ -81,6 +81,11 @@ private:
     /// Discard extended-query messages through the next `Sync`.
     bool ignore_until_sync = false;
 
+    /// True between the first Parse/Bind/Describe/Execute/Close of an extended-query
+    /// cycle and the `Sync`, or the simple `Query`, that ends it. Outside such a cycle
+    /// no `Sync` is coming.
+    bool in_extended_query_cycle = false;
+
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
@@ -127,6 +132,15 @@ private:
     void processExecuteQuery();
     void processCloseQuery();
     void processSyncQuery();
+
+    /// Reports a failed statement to the client with `ErrorResponse`. Must be called from within a
+    /// `catch` block: a failed write to the client (for example, it went away in the middle of the
+    /// result) cancels `out`, and nothing can be written into a canceled buffer any more. There is
+    /// nobody to deliver `ErrorResponse` to in that case, so the exception being handled is
+    /// rethrown to tear the connection down instead.
+    void sendErrorResponseOrRethrow(const Exception & e);
+
+    void recoverFromRejectedMessage();
 
     std::function<void(const Progress&)> createProgressCallback(
         ContextMutablePtr query_context,

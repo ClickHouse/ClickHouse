@@ -167,10 +167,17 @@ void CachedObjectStorage::removeObjectIfExists(const StoredObject & object)
     removeCacheIfExists(object.remote_path);
 }
 
-void CachedObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void CachedObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     for (const auto & object : objects)
+    {
         removeCacheIfExists(object.remote_path);
+
+        if (successful_objects)
+            successful_objects->emplace_back(object);
+    }
 }
 
 void CachedObjectStorage::copyObjectToAnotherObjectStorage( // NOLINT
@@ -219,6 +226,13 @@ void CachedObjectStorage::applyNewSettings(
     ContextPtr context, const ApplyNewSettingsOptions & options)
 {
     object_storage->applyNewSettings(config, config_prefix, context, options);
+}
+
+ObjectStoragePtr CachedObjectStorage::cloneImpl() const
+{
+    /// The cache object itself is intentionally shared: caches are global objects keyed by name,
+    /// so the copy keeps hitting the same cached data as the original.
+    return std::make_shared<CachedObjectStorage>(object_storage->clone(), cache, cache_settings, cache_config_name);
 }
 
 String CachedObjectStorage::getObjectsNamespace() const

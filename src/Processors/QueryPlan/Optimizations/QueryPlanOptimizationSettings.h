@@ -4,6 +4,7 @@
 #include <Core/SettingsEnums.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/FutureSetSettings.h>
 #include <QueryPipeline/SizeLimits.h>
 
 #include <chrono>
@@ -21,6 +22,8 @@ struct BuiltSetsByHash;
 using BuiltSetsByHashPtr = std::shared_ptr<BuiltSetsByHash>;
 
 class QueryPlan;
+
+struct DistributedPlanLocalObject;
 
 struct QueryPlanOptimizationSettings
 {
@@ -58,13 +61,16 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool filter_push_down_below_limit_by;
     bool propagate_predicate_across_join;
     bool fuse_filter_into_array_join;
     bool lower_array_join_function;
+    bool legacy_array_join_function_nondeterministic_evaluation;
     bool enable_lazy_columns_replication;
     bool short_circuit_function_evaluation_disabled;
     bool push_down_volume_reducing_functions;
     bool convert_outer_join_to_inner_join;
+    bool convert_outer_join_to_inner_join_transitively;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
     bool reuse_storage_ordering_for_window_functions;
@@ -86,7 +92,10 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool enable_group_by_top_k_dynamic_filtering;
+    bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
+    bool top_k_optimization_shared_boundary = true;
 
     /// If we can swap probe/build tables in join
     /// true/false - always/never swap
@@ -98,11 +107,16 @@ struct QueryPlanOptimizationSettings
     UInt64 query_plan_optimize_join_order_max_searched_plans;
     /// When non-zero, randomize statistics for join reordering using this value as seed
     UInt64 query_plan_optimize_join_order_randomize = 0;
-    /// Conflict detectors for join reordering validity in the
-    /// DPsub algorithm, instead of the default per-relation ON-clause restriction. CD-A is correct
-    /// but incomplete; CD-C is correct and complete. CD-C takes precedence when both are set.
-    bool query_plan_optimize_join_order_use_cd_a_conflict_detector = false;
-    bool query_plan_optimize_join_order_use_cd_c_conflict_detector = false;
+    /// Conflict detector deciding join reordering validity in the DPsub algorithm, instead of the
+    /// default per-relation ON-clause restriction. CD-A is correct but incomplete; CD-C is correct
+    /// and complete.
+    JoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector = JoinOrderConflictDetector::NONE;
+
+    /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
+    /// defaults (false). The conflict detectors' null-rejection analysis only
+    /// unlocks reorderings when the padded value is actually NULL, so with
+    /// `join_use_nulls = 0` no relation is treated as null-rejecting.
+    bool join_use_nulls = false;
 
     /// Infer transitive equi-join predicates (e.g., A.x=B.x AND B.x=C.x implies A.x=C.x)
     bool enable_join_transitive_predicates = false;
@@ -127,14 +141,20 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
+    bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
 
     bool make_distributed_plan = false;
+    /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the
+    /// query context's, read by the fallback decision. Null outside a query.
+    std::shared_ptr<const DistributedPlanLocalObject> distributed_plan_local_object;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
+    bool distributed_plan_fallback_to_local_execution
+        = true; /// Fall back to local execution instead of throwing when the plan cannot be distributed
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
     UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
@@ -156,6 +176,8 @@ struct QueryPlanOptimizationSettings
 
     bool optimize_use_implicit_projections;
     bool force_use_projection;
+    /// `EXPLAIN WHATIF` plans cannot see the projections that it weighs, so a forced projection must not fail them
+    bool skip_forced_projection_check = false;
     String force_projection_name;
 
     /// Bounds the cost of content-hashing IN-clause sets in projection matchers (today: aggregate
@@ -199,7 +221,7 @@ struct QueryPlanOptimizationSettings
     /// Setting needed for Sets (JOIN -> IN optimization)
 
     SizeLimits network_transfer_limits;
-    size_t use_index_for_in_with_subqueries_max_values;
+    FutureSetSettings set_settings;
     PreparedSetsCachePtr prepared_sets_cache;
 
     /// This is needed for conversion JoinLogical -> Join
@@ -247,6 +269,10 @@ struct QueryPlanOptimizationSettings
     bool keep_logical_steps;
 
     bool is_explain;
+
+    /// Assigns a unique id to each join cluster during reordering so EXPLAIN ANALYZE scopes actual cost
+    /// per cluster like the optimizer scopes the estimated cost
+    mutable UInt64 join_reorder_next_cluster_id = 0;
 
     /// Takes the sets the single-node plan already filled, so the probe plan can adopt them instead
     /// of re-running the same subqueries.

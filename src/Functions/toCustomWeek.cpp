@@ -109,9 +109,9 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
     FunctionDocumentation::Description description_to_start_of_week = R"(
 Rounds a date or date with time down to the nearest Sunday or Monday.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_to_start_of_week = R"(
 toStartOfWeek(datetime[, mode[, timezone]])
@@ -148,9 +148,9 @@ toStartOfWeek(toDate('2023-04-24'), 1):              2023-04-24
     FunctionDocumentation::Description description_to_last_day_of_week = R"(
 Rounds a date or date with time up to the nearest Saturday or Sunday.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_to_last_day_of_week = R"(
     toLastDayOfWeek(datetime[, mode[, timezone]])
