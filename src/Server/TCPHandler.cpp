@@ -927,7 +927,7 @@ void TCPHandler::runImpl()
                             block,
                             getCompressionCodec(query_settings, query_state->compression),
                             client_tcp_protocol_version,
-                            getFormatSettings(query_state->query_context),
+                            getNativeWireFormatSettings(query_state->query_context),
                             !query_settings[Setting::low_cardinality_allow_in_native_format]);
                     });
 
@@ -1356,7 +1356,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
             {
                 bool empty_block = false;
                 if (state.skipping_data)
-                    empty_block = !processUnexpectedData();
+                    empty_block = !processUnexpectedData(state);
                 else
                     empty_block = !processData(state, packet_type == Protocol::Client::Scalar);
                 if (empty_block)
@@ -2840,7 +2840,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
                     block,
                     getCompressionCodec(query_settings, current_state->compression),
                     client_tcp_protocol_version,
-                    getFormatSettings(current_state->query_context),
+                    getNativeWireFormatSettings(current_state->query_context),
                     !query_settings[Setting::low_cardinality_allow_in_native_format]);
             });
     }
@@ -3060,7 +3060,7 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
 }
 
 
-bool TCPHandler::processUnexpectedData()
+bool TCPHandler::processUnexpectedData(QueryState & state)
 {
     String skip_external_table_name;
     readStringBinary(skip_external_table_name, *in);
@@ -3071,7 +3071,8 @@ bool TCPHandler::processUnexpectedData()
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
+    auto skip_block_in = std::make_shared<NativeReader>(
+        *maybe_compressed_in, client_tcp_protocol_version, getNativeWireFormatSettings(state.query_context));
     /// A block with no columns that carries rows is skipped as data, it is not the end of the data.
     Block skipped_block = skip_block_in->read();
     bool empty_block = skipped_block.empty() && skipped_block.info.num_rows_without_columns == 0;
@@ -3101,7 +3102,7 @@ void TCPHandler::initBlockInput(QueryState & state)
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version,
-            getFormatSettings(state.query_context));
+            getNativeWireFormatSettings(state.query_context));
     }
 }
 
@@ -3142,7 +3143,7 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             std::make_shared<const Block>(block.cloneEmpty()),
-            getFormatSettings(state.query_context),
+            getNativeWireFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -3166,7 +3167,7 @@ void TCPHandler::initLogsBlockOutput(
             *logs_buf,
             client_tcp_protocol_version,
             std::make_shared<const Block>(block.cloneEmpty()),
-            getFormatSettings(state.query_context),
+            getNativeWireFormatSettings(state.query_context),
             !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
@@ -3185,7 +3186,7 @@ void TCPHandler::initProfileEventsBlockOutput(QueryState & state, const Block & 
 
         const Settings & query_settings = state.query_context->getSettingsRef();
         state.profile_events_block_out = std::make_unique<NativeWriter>(
-            *profile_events_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
+            *profile_events_buf, client_tcp_protocol_version, std::make_shared<const Block>(block.cloneEmpty()), getNativeWireFormatSettings(state.query_context), !query_settings[Setting::low_cardinality_allow_in_native_format]);
     }
 }
 
