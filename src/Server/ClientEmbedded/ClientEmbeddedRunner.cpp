@@ -41,7 +41,8 @@ void ClientEmbeddedRunner::run(const NameToNameMap & envs, const String & starti
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Client has been already started");
 
     LOG_DEBUG(log, "Starting embedded client");
-    client_thread = ThreadFromGlobalPool(&ClientEmbeddedRunner::clientRoutine, this, envs, starting_query);
+    client_thread = ThreadFromGlobalPool(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, &ClientEmbeddedRunner::clientRoutine, this, envs, starting_query);
 }
 
 
