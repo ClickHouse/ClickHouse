@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
+    extern const SettingsBool enable_group_by_top_k_dynamic_filtering;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
     extern const SettingsBool group_by_top_k_optimization_shared_boundary;
     extern const SettingsBool distributed_plan_fallback_to_local_execution;
@@ -155,7 +156,6 @@ namespace Setting
     extern const SettingsUInt64 query_plan_optimize_join_order_randomize;
     extern const SettingsUInt64 query_plan_max_set_size_for_projection_match;
     extern const SettingsBool enable_join_transitive_predicates;
-    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
@@ -226,6 +226,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
         = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_aggregation_having_prefilter];
     top_k_optimization_observation_rows = from[Setting::group_by_top_k_optimization_observation_rows];
     top_k_optimization_shared_boundary = from[Setting::group_by_top_k_optimization_shared_boundary];
+    enable_group_by_top_k_dynamic_filtering = from[Setting::enable_group_by_top_k_dynamic_filtering];
     top_k_through_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_top_k_through_join];
 
     query_plan_optimize_join_order_limit = from[Setting::query_plan_optimize_join_order_limit];
@@ -356,7 +357,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     max_block_size = from[Setting::max_block_size];
-    use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
+    set_settings = FutureSetSettings(from);
     use_skip_indexes_for_top_k = from[Setting::use_skip_indexes_for_top_k];
     use_top_k_dynamic_filtering = from[Setting::use_top_k_dynamic_filtering];
     use_top_k_dynamic_filtering_for_variable_length_types = from[Setting::use_top_k_dynamic_filtering_for_variable_length_types];
