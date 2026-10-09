@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
-SET allow_experimental_ipcrypt_functions = 1;
+SET enable_ipcrypt = 1;
 
 -- Deterministic encrypt/decrypt round-trip with IPv4
 SELECT 'det_roundtrip_ipv4';

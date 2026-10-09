@@ -10105,7 +10105,7 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_ipcrypt_functions, false, R"(
+    DECLARE(Bool, enable_ipcrypt, false, R"(
 Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
 )", EXPERIMENTAL, \
         {"26.10", false, false, "New setting to enable experimental IP address encryption functions."}) \

@@ -6,7 +6,7 @@ SELECT ipcryptDecrypt(toIPv4('1.2.3.4'), unhex('00112233445566778899aabbccddeeff
 SELECT ipcryptPrefixEncrypt(toIPv4('1.2.3.4'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100')); -- { serverError SUPPORT_IS_DISABLED }
 SELECT ipcryptPrefixDecrypt(toIPv4('1.2.3.4'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100')); -- { serverError SUPPORT_IS_DISABLED }
 
-SET allow_experimental_ipcrypt_functions = 1;
+SET enable_ipcrypt = 1;
 
 -- Bad key lengths
 SELECT ipcryptEncrypt(toIPv4('1.2.3.4'), 'tooshort'); -- { serverError BAD_ARGUMENTS }

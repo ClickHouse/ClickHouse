@@ -27,7 +27,7 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_ipcrypt_functions;
+    extern const SettingsBool enable_ipcrypt;
 }
 
 namespace ErrorCodes
@@ -62,11 +62,11 @@ public:
 
     static FunctionPtr create(ContextPtr context)
     {
-        if (!context->getSettingsRef()[Setting::allow_experimental_ipcrypt_functions])
+        if (!context->getSettingsRef()[Setting::enable_ipcrypt])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "IP address encryption function '{}' is experimental. "
-                "Set `allow_experimental_ipcrypt_functions` setting to enable it",
+                "Set `enable_ipcrypt` setting to enable it",
                 name);
         return std::make_shared<FunctionIPCrypt>();
     }
@@ -363,7 +363,7 @@ REGISTER_FUNCTION(IPCrypt)
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_ipcrypt_functions = 1` to enable it.
+Set `enable_ipcrypt = 1` to enable it.
 </Warning>
 
 Encrypts an IP address using a 16-byte key with deterministic format-preserving encryption.
@@ -377,7 +377,7 @@ IPv4/IPv6 input returns IPv6, String input returns String (an IPv4-mapped result
             = {"Encrypted IP address. IPv4/IPv6 input returns IPv6, String input returns String.", {"IPv6", "String"}};
         FunctionDocumentation::Examples examples = {
             {"Encrypt an IPv4 address",
-             "SET allow_experimental_ipcrypt_functions = 1;\nSELECT ipcryptEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeff'))",
+             "SET enable_ipcrypt = 1;\nSELECT ipcryptEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeff'))",
              "c629:37a3:24f9:e1c3:705e:a51b:a160:f609"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::Encrypt>>(
@@ -392,7 +392,7 @@ IPv4/IPv6 input returns IPv6, String input returns String (an IPv4-mapped result
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_ipcrypt_functions = 1` to enable it.
+Set `enable_ipcrypt = 1` to enable it.
 </Warning>
 
 Decrypts an IP address previously encrypted with `ipcryptEncrypt` using the same key.
@@ -406,7 +406,7 @@ IPv4/IPv6 input returns IPv6, String input returns String (an IPv4-mapped result
             = {"Decrypted IP address. IPv4/IPv6 input returns IPv6, String input returns String.", {"IPv6", "String"}};
         FunctionDocumentation::Examples examples = {
             {"Round-trip encrypt then decrypt",
-             "SET allow_experimental_ipcrypt_functions = 1;\nSELECT ipcryptDecrypt(ipcryptEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeff')), unhex('00112233445566778899aabbccddeeff'))",
+             "SET enable_ipcrypt = 1;\nSELECT ipcryptDecrypt(ipcryptEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeff')), unhex('00112233445566778899aabbccddeeff'))",
              "::ffff:192.168.1.1"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::Decrypt>>(
@@ -421,7 +421,7 @@ IPv4/IPv6 input returns IPv6, String input returns String (an IPv4-mapped result
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_ipcrypt_functions = 1` to enable it.
+Set `enable_ipcrypt = 1` to enable it.
 </Warning>
 
 Encrypts an IP address using prefix-preserving encryption with a 32-byte key.
@@ -436,7 +436,7 @@ The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
             = {"Encrypted IP address. IPv4 input returns IPv4, IPv6 returns IPv6, String returns String.", {"IPv4", "IPv6", "String"}};
         FunctionDocumentation::Examples examples = {
             {"Prefix-preserving encryption of IPv4",
-             "SET allow_experimental_ipcrypt_functions = 1;\nSELECT ipcryptPrefixEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
+             "SET enable_ipcrypt = 1;\nSELECT ipcryptPrefixEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
              "43.223.59.191"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::PrefixEncrypt>>(
@@ -451,7 +451,7 @@ The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_ipcrypt_functions = 1` to enable it.
+Set `enable_ipcrypt = 1` to enable it.
 </Warning>
 
 Decrypts an IP address previously encrypted with `ipcryptPrefixEncrypt` using the same key.
@@ -465,7 +465,7 @@ The return type preserves the input class: IPv4 stays IPv4, IPv6 stays IPv6.
             = {"Decrypted IP address. IPv4 input returns IPv4, IPv6 returns IPv6, String returns String.", {"IPv4", "IPv6", "String"}};
         FunctionDocumentation::Examples examples = {
             {"Round-trip prefix-preserving encrypt then decrypt",
-             "SET allow_experimental_ipcrypt_functions = 1;\nSELECT ipcryptPrefixDecrypt(ipcryptPrefixEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100')), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
+             "SET enable_ipcrypt = 1;\nSELECT ipcryptPrefixDecrypt(ipcryptPrefixEncrypt(toIPv4('192.168.1.1'), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100')), unhex('00112233445566778899aabbccddeeffffeeddccbbaa99887766554433221100'))",
              "192.168.1.1"},
         };
         factory.registerFunction<FunctionIPCrypt<IPCryptMode::PrefixDecrypt>>(
