@@ -1042,11 +1042,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 if (is_stored_in_definition(name))
                 {
                     /// Stored values are durable: they were gated when they were introduced, so only
-                    /// fresh definitions are checked. The experimental part is gated by the session
-                    /// settings, and the untyped-safety part (`requiresColumnTypeToCompress`, e.g. `T64`)
-                    /// runs along with it, so that a fresh definition rejects such a codec CREATE-like
-                    /// instead of `MergeTreeData` silently dropping the setting on the sanitize path.
-                    if (is_fresh_definition)
+                    /// definitions supplied now are checked. A replay of a definition committed elsewhere
+                    /// (`Replicated`-database DDL, recovery from metadata stored in Keeper or a backup) is
+                    /// not judged against the replaying session: a secondary refusing it would retry the
+                    /// same entry forever. The experimental part is gated by the session settings, and the
+                    /// untyped-safety part (`requiresColumnTypeToCompress`, e.g. `T64`) runs along with it,
+                    /// so that a fresh definition rejects such a codec CREATE-like instead of `MergeTreeData`
+                    /// silently dropping the setting on the sanitize path.
+                    if (!is_replayed_definition)
                     {
                         CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(local_settings));
                         CompressionCodecFactory::instance().checkCodecStringSafeForUntypedData(codec, name);
@@ -1114,7 +1117,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// is what the check above applies to a config-inherited value on the next load: restoring a gated
         /// config default here, after dropping the stored entry, would leave the table unloadable after a
         /// restart. Such a baseline is declined and the declaration default is used instead.
-        if (!is_fresh_definition)
+        /// Replays of a definition committed elsewhere skip the checks above for stored values too, so
+        /// they are sanitized the same way.
+        if (is_replayed_definition)
         {
             const auto baseline_codec_is_allowed = [&](const String & codec)
             {
