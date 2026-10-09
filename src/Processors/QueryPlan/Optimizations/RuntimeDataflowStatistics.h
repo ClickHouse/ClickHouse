@@ -43,6 +43,11 @@ struct RuntimeDataflowStatistics
     size_t duplicated_bytes = 0;
     size_t output_bytes = 0;
     size_t total_rows_to_read = 0;
+    /// The rows the tables below the boundary hold. The decision taken before a plan with parallel replicas
+    /// exists cannot tell which read the replicas would coordinate, so it cannot compare
+    /// `total_rows_to_read` against anything; this is a quantity it can recompute without knowing, so it is
+    /// recorded here as its drift reference.
+    size_t table_rows_below_boundary = 0;
 };
 
 inline RuntimeDataflowStatistics operator+(const RuntimeDataflowStatistics & lhs, const RuntimeDataflowStatistics & rhs)
@@ -131,9 +136,10 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, size_t table_rows_below_boundary_ = 0)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , table_rows_below_boundary(table_rows_below_boundary_)
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -146,6 +152,7 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    const size_t table_rows_below_boundary = 0;
 
     std::atomic_bool unsupported_case{false};
 

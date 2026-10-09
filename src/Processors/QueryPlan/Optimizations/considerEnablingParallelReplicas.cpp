@@ -245,6 +245,35 @@ String explainWithHashes(const QueryPlan & plan, const std::unordered_map<const 
 /// to estimate whether parallel replicas will be beneficial for the query or not. For that, we need to estimate how much data
 /// replicas will send to the initiator. To do that, we found the node that will be at the top of replicas plan (e.g. Aggregating step in the example above),
 /// and ask it collect statistics on the number of bytes it'd send to the initiator if we executed the query with parallel replicas.
+/// The rows the tables below `root` hold, summed over their distinct storages. This is the drift reference
+/// for the decision taken before a plan with parallel replicas exists: that decision cannot tell which read
+/// the replicas would coordinate, so it cannot recompute `total_rows_to_read` and needs a quantity that
+/// does not depend on knowing. Taken from the storages rather than from index analysis, because only the
+/// coordinated read is guaranteed to have been analyzed - on a join the other side often has not - and a
+/// reference that exists on one execution and not the next is no reference at all.
+size_t tableRowsBelow(const QueryPlan::Node & root)
+{
+    std::unordered_set<const MergeTreeData *> seen;
+    size_t rows = 0;
+    std::vector<const QueryPlan::Node *> to_visit{&root};
+    while (!to_visit.empty())
+    {
+        const auto * node = to_visit.back();
+        to_visit.pop_back();
+        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
+        {
+            const auto * data = &read->getMergeTreeData();
+            /// A self-join reads one table twice; count it once, so the reference does not depend on how
+            /// many times the plan happens to mention it.
+            if (seen.insert(data).second)
+                rows += data->getTotalActiveSizeInRows();
+        }
+        for (const auto * child : node->children)
+            to_visit.push_back(child);
+    }
+    return rows;
+}
+
 /// The cost model's two estimates. Factored out so the decision taken from cached statistics before a
 /// parallel-replicas plan exists and the decision taken after one is built cannot drift apart: they are
 /// the same comparison over the same inputs.
@@ -861,31 +890,27 @@ static bool cachedStatisticsDeclineParallelReplicas(
     /// plan wrongly - and this path only ever declines, which is correct whatever the measurements say. The
     /// full path still applies both before it adopts anything.
     ///
-    /// What does have to be caught is a table that has grown since it was measured, because growth is the
-    /// direction that turns a decline into a win, and a decline taken here records nothing, so nothing would
-    /// ever notice. The reads below the boundary bound the coordinated read from above - whichever one it is,
-    /// it reads no more rows than the largest of them - so a bound is enough to send a grown table back to
-    /// the full path, which identifies the real read and recollects. Shrinkage needs no guard: a read smaller
-    /// than it was measured only makes the single node look better still.
-    size_t largest_read_rows = 0;
-    std::vector<const QueryPlan::Node *> to_visit{boundary};
-    while (!to_visit.empty())
-    {
-        const auto * node = to_visit.back();
-        to_visit.pop_back();
-        if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-        {
-            /// Only an analysis already done is consulted: forcing one here would spend on the queries this
-            /// path exists to make cheap.
-            const auto analysis = read->getAnalyzedResult();
-            if (!analysis)
-                return false;
-            largest_read_rows = std::max<size_t>(largest_read_rows, analysis->selected_rows);
-        }
-        for (const auto * child : node->children)
-            to_visit.push_back(child);
-    }
-    if (!largest_read_rows || largest_read_rows > stats->total_rows_to_read * 2)
+    /// Drift does have to be caught, though, because a decline taken here records nothing: the statistics
+    /// are never refreshed, so a stale decline would pin the query to a single node for good. The full path
+    /// is what recollects, so significant drift in *either* direction has to go there.
+    ///
+    /// Both directions matter. Growth is the obvious one - more to read is what turns a decline into a win.
+    /// Shrinkage looks harmless, and is while the table shrinks evenly: scaling the read and the output
+    /// together leaves the comparison's direction untouched, and a heavily shrunk read drives the useful
+    /// thread count below `max_threads`, after which the replicas plan cannot win at all. But the two need
+    /// not shrink together. A table deleted down to a few distinct keys loses far more output than input,
+    /// and the output term is what was blocking adoption, so fresh statistics could adopt where the stale
+    /// ones decline.
+    ///
+    /// The reads below the boundary bound the coordinated read from above - whichever one it is, it reads no
+    /// more rows than the largest of them. The bound makes this conservative rather than exact: it never
+    /// misses growth, and it catches shrinkage only once even the largest read has halved, so a shrink
+    /// confined to the coordinated read while a sibling stays large is left for the full path to notice on
+    /// some later execution. Erring this way costs a skipped optimization, never a stale decision acted on.
+    const auto table_rows = tableRowsBelow(*boundary);
+    const auto recorded = stats->table_rows_below_boundary;
+    if (!table_rows || !recorded
+        || std::max<size_t>(recorded, table_rows) > std::min<size_t>(recorded, table_rows) * 2)
         return false;
 
     const auto estimate = estimateReplicasCost(*stats, boundary->step.get(), optimization_settings);
@@ -1393,7 +1418,11 @@ void considerEnablingParallelReplicas(
         || optimization_settings.automatic_parallel_replicas_mode == 2 // automatic_parallel_replicas_mode == 2 enforces statistics recollection
     )
     {
-        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(single_replica_plan_node_hash, rows_to_read);
+        /// The bound over the reads below the boundary goes into the entry as well, as the drift reference
+        /// for a later execution that decides before building a plan with parallel replicas: that decision
+        /// cannot identify the coordinated read, so `rows_to_read` is not a number it can recompute.
+        auto statistics_block = std::make_shared<RuntimeDataflowStatisticsBlock>(
+            single_replica_plan_node_hash, rows_to_read, tableRowsBelow(*corresponding_node_in_single_replica_plan));
         auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(statistics_block);
 
         /// A replica whose partial aggregation uses memory-bound merging sorts its output by the group
