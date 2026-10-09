@@ -72,8 +72,10 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_fresh' AND name = 'bucke
 -- 3. The migration removes the old node and creates the bucket nodes in one Keeper
 --    transaction, so when the removal is rejected the whole migration must be rejected and
 --    the old pointer must survive. The removal is made to fail deterministically by giving
---    the old node a child: the replicated table below keeps its metadata under it. (In
---    production the same request fails because another replica removed the node first.)
+--    the old node a child: the replicated table below keeps its metadata under it. This is
+--    the generic "the transaction did not go through" branch and nothing more: the code
+--    reports every non-OK response to the removal as `SUPPORT_IS_DISABLED`, whatever the
+--    cause, so this case makes no claim about concurrent migrations by other replicas.
 --    The holder is deliberately not a second queue: a queue removes its whole `keeper_path`
 --    when its last registration goes, so a holder queue would be left without its own
 --    registry node whenever `q_block` happened to be dropped first, which aborts a debug
