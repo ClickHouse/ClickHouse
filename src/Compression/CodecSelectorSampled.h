@@ -30,6 +30,7 @@ private:
         std::optional<size_t> winner;
         UInt32 runner_up_size = 0;
         UInt32 source_size = 0;
+        bool in_sample = false;
     };
 
     const UInt64 selection_period;

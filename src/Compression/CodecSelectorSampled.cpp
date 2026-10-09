@@ -9,6 +9,8 @@ namespace ProfileEvents
 extern const Event AdaptiveCodecBlocksPriced;
 extern const Event AdaptiveCodecBlocksRepriced;
 extern const Event AdaptiveCodecBlocksReused;
+extern const Event AdaptiveCodecBytesDefault;
+extern const Event AdaptiveCodecBytesWritten;
 }
 
 namespace DB::AdaptiveCodec
@@ -31,9 +33,9 @@ Candidates CodecSelectorSampled::select(CompressionState * state, const Outcome 
     {
         const UInt64 block = stream.block_index++;
         /// intHash64(block / selection_period) s.t. we get same hash for each block in the window.
-        const bool sampled = block % selection_period == intHash64(block / selection_period) % selection_period;
+        stream.in_sample = block % selection_period == intHash64(block / selection_period) % selection_period;
         /// No winner → either this is stream's first block or last block did full pricing and chose NONE. In either case, price all candidates.
-        if (!stream.winner || sampled)
+        if (!stream.winner || stream.in_sample)
         {
             /// A stream with a single candidate is not adaptive, so its blocks are not counted.
             if (outcome.all.count() > 1)
@@ -49,6 +51,12 @@ Candidates CodecSelectorSampled::select(CompressionState * state, const Outcome 
         stream.winner = outcome.best; /// Empty when nothing shrank the block, so no winner is remembered.
         stream.runner_up_size = outcome.runner_up_size;
         stream.source_size = outcome.source_size;
+
+        if (stream.in_sample && outcome.all.count() > 1)
+        {
+            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesDefault, outcome.default_size);
+            ProfileEvents::increment(ProfileEvents::AdaptiveCodecBytesWritten, outcome.best_size);
+        }
         return {};
     }
 

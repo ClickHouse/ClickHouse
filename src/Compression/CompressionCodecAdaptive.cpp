@@ -234,6 +234,9 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
             const UInt32 size = codec->compress(source, source_size, block);
             record(codecPosition(entry), size, block);
 
+            if (entry == 0)
+                outcome.default_size = size;
+
             if (with_chain)
                 run_chain(entry, block, size);
         }

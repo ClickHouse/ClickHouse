@@ -40,6 +40,7 @@ struct Outcome
     std::optional<size_t> best;
     UInt32 best_size;
     UInt32 runner_up_size = std::numeric_limits<UInt32>::max();
+    UInt32 default_size = 0;
     UInt32 source_size;
 };
 
