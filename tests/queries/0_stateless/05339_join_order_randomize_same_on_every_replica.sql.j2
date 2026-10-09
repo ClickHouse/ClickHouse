@@ -14,11 +14,20 @@ SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;
+DROP TABLE IF EXISTS l3;
+DROP TABLE IF EXISTS r3;
+DROP TABLE IF EXISTS m3;
 -- One row per mark, so the reading is shared between the replicas.
 CREATE TABLE l (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 CREATE TABLE r (k UInt64, w UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
 INSERT INTO l SELECT number, number FROM numbers(1000);
 INSERT INTO r SELECT number, number FROM numbers(1000);
+CREATE TABLE l3 (a UInt64, x UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE r3 (b UInt64, y UInt64) ENGINE = MergeTree ORDER BY b;
+CREATE TABLE m3 (c UInt64, z UInt64) ENGINE = MergeTree ORDER BY c;
+INSERT INTO l3 SELECT number, number FROM numbers(1000);
+INSERT INTO r3 SELECT number, number FROM numbers(1000);
+INSERT INTO m3 SELECT number, number FROM numbers(1000);
 
 {% set seeds = range(2, 14) -%}
 
@@ -29,6 +38,16 @@ SELECT {{ s }},
      FROM (EXPLAIN SELECT * FROM l AS a LEFT JOIN r AS b ON a.k = b.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = {{ s }}))
     = (SELECT arrayMap(x -> extract(x, 'ReadFromMergeTree \\(([^)]*)\\)'), arrayFilter(x -> x LIKE '%ReadFromMergeTree%', groupArray(explain)))
      FROM (EXPLAIN SELECT * FROM l AS x LEFT JOIN r AS y ON x.k = y.k SETTINGS enable_parallel_replicas = 0, query_plan_optimize_join_order_randomize = {{ s }}));
+{% endfor -%}
+
+-- One node, three tables: the right-nested join is flattened into the same join graph as the left-deep one, so
+-- it gets the same plan. Without transitive predicates the two spellings can be priced differently.
+{% for s in seeds -%}
+SELECT {{ s }},
+    (SELECT arrayMap(x -> extract(x, 'ReadFromMergeTree \\(([^)]*)\\)'), arrayFilter(x -> x LIKE '%ReadFromMergeTree%', groupArray(explain)))
+     FROM (EXPLAIN SELECT * FROM l3 JOIN r3 ON a = b JOIN m3 ON b = c SETTINGS enable_parallel_replicas = 0, enable_join_transitive_predicates = 1, query_plan_optimize_join_order_randomize = {{ s }}))
+    = (SELECT arrayMap(x -> extract(x, 'ReadFromMergeTree \\(([^)]*)\\)'), arrayFilter(x -> x LIKE '%ReadFromMergeTree%', groupArray(explain)))
+     FROM (EXPLAIN SELECT * FROM l3 JOIN (r3 JOIN m3 ON b = c) AS s ON a = b SETTINGS enable_parallel_replicas = 0, enable_join_transitive_predicates = 1, query_plan_optimize_join_order_randomize = {{ s }}));
 {% endfor -%}
 
 -- Parallel replicas: the replicas, which get the query re-spelled by the initiator, execute the join
@@ -68,3 +87,6 @@ SETTINGS enable_parallel_replicas = 0;
 
 DROP TABLE l;
 DROP TABLE r;
+DROP TABLE l3;
+DROP TABLE r3;
+DROP TABLE m3;
