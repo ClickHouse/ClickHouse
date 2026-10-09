@@ -231,7 +231,7 @@ MatchedTrees::Matches matchTrees(
                                             }
                                             else
                                             {
-                                                all_children_matched = inner_col->getField() == outer_col->getField();
+                                                all_children_matched = sameConstantValue(inner_col->getField(), outer_col->getField());
                                             }
                                         }
                                         else

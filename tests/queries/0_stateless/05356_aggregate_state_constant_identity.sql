@@ -8,6 +8,11 @@ SELECT * FROM (SELECT finalizeAggregation(materialize(arrayReduce('quantileState
 SELECT number, a FROM (SELECT number, finalizeAggregation(materialize(arrayReduce('quantileState(0.5)', [1, 2, 3, 100]))) + number AS a FROM numbers(2)) WHERE finalizeAggregation(materialize(arrayReduce('quantileState(0.9)', [1, 2, 3, 100]))) + number > 50 ORDER BY number SETTINGS query_plan_enable_optimizations = 1, query_plan_merge_expressions = 1;
 SELECT finalizeAggregation(tupleElement(`(x)`, 1)), finalizeAggregation(tupleElement(`(x)_1`, 1)) FROM (SELECT tuple(arrayReduce('quantileState(0.5)', [1, 2, 3, 100]) AS x), tuple(arrayReduce('quantileState(0.9)', [1, 2, 3, 100]) AS x));
 SELECT count() FROM numbers(100) WHERE number IN (SELECT toUInt64(finalizeAggregation(materialize(arrayReduce('quantileState(0.5)', [1, 2, 3, 100])))) AS v) OR number IN (SELECT toUInt64(finalizeAggregation(materialize(arrayReduce('quantileState(0.9)', [1, 2, 3, 100])))) AS v);
+DROP TABLE IF EXISTS t_aggregate_state_key;
+CREATE TABLE t_aggregate_state_key (s String) ENGINE = MergeTree ORDER BY concat(arrayReduce('quantileState(0.5)', [1.]), s);
+INSERT INTO t_aggregate_state_key VALUES ('a'), ('b');
+SELECT s FROM t_aggregate_state_key ORDER BY concat(arrayReduce('quantileState(0.9)', [1.]), s) SETTINGS optimize_read_in_order = 1;
+DROP TABLE t_aggregate_state_key;
 
 -- States nested in Array, Map, Tuple, Variant and Nullable(Tuple).
 SELECT * FROM (SELECT tuple([initializeAggregation('groupArrayState', 'x')], number) AS r, tuple([initializeAggregation('groupArrayState', 'y')], number) AS r FROM numbers(2)); -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
