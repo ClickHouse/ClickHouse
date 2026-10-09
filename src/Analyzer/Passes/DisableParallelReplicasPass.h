@@ -5,9 +5,8 @@
 namespace DB
 {
 
-/** Disable parallel replicas in case of correlated subquery,
-  * or if the query reads a temporary table that is not sent to the replicas.
-  */
+/** Disable parallel replicas in case of correlated subquery, or if the query reads a temporary table that is not sent to the replicas.
+ */
 class DisableParallelReplicasPass final : public IQueryTreePass
 {
 public:

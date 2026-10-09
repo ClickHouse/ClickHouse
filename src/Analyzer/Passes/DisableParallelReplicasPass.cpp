@@ -24,8 +24,7 @@ static bool canUseParallelReplicas(const ContextPtr & context)
     return context->canUseParallelReplicasOnInitiator() || context->canUseParallelReplicasCustomKey();
 }
 
-/// Only `Memory` temporary tables are sent to the replicas, so a query that would make a replica read another
-/// temporary table runs without parallel replicas.
+/// Only `Memory` temporary tables are sent to the replicas.
 class FindTemporaryTableNotSentToReplicasVisitor : public InDepthQueryTreeVisitorWithContext<FindTemporaryTableNotSentToReplicasVisitor>
 {
 public:
