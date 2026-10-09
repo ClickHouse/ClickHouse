@@ -203,6 +203,17 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     if (parts_with_ranges.empty())
         return;
 
+    /// Everything below only ever feeds text index entries, and collecting it walks every part to build
+    /// its alter conversions -- which resolves the pending patches of each part and is proportional to
+    /// (parts x patches). Queries that use only non-text skip indexes would pay that walk for nothing,
+    /// so bail out before it when the step analyzed no text index at all.
+    const bool has_text_index = std::ranges::any_of(
+        indexes->skip_indexes.useful_indices,
+        [](const auto & index) { return index.index->isTextIndex(); });
+
+    if (!has_text_index)
+        return;
+
     auto logger = getLogger("optimizeDirectReadFromTextIndex");
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
     auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
