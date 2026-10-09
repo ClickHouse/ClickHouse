@@ -269,6 +269,12 @@ void StorageMergeTree::startup()
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
+    /// A late async startup of a table that was already shut down (e.g. by a concurrent `DETACH`) must not
+    /// arm anything: the cleanup thread and the part-loading tasks run their first iteration right away,
+    /// before the re-check of `shutdown_called` below could unwind them.
+    if (shutdown_called.load())
+        return;
+
     const bool readonly = isTableReadonly();
     if (!readonly)
     {
@@ -293,6 +299,16 @@ void StorageMergeTree::startup()
         /// is a no-op and a `STREAM BOUNDED` read on the table never receives its first snapshot.
         background_streaming_assignee.start();
         startStatisticsCache();
+
+        /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
+        /// `shutdown_called`. `shutdown()` publishes that flag before stopping the background workers, so if
+        /// we observe it here — after arming — we must unwind *everything* we just armed above; otherwise a
+        /// logically shut-down table would keep doing background work until some later `shutdown()` stops it.
+        /// In particular, if the concurrent `shutdown()` has already run `flushAndPrepareForShutdown()`
+        /// (guarded by `flush_called`, so it never runs again), nothing else would ever stop the assignees
+        /// and the cleanup thread re-armed by this startup. All the stops below are idempotent.
+        if (shutdown_called.load())
+            stopAllBackgroundTasks();
     }
     catch (...)
     {
@@ -334,26 +350,51 @@ void StorageMergeTree::flushAndPrepareForShutdown()
 
 void StorageMergeTree::shutdown(bool)
 {
-    if (shutdown_called.exchange(true))
-        return;
+    /// Publish the shutdown intent *before* stopping the background tasks below. This, together with the
+    /// matching re-checks after arming in `startup` and in the `table_readonly` 1 -> 0 `ALTER`, closes their
+    /// race with `shutdown` (e.g. when a table is detached while its async startup is still in flight):
+    /// whatever the interleaving, the tasks end up stopped. If a task is armed before the stops below, they
+    /// stop it; if it is armed afterwards, the arming side observes `shutdown_called == true` and stops it.
+    const bool already_called = shutdown_called.exchange(true);
 
-    if (refresh_parts_task)
-        refresh_parts_task->deactivate();
-
-    stopStatisticsCache();
-
-    stopOutdatedAndUnexpectedDataPartsLoadingTask();
-
-    /// Unlock all waiting mutations
+    if (!already_called)
     {
-        std::lock_guard lock(mutation_wait_mutex);
-        mutation_wait_event.notify_all();
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+        stopStatisticsCache();
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+
+        /// Unlock all waiting mutations
+        {
+            std::lock_guard lock(mutation_wait_mutex);
+            mutation_wait_event.notify_all();
+        }
+
+        flushAndPrepareForShutdown();
     }
 
-    flushAndPrepareForShutdown();
+    /// Stop everything unconditionally on every call, after `flushAndPrepareForShutdown` has cancelled the
+    /// merges and moves. `flushAndPrepareForShutdown` runs only once (guarded by `flush_called`), and
+    /// `flushAndShutdown` runs it before `shutdown_called` is set, so a concurrent `startup` may re-arm the
+    /// assignees and the cleanup thread after it already stopped them, without observing `shutdown_called`.
+    /// The destructor's repeated `shutdown(false)` stops anything a racing `startup` or a failed `startup`
+    /// left armed, so no task fires while `~MergeTreeData` destroys the state it touches.
+    stopAllBackgroundTasks();
 
-    if (deduplication_log)
+    if (!already_called && deduplication_log)
         deduplication_log->shutdown();
+}
+
+void StorageMergeTree::stopAllBackgroundTasks()
+{
+    if (refresh_parts_task)
+        refresh_parts_task->deactivate();
+    stopStatisticsCache();
+    stopOutdatedAndUnexpectedDataPartsLoadingTask();
+    cleanup_thread.stop();
+    background_operations_assignee.finish();
+    background_moves_assignee.finish();
+    background_streaming_assignee.finish();
 }
 
 
@@ -630,7 +671,16 @@ void StorageMergeTree::alter(
             /// end up durably writable with some workers absent until a restart. Starting is
             /// idempotent, so a retried `ALTER` completes the transition.
             if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isReadonlySettingSet() && !shutdown_called)
+            {
                 startBackgroundWorkers(&started_workers);
+
+                /// A concurrent `shutdown` may have set `shutdown_called` after the check above and stopped
+                /// the workers before they were started here. It publishes the flag before stopping them,
+                /// so re-checking it after starting closes the race: either `shutdown` stops what was
+                /// started here, or this re-check observes the flag and stops it itself.
+                if (shutdown_called.load())
+                    stopAllBackgroundTasks();
+            }
 
             FailPointInjection::pauseFailPoint(FailPoints::mt_alter_settings_pause_before_metadata_commit);
             fiu_do_on(FailPoints::mt_alter_settings_throw_before_metadata_commit,
@@ -1017,8 +1067,9 @@ void StorageMergeTree::alter(
             /// so clearing it here would let writes in while the disk cleanup below is still running,
             /// contrary to the documented contract of `table_readonly`.
 
-            /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work.
-            if (!cleanup_thread.isCleanupCancelled())
+            /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work. Skip the cleanup on a
+            /// table that a concurrent `shutdown` has already shut down.
+            if (!cleanup_thread.isCleanupCancelled() && !shutdown_called.load())
             {
                 clearEmptyParts();
                 clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_BACKGROUND_CLEANUP);
@@ -4473,13 +4524,24 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
     /// `changeSettings` calls this on a `storage_policy` change before the metadata commit. For a
     /// table whose workers are disabled (attached with `table_readonly = 1`, or in the middle of a
     /// `table_readonly` toggle), the toggle itself starts the move assignee in `startBackgroundWorkers`.
+    ///
+    /// Nothing is started after `shutdown`. `shutdown` publishes `shutdown_called` before finishing the
+    /// assignee, so re-checking it after `start` closes the race with a concurrent `shutdown`: either it
+    /// finishes the assignee started here, or this re-check observes the flag and finishes it itself.
+    if (shutdown_called.load())
+        return;
+
     if (background_workers_enabled && areBackgroundMovesNeeded())
+    {
         background_moves_assignee.start();
+        if (shutdown_called.load())
+            background_moves_assignee.finish();
+    }
 }
 
 bool StorageMergeTree::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
-    if (!background_workers_enabled)
+    if (!background_workers_enabled || shutdown_called.load())
         return false;
 
     return MergeTreeData::scheduleDataMovingJob(assignee);
@@ -4535,12 +4597,25 @@ void StorageMergeTree::wakeupBackgroundWorkers() noexcept
     /// part loaders returned without loading while the workers were disabled; a loader that saw a
     /// writable table re-arms itself, one that saw the temporary `table_readonly = 1` of a failed
     /// 0 -> 1 commit does not, so they are scheduled again explicitly, which is also faster.
+    ///
+    /// Nothing is woken up after `shutdown`: it has already stopped the part loaders and the cleanup
+    /// thread, and re-arming them here (e.g. from the rollback of a failed settings `ALTER`) would let
+    /// them fire on a shut-down table, possibly while `~MergeTreeData` destroys the state they touch.
+    /// `shutdown` publishes `shutdown_called` before stopping them, so re-checking it after the wake-up
+    /// closes the race with a concurrent `shutdown`: either it stops what was woken up here, or this
+    /// re-check observes the flag and stops it itself.
+    if (shutdown_called.load())
+        return;
+
     try
     {
         background_operations_assignee.trigger();
         background_moves_assignee.trigger();
         cleanup_thread.wakeup();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
+
+        if (shutdown_called.load())
+            stopAllBackgroundTasks();
     }
     catch (...)
     {

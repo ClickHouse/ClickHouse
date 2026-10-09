@@ -49,6 +49,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
@@ -475,6 +476,7 @@ namespace ErrorCodes
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
     extern const int ILLEGAL_PROJECTION;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int INFINITE_LOOP;
 }
 
 namespace FailPoints
@@ -3498,7 +3500,7 @@ void MergeTreeData::startStatisticsCache()
     std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
-    if (refresh_statistics_seconds)
+    if (refresh_statistics_seconds && !refresh_stats_stopped)
     {
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool()->createTask(
@@ -3513,6 +3515,7 @@ void MergeTreeData::stopStatisticsCache()
 {
     /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
     std::lock_guard lock(refresh_stats_task_mutex);
+    refresh_stats_stopped = true;
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
 }
@@ -6032,18 +6035,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Like the other checks of fresh user input below, this one is made only by the initial execution.
     /// A `Replicated` database re-executes the ALTER per replica here: a secondary refusing what the
     /// initiator committed (e.g. because the replaying session lacks the `enable_<family>_codec` opt-in
-    /// the initiator had) would retry its queue entry forever. Shared Catalog secondaries replay without
-    /// a metadata transaction and are told apart by the client info instead (the same marker
-    /// `AlterCommands` and `StorageKeeperMap` use).
-    const auto alter_txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = alter_txn && !alter_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay = local_context->getClientInfo().is_shared_catalog_internal
-        && !SharedDatabaseCatalog::isInitialQuery(local_context);
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-    const bool is_alter_replay = is_ddl_replay || is_shared_catalog_replay;
+    /// the initiator had) would retry its queue entry forever (see `isSecondaryDDLReplay`).
+    const bool is_alter_replay = isSecondaryDDLReplay(local_context);
 
     std::unique_ptr<MergeTreeSettings> default_settings;
     std::optional<Settings> default_profile_settings;
@@ -6117,9 +6110,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Only the state after all commands can decide, because one command can
     /// turn a column non-physical and another give it statistics.
-    /// Only the initial execution judges it (see `is_alter_replay`).
+    /// A `Replicated` database re-executes the ALTER per replica here, so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
     {
-        if (!is_alter_replay)
+        if (!isSecondaryDDLReplay(local_context))
         {
             /// Only effective commands count. `command.ignore` covers a command that is a no-op against
             /// the pre-ALTER snapshot (`ADD COLUMN IF NOT EXISTS` for a column that already exists), but
@@ -6737,13 +6731,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
-    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
-    /// info rather than in a ZooKeeper metadata transaction.
-    bool is_secondary_replay = is_replay_on_another_replica;
-#if CLICKHOUSE_CLOUD
-    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
-        is_secondary_replay = true;
-#endif
+    const bool is_secondary_replay = isSecondaryDDLReplay(local_context);
 
     /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
     /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
@@ -6791,6 +6779,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
+
+    /// The TTL is analyzed while the table is loaded, when the table itself cannot be read yet.
+    const bool modifies_ttl = std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL; });
+    if (!is_secondary_replay && modifies_ttl && new_metadata.table_ttl.definition_ast)
+    {
+        const auto global_context = local_context->getGlobalContext();
+        const auto table_name = getStorageID().getQualifiedName();
+        const auto ttl_tables = getDependenciesFromCreateQuery(
+            global_context, QualifiedTableName{table_name.database, ""}, new_metadata.table_ttl.definition_ast, global_context->getCurrentDatabase());
+        if (ttl_tables.dependencies.contains(table_name))
+            throw Exception(ErrorCodes::INFINITE_LOOP,
+                "Cannot ALTER table {}: its TTL reads the table itself, so the table could not be loaded",
+                getStorageID().getNameForLogs());
+    }
 
     if (!columns_to_check_conversion.empty())
     {
