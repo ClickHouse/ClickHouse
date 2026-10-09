@@ -57,7 +57,7 @@ void registerInterpreterDescribeCacheQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterDescribeCacheQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterDescribeCacheQuery", create_fn);
+    factory.registerInterpreter("InterpreterDescribeCacheQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

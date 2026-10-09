@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST_fwd.h>
 
 
@@ -28,6 +29,7 @@ private:
     ASTPtr query_ptr;
 
     String getRewrittenQuery();
+    CurrentDatabaseInfo getFromInfo() const;
 };
 
 

@@ -177,6 +177,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -573,7 +574,8 @@ String formatQueryForLogging(const String & query, const Settings & settings)
         settings[Setting::max_query_size],
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks],
-        /*skip_insignificant*/ true);
+        /*skip_insignificant*/ true,
+        settings[Setting::allow_experimental_table_namespaces]);
     return ast ? ast->formatForLogging(settings[Setting::log_queries_cut_to_length]) : "";
 }
 
@@ -601,7 +603,7 @@ QueryLogElement logQueryStart(
     elem.query_start_time = timeInSeconds(query_start_time);
     elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
 
-    elem.current_database = context->getCurrentDatabase();
+    elem.current_database = context->getCurrentDatabase().getFullName();
     elem.query = query_for_logging;
     if (query_ast && settings[Setting::log_formatted_queries])
         elem.formatted_query = query_ast->formatForLogging();
@@ -1060,7 +1062,7 @@ void logExceptionBeforeStart(
     elem.query_start_time_microseconds = client_info.initial_query_start_time_microseconds;
     elem.query_duration_ms = elapsed_milliseconds;
 
-    elem.current_database = context->getCurrentDatabase();
+    elem.current_database = context->getCurrentDatabase().getFullName();
     elem.query = query_for_logging;
     elem.normalized_query_hash = normalized_query_hash;
 
@@ -2505,7 +2507,8 @@ static BlockIO executeQueryImpl(
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks],
+                settings[Setting::allow_experimental_table_namespaces]);
 
 #ifndef NDEBUG
             try
@@ -2547,7 +2550,8 @@ static BlockIO executeQueryImpl(
                         "",
                         new_max_query_size,
                         settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                        settings[Setting::max_parser_backtracks],
+                        settings[Setting::allow_experimental_table_namespaces]);
                 }
                 catch (const Exception & e)
                 {
@@ -2781,7 +2785,7 @@ static BlockIO executeQueryImpl(
             /// `setCurrentDatabase`; the HTTP path additionally resolves a database supplied via the
             /// URL *path*, which is already applied before we reach here.
             if (const String & database_setting = settings[Setting::database];
-                !database_setting.empty() && database_setting != context->getCurrentDatabase())
+                !database_setting.empty() && database_setting != context->getCurrentDatabase().getFullName())
             {
                 context->setCurrentDatabase(database_setting);
             }

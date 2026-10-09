@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Access/Common/AccessEntityType.h>
 
@@ -40,7 +41,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
 
-    void replaceEmptyDatabase(const String & current_database);
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database);
 
     QueryKind getQueryKind() const override { return QueryKind::Show; }
 

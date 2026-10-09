@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 
@@ -49,6 +50,13 @@ using RenderedCreateQueryPtr = std::shared_ptr<const RenderedCreateQuery>;
 struct LightWeightTableDetails
 {
     String name;
+};
+
+/// How a database exposes hierarchical table paths (`namespace.table`)
+enum class TableNamespaceSupport
+{
+    None,     /// flat table names only
+    Native,   /// the engine has real namespace metadata (data lake catalog)
 };
 
 /// Advisory hint passed to getTablesIterator: lets DataLake catalogs restrict
@@ -213,6 +221,10 @@ public:
     virtual bool isExternal() const { return true; }
 
     virtual bool isDatalakeCatalog() const { return false; }
+
+    virtual TableNamespaceSupport getTableNamespaceSupport() const { return TableNamespaceSupport::None; }
+
+    virtual void validateTableNamespace(std::string_view namespace_parts) const;
 
     /// True for databases such as `MySQL`/`PostgreSQL` whose table list lives on a remote service.
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.

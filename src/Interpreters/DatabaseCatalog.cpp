@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/CurrentThread.h>
 
@@ -78,6 +79,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
     extern const int TABLE_UUID_MISMATCH;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
@@ -94,6 +96,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -471,18 +474,28 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
-    const StorageID & table_id,
+    const StorageID & table_id_,
     ContextPtr context_,
     std::optional<Exception> * exception) const
 {
     checkStackSize();
 
-    if (!table_id)
+    if (!table_id_)
     {
         if (exception)
             exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot find table: StorageID is empty"));
         return {};
     }
+
+    /// the current database may be a logical namespace path filled into the id,
+    /// with the feature off a dotted database is only ever an exact name
+    const StorageID table_id
+        = (table_id_.database_name.find('.') != String::npos
+           && context_->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabase(), exception)
+        : table_id_;
+    if (!table_id)
+        return {};
 
     if (table_id.hasUUID())
     {
@@ -663,6 +676,35 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
     return check_database_and_table_name(table_id.getDatabaseName(), table_id.getTableName());
 }
 
+StorageID DatabaseCatalog::foldNamespaceIntoTableName(
+    StorageID storage_id, const CurrentDatabaseInfo & current_database_info, std::optional<Exception> * exception)
+{
+    const auto & info = current_database_info;
+    if (storage_id.hasUUID() || !info.hasSchema())
+        return storage_id;
+
+    if (storage_id.database_name != info.getFullName())
+        return storage_id;
+
+    /// a dot inside the name would be indistinguishable from a deeper path
+    if (storage_id.table_name.find('.') != String::npos)
+    {
+        auto error = Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table name {} contains a dot and cannot be resolved inside namespace {}; "
+            "select the database with USE {} and use a fully qualified name",
+            backQuoteIfNeed(storage_id.table_name), backQuoteIfNeed(info.getSchemaPart()),
+            backQuoteIfNeed(info.getDatabasePart()));
+        if (!exception)
+            throw std::move(error);
+        exception->emplace(std::move(error));
+        return StorageID::createEmpty();
+    }
+
+    storage_id.database_name = info.getDatabasePart();
+    storage_id.table_name = String(info.getSchemaPart()) + "." + storage_id.table_name;
+    return storage_id;
+}
+
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
     if (database_name.empty())
@@ -689,6 +731,13 @@ void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
             backQuoteIfNeed(database_name),
             backQuoteIfNeed(names[0]));
     }
+}
+
+void DatabaseCatalog::assertDatabaseAndNamespacesExist(const CurrentDatabaseInfo & database_info) const
+{
+    assertDatabaseExists(String(database_info.getDatabasePart()));
+    if (database_info.hasSchema())
+        getDatabase(database_info.getDatabasePart())->validateTableNamespace(database_info.getSchemaPart());
 }
 
 bool DatabaseCatalog::hasDatalakeCatalogs() const
@@ -1011,10 +1060,19 @@ Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const
     return res;
 }
 
-bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr context_) const
+bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id_, ContextPtr context_) const
 {
-    if (table_id.hasUUID())
-        return tryGetByUUID(table_id.uuid).second != nullptr;
+    if (table_id_.hasUUID())
+        return tryGetByUUID(table_id_.uuid).second != nullptr;
+
+    std::optional<Exception> fold_exception;
+    const StorageID table_id
+        = (table_id_.database_name.find('.') != String::npos
+           && context_->getSettingsRef()[Setting::allow_experimental_table_namespaces])
+        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabase(), &fold_exception)
+        : table_id_;
+    if (!table_id)
+        return false;
 
     DatabasePtr db;
     {

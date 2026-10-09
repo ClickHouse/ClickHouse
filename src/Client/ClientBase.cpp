@@ -732,7 +732,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
                 if (dialect == Dialect::logsql)
                     res = tryParseLogsQLQuery(*parser, pos, end, message, nullptr, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
                 else
-                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+                    res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length,
+                        settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true, /*allow_multipart_table_paths*/ true);
             }
             catch (const Exception & e)
             {
@@ -752,7 +753,8 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             if (dialect == Dialect::logsql)
                 res = parseLogsQLQueryAndMovePosition(*parser, pos, end, allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             else
-                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                res = parseQueryAndMovePosition(*parser, pos, end, "", allow_multi_statements, max_length,
+                    settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], /*allow_multipart_table_paths*/ true);
         }
     }
 
@@ -2626,7 +2628,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
 
         if (parsed_insert_query->columns)
         {
-            auto columns = processColumnTransformers(client_context->getCurrentDatabase(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
+            auto columns = processColumnTransformers(client_context->getCurrentDatabase().getFullName(), client_context->getInsertionTable(), columns_for_storage_file, parsed_insert_query->columns);
             ColumnsDescription reordered_description{};
             for (const auto & col_name : columns->children)
             {

@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/InterpreterUpdateQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 
@@ -149,7 +150,7 @@ BlockIO InterpreterUpdateQuery::execute()
         /// database of the session. The table identifiers are qualified on each host instead.
         if (resolved_table_id)
         {
-            AddDefaultDatabaseVisitor visitor(getContext(), resolved_table_id.getDatabaseName());
+            AddDefaultDatabaseVisitor visitor(getContext(), CurrentDatabaseInfo::fromOnlyDatabaseName(resolved_table_id.getDatabaseName()));
             if (update_query.predicate)
                 visitor.substituteDatabaseInTableFunctions(*update_query.predicate);
             if (update_query.assignments)
@@ -158,10 +159,10 @@ BlockIO InterpreterUpdateQuery::execute()
 
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
-        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const String & cluster_default_database, bool throw_if_unresolved)
+        params.additional_access_check = [captured_query_ptr = query_ptr, context = getContext()](const CurrentDatabaseInfo & cluster_default_database, bool throw_if_unresolved)
         {
             const auto & captured_update = captured_query_ptr->as<const ASTUpdateQuery &>();
-            const auto default_database = captured_update.getDatabase().empty() ? cluster_default_database : captured_update.getDatabase();
+            const auto default_database = captured_update.getDatabase().empty() ? cluster_default_database : CurrentDatabaseInfo::fromOnlyDatabaseName(captured_update.getDatabase());
             checkNoRowPolicyForSetOperands(captured_query_ptr, default_database, context, throw_if_unresolved);
         };
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -184,7 +185,7 @@ BlockIO InterpreterUpdateQuery::execute()
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
 
-    checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+    checkNoRowPolicyForSetOperands(query_ptr, CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.database_name), getContext());
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -211,13 +212,13 @@ BlockIO InterpreterUpdateQuery::execute()
     /// Add default database to table identifiers that we can encounter in the update expression.
     if (update_query.predicate)
     {
-        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        AddDefaultDatabaseVisitor visitor(getContext(), CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.getDatabaseName()));
         ASTPtr predicate = update_query.predicate->ptr();
         visitor.visit(predicate);
     }
     if (update_query.assignments)
     {
-        AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+        AddDefaultDatabaseVisitor visitor(getContext(), CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.getDatabaseName()));
         ASTPtr assignments = update_query.assignments->ptr();
         visitor.visit(assignments);
     }

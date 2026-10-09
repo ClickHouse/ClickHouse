@@ -1,5 +1,5 @@
 #include <Parsers/ParserUseQuery.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTUseQuery.h>
@@ -13,6 +13,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_use(Keyword::USE);
     ParserKeyword s_database(Keyword::DATABASE);
     ParserIdentifier name_p{/*allow_query_parameter*/ true};
+    ParserToken s_dot(TokenType::Dot);
 
     if (!s_use.ignore(pos, expected))
         return false;
@@ -41,6 +42,30 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         // Parse identifier directly (handles "USE database" where database is a name)
         if (!name_p.parse(pos, database, expected))
             return false;
+    }
+
+    if (pos.allow_multipart_table_paths && s_dot.ignore(pos, expected))
+    {
+        String first_part;
+
+        if (!tryGetIdentifierNameInto(database, first_part) || first_part.empty()
+            || first_part.find('.') != String::npos)
+            return false;
+
+        std::vector<String> parts{first_part};
+        ParserIdentifier part_p;
+        do
+        {
+            ASTPtr part;
+            if (!part_p.parse(pos, part, expected))
+                return false;
+            const String part_name = getIdentifierName(part);
+            if (part_name.empty() || part_name.find('.') != String::npos)
+                return false;
+            parts.push_back(part_name);
+        } while (s_dot.ignore(pos, expected));
+
+        database = make_intrusive<ASTIdentifier>(std::move(parts));
     }
 
     auto query = make_intrusive<ASTUseQuery>();

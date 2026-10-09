@@ -38,7 +38,7 @@ namespace
         /// An empty current database cannot be copied over: `setCurrentDatabase` rejects an empty name,
         /// and it cannot happen for a query anyway - the server refuses to start with an empty
         /// `default_database`, so every session context has a database to inherit.
-        const auto & database = context->getCurrentDatabase();
+        const auto database = context->getCurrentDatabase();
         if (!database.empty() && database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);
 
