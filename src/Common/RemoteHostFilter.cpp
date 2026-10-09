@@ -66,32 +66,49 @@ std::string RemoteHostFilter::checkAndGetCanonicalHostAndPort(
 
 void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    if (config.has("remote_url_allow_hosts"))
+    std::unordered_set<std::string> new_primary_hosts;
+    std::vector<std::string> new_regexp_hosts;
+    std::unordered_set<std::string> new_s3_buckets;
+    const bool has_config = config.has("remote_url_allow_hosts");
+
+    if (has_config)
     {
         std::vector<std::string> keys;
         config.keys("remote_url_allow_hosts", keys);
 
-        std::lock_guard guard(hosts_mutex);
-        primary_hosts.clear();
-        regexp_hosts.clear();
-
         for (const auto & key : keys)
         {
             if (startsWith(key, "host_regexp"))
-                regexp_hosts.push_back(config.getString("remote_url_allow_hosts." + key));
+                new_regexp_hosts.push_back(config.getString("remote_url_allow_hosts." + key));
             else if (startsWith(key, "host"))
-                primary_hosts.insert(config.getString("remote_url_allow_hosts." + key));
+                new_primary_hosts.insert(config.getString("remote_url_allow_hosts." + key));
+            else if (startsWith(key, "s3_bucket"))
+            {
+                const auto value = config.getString("remote_url_allow_hosts." + key);
+                const auto slash = value.find('/');
+                if (slash == 0 || slash == std::string::npos || slash + 1 == value.size() || value.find('/', slash + 1) != std::string::npos)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "<s3_bucket> \"{}\" in <remote_url_allow_hosts> must have the form host/bucket or host:port/bucket", value);
+                new_s3_buckets.insert(value);
+            }
         }
+    }
 
-        is_initialized = true;
-    }
-    else
-    {
-        is_initialized = false;
-        std::lock_guard guard(hosts_mutex);
-        primary_hosts.clear();
-        regexp_hosts.clear();
-    }
+    std::lock_guard guard(hosts_mutex);
+    primary_hosts = std::move(new_primary_hosts);
+    regexp_hosts = std::move(new_regexp_hosts);
+    s3_buckets = std::move(new_s3_buckets);
+    is_initialized = has_config;
+}
+
+bool RemoteHostFilter::isBucketAllowed(const std::string & endpoint_host, UInt16 endpoint_port, const std::string & bucket) const
+{
+    if (!is_initialized)
+        return true;
+
+    std::lock_guard guard(hosts_mutex);
+    return s3_buckets.contains(endpoint_host + "/" + bucket)
+        || s3_buckets.contains(endpoint_host + ":" + toString(endpoint_port) + "/" + bucket);
 }
 
 bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const

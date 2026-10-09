@@ -297,6 +297,11 @@ ThreadStatus::QueryCancellationBlocker::~QueryCancellationBlocker()
     query_cancellation_blocked = previous;
 }
 
+bool ThreadStatus::QueryCancellationBlocker::isActive()
+{
+    return query_cancellation_blocked;
+}
+
 ExecutionPhaseScope::ExecutionPhaseScope(ExecutionPhase phase) noexcept
     : thread(current_thread)
     , group(thread ? thread->getThreadGroup().get() : nullptr)

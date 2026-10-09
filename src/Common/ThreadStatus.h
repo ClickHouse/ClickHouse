@@ -349,6 +349,9 @@ public:
         QueryCancellationBlocker();
         ~QueryCancellationBlocker();
 
+        /// Whether a blocker is alive in the current thread. `ThreadPool` carries it into the jobs scheduled under it.
+        static bool isActive();
+
     private:
         bool previous;
     };
