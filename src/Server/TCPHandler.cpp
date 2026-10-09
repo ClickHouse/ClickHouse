@@ -2986,6 +2986,15 @@ bool TCPHandler::processData(QueryState & state, bool scalar)
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
 
+    /// A block with no columns and some rows is what a shard sends as a part of a query result. Data sent to
+    /// the server (scalars, external tables, `INSERT` and `input`) always has columns, so such a block here is
+    /// malformed, and treating it as the end of the data would silently drop its rows.
+    if (block.columns() == 0 && block.info.num_rows_without_columns > 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Received a block of {} rows without columns in a Data packet from the client",
+            block.info.num_rows_without_columns);
+
     if (block.empty())
         return false;
 
@@ -3063,7 +3072,9 @@ bool TCPHandler::processUnexpectedData()
         maybe_compressed_in = in;
 
     auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
-    bool empty_block = skip_block_in->read().empty();
+    /// A block with no columns that carries rows is skipped as data, it is not the end of the data.
+    Block skipped_block = skip_block_in->read();
+    bool empty_block = skipped_block.empty() && skipped_block.info.num_rows_without_columns == 0;
     return !empty_block;
 }
 
