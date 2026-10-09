@@ -1179,24 +1179,42 @@ std::optional<UInt128> StorageMaterializedView::getModificationHash(const Storag
         /// the effective reader's grants below. The target can have columns the view does not expose, so a
         /// caller without access to them would observe their churn through the hash. Inside the
         /// introspection scope, require the caller's own `SELECT` on every column of the target as well.
+        StoragePtr caller_checked_target;
+        StorageMetadataHandle caller_checked_target_metadata;
         if (isModificationHashIntrospection()
             && storage_snapshot->metadata->sql_security_type
             && *storage_snapshot->metadata->sql_security_type != SQLSecurityType::INVOKER)
         {
-            auto target_table = tryGetTargetTable();
-            if (!target_table)
+            caller_checked_target = tryGetTargetTable();
+            if (!caller_checked_target)
                 return {};
-            const auto target_id = target_table->getStorageID();
-            const auto target_metadata = target_table->getInMemoryMetadataPtr(query_context, false);
-            if (!canComputeModificationHash(query_context, target_id.database_name, target_id.table_name, target_metadata->getColumns()))
+            const auto target_id = caller_checked_target->getStorageID();
+            caller_checked_target_metadata = caller_checked_target->getInMemoryMetadataPtr(query_context, false);
+            if (!canComputeModificationHash(query_context, target_id.database_name, target_id.table_name, caller_checked_target_metadata->getColumns()))
                 return {};
         }
 
         /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
         /// target table and folds its identity (including the UUID, so a re-created target is distinguished).
-        auto target_hash = computeTableModificationHashForConsistency(getTargetTableId(), effective_context);
+        /// Hash the same target table whose columns were checked against the caller above.
+        auto target_hash = computeTableModificationHashForConsistency(
+            caller_checked_target ? caller_checked_target->getStorageID() : getTargetTableId(), effective_context);
         if (!target_hash)
             return {};
+
+        /// The call above refreshes the lazily applied metadata of the target first (see
+        /// `getModificationHashWithRefreshedMetadata`), and a schema-lazy target (`Iceberg`, `DeltaLake`, ...)
+        /// can discover new columns there. That refresh rechecks the new columns only against the effective
+        /// reader, so recheck them against the caller as well: the hash must not move because of columns
+        /// the caller is not allowed to read.
+        if (caller_checked_target)
+        {
+            const auto refreshed_metadata = caller_checked_target->getInMemoryMetadataPtr(query_context, false);
+            const auto target_id = caller_checked_target->getStorageID();
+            if (refreshed_metadata->getColumns() != caller_checked_target_metadata->getColumns()
+                && !canComputeModificationHash(query_context, target_id.database_name, target_id.table_name, refreshed_metadata->getColumns()))
+                return {};
+        }
 
         SipHash hash;
         /// Per-incarnation identity: a DROP + CREATE in an `Atomic` database gets a fresh UUID, so a
