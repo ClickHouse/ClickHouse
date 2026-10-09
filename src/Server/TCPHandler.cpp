@@ -129,6 +129,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
     extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
     extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
+    extern const ServerSettingsBool interserver_tables_status_allow_unauthenticated;
 }
 
 namespace FailPoints
@@ -1537,10 +1538,12 @@ void TCPHandler::processTablesStatusRequest()
     /// that hides the table status: every requested table is reported present, not replicated and
     /// writable, independently of the actual state of the tables, so nothing is disclosed, while the
     /// initiator still sees a usable replica and proceeds to the `Query`, which does authenticate.
+    /// `interserver_tables_status_allow_unauthenticated` restores the previous behavior.
     bool hide_table_status = false;
     if (is_interserver_mode)
     {
-        if (!is_interserver_authenticated)
+        if (!is_interserver_authenticated
+            && !server.context()->getServerSettings()[ServerSetting::interserver_tables_status_allow_unauthenticated])
         {
             LOG_DEBUG(LogFrequencyLimiter(log, 10),
                 "Answering an unauthenticated interserver TablesStatusRequest without the table status. "
