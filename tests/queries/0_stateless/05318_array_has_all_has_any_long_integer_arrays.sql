@@ -91,3 +91,41 @@ SELECT 'UInt64', 'not Nullable', count(),
 FROM (SELECT CAST(arrayMap(v -> assumeNotNull(v), a), 'Array(UInt64)') AS x, CAST(arrayMap(v -> assumeNotNull(v), b), 'Array(UInt64)') AS y FROM arrays);
 
 DROP TABLE arrays;
+
+-- A null-map byte can be any nonzero value: without short-circuit evaluation, `if` uses its condition as the null map.
+-- Every value is null at all of its positions (with the byte 1 or 2) or at none of them, so `has` gives the expected result.
+SELECT 'Int8', 'if null map', count(), countIf(has(x, v)) AS found,
+    countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
+    countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
+FROM (SELECT toInt8(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt8(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt8(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
+SETTINGS short_circuit_function_evaluation = 'disable';
+
+SELECT 'UInt8', 'if null map', count(), countIf(has(x, v)) AS found,
+    countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
+    countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
+FROM (SELECT toUInt8(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt8(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt8(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
+SETTINGS short_circuit_function_evaluation = 'disable';
+
+SELECT 'Int16', 'if null map', count(), countIf(has(x, v)) AS found,
+    countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
+    countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
+FROM (SELECT toInt16(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt16(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt16(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
+SETTINGS short_circuit_function_evaluation = 'disable';
+
+SELECT 'Int32', 'if null map', count(), countIf(has(x, v)) AS found,
+    countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
+    countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
+FROM (SELECT toInt32(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt32(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt32(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
+SETTINGS short_circuit_function_evaluation = 'disable';
+
+SELECT 'Int64', 'if null map', count(), countIf(has(x, v)) AS found,
+    countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
+    countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
+FROM (SELECT toInt64(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt64(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toInt64(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
+SETTINGS short_circuit_function_evaluation = 'disable';
+
+SELECT 'UInt64', 'if null map', count(), countIf(has(x, v)) AS found,
+    countIf(hasAll(x, [v]) != has(x, v) OR hasAny(x, [v]) != has(x, v)) AS mismatches,
+    countIf(hasAll(x, y) != arrayAll(w -> has(x, w), y) OR hasAny(x, y) != arrayExists(w -> has(x, w), y)) AS long_mismatches
+FROM (SELECT toUInt64(number) AS v, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt64(i % 128)), materialize(range(300))) AS x, arrayMap(i -> if(toUInt8(i % 128 % 3), NULL, toUInt64(i % 128)), materialize(range(number, number + 20))) AS y FROM numbers(128))
+SETTINGS short_circuit_function_evaluation = 'disable';

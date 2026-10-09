@@ -90,8 +90,13 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
     /// Filled lane by lane because comparing with the scalar directly is an implicit conversion that `-Wcharacter-conversion`
     /// rejects for `char8_t`, which is `UInt8`. It compiles to the same broadcast.
     Vector needle{};
+    Vector significant_lanes{};
     for (size_t lane = 0; lane < lanes; ++lane)
+    {
         needle[lane] = value;
+        significant_lanes[lane] = static_cast<T>(sizeof(T) == 1 ? ~0ULL : ~0xFFULL);
+    }
+    const auto significant = reinterpret_cast<SearchMask<32>>(significant_lanes);
 
     /// Without `ALWAYS_INLINE` the lambda can stay a call in the probe of `sliceHasAllBytes`.
     auto block_contains = [&](size_t begin) ALWAYS_INLINE
@@ -109,12 +114,16 @@ ALWAYS_INLINE bool sliceContains(const NumericArraySlice<T> & slice, const UInt8
                 NullBytes nulls;
                 memcpy(&nulls, null_map + begin + offset, sizeof(nulls));
                 /// Subtracting one turns the flags into masks; comparing them with zero instead made x86 narrow the 8-byte
-                /// comparison results to 4 bytes with two extra shuffles per vector.
-                equal &= __builtin_convertvector(nulls, decltype(equal)) - 1;
+                /// comparison results to 4 bytes with two extra shuffles per vector. A null-map byte can be any nonzero value
+                /// (`if` uses its condition), so a null lane keeps at most its low byte, which `significant` excludes.
+                if constexpr (sizeof(T) == 1)
+                    equal &= ~reinterpret_cast<Vector>(nonZeroLanes(nulls));
+                else
+                    equal &= __builtin_convertvector(nulls, decltype(equal)) - 1;
             }
             found |= reinterpret_cast<SearchMask<32>>(equal);
         }
-        return anyLaneSet(found);
+        return anyLaneSet(found & significant);
     };
 
     size_t i = 0;
