@@ -23,7 +23,8 @@ namespace
   * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
   *   `validateAggregates` rejects `grouping` in `WHERE`);
   * - else any `arrayJoin` function -> `KeepInHaving` (before aggregation it would multiply the rows);
-  * - else any `indexHint` function -> `KeepInHaving` (before aggregation it would prune granules, leaving partial groups);
+  * - else, with `keep_index_hint_conjuncts`, any `indexHint` function -> `KeepInHaving` (before aggregation it would
+  *   prune granules, leaving partial groups);
   * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
   * - else -> `Move`.
   *
@@ -44,7 +45,8 @@ enum class HavingConjunctMoveAction
     AbortRewrite,
 };
 
-HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & node, bool keep_server_dependent_conjuncts)
+HavingConjunctMoveAction classifyHavingConjunctForMove(
+    const QueryTreeNodePtr & node, bool keep_server_dependent_conjuncts, bool keep_index_hint_conjuncts)
 {
     HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
 
@@ -123,7 +125,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
                 bool is_grouping_function = function_name == "grouping" || function_name.starts_with("__grouping");
                 /// `arrayJoin` may also be written as its alias `unnest`.
                 const auto & canonical_name = getFunctionCanonicalNameIfAny(function_name);
-                if (is_grouping_function || canonical_name == "arrayJoin" || canonical_name == "indexHint")
+                if (is_grouping_function || canonical_name == "arrayJoin"
+                    || (keep_index_hint_conjuncts && canonical_name == "indexHint"))
                     keep_in_having();
             }
         }
@@ -138,7 +141,8 @@ HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & 
 
 }
 
-void moveNonAggregateHavingConjunctsToWhere(QueryNode & query_node, const ContextPtr & context, bool keep_server_dependent_conjuncts)
+void moveNonAggregateHavingConjunctsToWhere(
+    QueryNode & query_node, const ContextPtr & context, bool keep_server_dependent_conjuncts, bool keep_index_hint_conjuncts)
 {
     if (!query_node.hasHaving())
         return;
@@ -183,7 +187,7 @@ void moveNonAggregateHavingConjunctsToWhere(QueryNode & query_node, const Contex
     classifications.reserve(conjuncts.size());
     for (const auto & conjunct : conjuncts)
     {
-        auto action = classifyHavingConjunctForMove(conjunct, keep_server_dependent_conjuncts);
+        auto action = classifyHavingConjunctForMove(conjunct, keep_server_dependent_conjuncts, keep_index_hint_conjuncts);
         if (action == HavingConjunctMoveAction::AbortRewrite)
             return;
         classifications.push_back(action);

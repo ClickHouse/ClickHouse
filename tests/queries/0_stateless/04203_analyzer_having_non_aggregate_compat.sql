@@ -197,6 +197,12 @@ HAVING ((service = 'svc1' AND sum(value) > 0) AND sum(value) < 100) AND category
 ORDER BY category
 SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
 
+-- A.12 - `indexHint` conjunct moves to WHERE like in the legacy rewrite, so a non-key column inside it is allowed.
+SELECT 'A.12 indexHint conjunct moves to WHERE';
+SELECT category, sum(value) AS total FROM test_a1 GROUP BY category HAVING indexHint(id = 1)
+ORDER BY category
+SETTINGS enable_analyzer = 1, analyzer_compatibility_allow_non_aggregate_in_having = 1;
+
 DROP TABLE test_a1;
 DROP TABLE test_a2;
 DROP TABLE test_a3;
