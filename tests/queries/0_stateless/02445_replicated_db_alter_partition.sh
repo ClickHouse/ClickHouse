@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest
 # no-fasttest: Slow timeouts
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-msan
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;

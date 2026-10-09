@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-msan
+# Tags: no-fasttest
 # shellcheck disable=SC2206
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

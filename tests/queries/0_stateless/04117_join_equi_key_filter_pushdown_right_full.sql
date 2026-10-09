@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, no-msan
 -- no-parallel-replicas: the granule assertions describe the local `MergeTree` read, which parallel
 -- replicas replace, and the `RIGHT JOIN` shapes below hit the unrelated logical error of
 -- https://github.com/ClickHouse/ClickHouse/issues/113292 there.

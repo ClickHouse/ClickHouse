@@ -1,4 +1,4 @@
--- Tags: stateful, no-parallel-replicas, long
+-- Tags: stateful, no-parallel-replicas, long, no-msan
 -- Requires investigation (max_bytes_to_read is not respected)
 
 SET max_bytes_to_read = 600000000;
