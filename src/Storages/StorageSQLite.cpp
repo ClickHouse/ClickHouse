@@ -774,6 +774,7 @@ void registerStorageSQLite(StorageFactory & factory)
                                      table_or_query, columns, args.constraints, args.comment, args.getContext(),
                                      generated_columns_reclassification_pending);
     },
+    SecretArgumentsSpec{},
     {
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::SQLITE,

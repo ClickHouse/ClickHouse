@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/StorageURL.h>
 #include <BridgeHelper/XDBCBridgeHelper.h>
 
@@ -71,5 +72,8 @@ private:
 
     bool supportsSubsetOfColumns(const ContextPtr &) const override;
 };
+
+/// The `SecretArgumentsSpec` of `jdbc`, `odbc` and the `JDBC`/`ODBC` table engines.
+SecretArgumentsSpec xdbcSecretArguments();
 
 }
