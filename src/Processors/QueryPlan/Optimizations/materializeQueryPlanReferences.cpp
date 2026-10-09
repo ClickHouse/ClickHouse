@@ -69,7 +69,6 @@ PreparedSets::Subqueries extractSetsForMaterialization(QueryPlan::Node & subplan
             auto * child_root = child_plan ? child_plan->getRootNode() : nullptr;
             if (!child_root)
                 continue;
-            /// A set taken out of a sealed view's plan stays sealed in the outer plan.
             if (const auto * read_from_sealed_view = typeid_cast<const ReadFromSealedViewStep *>(node->step.get()))
             {
                 auto child_sets = extractSetsForMaterialization(*child_root);

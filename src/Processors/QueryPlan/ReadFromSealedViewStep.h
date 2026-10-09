@@ -30,14 +30,12 @@ public:
 
     void describePipeline(FormatSettings & settings) const override;
 
-    /// Optimizes the view's plan with the view's settings, once.
     void optimize();
 
     /// Seals the plans of the sets taken out of the view's plan, which are built by the outer plan.
     void sealSets(const std::vector<FutureSetFromSubqueryPtr> & sets) const;
 
 private:
-    /// For `clone` and `sealSets`.
     ReadFromSealedViewStep(QueryPlan view_plan_, QueryPlanOptimizationSettings optimization_settings_, bool show_plan_);
 
     QueryPlan view_plan;
