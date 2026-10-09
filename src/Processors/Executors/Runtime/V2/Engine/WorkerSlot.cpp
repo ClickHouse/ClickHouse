@@ -20,7 +20,7 @@ WorkerSlot::WorkerSlot(AcquiredSlotPtr slot_, MemoryReservation * reservation_, 
         lease->startConsumption();
 }
 
-bool WorkerSlot::keepGoing()
+bool WorkerSlot::keepRunning()
 {
     if (!lease && !reservation)
         return true;

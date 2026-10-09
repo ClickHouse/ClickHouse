@@ -1,5 +1,5 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/Updates/RoundUpdatesChannel.h>
-#include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorState.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/ExecutingProcessor.h>
 #include <Processors/Port.h>
 #include <Common/Exception.h>
 
@@ -22,7 +22,7 @@ RoundUpdatesChannel<PortT>::RoundUpdatesChannel(const RoundUpdatesChannel & othe
 }
 
 template <class PortT>
-void RoundUpdatesChannel<PortT>::connect(ProcessorState & owner_, PortT & port_)
+void RoundUpdatesChannel<PortT>::connect(ExecutingProcessor & owner_, PortT & port_)
 {
     if (isConnected())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Update channel is already connected");
@@ -45,7 +45,7 @@ bool RoundUpdatesChannel<PortT>::isConnected() const
 }
 
 template <class PortT>
-ProcessorState & RoundUpdatesChannel<PortT>::getOwner() const
+ExecutingProcessor & RoundUpdatesChannel<PortT>::getOwner() const
 {
     if (!isConnected())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Update channel is not connected");

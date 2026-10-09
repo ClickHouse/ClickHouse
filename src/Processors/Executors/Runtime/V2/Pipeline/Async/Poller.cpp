@@ -1,4 +1,5 @@
-#include <Processors/Executors/Runtime/V2/Engine/Polling/Poller.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/Async/Poller.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -23,18 +24,18 @@ namespace Runtime::V2
 class Poller::Deadlines
 {
     using Clock = std::chrono::steady_clock;
-    using Queue = std::multimap<Clock::time_point, ProcessorState *>;
+    using Queue = std::multimap<Clock::time_point, ExecutingProcessor *>;
 
 public:
-    void arm(ProcessorState * state, int64_t timeout_ms)
+    void arm(ExecutingProcessor * processor, int64_t timeout_ms)
     {
-        drop(state);
-        index[state] = queue.emplace(Clock::now() + std::chrono::milliseconds(timeout_ms), state);
+        drop(processor);
+        index[processor] = queue.emplace(Clock::now() + std::chrono::milliseconds(timeout_ms), processor);
     }
 
-    void drop(ProcessorState * state)
+    void drop(ExecutingProcessor * processor)
     {
-        if (auto it = index.find(state); it != index.end())
+        if (auto it = index.find(processor); it != index.end())
         {
             queue.erase(it->second);
             index.erase(it);
@@ -49,36 +50,36 @@ public:
         return queue.begin()->first;
     }
 
-    ProcessorState * popExpired()
+    ExecutingProcessor * popExpired()
     {
         if (queue.empty())
             return nullptr;
 
         auto it = queue.begin();
-        auto [deadline, state] = *it;
+        auto [deadline, processor] = *it;
 
         if (deadline > Clock::now())
             return nullptr;
 
         queue.erase(it);
-        index.erase(state);
-        return state;
+        index.erase(processor);
+        return processor;
     }
 
 private:
     Queue queue;
-    std::unordered_map<ProcessorState *, Queue::iterator> index;
+    std::unordered_map<ExecutingProcessor *, Queue::iterator> index;
 };
 
-void Poller::unregister(ProcessorState * state)
+void Poller::unregister(ExecutingProcessor * processor)
 {
-    auto it = fds.find(state);
+    auto it = fds.find(processor);
     if (it == fds.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor state {} is not registered in the poller", static_cast<const void *>(state));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is not registered in the poller", static_cast<const void *>(processor));
 
     epoll.remove(it->second);
     fds.erase(it);
-    deadlines->drop(state);
+    deadlines->drop(processor);
     pending_count.fetch_sub(1);
 }
 
@@ -95,12 +96,13 @@ void Poller::updateTimer()
     timer_signal.setRelative(std::max<int64_t>(1, us_until_deadline));
 }
 
-void Poller::collectExpired(std::vector<Task> & fired)
+void Poller::collectExpired(std::vector<ExecutingProcessor *> & fired)
 {
-    while (ProcessorState * expired = deadlines->popExpired())
+    while (ExecutingProcessor * expired = deadlines->popExpired())
     {
         unregister(expired);
-        fired.push_back(Task::create(*expired, Task::Step::AsyncReady));
+        expired->status.store(ExecutingProcessor::Status::AsyncReady);
+        fired.push_back(expired);
     }
 
     updateTimer();
@@ -120,15 +122,17 @@ Poller::~Poller() = default;
 
 bool Poller::add(const PollRequest & request)
 {
-    if (!fds.emplace(request.state, request.fd).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor state {} is already registered in the poller", static_cast<const void *>(request.state));
+    Wyrd::unreachable("Epoll does not supported in wyrd");
 
-    epoll.add(request.fd, request.state, request.events);
+    if (!fds.emplace(request.processor, request.fd).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} is already registered in the poller", static_cast<const void *>(request.processor));
+
+    epoll.add(request.fd, request.processor, request.events);
 
     if (request.timeout_ms < 0)
         return false;
 
-    deadlines->arm(request.state, request.timeout_ms);
+    deadlines->arm(request.processor, request.timeout_ms);
     return true;
 }
 
@@ -149,9 +153,9 @@ void Poller::pushMany(std::span<const PollRequest> requests)
         updateTimer();
 }
 
-std::vector<Task> Poller::poll(int timeout_ms)
+std::vector<ExecutingProcessor *> Poller::poll(int timeout_ms)
 {
-    std::vector<Task> fired;
+    std::vector<ExecutingProcessor *> fired;
 
     {
         std::lock_guard lock(mutex);
@@ -184,9 +188,10 @@ std::vector<Task> Poller::poll(int timeout_ms)
             continue;
         }
 
-        auto * state = static_cast<ProcessorState *>(ptr);
-        unregister(state);
-        fired.push_back(Task::create(*state, Task::Step::AsyncReady));
+        auto * processor = static_cast<ExecutingProcessor *>(ptr);
+        unregister(processor);
+        processor->status.store(ExecutingProcessor::Status::AsyncReady);
+        fired.push_back(processor);
     }
 
     if (timer_fired)

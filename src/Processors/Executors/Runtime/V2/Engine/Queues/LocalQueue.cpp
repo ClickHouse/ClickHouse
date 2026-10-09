@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/LocalTasks.h>
+#include <Processors/Executors/Runtime/V2/Engine/Queues/LocalQueue.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
 
 #include <fmt/format.h>
@@ -15,7 +15,7 @@ namespace Runtime::V2
 namespace
 {
 
-static_assert((LocalTasks::capacity & (LocalTasks::capacity - 1)) == 0);
+static_assert((LocalQueue::capacity & (LocalQueue::capacity - 1)) == 0);
 
 struct Bounds
 {
@@ -38,27 +38,27 @@ Int32 signedDifference(UInt32 lhs, UInt32 rhs)
     return std::bit_cast<Int32>(lhs - rhs);
 }
 
-void setSlot(auto & buffer, UInt32 index, const Task & task)
+void setSlot(auto & buffer, UInt32 index, ExecutingProcessor * value)
 {
-    buffer[index % LocalTasks::capacity].packed.store(Task::pack(task), std::memory_order::relaxed);
+    buffer[index % LocalQueue::capacity].value.store(value, std::memory_order::relaxed);
 }
 
-Task getSlot(const auto & buffer, UInt32 index)
+ExecutingProcessor * getSlot(const auto & buffer, UInt32 index)
 {
-    return Task::unpack(buffer[index % LocalTasks::capacity].packed.load(std::memory_order::relaxed));
+    return buffer[index % LocalQueue::capacity].value.load(std::memory_order::relaxed);
 }
 
 }
 
-LocalTasks::LocalTasks(std::string name)
+LocalQueue::LocalQueue(std::string name)
 {
     Wyrd::setName(head, fmt::format("{}.head", name));
     Wyrd::setName(bounds, fmt::format("{}.bounds", name));
     for (UInt32 index = 0; index < capacity; ++index)
-        Wyrd::setName(buffer[index].packed, fmt::format("{}.slot[{}]", name, index));
+        Wyrd::setName(buffer[index].value, fmt::format("{}.slot[{}]", name, index));
 }
 
-UInt32 LocalTasks::pushManyLifo(std::span<const Task> many)
+UInt32 LocalQueue::pushManyLifo(std::span<ExecutingProcessor * const> many)
 {
     const UInt32 current_head = head.load();
     const auto [tail, taken] = unpackBounds(bounds.load());
@@ -70,7 +70,7 @@ UInt32 LocalTasks::pushManyLifo(std::span<const Task> many)
     return count;
 }
 
-std::optional<Task> LocalTasks::popLifo()
+ExecutingProcessor * LocalQueue::popLifo()
 {
     const UInt32 new_head = head.load() - 1;
     head.store(new_head);
@@ -93,7 +93,7 @@ std::optional<Task> LocalTasks::popLifo()
 
             /// No tasks left.
             head.store(new_head + 1);
-            return std::nullopt;
+            return nullptr;
         }
         else if (available > 0)
         {
@@ -119,7 +119,7 @@ std::optional<Task> LocalTasks::popLifo()
     }
 }
 
-UInt32 LocalTasks::stealFifo(std::span<Task> out)
+UInt32 LocalQueue::stealFifo(std::span<ExecutingProcessor *> out)
 {
     /// Try lock steal range.
     Wyrd::SpinWait spin_wait;
@@ -162,14 +162,14 @@ UInt32 LocalTasks::stealFifo(std::span<Task> out)
     return steal_end - steal_begin;
 }
 
-UInt32 LocalTasks::size() const
+UInt32 LocalQueue::size() const
 {
     const UInt32 current_head = head.load();
     const auto [tail, taken] = unpackBounds(bounds.load());
     return std::max<Int32>(signedDifference(current_head, tail), 0);
 }
 
-UInt32 LocalTasks::freeSlots() const
+UInt32 LocalQueue::freeSlots() const
 {
     const UInt32 current_head = head.load();
     const auto [tail, taken] = unpackBounds(bounds.load());

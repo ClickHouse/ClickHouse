@@ -11,12 +11,12 @@ namespace Runtime::V2
 class RoundUpdates
 {
     template <class PortT>
-    static void drain(std::vector<PortT *> & ports, std::vector<PortT *> & ports_out_lifo);
+    static void drainLifo(std::vector<PortT *> & ports, std::vector<PortT *> & ports_out);
 
 public:
     void push(InputPort & port);
     void push(OutputPort & port);
-    void drain(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out);
+    void drainLifo(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out);
 
 private:
     IProcessor::UpdatedInputPorts inputs;

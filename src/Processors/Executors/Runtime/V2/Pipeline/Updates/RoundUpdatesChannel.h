@@ -9,7 +9,7 @@ class OutputPort;
 namespace Runtime::V2
 {
 
-struct ProcessorState;
+struct ExecutingProcessor;
 
 template <class PortT>
 class RoundUpdatesChannel
@@ -19,17 +19,17 @@ public:
     RoundUpdatesChannel(const RoundUpdatesChannel & other);
     RoundUpdatesChannel & operator=(const RoundUpdatesChannel &) = delete;
 
-    void connect(ProcessorState & owner_, PortT & port_);
+    void connect(ExecutingProcessor & owner_, PortT & port_);
     void disconnect();
     bool isConnected() const;
-    ProcessorState & getOwner() const;
+    ExecutingProcessor & getOwner() const;
 
     void notifyChanges();
     void markDrained();
 
 private:
     PortT * port = nullptr;
-    ProcessorState * owner = nullptr;
+    ExecutingProcessor * owner = nullptr;
     bool in_round_updates = false;
 };
 

@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Pipeline/State/ProcessorState.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/ExecutingProcessor.h>
+
+#include <cstdint>
 
 namespace DB
 {
@@ -8,11 +10,9 @@ namespace DB
 namespace Runtime::V2
 {
 
-struct ProcessorState;
-
 struct PollRequest
 {
-    ProcessorState * state = nullptr;
+    ExecutingProcessor * processor = nullptr;
     int fd = -1;
     uint32_t events = 0;
     int64_t timeout_ms = -1;

@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Pipeline/State/RemovalGroups.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/RemovalGroups.h>
 #include <Processors/IProcessor.h>
 #include <Common/Exception.h>
 
@@ -17,14 +17,15 @@ RemovalGroups::RemovalGroups()
 {
     Wyrd::setName(mutex, "removal_groups.mutex");
     Wyrd::setName(ready_groups, "removal_groups.ready_groups");
+    Wyrd::setName(finished_total, "removal_groups.finished_total");
 }
 
-void RemovalGroups::submitForRemoval(Processors processors)
+void RemovalGroups::submitForRemoval(const Processors & processors)
 {
     std::lock_guard lock(mutex);
 
     Group & group = groups.emplace_back();
-    group.processors = std::move(processors);
+    group.processors = processors;
 
     for (const auto & processor : group.processors)
     {
@@ -41,23 +42,34 @@ void RemovalGroups::submitForRemoval(Processors processors)
         ready_groups.fetch_add(1);
 }
 
-void RemovalGroups::markFinished(IProcessor * processor)
+void RemovalGroups::markFinished(const std::vector<IProcessor *> & processors)
 {
+    if (processors.empty())
+        return;
+
     std::lock_guard lock(mutex);
 
-    auto it = pending_finish_groups.find(processor);
-    if (it == pending_finish_groups.end())
+    size_t groups_completed = 0;
+    for (auto * processor : processors)
     {
-        finished_processors.insert(processor);
-        return;
+        auto it = pending_finish_groups.find(processor);
+        if (it == pending_finish_groups.end())
+        {
+            finished_processors.insert(processor);
+            continue;
+        }
+
+        Group & group = *it->second;
+        group.unfinished -= 1;
+        pending_finish_groups.erase(it);
+
+        if (group.unfinished == 0)
+            ++groups_completed;
     }
 
-    Group & group = *it->second;
-    group.unfinished -= 1;
-    pending_finish_groups.erase(it);
-
-    if (group.unfinished == 0)
-        ready_groups.fetch_add(1);
+    finished_total.fetch_add(processors.size());
+    if (groups_completed > 0)
+        ready_groups.fetch_add(groups_completed);
 }
 
 Processors RemovalGroups::takeReadyForRemoval()
@@ -78,7 +90,13 @@ Processors RemovalGroups::takeReadyForRemoval()
     }
 
     ready_groups.store(0);
+    finished_total.fetch_sub(result.size());
     return result;
+}
+
+size_t RemovalGroups::finishedCount() const
+{
+    return finished_total.load();
 }
 
 bool RemovalGroups::hasReadyForRemoval() const

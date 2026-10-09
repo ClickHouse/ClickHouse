@@ -5,7 +5,6 @@
 #include <Processors/IProcessor.h>
 
 #include <list>
-#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -26,18 +25,20 @@ class RemovalGroups
 public:
     RemovalGroups();
 
-    void submitForRemoval(Processors processors);
-    void markFinished(IProcessor * processor);
+    void submitForRemoval(const Processors & processors);
+    void markFinished(const std::vector<IProcessor *> & processors);
 
     bool hasReadyForRemoval() const;
     Processors takeReadyForRemoval();
+    size_t finishedCount() const;
 
 private:
-    Wyrd::Mutex mutex;
+    mutable Wyrd::Mutex mutex;
     std::list<Group> groups;
     std::unordered_map<const IProcessor *, Group *> pending_finish_groups;
     std::unordered_set<const IProcessor *> finished_processors;
     Wyrd::Atomic<size_t> ready_groups{0};
+    Wyrd::Atomic<size_t> finished_total{0};
 };
 
 }

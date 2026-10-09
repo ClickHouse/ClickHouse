@@ -17,7 +17,7 @@ class WorkerSlot
 public:
     WorkerSlot(AcquiredSlotPtr slot_, MemoryReservation * reservation_, MemoryTracker * tracker_);
 
-    bool keepGoing();
+    bool keepRunning();
 
 private:
     AcquiredSlotPtr slot;

@@ -6,10 +6,9 @@
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Processors/IProcessor.h>
 
-#include <cstdint>
 #include <mutex>
-#include <string>
 #include <optional>
+#include <string>
 
 namespace DB
 {
@@ -17,35 +16,25 @@ namespace DB
 namespace Runtime::V2
 {
 
-class ProcessorLock
+struct ExecutingProcessor
 {
-public:
-    enum class Status : uint8_t
+    enum class Status : UInt8
     {
         Idle,
-        Executing,
+        Prepare,
+        Work,
+        Async,
+        AsyncReady,
+        UpdatePipeline,
         Finished,
     };
 
     void setName(std::string name);
     std::unique_lock<Wyrd::Mutex> lockRound();
 
-    /// Decisions are made under the round lock; `isFinished` is a lock-free look.
-    Status status() const;
-    void setExecuting();
-    void setIdle();
-    void finish();
-    bool isFinished() const;
-
-private:
-    Wyrd::Mutex mutex;
-    Wyrd::Atomic<Status> value{Status::Idle};
-};
-
-struct ProcessorState
-{
     IProcessor * processor = nullptr;
-    ProcessorLock lock;
+    Wyrd::Mutex round_mutex;
+    Wyrd::Atomic<Status> status = Status::Idle;
     RoundUpdates round_updates;
     UpdateInbox incoming_updates;
     std::optional<IProcessor::Status> last_status;

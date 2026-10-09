@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
+#include <base/types.h>
 
 #include <array>
-#include <optional>
 #include <span>
 #include <string>
 
@@ -15,24 +14,26 @@ namespace DB
 namespace Runtime::V2
 {
 
-/// Bounded Chase-Lev ring: the owner pushes and pops LIFO at head, thieves steal batches of the oldest tasks.
+struct ExecutingProcessor;
+
+/// Bounded Chase-Lev ring: the owner pushes and pops LIFO at head, thieves steal batches of the oldest entries.
 /// https://dl.acm.org/doi/epdf/10.1145/1073970.1073974
-class LocalTasks
+class LocalQueue
 {
     struct Slot
     {
-        Wyrd::Atomic<PackedTask> packed;
+        Wyrd::Atomic<ExecutingProcessor *> value;
     };
 
 public:
     static constexpr UInt32 capacity = Wyrd::enabled() ? 8 : 256;
 
-    explicit LocalTasks(std::string name);
+    explicit LocalQueue(std::string name);
 
-    UInt32 pushManyLifo(std::span<const Task> many);
+    UInt32 pushManyLifo(std::span<ExecutingProcessor * const> many);
 
-    std::optional<Task> popLifo();
-    UInt32 stealFifo(std::span<Task> out);
+    ExecutingProcessor * popLifo();
+    UInt32 stealFifo(std::span<ExecutingProcessor *> out);
 
     UInt32 size() const;
     UInt32 freeSlots() const;

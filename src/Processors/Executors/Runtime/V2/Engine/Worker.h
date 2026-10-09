@@ -1,14 +1,12 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Engine/Polling/PollRequest.h>
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskRunner.h>
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/LocalTasks.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunner.h>
+#include <Processors/Executors/Runtime/V2/Engine/Queues/LocalQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerSlot.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 
 #include <array>
 #include <atomic>
-#include <optional>
 #include <span>
 
 namespace DB
@@ -21,19 +19,18 @@ class WorkerPool;
 
 class Worker
 {
-    /// Tasks search.
+    /// Search.
     bool keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag);
-    std::optional<Task> pickTask(WorkerSlot & slot, std::atomic_bool * yield_flag);
-    std::optional<Task> tryPickTask();
-    std::optional<Task> tryPickTaskBeforePark();
-    std::optional<Task> tryStealTasks(size_t rounds);
-    Task pickFromBatch(std::span<const Task> batch);
+    ExecutingProcessor * pick(WorkerSlot & slot, std::atomic_bool * yield_flag);
+    ExecutingProcessor * tryPick();
+    ExecutingProcessor * tryPickBeforePark();
+    ExecutingProcessor * trySteal(size_t rounds);
+    ExecutingProcessor * pickFromBatch(std::span<ExecutingProcessor * const> batch);
 
-    /// Tasks population.
-    void pushManyLifo(std::span<const Task> tasks);
-    void pushMany(std::span<const PollRequest> requests);
+    /// Population.
+    void pushManyLifo(std::span<ExecutingProcessor * const> many);
     void wakeFor(Int64 extra_work);
-    void runTask(Task task);
+    void execute(ExecutingProcessor & executing);
     void finishRun();
 
 public:
@@ -41,17 +38,17 @@ public:
 
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
 
-    UInt32 stealFifo(std::span<Task> out);
-    void handOverTasks();
+    UInt32 stealFifo(std::span<ExecutingProcessor *> out);
+    void handOver();
     void wake();
 
 private:
     WorkerPool & pool;
     const size_t worker_id;
-    TaskRunner runner;
+    ProcessorRunner runner;
 
-    LocalTasks local_tasks;
-    std::array<Task, LocalTasks::capacity> tmp_task_buffer{};
+    LocalQueue local_tasks;
+    std::array<ExecutingProcessor *, LocalQueue::capacity> tmp_buffer{};
 
     Wyrd::Atomic<UInt32> wakeups = 0;
 };

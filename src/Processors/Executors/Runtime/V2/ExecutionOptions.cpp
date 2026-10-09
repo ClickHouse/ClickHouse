@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Engine/RunOptions.h>
+#include <Processors/Executors/Runtime/V2/ExecutionOptions.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -15,9 +15,9 @@ namespace Setting
 namespace Runtime::V2
 {
 
-RunOptions makeRunOptions(QueryStatusPtr process_list_element)
+ExecutionOptions makeExecutionOptions(QueryStatusPtr process_list_element)
 {
-    RunOptions options;
+    ExecutionOptions options;
     if (process_list_element)
     {
         const auto & context = process_list_element->getContext();

@@ -1,7 +1,13 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
+#include <Processors/Executors/Runtime/Wyrd/Facade/SpinWait.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <QueryPipeline/printPipeline.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
+
+#include <fmt/format.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -20,15 +26,37 @@ namespace Runtime::V2
 namespace
 {
 
-bool supersedes(IProcessor::CancelReason current, IProcessor::CancelReason reason)
-{
-    if (current == IProcessor::CancelReason::NotCancelled)
-        return true;
+using Records = std::unordered_map<const IProcessor *, ExecutingProcessor>;
 
-    return current == IProcessor::CancelReason::PartialResult && reason != IProcessor::CancelReason::PartialResult;
+String describeProcessor(const IProcessor * processor)
+{
+    return fmt::format("{} at {}", processor->getUniqID(), fmt::ptr(processor));
 }
 
-void checkConnectedOnlyInside(const Processors & group)
+void checkNeighbourIsKnown(const Records & records, const ExecutingProcessor & executing, const Port & connected_port, const char * found_as)
+{
+    const IProcessor * to = &connected_port.getProcessor();
+    if (!records.contains(to))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Processor {} was found as {} for processor {}, but not found in list of processors",
+            describeProcessor(to),
+            found_as,
+            describeProcessor(executing.processor));
+}
+
+void checkNeighboursHaveChannels(ExecutingProcessor & executing)
+{
+    for (auto & input : executing.processor->getInputs())
+        if (input.isConnected() && !input.getOutputPort().getRoundUpdatesChannel().isConnected())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected output port from a pipeline update that did not list it in to_reconnect", describeProcessor(&input.getOutputPort().getProcessor()));
+
+    for (auto & output : executing.processor->getOutputs())
+        if (output.isConnected() && !output.getInputPort().getRoundUpdatesChannel().isConnected())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} got a connected input port from a pipeline update that did not list it in to_reconnect", describeProcessor(&output.getInputPort().getProcessor()));
+}
+
+void checkConnectedOnlyInsideGroup(const Processors & group)
 {
     std::unordered_set<const IProcessor *> members;
     for (const auto & processor : group)
@@ -56,48 +84,123 @@ void checkConnectedOnlyInside(const Processors & group)
     }
 }
 
+ExecutingProcessor & addRecord(Records & records, IProcessor * processor)
+{
+    auto [it, inserted] = records.try_emplace(processor);
+    if (!inserted)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was already added to pipeline", processor->getName());
+
+    it->second.processor = processor;
+    it->second.setName(fmt::format("processor[{}]", processor->getUniqID()));
+    return it->second;
+}
+
+void connectPorts(const Records & records, ExecutingProcessor & executing)
+{
+    for (auto & input : executing.processor->getInputs())
+    {
+        if (!input.isConnected() || input.getRoundUpdatesChannel().isConnected())
+            continue;
+
+        checkNeighbourIsKnown(records, executing, input.getOutputPort(), "input");
+        input.getRoundUpdatesChannel().connect(executing, input);
+        executing.incoming_updates.push(input);
+    }
+
+    for (auto & output : executing.processor->getOutputs())
+    {
+        if (!output.isConnected() || output.getRoundUpdatesChannel().isConnected())
+            continue;
+
+        checkNeighbourIsKnown(records, executing, output.getInputPort(), "output");
+        output.getRoundUpdatesChannel().connect(executing, output);
+        executing.incoming_updates.push(output);
+    }
+}
+
+void disconnectPorts(IProcessor & processor)
+{
+    for (auto & input : processor.getInputs())
+        input.getRoundUpdatesChannel().disconnect();
+
+    for (auto & output : processor.getOutputs())
+        output.getRoundUpdatesChannel().disconnect();
+}
+
 }
 
 ExecutingPipeline::ExecutingPipeline(std::shared_ptr<Processors> processors_)
-    : states(std::move(processors_))
+    : processors(std::move(processors_))
 {
+    Wyrd::setName(mutex, "pipeline.mutex");
     Wyrd::setName(cancel_reason, "pipeline.cancel_reason");
+
+    for (const auto & processor : *processors)
+        addRecord(records, processor.get());
+
+    for (const auto & processor : *processors)
+        connectPorts(records, records.at(processor.get()));
 }
 
-std::vector<ProcessorState *> ExecutingPipeline::sinks()
+std::vector<ExecutingProcessor *> ExecutingPipeline::sinks()
 {
-    std::vector<ProcessorState *> result;
-    states.forEachProcessor([&](IProcessor & processor, ProcessorState & state)
+    std::lock_guard lock(mutex);
+
+    std::vector<ExecutingProcessor *> result;
+    for (const auto & processor : *processors)
     {
-        const bool has_connected_output = std::ranges::any_of(processor.getOutputs(), [](const OutputPort & output) { return output.isConnected(); });
+        const bool has_connected_output = std::ranges::any_of(processor->getOutputs(), [](const OutputPort & output) { return output.isConnected(); });
         if (!has_connected_output)
-            result.push_back(&state);
-    });
+            result.push_back(&records.at(processor.get()));
+    }
 
     std::ranges::reverse(result);
     return result;
 }
 
-std::vector<ProcessorState *> ExecutingPipeline::updateProcessors(ProcessorState & requester, const Processors & to_add, const Processors & to_reconnect)
+std::vector<ExecutingProcessor *> ExecutingPipeline::update(ExecutingProcessor & requester, const Processors & to_add, const Processors & to_reconnect)
 {
-    auto updated = states.update(requester, to_add, to_reconnect);
+    std::lock_guard lock(mutex);
+
+    std::vector<ExecutingProcessor *> updated;
+    for (const auto & processor : to_reconnect)
+    {
+        auto it = records.find(processor.get());
+        if (it == records.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} listed in to_reconnect does not exist in pipeline", processor->getName());
+
+        updated.push_back(&it->second);
+    }
+
+    for (const auto & processor : to_add)
+        updated.push_back(&addRecord(records, processor.get()));
+
+    processors->insert(processors->end(), to_add.begin(), to_add.end());
 
     const auto reason = cancel_reason.load();
     if (reason != IProcessor::CancelReason::NotCancelled)
         for (const auto & processor : to_add)
             processor->cancel(reason);
 
+    connectPorts(records, requester);
+    for (auto * executing : updated)
+        connectPorts(records, *executing);
+
+    checkNeighboursHaveChannels(requester);
+    for (auto * executing : updated)
+        checkNeighboursHaveChannels(*executing);
+
     return updated;
 }
 
-void ExecutingPipeline::submitForRemoval(Processors group)
+void ExecutingPipeline::submitForRemoval(const Processors & group)
 {
-    removals.submitForRemoval(std::move(group));
+    removals.submitForRemoval(group);
 }
 
-void ExecutingPipeline::recordAsFinished(IProcessor & processor)
+void ExecutingPipeline::recordAsFinished(const std::vector<IProcessor *> & finished)
 {
-    removals.markFinished(&processor);
+    removals.markFinished(finished);
 }
 
 bool ExecutingPipeline::hasReadyForRemoval() const
@@ -107,20 +210,40 @@ bool ExecutingPipeline::hasReadyForRemoval() const
 
 void ExecutingPipeline::removeReady()
 {
-    Processors ready = removals.takeReadyForRemoval();
-    checkConnectedOnlyInside(ready);
-    states.remove(ready);
+    const Processors ready = removals.takeReadyForRemoval();
+    checkConnectedOnlyInsideGroup(ready);
+
+    std::lock_guard lock(mutex);
+    for (const auto & processor : ready)
+    {
+        auto it = records.find(processor.get());
+        if (it == records.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} does not exist in pipeline", processor->getName());
+
+        if (it->second.status.load() != ExecutingProcessor::Status::Finished)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to remove not finished processor {}", processor->getName());
+
+        disconnectPorts(*processor);
+        records.erase(it);
+        processors->remove(processor);
+    }
 }
 
 void ExecutingPipeline::cancel(IProcessor::CancelReason reason)
 {
+    Wyrd::SpinWait spin_wait;
     auto current = cancel_reason.load();
-    while (supersedes(current, reason) && !cancel_reason.compare_exchange_weak(current, reason))
+    while (current == IProcessor::CancelReason::NotCancelled || (current == IProcessor::CancelReason::PartialResult && reason != IProcessor::CancelReason::PartialResult))
     {
+        if (cancel_reason.compare_exchange_weak(current, reason))
+            break;
+
+        spin_wait.spin();
     }
 
-    const auto reason_in_force = cancel_reason.load();
-    states.forEachProcessor([&](IProcessor & processor, ProcessorState &) { processor.cancel(reason_in_force); });
+    std::lock_guard lock(mutex);
+    for (const auto & processor : *processors)
+        processor->cancel(cancel_reason.load());
 }
 
 bool ExecutingPipeline::cancelled() const
@@ -129,20 +252,20 @@ bool ExecutingPipeline::cancelled() const
     return reason != IProcessor::CancelReason::NotCancelled && reason != IProcessor::CancelReason::PartialResult;
 }
 
-bool ExecutingPipeline::allProcessorsFinished()
+bool ExecutingPipeline::allProcessorsFinished() const
 {
-    bool all_finished = true;
-    states.forEachProcessor([&](IProcessor &, ProcessorState & state) { all_finished = all_finished && state.lock.isFinished(); });
-    return all_finished;
+    std::lock_guard lock(mutex);
+    return removals.finishedCount() == processors->size();
 }
 
 void ExecutingPipeline::reportReadProgress(ReadProgressCallback & callback)
 {
-    states.forEachProcessor([&](IProcessor & processor, ProcessorState &)
+    std::lock_guard lock(mutex);
+    for (const auto & processor : *processors)
     {
-        auto progress = processor.getReadProgress();
+        auto progress = processor->getReadProgress();
         if (!progress)
-            return;
+            continue;
 
         if (progress->counters.total_rows_approx)
             callback.addTotalRowsApprox(progress->counters.total_rows_approx);
@@ -152,12 +275,30 @@ void ExecutingPipeline::reportReadProgress(ReadProgressCallback & callback)
 
         if (progress->counters.read_rows || progress->counters.read_bytes)
             callback.onProgress(progress->counters.read_rows, progress->counters.read_bytes, progress->limits);
-    });
+    }
 }
 
 String ExecutingPipeline::dump() const
 {
-    return states.dump();
+    std::lock_guard lock(mutex);
+
+    std::vector<std::optional<IProcessor::Status>> statuses;
+    statuses.reserve(processors->size());
+
+    for (const auto & processor : *processors)
+    {
+        WriteBufferFromOwnString buffer;
+        buffer << "(" << processor->getNumExecutedJobs() << " jobs)";
+        processor->setDescription(buffer.str());
+
+        statuses.emplace_back(records.at(processor.get()).last_status);
+    }
+
+    WriteBufferFromOwnString out;
+    printPipeline(*processors, statuses, out);
+    out.finalize();
+
+    return out.str();
 }
 
 }

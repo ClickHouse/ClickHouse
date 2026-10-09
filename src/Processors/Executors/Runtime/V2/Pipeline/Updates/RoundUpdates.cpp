@@ -10,13 +10,13 @@ namespace Runtime::V2
 {
 
 template <class PortT>
-void RoundUpdates::drain(std::vector<PortT *> & ports, std::vector<PortT *> & ports_out_lifo)
+void RoundUpdates::drainLifo(std::vector<PortT *> & ports, std::vector<PortT *> & ports_out)
 {
-    ports_out_lifo.clear();
-    ports_out_lifo.swap(ports);
-    std::reverse(ports_out_lifo.begin(), ports_out_lifo.end());
+    ports_out.clear();
+    ports_out.swap(ports);
+    std::reverse(ports_out.begin(), ports_out.end());
 
-    for (auto * port : ports_out_lifo)
+    for (auto * port : ports_out)
         port->getRoundUpdatesChannel().markDrained();
 }
 
@@ -30,10 +30,10 @@ void RoundUpdates::push(OutputPort & port)
     outputs.push_back(&port);
 }
 
-void RoundUpdates::drain(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out)
+void RoundUpdates::drainLifo(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out)
 {
-    drain(inputs, inputs_out);
-    drain(outputs, outputs_out);
+    drainLifo(inputs, inputs_out);
+    drainLifo(outputs, outputs_out);
 }
 
 }

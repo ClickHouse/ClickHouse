@@ -1,4 +1,4 @@
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/TaskRunner.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/ProcessorRunner.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepProfiler.h>
 #include <Processors/QueryPlan/Profiling/Execution/StepWallClock.h>
@@ -18,22 +18,22 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
 namespace Runtime::V2
 {
 
-void TaskRunner::runPrepare(ProcessorState & state)
+void ProcessorRunner::runPrepare(ExecutingProcessor & executing)
 {
     pending_inputs.clear();
     pending_outputs.clear();
-    finished_processors.clear();
 
     {
-        auto round_lock = state.lock.lockRound();
-        state.lock.setIdle();
-        prepareRound(state, std::move(round_lock));
+        auto round_lock = executing.lockRound();
+        executing.status.store(ExecutingProcessor::Status::Idle);
+        prepareRound(executing, std::move(round_lock));
     }
 
     size_t processed_inputs = 0;
@@ -46,15 +46,11 @@ void TaskRunner::runPrepare(ProcessorState & state)
         for (; processed_inputs < pending_inputs.size(); ++processed_inputs)
             visitNeighbour(*pending_inputs[processed_inputs]);
     }
-
-    /// TODO: add batch api
-    for (auto * processor : finished_processors)
-        pipeline.recordAsFinished(*processor);
 }
 
-void TaskRunner::runWork(ProcessorState & state) /// NOLINT
+void ProcessorRunner::runWork(ExecutingProcessor & executing)
 {
-    IProcessor & processor = *state.processor;
+    IProcessor & processor = *executing.processor;
 
     std::unique_ptr<OpenTelemetry::SpanHolder> span;
     if (options.trace_processors)
@@ -118,86 +114,92 @@ void TaskRunner::runWork(ProcessorState & state) /// NOLINT
     }
 }
 
-void TaskRunner::runAsyncReady(ProcessorState & state)
+void ProcessorRunner::runAsyncReady(ExecutingProcessor & executing)
 {
-    state.processor->onAsyncJobReady();
-    tasks_found.push_back(Task::create(state, Task::Step::Work));
+    executing.processor->onAsyncJobReady();
+    executing.status.store(ExecutingProcessor::Status::Work);
 }
 
-void TaskRunner::runUpdatePipeline(ProcessorState & state)
+void ProcessorRunner::runUpdatePipeline(ExecutingProcessor & executing)
 {
-    IProcessor::PipelineUpdate update = state.processor->updatePipeline();
+    IProcessor & processor = *executing.processor;
+    IProcessor::PipelineUpdate update = processor.updatePipeline();
 
-    /// TODO: move to callers.
-    for (const auto & processor : update.to_add)
-        if (!processor->getQueryPlanStep())
-            processor->inheritQueryPlanStepFromParent(*state.processor, state.processor->getQueryPlanStepGroup());
+    /// TODO: move to callers (do that in processor implementations).
+    for (const auto & added : update.to_add)
+        if (!added->getQueryPlanStep())
+            added->inheritQueryPlanStepFromParent(processor, processor.getQueryPlanStepGroup());
 
-    auto updated = pipeline.updateProcessors(state, update.to_add, update.to_reconnect);
+    auto updated = pipeline.update(executing, update.to_add, update.to_reconnect);
     if (!update.to_remove.empty())
-        pipeline.submitForRemoval(std::move(update.to_remove));
+        pipeline.submitForRemoval(update.to_remove);
 
-    if (pipeline.cancelled())
-        return;
-
-    tasks_found.push_back(Task::create(state, Task::Step::Prepare));
-    for (auto * updated_state : updated)
-        notifyOwner(*updated_state);
+    for (auto * updated_executing : updated)
+        notifyOwner(*updated_executing);
 }
 
 template <class PortT>
-void TaskRunner::visitNeighbour(PortT & neighbour)
+void ProcessorRunner::visitNeighbour(PortT & neighbour)
 {
-    ProcessorState & owner = neighbour.getRoundUpdatesChannel().getOwner();
-    if (owner.lock.isFinished())
+    ExecutingProcessor & owner = neighbour.getRoundUpdatesChannel().getOwner();
+    if (owner.status.load() == ExecutingProcessor::Status::Finished)
         return;
 
-    auto round_lock = owner.lock.lockRound();
+    auto round_lock = owner.lockRound();
     owner.incoming_updates.push(neighbour);
 
-    switch (owner.lock.status())
+    switch (owner.status.load())
     {
-        case ProcessorLock::Status::Idle:
+        case ExecutingProcessor::Status::Idle:
             prepareRound(owner, std::move(round_lock));
             return;
-        case ProcessorLock::Status::Executing:
+        case ExecutingProcessor::Status::Prepare:
+        case ExecutingProcessor::Status::Work:
+        case ExecutingProcessor::Status::Async:
+        case ExecutingProcessor::Status::AsyncReady:
+        case ExecutingProcessor::Status::UpdatePipeline:
             owner.processor->onUpdatePorts();
             return;
-        case ProcessorLock::Status::Finished:
+        case ExecutingProcessor::Status::Finished:
             return;
     }
 }
 
-void TaskRunner::notifyOwner(ProcessorState & state)
+void ProcessorRunner::notifyOwner(ExecutingProcessor & executing)
 {
-    auto round_lock = state.lock.lockRound();
-    switch (state.lock.status())
+    auto round_lock = executing.lockRound();
+    switch (executing.status.load())
     {
-        case ProcessorLock::Status::Idle:
-            state.lock.setExecuting();
-            tasks_found.push_back(Task::create(state, Task::Step::Prepare));
+        case ExecutingProcessor::Status::Idle:
+            executing.status.store(ExecutingProcessor::Status::Prepare);
+            runnable.push_back(&executing);
             return;
-        case ProcessorLock::Status::Executing:
-            state.processor->onUpdatePorts();
+        case ExecutingProcessor::Status::Prepare:
+        case ExecutingProcessor::Status::Work:
+        case ExecutingProcessor::Status::Async:
+        case ExecutingProcessor::Status::AsyncReady:
+        case ExecutingProcessor::Status::UpdatePipeline:
+            executing.processor->onUpdatePorts();
             return;
-        case ProcessorLock::Status::Finished:
+        case ExecutingProcessor::Status::Finished:
             return;
     }
 }
 
-void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mutex>)
+void ProcessorRunner::prepareRound(ExecutingProcessor & executing, std::unique_lock<Wyrd::Mutex>)
 {
-    IProcessor & processor = *state.processor;
+    IProcessor & processor = *executing.processor;
 
-    state.incoming_updates.drain(hint_inputs, hint_outputs);
-    const auto last_status = state.last_status;
+    executing.incoming_updates.drainLifo(hint_inputs, hint_outputs);
+    const auto last_status = executing.last_status;
     const auto new_status = processor.prepare(hint_inputs, hint_outputs);
-    state.last_status = new_status;
+    executing.last_status = new_status;
 
     if (options.profile_processors)
         profileWaits(processor, last_status, new_status);
 
-    state.round_updates.drain(changed_inputs, changed_outputs);
+    /// TODO: Fix lifo here.
+    executing.round_updates.drainLifo(changed_inputs, changed_outputs);
     for (auto * input : changed_inputs)
         pending_outputs.push_back(&input->getOutputPort());
     for (auto * output : changed_outputs)
@@ -212,21 +214,21 @@ void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mut
         case IProcessor::Status::Finished:
             if (CurrentThread::getGroup())
                 CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
-            state.lock.finish();
+            executing.status.store(ExecutingProcessor::Status::Finished);
             finished_processors.push_back(&processor);
             return;
 
         case IProcessor::Status::Ready:
-            state.lock.setExecuting();
-            tasks_found.push_back(Task::create(state, Task::Step::Work));
+            executing.status.store(ExecutingProcessor::Status::Work);
+            runnable.push_back(&executing);
             return;
 
         case IProcessor::Status::Async:
         {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
             auto [fd, events, timeout_ms] = processor.scheduleForEvent();
-            state.lock.setExecuting();
-            poll_requests_found.push_back(PollRequest{.state = &state, .fd = fd, .events = events, .timeout_ms = timeout_ms});
+            executing.status.store(ExecutingProcessor::Status::Async);
+            poll_requests.push_back(PollRequest{.processor = &executing, .fd = fd, .events = events, .timeout_ms = timeout_ms});
             return;
 #else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Asynchronous processors are not supported on this platform");
@@ -234,13 +236,13 @@ void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mut
         }
 
         case IProcessor::Status::UpdatePipeline:
-            state.lock.setExecuting();
-            tasks_found.push_back(Task::create(state, Task::Step::UpdatePipeline));
+            executing.status.store(ExecutingProcessor::Status::UpdatePipeline);
+            runnable.push_back(&executing);
             return;
     }
 }
 
-void TaskRunner::profileWaits(IProcessor & processor, std::optional<IProcessor::Status> last_status, IProcessor::Status status) const
+void ProcessorRunner::profileWaits(IProcessor & processor, std::optional<IProcessor::Status> last_status, IProcessor::Status status) const
 {
     if (last_status != IProcessor::Status::NeedData && status == IProcessor::Status::NeedData)
         processor.input_wait_watch.restart();
@@ -253,7 +255,7 @@ void TaskRunner::profileWaits(IProcessor & processor, std::optional<IProcessor::
         processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
 }
 
-TaskRunner::TaskRunner(ExecutingPipeline & pipeline_, const RunOptions & options_, size_t worker_id_)
+ProcessorRunner::ProcessorRunner(ExecutingPipeline & pipeline_, const ExecutionOptions & options_, size_t worker_id_)
     : pipeline(pipeline_)
     , options(options_)
     , worker_id(worker_id_)
@@ -261,40 +263,53 @@ TaskRunner::TaskRunner(ExecutingPipeline & pipeline_, const RunOptions & options
 {
 }
 
-void TaskRunner::run(Task task)
+void ProcessorRunner::run(ExecutingProcessor & executing)
 {
-    tasks_found.clear();
-    poll_requests_found.clear();
+    runnable.clear();
+    poll_requests.clear();
+    finished_processors.clear();
 
-    switch (task.step())
+    switch (executing.status.load())
     {
-        case Task::Step::Prepare:
-            runPrepare(task.state());
-            break;
-        case Task::Step::Work:
-            runWork(task.state());
-            runPrepare(task.state());
-            break;
-        case Task::Step::AsyncReady:
-            runAsyncReady(task.state());
-            break;
-        case Task::Step::UpdatePipeline:
-            runUpdatePipeline(task.state());
-            break;
+        case ExecutingProcessor::Status::Prepare:
+            runPrepare(executing);
+            return;
+        case ExecutingProcessor::Status::Work:
+            runWork(executing);
+            runPrepare(executing);
+            return;
+        case ExecutingProcessor::Status::AsyncReady:
+            runAsyncReady(executing);
+            runWork(executing);
+            runPrepare(executing);
+            return;
+        case ExecutingProcessor::Status::UpdatePipeline:
+            runUpdatePipeline(executing);
+            runPrepare(executing);
+            return;
+        case ExecutingProcessor::Status::Idle:
+        case ExecutingProcessor::Status::Async:
+        case ExecutingProcessor::Status::Finished:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor {} was picked while not scheduled", executing.processor->getName());
     }
 }
 
-const std::vector<Task> & TaskRunner::getFoundTasks() const
+const std::vector<ExecutingProcessor *> & ProcessorRunner::getRunnable() const
 {
-    return tasks_found;
+    return runnable;
 }
 
-const std::vector<PollRequest> & TaskRunner::getFoundPollRequests() const
+const std::vector<PollRequest> & ProcessorRunner::getPollRequests() const
 {
-    return poll_requests_found;
+    return poll_requests;
 }
 
-WorkIntervals TaskRunner::takeWorkIntervals()
+const std::vector<IProcessor *> & ProcessorRunner::getFinishedProcessors() const
+{
+    return finished_processors;
+}
+
+WorkIntervals ProcessorRunner::extractWorkIntervals()
 {
     return std::exchange(work_intervals, {});
 }

@@ -31,7 +31,7 @@ bool checkTimeLimit(const QueryStatusPtr & process_list_element)
 PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem)
     : processors(std::move(processors_))
     , process_list_element(std::move(elem))
-    , options(makeRunOptions(process_list_element))
+    , options(makeExecutionOptions(process_list_element))
 {
     Wyrd::setName(mutex, "executor.mutex");
     if (process_list_element)

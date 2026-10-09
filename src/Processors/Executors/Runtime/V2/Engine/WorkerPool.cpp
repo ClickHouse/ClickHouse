@@ -86,13 +86,10 @@ SlotAllocationPtr WorkerPool::allocateCPU(bool concurrency_control, SlotCount in
 
 void WorkerPool::initializeExecution()
 {
-    std::vector<Task> root_tasks;
-    for (auto * sink : pipeline.sinks())
-    {
-        sink->lock.setExecuting();
-        root_tasks.push_back(Task::create(*sink, Task::Step::Prepare));
-    }
-    global_tasks.pushManyFifo(root_tasks);
+    std::vector<ExecutingProcessor *> roots = pipeline.sinks();
+    for (auto * root : roots)
+        root->status.store(ExecutingProcessor::Status::Prepare);
+    global_tasks.pushManyFifo(roots);
 }
 
 void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
@@ -163,7 +160,7 @@ void WorkerPool::grow(size_t threads_needed)
 
 void WorkerPool::preempt(size_t worker_id)
 {
-    workers[worker_id].handOverTasks();
+    workers[worker_id].handOver();
     coordinator.leave(worker_id);
 }
 
@@ -172,7 +169,7 @@ void WorkerPool::resume(size_t worker_id)
     coordinator.enter(worker_id);
 }
 
-WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const RunOptions & options_, size_t max_threads_, bool concurrency_control)
+WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const ExecutionOptions & options_, size_t max_threads_, bool concurrency_control)
     : pipeline(pipeline_)
     , options(options_)
     , max_threads(max_threads_)

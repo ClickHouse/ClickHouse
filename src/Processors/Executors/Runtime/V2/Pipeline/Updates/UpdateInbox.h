@@ -12,14 +12,14 @@ namespace Runtime::V2
 class UpdateInbox
 {
     template <class PortT>
-    static void drain(UpdateInboxEntry *& head, std::vector<PortT *> & ports_out_lifo);
+    static void drainLifo(UpdateInboxEntry *& head, std::vector<PortT *> & ports_out);
 
 public:
     UpdateInbox();
 
     void push(InputPort & port);
     void push(OutputPort & port);
-    void drain(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out);
+    void drainLifo(IProcessor::UpdatedInputPorts & inputs_out, IProcessor::UpdatedOutputPorts & outputs_out);
 
 private:
     UpdateInboxEntry * inputs;

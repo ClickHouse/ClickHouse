@@ -18,7 +18,7 @@ namespace Runtime::V2
 {
 
 static constexpr size_t steal_rounds = 4;
-static constexpr size_t max_take_from_global = LocalTasks::capacity / 2;
+static constexpr size_t max_take_from_global = LocalQueue::capacity / 2;
 
 Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     : pool(pool_)
@@ -31,7 +31,7 @@ Worker::Worker(WorkerPool & pool_, size_t worker_id_)
 
 bool Worker::keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
-    if (!slot.keepGoing() || pool.coordinator.isStopped())
+    if (!slot.keepRunning() || pool.coordinator.isStopped())
         return false;
 
     if (yield_flag && yield_flag->load())
@@ -47,34 +47,34 @@ bool Worker::keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag)
     return true;
 }
 
-std::optional<Task> Worker::pickTask(WorkerSlot & slot, std::atomic_bool * yield_flag)
+ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
     while (true)
     {
         if (!keepRunning(slot, yield_flag))
-            return std::nullopt;
+            return nullptr;
 
-        if (auto task = tryPickTask())
-            return task;
+        if (auto * picked = tryPick())
+            return picked;
 
         if (pool.pipeline.hasReadyForRemoval())
             pool.pipeline.removeReady();
 
         if (pool.poller.pending() > 0 && pool.coordinator.startPolling())
         {
-            auto task = tryPickTaskBeforePark();
-            if (!task)
+            auto * picked = tryPickBeforePark();
+            if (!picked)
             {
                 const auto fired = pool.poller.poll(-1);
                 if (!fired.empty())
                 {
-                    task = pickFromBatch(fired);
+                    picked = pickFromBatch(fired);
                     wakeFor(fired.size() - 1);
                 }
             }
             pool.coordinator.stopPolling();
-            if (task)
-                return task;
+            if (picked)
+                return picked;
         }
         else
         {
@@ -82,23 +82,23 @@ std::optional<Task> Worker::pickTask(WorkerSlot & slot, std::atomic_bool * yield
             if (!pool.coordinator.startParking(worker_id))
                 continue;
 
-            auto task = tryPickTaskBeforePark();
-            if (!task)
+            auto * picked = tryPickBeforePark();
+            if (!picked)
                 futexWaitFetch(wakeups, wakeups_before);
             pool.coordinator.becomeNormal(worker_id);
-            if (task)
-                return task;
+            if (picked)
+                return picked;
         }
     }
 }
 
-std::optional<Task> Worker::tryPickTask()
+ExecutingProcessor * Worker::tryPick()
 {
-    if (auto task = local_tasks.popLifo())
-        return task;
+    if (auto * picked = local_tasks.popLifo())
+        return picked;
 
-    if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_task_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
-        return pickFromBatch(std::span(tmp_task_buffer).first(count));
+    if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
+        return pickFromBatch(std::span(tmp_buffer).first(count));
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
     {
@@ -107,34 +107,34 @@ std::optional<Task> Worker::tryPickTask()
 
         if (!fired.empty())
         {
-            auto task = pickFromBatch(fired);
+            auto * picked = pickFromBatch(fired);
             wakeFor(fired.size() - 1);
-            return task;
+            return picked;
         }
     }
 
     if (pool.coordinator.startStealing())
     {
-        auto task = tryStealTasks(steal_rounds);
+        auto * picked = trySteal(steal_rounds);
         pool.coordinator.stopStealing();
-        wakeFor(task.has_value());
-        return task;
+        wakeFor(picked != nullptr);
+        return picked;
     }
 
-    return std::nullopt;
+    return nullptr;
 }
 
-std::optional<Task> Worker::tryPickTaskBeforePark()
+ExecutingProcessor * Worker::tryPickBeforePark()
 {
-    if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_task_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
-        return pickFromBatch(std::span(tmp_task_buffer).first(count));
+    if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
+        return pickFromBatch(std::span(tmp_buffer).first(count));
 
-    auto task = tryStealTasks(/*rounds=*/1);
-    wakeFor(task.has_value());
-    return task;
+    auto * picked = trySteal(/*rounds=*/1);
+    wakeFor(picked != nullptr);
+    return picked;
 }
 
-std::optional<Task> Worker::tryStealTasks(size_t rounds)
+ExecutingProcessor * Worker::trySteal(size_t rounds)
 {
     const size_t workers = pool.workers.size();
     for (size_t round = 0; round < rounds; ++round)
@@ -146,33 +146,28 @@ std::optional<Task> Worker::tryStealTasks(size_t rounds)
             if (&other == this)
                 continue;
 
-            const UInt32 count = other.stealFifo(tmp_task_buffer);
+            const UInt32 count = other.stealFifo(tmp_buffer);
             if (count == 0)
                 continue;
 
-            return pickFromBatch(std::span(tmp_task_buffer).first(count));
+            return pickFromBatch(std::span(tmp_buffer).first(count));
         }
     }
 
-    return std::nullopt;
+    return nullptr;
 }
 
-Task Worker::pickFromBatch(std::span<const Task> batch)
+ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor * const> batch)
 {
     pushManyLifo(batch.first(batch.size() - 1));
     return batch.back();
 }
 
-void Worker::pushManyLifo(std::span<const Task> tasks)
+void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)
 {
-    const size_t kept = std::min<size_t>(tasks.size(), local_tasks.freeSlots());
-    pool.global_tasks.pushManyFifo(tasks.first(tasks.size() - kept));
-    local_tasks.pushManyLifo(tasks.last(kept));
-}
-
-void Worker::pushMany(std::span<const PollRequest> requests)
-{
-    pool.poller.pushMany(requests);
+    const size_t kept = std::min<size_t>(many.size(), local_tasks.freeSlots());
+    pool.global_tasks.pushManyFifo(many.first(many.size() - kept));
+    local_tasks.pushManyLifo(many.last(kept));
 }
 
 void Worker::wakeFor(Int64 extra_work)
@@ -187,49 +182,52 @@ void Worker::wakeFor(Int64 extra_work)
     pool.grow(1);
 }
 
-void Worker::runTask(Task task)
+void Worker::execute(ExecutingProcessor & executing)
 {
-    runner.run(task);
+    runner.run(executing);
 
-    const auto & new_compute_tasks = runner.getFoundTasks();
-    pushManyLifo(new_compute_tasks);
+    const auto & runnable = runner.getRunnable();
+    pushManyLifo(runnable);
 
-    const auto & new_poll_requests = runner.getFoundPollRequests();
-    pushMany(new_poll_requests);
+    const auto & poll_requests = runner.getPollRequests();
+    pool.poller.pushMany(poll_requests);
 
-    const Int64 work_found = new_compute_tasks.size() + new_poll_requests.size();
+    const auto & finished_processors = runner.getFinishedProcessors();
+    pool.pipeline.recordAsFinished(finished_processors);
+
+    const Int64 work_found = runnable.size() + poll_requests.size();
     wakeFor(work_found - 1);
 }
 
 void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
 {
-    while (auto task = pickTask(slot, yield_flag))
-        runTask(*task);
+    while (auto * picked = pick(slot, yield_flag))
+        execute(*picked);
 
     finishRun();
 }
 
 void Worker::finishRun()
 {
-    handOverTasks();
+    handOver();
 
     if (pool.options.step_profiler)
-        pool.options.step_profiler->addWorkIntervals(runner.takeWorkIntervals());
+        pool.options.step_profiler->addWorkIntervals(runner.extractWorkIntervals());
 }
 
-UInt32 Worker::stealFifo(std::span<Task> out)
+UInt32 Worker::stealFifo(std::span<ExecutingProcessor *> out)
 {
     return local_tasks.stealFifo(out);
 }
 
-void Worker::handOverTasks()
+void Worker::handOver()
 {
     size_t moved = 0;
     while (local_tasks.size() > 0)
     {
-        if (const size_t count = local_tasks.stealFifo(tmp_task_buffer))
+        if (const size_t count = local_tasks.stealFifo(tmp_buffer))
         {
-            pool.global_tasks.pushManyFifo(std::span(tmp_task_buffer).first(count));
+            pool.global_tasks.pushManyFifo(std::span(tmp_buffer).first(count));
             moved += count;
         }
     }

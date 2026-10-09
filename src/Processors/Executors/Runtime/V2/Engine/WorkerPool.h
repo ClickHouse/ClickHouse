@@ -1,8 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/V2/Engine/Polling/Poller.h>
-#include <Processors/Executors/Runtime/V2/Engine/RunOptions.h>
-#include <Processors/Executors/Runtime/V2/Engine/Tasks/GlobalTasks.h>
+#include <Processors/Executors/Runtime/V2/Pipeline/Async/Poller.h>
+#include <Processors/Executors/Runtime/V2/ExecutionOptions.h>
+#include <Processors/Executors/Runtime/V2/Engine/Queues/GlobalQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
@@ -37,7 +37,7 @@ class WorkerPool
     void resume(size_t worker_id);
 
 public:
-    WorkerPool(ExecutingPipeline & pipeline_, const RunOptions & options_, size_t max_threads_, bool concurrency_control);
+    WorkerPool(ExecutingPipeline & pipeline_, const ExecutionOptions & options_, size_t max_threads_, bool concurrency_control);
     ~WorkerPool();
 
     void run();
@@ -52,13 +52,13 @@ public:
 
 private:
     ExecutingPipeline & pipeline;
-    const RunOptions & options;
+    const ExecutionOptions & options;
     const size_t max_threads;
 
     /// Scheduling state
     std::deque<Worker> workers;
     WorkersCoordinator coordinator;
-    GlobalTasks global_tasks;
+    GlobalQueue global_tasks;
     Poller poller;
 
     /// CPU slots

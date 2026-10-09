@@ -16,7 +16,7 @@ struct MemoryReservation;
 namespace Runtime::V2
 {
 
-struct RunOptions
+struct ExecutionOptions
 {
     QueryStatusPtr process_list_element;
     MemoryReservation * reservation = nullptr;
@@ -27,7 +27,7 @@ struct RunOptions
     bool trace_processors = false;
 };
 
-RunOptions makeRunOptions(QueryStatusPtr process_list_element);
+ExecutionOptions makeExecutionOptions(QueryStatusPtr process_list_element);
 
 }
 
