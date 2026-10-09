@@ -91,6 +91,8 @@ public:
         params.bucket_top_k_count_index = count_index;
     }
 
+    void disableBucketTopK() { params.bucket_top_k = 0; }
+
     /// See `Aggregator::Params::having_prefilter_op`; called by the plan optimization.
     void enableHavingPrefilter(Aggregator::Params::HavingPrefilterOp op, UInt64 threshold, size_t count_index)
     {
