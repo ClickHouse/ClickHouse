@@ -57,6 +57,21 @@ public:
     }
 
     String getName() const override { return name; }
+
+    /// The captured parser settings decide whether a query is serialized or rejected, and how the
+    /// number literals in it are rendered, see `IFunctionBase::updateHash`.
+    void updateHash(SipHash & hash) const override
+    {
+        hash.update(max_query_size);
+        hash.update(max_parser_depth);
+        hash.update(max_parser_backtracks);
+        hash.update(max_ast_depth);
+        hash.update(max_ast_elements);
+        hash.update(allow_settings_after_format_in_insert);
+        hash.update(implicit_select);
+        hash.update(context_typed_number_literals);
+    }
+
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }

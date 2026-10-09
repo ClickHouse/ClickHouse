@@ -62,7 +62,7 @@ public:
     String getName() const override { return name; }
 
     /// The captured parser settings decide whether a query is formatted or rejected, and how the
-    /// data types in it are rendered, see `IFunctionBase::updateHash`.
+    /// data types and number literals in it are rendered, see `IFunctionBase::updateHash`.
     void updateHash(SipHash & hash) const override
     {
         hash.update(max_query_size);
@@ -70,6 +70,7 @@ public:
         hash.update(max_parser_backtracks);
         hash.update(print_pretty_type_names);
         hash.update(implicit_select);
+        hash.update(context_typed_number_literals);
     }
 
     size_t getNumberOfArguments() const override { return 1; }
