@@ -206,13 +206,22 @@ static void loadRowCountTargets(const StoragePtr & table, const ContextPtr & con
 /// would refuse to drop an empty table that nobody has touched since the database was attached.
 /// An `Alias`, a materialized view with an inner table, a `TimeSeries` table and a
 /// `MaterializedPostgreSQL` table report the row count of their targets, which they look up in the
-/// catalog themselves, so the stand-ins of those targets are loaded too.
+/// catalog themselves, so the stand-ins of those targets are loaded too. `DETACH` of any of these
+/// wrappers only removes the wrapper and leaves its inner tables (and their rows) in place, so a
+/// detached wrapper holds no rows of its own.
 bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDropQuery::Kind kind) const
 {
     const StoragePtr table = resolveStorageProxyLoading(table_or_proxy);
     if (kind != ASTDropQuery::Kind::Truncate
         && (dynamic_cast<const StorageAlias *>(table.get()) || dynamic_cast<const StorageMerge *>(table.get())))
         return true;
+    if (kind == ASTDropQuery::Kind::Detach
+        && (dynamic_cast<const StorageMaterializedView *>(table.get()) || dynamic_cast<const StorageTimeSeries *>(table.get())))
+        return true;
+#if USE_LIBPQXX
+    if (kind == ASTDropQuery::Kind::Detach && dynamic_cast<const StorageMaterializedPostgreSQL *>(table.get()))
+        return true;
+#endif
     if (table->isView())
     {
         const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
