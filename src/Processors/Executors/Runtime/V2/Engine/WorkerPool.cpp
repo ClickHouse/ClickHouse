@@ -127,11 +127,13 @@ void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
 
 void WorkerPool::initializeExecution()
 {
+    std::vector<Task> root_tasks;
     for (auto * sink : pipeline.sinks())
     {
         sink->lock.setExecuting();
-        global_tasks.push(Task::create(*sink, Task::Step::Prepare));
+        root_tasks.push_back(Task::create(*sink, Task::Step::Prepare));
     }
+    global_tasks.pushManyFifo(root_tasks);
 }
 
 void WorkerPool::preempt(size_t worker_id)
