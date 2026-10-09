@@ -30,6 +30,7 @@ INSERT INTO t_db_dim SELECT number, concat('name_', toString(number % 100)), num
 -- The dimension side ships only the join key `k`, 8 bytes per row: the filter column is read and
 -- dropped below the join. Each budget below fits the estimate of 100 rows (800 bytes) and not the
 -- bound of 1000 rows (8000 bytes).
+-- The read itself is distributed first: every node scanning the 1000 rows would exceed the budget.
 SELECT '-- an equality estimated from statistics (100 of 1000 rows) fits the budget: broadcast';
 EXPLAIN SELECT count() FROM t_db_big AS b JOIN t_db_dim AS d ON b.k = d.k WHERE d.grp = 3
 SETTINGS distributed_plan_max_bytes_to_broadcast = 4000;

@@ -1021,11 +1021,15 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         if (analysis_result)
         {
             const auto stats = estimateReadRowsCount(node);
+            const Float64 bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_merge_tree_step->getOutputHeader(), stats.column_stats));
+            /// Every node scans the selected ranges whatever the filter leaves of them.
+            const UInt64 scanned_rows = std::max<UInt64>(analysis_result->selected_rows, stats.estimated_rows.value_or(0));
             const ReplicationSize size{
                 .estimated_rows = stats.estimated_rows,
                 .estimate_from_defaults = stats.estimate_from_defaults,
                 .max_rows = stats.max_rows ? stats.max_rows : std::optional<UInt64>(analysis_result->selected_rows),
-                .bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_merge_tree_step->getOutputHeader(), stats.column_stats))};
+                .bytes_per_row = bytes_per_row,
+                .scan_bytes = static_cast<UInt64>(static_cast<Float64>(scanned_rows) * bytes_per_row)};
             if (decideReplication(size, replicationBudget(optimization_settings)).allowed)
                 return;
         }

@@ -8,8 +8,9 @@ Expression ((Project names + Projection))
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (default.t_db_big)
             BroadcastExchange
-              Expression ((WHERE + Change column names to column identifiers))
-                ReadFromMergeTree (default.t_db_dim)
+              GatherExchange
+                Expression ((WHERE + Change column names to column identifiers))
+                  ReadFromMergeTree (default.t_db_dim)
 -- the LIKE default also says 100 rows, but it is a guess and the bound of 1000 rows does not fit: shuffle
 Expression ((Project names + Projection))
   MergingAggregated (merge)
