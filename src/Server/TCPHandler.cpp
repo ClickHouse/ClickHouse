@@ -1146,6 +1146,12 @@ void TCPHandler::runImpl()
                 /// Try to send logs to client, but it could be risky too
                 /// Assume that we can't break output here
                 sendLogs(*query_state);
+
+                /// Flush the tail of the profile events accumulated since the last periodic report,
+                /// so that the initiator of a distributed query charges them to the quotas over
+                /// profile events even when this query fails.
+                if (query_scope)
+                    sendSelectProfileEvents(*query_state);
             }
             catch (const Exception & e)
             {
