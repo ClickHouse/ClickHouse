@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -84,12 +84,14 @@ public:
     ~GraceHashJoin() override;
 
     std::string getName() const override { return "GraceHashJoin"; }
+
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::GRACE_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
     void initialize(const Block & sample_block) override;
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, JoinBuildContext context) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
 
@@ -117,7 +119,7 @@ public:
 
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;
-    void requestSpill() override { force_spill = true; }
+    void requestSpill(JoinBuildContext /*context*/) override { force_spill = true; }
 
 private:
     void initBuckets();
@@ -125,10 +127,10 @@ private:
     InMemoryJoinPtr makeInMemoryJoin(const String & bucket_id, size_t reserve_num = 0);
 
     /// Add right table block to the @join. Calls @rehash on overflow.
-    void addBlockToJoinImpl(Block block);
+    void addBlockToJoinImpl(Block block, JoinBuildContext context);
 
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
-    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover);
+    void repartitionCurrentBucket(size_t prev_keys_num, Block leftover, JoinBuildContext context);
     bool canForceRepartition() const;
     bool forcedSpillPending() const;
 

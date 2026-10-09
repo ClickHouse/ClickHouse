@@ -56,8 +56,8 @@ SELECT mapPopulateSeries(map(toUInt64(18446744073709551615), toUInt64(5)), 18446
 
 SELECT 'Duplicate keys';
 
-SELECT mapPopulateSeries(map(1, 4, 1, 5, 5, 6));
-SELECT mapPopulateSeries(map(1, 4, 1, 5, 5, 6), materialize(10));
+SELECT mapPopulateSeries(map(1, 5, 1, 4, 5, 6));
+SELECT mapPopulateSeries(map(1, 5, 1, 4, 5, 6), materialize(10));
 
 DROP TABLE 02005_test_table;
 
@@ -119,7 +119,7 @@ SELECT mapPopulateSeries([18446744073709551615], [5], 18446744073709551615);
 
 SELECT 'Duplicate keys';
 
-SELECT mapPopulateSeries([1, 1, 5], [4, 5, 6]);
-SELECT mapPopulateSeries([1, 1, 5], [4, 5, 6], materialize(10));
+SELECT mapPopulateSeries([1, 1, 5], [5, 4, 6]);
+SELECT mapPopulateSeries([1, 1, 5], [5, 4, 6], materialize(10));
 
 DROP TABLE 02005_test_table;
