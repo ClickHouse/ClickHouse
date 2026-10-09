@@ -176,6 +176,7 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
     extern const int FILE_CHANGED_DURING_READ;
+    extern const int INCORRECT_DATA;
 }
 
 namespace FailPoints
@@ -2848,9 +2849,6 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
     if (format_settings.parquet.preserve_order || !format_settings.seekable_read)
         return;
 
-    /// Writers rewrite the files under the write lock, and the sources take the read lock only when they are created.
-    auto read_lock = storage->lockRwlock(RWLockImpl::Read, ctx);
-
     struct State
     {
         Strings files;
@@ -2933,6 +2931,13 @@ void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filt
                     }
                     catch (Exception & e)
                     {
+                        /// Left to its reader, which fails the query only if the file is still bad when it opens it:
+                        /// the file may be in the middle of a rewrite, e.g. by an `INSERT` into the same path.
+                        if (e.code() == ErrorCodes::INCORRECT_DATA || e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+                        {
+                            LOG_TRACE(getLogger("ReadFromFile"), "Cannot read the footer of {}: {}", path, e.message());
+                            continue;
+                        }
                         e.addMessage(fmt::format("(in file/uri {})", path));
                         state->stop = true;
                         throw;

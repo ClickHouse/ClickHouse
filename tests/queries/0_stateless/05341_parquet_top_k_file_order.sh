@@ -129,6 +129,9 @@ for args in "${ON[*]}" "${OFF[*]}"; do
         SELECT k FROM file('${DIR}/empty/*.parquet', Parquet, 'k Int64') ORDER BY k LIMIT 3" 2>&1 \
         | grep -o "Code: [0-9]*"
 done
+echo "-- EXPLAIN PIPELINE does not fail on the corrupt file"
+"${LOCAL[@]}" "${MT[@]}" "${ON[@]}" --query "
+    EXPLAIN PIPELINE SELECT k FROM file('${DIR}/bad/*.parquet', Parquet, 'k Int64') ORDER BY k LIMIT 3" > /dev/null && echo "OK"
 
 echo "-- no first pass with at most one file per stream or with more than 4 streams"
 mkdir -p "${DIR}/four" "${DIR}/many"

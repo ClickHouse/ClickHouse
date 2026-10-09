@@ -43,6 +43,8 @@ Code: 117
 Code: 117
 Code: 117
 Code: 117
+-- EXPLAIN PIPELINE does not fail on the corrupt file
+OK
 -- no first pass with at most one file per stream or with more than 4 streams
 four	4	0
 many	4	10
