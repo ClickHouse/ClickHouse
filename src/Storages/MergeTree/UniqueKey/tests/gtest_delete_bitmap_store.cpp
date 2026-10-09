@@ -376,7 +376,7 @@ TEST(DeleteBitmapStoreTest, AReadUnionsEveryVersionAtOrBelowTheSnapshot)
     EXPECT_EQ(at_twelve->cardinality(), 3u);
 }
 
-/// Every other test here runs with no cache, so the incremental path below is theirs alone.
+/// The incremental path below runs only here: the other cached test reads a single version.
 TEST(DeleteBitmapStoreTest, AReadExtendsTheUnionItFindsCached)
 {
     TableFixture tbl;
@@ -475,16 +475,15 @@ TEST(DeleteBitmapStoreTest, ABitmapWhoseTargetLeftThePartSetIsRejected)
     EXPECT_THROW(store.readBitmap(vanished, UNBOUNDED_CSN), Exception);
 }
 
-TEST(DeleteBitmapStoreTest, AHolderThatLeftThePartSetIsRejected)
+TEST(DeleteBitmapStoreTest, AVersionWhoseOnlyHolderLeftThePartSetIsRejected)
 {
     TableFixture tbl;
     DeleteBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const auto holder = tbl.partInfo("all_9_9_0");
-    const auto target = tbl.partInfo("all_1_1_0");
-    store.registerStagedBitmaps(holder, {target});
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    store.registerLinks(tbl.partInfo("all_9_9_0"), {{target->info, /*csn=*/ 7}});
 
-    EXPECT_THROW(store.readBitmap(target, UNBOUNDED_CSN), Exception);
+    EXPECT_THROW(store.readBitmap(target->info, UNBOUNDED_CSN), Exception);
 }
 
 #endif
@@ -613,27 +612,55 @@ TEST(DeleteBitmapStoreTest, ACarriedBitmapOutlivesTheOwnerThatWroteIt)
     EXPECT_TRUE(bitmap->contains(1));
 }
 
-TEST(DeleteBitmapStoreTest, AReadSurvivesAHolderThatLeftTheSetWhenAnotherHoldsTheVersion)
+TEST(DeleteBitmapStoreTest, AReadSkipsAHolderNotYetInThePartSet)
 {
     TableFixture tbl;
     DeleteBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
     const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
     const auto merged = tbl.addPart("all_20_20_0", /*first_id=*/ 300, /*rows=*/ 2);
-    const auto target_name = target->info.getPartNameV1();
 
-    /// Models the handoff window `versionsUpTo` tolerates (see its comment) directly, by
-    /// registering the link and never adding the part: going through the real lifecycle leaves
-    /// it Outdated, which still resolves and wouldn't exercise the window at all.
-    writeCarried(partStorage(*merged), /*version=*/ 7, target_name, bitmapWithRow(7));
+    /// A part still loading lists its links before it joins the part set; `merged` already carries
+    /// the version-7 kill, so the read skips that holder.
+    writeCarried(partStorage(*merged), /*version=*/ 7, target->info.getPartNameV1(), bitmapWithRow(7));
     store.loadPart(merged->info, merged->getDataPartStorage());
-    store.registerLinks(tbl.partInfo("all_9_9_0"), {{target->info, /*csn=*/ 7}});
+    store.registerStagedBitmaps(tbl.partInfo("all_9_9_0"), {target->info});
 
-    /// Both holders are the same bytes, so the read owes an answer, not an error.
     const auto [bitmap, csn] = store.readBitmap(target->info, UNBOUNDED_CSN);
     EXPECT_EQ(csn, 7u);
     EXPECT_TRUE(bitmap->contains(7));
     EXPECT_EQ(bitmap->cardinality(), 1u);
+}
+
+TEST(DeleteBitmapStoreTest, AReadSkipsAHolderThatCleanupIsDeleting)
+{
+    TableFixture tbl;
+    auto cache = std::make_shared<DeleteBitmapCache>(
+        "SLRU", CurrentMetrics::end(), CurrentMetrics::end(), /*max_size_in_bytes=*/ 64 << 20,
+        /*size_ratio=*/ 0.5);
+    DeleteBitmapStore store{*tbl.table, cache};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    auto holder = tbl.addPart("all_4_4_0", /*first_id=*/ 200, /*rows=*/ 1);
+    const CSN version = holder->version->getInfo().creation_csn;
+    store.registerStagedBitmaps(holder->info, {target->info});
+
+    outdate(tbl, holder);
+    const auto merged = tbl.addPart("all_4_9_1", /*first_id=*/ 300, /*rows=*/ 1);
+    writeCarried(partStorage(*merged), version, target->info.getPartNameV1(), bitmapWithRow(2));
+    store.loadPart(merged->info, merged->getDataPartStorage());
+
+    /// Deleting, with its link still listed: the window before cleanup erases it and drops the link.
+    holder.reset();
+    ASSERT_EQ(tbl.table->grabOldParts(/*force=*/ true).size(), 1u);
+
+    /// The miss pins `merged`; the hit then needs no part at all.
+    for (int read = 0; read < 2; ++read)
+    {
+        const auto [bitmap, csn] = store.readBitmap(target->info, UNBOUNDED_CSN);
+        EXPECT_EQ(csn, version);
+        EXPECT_TRUE(bitmap->contains(2));
+    }
 }
 
 TEST(DeleteBitmapStoreTest, ACarriedBitmapKeepsTheVersionItWasCreatedWith)
