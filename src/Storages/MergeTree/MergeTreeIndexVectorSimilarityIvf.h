@@ -114,7 +114,7 @@ void checkVectorSimilarityIvfIndexForTable(
     ContextPtr context);
 
 /// Internal objects of an IVF table : the centroids table (level, cid, cid_end, parent, vec, active, radius, generation,
-/// generation_size, split_from) and a dictionary over it. Level 0 holds the leaves; each write (training, split) is a generation
+/// generation_size, split_from, created_at = the time of the write) and a dictionary over it. Level 0 holds the leaves; each write (training, split) is a generation
 /// with its expected size. A leaf is retired if it is not active or another leaf has it as split_from. Every leaf owns the range of
 /// cluster ids [cid, cid_end): training spreads the leaves over the ids below 2^63, and the children of a split take the two halves of
 /// the rest of the range of their parent, so that a cluster and all clusters split from it are one range of the primary key.

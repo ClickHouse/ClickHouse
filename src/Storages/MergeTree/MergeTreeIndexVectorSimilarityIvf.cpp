@@ -691,7 +691,7 @@ void createVectorSimilarityIvfInnerObjects(
         executeInternalQuery(fmt::format(
             "CREATE TABLE {} "
             "(level UInt8, cid UInt64, cid_end UInt64, parent UInt64, vec Array(Float32), active Bool, radius Float32, "
-            "generation UInt32, generation_size UInt32, split_from UInt64{}) "
+            "generation UInt32, generation_size UInt32, split_from UInt64, created_at DateTime DEFAULT now(){}) "
             "ENGINE = {} PARTITION BY level ORDER BY (level, parent, cid) SETTINGS index_granularity = 256",
             centroids_table_id.getFullTableName(), hnsw_index, centroids_engine), internal_context);
 
