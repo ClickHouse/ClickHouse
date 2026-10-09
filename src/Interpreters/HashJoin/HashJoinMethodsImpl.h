@@ -1,13 +1,11 @@
 #pragma once
 
-#include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
 #include <Common/HashTable/Prefetching.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <Interpreters/HashJoin/HashJoinMethods.h>
 #include <Interpreters/HashJoin/HashJoinResult.h>
-#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
 
 #include <algorithm>
@@ -17,6 +15,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+extern const int UNSUPPORTED_JOIN_KEYS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -104,6 +103,13 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl(
 {
     switch (type)
     {
+        case HashJoin::Type::EMPTY:
+            [[fallthrough]];
+        case HashJoin::Type::CROSS:
+            /// Do nothing. We will only save block, and it is enough
+            is_inserted = true;
+            break;
+
 #define M(TYPE) \
     case HashJoin::Type::TYPE: \
         if (selector.isContinuousRange()) \
@@ -149,12 +155,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             HashJoin::isLowCardinalityType(join.data->type));
     }
 
-    /// Only MapsAll keeps every right row of a key, so only there do the recorded words resolve to
-    /// exact rows. The residual path is excluded: its words count output rows rather than left rows,
-    /// and both metrics come from elsewhere there
-    constexpr bool refs_can_carry_stats = join_features.is_maps_all
-        && (join_features.inner || join_features.left || join_features.full);
-    const bool record_refs_for_stats = refs_can_carry_stats && join.recordsRowRefsForStats();
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
@@ -170,16 +170,11 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         join.table_join->getMixedJoinExpression(),
         join.additional_filter_required_rhs_pos,
         join_features.is_asof_join,
-        is_join_get,
-        record_refs_for_stats);
-
-    if (join.matched_rows_stats && join.matched_rows_stats->hasRightFlags())
-        added_columns.match_stats = join.matched_rows_stats.get();
+        is_join_get);
 
     bool has_required_right_keys = (join.required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
-
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
     else
@@ -188,16 +183,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     size_t processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
-
-    if (auto * stats = join.matched_rows_stats.get())
-    {
-        const size_t probed_rows = processed_rows ? processed_rows : block.rows();
-        stats->collectProbeBlock(probed_rows, countMatchedLeftRows<KIND, STRICTNESS>(added_columns, probed_rows));
-
-        const bool right_matches_marked_inline = added_columns.additional_filter_expression != nullptr;
-        if (stats->hasRightFlags() && !right_matches_marked_inline)
-            markRightMatchedFromRowRefs(*stats, added_columns);
-    }
 
     std::optional<ScatteredBlock> next_scattered_block;
     if (0 < processed_rows && processed_rows < block.rows())
@@ -214,7 +199,6 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         std::move(added_columns.offsets_to_replicate),
         std::move(added_columns.filter),
         std::move(added_columns.matched_rows),
-        added_columns.lazy_output.hash_table_matches,
         std::move(block),
         HashJoinResult::Properties{
             *join.table_join,
@@ -277,33 +261,19 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
     bool & is_inserted,
     bool & all_values_unique)
 {
-    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
-    constexpr bool is_set = SetJoinMaps<MapsTemplate>;
+    [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename HashMap::mapped_type, RowRef>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
-    [[maybe_unused]] TypeIndex asof_type{};
-    [[maybe_unused]] ASOFJoinInequality asof_inequality{};
     if constexpr (is_asof_join)
-    {
         asof_column = key_columns.back();
-        /// Hoisted out of the loop below, see `Inserter::insertAsof`.
-        asof_type = *join.getAsofType();
-        asof_inequality = join.getAsofInequality();
-    }
 
     auto key_getter = createKeyGetter<KeyGetter, is_asof_join>(key_columns, key_sizes);
 
-    /// For ALL and ASOF join always insert values. A set map keeps no reference into the block, so unless
-    /// the block has to be kept for another algorithm the caller drops it.
-    if constexpr (is_set)
-        is_inserted = join.mustKeepRightBlocks();
-    else
-        is_inserted = !mapped_one || is_asof_join;
+    /// For ALL and ASOF join always insert values
+    is_inserted = !mapped_one || is_asof_join;
 
     const size_t rows = ScatteredBlock::Selector::size(selector);
-    /// Hoisted out of the loop below, see `Inserter::insertOne`.
-    [[maybe_unused]] const bool any_take_last_row = join.anyTakeLastRow();
 
     /// Software prefetch during the build phase.
     constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, HashMap>;
@@ -330,9 +300,8 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
         if (null_map && (*null_map)[ind])
         {
             /// nulls are not inserted into hash table,
-            /// keep them for RIGHT and FULL joins - a set map is never used by one of those
-            if constexpr (!is_set)
-                is_inserted = true;
+            /// keep them for RIGHT and FULL joins
+            is_inserted = true;
             continue;
         }
 
@@ -341,11 +310,9 @@ void HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImplTypeCas
             continue;
 
         if constexpr (is_asof_join)
-            Inserter<HashMap, KeyGetter>::insertAsof(asof_type, asof_inequality, map, key_getter, stored_block_no, ind, pool, *asof_column);
-        else if constexpr (is_set)
-            Inserter<HashMap, KeyGetter>::insertKeyOnly(map, key_getter, ind, pool);
+            Inserter<HashMap, KeyGetter>::insertAsof(join, map, key_getter, stored_block_no, ind, pool, *asof_column);
         else if constexpr (mapped_one)
-            is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(any_take_last_row, map, key_getter, stored_block_no, ind, pool);
+            is_inserted |= Inserter<HashMap, KeyGetter>::insertOne(join, map, key_getter, stored_block_no, ind, pool);
         else
             all_values_unique &= Inserter<HashMap, KeyGetter>::insertAll(join, map, key_getter, stored_block_no, ind, pool);
     }
@@ -364,6 +331,21 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
     switch (type)
     {
+        case HashJoin::Type::EMPTY: {
+            if constexpr (!is_asof_join)
+            {
+                using KeyGetter = KeyGetterEmpty<typename MapsTemplate::MappedType>;
+                std::vector<KeyGetter> key_getter_vector;
+                key_getter_vector.emplace_back();
+
+                using MapTypeVal = typename KeyGetter::MappedType;
+                std::vector<const MapTypeVal *> a_map_type_vector;
+                a_map_type_vector.emplace_back();
+                return joinRightColumnsSwitchNullability<KeyGetter>(
+                    std::move(key_getter_vector), a_map_type_vector, added_columns, selector, used_flags);
+            }
+            throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys. Type: {}", type);
+        }
 #define M(TYPE) \
     case HashJoin::Type::TYPE: { \
         using MapTypeVal = const typename std::remove_reference_t<decltype(MapsTemplate::TYPE)>::element_type; \
@@ -382,6 +364,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::switchJoinRightColumns(
             APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
 
+        default:
+            throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys (type: {})", type);
     }
 }
 
@@ -395,15 +379,11 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
     JoinStuff::JoinUsedFlags & used_flags)
 {
     if (added_columns.need_filter)
-    {
         return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
-    }
     else
-    {
         return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
             std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
-    }
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
@@ -498,8 +478,6 @@ void setUsed(IColumn::Filter & filter [[maybe_unused]], size_t pos [[maybe_unuse
     }
 }
 
-/// A set map records that a key is present and nothing else: LEFT ANTI emits a row only when the key
-/// is missing, and LEFT SEMI has no right-side value to emit, so a match only marks the left row.
 template <
     JoinKind KIND,
     JoinStrictness STRICTNESS,
@@ -509,36 +487,6 @@ template <
     typename Map,
     typename KeyGetter,
     typename AddedColumns>
-requires SetJoinMaps<MapsTemplate>
-void processMatch(
-    const typename KeyGetter::FindResult &,
-    [[maybe_unused]] AddedColumns & added_columns,
-    JoinStuff::JoinUsedFlags &,
-    [[maybe_unused]] size_t i,
-    size_t,
-    IColumn::Offset &,
-    KnownRowsHolder<flag_per_row> &,
-    bool)
-{
-    constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
-    static_assert(
-        join_features.left && (join_features.is_semi_join || join_features.is_anti_join),
-        "A set map is only chosen for LEFT SEMI and LEFT ANTI");
-
-    if constexpr (join_features.is_semi_join)
-        setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-}
-
-template <
-    JoinKind KIND,
-    JoinStrictness STRICTNESS,
-    bool need_filter,
-    bool flag_per_row,
-    typename MapsTemplate,
-    typename Map,
-    typename KeyGetter,
-    typename AddedColumns>
-requires MappedJoinMaps<MapsTemplate>
 void processMatch(
     const typename KeyGetter::FindResult & find_result,
     AddedColumns & added_columns,
@@ -546,8 +494,7 @@ void processMatch(
     size_t i,
     size_t ind,
     IColumn::Offset & current_offset,
-    KnownRowsHolder<flag_per_row> & known_rows,
-    bool is_last_disjunct)
+    KnownRowsHolder<flag_per_row> & known_rows)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsTemplate> join_features;
 
@@ -569,25 +516,18 @@ void processMatch(
     {
         setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
         used_flags.template setUsed<join_features.need_flags, flag_per_row>(find_result);
-        /// An ALL join emits a right row for each matching left row, so nothing is claimed here.
-        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
+        auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
+        addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
     }
     else if constexpr ((join_features.is_any_join || join_features.is_semi_join) && join_features.right)
     {
-        /// Each right row is emitted for exactly one left row, so the claimed rows must be the emitted
-        /// ones. With several disjuncts a right row is reachable through several keys, hence the claim
-        /// is taken per row by `addFoundRowAll`, which emits only what it claims.
-        if constexpr (flag_per_row)
+        /// Use first appeared left key + it needs left columns replication
+        bool used_once = used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result);
+        if (used_once)
         {
-            static_assert(join_features.need_flags, "RIGHT ANY/SEMI JOIN needs flags to claim the rows it emits");
-            if (addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, &used_flags, is_last_disjunct))
-                setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-        }
-        /// A single disjunct reaches a right row through one key only, so claiming the key claims all of its rows.
-        else if (used_flags.template setUsedOnce<join_features.need_flags, flag_per_row>(find_result))
-        {
+            auto used_flags_opt = join_features.need_flags ? &used_flags : nullptr;
             setUsed<need_filter>(added_columns.filter, i, added_columns.matched_rows);
-            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, nullptr, is_last_disjunct);
+            addFoundRowAll<Map, join_features.add_missing>(mapped, added_columns, current_offset, known_rows, used_flags_opt);
         }
     }
     else if constexpr (join_features.is_any_join && join_features.inner)
@@ -697,7 +637,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             {
                 right_row_found = true;
                 processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
-                    find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows, /*is_last_disjunct=*/ true);
+                    find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows);
             }
         }
 
@@ -814,9 +754,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 if (find_result.isFound())
                 {
                     right_row_found = true;
-                    const bool is_last_disjunct = onexpr_idx + 1 == added_columns.join_on_keys.size();
                     processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
-                        find_result, added_columns, used_flags, i, ind, current_offset, known_rows, is_last_disjunct);
+                        find_result, added_columns, used_flags, i, ind, current_offset, known_rows);
 
                     if constexpr (join_features.is_any_or_semi_join && !(join_features.is_any_join && (join_features.right || join_features.full)))
                         break;
@@ -1051,11 +990,10 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                     /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
                     /// it's different from `joinRightColumns`.
                     PreSelectedRows selected_rows_view{selected_rows};
-                    const bool is_last_disjunct = join_clause_idx + 1 == added_columns.join_on_keys.size();
                     if (flag_per_row)
-                        addFoundRowAll<Map, false, true>(mapped, selected_rows_view, current_added_rows, all_flag_known_rows, nullptr, is_last_disjunct);
+                        addFoundRowAll<Map, false, true>(mapped, selected_rows_view, current_added_rows, all_flag_known_rows, nullptr);
                     else
-                        addFoundRowAll<Map, false, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr, is_last_disjunct);
+                        addFoundRowAll<Map, false, false>(mapped, selected_rows_view, current_added_rows, single_flag_know_rows, nullptr);
                 }
 
             }
@@ -1082,12 +1020,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
 
         const PaddedPODArray<UInt8> & filter_flags = assert_cast<const ColumnUInt8 &>(*filter_col).getData();
 
-        if (added_columns.match_stats) [[unlikely]]
-            for (size_t row = 0; row < selected_rows.size(); ++row)
-                if (filter_flags[row])
-                    added_columns.match_stats->markRightMatched(selected_rows[row]);
-
-        [[maybe_unused]] UInt64 matched_left = 0;
         size_t prev_replicated_row = 0;
         auto * selected_right_row_it = selected_rows.begin();
         size_t find_result_index = 0;
@@ -1210,9 +1142,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                         added_columns.applyLazyDefaults();
                 }
             }
-            if constexpr (leftMatchedSource(KIND, STRICTNESS) == LeftMatchedSource::DefaultRowMarkers)
-                matched_left += any_matched;
-
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
             if constexpr (join_features.need_replication)
@@ -1221,9 +1150,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
             }
             prev_replicated_row = row_replicate_offset[i];
         }
-
-        if constexpr (leftMatchedSource(KIND, STRICTNESS) == LeftMatchedSource::DefaultRowMarkers)
-            added_columns.matched_left_rows = matched_left;
     }
 
     if constexpr (join_features.need_replication)

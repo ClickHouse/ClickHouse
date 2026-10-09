@@ -70,6 +70,7 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
+
 def list_namespaces(started_cluster):
     base_url_local = f"http://localhost:{started_cluster.iceberg_rest_catalog_port}/v1"
     response = requests.get(f"{base_url_local}/namespaces")
@@ -451,7 +452,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-
+    
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -938,10 +939,7 @@ def test_optimize_manifest_with_catalog(started_cluster):
         ["snapshots"],
         ["metadata-log"],
         ["snapshot-log"],
-        # `refs` is likewise optional (an object, not an array): e.g. empty-table metadata
-        # created by external engines may omit it entirely.
-        ["refs"],
-        ["refs", "snapshots", "metadata-log", "snapshot-log"],
+        ["snapshots", "metadata-log", "snapshot-log"],
     ],
 )
 def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
@@ -1593,17 +1591,6 @@ def test_system_tables_metadata_unresolvable_does_not_abort_scan(started_cluster
                 f"AND create_table_query = '' AND engine_full = '' AND as_select = '' {settings}"
             )
             assert int(result.strip()) >= 1, f"create_table_query default, require={require}"
-
-            ## SHOW CREATE TABLE is served by InterpreterShowCreateQuery, a different code path
-            ## from the system.tables column filler above. It answers from catalog metadata and
-            ## must not fail because the storage object cannot be opened.
-            result = node.query(
-                f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}` {settings}"
-            )
-            assert table_name in result, f"SHOW CREATE TABLE, require={require}"
-            assert (
-                "Injected metadata resolution failure" not in result
-            ), f"SHOW CREATE TABLE leaked the resolution error, require={require}"
     finally:
         node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
 
@@ -2171,81 +2158,6 @@ def test_alter_database_settings_onelake_persistence(started_cluster):
     node.query(f"DROP DATABASE {db_name}")
 
 
-def test_alter_database_settings_onelake_refresh_token(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    db_name = f"onelake_refresh_token_{uuid.uuid4().hex}"
-    old_token = f"refresh_token_{uuid.uuid4().hex}"
-    new_token = f"refresh_token_{uuid.uuid4().hex}"
-
-    error = node.query_and_get_error(
-        f"""
-        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_refresh_token = '{old_token}'
-        """,
-        settings={"allow_database_iceberg": 1},
-    )
-    assert "BAD_ARGUMENTS" in error
-
-    error = node.query_and_get_error(
-        f"""
-        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', oauth_server_use_request_body = 0
-        """,
-        settings={"allow_database_iceberg": 1},
-    )
-    assert "BAD_ARGUMENTS" in error
-    assert "oauth_server_use_request_body" in error
-
-    # In refresh-token mode the catalog access token is reused for Azure storage,
-    # so a non-storage auth_scope is rejected at CREATE time.
-    error = node.query_and_get_error(
-        f"""
-        CREATE DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}', auth_scope = 'api://my-catalog/.default'
-        """,
-        settings={"allow_database_iceberg": 1},
-    )
-    assert "BAD_ARGUMENTS" in error
-    assert "auth_scope" in error
-
-    node.query(
-        f"""
-        ATTACH DATABASE {db_name} ENGINE = DataLakeCatalog('http://fake-onelake:1/api')
-        SETTINGS catalog_type = 'onelake', warehouse = 'wh', onelake_tenant_id = 'tenant-1', onelake_client_id = 'client-1', onelake_refresh_token = '{old_token}'
-        """
-    )
-
-    node.query(
-        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_refresh_token = '{new_token}'"
-    )
-
-    error = node.query_and_get_error(
-        f"ALTER DATABASE {db_name} MODIFY SETTING onelake_bearer_token = 'token'"
-    )
-    assert "BAD_ARGUMENTS" in error
-
-    show_result = node.query(f"SHOW CREATE DATABASE {db_name}")
-    assert new_token not in show_result
-    assert "[HIDDEN]" in show_result
-
-    node.restart_clickhouse()
-
-    engine_full_with_secrets = node.query(
-        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'",
-        settings={"format_display_secrets_in_show_and_select": 1},
-    )
-    assert new_token in engine_full_with_secrets
-    assert old_token not in engine_full_with_secrets
-
-    engine_full = node.query(
-        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
-    )
-    assert new_token not in engine_full
-
-    node.query(f"DROP DATABASE {db_name}")
-
-
 def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
     """
     Regression test: an error from the catalog while listing tables (e.g. expired
@@ -2299,62 +2211,5 @@ def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
         "SETTINGS show_data_lake_catalogs_in_system_tables = 1"
     )
     assert "table_x" in result
-
-    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
-
-
-def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
-    node = started_cluster.instances["node1"]
-
-    test_ref = f"test_catalog_commit_conflict_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_iceberg_table(
-        started_cluster, node, root_namespace, table_name, "(x UInt64)"
-    )
-
-    # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are
-    # constructed before the pipeline starts, so all but one of them commit against a stale parent
-    # and are refused with `409`. That makes the conflict a property of the plan rather than a race.
-    num_writers = 4
-    query_id = uuid.uuid4().hex
-    node.query(
-        f"INSERT INTO {table_ref} SELECT number FROM numbers_mt(4000000)",
-        query_id=query_id,
-        settings={
-            "allow_insert_into_iceberg": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-            "max_insert_threads": num_writers,
-            "max_threads": num_writers,
-        },
-    )
-
-    node.query("SYSTEM FLUSH LOGS system.text_log")
-
-    conflicts, http_requests = map(
-        int,
-        node.query(
-            f"""
-            SELECT
-                countIf(logger_name LIKE 'RestCatalog%' AND message LIKE '%updateMetadata conflict%'),
-                countIf(logger_name = 'ReadWriteBufferFromHTTP')
-            FROM system.text_log
-            WHERE query_id = '{query_id}' AND message LIKE '%409%'
-            """
-        ).split(),
-    )
-
-    assert conflicts, (
-        "no writer was refused, so nothing about conflict handling was exercised"
-    )
-    assert http_requests == conflicts, (
-        f"{conflicts} refused commit(s) cost {http_requests} catalog requests, so a conflict is "
-        f"resent with backoff instead of being handed back to the sink at once"
-    )
-
-    assert int(node.query(f"SELECT count() FROM {table_ref}")) == 4000000
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")

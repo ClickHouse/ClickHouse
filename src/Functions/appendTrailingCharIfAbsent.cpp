@@ -135,9 +135,9 @@ Appends character `c` to string `s` if `s` is non-empty and does not end with ch
         "Usage example",
         "SELECT appendTrailingCharIfAbsent('https://example.com', '/');",
         R"(
-┌─appendTrailingCharIfAbsent('https://example.com', '/')─┐
-│ https://example.com/                                   │
-└────────────────────────────────────────────────────────┘
+┌─appendTraili⋯.com', '/')─┐
+│ https://example.com/     │
+└──────────────────────────┘
         )"
     }
     };

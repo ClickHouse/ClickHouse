@@ -2,7 +2,6 @@
 
 #include <fmt/ranges.h>
 #include <random>
-#include <ranges>
 #include <filesystem>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -662,10 +661,9 @@ std::string ListRequestGenerator::descriptionImpl()
 
 ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(const Coordination::ACLs & /*acls*/)
 {
-    /// `getChildren` is the only list op that ZooKeeper-compatible servers accept both standalone
-    /// and as a `multi` sub-request; `List` and `FilteredList` are refused inside `multi`.
-    auto request = std::make_shared<ZooKeeperSimpleListRequest>();
+    auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path.getPath();
+    request->list_request_type = ListRequestType::ALL;
     if (watch_probability.has_value() && watch_picker(watch_rng) < *watch_probability)
     {
         request->has_watch = true;

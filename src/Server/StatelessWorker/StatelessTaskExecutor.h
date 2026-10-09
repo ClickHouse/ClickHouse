@@ -9,7 +9,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <unordered_map>
 
 namespace DB
@@ -37,15 +36,6 @@ public:
         Result result;
         String message;
         Progress progress;
-        /// Error code of a failed task, 0 otherwise.
-        int error_code = 0;
-    };
-
-    /// The error a task ended with.
-    struct TaskFailure
-    {
-        int code = 0;
-        String message;
     };
 
     Result startTask(const String & unique_task_id, const DistributedQueryTaskDescription & task, const String & unique_temp_file_path);
@@ -62,8 +52,7 @@ private:
 
     struct TaskState
     {
-        /// Fulfilled when the task ends: with nothing on success, with the failure otherwise.
-        std::shared_future<std::optional<TaskFailure>> completion_future;
+        std::shared_future<String> completion_future;
         std::shared_ptr<std::atomic<bool>> cancelled = std::make_shared<std::atomic<bool>>(false);
         std::shared_ptr<Progress> progress = std::make_shared<Progress>();
     };

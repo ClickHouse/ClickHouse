@@ -55,10 +55,12 @@ private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
-    const std::string bearer_token;
+    DB::HTTPHeaderEntry auth_header;
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
+
+    Poco::Net::HTTPBasicCredentials credentials{};
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
@@ -66,7 +68,7 @@ private:
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
     void getCredentials(const String & table_id, TableMetadata & metadata) const;
 
-    Poco::JSON::Object::Ptr requestReadCredentials(const String & table_id) const;
+    Poco::JSON::Object::Ptr requestCredentials(const String & table_id, const String & operation) const;
 
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
     std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
@@ -77,6 +79,10 @@ private:
         TableMetadata & result) const;
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+
+    ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
+
+    ICatalog::CredentialsRefreshCallback getCredentialsCallbackForOperation(const String & unity_table_id, const String & operation);
 };
 
 }

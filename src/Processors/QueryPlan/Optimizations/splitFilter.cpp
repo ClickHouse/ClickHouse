@@ -54,15 +54,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
         return 0;
 
     const auto * filter_dag_node = expr.tryFindInOutputs(filter_column_name);
-
-    /// `tryPushDownVolumeReducingFunction` moves these functions below the filter so that the wide
-    /// argument column is not copied by the filter. Keeping them in the filter part here prevents
-    /// the two optimizations from moving the same nodes in opposite directions forever.
-    std::unordered_set<const ActionsDAG::Node *> volume_reducing_functions;
-    if (settings.push_down_volume_reducing_functions)
-        volume_reducing_functions = collectVolumeReducingFunctionsToKeepBelow(expr, filter_dag_node);
-
-    auto split = expr.splitActionsForFilter(filter_column_name, std::move(volume_reducing_functions));
+    auto split = expr.splitActionsForFilter(filter_column_name);
 
     if (split.second.trivial())
         return 0;

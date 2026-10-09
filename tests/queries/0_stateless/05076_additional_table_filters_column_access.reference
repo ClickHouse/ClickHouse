@@ -114,33 +114,27 @@ ACCESS_DENIED
 1
 -- analyzer=1: 31 definer parameterized view, no filter
 2
--- analyzer=1: 32 trivial view over the replicas, pushdown, custom key over denied column
+-- analyzer=1: 32 trivial view over the replicas, custom key over denied column
 ACCESS_DENIED
--- analyzer=1: 33 trivial view over the replicas, pushdown, custom key over granted column
-2
--- analyzer=1: 34 trivial view over the replicas, no pushdown, custom key over denied column
+-- analyzer=1: 33 trivial view shadowing the denied column, custom key over the shadowing column
 ACCESS_DENIED
--- analyzer=1: 35 trivial view shadowing the denied column, pushdown, custom key over the shadowing column
-ACCESS_DENIED
--- analyzer=1: 36 trivial view shadowing the denied column, no pushdown, custom key over the shadowing column
-ACCESS_DENIED
--- analyzer=1: 37 definer view with SAMPLE, control
+-- analyzer=1: 34 definer view with SAMPLE, control
 100
--- analyzer=1: 38 definer view with SAMPLE, invoker supplies the replica slice
+-- analyzer=1: 35 definer view with SAMPLE, invoker supplies the replica slice
 100
--- analyzer=1: 39 SQL SECURITY NONE view with SAMPLE, invoker supplies the replica slice
+-- analyzer=1: 36 SQL SECURITY NONE view with SAMPLE, invoker supplies the replica slice
 100
--- analyzer=1: 40 definer view with SAMPLE read through Distributed by three followers in sampling_key mode
+-- analyzer=1: 37 definer view with SAMPLE read through Distributed by three followers in sampling_key mode
 100
--- analyzer=1: 41 SQL SECURITY NONE view with SAMPLE read through Distributed by three followers in sampling_key mode
+-- analyzer=1: 38 SQL SECURITY NONE view with SAMPLE read through Distributed by three followers in sampling_key mode
 100
--- analyzer=0: 37 definer view with SAMPLE, control
+-- analyzer=0: 34 definer view with SAMPLE, control
 100
--- analyzer=0: 38 definer view with SAMPLE, invoker supplies the replica slice
+-- analyzer=0: 35 definer view with SAMPLE, invoker supplies the replica slice
 100
--- analyzer=0: 39 SQL SECURITY NONE view with SAMPLE, invoker supplies the replica slice
+-- analyzer=0: 36 SQL SECURITY NONE view with SAMPLE, invoker supplies the replica slice
 100
--- analyzer=0: 40 definer view with SAMPLE read through Distributed by three followers in sampling_key mode
+-- analyzer=0: 37 definer view with SAMPLE read through Distributed by three followers in sampling_key mode
 100
--- analyzer=0: 41 SQL SECURITY NONE view with SAMPLE read through Distributed by three followers in sampling_key mode
+-- analyzer=0: 38 SQL SECURITY NONE view with SAMPLE read through Distributed by three followers in sampling_key mode
 100

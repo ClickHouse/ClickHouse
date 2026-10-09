@@ -175,8 +175,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 added_delete_files,
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
-    std::optional<Int64> user_defined_timestamp,
-    SnapshotOperation operation)
+    std::optional<Int64> user_defined_timestamp)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
@@ -220,14 +219,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    /// A merge-on-read DELETE writes position-delete files (num_deleted_rows != 0): per the Iceberg
-    /// spec that snapshot is an `overwrite`, not an `append`. Compaction passes `Replace` explicitly.
-    const char * operation_name = Iceberg::f_append;
-    if (operation == SnapshotOperation::Replace)
-        operation_name = Iceberg::f_replace;
-    else if (num_deleted_rows != 0)
-        operation_name = Iceberg::f_overwrite;
-    summary->set(Iceberg::f_operation, operation_name);
+    summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
     summary->set(Iceberg::f_added_records, std::to_string(added_records));
     summary->set(Iceberg::f_added_files_size, std::to_string(added_files_size));
@@ -267,7 +259,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
     if (!metadata_object->has(Iceberg::f_refs))
-        metadata_object->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+        metadata_object->set(Iceberg::f_refs, new Poco::JSON::Object);
 
     if (!metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
     {
@@ -378,10 +370,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
-    /// `refs` is optional per the Iceberg spec. Seed it as Object::Ptr, not as a raw pointer:
-    /// `getObject` below matches on typeid(Object::Ptr) and returns null for any other type tag.
     if (!metadata_object->has(Iceberg::f_refs))
-        metadata_object->set(Iceberg::f_refs, Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+        metadata_object->set(Iceberg::f_refs, new Poco::JSON::Object);
 
     if (!metadata_object->getObject(Iceberg::f_refs)->has(Iceberg::f_main))
     {

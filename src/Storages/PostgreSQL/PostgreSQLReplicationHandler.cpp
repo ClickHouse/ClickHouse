@@ -294,9 +294,9 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
 
     LOG_INFO(log, "Using replication slot {} and publication {}", replication_slot, doubleQuoteString(publication_name));
 
-    startup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
-    consumer_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
-    cleanup_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
+    startup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaStartup", [this]{ checkConnectionAndStart(); });
+    consumer_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaConsume", [this]{ consumerFunc(); });
+    cleanup_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLReplicaCleanup", [this]{ cleanupFunc(); });
 }
 
 
@@ -583,7 +583,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             if (user_provided_snapshot.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Using a user-defined replication slot must "
-                                "be provided with a snapshot from EXPORT SNAPSHOT when the slot is created. "
+                                "be provided with a snapshot from EXPORT SNAPSHOT when the slot is created."
                                 "Pass it to `materialized_postgresql_snapshot` setting");
             snapshot_name = user_provided_snapshot;
         }

@@ -32,21 +32,21 @@ keywords: ['ネイティブプロトコル', 'tcp プロトコル', 'クライ�
 
 [client hello](/ja/resources/develop-contribute/native-protocol/client#hello) への応答。
 
-| フィールド             | 型       | 値                            | 説明             |
-| ----------------- | ------- | ---------------------------- | -------------- |
-| name              | String  | `ClickHouse`                 | サーバー名          |
-| version&#95;major | UVarInt | `21`                         | サーバーのメジャーバージョン |
-| version&#95;minor | UVarInt | `12`                         | サーバーのマイナーバージョン |
-| revision          | UVarInt | `54452`                      | サーバーのリビジョン     |
-| tz                | String  | `Europe/Moscow`              | サーバーのタイムゾーン    |
-| display&#95;name  | String  | `<display_name-or-hostname>` | UI 用のサーバー名     |
-| version&#95;patch | UVarInt | `3`                          | サーバーのパッチバージョン  |
+| フィールド             | 型       | 値               | 説明             |
+| ----------------- | ------- | --------------- | -------------- |
+| name              | String  | `Clickhouse`    | サーバー名          |
+| version&#95;major | UVarInt | `21`            | サーバーのメジャーバージョン |
+| version&#95;minor | UVarInt | `12`            | サーバーのマイナーバージョン |
+| revision          | UVarInt | `54452`         | サーバーのリビジョン     |
+| tz                | String  | `Europe/Moscow` | サーバーのタイムゾーン    |
+| display&#95;name  | String  | `Clickhouse`    | UI 用のサーバー名     |
+| version&#95;patch | UVarInt | `3`             | サーバーのパッチバージョン  |
 
 <div id="exception">
-  ## Exception
+  ## 例外
 </div>
 
-クエリ処理中のサーバーException。
+クエリ処理中のサーバー例外。
 
 | フィールド           | 型      | 値                                      | 説明                                 |
 | --------------- | ------ | -------------------------------------- | ---------------------------------- |
@@ -56,9 +56,9 @@ keywords: ['ネイティブプロトコル', 'tcp プロトコル', 'クライ�
 | stack&#95;trace | String | ~                                      | C++ のスタックトレース                      |
 | nested          | Bool   | `true`                                 | さらにエラーあり                           |
 
-`nested` が `false` になるまで、Exceptionが連続して並ぶ場合があります。
+`nested` が `false` になるまで、例外が連続して並ぶ場合があります。
 
-[codes]: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp "エラーコードの一覧"
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "エラーコードの一覧"
 
 <div id="progress">
   ## Progress

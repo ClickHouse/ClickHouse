@@ -174,7 +174,7 @@ public:
         Coordination::Requests & requests,
         const std::string & processing_id);
     /// Prepare requests, required to reset file's processing state.
-    virtual void prepareResetProcessingRequests(Coordination::Requests & requests);
+    void prepareResetProcessingRequests(Coordination::Requests & requests);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();
@@ -182,12 +182,9 @@ public:
     void finalizeFailed(const std::string & exception_message);
     /// Do some work after prepared requests reset processing without marking as failed.
     void finalizeResetProcessing();
-
     /// Whether prepareFailedRequests just reset processing
     /// without actually marking the file as failed.
     bool wasProcessingResetWithoutFailure() const { return processing_reset_without_failure; }
-    /// Whether the file was given up on for good (see `permanently_failed`).
-    bool wasPermanentlyFailed() const { return permanently_failed; }
     /// Do some work after prepared requests to set file as Processing succeeded.
     /// `file_state` is a file state,
     /// which we find out after unsuccessfully attempting to set file as processing.
@@ -222,11 +219,7 @@ protected:
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl is not implemented");
     }
-    virtual void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
-
-    virtual void debugFinalizeProcessed();
-    virtual void debugFinalizeFailed();
-    virtual void debugFinalizeResetProcessing();
+    void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
     const std::string zookeeper_name;
@@ -252,10 +245,6 @@ protected:
     /// Whether prepareFailedRequests just reset processing without actually
     /// marking the file as failed (when reduce_retry_count was false).
     bool processing_reset_without_failure = false;
-    /// Whether prepareFailedRequests gave up on the file for good, i.e. created
-    /// the terminal /failed node rather than a retriable one (retries exhausted,
-    /// or retries are disabled altogether).
-    bool permanently_failed = false;
     /// Id of the processor, which is put into processing node.
     /// Can be used to check if processing node was created by us or by someone else.
     std::string processor_info;

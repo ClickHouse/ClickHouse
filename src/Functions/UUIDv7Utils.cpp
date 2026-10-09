@@ -6,9 +6,6 @@ namespace DB
 namespace UUIDv7Utils
 {
 
-CounterFields Data::fields;
-SharedMutex Data::mutex;
-
 
 void setTimestampAndVersion(UUID & uuid, uint64_t timestamp)
 {

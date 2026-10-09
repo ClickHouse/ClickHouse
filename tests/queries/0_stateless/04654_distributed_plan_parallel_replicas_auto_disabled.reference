@@ -1,8 +1,0 @@
-enable_parallel_replicas = 1 no longer throws
-100000	4999950000
-the automatic parallel replicas heuristic no longer throws
-100000	4999950000
-parallel replicas over a plain MergeTree with a cluster no longer throws
-100000	4999950000
-the query still distributes
-distributes

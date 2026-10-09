@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
-extern const int NOT_IMPLEMENTED;
 }
 
 inline void readTimeText(
@@ -241,11 +240,6 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
-}
-
-void SerializationTime::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Time is not supported by the HiveText output format");
 }
 
 }

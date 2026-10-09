@@ -6,8 +6,6 @@
 
 #include <Poco/JSON/Object.h>
 
-#include <filesystem>
-
 #include <Common/logger_useful.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -95,8 +93,8 @@ void collectMetadataRootFiles(
 {
     out.insert(metadata_path);
 
-    /// version-hint.text is not a metadata path: it is a fixed object under the storage root.
-    out.insert(std::filesystem::path(resolver.getTableRoot()) / "metadata" / "version-hint.text");
+    auto version_hint = IcebergPathFromMetadata::deserialize(fmt::format("{}metadata/version-hint.text", resolver.getTableLocation()));
+    out.insert(resolver.resolve(version_hint));
 
     if (metadata->has(f_metadata_log))
     {

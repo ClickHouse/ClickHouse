@@ -69,9 +69,11 @@ CREATE TABLE table_name
 ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
 ```
 
-<Note title="Unsupported gsutil URI">
+<Info>
+**Unsupported gsutil URI**
+
 gsutil URI such as `gs://clickhouse-docs-example-bucket` is not supported, please use a URL starting `https://storage.googleapis.com`
-</Note>
+</Info>
 
 **Arguments**
 

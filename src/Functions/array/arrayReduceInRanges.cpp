@@ -75,10 +75,6 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
     const IAggregateFunction & agg_func = *aggregate_function;
     std::unique_ptr<Arena> arena = std::make_unique<Arena>();
 
-    /// A zero-byte arena allocation does not advance the arena, so states of a zero-size aggregate
-    /// function would all share one address.
-    const size_t state_size = std::max<size_t>(agg_func.sizeOfData(), 1);
-
     /// Aggregate functions do not support constant columns. Therefore, we materialize them.
     VectorWithMemoryTracking<ColumnPtr> materialized_columns;
 
@@ -183,7 +179,7 @@ ColumnPtr FunctionArrayReduceInRanges::executeImpl(
         PODArray<AggregateDataPtr> places(place_total);
         for (size_t j = 0; j < place_total; ++j)
         {
-            places[j] = arena->alignedAlloc(state_size, agg_func.alignOfData());
+            places[j] = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
             try
             {
                 agg_func.create(places[j]);

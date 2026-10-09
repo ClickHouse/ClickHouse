@@ -325,6 +325,7 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"View", "VIEW"},
     {"LiveView", "VIEW"},
     {"MaterializedView", "MATERIALIZED VIEW"},
+    {"WindowView", "VIEW"},
 
     // Dictionary
     {"Dictionary", "DICTIONARY"},
@@ -333,7 +334,6 @@ const static std::vector<std::pair<std::string, std::string>> engine_to_type =
     {"AzureBlobStorage", "REMOTE TABLE"},
     {"AzureQueue", "REMOTE TABLE"},
     {"ArrowFlight", "REMOTE TABLE"},
-    {"BigQuery", "REMOTE TABLE"},
     {"DeltaLake", "REMOTE TABLE"},
     {"DeltaLakeAzure", "REMOTE TABLE"},
     {"DeltaLakeLocal", "REMOTE TABLE"},

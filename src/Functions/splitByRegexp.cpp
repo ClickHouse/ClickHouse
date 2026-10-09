@@ -226,9 +226,9 @@ Empty substrings may be selected when:
 - there are multiple consecutive non-empty regular expression matches
 - the original string string is empty while the regular expression is not empty.
 
-<Note>
-Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-</Note>
+:::note
+Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+:::
 )";
     FunctionDocumentation::Syntax syntax = "splitByRegexp(regexp, s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {
@@ -242,9 +242,9 @@ Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings
         "Usage example",
         "SELECT splitByRegexp('\\\\d+', 'a12bc23de345f');",
         R"(
-┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
-│ ['a','bc','de','f']                    │
-└────────────────────────────────────────┘
+┌─splitByRegex⋯c23de345f')─┐
+│ ['a12bc23de345f']        │
+└──────────────────────────┘
         )"
     },
     {

@@ -11,7 +11,6 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Interpreters/TransactionsInfoLog.h>
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUTImpl.h>
@@ -37,8 +36,6 @@ ColumnsDescription TransactionsInfoLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The hostname where transaction was executed."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(type_enum), "The type of the transaction. Possible values: Begin, Commit, Rollback, AddPart, LockPart, UnlockPart."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime64>(6), "Time of the entry"},
@@ -77,8 +74,6 @@ void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(type);
     auto event_time_seconds = event_time / 1000000;
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());
@@ -107,12 +102,11 @@ try
     if (!system_log)
         return;
 
-    system_log->add([&](TransactionsInfoLogElement & element)
-    {
-        element.type = type;
-        element.tid = tid;
-        element.fillCommonFields(&context);
-    });
+    TransactionsInfoLogElement elem;
+    elem.type = type;
+    elem.tid = tid;
+    elem.fillCommonFields(&context);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {

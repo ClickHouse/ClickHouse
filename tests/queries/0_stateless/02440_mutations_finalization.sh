@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-parallel, no-replicated-database
+# Tags: no-shared-merge-tree, no-parallel
 # no-shared-merge-tree -- SMT doesn't assign mutations when merges are stopped.
 # no-parallel -- uses server-wide failpoints that affect all RMT tables.
-# no-replicated-database -- SYSTEM ENABLE FAILPOINT is process-local, but the test cluster gives
-# this shard a second replica of the same table, whose merge-selecting task is not paused and
-# assigns the mutation the test expects to stay pending.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

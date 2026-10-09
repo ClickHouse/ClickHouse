@@ -10,9 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
-/// Disabled on macOS: the malloc-zone hook observes system-library allocations (e.g. dyld mallocs
-/// on a thread's first `absl::Mutex` lock) that can occur inside deny scopes and cannot be prevented.
-#if !defined(NDEBUG) && !defined(OS_DARWIN)
+#if !defined(NDEBUG)
 #define MEMORY_TRACKER_DEBUG_CHECKS
 #endif
 
@@ -22,8 +20,7 @@
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <base/scope_guard.h>
-#include <Common/FiberLocal.h>
-extern constinit FiberLocal<bool, FiberLocalSlot::MEMORY_TRACKER_ALWAYS_THROW_ON_ALLOCATION> memory_tracker_always_throw_logical_error_on_allocation;
+extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
 
 /// NOLINTNEXTLINE
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
@@ -203,16 +200,6 @@ public:
     Int64 getSoftLimit() const
     {
         return soft_limit.load(std::memory_order_relaxed);
-    }
-
-    /// `amount / hard_limit` for this tracker, or 0 without a hard limit. Lock-free.
-    double getPressure() const
-    {
-        const Int64 limit = hard_limit.load(std::memory_order_relaxed);
-        if (limit <= 0)
-            return 0.0;
-        const Int64 used = amount.load(std::memory_order_relaxed);
-        return used <= 0 ? 0.0 : static_cast<double>(used) / static_cast<double>(limit);
     }
 
     /** Set limit if it was not set.

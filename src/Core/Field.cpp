@@ -1,4 +1,3 @@
-#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
@@ -980,72 +979,6 @@ String fieldToString(const Field & x)
         x);
 }
 
-void normalizeBoolFields(Field & field)
-{
-    if (field.getType() == Field::Types::Bool)
-    {
-        field = field.safeGet<UInt64>();
-    }
-    else if (field.getType() == Field::Types::Tuple)
-    {
-        auto & tuple = field.safeGet<Tuple>();
-        for (auto & elem : tuple)
-            normalizeBoolFields(elem);
-    }
-    else if (field.getType() == Field::Types::Array)
-    {
-        auto & array = field.safeGet<Array>();
-        for (auto & elem : array)
-            normalizeBoolFields(elem);
-    }
-    else if (field.getType() == Field::Types::Map)
-    {
-        auto & map = field.safeGet<Map>();
-        for (auto & elem : map)
-            normalizeBoolFields(elem);
-    }
-}
-
-bool anyFieldSatisfies(const Field & field, bool (*predicate)(const Field &))
-{
-    /// Walked with an explicit worklist, like the copy and destroy paths above, so the native stack
-    /// depth does not follow the nesting depth of a value that arrives from data rather than a literal.
-    absl::InlinedVector<const Field *, 16> pending{&field};
-
-    while (!pending.empty())
-    {
-        const Field * current = pending.back();
-        pending.pop_back();
-
-        if (predicate(*current))
-            return true;
-
-        switch (current->getType())
-        {
-            case Field::Types::Array:
-                for (const Field & element : current->safeGet<Array>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Tuple:
-                for (const Field & element : current->safeGet<Tuple>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Map:
-                for (const Field & element : current->safeGet<Map>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Object:
-                for (const auto & [_, element] : current->safeGet<Object>())
-                    pending.push_back(&element);
-                break;
-            default:
-                break;
-        }
-    }
-
-    return false;
-}
-
 std::string_view fieldTypeToString(Field::Types::Which type)
 {
     switch (type)
@@ -1142,8 +1075,8 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
-/// `unsigned long` is not covered by the list above where it is a type of its own.
-#if defined(LONG_IS_A_DISTINCT_TYPE)
+/// In Darwin unsigned long does not match any of the UInt* types
+#ifdef OS_DARWIN
 template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;
 #endif
 }
