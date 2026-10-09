@@ -310,7 +310,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
                 backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getSchemaPart()));
     }
 
-    show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase().getFullName());
+    show_query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)

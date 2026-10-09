@@ -44,7 +44,7 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             "(USE {}.{}); qualify the table with its database explicitly",
             backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getSchemaPart()));
 
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase().getFullName());
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     String origin;
     String expr = "*";

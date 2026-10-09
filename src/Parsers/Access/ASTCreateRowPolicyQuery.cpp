@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
@@ -190,7 +191,7 @@ void ASTCreateRowPolicyQuery::replaceCurrentUserTag(const String & current_user_
         roles->replaceCurrentUserTag(current_user_name);
 }
 
-void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const String & current_database) const
+void ASTCreateRowPolicyQuery::replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const
 {
     if (names)
         names->replaceEmptyDatabase(current_database);

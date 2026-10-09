@@ -17,7 +17,7 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void replaceEmptyDatabase(const String & current_database);
+
     QueryKind getQueryKind() const override { return QueryKind::Check; }
 
 protected:

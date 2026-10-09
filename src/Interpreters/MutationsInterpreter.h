@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
@@ -18,6 +19,8 @@ class QueryPlan;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
+
+struct CurrentDatabaseInfo;
 
 struct IsStorageTouched
 {
@@ -60,7 +63,7 @@ void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
 /// This must run with the submitting context before the mutation is handed to a background context.
 void checkNoRowPolicyForSetOperands(
     const ASTPtr & mutation_ast,
-    const String & default_database,
+    const CurrentDatabaseInfo & default_database,
     const ContextPtr & context,
     bool throw_if_unresolved = false);
 

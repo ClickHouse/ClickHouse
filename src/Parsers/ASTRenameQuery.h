@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
@@ -69,19 +70,29 @@ public:
         }
     }
 
-    void setDatabaseIfNotExists(const String & database_name)
+    void setDatabaseIfNotExists(const CurrentDatabaseInfo & current_database)
     {
         for (auto & elem : elements)
         {
             if (!elem.from.database)
             {
-                elem.from.database = make_intrusive<ASTIdentifier>(database_name);
+                auto [correct_database, table] = current_database.rebase(elem.from.getTable());
+                elem.from.database = make_intrusive<ASTIdentifier>(std::move(correct_database));
                 children.push_back(elem.from.database);
+
+                reset(elem.from.table);
+                elem.from.table = make_intrusive<ASTIdentifier>(std::move(table));
+                children.push_back(elem.from.table);
             }
             if (!elem.to.database)
             {
-                elem.to.database = make_intrusive<ASTIdentifier>(database_name);
+                auto [correct_database, table] = current_database.rebase(elem.to.getTable());
+                elem.to.database = make_intrusive<ASTIdentifier>(std::move(correct_database));
                 children.push_back(elem.to.database);
+
+                reset(elem.to.table);
+                elem.to.table = make_intrusive<ASTIdentifier>(std::move(table));
+                children.push_back(elem.to.table);
             }
         }
     }

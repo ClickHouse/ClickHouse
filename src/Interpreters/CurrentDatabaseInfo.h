@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <fmt/format.h>
 
 #include <string_view>
 
@@ -31,12 +32,32 @@ struct CurrentDatabaseInfo
         return hasSchema() ? std::string_view(value).substr(separator_idx + 1) : std::string_view{};
     }
 
+    std::pair<String, String> rebase(const String & unqualified_table_name) const
+    {
+        return
+        {
+            String(getDatabasePart()),
+            hasSchema() ? fmt::format("{}.{}", getSchemaPart(), unqualified_table_name) : unqualified_table_name
+        };
+    }
+
     bool hasSchema() const { return separator_idx != String::npos; }
     bool empty() const { return value.empty(); }
 
     bool operator==(const CurrentDatabaseInfo &) const = default;
+    bool operator<(const CurrentDatabaseInfo & rhs) const
+    {
+        return value < rhs.value;
+    }
+
+    static CurrentDatabaseInfo fromOnlyDatabaseName(String database);
 
 private:
+
+    struct OnlyDatabase {};
+
+    CurrentDatabaseInfo(String database, OnlyDatabase);
+
     String value;
     size_t separator_idx = String::npos;
 };

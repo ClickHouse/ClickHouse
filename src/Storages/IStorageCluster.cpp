@@ -117,7 +117,7 @@ void IStorageCluster::read(
     data.remote_table.database = context->getCurrentDatabase().getFullName();
     data.remote_table.table = getName();
     RestoreQualifiedNamesVisitor(data).visit(query_to_send);
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase().getFullName(),
+    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
                                       /* only_replace_current_database_function_= */false,
                                       /* only_replace_in_join_= */true);
     visitor.visit(query_to_send);

@@ -1,3 +1,4 @@
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/InterpreterDeleteQuery.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/replaceLegacyToTime.h>
@@ -103,7 +104,7 @@ BlockIO InterpreterDeleteQuery::execute()
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
     if (delete_query.cluster.empty())
-        checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+        checkNoRowPolicyForSetOperands(query_ptr, CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.database_name), getContext());
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
@@ -184,7 +185,7 @@ BlockIO InterpreterDeleteQuery::execute()
             /// Substitute the database into table functions that use the current database implicitly, e.g.
             /// `merge('tables_regexp')`, before `executeDDLQueryOnCluster` replaces `currentDatabase()` with
             /// the database of the session. The table identifiers are qualified on each host instead.
-            AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+            AddDefaultDatabaseVisitor visitor(getContext(), CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.getDatabaseName()));
             auto & mutable_delete_query = query_ptr->as<ASTDeleteQuery &>();
             if (mutable_delete_query.predicate)
                 visitor.substituteDatabaseInTableFunctions(*mutable_delete_query.predicate);
@@ -193,9 +194,9 @@ BlockIO InterpreterDeleteQuery::execute()
 
             DDLQueryOnClusterParams params;
             params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
-            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &, bool throw_if_unresolved)
+            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const CurrentDatabaseInfo &, bool throw_if_unresolved)
             {
-                checkNoRowPolicyForSetOperands(captured_query_ptr, table_id.database_name, context, throw_if_unresolved);
+                checkNoRowPolicyForSetOperands(captured_query_ptr, CurrentDatabaseInfo::fromOnlyDatabaseName(table_id.database_name), context, throw_if_unresolved);
             };
             return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }

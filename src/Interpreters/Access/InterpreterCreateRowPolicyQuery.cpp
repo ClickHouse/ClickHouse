@@ -75,7 +75,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);
 
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase().getFullName());
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)

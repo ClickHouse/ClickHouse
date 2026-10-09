@@ -40,4 +40,13 @@ CurrentDatabaseInfo::CurrentDatabaseInfo(String full_name_)
         separator_idx = dot;
 }
 
+CurrentDatabaseInfo CurrentDatabaseInfo::fromOnlyDatabaseName(String database)
+{
+    return CurrentDatabaseInfo(std::move(database), {});
+}
+
+CurrentDatabaseInfo::CurrentDatabaseInfo(String database, OnlyDatabase)
+    : value(std::move(database))
+{}
+
 }

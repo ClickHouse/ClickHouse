@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Common/RowPolicyDefs.h>
@@ -50,7 +51,7 @@ public:
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
 
     void replaceCurrentUserTag(const String & current_user_name) const;
-    void replaceEmptyDatabase(const String & current_database) const;
+    void replaceEmptyDatabase(const CurrentDatabaseInfo & current_database) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
