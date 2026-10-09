@@ -37,11 +37,9 @@ INNER JOIN view(SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS
 ON a.c0 = v.d0
 ORDER BY ALL;
 
--- A view whose own join is itself a candidate for reordering is still kept whole. This arm does not
--- cover the boundary being carried onto the node `chooseJoinOrder` returns: the traversal optimizes
--- the enclosing join first, so it reads the boundary before the inner join is ever replaced. Measured
--- by deleting that re-application, which leaves every arm of this test green. It is there for a
--- receiver handed an already-expanded fragment, which the arms below cover.
+-- A view whose own join is itself a candidate for reordering is still kept whole. The enclosing join is
+-- optimized first, so this arm reads the boundary before the inner join is reordered; it does not cover
+-- the boundary surviving that reordering, which a unit test does.
 SELECT '-- view whose own inner join is reordered';
 SELECT a.c0, v.c0
 FROM t_a_05039 AS a
@@ -95,11 +93,8 @@ ORDER BY ALL;
 
 -- An inlined view is rewritten into a subquery before the join tree is resolved, so it is numbered by
 -- the same alias pass as the enclosing query, does not restart the namespace, and is not a case the
--- barrier exists for. Only a stored view reaches the inlining hook, which rewrites a `TableNode`, so a
--- `view(...)` table function never enters it. The pair reads different values, which is what shows the
--- setting is in effect here instead of being asserted by results that agree either way. Suppressing the
--- marking under the setting leaves both arms unchanged, so the inlined arm flattens because no view is
--- read at all, not because the mark was withheld.
+-- barrier exists for. Only a stored view is inlined, a `view(...)` table function is not. The pair reads
+-- different values, which shows the setting is in effect.
 SELECT '-- a stored view is flattened once it is inlined';
 DROP VIEW IF EXISTS v_inline_05039;
 CREATE VIEW v_inline_05039 AS SELECT toInt32(x.c0 + 1) AS d0 FROM t_a_05039 AS x, t_b_05039 AS y;
@@ -209,7 +204,7 @@ SELECT count() > 0 FROM (
 -- No view is read on a replica handed an already-expanded plan fragment, so the boundary cannot be
 -- re-derived there and has to travel with the step itself. Decorrelating a correlated subquery without
 -- the in-memory buffer emits a subplan reference, which is materialized by cloning the referenced
--- subplan, and that clone happens before join reordering runs, so a boundary lost in `clone` leaves a
+-- subplan, and that copy is made before join reordering runs, so a boundary lost in it leaves a
 -- flattenable view behind. Both copies of the view join must stay opaque; the plain-subquery arm after
 -- it is the control that this shape does flatten what it may.
 SELECT '-- a cloned subplan keeps the view opaque';
@@ -242,14 +237,7 @@ SELECT count() FROM (
              correlated_subqueries_use_in_memory_buffer = 0, correlated_subqueries_default_join_kind = 'right'
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
--- The wire is the other way a step travels, and it is deliberately NOT asserted here. Setting
--- `serialize_query_plan = 1` is not enough to reach `serialize`/`deserialize`: a plan is only written
--- to a stream for a shard that is actually remote, and a single-server test has none, so the local
--- shard takes the local-plan path instead. Measured by instrumenting both functions and running this
--- shape, `remote()` over this server's own port, a `remote()` that ships the whole view join, and two
--- joined remote legs: zero calls in every one, while a probe at `clone` in the same build fired. An
--- arm here would pass whatever the `flags` byte did, so none is shipped; the round trip is asserted
--- in `gtest_join_step_logical_reorder_boundary_roundtrip.cpp` instead.
+-- The boundary sent to another server with a plan fragment is covered by a unit test.
 DROP VIEW v_shadow_05039;
 DROP VIEW v_inline_05039;
 DROP VIEW v_merge_05039;
