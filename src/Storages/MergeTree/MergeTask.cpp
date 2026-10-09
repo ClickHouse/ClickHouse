@@ -344,7 +344,7 @@ bool MergeTask::GlobalRuntimeContext::isCancelled() const
 {
     /// A projection's synthetic partition ID does not identify the parent partition's blocker.
     /// Use the inherited predicate so stopping the parent operation also stops its projection work.
-    return operation_is_cancelled();
+    return operation_request() != CancellationRequest::None;
 }
 
 void MergeTask::GlobalRuntimeContext::checkOperationIsNotCanceled() const
@@ -1291,7 +1291,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
 
-    ctx->is_cancelled = global_ctx->operation_is_cancelled;
+    ctx->is_cancelled = [request = global_ctx->operation_request]
+    {
+        return request() != CancellationRequest::None;
+    };
 
     /// This is the end of preparation. Execution will be per block.
     return false;

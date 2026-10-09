@@ -29,11 +29,11 @@ bool PartitionActionBlocker::isCancelledForPartition(const std::string & partiti
     return state->isCancelledForPartition(partition_id);
 }
 
-std::function<bool()> PartitionActionBlocker::getCancellationPredicate(std::string partition_id_) const
+CancellationRequestPredicate PartitionActionBlocker::getCancellationRequestPredicate(std::string partition_id_) const
 {
     return [shared_state = state, partition_id = std::move(partition_id_)]
     {
-        return shared_state->isCancelledForPartition(partition_id);
+        return shared_state->isCancelledForPartition(partition_id) ? CancellationRequest::StopWork : CancellationRequest::None;
     };
 }
 

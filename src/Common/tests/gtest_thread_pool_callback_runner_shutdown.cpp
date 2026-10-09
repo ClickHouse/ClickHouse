@@ -250,7 +250,7 @@ TEST(ThreadPoolCallbackRunner, FastRunnerRestoresPhaseForExecutionAndDiscard)
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
         ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
         std::atomic_size_t destroyed{0};
         struct Recorder
@@ -346,7 +346,7 @@ TEST(ThreadPoolCallbackRunner, FailedAttachmentDoesNotRunTaskOrGrantCleanup)
     {
         ThreadStatus status;
         auto target = ThreadGroup::createForMergeMutate(getContext().context);
-        auto caller = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        auto caller = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
         bool ran = false;
         size_t destroyed = 0;
         struct Recorder

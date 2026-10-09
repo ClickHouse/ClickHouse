@@ -1,13 +1,13 @@
 #pragma once
 
 #include <memory>
-#include <functional>
 #include <string>
 #include <unordered_map>
 
 #include <Common/ActionLock.h>
 #include <Common/ActionBlocker.h>
 #include <Common/SharedMutex.h>
+#include <Common/OperationCancellation.h>
 
 namespace DB
 {
@@ -42,7 +42,7 @@ public:
 
     /// Observes live blockers, including partitions blocked after this predicate was created.
     /// Retains only blocker state, so asynchronous work may safely outlive the owner.
-    std::function<bool()> getCancellationPredicate(std::string partition_id) const;
+    CancellationRequestPredicate getCancellationRequestPredicate(std::string partition_id) const;
 
     /// Temporarily blocks corresponding actions (while the returned object is alive)
     friend class ActionLock;

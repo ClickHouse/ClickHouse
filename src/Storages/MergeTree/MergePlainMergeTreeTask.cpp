@@ -100,7 +100,7 @@ void MergePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context,
-        stopWorkOnCancellation(storage.merger_mutator.merges_blocker.getCancellationPredicate(future_part->part_info.getPartitionId())));
+        storage.merger_mutator.merges_blocker.getCancellationRequestPredicate(future_part->part_info.getPartitionId()));
     ThreadGroupSwitcher preparation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(

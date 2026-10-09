@@ -182,9 +182,17 @@ TEST_P(S3CacheCancellationHandoff, ReusedS3ReaderUsesCurrentOperation)
             auto original_canceled = std::make_shared<std::atomic_bool>(false);
             auto consumer_canceled = std::make_shared<std::atomic_bool>(false);
             auto original_group
-                = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([original_canceled] { return original_canceled->load(); }));
+                = ThreadGroup::createForMergeMutate(
+                    getContext().context, [original_canceled]
+                    {
+                        return original_canceled->load() ? CancellationRequest::StopWork : CancellationRequest::None;
+                    });
             auto consumer_group
-                = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([consumer_canceled] { return consumer_canceled->load(); }));
+                = ThreadGroup::createForMergeMutate(
+                    getContext().context, [consumer_canceled]
+                    {
+                        return consumer_canceled->load() ? CancellationRequest::StopWork : CancellationRequest::None;
+                    });
             size_t sources_created = 0;
             ThreadPoolRemoteFSReader async_reader(1, 2);
             auto create_reader = [&](bool async)
@@ -259,7 +267,7 @@ TEST(OperationCancellation, CancelledAbortRecoversAfterRetryableFailure)
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
         Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory(false, 1);
@@ -292,7 +300,7 @@ TEST(OperationCancellation, CleanupRetriesDoNotPermitExplicitWork)
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
         Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory;
@@ -406,7 +414,7 @@ TEST(OperationCancellation, CleanupDeleteHelpersRetainPhase)
         std::async(std::launch::async, [batch_supported]
         {
             ThreadStatus status;
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
             Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory(false, 1);
@@ -564,7 +572,7 @@ TEST(OperationCancellation, CleanupRespectsZeroRetries)
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
         Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory;
@@ -605,7 +613,11 @@ TEST(OperationCancellation, CancellationDuringDelayCalculationPreventsRetryDispa
         {
             ThreadStatus status;
             auto canceled = std::make_shared<std::atomic_bool>(false);
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([canceled] { return canceled->load(); }));
+            auto group = ThreadGroup::createForMergeMutate(
+                getContext().context, [canceled]
+                {
+                    return canceled->load() ? CancellationRequest::StopWork : CancellationRequest::None;
+                });
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
             Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory;

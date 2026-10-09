@@ -1101,7 +1101,7 @@ TEST_F(WBS3Test, CurrentOperationCancelsRequestsWithoutHooks)
     std::async(std::launch::async, [&]
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return CancellationRequest::StopWork; });
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         auto & s3 = static_cast<S3::Client &>(*client);
 
@@ -1127,7 +1127,11 @@ TEST_F(WBS3Test, CurrentOperationAllowsMultipartCleanupWithoutHooks)
     {
         ThreadStatus status;
         auto canceled = std::make_shared<std::atomic_bool>(false);
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([canceled] { return canceled->load(); }));
+        auto group = ThreadGroup::createForMergeMutate(
+            getContext().context, [canceled]
+            {
+                return canceled->load() ? CancellationRequest::StopWork : CancellationRequest::None;
+            });
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         auto & s3 = static_cast<S3::Client &>(*client);
 
@@ -1233,7 +1237,11 @@ TEST_P(PostUploadCancellation, StopsVerification)
             auto injection = std::make_shared<CancelDuringHead>(check_size ? 1 : 0);
             setInjectionModel(injection);
             getSettings()[Setting::s3_check_objects_after_upload] = true;
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([injection] { return injection->cancelled.load(); }));
+            auto group = ThreadGroup::createForMergeMutate(
+                getContext().context, [injection]
+                {
+                    return injection->cancelled.load() ? CancellationRequest::StopWork : CancellationRequest::None;
+                });
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
 
             try

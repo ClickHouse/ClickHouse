@@ -101,14 +101,6 @@ CancellationRequestPredicate MergeListElement::getCancellationRequestPredicate()
     };
 }
 
-std::function<bool()> MergeListElement::getCancellationPredicate() const
-{
-    return [predicate = getCancellationRequestPredicate()]
-    {
-        return predicate() != CancellationRequest::None;
-    };
-}
-
 MergeInfo MergeListElement::getInfo() const
 {
     MergeInfo res;

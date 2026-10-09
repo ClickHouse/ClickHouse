@@ -580,9 +580,9 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// A nested pipeline that is only stopped returns without an exception, so its caller cannot
     /// distinguish a cancelled build from a completed one.
     context->setInteractiveCancelCallback(
-        [is_canceled = (*merge_entry)->getCancellationPredicate()]
+        [request = (*merge_entry)->getCancellationRequestPredicate()]
         {
-            if (is_canceled())
+            if (request() != CancellationRequest::None)
                 throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
             return false;
         });

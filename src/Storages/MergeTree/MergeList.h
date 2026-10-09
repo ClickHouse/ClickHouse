@@ -18,7 +18,6 @@
 #include <mutex>
 #include <atomic>
 #include <utility>
-#include <functional>
 
 
 namespace CurrentMetrics
@@ -159,7 +158,6 @@ public:
 
     /// Called once by the preparing task if this merge will perform TTL work.
     void enableTTLCancellation(const ActionBlocker & blocker);
-    std::function<bool()> getCancellationPredicate() const;
     CancellationRequestPredicate getCancellationRequestPredicate() const;
 
     MergeInfo getInfo() const;

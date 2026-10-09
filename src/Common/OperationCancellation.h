@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <functional>
-#include <utility>
 
 namespace DB
 {
@@ -21,15 +20,6 @@ enum class ExecutionPhase
 };
 
 using CancellationRequestPredicate = std::function<CancellationRequest()>;
-
-/// Adapts legacy cancellation sources without changing their stop-work semantics.
-inline CancellationRequestPredicate stopWorkOnCancellation(std::function<bool()> predicate)
-{
-    return [predicate = std::move(predicate)]
-    {
-        return predicate() ? CancellationRequest::StopWork : CancellationRequest::None;
-    };
-}
 
 class OperationCancellationState
 {

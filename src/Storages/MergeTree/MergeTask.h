@@ -124,7 +124,7 @@ public:
             global_ctx->projection_merge_list_element = std::move(projection_merge_list_element_);
             global_ctx->merge_list_element_ptr
                 = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get() : (*global_ctx->merge_entry)->ptr();
-            global_ctx->operation_is_cancelled = global_ctx->merge_list_element_ptr->getCancellationPredicate();
+            global_ctx->operation_request = global_ctx->merge_list_element_ptr->getCancellationRequestPredicate();
             global_ctx->time_of_merge = std::move(time_of_merge_);
             global_ctx->context = std::move(context_);
             global_ctx->holder = &holder;
@@ -213,7 +213,7 @@ private:
         /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
         std::unique_ptr<MergeListElement> projection_merge_list_element;
         MergeListElement * merge_list_element_ptr{nullptr};
-        std::function<bool()> operation_is_cancelled;
+        CancellationRequestPredicate operation_request;
         MergeTreeData * data{nullptr};
         MergeTreeSettingsPtr data_settings;
         MergeTreeDataMergerMutator * mutator{nullptr};
