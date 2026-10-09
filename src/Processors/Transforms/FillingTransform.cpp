@@ -96,6 +96,30 @@ static std::optional<Int64> calendarStepOutOfStorageType(T value, Int64 delta, c
     return {};
 }
 
+/** A step of a fixed-length kind over DateTime64 is a fixed number of ticks of the column. Returns that number for
+  * the kinds not finer than the scale of the column, and nothing for the other kinds.
+  */
+static std::optional<Int64> fixedLengthStepTicks(IntervalKind::Kind kind, UInt32 scale)
+{
+    auto ticks = [scale](Int64 seconds_per_unit, UInt32 unit_scale) -> std::optional<Int64>
+    {
+        if (unit_scale > scale)
+            return {};
+        return seconds_per_unit * DecimalUtils::scaleMultiplier<Int64>(scale - unit_scale);
+    };
+
+    switch (kind)
+    {
+        case IntervalKind::Kind::Nanosecond: return ticks(1, 9);
+        case IntervalKind::Kind::Microsecond: return ticks(1, 6);
+        case IntervalKind::Kind::Millisecond: return ticks(1, 3);
+        case IntervalKind::Kind::Second: return ticks(1, 0);
+        case IntervalKind::Kind::Minute: return ticks(60, 0);
+        case IntervalKind::Kind::Hour: return ticks(3600, 0);
+        default: return {};
+    }
+}
+
 template <typename T>
 static FillColumnDescription::StepFunction getStepFunction(
     IntervalKind::Kind kind, Int64 step, const DateLUTImpl & date_lut, UInt16 scale = DataTypeDateTime64::default_scale)
@@ -147,6 +171,31 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             const auto & step_dec = step.safeGet<DecimalField<Decimal64>>();
             Int64 converted_step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
             static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+
+            /// `FillingRow::doLongJump` multiplies the step by exponentially growing jump counts. The functions adding
+            /// seconds and finer kinds to DateTime64 throw `DECIMAL_OVERFLOW` when the ticks do not fit Int64, and the
+            /// ones adding minutes and hours wrap around, which may land ahead of the current value. Add the ticks
+            /// of a fixed-length step with saturation instead: a saturated value lies past the range of the column
+            /// in the direction of the step, so the jump is shortened, and a single saturated step is rejected as a
+            /// value the column cannot hold or stops the filling at its border.
+            if (const auto ticks_per_unit = fixedLengthStepTicks(step_kind->getKind(), date_time64->getScale()))
+            {
+                return [converted_step, step_ticks = *ticks_per_unit](Field & field, Int64 jumps_count)
+                {
+                    auto field_decimal = field.safeGet<DecimalField<DateTime64>>();
+                    Int64 units = 0;
+                    Int64 delta = 0;
+                    Int64 res = 0;
+                    if (common::mulOverflow(converted_step, jumps_count, units)
+                        || common::mulOverflow(units, step_ticks, delta)
+                        || common::addOverflow(field_decimal.getValue().value, delta, res))
+                    {
+                        const bool forward = (converted_step < 0) == (jumps_count < 0);
+                        res = forward ? std::numeric_limits<Int64>::max() : std::numeric_limits<Int64>::min();
+                    }
+                    field = DecimalField<DateTime64>(DateTime64(res), field_decimal.getScale());
+                };
+            }
 
             switch (step_kind.value()) // NOLINT(bugprone-switch-missing-default-case)
             {

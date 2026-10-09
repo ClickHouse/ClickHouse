@@ -273,3 +273,11 @@ SELECT count(), max(b) FROM (SELECT a, b FROM (SELECT 1 AS a, toUInt8(11) AS b U
 -- The walk of a trailing fill column towards a TO past the range of the column type is rejected when the walk
 -- starts, not after generating every value up to the boundary of the type (2^32 rows for `DateTime`).
 SELECT a, t FROM (SELECT 1 AS a, toDateTime(5, 'UTC') AS t UNION ALL SELECT 2 AS a, toDateTime(5, 'UTC') AS t) ORDER BY a ASC WITH FILL, t ASC WITH FILL TO 4294967297 STEP 1 FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
+SELECT 'a fixed-length INTERVAL step over DateTime64 saturates at the boundary of the storage type';
+
+-- A step of seconds or a finer kind used to throw `DECIMAL_OVERFLOW` once the ticks left Int64, also in the long
+-- jumps of a fill with `STALENESS`, and a step of minutes or hours wrapped around and never terminated.
+SELECT t FROM (SELECT toDateTime64('2262-04-11 23:47:14', 9, 'UTC') AS t) ORDER BY t WITH FILL FROM toDateTime64('2262-04-11 23:47:14', 9, 'UTC') TO toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC') STEP INTERVAL 1 SECOND;
+SELECT t FROM (SELECT toDateTime64('2262-04-11 23:47:14', 9, 'UTC') AS t) ORDER BY t WITH FILL TO toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC') STEP INTERVAL 1 MINUTE;
+SELECT t FROM (SELECT toDateTime64('1700-01-01 00:00:00', 9, 'UTC') AS t UNION ALL SELECT toDateTime64('2262-04-11 23:47:14', 9, 'UTC')) ORDER BY t WITH FILL STEP INTERVAL 1 SECOND STALENESS INTERVAL 2 SECOND;
