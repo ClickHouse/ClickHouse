@@ -83,6 +83,12 @@ Same-width FixedString source stays exact
 1
 1
 1
+FixedString key, String source stays live
+610000
+1
+610000
+620000
+630000
 Tuple key, collapsing element type, declined
 61
 6100
@@ -156,6 +162,16 @@ Tuple key, collapsing temporal element, declined
 ('2020-01-01 00:00:00',1)
 ('2020-01-01 12:34:56',1)
 1
+1
+Named tuple key, reordered collapsing element, declined
+('2020-01-01 00:00:00','2030-02-03')
+('2020-01-01 12:34:56','2030-02-03')
+1
+('2020-01-01 00:00:00','2030-02-03')
+('2020-01-01 12:34:56','2030-02-03')
+('2021-01-01 00:00:00','2030-02-03')
+1
+('2020-01-01 00:00:00','2030-02-03')
 1
 Component-equal temporal pair stays exact
 2020-01-01 00:00:00

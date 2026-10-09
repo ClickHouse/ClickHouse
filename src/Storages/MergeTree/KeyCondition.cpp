@@ -3306,8 +3306,29 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
 
     if (key_which.isTuple() && set_which.isTuple())
     {
-        const auto & key_elements = assert_cast<const DataTypeTuple &>(*key_unwrapped).getElements();
-        const auto & set_elements = assert_cast<const DataTypeTuple &>(*set_unwrapped).getElements();
+        const auto & key_tuple = assert_cast<const DataTypeTuple &>(*key_unwrapped);
+        const auto & set_tuple = assert_cast<const DataTypeTuple &>(*set_unwrapped);
+        const auto & key_elements = key_tuple.getElements();
+        const auto & set_elements = set_tuple.getElements();
+
+        /// Named tuples sharing an element name are cast by name, and a key element without a
+        /// counterpart is dropped, which merges keys that differ only in it.
+        if (key_tuple.hasExplicitNames() && set_tuple.hasExplicitNames())
+        {
+            const auto & key_names = key_tuple.getElementNames();
+            if (std::ranges::any_of(key_names, [&](const String & name) { return set_tuple.tryGetPositionByName(name).has_value(); }))
+            {
+                for (size_t i = 0; i < key_elements.size(); ++i)
+                {
+                    auto set_position = set_tuple.tryGetPositionByName(key_names[i]);
+                    if (!set_position || keyToSetConversionMayCollapse(key_elements[i], set_elements[*set_position]))
+                        return true;
+                }
+
+                return false;
+            }
+        }
+
         if (key_elements.size() != set_elements.size())
             return false;
 
@@ -3319,8 +3340,10 @@ static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const Da
     }
 
     /// A text key is equality-preserving only against the same text type: `FixedString` padding and
-    /// text-to-numeric parsing both merge distinct keys.
-    if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped))
+    /// text-to-numeric parsing both merge distinct keys. A `FixedString` key cast into `String` only
+    /// loses its trailing zero bytes, which is injective at a fixed width.
+    if (key_which.isStringOrFixedString() && !key_unwrapped->equals(*set_unwrapped)
+        && !(key_which.isFixedString() && set_which.isString()))
         return true;
 
     /// A temporal target that cannot represent a component the key carries merges every key sharing

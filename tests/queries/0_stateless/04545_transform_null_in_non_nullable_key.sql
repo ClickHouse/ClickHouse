@@ -9,16 +9,16 @@
 -- Regression test for issue #111340: `transform_null_in = 1`, non-Nullable key column, `IN`/`NOT IN`
 -- a subquery whose result is Nullable. Previously threw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN (349).
 --
--- Cases A, B, D, C, C2 -- C21, E, F, H, I, J, G, K cover, in order: the folded-default pair,
--- the numeric analogue, the cross-type exact direction and its counterexample, the three silent-collapse families (text key against a different type / key with
--- a finer Decimal or DateTime64 scale, or a scaled key against a scale-less integer or float source /
--- temporal key whose target drops its time of day or its calendar date) with their controls
--- (injective numeric narrowing, identical text types, identical composite element types, a
--- component-equal temporal pair, and three liveness controls: a finer-scale source, a scale-zero key,
--- a widening temporal pair), the `NOT has` caller, the
--- `LowCardinality(Nullable(T))` source, the multi-column set, the
--- all-NULL empty set, the positive `IN` direction,
--- and the two shapes that must stay unchanged (`Tuple(Nullable, Nullable)` key, duplicate key mapping).
+-- Cases A, B, D, C, C2 -- C23, E, F, H, I, J, G, K cover, in order: the folded-default pair, the
+-- numeric analogue, the cross-type exact direction and its counterexample, the three silent-collapse
+-- families (text key against a different type / key with a finer Decimal or DateTime64 scale, or a
+-- scaled key against a scale-less integer or float source / temporal key whose target drops its time
+-- of day or its calendar date) with their controls (injective numeric narrowing, identical text types,
+-- identical composite element types, a component-equal temporal pair, and three liveness controls: a
+-- finer-scale source, a scale-zero key, a widening temporal pair), a `FixedString` key against a
+-- `String` element, named tuples cast by name, the `NOT has` caller, the `LowCardinality(Nullable(T))`
+-- source, the multi-column set, the all-NULL empty set, the positive `IN` direction, and the two
+-- shapes that must stay unchanged (`Tuple(Nullable, Nullable)` key, duplicate key mapping).
 
 SET transform_null_in = 1;
 SET explain_query_plan_default = 'legacy';
@@ -206,6 +206,17 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELE
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s NOT IN (SELECT CAST('ab', 'Nullable(FixedString(2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
 
+-- Case C22 (CONTROL): a `FixedString` key cast into a `String` element only loses its trailing zero
+-- bytes, so distinct keys stay distinct and the atom stays live. The reverse cast pads `'a\0'` onto the
+-- `'a'` key, which the set reports as inexact, so `NOT IN` keeps every row.
+SELECT 'FixedString key, String source stays live';
+DROP TABLE IF EXISTS t_fss;
+CREATE TABLE t_fss (s FixedString(3)) ENGINE = MergeTree ORDER BY s PARTITION BY s;
+INSERT INTO t_fss VALUES ('a'), ('b'), ('c');
+SELECT hex(s) FROM t_fss WHERE s IN (SELECT CAST('a', 'Nullable(String)') UNION ALL SELECT NULL) ORDER BY s;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_fss WHERE s IN (SELECT CAST('a', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
+SELECT hex(s) FROM t_fss WHERE s NOT IN (SELECT CAST(concat('a', char(0)), 'Nullable(String)') UNION ALL SELECT NULL) ORDER BY s;
+
 -- Case C11: the collapse test must recurse into composites, the way `canBeSafelyCast` -- the
 -- predicate it complements -- already does. A `Tuple(String, UInt64)` key against a
 -- `Tuple(FixedString(2), UInt64)` set element collapses on its FIRST element exactly as case C6 does,
@@ -367,6 +378,22 @@ SELECT k FROM t_td WHERE k IN (SELECT CAST(tuple(toDate('2020-01-01'), 1), 'Null
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_td WHERE k IN (SELECT CAST(tuple(toDate('2020-01-01'), 1), 'Nullable(Tuple(Date, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_td WHERE k IN (SELECT CAST(tuple(toDate('2020-01-01'), 1), 'Nullable(Tuple(Date, UInt64))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 3/3%';
 
+-- Case C23: named tuples sharing an element name are cast by name, not by position. Paired by position,
+-- `Tuple(a DateTime, b Date)` and `Tuple(b DateTime, a Date)` hold equal types, while the cast turns `a`
+-- into a `Date` and merges both 2020-01-01 keys.
+SELECT 'Named tuple key, reordered collapsing element, declined';
+DROP TABLE IF EXISTS t_nt;
+CREATE TABLE t_nt (k Tuple(a DateTime, b Date)) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+INSERT INTO t_nt VALUES (('2020-01-01 00:00:00', '2030-02-03')), (('2020-01-01 12:34:56', '2030-02-03')), (('2021-01-01 00:00:00', '2030-02-03'));
+SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDateTime('2030-02-03 00:00:00'), toDate('2020-01-01')), 'Nullable(Tuple(b DateTime, a Date))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDateTime('2030-02-03 00:00:00'), toDate('2020-01-01')), 'Nullable(Tuple(b DateTime, a Date))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
+-- A key element the set does not name is dropped by the cast, which merges keys that differ only in it.
+SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03')), 'Nullable(Tuple(b Date))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03')), 'Nullable(Tuple(b Date))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%element set%';
+-- CONTROL: the same names reordered with matching types lose nothing, so the atom stays live.
+SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03'), toDateTime('2020-01-01 00:00:00')), 'Nullable(Tuple(b Date, a DateTime))') UNION ALL SELECT NULL) ORDER BY k SETTINGS enable_nullable_tuple_type = 1;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nt WHERE k IN (SELECT CAST(tuple(toDate('2030-02-03'), toDateTime('2020-01-01 00:00:00')), 'Nullable(Tuple(b Date, a DateTime))') UNION ALL SELECT NULL) SETTINGS enable_nullable_tuple_type = 1) WHERE explain ILIKE '%Parts: 1/3%';
+
 -- Case C21 (CONTROL, must NOT change): a component-EQUAL temporal pair loses nothing, so the arm must
 -- NOT fire. This is what stops it from being "fixed" by declining every temporal pair. The forward
 -- `DateTime -> DateTime` cast is the equal-types base case of `canBeSafelyCast`, so this atom is
@@ -501,3 +528,5 @@ DROP TABLE t_t64;
 DROP TABLE t_dd;
 DROP TABLE t_d64;
 DROP TABLE t_td;
+DROP TABLE t_fss;
+DROP TABLE t_nt;
