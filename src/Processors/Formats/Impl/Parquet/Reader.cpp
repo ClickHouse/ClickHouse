@@ -1197,9 +1197,7 @@ void Reader::prepareBloomFilterCondition()
     {
         bool any_column_uses_bf = false;
 
-        /// Remember the physical value of a hashed integer constant (see `PrimitiveColumnInfo::physical_constants`).
-        /// Give up on a column with very many constants, for which the sorted hashed value set is better, and
-        /// keep a value only if it is exactly what was hashed.
+        /// See `PrimitiveColumnInfo::physical_constants`.
         static constexpr size_t max_physical_constants = 256;
         auto give_up_physical_constants = [](PrimitiveColumnInfo & column_info)
         {
@@ -1299,7 +1297,6 @@ void Reader::prepareBloomFilterCondition()
         bloom_filter_condition.emplace(*format_filter_info->key_condition);
         bloom_filter_condition->prepareBloomFilterData(hash_one, hash_many);
 
-        /// `physical_constants` is sorted by hash and holds each constant once; `physical_constants_by_value` orders them by value.
         for (PrimitiveColumnInfo & column_info : primitive_columns)
         {
             const auto & constants = column_info.physical_constants;
@@ -2111,10 +2108,9 @@ struct DictionaryValueHashes
     }
 };
 
-/// The dictionary holds only the non-null values of a column chunk. Returns false if its nulls rule out pruning:
-/// reading a null into a non-nullable column fails without `input_format_null_as_default`, and the row group must
-/// not be skipped (nor if the default value can't be hashed). Otherwise `default_value_hash` is the hash of the
-/// default value the nulls are read as under `input_format_null_as_default`, or empty if no null can match.
+/// The dictionary holds only non-null values. Returns false if nulls forbid pruning: without `input_format_null_as_default`
+/// reading one into a non-nullable column throws, so the row group must be read. Otherwise `default_value_hash` is the
+/// hash of the default value nulls are read as, or empty if no null can match.
 static bool hashDictionaryNulls(
     const parq::FileMetaData & file_metadata, const ReadOptions & options,
     const Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
@@ -2291,8 +2287,7 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     bool computed = false;
     std::optional<DictionaryValueHashes> value_hashes;
 
-    /// Whether each of `column_info.physical_constants` is in this dictionary, once it was compared with it
-    /// (see `findPhysicalConstants`). Each constant is compared at most once, however many conditions probe it.
+    /// Whether each of `column_info.physical_constants` is in this dictionary, once compared with it.
     enum class ConstantPresence : UInt8 { Unknown, Absent, Present };
     std::vector<ConstantPresence> constant_presence;
     size_t constants_compared_one_by_one = 0;
@@ -2317,20 +2312,17 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
 
     bool findAnyHash(const std::vector<uint64_t> & hashes) override;
 
-    /// Whether the dictionary holds one of the query constants with these hashes, decided by comparing its
-    /// stored values with the constants' physical values; nullopt if that can't be decided this way.
+    /// `findAnyHash` by comparing the stored values with the constants' physical values; nullopt if not applicable.
     std::optional<bool> findPhysicalConstants(const std::vector<uint64_t> & hashes);
 
-    /// The same for the constants `entries` (indices of `column_info.physical_constants`), once the
-    /// dictionary is known to store values of type `T`.
+    /// `entries` are indices of `column_info.physical_constants`.
     template <typename T>
     std::optional<bool> containsAnyConstantOfType(const std::vector<size_t> & entries);
     template <typename T, typename P>
     bool containsAnyConstant(const std::vector<size_t> & entries);
 };
 
-/// Whether one of `count` values of type `T` stored back to back at `data` is `needle` after the
-/// `static_cast` to the physical type `P` that `parquetTryHashColumn` applies before hashing.
+/// Compares after the `static_cast` to the physical type `P` that `parquetTryHashColumn` applies before hashing.
 template <typename T, typename P>
 static bool storedIntegersContain(const char * data, size_t count, P needle)
 {
@@ -2356,8 +2348,7 @@ static bool storedIntegersContain(const char * data, size_t count, P needle)
     return false;
 }
 
-/// Marks in `found` which of the sorted, distinct `needles` are among `count` values of type `T` stored back to
-/// back at `data` (after the cast to `P`), in one pass with a branchless binary search per value.
+/// Marks in `found` which of the sorted, distinct `needles` are among the stored values (after the cast to `P`).
 template <typename T, typename P>
 static void storedIntegersFindSorted(const char * data, size_t count, const std::vector<P> & needles, std::vector<UInt8> & found)
 {
@@ -2388,8 +2379,7 @@ static void storedIntegersFindSorted(const char * data, size_t count, const std:
     }
 }
 
-/// Up to this many constants are compared in a separate vectorized pass each; the rest, in one pass with a binary
-/// search over them, which costs about as much as this many passes.
+/// Constants beyond this many separate passes are compared in one pass with a binary search over them.
 static constexpr size_t max_constants_compared_one_by_one = 32;
 
 template <typename T, typename P>
@@ -2410,7 +2400,6 @@ bool Reader::DictionaryLookup::containsAnyConstant(const std::vector<size_t> & e
 
     if (constants_compared_one_by_one + unknown > max_constants_compared_one_by_one)
     {
-        /// Compare all the column's constants not compared yet in one pass.
         const size_t num_unknown = std::count(constant_presence.begin(), constant_presence.end(), ConstantPresence::Unknown);
         std::vector<P> needles;
         std::vector<UInt32> needle_entries;
@@ -2462,8 +2451,7 @@ std::optional<bool> Reader::DictionaryLookup::findPhysicalConstants(const std::v
         || dictionary.mode != Dictionary::Mode::FixedSize || dictionary.data.size() != dictionary.count * dictionary.value_size)
         return std::nullopt;
 
-    /// The constants with these hashes. Every hash produced for this column has its constant recorded
-    /// (sorted by hash); a collision of two constants' hashes only adds a constant to compare.
+    /// Every hash produced for this column has its constants recorded; a hash collision only adds a constant to compare.
     std::vector<size_t> entries;
     const auto & constants = column_info.physical_constants;
     for (UInt64 hash : hashes)

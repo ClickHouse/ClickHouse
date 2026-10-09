@@ -222,11 +222,8 @@ struct Reader
         /// row groups using the smaller atoms.
         std::vector<UInt64> bloom_filter_hashes;
 
-        /// The query constants hashed for this column (by `prepareBloomFilterCondition`) as INT32/INT64
-        /// physical values, sign-extended to 64 bits, each with its hash, each constant once. A dictionary of
-        /// stored integers can then be tested against a few constants by comparing its values with them
-        /// directly, instead of copying and hashing every dictionary value (see `DictionaryLookup::findPhysicalConstants`).
-        /// Used only while `physical_constants_complete`: every hash produced for the column is here.
+        /// (hash, INT32/INT64 physical value sign-extended to 64 bits) of each query constant hashed for this column,
+        /// sorted, each once. Used only while `physical_constants_complete`: every hash produced for the column is here.
         std::vector<std::pair<UInt64, Int64>> physical_constants;
         /// Indices of `physical_constants` in the order of their values.
         std::vector<UInt32> physical_constants_by_value;
