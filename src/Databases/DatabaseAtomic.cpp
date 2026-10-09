@@ -146,6 +146,7 @@ bool mayExist(const DiskPtr & disk, const String & path) noexcept
     }
     catch (...)
     {
+        /// Ok: an unknown answer counts as "may exist".
         return true;
     }
 }
