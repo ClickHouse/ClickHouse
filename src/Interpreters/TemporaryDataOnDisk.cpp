@@ -61,6 +61,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_USE_DISTRIBUTED_CACHE;
     extern const int INVALID_STATE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_ENOUGH_SPACE;
@@ -357,10 +358,16 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 {
     return [](const TemporaryDataOnDiskSettings & settings, size_t /*max_size*/) -> std::unique_ptr<TemporaryFileHolder>
     {
-        auto global_context = Context::getGlobalContextInstance();
-        auto read_settings = global_context->getReadSettings();
-        if (!DistributedCache::Registry::instance().isReady(read_settings.distributed_cache_settings.read_only_from_current_az))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache is not ready yet");
+        /// Only the registry-wide preconditions the holder cannot recover from: a zero alignment,
+        /// still unfetched from Keeper, makes every aligned read and write throw from `alignToSize`.
+        /// Server availability is the holder's own check, resolving the ring from its own context.
+        auto & registry = DistributedCache::Registry::instance();
+        if (!registry.isInitialized() || !registry.getOffsetAlignment())
+            throw Exception(
+                ErrorCodes::CANNOT_USE_DISTRIBUTED_CACHE,
+                "Distributed cache is not ready yet: the registry is not initialized (most likely the "
+                "`distributed_cache_client` section is absent in the server config) or the offset "
+                "alignment has not been fetched from Keeper");
 
         return std::make_unique<TemporaryFileInDistributedCache>(settings);
     };

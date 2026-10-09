@@ -130,7 +130,7 @@ private:
         const S3Settings & settings,
         const ContextPtr & context)
     {
-        context->getGlobalContext()->getRemoteHostFilter().checkURL(s3_uri.uri);
+        s3_uri.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
 
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
         NormalizedHTTPHeaderEntries headers;

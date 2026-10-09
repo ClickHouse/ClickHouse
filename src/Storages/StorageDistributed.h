@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -326,5 +327,8 @@ private:
 
     void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };
+
+/// The `SecretArgumentsSpec` of the `remote`/`remoteSecure` table functions and the `Remote`/`RemoteSecure` table engines.
+SecretArgumentsSpec remoteSecretArguments();
 
 }
