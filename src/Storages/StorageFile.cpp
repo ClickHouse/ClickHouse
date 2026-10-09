@@ -3977,6 +3977,12 @@ void StorageFile::truncate(
         if (current_paths.empty())
             return;
 
+        /// The first file is truncated before anything else is deleted: it is the file of the table itself,
+        /// and if it cannot be truncated, the query fails without having touched the rest of the data.
+        const auto & path = current_paths.front();
+        if (fs::exists(path) && 0 != ::truncate(path.c_str(), 0))
+            ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
+
         /// The files after the first one were created by the inserts into this table - with
         /// `engine_file_allow_create_multiple_files` or by splitting the data by size. The truncated table
         /// is empty, so they are deleted rather than kept empty: otherwise the next insert split by size
@@ -3986,10 +3992,6 @@ void StorageFile::truncate(
         removeStaleSplitFiles(
             Strings(current_paths.begin() + 1, current_paths.end()),
             [this](const String & removed_path) { retirePath(removed_path); });
-
-        const auto & path = current_paths.front();
-        if (fs::exists(path) && 0 != ::truncate(path.c_str(), 0))
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_TRUNCATE_FILE, path, "Cannot truncate file at {}", path);
 
         warnAboutForgottenSplitTail(current_paths, getNumberedFileNames(path), getStorageID().getNameForLogs());
     }
