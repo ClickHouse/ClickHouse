@@ -3891,6 +3891,10 @@ BlockIO InterpreterCreateQuery::execute()
             /// This branch ships the query text as written, and the DDL worker skips the rewrite of
             /// `force_primary_key_reverse_order` for secondary queries, so apply it on the initiator here.
             /// The same exclusions as in `getTablePropertiesAndNormalizeCreateQuery` apply.
+            /// The engine is not known here when it comes from `AS` another table or from the default table
+            /// engine: it is resolved only on the worker hosts (the source table may not even exist on the
+            /// initiator), so such queries are left as is. This is a testing setting, so the gap is accepted
+            /// rather than rejecting these queries, which would break randomized tests on this legacy path.
             if (!is_create_database && !internal && !create.attach && !create.is_clone_as && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
                 applyForceReverseOrder(create);

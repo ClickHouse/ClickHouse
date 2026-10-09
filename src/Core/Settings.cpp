@@ -7138,6 +7138,9 @@ The rewrite is skipped for `CREATE TABLE ... CLONE AS ...` and for restoring fro
 those attach existing data parts that are physically sorted in the original order.
 Tables created with the deprecated `MergeTree` syntax, where the sorting key is an engine argument
 (e.g. `MergeTree(date, key, 8192)`), are not affected, because that syntax does not support `DESC` keys.
+With `distributed_ddl_entry_format_version` below 3, `CREATE TABLE ... ON CLUSTER` queries that do not specify
+the engine explicitly (`AS` another table, or relying on the default table engine) are not affected either,
+because the engine is resolved only on the hosts executing the query, which do not apply the rewrite.
 )", 0, \
         {"26.10", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"}) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
