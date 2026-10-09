@@ -76,9 +76,9 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
         assert "KEEPER_EXCEPTION" in str(e.value)
         expirations = session_expirations()
 
-        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-        try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            try:
                 # Takes the client outside a query pipeline; the fail point pauses its connection attempt with no lock held.
                 connector = executor.submit(
                     run,
@@ -87,6 +87,8 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
                     no_limit,
                 )
                 node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+                # A config reload does not wait for the attempt.
+                node.query("SYSTEM RELOAD CONFIG", timeout=60)
 
                 if zk_name == "default":
                     # The client mutex is free while the attempt is in flight.
@@ -128,8 +130,8 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
                     assert error and "All connection tries failed while connecting to ZooKeeper" in error, error
                 # The connector's attempt and the one the waiters shared.
                 assert session_expirations() - expirations == 2
-        finally:
-            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            finally:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
     # zoo1 rejects connections until it has rejoined the ensemble, so the next test waits for it here.
     node.query_with_retry(base_query, retry_count=60, sleep_time=1)
@@ -137,7 +139,10 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
 
 
 def test_reload_during_connection_attempt(started_cluster):
-    """A config reload removes an auxiliary client right away, unless that client's own attempt is in flight."""
+    """
+    A config reload does not wait for a connection attempt. It removes a client that has none right away, and the
+    callers of an attempt made with the old config retry with the new one, also when that attempt fails.
+    """
     query = "SELECT * FROM system.zookeeper WHERE path = '/' AND zookeeperName = '{}' LIMIT 1"
     config_path = "/etc/clickhouse-server/config.d/auxiliary_zookeepers.xml"
     failpoint = "context_auxiliary_zookeeper_connection_attempt_pause"
@@ -148,7 +153,10 @@ def test_reload_during_connection_attempt(started_cluster):
     node.query_with_retry(query.format("zookeeper2"), retry_count=60, sleep_time=1)
     node.query_with_retry(query.format("zookeeper3"), retry_count=60, sleep_time=1)
     config = node.exec_in_container(["cat", config_path])
+    zookeeper2 = config[config.index("<zookeeper2>") : config.index("</zookeeper2>") + len("</zookeeper2>")]
     zookeeper3 = config[config.index("<zookeeper3>") : config.index("</zookeeper3>") + len("</zookeeper3>")]
+    # zookeeper2 moves to zoo2, zookeeper3 is removed.
+    new_config = config.replace(zookeeper3, "").replace(zookeeper2, zookeeper2.replace("zoo1", "zoo2"))
     try:
         with PartitionManager() as pm:
             pm.add_rule(
@@ -165,25 +173,22 @@ def test_reload_during_connection_attempt(started_cluster):
             with pytest.raises(QueryRuntimeException):
                 node.query(query.format("zookeeper2"), settings=no_limit)
 
-            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
-            try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+                try:
                     connector = executor.submit(node.query, query.format("zookeeper2"), settings=no_limit, timeout=120)
                     node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
 
-                    node.replace_config(config_path, config.replace(zookeeper3, ""))
-                    reload = executor.submit(node.query, "SYSTEM RELOAD CONFIG", timeout=120)
-                    error = node.query_and_get_error_with_retry(query.format("zookeeper3"), settings=no_limit)
+                    node.replace_config(config_path, new_config)
+                    node.query("SYSTEM RELOAD CONFIG", timeout=60)
+                    error = node.query_and_get_error(query.format("zookeeper3"), settings=no_limit)
                     assert "Unknown auxiliary ZooKeeper name" in error, error
-                    # zookeeper2 is reloaded after its attempt.
-                    assert not reload.done()
 
+                    # The attempt to zoo1 fails, and the connector retries with zoo2.
                     node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-                    reload.result(timeout=120)
-                    with pytest.raises(QueryRuntimeException):
-                        connector.result(timeout=120)
-            finally:
-                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                    connector.result(timeout=120)
+                finally:
+                    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
     finally:
         node.replace_config(config_path, config)
         node.query("SYSTEM RELOAD CONFIG")
@@ -191,63 +196,53 @@ def test_reload_during_connection_attempt(started_cluster):
     node.query_with_retry(query.format("zookeeper3"), retry_count=60, sleep_time=1)
 
 
-def test_reload_during_another_connection_attempt(started_cluster):
-    """A client published while a reload waits is reloaded at once, even if another client's attempt is still in flight."""
-    query = "SELECT * FROM system.zookeeper WHERE path = '/' AND zookeeperName = '{}' LIMIT 1"
+def test_reload_during_first_connection_attempt(started_cluster):
+    """
+    A reload that keeps the config of a client keeps its first connection attempt. A reload that removes the client
+    supersedes it: the attempt is not published, and its callers retry with the new config.
+    """
+    query = "SELECT * FROM system.zookeeper WHERE path = '/' AND zookeeperName = 'zookeeper4' LIMIT 1"
     config_path = "/etc/clickhouse-server/config.d/auxiliary_zookeepers.xml"
     failpoint = "context_auxiliary_zookeeper_connection_attempt_pause"
     no_limit = {"get_zookeeper_lock_acquire_timeout_ms": 0, "insert_keeper_max_retries": 0}
-    suffix = uuid.uuid4().hex
 
     node.query_with_retry("SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 1", retry_count=60, sleep_time=1)
-    node.query_with_retry(query.format("zookeeper3"), retry_count=60, sleep_time=1)
     config = node.exec_in_container(["cat", config_path])
-    new_config = config
-    for name in ["zookeeper3", "zookeeper4"]:
-        new_config = new_config.replace(config[config.index(f"<{name}>") : config.index(f"</{name}>") + len(f"</{name}>")], "")
-    try:
-        with PartitionManager() as pm:
-            pm.add_rule(
-                {
-                    "instance": node,
-                    "chain": "OUTPUT",
-                    "destination": cluster.get_instance_ip("zoo3"),
-                    "destination_port": 2181,
-                    "protocol": "tcp",
-                    "action": "DROP",
-                }
-            )
+    zookeeper4 = config[config.index("<zookeeper4>") : config.index("</zookeeper4>") + len("</zookeeper4>")]
+    without_zookeeper4 = config.replace(zookeeper4, "")
+
+    def reload_config(new_config):
+        node.replace_config(config_path, new_config)
+        node.query("SYSTEM RELOAD CONFIG", timeout=60)
+
+    def first_connection(new_config):
+        """Reloads the config while the first connection of zookeeper4 is paused before it connects."""
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
             try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                    # The first connection of zookeeper4 is paused before it connects, with the config that has it.
-                    first = executor.submit(node.query, query.format("zookeeper4"), settings=no_limit, timeout=120)
-                    node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
-                    # zookeeper0 (it sorts first) cannot reach zoo3, so its first attempt takes 15 s.
-                    slow = executor.submit(
-                        node.query, query.format("zookeeper0"), query_id=f"slow_{suffix}", settings=no_limit, timeout=120
-                    )
-                    wait_for_query(f"slow_{suffix}")
-
-                    node.replace_config(config_path, new_config)
-                    reload = executor.submit(node.query, "SYSTEM RELOAD CONFIG", timeout=120)
-                    # Once zookeeper3 is removed, the reload waits for the two attempts.
-                    error = node.query_and_get_error_with_retry(query.format("zookeeper3"), settings=no_limit)
-                    assert "Unknown auxiliary ZooKeeper name" in error, error
-                    node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
-                    first.result(timeout=120)
-                    error = node.query_and_get_error_with_retry(query.format("zookeeper4"), settings=no_limit)
-                    assert "Unknown auxiliary ZooKeeper name" in error, error
-                    assert not slow.done() and not reload.done()
-
-                    reload.result(timeout=120)
-                    with pytest.raises(QueryRuntimeException):
-                        slow.result(timeout=120)
+                first = executor.submit(node.query, query, settings=no_limit, timeout=120)
+                node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+                reload_config(new_config)
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                return first.exception(timeout=120)
             finally:
                 node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    def sessions():
+        return int(node.query("SELECT value FROM system.events WHERE event = 'ZooKeeperInit'"))
+
+    try:
+        established = sessions()
+        assert first_connection(config) is None
+        assert sessions() - established == 1
+
+        # zookeeper4 connects for the first time again.
+        reload_config(without_zookeeper4)
+        reload_config(config)
+        error = first_connection(without_zookeeper4)
+        assert error is not None and "Unknown auxiliary ZooKeeper name" in str(error), error
     finally:
-        node.replace_config(config_path, config)
-        node.query("SYSTEM RELOAD CONFIG")
+        reload_config(config)
 
 
 @pytest.mark.parametrize("zk_name", ["default", "zookeeper2"])
