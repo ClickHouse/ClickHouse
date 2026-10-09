@@ -27,6 +27,14 @@
 #include <optional>
 
 
+/// Accounts the allocations of the state to its tracker (see `IRadixUniqExactState::getMemoryTracker`). Only the calls
+/// into the state are wrapped: the input chunk was allocated under the tracker of the query, so freeing it here would
+/// be charged to the state.
+#define RADIX_UNIQ_EXACT_TRACK_MEMORY(state_) \
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher; \
+    if ((state_)->useOwnTracker()) \
+        memory_tracker_switcher.emplace((state_)->getMemoryTracker())
+
 namespace DB
 {
 
@@ -278,6 +286,8 @@ public:
         , stats_collecting_params(stats_collecting_params_)
         , hint(hint_)
     {
+        /// The sets preallocated from the statistics are the memory of the state.
+        RADIX_UNIQ_EXACT_TRACK_MEMORY(this);
         for (auto & stream : streams)
         {
             stream.local_set.reset(INITIAL_LOCAL_SET_CAPACITY);
@@ -1039,14 +1049,6 @@ IProcessor::Status RadixUniqExactRouteTransform::prepare()
     has_chunk = true;
     return Status::Ready;
 }
-
-/// Accounts the allocations of the state to its tracker (see `IRadixUniqExactState::getMemoryTracker`). Only the calls
-/// into the state are wrapped: the input chunk was allocated under the tracker of the query, so freeing it here would
-/// be charged to the state.
-#define RADIX_UNIQ_EXACT_TRACK_MEMORY(state_) \
-    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher; \
-    if ((state_)->useOwnTracker()) \
-        memory_tracker_switcher.emplace((state_)->getMemoryTracker())
 
 void RadixUniqExactRouteTransform::work()
 {
