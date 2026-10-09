@@ -33,6 +33,14 @@ namespace
             || key == "sslrootcert_pem" || key == "sslcert_pem" || key == "sslkey_pem"
             || key == "headers" || key == "header";
     }
+
+    /// Keys of a dictionary source whose value is a URI that may embed credentials in its userinfo
+    /// (`scheme://user:password@host`) or in presigned-URL query parameters. Both spellings are in
+    /// use: the `HTTP` source takes `url`, other sources take `uri`.
+    bool isURIKey(const String & key)
+    {
+        return key == "uri" || key == "url";
+    }
 }
 
 String ASTPair::getID(char) const
@@ -100,15 +108,25 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
-    else if (!settings.show_secrets && (first == "uri" || first == "options"))
+    else if (!settings.show_secrets && (isURIKey(first) || first == "options"))
     {
-        /// A MongoDB connection string or option list.
+        /// Mask the credentials embedded in a URI value. The `HTTP` source `url` has its whole
+        /// userinfo (`scheme://user:password@host`) and its presigned-URL query parameters masked,
+        /// the same way an S3 URL is masked in `FunctionSecretArgumentsFinder`. A MongoDB connection
+        /// string or option list (`uri`/`options`) additionally has its secret options masked.
+        auto mask = [&](String & value)
+        {
+            if (first == "url")
+                return maskURICredentials(value);
+            return maskMongoDBConnectionString(value);
+        };
+
         const auto * literal = second->as<ASTLiteral>();
         const auto * identifier = second->as<ASTIdentifier>();
         if (literal && literal->value.getType() == Field::Types::String)
         {
             String value = literal->value.safeGet<String>();
-            if (maskMongoDBConnectionString(value))
+            if (mask(value))
                 make_intrusive<ASTLiteral>(Field(value))->format(ostr, settings, state, frame);
             else
                 second->format(ostr, settings, state, frame);
@@ -116,7 +134,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         else if (identifier)
         {
             String value = identifier->name();
-            if (maskMongoDBConnectionString(value))
+            if (mask(value))
                 make_intrusive<ASTIdentifier>(value)->format(ostr, settings, state, frame);
             else
                 second->format(ostr, settings, state, frame);
@@ -139,7 +157,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return isSecretKey(first) || first == "uri" || first == "options" || second->hasSecretParts();
+    return isSecretKey(first) || isURIKey(first) || first == "options" || second->hasSecretParts();
 }
 
 
