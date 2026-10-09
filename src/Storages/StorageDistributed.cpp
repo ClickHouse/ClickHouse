@@ -1976,7 +1976,7 @@ static std::string findPendingQueueBlock(const std::string & path)
         for (fs::directory_iterator block(replica->path(), block_ec), blocks_end; !block_ec && block != blocks_end;
              block.increment(block_ec))
         {
-            UInt64 block_number;
+            UInt64 block_number = 0;
             if (block->is_regular_file(block_ec) && block->path().extension() == ".bin"
                 && tryParse(block_number, block->path().stem().string()))
                 return block->path().string();
