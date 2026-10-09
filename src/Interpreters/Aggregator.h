@@ -217,6 +217,13 @@ public:
             std::vector<int> nulls_directions;      /// per-column NULLS/NaNs directions
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
+            bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
+
+            /// Set by the plan optimization when the first ranked key is a column read straight from a `MergeTree`
+            /// table: the heaps publish their boundary into it and the reading step filters rows and skips granules
+            /// by the published value (see `enable_group_by_top_k_dynamic_filtering`). Never serialized: it is a
+            /// link between two steps of the same local plan.
+            TopKThresholdTrackerPtr threshold_tracker;
         };
         std::optional<TopKParams> top_k;
 
@@ -599,6 +606,11 @@ private:
     /// Per-query aggregate metadata used to estimate the cost of retaining states and merging them.
     size_t adaptive_state_bytes_per_distinct_input = 0;
     std::vector<size_t> adaptive_parallel_merge_indices;
+
+    /// The tightest top-K skip boundary any aggregation thread has published; shared by the
+    /// per-thread heaps of this aggregation (see `SharedTopKBoundary`). Mutable because the
+    /// execution paths that publish and read it are `const`.
+    mutable SharedTopKBoundary top_k_shared_boundary;
 
     AggregatedDataVariants::Type method_chosen;
 

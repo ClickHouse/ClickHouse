@@ -1,0 +1,13 @@
+query	stats_collected
+q05292_prewhere_3_0	1
+q05292_prewhere_3_1	0
+q05292_prewhere_7_0	1
+q05292_column_3_0	1
+q05292_column_3_1	0
+q05292_column_7_0	1
+q05292_join_1_0	1
+q05292_join_1_1	0
+q05292_join_2_0	1
+q05292_heavy_before_0	1
+q05292_heavy_before_1	0
+q05292_heavy_changed_0	0
