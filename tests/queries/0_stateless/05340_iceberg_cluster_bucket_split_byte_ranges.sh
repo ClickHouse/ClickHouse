@@ -56,7 +56,7 @@ run_cluster "bucket_byte_ranges" "cluster_table_function_split_granularity = 'bu
 run_cluster "bucket_per_row_group" "cluster_table_function_split_granularity = 'bucket', cluster_table_function_buckets_batch_size = 0"
 run_cluster "bucket_bitmap_deletes" "cluster_table_function_split_granularity = 'bucket', cluster_table_function_buckets_batch_size = 1048576, use_roaring_bitmap_iceberg_positional_deletes = 1"
 run_cluster "auto_few_files" "cluster_table_function_split_granularity = 'auto', cluster_table_function_buckets_batch_size = 1048576"
-# Files larger than the bucket size are the only ones split: with a bucket above the file size nothing is.
+# The bucket size is an upper bound: three files are still split to give work to every reading thread.
 run_cluster "bucket_larger_than_files" "cluster_table_function_split_granularity = 'bucket', cluster_table_function_buckets_batch_size = 1073741824"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"

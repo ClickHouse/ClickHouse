@@ -2473,8 +2473,6 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     ObjectInfoPtr object_info;
     if (current_index >= buffer.size())
     {
-        /// Each request for a task is a round trip to the initiator. Keep one request in flight per
-        /// reading thread, so that the next task is already known when the current one is finished.
         std::future<ClusterFunctionReadTaskResponsePtr> future;
         {
             std::lock_guard lock(prefetch_mutex);
@@ -2500,8 +2498,6 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
 
         if (!task || task->isEmpty())
         {
-            /// The requests in flight are not answered in the order they were scheduled, so a request
-            /// scheduled after this one may have received the last task: collect them before giving up.
             std::lock_guard lock(prefetch_mutex);
             while (!prefetched_tasks.empty())
             {

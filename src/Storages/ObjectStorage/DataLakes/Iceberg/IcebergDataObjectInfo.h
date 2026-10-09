@@ -110,8 +110,6 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     void addEqualityDeleteObject(const Iceberg::ProcessedManifestFileEntryPtr & equality_delete_object, const String & resolved_storage_path);
     Iceberg::IcebergObjectSerializableInfo info;
 
-    /// Start offsets of the row groups from the manifest (`split_offsets`). Used only on the initiator
-    /// of a cluster query to cut the file into tasks, so it is not sent to the workers.
     std::vector<UInt64> split_offsets;
 };
 

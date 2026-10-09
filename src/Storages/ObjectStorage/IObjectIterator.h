@@ -45,8 +45,6 @@ struct ObjectInfo
 
     virtual ~ObjectInfo() = default;
 
-    /// Polymorphic copy: derived classes carry per-file metadata (e.g. Iceberg delete files) that a
-    /// plain copy of the base class would slice off.
     virtual std::shared_ptr<ObjectInfo> clone() const { return std::make_shared<ObjectInfo>(*this); }
 
     virtual std::string getFileName() const { return relative_path_with_metadata.getFileName(); }
@@ -59,7 +57,6 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
-    /// Start offsets of the row groups (Parquet) of the file, when the table metadata records them.
     virtual std::vector<UInt64> getSplitOffsetsHint() const { return {}; }
 
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
@@ -129,13 +126,6 @@ private:
     LoggerPtr log = getLogger("ObjectIteratorWithPathAndFileFilter");
 };
 
-/// Cuts every file of the nested iterator into buckets (Parquet row groups) that can be read
-/// independently, so that a cluster query distributes pieces of a file across the nodes.
-///
-/// A file whose size is known from the table metadata (data lakes) is cut by byte ranges without
-/// reading it; the reader on the node then picks the row groups that fall into its range. Other files
-/// are cut by their footer, which is read here. Files are processed ahead of time in a thread pool,
-/// so a slow object storage does not stall the task distribution.
 class ObjectIteratorSplitByBuckets : public IObjectIterator, private WithContext
 {
 public:
@@ -144,6 +134,7 @@ public:
         const String & format_,
         ObjectStoragePtr object_storage_,
         const ContextPtr & context_,
+        size_t min_buckets_per_file_,
         const StorageID & storage_id_ = StorageID::createEmpty(),
         FormatFilterInfoPtr format_filter_info_ = nullptr);
 
@@ -171,6 +162,7 @@ private:
     const FormatFilterInfoPtr format_filter_info;
     QueryConditionCachePtr query_condition_cache;
     const size_t bucket_size;
+    const size_t min_buckets_per_file;
     const size_t max_in_flight;
     ThreadPoolCallbackRunnerUnsafe<std::vector<ObjectInfoPtr>> runner;
 

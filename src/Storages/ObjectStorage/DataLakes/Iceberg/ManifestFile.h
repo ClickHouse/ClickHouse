@@ -110,7 +110,6 @@ struct ParsedManifestFileEntry : boost::noncopyable
     Int64 record_count;
     Int64 file_size_in_bytes;
 
-    /// Start offsets of the row groups of the data file, if the writer recorded them.
     std::optional<std::vector<Int64>> split_offsets;
 
     bool isDeletionVector() const;

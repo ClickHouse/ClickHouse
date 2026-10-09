@@ -44,9 +44,6 @@ public:
     String getName() const override { return "IcebergPositionDeleteTransform"; }
 
 protected:
-    /// The delete files are opened on the first chunk rather than in the constructor: by then the
-    /// reader of the data file knows which rows it is going to output (a bucket of a cluster query
-    /// reads a part of the file), and the delete files are read only for that range of positions.
     void ensureInitialized();
     virtual void initializeDeletes() = 0;
     void initializeDeleteSources();

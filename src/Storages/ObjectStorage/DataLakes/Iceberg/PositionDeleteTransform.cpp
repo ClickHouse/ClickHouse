@@ -74,7 +74,6 @@ void IcebergPositionDeleteTransform::ensureInitialized()
 
 void IcebergPositionDeleteTransform::initializeDeleteSources()
 {
-    /// The data file reader is going to output nothing, so no deletes can apply.
     if (row_range.has_value() && row_range->first >= row_range->second)
         return;
 
@@ -85,9 +84,6 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         make_intrusive<ASTIdentifier>(IcebergPositionDeleteTransform::data_file_path_column_name),
         make_intrusive<ASTLiteral>(Field(iceberg_data_path)));
 
-    /// The position delete files are sorted by (file_path, pos), so the range of positions of the
-    /// data file this reader outputs lets the Parquet reader skip the row groups and pages of the
-    /// delete files that belong to other parts of the data file.
     if (row_range.has_value())
     {
         where_ast = makeASTFunction(

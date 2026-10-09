@@ -17,6 +17,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Core/Settings.h>
+#include <limits>
 #include <Formats/FormatFactory.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -476,6 +477,12 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     }
 
     const auto & settings = local_context->getSettingsRef();
+    constexpr size_t tasks_per_reading_thread = 8;
+    const size_t cluster_threads = ids_of_hosts.size() * std::max<size_t>(1, settings[Setting::max_threads]);
+    const size_t target_tasks = tasks_per_reading_thread * cluster_threads;
+    const size_t estimated_files = iterator->estimatedKeysCount();
+    const bool files_are_known = estimated_files > 0 && estimated_files != std::numeric_limits<size_t>::max();
+
     bool split_by_buckets = false;
     switch (settings[Setting::cluster_table_function_split_granularity])
     {
@@ -485,30 +492,25 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
             split_by_buckets = true;
             break;
         case ObjectStorageGranularityLevel::AUTO:
-        {
-            /// Whole files already give every reading thread of the cluster something to do when there
-            /// are enough of them; cutting them further only adds per-task costs.
-            const size_t estimated_files = iterator->estimatedKeysCount();
-            const size_t cluster_threads = ids_of_hosts.size() * std::max<size_t>(1, settings[Setting::max_threads]);
-            split_by_buckets = estimated_files < cluster_threads;
-            LOG_DEBUG(
-                getLogger("StorageObjectStorageCluster"),
-                "Estimated {} files for {} reading threads in the cluster, {} files into buckets",
-                estimated_files,
-                cluster_threads,
-                split_by_buckets ? "splitting" : "not splitting");
+            split_by_buckets = files_are_known && estimated_files < target_tasks;
             break;
-        }
     }
 
     if (split_by_buckets)
     {
+        const size_t min_buckets_per_file = files_are_known ? (target_tasks + estimated_files - 1) / estimated_files : 1;
+        LOG_DEBUG(
+            getLogger("StorageObjectStorageCluster"),
+            "Splitting files into buckets: estimated {} files for {} reading threads, at least {} buckets per file",
+            estimated_files,
+            cluster_threads,
+            min_buckets_per_file);
         iterator = std::make_shared<ObjectIteratorSplitByBuckets>(
             std::move(iterator),
             configuration->format,
             object_storage,
-            local_context
-        );
+            local_context,
+            min_buckets_per_file);
     }
 
     auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(

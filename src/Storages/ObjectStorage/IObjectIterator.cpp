@@ -122,6 +122,7 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     const String & format_,
     ObjectStoragePtr object_storage_,
     const ContextPtr & context_,
+    size_t min_buckets_per_file_,
     const StorageID & storage_id_,
     FormatFilterInfoPtr format_filter_info_)
     : WithContext(context_)
@@ -132,6 +133,7 @@ ObjectIteratorSplitByBuckets::ObjectIteratorSplitByBuckets(
     , storage_id(storage_id_)
     , format_filter_info(std::move(format_filter_info_))
     , bucket_size(context_->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size])
+    , min_buckets_per_file(std::max<size_t>(1, min_buckets_per_file_))
     , max_in_flight(std::clamp<size_t>(context_->getSettingsRef()[Setting::max_threads], 1, 32))
     , runner(threadPoolCallbackRunnerUnsafe<std::vector<ObjectInfoPtr>>(getIOThreadPool().get(), ThreadName::BUCKET_SPLITTER))
 {
@@ -182,14 +184,12 @@ std::vector<ObjectInfoPtr> ObjectIteratorSplitByBuckets::split(const ObjectInfoP
 
     std::vector<FileBucketInfoPtr> buckets;
     if (file_size.has_value())
-        buckets = splitter->splitByByteRanges(bucket_size, *file_size, object_info->getSplitOffsetsHint());
+        buckets = splitter->splitByByteRanges(bucket_size, min_buckets_per_file, *file_size, object_info->getSplitOffsetsHint());
 
-    /// Reading the footer is the last resort: the size is unknown, or the caller asked for a bucket
-    /// per row group (`bucket_size == 0`) and the metadata does not say where the row groups start.
-    if (buckets.empty() && (!file_size.has_value() || bucket_size == 0))
+    if (buckets.empty())
     {
         auto buffer = createReadBuffer(object_info->relative_path_with_metadata, object_storage, getContext(), log);
-        buckets = splitter->splitToBuckets(bucket_size, *buffer, format_settings);
+        buckets = splitter->splitToBuckets(bucket_size, min_buckets_per_file, *buffer, format_settings);
     }
 
     if (buckets.size() <= 1)

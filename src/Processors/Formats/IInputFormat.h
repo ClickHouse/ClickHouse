@@ -53,7 +53,6 @@ struct ChunkInfoRowNumbers : public ChunkInfo
 /// Structure for storing information about buckets that IInputFormat needs to read.
 struct FileBucketInfo
 {
-    /// `protocol_version` is the cluster processing protocol version of the peer, see ProtocolDefines.h.
     virtual void serialize(WriteBuffer & buffer, size_t protocol_version) const = 0;
     virtual void deserialize(ReadBuffer & buffer, size_t protocol_version) = 0;
     virtual String getIdentifier() const = 0;
@@ -67,14 +66,9 @@ using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 /// Interface for splitting a file into buckets.
 struct IBucketSplitter
 {
-    /// Splits a file into buckets using the given read buffer and format settings.
-    /// Returns information about the resulting buckets (see the structure above for details).
-    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, size_t min_buckets, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
 
-    /// Splits a file into buckets of about `bucket_size` bytes without reading the file, from its size
-    /// and (optionally) the known start offsets of its row groups (`split_offsets` in Iceberg manifests).
-    /// Returns an empty vector if the format cannot do that; the caller then reads the file metadata instead.
-    virtual std::vector<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*file_size*/, const std::vector<UInt64> & /*split_offsets*/)
+    virtual std::vector<FileBucketInfoPtr> splitByByteRanges(size_t /*bucket_size*/, size_t /*min_buckets*/, size_t /*file_size*/, const std::vector<UInt64> & /*split_offsets*/)
     {
         return {};
     }
@@ -146,9 +140,6 @@ public:
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
-    /// Range [begin, end) of row numbers within the file that this reader may output, taking the
-    /// buckets and pruned row groups into account. Known only after the reader has been initialized,
-    /// i.e. after the first `read`; nullopt otherwise.
     virtual std::optional<std::pair<size_t, size_t>> getRowRangeToRead() const { return std::nullopt; }
 
     /// Whether the format has applied TopN dynamic filtering (`FormatFilterInfo::top_k_filter`) to the

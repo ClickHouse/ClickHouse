@@ -590,8 +590,6 @@ ObjectInfoPtr IcebergIterator::next(size_t)
 
 size_t IcebergIterator::estimatedKeysCount()
 {
-    /// Live data file counts of the manifests, as recorded in the manifest list. An upper bound: the
-    /// manifests pruned by partition or min/max statistics are included.
     if (!data_snapshot)
         return std::numeric_limits<size_t>::max();
     size_t total = 0;

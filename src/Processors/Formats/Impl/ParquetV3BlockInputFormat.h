@@ -14,10 +14,7 @@ namespace DB
 
 struct ParquetFileBucketInfo : public FileBucketInfo
 {
-    /// Row groups to read; empty means no restriction by index.
     std::vector<size_t> row_group_ids;
-    /// Byte range [offset, offset + length) of the file; a row group belongs to it when the midpoint
-    /// of its compressed data does. Nullopt means no restriction by position.
     std::optional<std::pair<UInt64, UInt64>> byte_range;
 
     ParquetFileBucketInfo() = default;
@@ -37,8 +34,8 @@ using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
-    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
-    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t file_size, const std::vector<UInt64> & split_offsets) override;
+    std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, size_t min_buckets, ReadBuffer & buf, const FormatSettings & format_settings_) override;
+    std::vector<FileBucketInfoPtr> splitByByteRanges(size_t bucket_size, size_t min_buckets, size_t file_size, const std::vector<UInt64> & split_offsets) override;
 };
 
 class ParquetV3BlockInputFormat final : public IInputFormat
