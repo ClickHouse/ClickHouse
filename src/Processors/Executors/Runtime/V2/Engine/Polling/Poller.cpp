@@ -116,21 +116,35 @@ Poller::Poller()
 
 Poller::~Poller() = default;
 
-void Poller::add(const PollRequest & request)
+bool Poller::add(const PollRequest & request)
 {
-    std::lock_guard lock(mutex);
-
     if (!fds.emplace(request.state, request.fd).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Processor state {} is already registered in the poller", static_cast<const void *>(request.state));
 
     epoll.add(request.fd, request.state, request.events);
-    pending_count.fetch_add(1);
 
-    if (request.timeout_ms >= 0)
-    {
-        deadlines->arm(request.state, request.timeout_ms);
+    if (request.timeout_ms < 0)
+        return false;
+
+    deadlines->arm(request.state, request.timeout_ms);
+    return true;
+}
+
+void Poller::pushMany(std::span<const PollRequest> requests)
+{
+    if (requests.empty())
+        return;
+
+    std::lock_guard lock(mutex);
+
+    bool armed = false;
+    for (const auto & request : requests)
+        armed |= add(request);
+
+    pending_count.fetch_add(requests.size());
+
+    if (armed)
         updateTimer();
-    }
 }
 
 std::vector<Task> Poller::poll(int timeout_ms)
@@ -191,9 +205,10 @@ void Poller::wakeup()
 
 #else
 
-void Poller::add(const PollRequest &)
+void Poller::pushMany(std::span<const PollRequest> requests)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async processors are not supported on this platform");
+    if (!requests.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async processors are not supported on this platform");
 }
 
 #endif

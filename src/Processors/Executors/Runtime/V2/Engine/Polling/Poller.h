@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <mutex>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -27,6 +28,7 @@ class Poller
 {
     class Deadlines;
 
+    bool add(const PollRequest & request);
     void unregister(ProcessorState * state);
     void updateTimer();
     void collectExpired(std::vector<Task> & fired);
@@ -35,7 +37,7 @@ public:
     Poller();
     ~Poller();
 
-    void add(const PollRequest & request);
+    void pushMany(std::span<const PollRequest> requests);
     std::vector<Task> poll(int timeout_ms);
     size_t pending() const;
     void wakeup();
@@ -59,7 +61,7 @@ private:
 class Poller
 {
 public:
-    void add(const PollRequest & request);
+    void pushMany(std::span<const PollRequest> requests);
     std::vector<Task> poll(int) { return {}; }
     size_t pending() const { return 0; }
     void wakeup() {}
