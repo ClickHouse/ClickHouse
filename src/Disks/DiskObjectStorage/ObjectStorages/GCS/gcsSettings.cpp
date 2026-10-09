@@ -585,6 +585,13 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
 
     gc::Options options;
 
+    /// The transport is the Poco-based one from `contrib/google-cloud-cpp-cmake/poco_rest_client.cc`:
+    /// there, the stall timeouts are the send and receive timeouts of the request, which is what the
+    /// S3-compatibility path means by `request_timeout_ms`. The upstream options are whole seconds, so
+    /// round up to keep a sub-second timeout from becoming "no timeout".
+    const auto request_timeout = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::milliseconds(settings.request_timeout_ms) + std::chrono::milliseconds(999));
+
     const auto credential_source = chooseGCSCredentialSource(settings);
     gc::Options token_request_options;
     if (credential_source == GCSCredentialSource::ServiceAccountKey || credential_source == GCSCredentialSource::ServiceAccountKeyFile)
@@ -615,6 +622,10 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
             token_request_options.set<::ClickHouse::PocoRestProxyConfigProviderOption>(makeGCSProxyConfigProvider(token_proxy_resolver));
             token_request_options.set<::ClickHouse::PocoRestProxyErrorReportOption>(makeGCSProxyErrorReporter(token_proxy_resolver));
             token_request_options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
+            /// The token request is remote I/O like the storage requests, so it gets the same stall
+            /// timeout rather than the transport's default of 120 seconds.
+            token_request_options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
+            token_request_options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
         }
     }
 
@@ -668,12 +679,6 @@ std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & setti
         options.set<gc::CustomHeadersOption>(std::move(custom_headers));
     }
 
-    /// The transport is the Poco-based one from `contrib/google-cloud-cpp-cmake/poco_rest_client.cc`:
-    /// there, the stall timeouts are the send and receive timeouts of the request, which is what the
-    /// S3-compatibility path means by `request_timeout_ms`. The upstream options are whole seconds, so
-    /// round up to keep a sub-second timeout from becoming "no timeout".
-    const auto request_timeout = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::milliseconds(settings.request_timeout_ms) + std::chrono::milliseconds(999));
     options.set<gc::rest_internal::TransferStallTimeoutOption>(request_timeout);
     options.set<gc::rest_internal::DownloadStallTimeoutOption>(request_timeout);
     options.set<::ClickHouse::PocoRestConnectTimeoutOption>(std::chrono::milliseconds(settings.connect_timeout_ms));
