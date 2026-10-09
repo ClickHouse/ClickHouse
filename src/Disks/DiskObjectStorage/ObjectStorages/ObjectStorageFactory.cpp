@@ -24,6 +24,7 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <Common/Macros.h>
 
@@ -77,6 +78,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const ContextPtr & context,
     bool run_access_check,
     bool run_local_paths_check,
+    bool run_remote_host_filter_check,
     bool attach) const
 {
     std::string type;
@@ -97,7 +99,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, attach);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, run_remote_host_filter_check, attach);
 }
 
 #if USE_AWS_S3
@@ -139,6 +141,7 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
+        bool run_remote_host_filter_check,
         bool /* attach */) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
@@ -146,6 +149,10 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         auto settings = std::make_unique<S3Settings>();
         settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
         auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
+        /// The endpoint of a disk created in SQL is user input, so it is subject to `remote_url_allow_hosts`
+        /// like the URL of an `s3` table; checked before the client is built, which already talks to the endpoint.
+        if (run_remote_host_filter_check)
+            uri.checkRemoteHostFilter(context->getGlobalContext()->getRemoteHostFilter());
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -171,6 +178,7 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const ContextPtr & context,
            bool /* run_access_check */,
            bool /* run_local_paths_check */,
+           bool /* run_remote_host_filter_check */,
            bool /* attach */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
@@ -196,6 +204,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */,
         bool /* attach */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
@@ -236,6 +245,7 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */,
         bool /* attach */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
@@ -265,6 +275,7 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool run_local_paths_check,
+        bool /* run_remote_host_filter_check */,
         bool /* attach */) -> ObjectStoragePtr
     {
         String object_key_prefix;
@@ -298,6 +309,7 @@ static void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
         const ContextPtr & context,
         bool /* run_access_check */,
         bool /* run_local_paths_check */,
+        bool /* run_remote_host_filter_check */,
         bool attach) -> ObjectStoragePtr
     {
         auto cache_name = config.getString(config_prefix + ".cache_name");
