@@ -21,9 +21,8 @@ class GlobalTasks
 public:
     GlobalTasks();
 
-    void push(const Task & task);
-    void pushMany(std::span<const Task> many);
-    std::optional<Task> tryPop();
+    void pushManyFifo(std::span<const Task> many);
+    size_t popManyFifo(std::span<Task> out, size_t sharers);
     size_t size() const;
 
 private:

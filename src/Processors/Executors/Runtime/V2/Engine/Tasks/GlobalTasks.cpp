@@ -1,5 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/GlobalTasks.h>
 
+#include <algorithm>
 #include <mutex>
 
 namespace DB
@@ -14,14 +15,7 @@ GlobalTasks::GlobalTasks()
     Wyrd::setName(tasks_count, "global_tasks.tasks_count");
 }
 
-void GlobalTasks::push(const Task & task)
-{
-    std::lock_guard lock(mutex);
-    tasks.push_back(task);
-    tasks_count.store(tasks.size());
-}
-
-void GlobalTasks::pushMany(std::span<const Task> many)
+void GlobalTasks::pushManyFifo(std::span<const Task> many)
 {
     if (many.empty())
         return;
@@ -31,19 +25,17 @@ void GlobalTasks::pushMany(std::span<const Task> many)
     tasks_count.store(tasks.size());
 }
 
-std::optional<Task> GlobalTasks::tryPop()
+size_t GlobalTasks::popManyFifo(std::span<Task> out, size_t sharers)
 {
     if (tasks_count.load() == 0)
-        return std::nullopt;
+        return 0;
 
     std::lock_guard lock(mutex);
-    if (tasks.empty())
-        return std::nullopt;
-
-    Task task = tasks.front();
-    tasks.pop_front();
+    const size_t count = std::min({out.size(), tasks.size(), tasks.size() / sharers + 1});
+    std::copy_n(tasks.begin(), count, out.begin());
+    tasks.erase(tasks.begin(), tasks.begin() + count);
     tasks_count.store(tasks.size());
-    return task;
+    return count;
 }
 
 size_t GlobalTasks::size() const
