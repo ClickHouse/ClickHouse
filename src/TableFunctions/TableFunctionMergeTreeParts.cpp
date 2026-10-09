@@ -14,6 +14,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Disks/DiskFromAST.h>
@@ -677,7 +678,10 @@ FROM mergeTreeParts(
     table_settings(index_granularity_bytes = 10485760))
 ```
 )DOCS_MD",
-         .category = FunctionDocumentation::Category::TableFunction});
+         .category = FunctionDocumentation::Category::TableFunction},
+        /// The disk description carries the credentials of the disk. Its values are hidden like those of
+        /// `SETTINGS disk = disk(...)` of a table: all but the `type`, the nested `disk` and the `name`.
+        {.custom = [](FunctionSecretArgumentsFinder & finder) { finder.maskNestedSecretMap("disk", {"type", "disk", "name"}); }});
 }
 
 }
