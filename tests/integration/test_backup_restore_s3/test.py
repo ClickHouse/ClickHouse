@@ -1273,9 +1273,9 @@ def test_backup_restore_s3_plain(cluster):
         """,
         query_id=restore_query_id,
     )
-    # The restored table sits on a static (readonly) storage policy. `StorageMergeTree::restoreDataFromBackup`
-    # rejects it at admission with `TABLE_IS_PERMANENTLY_READ_ONLY`, before any backup data is streamed to disk
-    # (previously the rejection surfaced later and incidentally, as a failed volume reservation with `READONLY`).
+    # The restored table sits on a static (readonly) storage policy, so `StorageMergeTree::restoreDataFromBackup`
+    # rejects it with `TABLE_IS_PERMANENTLY_READ_ONLY` (previously the rejection surfaced as a failed volume
+    # reservation with `READONLY`). Nothing can be written to the readonly disk either way.
     assert "TABLE_IS_PERMANENTLY_READ_ONLY" in err
     instance.query("DROP TABLE IF EXISTS sample SYNC")
     instance.query("DROP TABLE sample_restored SYNC")
