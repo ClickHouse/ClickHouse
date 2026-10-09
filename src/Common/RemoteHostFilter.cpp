@@ -25,10 +25,11 @@ void RemoteHostFilter::checkURL(const Poco::URI & uri) const
     {
         std::string masked_uri = uri.toString();
         maskURIUserinfo(masked_uri);
-        /// An S3 URI can carry its presigned query in the path, which `toString` renders with '?' as `%3F` and '%'
-        /// as `%25`. Undo the '?' first, so a `%253F` written in the path does not become a separator.
+        /// An S3 URI can carry its query folded into the path, which `toString` renders with '?' as `%3F` and '%' as
+        /// `%25`, leaving no raw query. Undo the '?' first, so a `%253F` written in the path does not become a separator.
         boost::replace_all(masked_uri, "%3F", "?");
-        boost::replace_all(masked_uri, "%25", "%");
+        if (uri.getRawQuery().empty())
+            boost::replace_all(masked_uri, "%25", "%");
         maskPresignedURLParameters(masked_uri);
         throw Exception(ErrorCodes::UNACCEPTABLE_URL, "URL \"{}\" is not allowed in configuration file, "
                                                       "see <remote_url_allow_hosts>", masked_uri);

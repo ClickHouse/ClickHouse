@@ -49,9 +49,11 @@ String maskedURIString(const Poco::URI & uri)
     /// With `compatibility_s3_presigned_url_query_in_path` the constructor folds the query of a presigned URL
     /// into the path by percent-encoding its '?', which `toString` renders as `%3F`, so `maskPresignedURLParameters`
     /// would not see the parameters. Put the '?' back: `toString` encodes '%' itself as `%25`, so a `%3F` can only
-    /// come from a '?'. Only then put the '%' back, so a percent-encoded parameter name reads as it was written.
+    /// come from a '?'. Only then put the '%' back, so a percent-encoded parameter name reads as written. Only the
+    /// path is encoded: `toString` appends a raw query as is, and a folded query leaves none.
     boost::replace_all(result, "%3F", "?");
-    boost::replace_all(result, "%25", "%");
+    if (uri.getRawQuery().empty())
+        boost::replace_all(result, "%25", "%");
     maskPresignedURLParameters(result);
     return result;
 }
