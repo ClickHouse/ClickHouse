@@ -952,15 +952,17 @@ RadixUniqExactStatePtr createState(size_t num_streams, const StatsCollectingPara
         if (hint && hint->num_streams != num_streams)
             hint.reset();
 
-        /// As the ordinary aggregation, do not preallocate the sets above `max_size_to_preallocate`.
-        if (hint && hint->num_distinct > stats_collecting_params.max_size_to_preallocate)
+        /// As the ordinary aggregation, do not preallocate the sets above `max_size_to_preallocate`: one local set per
+        /// stream, then the bucket sets.
+        const size_t preallocated = hint ? std::max(hint->num_distinct, hint->stream_distinct * num_streams) : 0;
+        if (preallocated > stats_collecting_params.max_size_to_preallocate)
         {
             LOG_TRACE(
                 getLogger("HashTablesStatistics"),
                 "No space were preallocated in hash tables because 'max_size_to_preallocate' has too small value: {}, should be at "
                 "least {}",
                 stats_collecting_params.max_size_to_preallocate,
-                hint->num_distinct);
+                preallocated);
             hint.reset();
         }
     }
