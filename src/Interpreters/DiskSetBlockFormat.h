@@ -156,7 +156,7 @@ private:
 
     /// These hold the payload of the block of packed gaps being decoded and the offsets of its keys. A fixed
     /// buffer can hold the payload, because the encoder keeps every payload within `block_bytes`.
-    std::array<uint8_t, block_bytes> payload;
+    std::array<uint8_t, block_bytes> payload{};
     PODArray<Offset> offsets;
 };
 
