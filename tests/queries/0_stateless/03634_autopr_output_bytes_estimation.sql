@@ -14,8 +14,15 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- beyond the tolerance below.
 SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
 
--- Override randomized max_threads to avoid timeout on slow builds (ASan)
-SET max_threads=0;
+-- Pin the thread count, both to override the randomized value (which can be low enough to time the test
+-- out on a slow build) and because it decides the shape of the blocks the estimate is sampled from. The
+-- ratio is measured per output block, as the wire compresses it, so the blocks' size is what the codec
+-- gets to work with: a single-stream aggregation hands over a few large blocks and the same `String` key
+-- column measures 3.30x, while many streams hand over the bucket Top-K conversion's bounded samples, a
+-- few dozen rows, and measure 1.46x. Left to `max_threads = 0` the estimate therefore followed whatever
+-- thread count the machine gave - `query_12` ranged over 2924508..6655105 and `query_10` over
+-- 145883..204903 across 35 runs. Pinned, each repeats within 3%.
+SET max_threads=16;
 
 -- Override randomized max_block_size so the output-bytes estimate stays deterministic.
 -- `RuntimeDataflowStatisticsOutputBytes` is accumulated per block (the output columns are
@@ -77,24 +84,33 @@ SYSTEM FLUSH LOGS query_log;
 -- is several times more bytes than any real cluster transfers. `serialize_query_plan` moves the estimate
 -- by less than 0.4%, so one set of values covers both the query-based and the plan-based implementation.
 --
+-- The transfer runs with the default `network_compression_method` (`ZSTD`, level 3), which is what the
+-- estimate prices with as well - `getDefaultCodec` is `ZSTD(3)` whatever the server config says, and the
+-- harness never randomizes the network method. Re-measuring against a cluster that sets `LZ4` records
+-- 1.04x to 1.66x more (`query_43` 54328834 instead of 32658851) and is not comparable to these values.
+--
 -- `parallel_replicas_local_plan` has to be 0 for the measurement: with the local plan on, the local
 -- replica wins the race for the ranges on a warm single-machine cluster and almost nothing crosses the
 -- wire at all - `query_12` measures 5358127 bytes with it off and 4675 with it on, and `query_15` swings
 -- between 3421 and 260928 run to run. With it off the figures repeat within ~0.5%, except `query_12`,
 -- which carries ~15% from how the ranges split between the replicas.
 --
--- Every query is checked, but a pair also has to differ by more than 100 KB to count: below that the
+-- Every query is checked, but a pair also has to differ by more than 64 KB to count: below that the
 -- difference is protocol framing and per-replica fixed cost, which the estimate does not model and should
 -- not. That is what `query_1`, `query_20`, `query_21`, `query_22` and `query_23` live on - a single-row
 -- `COUNT(*)` result still costs about 17 KB on the wire against a 12-byte estimate. Unlike skipping those
 -- rows outright, this still catches an estimate that blows up on them, since that moves the difference
--- past 100 KB. (Suppressing the progress and profile-event packets with `send_profile_events = 0` and a
--- large `interactive_delay` only takes 1-6 KB off those transfers, and nothing off the large ones.)
+-- past the slack. (Suppressing the progress and profile-event packets with `send_profile_events = 0` and
+-- a large `interactive_delay` only takes 1-6 KB off those transfers, and nothing off the large ones.)
 --
--- The larger queries land within 1.05x to 1.80x of the transferred bytes: `query_28` 1.05x, `query_15`
--- 1.16x, `query_43` 1.18x, `query_12` 1.20x, `query_34` 1.69x and `query_10` 1.80x - the last two under
--- rather than over. Aggregate states are the residual: they are sampled from the hash table and so priced
--- in hash-table order, while the replicas send them in key order.
+-- Both bounds are set off the estimate's measured spread with the thread count pinned. The widest
+-- difference the slack has to absorb is 49676 bytes on `query_23`, hence 64 KB. Outside the slack the
+-- widest ratio is 1.80x on `query_10`, whose `uniqExact` states are sampled from the hash table, hence
+-- 2.5x. The rest sit well inside: `query_28` 1.07x, `query_15` 1.16x, `query_43` 1.18x, `query_12` 1.20x
+-- and `query_34` 1.62x, each repeating within 3%.
+--
+-- Aggregate states are the residual: they are sampled from the hash table and so priced in hash-table
+-- order, while the replicas send them in key order.
 WITH
     [17258, 362202, 5372342, 1992487, 17111, 33142, 73083, 58884, 38520304, 130028333, 32692272/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
@@ -110,4 +126,4 @@ FROM
     )
 )
 WHERE (greatest(res.2, res.3) / least(res.2, res.3)) > 2.5
-  AND (greatest(res.2, res.3) - least(res.2, res.3)) > 100000;
+  AND (greatest(res.2, res.3) - least(res.2, res.3)) > 65536;

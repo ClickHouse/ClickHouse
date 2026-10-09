@@ -814,7 +814,7 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 Defines how many milliseconds a Keeper client waits to acquire the corresponding `Context` mutex before failing.
 
 The value is taken from the `Context` that performs the acquisition. A per-query override applies only when the operation uses the query context, such as reads from `system.zookeeper`, `zookeeperSessionUptime`, `SYSTEM RECONNECT ZOOKEEPER`, and query-context auxiliary Keeper access.
-Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead.
+Operations that use a global or background context, including `BACKUP` and `RESTORE` coordination and `Replicated` database activity, use that context's value instead, and get the timeout as a Keeper error (`ZOPERATIONTIMEOUT`) that they handle like other Keeper errors.
 `SYSTEM RELOAD CONFIG` and `SYSTEM RELOAD ASYNCHRONOUS METRICS` are not covered because they use independently serialized reload paths.
 
 Possible values:
@@ -916,6 +916,18 @@ The interval in microseconds for checking whether request execution has been can
 <SettingsInfoBlock type="SetOperationMode" default_value="ALL" />
 
 Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
+
+## json_extract_named_tuples_as_objects {#json_extract_named_tuples_as_objects}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "0"},{"label": "New setting to make the `JSONExtract` family fill named tuples from JSON objects only, instead of the historical positional fill from arrays. Unnamed tuples always fill positionally, and extraction from a column of the `JSON` data type is unaffected."}]}]}/>
+
+Fill named tuples from JSON objects only, in the `JSONExtract` family of functions. When disabled, a JSON array fills a named tuple positionally (the historical behavior), so which array element lands in which named field depends on the tuple's declaration order. Unnamed tuples always fill positionally from arrays regardless of this setting.
+
+This setting applies to JSON passed as a string. Extraction from a column of the `JSON` data type is not affected, for typed and untyped paths alike: it reads the column's subcolumns instead of parsing a JSON document, so it never reaches the code this setting governs. Named tuple *columns* in JSON input formats are governed by the separate [input_format_json_named_tuples_as_objects](/reference/settings/formats/input-format#input_format_json_named_tuples_as_objects) setting; this setting covers the extraction functions only.
+
+Disabled by default.
 
 ## kill_throw_if_noop {#kill_throw_if_noop}
 
