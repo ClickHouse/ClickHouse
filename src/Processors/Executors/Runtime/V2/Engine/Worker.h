@@ -27,9 +27,10 @@ class Worker
     std::optional<Task> tryPickTask();
     std::optional<Task> tryPickTaskBeforePark();
     std::optional<Task> tryStealTasks(size_t rounds);
+    Task pickFromBatch(std::span<const Task> batch);
 
     /// Tasks population.
-    void pushMany(std::span<const Task> tasks);
+    void pushManyLifo(std::span<const Task> tasks);
     void pushMany(std::span<const PollRequest> requests);
     void wakeFor(Int64 extra_work);
     void runTask(Task task);
@@ -40,7 +41,7 @@ public:
 
     void run(WorkerSlot & slot, std::atomic_bool * yield_flag);
 
-    UInt32 steal(std::span<Task> out);
+    UInt32 stealFifo(std::span<Task> out);
     void handOverTasks();
     void wake();
 

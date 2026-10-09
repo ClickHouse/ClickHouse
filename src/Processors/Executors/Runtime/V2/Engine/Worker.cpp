@@ -16,6 +16,7 @@ namespace Runtime::V2
 {
 
 static constexpr size_t steal_rounds = 4;
+static constexpr size_t max_take_from_global = LocalTasks::capacity / 2;
 
 Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     : pool(pool_)
@@ -63,9 +64,8 @@ std::optional<Task> Worker::pickTask(WorkerSlot & slot, std::atomic_bool * yield
                 const auto fired = pool.poller.poll(-1);
                 if (!fired.empty())
                 {
-                    pushMany(std::span(fired).subspan(1));
+                    task = pickFromBatch(fired);
                     wakeFor(fired.size() - 1);
-                    task = fired.front();
                 }
             }
             pool.coordinator.stopPolling();
@@ -90,11 +90,11 @@ std::optional<Task> Worker::pickTask(WorkerSlot & slot, std::atomic_bool * yield
 
 std::optional<Task> Worker::tryPickTask()
 {
-    if (auto task = local_tasks.pop())
+    if (auto task = local_tasks.popLifo())
         return task;
 
-    if (auto task = pool.global_tasks.tryPop())
-        return task;
+    if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_task_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
+        return pickFromBatch(std::span(tmp_task_buffer).first(count));
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
     {
@@ -103,9 +103,9 @@ std::optional<Task> Worker::tryPickTask()
 
         if (!fired.empty())
         {
-            pushMany(std::span(fired).subspan(1));
+            auto task = pickFromBatch(fired);
             wakeFor(fired.size() - 1);
-            return fired.front();
+            return task;
         }
     }
 
@@ -122,8 +122,8 @@ std::optional<Task> Worker::tryPickTask()
 
 std::optional<Task> Worker::tryPickTaskBeforePark()
 {
-    if (auto task = pool.global_tasks.tryPop())
-        return task;
+    if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_task_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
+        return pickFromBatch(std::span(tmp_task_buffer).first(count));
 
     auto task = tryStealTasks(/*rounds=*/1);
     wakeFor(task.has_value());
@@ -142,23 +142,28 @@ std::optional<Task> Worker::tryStealTasks(size_t rounds)
             if (&other == this)
                 continue;
 
-            const UInt32 count = other.steal(tmp_task_buffer);
+            const UInt32 count = other.stealFifo(tmp_task_buffer);
             if (count == 0)
                 continue;
 
-            const std::span stolen(tmp_task_buffer.data(), count);
-            local_tasks.pushMany(stolen.subspan(1));
-            return stolen.front();
+            return pickFromBatch(std::span(tmp_task_buffer).first(count));
         }
     }
 
     return std::nullopt;
 }
 
-void Worker::pushMany(std::span<const Task> tasks)
+Task Worker::pickFromBatch(std::span<const Task> batch)
 {
-    const UInt32 pushed = local_tasks.pushMany(tasks);
-    pool.global_tasks.pushMany(tasks.subspan(pushed));
+    pushManyLifo(batch.first(batch.size() - 1));
+    return batch.back();
+}
+
+void Worker::pushManyLifo(std::span<const Task> tasks)
+{
+    const size_t kept = std::min<size_t>(tasks.size(), local_tasks.freeSlots());
+    pool.global_tasks.pushManyFifo(tasks.first(tasks.size() - kept));
+    local_tasks.pushManyLifo(tasks.last(kept));
 }
 
 void Worker::pushMany(std::span<const PollRequest> requests)
@@ -183,7 +188,7 @@ void Worker::runTask(Task task)
     runner.run(task);
 
     const auto & new_compute_tasks = runner.getFoundTasks();
-    pushMany(new_compute_tasks);
+    pushManyLifo(new_compute_tasks);
 
     const auto & new_poll_requests = runner.getFoundPollRequests();
     pushMany(new_poll_requests);
@@ -208,9 +213,9 @@ void Worker::finishRun()
         pool.pipeline.step_profiler->addWorkIntervals(runner.takeWorkIntervals());
 }
 
-UInt32 Worker::steal(std::span<Task> out)
+UInt32 Worker::stealFifo(std::span<Task> out)
 {
-    return local_tasks.steal(out);
+    return local_tasks.stealFifo(out);
 }
 
 void Worker::handOverTasks()
@@ -218,9 +223,9 @@ void Worker::handOverTasks()
     size_t moved = 0;
     while (local_tasks.size() > 0)
     {
-        if (const size_t count = local_tasks.steal(tmp_task_buffer))
+        if (const size_t count = local_tasks.stealFifo(tmp_task_buffer))
         {
-            pool.global_tasks.pushMany(std::span(tmp_task_buffer).first(count));
+            pool.global_tasks.pushManyFifo(std::span(tmp_task_buffer).first(count));
             moved += count;
         }
     }
