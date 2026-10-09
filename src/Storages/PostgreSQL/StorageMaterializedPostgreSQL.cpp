@@ -41,6 +41,7 @@
 #include <Storages/StoragePostgreSQL.h>
 
 #include <QueryPipeline/Pipe.h>
+#include <Storages/NamedCollectionsHelpers.h>
 
 
 namespace DB
@@ -802,6 +803,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
     factory.registerStorage(
         "MaterializedPostgreSQL",
         creator_fn,
+        mysqlPostgreSQLSecretArguments(4),
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,
