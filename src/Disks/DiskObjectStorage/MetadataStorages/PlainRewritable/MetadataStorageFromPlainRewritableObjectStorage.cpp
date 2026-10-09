@@ -1280,7 +1280,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
         metadata_storage.metrics));
 }
 
-void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/, RemoteIORequestIntent intent)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
 {
     addAffectedFilePath(path);
 
@@ -1299,10 +1299,10 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
-        removed_objects, intent));
+        removed_objects));
 }
 
-void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path, RemoteIORequestIntent intent)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory(const std::string & path)
 {
     addAffectedPath(path);
     if (!normalizePath(path).empty())
@@ -1313,10 +1313,10 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics, intent));
+        metadata_storage.metrics));
 }
 
-void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/, RemoteIORequestIntent intent)
+void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
 {
     addAffectedPath(path);
     if (!normalizePath(path).empty())
@@ -1328,7 +1328,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
-        removed_objects, intent));
+        removed_objects));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)

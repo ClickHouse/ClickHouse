@@ -121,9 +121,9 @@ public:
     void removeRecursive(const String &) override { throwNotAllowed(); }
     void removeSharedFile(const String &, bool) override { throwNotAllowed(); }
     void removeSharedFileIfExists(const String &, bool) override { throwNotAllowed(); }
-    void removeSharedRecursive(const String &, bool, const NameSet &, RemoteIORequestIntent = RemoteIORequestIntent::Regular) override { throwNotAllowed(); }
+    void removeSharedRecursive(const String &, bool, const NameSet &) override { throwNotAllowed(); }
     void moveDirectory(const String &, const String &) override { throwNotAllowed(); }
-    void removeDirectory(const String &, RemoteIORequestIntent = RemoteIORequestIntent::Regular) override { throwNotAllowed(); }
+    void removeDirectory(const String &) override { throwNotAllowed(); }
     void setLastModified(const String &, const Poco::Timestamp &) override { throwNotAllowed(); }
     void createFile(const String &) override { throwNotAllowed(); }
     void createDirectory(const String &) override { throwNotAllowed(); }

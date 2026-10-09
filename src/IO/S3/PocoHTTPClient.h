@@ -11,7 +11,6 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/ProxyConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
-#include <IO/RemoteIORequestIntent.h>
 #include <IO/HTTPCommon.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/HTTPRequestThrottler.h>
@@ -21,7 +20,6 @@
 #include <aws/core/client/ClientConfiguration.h>
 #include <aws/core/http/HttpClient.h>
 #include <aws/core/http/HttpRequest.h>
-#include <aws/core/http/standard/StandardHttpRequest.h>
 #include <aws/core/http/standard/StandardHttpResponse.h>
 
 #include <base/types.h>
@@ -46,13 +44,6 @@ class HTTPMessage;
 
 namespace DB::S3
 {
-
-class PocoHTTPRequest final : public Aws::Http::Standard::StandardHttpRequest
-{
-public:
-    using Aws::Http::Standard::StandardHttpRequest::StandardHttpRequest;
-    RemoteIORequestIntent intent = RemoteIORequestIntent::Regular;
-};
 
 /// HTTP 400 from S3 with non-empty `x-amz-bucket-region` (wrong SigV4 signing region for the bucket).
 bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response);

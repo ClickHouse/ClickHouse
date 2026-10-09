@@ -103,13 +103,9 @@ void writePendingReplaceTombstoneMarker(
     writeTombstoneMarkerContent(object_storage, layout, removed_name, PlainRewritableLayout::makePendingReplaceTombstoneContent(pending_replace));
 }
 
-void removeTombstoneMarker(
-    IObjectStorage & object_storage,
-    const PlainRewritableLayout & layout,
-    const std::string & removed_name,
-    RemoteIORequestIntent intent = RemoteIORequestIntent::Regular)
+void removeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritableLayout & layout, const std::string & removed_name)
 {
-    object_storage.removeObjectIfExists(StoredObject(layout.constructTombstoneMarkerKey(removed_name)), intent);
+    object_storage.removeObjectIfExists(StoredObject(layout.constructTombstoneMarkerKey(removed_name)));
 }
 
 }
@@ -162,13 +158,12 @@ DirectoryRemoteInfo getDirectoryInfoOrThrow(const FsSnapshot & fs_tree, const No
 /// The blob is removed only when its last link is gone. The link count is tracked only for blobs that are referenced,
 /// so the count is not decremented for the removed blob: a new blob may appear under the same key later.
 std::optional<StoredObject> removeLinkAndGetBlobToRemove(
-    FsSnapshot & fs_tree, const PlainRewritableLayout & layout, const std::string & blob_key,
-    RemoteIORequestIntent intent = RemoteIORequestIntent::Regular)
+    FsSnapshot & fs_tree, const PlainRewritableLayout & layout, const std::string & blob_key)
 {
     if (fs_tree.getBlobLinkCount(blob_key) == 1)
         return StoredObject(layout.constructBlobObjectKey(blob_key));
 
-    fs_tree.removeBlobLink(blob_key, intent);
+    fs_tree.removeBlobLink(blob_key);
     return std::nullopt;
 }
 
@@ -221,39 +216,19 @@ void MetadataStorageFromPlainObjectStoragePublishOperation::execute()
     /// A transaction that removes a link to a shared blob does not exclude the transactions removing the other links
     /// to it, because they lock only the paths of their own files. Each of them may see the other link left and keep
     /// the blob, so the last link is found only here, where the publications are serialized.
-    const auto journal = fs_tree->getJournal();
-    std::unordered_map<std::string, RemoteIORequestIntent> removal_intents;
-    for (const auto & edit : journal)
-        if (const auto * removal = std::get_if<FsEdits::RemoveBlobLink>(&edit))
-            removal_intents.insert_or_assign(removal->blob_key, removal->intent);
-
-    /// Only this publishing transaction grants permission, not an earlier transaction that removed another link.
-    /// If this journal removes several links to a blob, its last removal supplies the deletion intent.
-    for (const auto & blob_key : fs.applyJournal(journal))
-    {
-        auto & objects = removal_intents.at(blob_key) == RemoteIORequestIntent::Cleanup ? cleanup_unlinked_blobs : unlinked_blobs;
-        objects.emplace_back(layout->constructBlobObjectKey(blob_key));
-    }
+    for (const auto & blob_key : fs.applyJournal(fs_tree->getJournal()))
+        unlinked_blobs.emplace_back(layout->constructBlobObjectKey(blob_key));
 }
 
 void MetadataStorageFromPlainObjectStoragePublishOperation::finalize()
 {
-    if (unlinked_blobs.empty() && cleanup_unlinked_blobs.empty())
+    if (unlinked_blobs.empty())
         return;
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStoragePublishOperation"),
-        "Removing {} blobs whose last links were removed by concurrent transactions", unlinked_blobs.size() + cleanup_unlinked_blobs.size());
-    /// Attempt explicit cleanup before an ordinary deletion can throw cancellation. Never grant cleanup to the whole batch.
-    if (!cleanup_unlinked_blobs.empty())
-    {
-        object_storage->removeObjectsIfExist(cleanup_unlinked_blobs, nullptr, RemoteIORequestIntent::Cleanup);
-        removed_objects.append_range(cleanup_unlinked_blobs);
-    }
-    if (!unlinked_blobs.empty())
-    {
-        object_storage->removeObjectsIfExist(unlinked_blobs);
-        removed_objects.append_range(unlinked_blobs);
-    }
+        "Removing {} blobs whose last links were removed by concurrent transactions", unlinked_blobs.size());
+    object_storage->removeObjectsIfExist(unlinked_blobs);
+    removed_objects.append_range(unlinked_blobs);
 }
 
 MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFromPlainObjectStorageCreateDirectoryOperation(
@@ -335,7 +310,7 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::undo()
     undoWithRetries(log, fmt::format("remove the metadata of the directory '{}'", path), [&]
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(directory_remote_path);
-        object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path), RemoteIORequestIntent::Cleanup);
+        object_storage->removeObjectIfExists(StoredObject(metadata_object_key, path));
     });
 }
 
@@ -481,10 +456,8 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     std::shared_ptr<FsSnapshot> fs_tree_,
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
-    std::shared_ptr<PlainRewritableMetrics> metrics_,
-    RemoteIORequestIntent intent_)
-    : intent(intent_)
-    , path(std::move(path_))
+    std::shared_ptr<PlainRewritableMetrics> metrics_)
+    : path(std::move(path_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
@@ -510,7 +483,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::execute()
     remove_attempted = true;
     auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
     auto metadata_object = StoredObject(/*remote_path*/ metadata_object_key, /*local_path*/ path, path.string().length());
-    object_storage->removeObjectIfExists(metadata_object, intent);
+    object_storage->removeObjectIfExists(metadata_object);
 
     fs_tree->removeDirectory(path);
     ProfileEvents::increment(metrics->directory_removed);
@@ -631,10 +604,8 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    StoredObjects & removed_objects_,
-    RemoteIORequestIntent intent_)
-    : intent(intent_)
-    , path(std::move(path_))
+    StoredObjects & removed_objects_)
+    : path(std::move(path_))
     , if_exists(if_exists_)
     , fs_tree(std::move(fs_tree_))
     , object_storage(object_storage_)
@@ -673,7 +644,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
         previous_directory_info = directory_info;
 
         fs_tree->removeFile(path);
-        blob_to_remove = removeLinkAndGetBlobToRemove(*fs_tree, *layout, blob_key, intent);
+        blob_to_remove = removeLinkAndGetBlobToRemove(*fs_tree, *layout, blob_key);
         fs_tree->markDirectoryExplicit(directory);
 
         prefix_path_written = true;
@@ -691,7 +662,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     writeTombstoneMarker(*object_storage, *layout, tmp_name);
 
     object_storage->copyObject(StoredObject(remote_source_path), StoredObject(remote_tmp_path), getReadSettings(), getWriteSettings());
-    object_storage->removeObjectIfExists(StoredObject(remote_source_path), intent);
+    object_storage->removeObjectIfExists(StoredObject(remote_source_path));
 
     fs_tree->removeFile(path);
 }
@@ -733,14 +704,14 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo()
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the file '{}'", path), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path), RemoteIORequestIntent::Cleanup);
+        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
     });
 
     /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
     /// leaves either nothing or a marked leftover, never an unmarked one.
     undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the file '{}'", path), [&]
     {
-        removeTombstoneMarker(*object_storage, *layout, tmp_name, RemoteIORequestIntent::Cleanup);
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
     });
 }
 
@@ -751,7 +722,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
     if (blob_to_remove)
     {
         LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation"), "Removing the blob '{}' of the unlinked file '{}'", blob_to_remove->remote_path, path);
-        object_storage->removeObjectIfExists(*blob_to_remove, intent);
+        object_storage->removeObjectIfExists(*blob_to_remove);
         removed_objects.push_back(*blob_to_remove);
     }
 
@@ -762,10 +733,10 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::finalize(
         });
 
         removed_objects.push_back(StoredObject(remote_source_path));
-        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path), intent);
+        object_storage->removeObjectIfExists(StoredObject(remote_tmp_path));
         /// The marker outlives the objects it marks, so that a process that dies in the middle of this always
         /// leaves either nothing or a marked leftover, never an unmarked one.
-        removeTombstoneMarker(*object_storage, *layout, tmp_name, intent);
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
     }
 }
 
@@ -862,7 +833,7 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::undo()
     /// The target held no file before the copy, so the key has to be empty again whether or not the copy said so.
     undoWithRetries(log, fmt::format("remove the copy of the file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(remote_path_to), RemoteIORequestIntent::Cleanup);
+        object_storage->removeObjectIfExists(StoredObject(remote_path_to));
     });
 }
 
@@ -1162,7 +1133,7 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         if (!had_existing_target)
         {
             /// The key held no file before the move, so nothing of value can be there.
-            object_storage->removeObjectIfExists(StoredObject(remote_path_to), RemoteIORequestIntent::Cleanup);
+            object_storage->removeObjectIfExists(StoredObject(remote_path_to));
             return;
         }
 
@@ -1182,22 +1153,22 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
     /// either nothing or a marked leftover, never an unmarked one.
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the source file '{}'", path_from), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from), RemoteIORequestIntent::Cleanup);
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_from));
     });
 
     undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the source file '{}'", path_from), [&]
     {
-        removeTombstoneMarker(*object_storage, *layout, tmp_name_from, RemoteIORequestIntent::Cleanup);
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_from);
     });
 
     undoWithRetries(log, fmt::format("remove the temporary copy of the blob of the target file '{}'", path_to), [&]
     {
-        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to), RemoteIORequestIntent::Cleanup);
+        object_storage->removeObjectIfExists(StoredObject(tmp_remote_path_to));
     });
 
     undoWithRetries(log, fmt::format("remove the tombstone marker of the temporary copy of the blob of the target file '{}'", path_to), [&]
     {
-        removeTombstoneMarker(*object_storage, *layout, tmp_name_to, RemoteIORequestIntent::Cleanup);
+        removeTombstoneMarker(*object_storage, *layout, tmp_name_to);
     });
 }
 
@@ -1238,10 +1209,8 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    StoredObjects & removed_objects_,
-    RemoteIORequestIntent intent_)
-    : intent(intent_)
-    , path(std::move(path_))
+    StoredObjects & removed_objects_)
+    : path(std::move(path_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
     , layout(std::move(layout_))
@@ -1309,7 +1278,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
                 else
                 {
                     LOG_TRACE(log, "Keeping the blob of the file '{}', it is shared with other files", file_path);
-                    fs_tree->removeBlobLink(blob_key, intent);
+                    fs_tree->removeBlobLink(blob_key);
                 }
             }
         }
@@ -1334,7 +1303,7 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
     }
 
     if (marker_written)
-        removeTombstoneMarker(*object_storage, *layout, tmp_name, RemoteIORequestIntent::Cleanup);
+        removeTombstoneMarker(*object_storage, *layout, tmp_name);
 }
 
 void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
@@ -1354,15 +1323,15 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::finalize()
     /// gives no ordering guarantees within a request: a directory could lose its `prefix.path` while still having
     /// data objects, and if the process died at that moment, they would become unreachable forever.
     /// The objects were chosen by `execute`, which keeps the blobs shared with the files outside of the subtree.
-    object_storage->removeObjectsIfExist(data_objects_to_remove, nullptr, intent);
+    object_storage->removeObjectsIfExist(data_objects_to_remove);
 
     FailPointInjection::pauseFailPoint(FailPoints::plain_object_storage_pause_before_remove_recursive_metadata);
 
-    object_storage->removeObjectsIfExist(metadata_objects_to_remove, nullptr, intent);
+    object_storage->removeObjectsIfExist(metadata_objects_to_remove);
 
     /// The marker is deleted last: it is what tells the next load that the leftovers of this removal are
     /// garbage, so it has to outlive every object it covers.
-    removeTombstoneMarker(*object_storage, *layout, tmp_name, intent);
+    removeTombstoneMarker(*object_storage, *layout, tmp_name);
 
     removed_objects.append_range(data_objects_to_remove);
     removed_objects.append_range(metadata_objects_to_remove);

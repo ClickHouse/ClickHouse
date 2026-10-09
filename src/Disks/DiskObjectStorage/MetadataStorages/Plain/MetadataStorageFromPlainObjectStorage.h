@@ -91,9 +91,9 @@ public:
     void createDirectoryRecursive(const std::string & /*path*/) override {}
     bool supportsChmod() const override { return false; }
 
-    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
-    void removeDirectory(const std::string & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
-    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override;
+    void unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects) override;
+    void removeDirectory(const std::string & path) override;
+    void removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects) override;
 
     ObjectStorageKey generateObjectKeyForPath(const std::string & path) override;
     StoredObjects getSubmittedForRemovalBlobs() override;

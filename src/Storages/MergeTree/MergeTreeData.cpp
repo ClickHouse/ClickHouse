@@ -11709,7 +11709,7 @@ void MergeTreeData::optimizeDryRun(
         getStorageID(),
         future_part,
         task_context,
-        merger_mutator.merges_blocker.getCancellationPredicate(future_part->part_info.getPartitionId()),
+        stopWorkOnCancellation(merger_mutator.merges_blocker.getCancellationPredicate(future_part->part_info.getPartitionId())),
         CurrentThread::getGroup());
     ThreadGroupSwitcher operation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 

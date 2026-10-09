@@ -4,6 +4,7 @@
 #include <IO/Progress.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/IThrottler.h>
+#include <Common/OperationCancellation.h>
 #include <Common/Logger_fwd.h>
 #include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
@@ -120,6 +121,7 @@ public:
         std::shared_ptr<std::atomic_size_t> plan_step_index = std::make_shared<std::atomic_size_t>(0);
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
+        CancellationRequestPredicate operation_cancellation_request = {};
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
         ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
@@ -143,11 +145,11 @@ public:
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// NOTE: make sure that you are the only user of this shared_ptr (usually it is managed via ThreadGroupSwitcher)
-    /// Creates a merge/mutation group with `operation_is_canceled` installed before threads attach.
+    /// Creates a merge/mutation group with `operation_request` installed before threads attach.
     /// Attached threads copy the callback, so its captured state must remain valid and be thread-safe.
     /// The caller owns cancellation state, including keeping observed cancellation set for the operation.
     static ThreadGroupPtr createForMergeMutate(
-        ContextPtr storage_context, QueryIsCanceledPredicate operation_is_canceled = {}, ThreadGroupPtr foreground_group = {});
+        ContextPtr storage_context, CancellationRequestPredicate operation_request = {}, ThreadGroupPtr foreground_group = {});
 
     static ThreadGroupPtr createForMaterializedView(ContextPtr context);
     static ThreadGroupPtr createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent_thread_group);
@@ -244,6 +246,9 @@ protected:
     FatalErrorCallback fatal_error_callback;
 
     ThreadGroup::SharedData local_data;
+    ExecutionPhase execution_phase = ExecutionPhase::Work;
+    friend class ExecutionPhaseScope;
+    friend class ThreadGroupSwitcher;
 
     bool performance_counters_finalized = false;
 
@@ -329,6 +334,8 @@ public:
     void attachQueryForLog(const String & query_);
     const String & getQueryForLog() const;
 
+    CancellationRequest getCancellationRequest() const;
+    ExecutionPhase getExecutionPhase() const noexcept { return execution_phase; }
     bool isQueryCanceled() const;
 
     /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.

@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 
 #include <IO/HTTPHeaderEntries.h>
-#include <IO/RemoteIORequestIntent.h>
 #include <IO/S3/URI.h>
 #include <IO/S3/ProviderType.h>
 #include <IO/S3/ChecksumAlgorithm.h>
@@ -127,27 +126,8 @@ void translateHeadersToGCS(Aws::Http::HttpRequest & request);
 /// of `translateHeadersToGCS`; `PocoHTTPClient` applies it so the SDK can parse the response.
 std::optional<std::string> translateHeaderNameFromGCS(const std::string & name);
 
-class RequestMetadata
-{
-public:
-    virtual ~RequestMetadata() = default;
-    RemoteIORequestIntent getRequestIntent() const { return intent; }
-
-protected:
-    RequestMetadata() = default;
-    RequestMetadata(const RequestMetadata &) = default;
-    RequestMetadata(RequestMetadata &&) = default;
-    RequestMetadata & operator=(const RequestMetadata &) = default;
-    RequestMetadata & operator=(RequestMetadata &&) = default;
-
-    void setRequestIntent(RemoteIORequestIntent value) { intent = value; }
-
-private:
-    RemoteIORequestIntent intent = RemoteIORequestIntent::Regular;
-};
-
 template <typename BaseRequest>
-class ExtendedRequest : public BaseRequest, public RequestMetadata
+class ExtendedRequest : public BaseRequest
 {
 public:
     Aws::Endpoint::EndpointParameters GetEndpointContextParams() const override
@@ -283,18 +263,13 @@ public:
 };
 
 using CreateMultipartUploadRequest = ExtendedRequest<Model::CreateMultipartUploadRequest>;
-class AbortMultipartUploadRequest : public ExtendedRequest<Model::AbortMultipartUploadRequest>
-{
-public:
-    using RequestMetadata::setRequestIntent;
-};
+using AbortMultipartUploadRequest = ExtendedRequest<Model::AbortMultipartUploadRequest>;
 using UploadPartCopyRequest = ExtendedRequest<Model::UploadPartCopyRequest>;
 using PutObjectTaggingRequest = ExtendedRequest<Model::PutObjectTaggingRequest>;
 
 class DeleteObjectRequest : public ExtendedRequest<Model::DeleteObjectRequest>
 {
 public:
-    using RequestMetadata::setRequestIntent;
     bool RequestChecksumRequired() const override { return is_s3express_bucket; }
     bool ShouldComputeContentMd5() const override { return !is_s3express_bucket; }
 };
@@ -302,7 +277,6 @@ public:
 class DeleteObjectsRequest : public ExtendedRequest<Model::DeleteObjectsRequest>
 {
 public:
-    using RequestMetadata::setRequestIntent;
     bool RequestChecksumRequired() const override { return is_s3express_bucket; }
     bool ShouldComputeContentMd5() const override { return !is_s3express_bucket; }
 };

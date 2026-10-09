@@ -150,10 +150,10 @@ public:
     }
 
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
-    void removeDirectory(const std::string & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
+    void removeDirectory(const std::string & path) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate_transaction->removeDirectory(wrapped_path, intent);
+        delegate_transaction->removeDirectory(wrapped_path);
     }
 
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
@@ -176,10 +176,10 @@ public:
     /// Differs from removeRecursive for S3/HDFS disks
     /// Second bool param is a flag to remove (false) or keep (true) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    void removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
+    void removeSharedRecursive(const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only) override
     {
         auto wrapped_path = wrappedPath(path);
-        delegate_transaction->removeSharedRecursive(wrapped_path, keep_all_shared_data, file_names_remove_metadata_only, intent);
+        delegate_transaction->removeSharedRecursive(wrapped_path, keep_all_shared_data, file_names_remove_metadata_only);
     }
 
     /// Remove file or directory if it exists.
@@ -195,13 +195,13 @@ public:
     /// May be much faster for blob storage.
     /// Second bool param is a flag to remove (true) or keep (false) shared data on S3.
     /// Third param determines which files cannot be removed even if second is true.
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
         auto wrapped_path_files = files;
         for (auto & file : wrapped_path_files)
             file.path = wrappedPath(file.path);
 
-        delegate_transaction->removeSharedFiles(wrapped_path_files, keep_all_batch_data, file_names_remove_metadata_only, intent);
+        delegate_transaction->removeSharedFiles(wrapped_path_files, keep_all_batch_data, file_names_remove_metadata_only);
     }
 
     /// Set last modified time to file or directory at `path`.

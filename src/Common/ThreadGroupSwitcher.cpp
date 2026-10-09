@@ -19,6 +19,11 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
 }
 
+ExecutionPhase getCurrentExecutionPhase() noexcept
+{
+    return CurrentThread::getExecutionPhase();
+}
+
 ThreadGroupPtr getCurrentThreadGroup()
 {
     if (!current_thread)
@@ -35,6 +40,7 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             return;
 
         prev_thread = current_thread;
+        prev_execution_phase = CurrentThread::getExecutionPhase();
         prev_thread_group = CurrentThread::getGroup();
         if (prev_thread_group)
         {
@@ -86,7 +92,10 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             /// Restore the borrowed group and name here: the destructor early-returns on this path
             /// (both groups are nulled below).
             if (prev_thread_group && !CurrentThread::getGroup())
+            {
                 CurrentThread::attachToGroup(prev_thread_group);
+                current_thread->execution_phase = prev_execution_phase;
+            }
             if (should_restore_prev_thread_name)
                 setThreadName(prev_thread_name);
         }
@@ -120,6 +129,7 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             CurrentThread::attachToGroup(prev_thread_group);
+            current_thread->execution_phase = prev_execution_phase;
             /// Restore the borrowed thread's original name, else it keeps the async-pool name and
             /// misattributes later logs, traces, /proc names and jemalloc thread profiles.
             if (should_restore_prev_thread_name)

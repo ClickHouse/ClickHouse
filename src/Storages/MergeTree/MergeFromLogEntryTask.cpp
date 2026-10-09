@@ -390,7 +390,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         storage.getStorageID(),
         future_merged_part,
         task_context,
-        storage.merger_mutator.merges_blocker.getCancellationPredicate(future_merged_part->part_info.getPartitionId()));
+        stopWorkOnCancellation(storage.merger_mutator.merges_blocker.getCancellationPredicate(future_merged_part->part_info.getPartitionId())));
     ThreadGroupSwitcher preparation_group((*merge_mutate_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(

@@ -439,17 +439,17 @@ void S3ObjectStorage::listObjects(const std::string & path, RelativePathsWithMet
     } while (outcome.GetResult().GetIsTruncated());
 }
 
-void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists, RemoteIORequestIntent intent)
+void S3ObjectStorage::removeObjectImpl(const StoredObject & object, bool if_exists)
 {
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     const auto [bucket, key] = splitBucketAndKey(object.remote_path);
 
     deleteFileFromS3(client.get(), bucket, key, if_exists,
                       blob_storage_log, object.local_path, object.bytes_size,
-                      ProfileEvents::DiskS3DeleteObjects, intent);
+                      ProfileEvents::DiskS3DeleteObjects);
 }
 
-void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects, RemoteIORequestIntent intent)
+void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects)
 {
     if (objects.empty())
         return;
@@ -493,21 +493,20 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
                           s3_capabilities, settings_ptr->request_settings[S3RequestSetting::objects_chunk_size_to_delete],
                           blob_storage_log, local_paths_for_blob_storage_log, file_sizes_for_blob_storage_log,
                           ProfileEvents::DiskS3DeleteObjects,
-                          &successful_keys, intent);
+                          &successful_keys);
     }
 }
 
-void S3ObjectStorage::removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent intent)
+void S3ObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
-    removeObjectImpl(object, true, intent);
+    removeObjectImpl(object, true);
 }
 
 void S3ObjectStorage::removeObjectsIfExist( /// NOLINT
     const StoredObjects & objects,
-    StoredObjects * successful_objects,
-    RemoteIORequestIntent intent)
+    StoredObjects * successful_objects)
 {
-    removeObjectsImpl(objects, true, successful_objects, intent);
+    removeObjectsImpl(objects, true, successful_objects);
 }
 
 static void putObjectsTagOnS3(

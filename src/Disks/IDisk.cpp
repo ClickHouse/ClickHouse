@@ -104,7 +104,7 @@ DiskTransactionPtr IDisk::createTransaction()
     return std::make_shared<FakeDiskTransaction>(*this);
 }
 
-void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent /* intent */)
+void IDisk::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     for (const auto & file : files)
     {

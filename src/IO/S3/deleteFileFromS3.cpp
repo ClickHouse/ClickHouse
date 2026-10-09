@@ -28,11 +28,9 @@ void deleteFileFromS3(
     BlobStorageLogWriterPtr blob_storage_log,
     const String & local_path_for_blob_storage_log,
     size_t file_size_for_blob_storage_log,
-    std::optional<ProfileEvents::Event> profile_event,
-    RemoteIORequestIntent intent)
+    std::optional<ProfileEvents::Event> profile_event)
 {
     S3::DeleteObjectRequest request;
-    request.setRequestIntent(intent);
     request.SetBucket(bucket);
     request.SetKey(key);
 
@@ -90,8 +88,7 @@ void deleteFilesFromS3(
     const Strings & local_paths_for_blob_storage_log,
     const VectorWithMemoryTracking<size_t> & file_sizes_for_blob_storage_log,
     std::optional<ProfileEvents::Event> profile_event,
-    Strings * successful_keys,
-    RemoteIORequestIntent intent)
+    Strings * successful_keys)
 {
     chassert(local_paths_for_blob_storage_log.empty() || (local_paths_for_blob_storage_log.size() == keys.size()));
     chassert(file_sizes_for_blob_storage_log.empty() || (file_sizes_for_blob_storage_log.size() == keys.size()));
@@ -140,7 +137,6 @@ void deleteFilesFromS3(
             delkeys.SetQuiet(true);
 
             S3::DeleteObjectsRequest request;
-            request.setRequestIntent(intent);
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
 
@@ -308,7 +304,7 @@ void deleteFilesFromS3(
 
         deleteFileFromS3(s3_client, bucket, keys[i], if_exists,
                          blob_storage_log, local_path_for_blob_storage_log, file_size_for_blob_storage_log,
-                         profile_event, intent);
+                         profile_event);
 
         if (successful_keys)
             successful_keys->emplace_back(keys[i]);

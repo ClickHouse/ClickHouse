@@ -6,6 +6,7 @@
 #include <memory>
 #include <boost/core/noncopyable.hpp>
 #include <Common/setThreadName.h>
+#include <Common/OperationCancellation.h>
 
 namespace DB
 {
@@ -18,6 +19,7 @@ class ThreadStatus;
 /// Returns the thread group of the current thread, or nullptr if not attached.
 /// This is equivalent to CurrentThread::getGroup() but avoids including CurrentThread.h.
 ThreadGroupPtr getCurrentThreadGroup();
+ExecutionPhase getCurrentExecutionPhase() noexcept;
 
 /**
  * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
@@ -43,6 +45,7 @@ public:
 
 private:
     ThreadStatus * prev_thread = nullptr;
+    ExecutionPhase prev_execution_phase = ExecutionPhase::Work;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
     /// Name of a borrowed thread (allow_existing_group=true), saved before renaming and restored in the

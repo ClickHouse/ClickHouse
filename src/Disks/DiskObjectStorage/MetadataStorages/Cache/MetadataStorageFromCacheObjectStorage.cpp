@@ -345,9 +345,9 @@ void MetadataStorageFromCacheObjectStorageTransaction::setReadOnly(const std::st
     underlying->setReadOnly(path);
 }
 
-void MetadataStorageFromCacheObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects, RemoteIORequestIntent intent)
+void MetadataStorageFromCacheObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool should_remove_objects)
 {
-    underlying->unlinkFile(path, if_exists, should_remove_objects, intent);
+    underlying->unlinkFile(path, if_exists, should_remove_objects);
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::createDirectory(const std::string & path)
@@ -360,14 +360,14 @@ void MetadataStorageFromCacheObjectStorageTransaction::createDirectoryRecursive(
     underlying->createDirectoryRecursive(path);
 }
 
-void MetadataStorageFromCacheObjectStorageTransaction::removeDirectory(const std::string & path, RemoteIORequestIntent intent)
+void MetadataStorageFromCacheObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    underlying->removeDirectory(path, intent);
+    underlying->removeDirectory(path);
 }
 
-void MetadataStorageFromCacheObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects, RemoteIORequestIntent intent)
+void MetadataStorageFromCacheObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
 {
-    underlying->removeRecursive(path, should_remove_objects, intent);
+    underlying->removeRecursive(path, should_remove_objects);
 }
 
 void MetadataStorageFromCacheObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)

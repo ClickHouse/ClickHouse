@@ -4,8 +4,6 @@
 
 #include <Core/ServerUUID.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Cache/MetadataStorageFromCacheObjectStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Memory/MetadataStorageFromMemory.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadPipeline.h>
@@ -77,8 +75,9 @@ public:
         if (attempt > failures_before_success)
         {
             const bool batch_delete = request.getMethod() == "POST" && request.getURI().contains("delete");
-            const String body = batch_delete ? "<DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>" : "";
-            response.setStatusAndReason(batch_delete ? Poco::Net::HTTPResponse::HTTP_OK : Poco::Net::HTTPResponse::HTTP_NO_CONTENT);
+            const String body = request.has("x-amz-copy-source") ? "<CopyObjectResult><ETag>test</ETag></CopyObjectResult>" : batch_delete ? "<DeleteResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>" : "";
+            response.setStatusAndReason(request.getMethod() == "DELETE"
+                ? Poco::Net::HTTPResponse::HTTP_NO_CONTENT : Poco::Net::HTTPResponse::HTTP_OK);
             response.setContentType("application/xml");
             response.setContentLength(body.size());
             response.setKeepAlive(false);
@@ -183,9 +182,9 @@ TEST_P(S3CacheCancellationHandoff, ReusedS3ReaderUsesCurrentOperation)
             auto original_canceled = std::make_shared<std::atomic_bool>(false);
             auto consumer_canceled = std::make_shared<std::atomic_bool>(false);
             auto original_group
-                = ThreadGroup::createForMergeMutate(getContext().context, [original_canceled] { return original_canceled->load(); });
+                = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([original_canceled] { return original_canceled->load(); }));
             auto consumer_group
-                = ThreadGroup::createForMergeMutate(getContext().context, [consumer_canceled] { return consumer_canceled->load(); });
+                = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([consumer_canceled] { return consumer_canceled->load(); }));
             size_t sources_created = 0;
             ThreadPoolRemoteFSReader async_reader(1, 2);
             auto create_reader = [&](bool async)
@@ -260,7 +259,7 @@ TEST(OperationCancellation, CancelledAbortRecoversAfterRetryableFailure)
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return true; });
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
         Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory(false, 1);
@@ -278,22 +277,22 @@ TEST(OperationCancellation, CancelledAbortRecoversAfterRetryableFailure)
             3, {}, std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test", "test"), config,
             Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, {.use_virtual_addressing = false});
         S3::AbortMultipartUploadRequest request;
-        request.setRequestIntent(RemoteIORequestIntent::Cleanup);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
         request.SetBucket("bucket");
         request.SetKey("key");
         request.SetUploadId("test");
         EXPECT_NO_THROW({ EXPECT_TRUE(client->AbortMultipartUpload(request).IsSuccess()); });
         EXPECT_EQ(counters.requests.load(), 2);
-        EXPECT_TRUE(CurrentThread::get().isQueryCanceled());
+        EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopWork);
     }).get();
 }
 
-TEST(OperationCancellation, CleanupRetriesDoNotPermitOrdinaryRequests)
+TEST(OperationCancellation, CleanupRetriesDoNotPermitExplicitWork)
 {
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return true; });
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
         Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory;
@@ -317,11 +316,12 @@ TEST(OperationCancellation, CleanupRetriesDoNotPermitOrdinaryRequests)
         abort.SetBucket("bucket");
         abort.SetKey("key");
         abort.SetUploadId("test");
-        abort.setRequestIntent(RemoteIORequestIntent::Cleanup);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
         size_t callbacks = 0;
         std::vector<size_t> callback_states; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         abort.SetRequestRetryHandler([&, state = size_t{0}](const Aws::AmazonWebServiceRequest &) mutable
         {
+            ExecutionPhaseScope work(ExecutionPhase::Work);
             ++callbacks;
             callback_states.push_back(++state);
             S3::HeadObjectRequest ordinary;
@@ -365,15 +365,18 @@ TEST(OperationCancellation, CleanupRetriesDoNotPermitOrdinaryRequests)
         EXPECT_EQ(counters.requests.load(), 8);
         EXPECT_EQ(callbacks, 4);
         EXPECT_EQ(callback_states, (std::vector<size_t>{1, 2, 3, 4})); // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        abort.setRequestIntent(RemoteIORequestIntent::Regular);
-        EXPECT_THROW(client->AbortMultipartUpload(abort), Exception);
-        EXPECT_EQ(counters.requests.load(), 8);
-
+        {
+            ExecutionPhaseScope work(ExecutionPhase::Work);
+            EXPECT_THROW(client->AbortMultipartUpload(abort), Exception);
+            EXPECT_EQ(counters.requests.load(), 8);
+            S3::DeleteObjectRequest remove;
+            remove.SetBucket("bucket");
+            remove.SetKey("key");
+            EXPECT_THROW(client->DeleteObject(remove), Exception);
+        }
         S3::DeleteObjectRequest remove;
         remove.SetBucket("bucket");
         remove.SetKey("key");
-        EXPECT_THROW(client->DeleteObject(remove), Exception);
-        remove.setRequestIntent(RemoteIORequestIntent::Cleanup);
         EXPECT_NO_THROW({ EXPECT_FALSE(client->DeleteObject(remove).IsSuccess()); });
         EXPECT_EQ(counters.requests.load(), 12);
 
@@ -382,10 +385,10 @@ TEST(OperationCancellation, CleanupRetriesDoNotPermitOrdinaryRequests)
         Aws::S3::Model::Delete objects;
         objects.AddObjects(Aws::S3::Model::ObjectIdentifier{}.WithKey("key"));
         batch.SetDelete(objects);
-        batch.setRequestIntent(RemoteIORequestIntent::Cleanup);
         EXPECT_NO_THROW({ EXPECT_FALSE(client->DeleteObjects(batch).IsSuccess()); });
         EXPECT_EQ(counters.requests.load(), 16);
 
+        ExecutionPhaseScope work(ExecutionPhase::Work);
         S3::PocoHTTPClient transport(config);
         auto raw_abort = Aws::Http::CreateHttpRequest(
             fmt::format("http://127.0.0.1:{}/bucket/key?uploadId=test", socket.address().port()),
@@ -396,14 +399,14 @@ TEST(OperationCancellation, CleanupRetriesDoNotPermitOrdinaryRequests)
     }).get();
 }
 
-TEST(OperationCancellation, CleanupDeleteHelpersRetainIntent)
+TEST(OperationCancellation, CleanupDeleteHelpersRetainPhase)
 {
     for (const bool batch_supported : {false, true})
     {
         std::async(std::launch::async, [batch_supported]
         {
             ThreadStatus status;
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return true; });
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
             Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory(false, 1);
@@ -427,9 +430,12 @@ TEST(OperationCancellation, CleanupDeleteHelpersRetainIntent)
                     {}, {}, {}, {}, &removed),
                 Exception);
             EXPECT_EQ(counters.requests.load(), 0);
-            EXPECT_NO_THROW(
-                deleteFilesFromS3(client, "bucket", {"first", "second"}, true, capabilities, 1000,
-                    {}, {}, {}, {}, &removed, RemoteIORequestIntent::Cleanup));
+            {
+                ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+                EXPECT_NO_THROW(
+                    deleteFilesFromS3(client, "bucket", {"first", "second"}, true, capabilities, 1000,
+                        {}, {}, {}, {}, &removed));
+            }
             EXPECT_EQ(removed, (Strings{"first", "second"}));
             EXPECT_EQ(counters.requests.load(), batch_supported ? 2 : 3);
             EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
@@ -437,75 +443,103 @@ TEST(OperationCancellation, CleanupDeleteHelpersRetainIntent)
     }
 }
 
-TEST(OperationCancellation, CachedMetadataForwardsDeletionIntent)
-{
-    class RecordingTransaction final : public IMetadataTransaction
-    {
-    public:
-        RemoteIORequestIntent last_intent = RemoteIORequestIntent::Regular;
-        void commit(const TransactionCommitOptionsVariant &) override
-        {
-            ADD_FAILURE();
-        }
-        TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &) override
-        {
-            ADD_FAILURE();
-            return false;
-        }
-        bool supportsChmod() const override
-        {
-            return false;
-        }
-        ObjectStorageKey generateObjectKeyForPath(const std::string &) override
-        {
-            ADD_FAILURE();
-            return {};
-        }
-        StoredObjects getSubmittedForRemovalBlobs() override
-        {
-            ADD_FAILURE();
-            return {};
-        }
-        void createMetadataFile(const std::string &, const StoredObjects &) override
-        {
-            ADD_FAILURE();
-        }
-        void unlinkFile(const std::string &, bool, bool, RemoteIORequestIntent intent) override
-        {
-            last_intent = intent;
-        }
-        void removeDirectory(const std::string &, RemoteIORequestIntent intent) override
-        {
-            last_intent = intent;
-        }
-        void removeRecursive(const std::string &, const ShouldRemoveObjectsPredicate &, RemoteIORequestIntent intent) override
-        {
-            last_intent = intent;
-        }
-    };
-    auto underlying = std::make_shared<RecordingTransaction>();
-    MetadataStorageFromCacheObjectStorage storage(std::make_shared<MetadataStorageFromMemory>("", nullptr));
-    MetadataStorageFromCacheObjectStorageTransaction transaction(underlying, storage);
-    for (const auto intent : {RemoteIORequestIntent::Cleanup, RemoteIORequestIntent::Regular})
-    {
-        transaction.unlinkFile("part/data", true, true, intent);
-        EXPECT_EQ(underlying->last_intent, intent);
-        underlying->last_intent = RemoteIORequestIntent::Regular;
-        transaction.removeDirectory("part", intent);
-        EXPECT_EQ(underlying->last_intent, intent);
-        underlying->last_intent = RemoteIORequestIntent::Regular;
-        transaction.removeRecursive("part", nullptr, intent);
-        EXPECT_EQ(underlying->last_intent, intent);
-    }
-}
-
-TEST(OperationCancellation, CredentialRetriesRemainCancelled)
+TEST(OperationCancellation, CleanupPrerequisitesAndEscalation)
 {
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto cancelled = std::make_shared<std::atomic_bool>(false);
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, [cancelled] { return cancelled->load(); });
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+        Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory(false, 0);
+        auto & counters = static_cast<CancellationHTTPFactory &>(*factory);
+        Poco::Net::HTTPServer server(factory, socket, new Poco::Net::HTTPServerParams);
+        server.start();
+        SCOPE_EXIT({ server.stopAll(true); });
+        RemoteHostFilter filter;
+        auto config = S3::ClientFactory::instance().createClientConfiguration(
+            "us-east-1", filter, 3, {.max_retries = 1, .initial_delay_ms = 1, .max_delay_ms = 1},
+            false, false, false, false, {}, {}, "http");
+        config.retryStrategy = std::make_shared<S3::Client::RetryStrategy>(config.retry_strategy);
+        config.endpointOverride = fmt::format("127.0.0.1:{}", socket.address().port());
+        auto client = S3::Client::create(
+            3, {}, std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test", "test"), config,
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, {.use_virtual_addressing = false});
+        state->request(CancellationRequest::StopWork);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+        S3::GetObjectRequest read;
+        read.SetBucket("bucket");
+        read.SetKey("source");
+        EXPECT_TRUE(client->GetObject(read).IsSuccess());
+        S3::PutObjectRequest write;
+        write.SetBucket("bucket");
+        write.SetKey("target");
+        write.SetBody(std::make_shared<Aws::StringStream>());
+        write.SetContentLength(0);
+        EXPECT_TRUE(client->PutObject(write).IsSuccess());
+        S3::CopyObjectRequest copy;
+        copy.SetBucket("bucket");
+        copy.SetKey("target");
+        copy.SetCopySource("bucket/source");
+        EXPECT_TRUE(client->CopyObject(copy).IsSuccess());
+        EXPECT_EQ(counters.requests.load(), 3);
+        state->request(CancellationRequest::StopAll);
+        EXPECT_THROW(client->GetObject(read), Exception);
+        EXPECT_THROW(client->PutObject(write), Exception);
+        EXPECT_THROW(client->CopyObject(copy), Exception);
+        EXPECT_EQ(counters.requests.load(), 3);
+    }).get();
+}
+
+TEST(OperationCancellation, EscalationInCleanupRetryHookPreventsRedispatch)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+        Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory;
+        auto & counters = static_cast<CancellationHTTPFactory &>(*factory);
+        Poco::Net::HTTPServer server(factory, socket, new Poco::Net::HTTPServerParams);
+        server.start();
+        SCOPE_EXIT({ server.stopAll(true); });
+        RemoteHostFilter filter;
+        auto config = S3::ClientFactory::instance().createClientConfiguration(
+            "us-east-1", filter, 3, {.max_retries = 2, .initial_delay_ms = 1, .max_delay_ms = 1},
+            false, false, false, false, {}, {}, "http");
+        config.retryStrategy = std::make_shared<S3::Client::RetryStrategy>(config.retry_strategy);
+        config.endpointOverride = fmt::format("127.0.0.1:{}", socket.address().port());
+        auto client = S3::Client::create(
+            3, {}, std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>("test", "test"), config,
+            Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, {.use_virtual_addressing = false});
+        state->request(CancellationRequest::StopWork);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+        S3::AbortMultipartUploadRequest abort;
+        abort.SetBucket("bucket");
+        abort.SetKey("key");
+        abort.SetUploadId("test");
+        size_t callbacks = 0;
+        abort.SetRequestRetryHandler([&](const Aws::AmazonWebServiceRequest &)
+        {
+            ++callbacks;
+            state->request(CancellationRequest::StopAll);
+        });
+        EXPECT_THROW(client->AbortMultipartUpload(abort), Exception);
+        EXPECT_EQ(callbacks, 1);
+        EXPECT_EQ(counters.requests.load(), 1);
+    }).get();
+}
+
+TEST(OperationCancellation, CredentialRetriesFollowExecutionPhase)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         RemoteHostFilter filter;
         auto config = S3::ClientFactory::instance().createClientConfiguration(
@@ -516,7 +550,11 @@ TEST(OperationCancellation, CredentialRetriesRemainCancelled)
         Aws::Client::AWSError<Aws::Client::CoreErrors> error(
             Aws::Client::CoreErrors::NETWORK_CONNECTION, "NetworkError", "Retryable test failure", true);
         EXPECT_TRUE(config.retryStrategy->ShouldRetry(error, 0));
-        cancelled->store(true);
+        state->request(CancellationRequest::StopWork);
+        EXPECT_FALSE(config.retryStrategy->ShouldRetry(error, 0));
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+        EXPECT_TRUE(config.retryStrategy->ShouldRetry(error, 0));
+        state->request(CancellationRequest::StopAll);
         EXPECT_FALSE(config.retryStrategy->ShouldRetry(error, 0));
     }).get();
 }
@@ -526,7 +564,7 @@ TEST(OperationCancellation, CleanupRespectsZeroRetries)
     std::async(std::launch::async, []
     {
         ThreadStatus status;
-        auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return true; });
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
         ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
         Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
         Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory;
@@ -546,7 +584,7 @@ TEST(OperationCancellation, CleanupRespectsZeroRetries)
         request.SetBucket("bucket");
         request.SetKey("key");
         request.SetUploadId("test");
-        request.setRequestIntent(RemoteIORequestIntent::Cleanup);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
         EXPECT_NO_THROW(
         {
             const auto outcome = client->AbortMultipartUpload(request);
@@ -554,7 +592,8 @@ TEST(OperationCancellation, CleanupRespectsZeroRetries)
             EXPECT_EQ(outcome.GetError().GetResponseCode(), Aws::Http::HttpResponseCode::SERVICE_UNAVAILABLE);
         });
         EXPECT_EQ(counters.requests.load(), 1);
-        EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+        EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+        EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopWork);
     }).get();
 }
 
@@ -566,7 +605,7 @@ TEST(OperationCancellation, CancellationDuringDelayCalculationPreventsRetryDispa
         {
             ThreadStatus status;
             auto canceled = std::make_shared<std::atomic_bool>(false);
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, [canceled] { return canceled->load(); });
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([canceled] { return canceled->load(); }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             Poco::Net::ServerSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
             Poco::Net::HTTPRequestHandlerFactory::Ptr factory = new CancellationHTTPFactory;

@@ -498,7 +498,7 @@ void AzureObjectStorage::removeObjectImpl(
             success ? "" : error_message);
 }
 
-void AzureObjectStorage::removeObjectIfExists(const StoredObject & object, RemoteIORequestIntent /* intent */)
+void AzureObjectStorage::removeObjectIfExists(const StoredObject & object)
 {
     auto blob_storage_log = BlobStorageLogWriter::create(name);
     removeObjectImpl(object, client.get(), true, std::move(blob_storage_log));
@@ -613,8 +613,7 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
 
 void AzureObjectStorage::removeObjectsIfExist( /// NOLINT
     const StoredObjects & objects,
-    StoredObjects * successful_objects,
-    RemoteIORequestIntent /* intent */)
+    StoredObjects * successful_objects)
 {
     if (objects.empty())
         return;

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <IO/RemoteIORequestIntent.h>
-
 #include <memory>
 #include <optional>
 #include <vector>
@@ -71,7 +69,7 @@ public:
         throwNotImplemented();
     }
 
-    virtual void unlinkFile(const std::string & /* path */, bool /* if_exists */, bool /* should_remove_objects */, RemoteIORequestIntent /* intent */ = RemoteIORequestIntent::Regular)
+    virtual void unlinkFile(const std::string & /* path */, bool /* if_exists */, bool /* should_remove_objects */)
     {
         throwNotImplemented();
     }
@@ -86,13 +84,13 @@ public:
         throwNotImplemented();
     }
 
-    virtual void removeDirectory(const std::string & /* path */, RemoteIORequestIntent /* intent */ = RemoteIORequestIntent::Regular)
+    virtual void removeDirectory(const std::string & /* path */)
     {
         throwNotImplemented();
     }
 
     using ShouldRemoveObjectsPredicate = std::function<bool(const std::string & relative_path)>;
-    virtual void removeRecursive(const std::string & /* path */, const ShouldRemoveObjectsPredicate & /* should_remove_objects */, RemoteIORequestIntent /* intent */ = RemoteIORequestIntent::Regular)
+    virtual void removeRecursive(const std::string & /* path */, const ShouldRemoveObjectsPredicate & /* should_remove_objects */)
     {
         throwNotImplemented();
     }

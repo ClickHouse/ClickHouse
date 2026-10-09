@@ -1,7 +1,5 @@
 #pragma once
 
-#include <IO/RemoteIORequestIntent.h>
-
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
@@ -54,7 +52,6 @@ private:
 
     /// The blobs that lost their last link only when the changes were published, see `FsMetadata::applyJournal`.
     StoredObjects unlinked_blobs;
-    StoredObjects cleanup_unlinked_blobs;
 
 public:
     MetadataStorageFromPlainObjectStoragePublishOperation(
@@ -128,7 +125,6 @@ public:
 class MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation final : public IMetadataOperation
 {
 private:
-    const RemoteIORequestIntent intent;
     const std::filesystem::path path;
     const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
@@ -145,8 +141,7 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_,
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
-        std::shared_ptr<PlainRewritableMetrics> metrics_,
-        RemoteIORequestIntent intent_ = RemoteIORequestIntent::Regular);
+        std::shared_ptr<PlainRewritableMetrics> metrics_);
 
     void execute() override;
     void undo() override;
@@ -192,7 +187,6 @@ public:
 class MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation final : public IMetadataOperation
 {
 private:
-    const RemoteIORequestIntent intent;
     const std::filesystem::path path;
     const bool if_exists;
     const std::shared_ptr<FsSnapshot> fs_tree;
@@ -224,8 +218,7 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
-        StoredObjects & removed_objects_,
-        RemoteIORequestIntent intent_ = RemoteIORequestIntent::Regular);
+        StoredObjects & removed_objects_);
 
     void execute() override;
     void undo() override;
@@ -384,7 +377,6 @@ public:
 class MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation final : public IMetadataOperation
 {
 private:
-    const RemoteIORequestIntent intent;
     const std::filesystem::path path;
     const std::shared_ptr<FsSnapshot> fs_tree;
     const std::shared_ptr<IObjectStorage> object_storage;
@@ -411,8 +403,7 @@ public:
         std::shared_ptr<IObjectStorage> object_storage_,
         std::shared_ptr<PlainRewritableLayout> layout_,
         std::shared_ptr<PlainRewritableMetrics> metrics_,
-        StoredObjects & removed_objects_,
-        RemoteIORequestIntent intent_ = RemoteIORequestIntent::Regular);
+        StoredObjects & removed_objects_);
 
     void execute() override;
     void undo() override;

@@ -100,7 +100,7 @@ void MergePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context,
-        storage.merger_mutator.merges_blocker.getCancellationPredicate(future_part->part_info.getPartitionId()));
+        stopWorkOnCancellation(storage.merger_mutator.merges_blocker.getCancellationPredicate(future_part->part_info.getPartitionId())));
     ThreadGroupSwitcher preparation_group((*merge_list_entry)->thread_group, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
 
     storage.writePartLog(
@@ -214,10 +214,10 @@ void MergePlainMergeTreeTask::cancel() noexcept
 
 void MergePlainMergeTreeTask::cleanupAfterFailure() noexcept
 {
-    /// Cleanup and part destruction can issue S3 requests; keep the merge's cancellation visible
-    /// through `CurrentThread`. Only explicitly marked abort/delete requests retain configured retries.
+    /// Cleanup retains configured retries under `StopWork`, but still observes `StopAll`.
     ThreadGroupSwitcher operation_group(
         merge_list_entry ? (*merge_list_entry)->thread_group : nullptr, ThreadName::MERGE_MUTATE, /*allow_existing_group*/ true);
+    ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
     if (merge_task)
         merge_task->cancel();
 

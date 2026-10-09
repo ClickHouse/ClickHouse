@@ -392,10 +392,10 @@ void DiskObjectStorage::removeSharedFile(const String & path, bool delete_metada
     transaction->commit();
 }
 
-void DiskObjectStorage::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent)
+void DiskObjectStorage::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     auto transaction = createObjectStorageTransaction();
-    transaction->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only, intent);
+    transaction->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
     transaction->commit();
 }
 
@@ -468,13 +468,13 @@ void DiskObjectStorage::createDirectories(const String & path)
     }
 }
 
-void DiskObjectStorage::removeDirectory(const String & path, RemoteIORequestIntent intent)
+void DiskObjectStorage::removeDirectory(const String & path)
 {
     if (!isDirectoryEmpty(path))
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Unable to remove directory '{}', the directory is not empty", path);
 
     auto transaction = createObjectStorageTransaction();
-    transaction->removeDirectory(path, intent);
+    transaction->removeDirectory(path);
     transaction->commit();
 }
 
@@ -683,10 +683,10 @@ void DiskObjectStorage::removeSharedFileIfExists(const String & path, bool delet
 }
 
 void DiskObjectStorage::removeSharedRecursive(
-    const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent)
+    const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     auto transaction = createObjectStorageTransaction();
-    transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only, intent);
+    transaction->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
     transaction->commit();
 }
 

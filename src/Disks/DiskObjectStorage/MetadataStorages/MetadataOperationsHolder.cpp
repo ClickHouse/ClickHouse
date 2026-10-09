@@ -1,3 +1,4 @@
+#include <Common/OperationCancellation.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 
 #include <Common/Exception.h>
@@ -21,6 +22,7 @@ extern const int FS_METADATA_ERROR;
 
 void MetadataOperationsHolder::rollback(size_t until_pos, Exception & rollback_reason) noexcept
 {
+    ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
     ProfileEvents::increment(ProfileEvents::MetadataTransactionRollbacks);
 
     for (int64_t i = until_pos; i >= 0; --i)

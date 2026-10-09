@@ -33,6 +33,164 @@ extern const int CANNOT_SCHEDULE_TASK;
 extern const int QUERY_WAS_CANCELLED;
 }
 
+TEST(OperationCancellation, CleanupObservesEscalationWithoutClearingRequest)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+        state->request(CancellationRequest::StopWork);
+        EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+        {
+            ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+            EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopWork);
+            EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+            {
+                ExecutionPhaseScope work(ExecutionPhase::Work);
+                EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+            }
+            EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+            state->request(CancellationRequest::StopAll);
+            EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+            {
+                ThreadStatus::QueryCancellationBlocker blocker;
+                EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopAll);
+                EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+            }
+            EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+        }
+        state->request(CancellationRequest::None);
+        state->request(CancellationRequest::StopWork);
+        EXPECT_EQ(state->getRequest(), CancellationRequest::StopAll);
+        EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+    }).get();
+}
+
+TEST(OperationCancellation, PhaseRestoresAcrossGroupSwitchAndException)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        auto other = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        {
+            ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+            {
+                ThreadGroupSwitcher same(group, ThreadName::MERGE_MUTATE);
+                EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+            }
+            try
+            {
+                ThreadGroupSwitcher switched(other, ThreadName::MERGE_MUTATE, true);
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+                CurrentThread::checkIfNotCancelled();
+                FAIL() << "Unrelated group inherited cleanup";
+            }
+            catch (const Exception &)
+            {
+                EXPECT_EQ(CurrentThread::getGroup(), group);
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Cleanup);
+            }
+            EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+        }
+        EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+    }).get();
+}
+
+TEST(OperationCancellation, ShutdownLatchPreservesEscalationForNewEntries)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        MergeList merges;
+        auto part = std::make_shared<FutureMergedMutatedPart>();
+        part->part_info = MergeTreePartInfo("p", 1, 2, 1);
+        part->name = part->part_info.getPartNameV1();
+        auto first = merges.insert(StorageID("default", "cancellation_test"), part, getContext().context);
+        merges.cancelAll();
+        EXPECT_EQ((*first)->cancellation_state->getRequest(), CancellationRequest::StopWork);
+        merges.cancelAll(CancellationRequest::StopAll);
+        merges.cancelAll(CancellationRequest::StopWork);
+        EXPECT_EQ((*first)->cancellation_state->getRequest(), CancellationRequest::StopAll);
+        auto second = merges.insert(StorageID("default", "cancellation_test"), part, getContext().context);
+        ThreadGroupSwitcher attached((*second)->thread_group, ThreadName::MERGE_MUTATE);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+        EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopAll);
+        EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+    }).get();
+}
+
+TEST(OperationCancellation, QueuedPhaseIsCapturedButCancellationRemainsLive)
+{
+    for (bool use_local_runner : {false, true})
+    {
+        std::async(std::launch::async, [use_local_runner]
+        {
+            ThreadStatus status;
+            auto state = std::make_shared<OperationCancellationState>();
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+            auto escalated = std::make_shared<OperationCancellationState>();
+            auto other = ThreadGroup::createForMergeMutate(getContext().context, [escalated] { return escalated->getRequest(); });
+            ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+            ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
+            std::promise<void> release;
+            auto gate = release.get_future().share();
+            bool released = false;
+            pool.scheduleOrThrowOnError([gate] { gate.wait(); });
+            SCOPE_EXIT_SAFE({ if (!released) release.set_value(); });
+            auto unsafe = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::MERGE_MUTATE);
+            ThreadPoolCallbackRunnerLocal<void> local(pool, ThreadName::MERGE_MUTATE);
+            auto enqueue = [&](std::function<void()> callback)
+            {
+                if (use_local_runner)
+                    return std::move(local.enqueueAndGiveOwnership(std::move(callback))->future);
+                return unsafe(std::move(callback), {});
+            };
+            auto work = enqueue([]
+            {
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+                EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+            });
+            std::future<void> cleanup_task;
+            std::future<void> escalated_task;
+            {
+                ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+                cleanup_task = enqueue([]
+                {
+                    EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Cleanup);
+                    EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+                    EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopWork);
+                });
+                ThreadGroupSwitcher switched(other, ThreadName::MERGE_MUTATE, true);
+                ExecutionPhaseScope other_cleanup(ExecutionPhase::Cleanup);
+                escalated_task = enqueue([]
+                {
+                    EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Cleanup);
+                    EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+                    EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopAll);
+                });
+            }
+            state->request(CancellationRequest::StopWork);
+            escalated->request(CancellationRequest::StopAll);
+            release.set_value();
+            released = true;
+            work.get();
+            cleanup_task.get();
+            escalated_task.get();
+            enqueue([]
+            {
+                EXPECT_EQ(CurrentThread::getExecutionPhase(), ExecutionPhase::Work);
+                EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+            }).get();
+            pool.wait();
+        }).get();
+    }
+}
+
 TEST(OperationCancellation, QueryCancellationExceptionHasPriority)
 {
     std::async(
@@ -57,9 +215,20 @@ TEST(OperationCancellation, QueryCancellationExceptionHasPriority)
                 0,
                 true);
             context->setProcessListElement(query);
-            auto group = ThreadGroup::createForMergeMutate(context, [] { return true; });
-            ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
+            auto state = std::make_shared<OperationCancellationState>();
+            state->request(CancellationRequest::StopAll);
+            auto parent = ThreadGroup::createForMergeMutate(context, [state] { return state->getRequest(); });
+            auto part = std::make_shared<FutureMergedMutatedPart>();
+            part->part_info = MergeTreePartInfo("p", 1, 2, 1);
+            part->name = part->part_info.getPartNameV1();
+            MergeListElement entry(StorageID("default", "priority_test"), part, context, {}, parent);
+            ActionBlocker ttl_blocker;
+            ThreadGroupSwitcher scope(entry.thread_group, ThreadName::MERGE_MUTATE);
+            entry.enableTTLCancellation(ttl_blocker);
+            ttl_blocker.cancelForever();
             query->cancelQuery(CancelReason::CANCELLED_BY_USER);
+            ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+            EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopAll);
             try
             {
                 CurrentThread::checkIfNotCancelled();
@@ -87,7 +256,7 @@ TEST(OperationCancellation, MergeListCancellationReachesThreadGroup)
             MergeListElement entry(StorageID("default", "cancellation_test"), future_part, getContext().context);
             ThreadGroupSwitcher scope(entry.thread_group, ThreadName::MERGE_MUTATE);
             EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
-            *entry.is_cancelled = true;
+            entry.cancellation_state->request(CancellationRequest::StopWork);
             EXPECT_TRUE(CurrentThread::get().isQueryCanceled());
             EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
         })
@@ -106,13 +275,38 @@ TEST(OperationCancellation, MergeListGroupOutlivesEntry)
             future_part->name = future_part->part_info.getPartNameV1();
             auto entry = std::make_unique<MergeListElement>(StorageID("default", "cancellation_test"), future_part, getContext().context);
             auto group = entry->thread_group;
-            *entry->is_cancelled = true;
+            entry->cancellation_state->request(CancellationRequest::StopWork);
             entry.reset();
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             EXPECT_TRUE(CurrentThread::get().isQueryCanceled());
             EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
         })
         .get();
+}
+
+TEST(OperationCancellation, TTLSourcePublishedAfterAttachmentOutlivesTaskSetup)
+{
+    std::async(std::launch::async, []
+    {
+        ThreadStatus status;
+        auto part = std::make_shared<FutureMergedMutatedPart>();
+        part->part_info = MergeTreePartInfo("p", 1, 2, 1);
+        part->name = part->part_info.getPartNameV1();
+        auto entry = std::make_unique<MergeListElement>(StorageID("default", "ttl_test"), part, getContext().context);
+        auto group = entry->thread_group;
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        {
+            ActionBlocker ttl_blocker;
+            entry->enableTTLCancellation(ttl_blocker);
+            EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+            ttl_blocker.cancelForever();
+        }
+        entry.reset();
+        EXPECT_EQ(CurrentThread::getCancellationRequest(), CancellationRequest::StopWork);
+        EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
+        ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+        EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
+    }).get();
 }
 
 TEST(OperationCancellation, MergeListBlockerCancellationLatches)
@@ -127,14 +321,14 @@ TEST(OperationCancellation, MergeListBlockerCancellationLatches)
             future_part->part_info = MergeTreePartInfo("p", 1, 2, 1);
             future_part->name = future_part->part_info.getPartNameV1();
             MergeListElement entry(
-                StorageID("default", "cancellation_test"), future_part, getContext().context, blocker.getCancellationPredicate("p"));
+                StorageID("default", "cancellation_test"), future_part, getContext().context, stopWorkOnCancellation(blocker.getCancellationPredicate("p")));
             ThreadGroupSwitcher scope(entry.thread_group, ThreadName::MERGE_MUTATE);
             auto other = blocker.cancelForPartition("other");
             EXPECT_NO_THROW(CurrentThread::checkIfNotCancelled());
             {
                 auto lock = blocker.cancelForPartition("p");
                 EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
-                EXPECT_TRUE(entry.is_cancelled->load());
+                EXPECT_EQ(entry.cancellation_state->getRequest(), CancellationRequest::StopWork);
             }
             EXPECT_THROW(CurrentThread::checkIfNotCancelled(), Exception);
         })
@@ -149,7 +343,7 @@ TEST(OperationCancellation, AttachedThreadObservesCancellation)
         {
             ThreadStatus status;
             auto canceled = std::make_shared<std::atomic_bool>(false);
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, [canceled] { return canceled->load(); });
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([canceled] { return canceled->load(); }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
 
             EXPECT_FALSE(CurrentThread::get().isQueryCanceled());
@@ -187,8 +381,7 @@ TEST(OperationCancellation, CancellableAdmissionDoesNotWaitForUnrelatedWork)
             ThreadStatus status;
             bool first_check = true;
             auto group = ThreadGroup::createForMergeMutate(
-                getContext().context,
-                [&]
+                getContext().context, stopWorkOnCancellation([&]
                 {
                     if (first_check)
                     {
@@ -196,7 +389,7 @@ TEST(OperationCancellation, CancellableAdmissionDoesNotWaitForUnrelatedWork)
                         checked.set_value();
                     }
                     return canceled.load();
-                });
+                }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::ASYNC_COPY, /* check_cancellation */ true);
             try
@@ -228,7 +421,7 @@ TEST(OperationCancellation, DefaultAdmissionIgnoresCancellation)
         []
         {
             ThreadStatus status;
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return true; });
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
             ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::ASYNC_COPY);
@@ -255,7 +448,7 @@ TEST(OperationCancellation, CancelledAdmissionDiscardsOwnQueuedWork)
         [&]
         {
             ThreadStatus status;
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, [&] { return canceled.load(); });
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([&] { return canceled.load(); }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             try
             {
@@ -288,7 +481,7 @@ TEST(OperationCancellation, CancelledAdmissionRejectsWorkWithFreeCapacity)
         []
         {
             ThreadStatus status;
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, [] { return true; });
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([] { return true; }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1);
             ThreadPoolCallbackRunnerLocal<void> runner(pool, ThreadName::ASYNC_COPY, /* check_cancellation */ true);
@@ -334,15 +527,14 @@ TEST(OperationCancellation, CancelledAdmissionDrainsRunningWork)
         {
             ThreadStatus status;
             auto group = ThreadGroup::createForMergeMutate(
-                getContext().context,
-                [&]
+                getContext().context, stopWorkOnCancellation([&]
                 {
                     if (!canceled.load())
                         return false;
                     if (!cancellation_observed.exchange(true))
                         observed_cancellation.set_value();
                     return true;
-                });
+                }));
             ThreadGroupSwitcher scope(group, ThreadName::MERGE_MUTATE);
             try
             {
@@ -382,7 +574,7 @@ TEST(OperationCancellation, WorkerUsesEnqueueContextAndRestoresIt)
             ThreadStatus status;
             ThreadPool pool(CurrentMetrics::LocalThread, CurrentMetrics::LocalThreadActive, CurrentMetrics::LocalThreadScheduled, 1, 1, 10);
             auto canceled = std::make_shared<std::atomic_bool>(false);
-            auto group = ThreadGroup::createForMergeMutate(getContext().context, [canceled] { return canceled->load(); });
+            auto group = ThreadGroup::createForMergeMutate(getContext().context, stopWorkOnCancellation([canceled] { return canceled->load(); }));
             std::weak_ptr<ThreadGroup> weak_group = group;
             auto runner = threadPoolCallbackRunnerUnsafe<bool>(pool, ThreadName::REMOTE_FS_READ_THREAD_POOL);
             std::promise<void> release_worker;

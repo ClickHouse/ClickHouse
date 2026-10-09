@@ -200,7 +200,7 @@ TransactionCommitOutcomeVariant MetadataStorageFromPlainObjectStorageTransaction
     return true;
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path, bool /*if_exists*/, bool /*should_remove_objects*/, RemoteIORequestIntent intent)
+void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::string & path, bool /*if_exists*/, bool /*should_remove_objects*/)
 {
     if (metadata_storage.object_metadata_cache)
     {
@@ -211,25 +211,25 @@ void MetadataStorageFromPlainObjectStorageTransaction::unlinkFile(const std::str
     }
 
     auto object_key = getKeyForPath(object_storage->getCommonKeyPrefix(), path);
-    metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()), intent);
+    metadata_storage.object_storage->removeObjectIfExists(StoredObject(object_key.serialize()));
     objects_to_remove.push_back(StoredObject(object_key.serialize()));
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path, RemoteIORequestIntent /* intent */)
+void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std::string & path)
 {
     if (metadata_storage.iterateDirectory(path)->isValid())
         throw Exception(ErrorCodes::CANNOT_RMDIR, "Cannot remove non-empty directory {} on {}", path, object_storage->getName());
 }
 
-void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects, RemoteIORequestIntent intent)
+void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & should_remove_objects)
 {
     for (auto it = metadata_storage.iterateDirectory(path); it->isValid(); it->next())
     {
         const auto & child = it->path();
         if (metadata_storage.existsFile(child))
-            unlinkFile(child, /*if_exists=*/true, /*should_remove_objects=*/true, intent);
+            unlinkFile(child, /*if_exists=*/true, /*should_remove_objects=*/true);
         else
-            removeRecursive(child, should_remove_objects, intent);
+            removeRecursive(child, should_remove_objects);
     }
 }
 

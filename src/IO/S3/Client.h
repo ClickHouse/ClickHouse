@@ -324,7 +324,7 @@ private:
     RequestResult processRequestResult(RequestResult && outcome) const;
 
     void updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws::Client::CoreErrors> error, Int64 attempt_no) const;
-    void slowDownAfterRetryableError(RemoteIORequestIntent intent) const;
+    void slowDownAfterRetryableError() const;
 
     void logConfiguration() const;
     String initial_endpoint;

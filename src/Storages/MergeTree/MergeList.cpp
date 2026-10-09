@@ -27,7 +27,7 @@ const MergeTreePartInfo MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION = {"al
 
 MergeListElement::MergeListElement(
     const StorageID & table_id_, FutureMergedMutatedPartPtr future_part, const ContextPtr & context,
-    std::function<bool()> operation_is_canceled_, ThreadGroupPtr foreground_group)
+    CancellationRequestPredicate operation_request_, ThreadGroupPtr foreground_group)
     : table_id{table_id_}
     , partition_id{future_part->part_info.getPartitionId()}
     , result_part_name{future_part->name}
@@ -38,7 +38,7 @@ MergeListElement::MergeListElement(
     , merge_type{future_part->merge_type}
     , merge_algorithm{MergeAlgorithm::Undecided}
     , num_parts_metric_increment(CurrentMetrics::MergeParts, num_parts)
-    , operation_is_canceled(std::move(operation_is_canceled_))
+    , operation_request(std::move(operation_request_))
 {
     auto format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     if (result_part_name != result_part_info.getPartNameV1())
@@ -79,22 +79,33 @@ MergeListElement::MergeListElement(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} source parts for mutation {}: {}", future_part->parts.size(),
                         result_part_info.getPartNameV1(), fmt::join(source_part_names, ", "));
 
-    thread_group = ThreadGroup::createForMergeMutate(context, getCancellationPredicate(), std::move(foreground_group));
+    thread_group = ThreadGroup::createForMergeMutate(context, getCancellationRequestPredicate(), std::move(foreground_group));
+}
+
+void MergeListElement::enableTTLCancellation(const ActionBlocker & blocker)
+{
+    chassert(!cancellation_state->ttl_enabled.load(std::memory_order_relaxed));
+    cancellation_state->ttl_blocker.emplace(blocker);
+    cancellation_state->ttl_enabled.store(true, std::memory_order_release);
+}
+
+CancellationRequestPredicate MergeListElement::getCancellationRequestPredicate() const
+{
+    return [state = cancellation_state, predicate = operation_request]
+    {
+        if (predicate)
+            state->request(predicate());
+        if (state->ttl_enabled.load(std::memory_order_acquire) && state->ttl_blocker->isCancelled())
+            state->request(CancellationRequest::StopWork);
+        return state->getRequest();
+    };
 }
 
 std::function<bool()> MergeListElement::getCancellationPredicate() const
 {
-    /// Once this attempt observes cancellation, keep it cancelled even if a temporary blocker is released.
-    return [canceled = is_cancelled, predicate = operation_is_canceled]
+    return [predicate = getCancellationRequestPredicate()]
     {
-        if (canceled->load(std::memory_order_relaxed))
-            return true;
-        if (predicate && predicate())
-        {
-            canceled->store(true, std::memory_order_relaxed);
-            return true;
-        }
-        return canceled->load(std::memory_order_relaxed);
+        return predicate() != CancellationRequest::None;
     };
 }
 

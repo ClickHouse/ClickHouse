@@ -1125,6 +1125,7 @@ bool IMergeTreeDataPart::mayStoreDataInCaches() const
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
+    ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIfNeeded");
 
     if (is_removed)
@@ -1184,7 +1185,7 @@ void IMergeTreeDataPart::removeIfNeeded()
             }
         }
 
-        remove(RemoteIORequestIntent::Cleanup);
+        remove();
 
         if (state == MergeTreeDataPartState::DeleteOnDestroy)
         {
@@ -3032,7 +3033,7 @@ std::pair<bool, NameSet> IMergeTreeDataPart::canRemovePart() const
     return storage.unlockSharedData(*this);
 }
 
-void IMergeTreeDataPart::remove(RemoteIORequestIntent intent)
+void IMergeTreeDataPart::remove()
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::remove");
     chassert(assertHasValidVersionMetadata());
@@ -3071,7 +3072,7 @@ void IMergeTreeDataPart::remove(RemoteIORequestIntent intent)
     }
 
     bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
-    getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log.load(), intent);
+    getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log.load());
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const

@@ -560,9 +560,9 @@ TEST_P(ThreadContextCacheHandoff, SharedSourceUsesCurrentOperation)
         auto original_canceled = std::make_shared<std::atomic_bool>(false);
         auto next_canceled = std::make_shared<std::atomic_bool>(false);
         auto original_group = ThreadGroup::createForMergeMutate(
-            getContext().context, [original_canceled] { return original_canceled->load(); });
+            getContext().context, stopWorkOnCancellation([original_canceled] { return original_canceled->load(); }));
         auto next_group = ThreadGroup::createForMergeMutate(
-            getContext().context, [next_canceled] { return next_canceled->load(); });
+            getContext().context, stopWorkOnCancellation([next_canceled] { return next_canceled->load(); }));
 
         size_t sources_created = 0;
         auto create_reader = [&]

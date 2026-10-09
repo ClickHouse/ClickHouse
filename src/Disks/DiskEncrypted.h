@@ -152,10 +152,10 @@ public:
         tx->commit();
     }
 
-    void removeDirectory(const String & path, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
+    void removeDirectory(const String & path) override
     {
         auto tx = createEncryptedTransaction();
-        tx->removeDirectory(path, intent);
+        tx->removeDirectory(path);
         tx->commit();
     }
 
@@ -173,17 +173,17 @@ public:
         tx->commit();
     }
 
-    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
+    void removeSharedRecursive(const String & path, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
         auto tx = createEncryptedTransaction();
-        tx->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only, intent);
+        tx->removeSharedRecursive(path, keep_all_batch_data, file_names_remove_metadata_only);
         tx->commit();
     }
 
-    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular) override
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only) override
     {
         auto tx = createEncryptedTransaction();
-        tx->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only, intent);
+        tx->removeSharedFiles(files, keep_all_batch_data, file_names_remove_metadata_only);
         tx->commit();
     }
 

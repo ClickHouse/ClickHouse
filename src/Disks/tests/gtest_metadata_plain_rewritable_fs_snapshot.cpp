@@ -4,6 +4,12 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
 
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
+#include <future>
 #include <gtest/gtest.h>
 
 #include <map>
@@ -16,94 +22,74 @@ namespace
 class RecordingRemovalStorage : public LocalObjectStorage
 {
 public:
-    RecordingRemovalStorage() : LocalObjectStorage(LocalObjectStorageSettings("intent_test", "/", true)) {}
+    RecordingRemovalStorage() : LocalObjectStorage(LocalObjectStorageSettings("phase_test", "/", true)) {}
 
-    std::map<std::string, RemoteIORequestIntent> requests;
+    std::map<std::string, ExecutionPhase> requests;
 
-    void removeObjectsIfExist(const StoredObjects & objects, StoredObjects *, RemoteIORequestIntent intent) override
+    void removeObjectsIfExist(const StoredObjects & objects, StoredObjects *) override
     {
+        CurrentThread::checkIfNotCancelled();
         for (const auto & object : objects)
-            EXPECT_TRUE(requests.emplace(object.remote_path, intent).second);
+            EXPECT_TRUE(requests.emplace(object.remote_path, CurrentThread::getExecutionPhase()).second);
     }
 };
 }
 
-TEST(FsSnapshot, ConcurrentLastLinkDeletionKeepsPublishingOperationIntent)
+TEST(FsSnapshot, ConcurrentLastLinkDeletionUsesPublishingExecutionPhase)
 {
-    for (const auto first_intent : {RemoteIORequestIntent::Regular, RemoteIORequestIntent::Cleanup})
+    std::async(std::launch::async, []
     {
-        FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
-        std::unordered_map<std::string, DirectoryRemoteInfo> directories;
-        for (const auto * directory : {"a", "b"})
-            directories[directory] = {.remote_path = directory, .etag = "", .files = {
-                {"regular", {1, 0, "regular_blob"}}, {"cleanup", {1, 0, "cleanup_blob"}}}, .has_explicit_file_list = true};
-        fs.applyLayout(std::move(directories));
+        ThreadStatus status;
+        auto state = std::make_shared<OperationCancellationState>();
+        auto group = ThreadGroup::createForMergeMutate(getContext().context, [state] { return state->getRequest(); });
+        ThreadGroupSwitcher attached(group, ThreadName::MERGE_MUTATE);
+        for (const auto final_phase : {ExecutionPhase::Work, ExecutionPhase::Cleanup})
+        {
+            FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
+            std::unordered_map<std::string, DirectoryRemoteInfo> directories;
+            for (const auto * directory : {"a", "b"})
+                directories[directory] = {.remote_path = directory, .etag = "", .files = {
+                    {"data", {1, 0, "shared_blob"}}}, .has_explicit_file_list = true};
+            fs.applyLayout(std::move(directories));
 
-        auto first = fs.takeReadWriteSnapshot();
-        auto second = fs.takeReadWriteSnapshot();
-        first->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
-        second->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
-        first->removeFile("a/regular");
-        first->removeFile("a/cleanup");
-        first->removeBlobLink("regular_blob", first_intent);
-        first->removeBlobLink("cleanup_blob", first_intent);
-        second->removeFile("b/regular");
-        second->removeFile("b/cleanup");
-        second->removeBlobLink("regular_blob", RemoteIORequestIntent::Regular);
-        second->removeBlobLink("cleanup_blob", RemoteIORequestIntent::Cleanup);
+            auto first = fs.takeReadWriteSnapshot();
+            auto second = fs.takeReadWriteSnapshot();
+            first->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+            second->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
+            first->removeFile("a/data");
+            first->removeBlobLink("shared_blob");
+            second->removeFile("b/data");
+            second->removeBlobLink("shared_blob");
 
-        auto storage = std::make_shared<RecordingRemovalStorage>();
-        auto layout = std::make_shared<PlainRewritableLayout>("prefix/");
-        StoredObjects removed;
-        MetadataStorageFromPlainObjectStoragePublishOperation first_publish(first, fs, storage, layout, removed);
-        first_publish.execute();
-        first_publish.finalize();
-        EXPECT_TRUE(storage->requests.empty());
-        MetadataStorageFromPlainObjectStoragePublishOperation second_publish(second, fs, storage, layout, removed);
-        second_publish.execute();
-        second_publish.finalize();
-
-        ASSERT_EQ(storage->requests.size(), 2);
-        EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("regular_blob")), RemoteIORequestIntent::Regular);
-        EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("cleanup_blob")), RemoteIORequestIntent::Cleanup);
-        EXPECT_EQ(removed.size(), 2);
-    }
-}
-
-TEST(FsSnapshot, ReplayedJournalUsesLastRemovalIntentPerBlob)
-{
-    FsMetadata fs(CurrentMetrics::end(), CurrentMetrics::end());
-    std::unordered_map<std::string, DirectoryRemoteInfo> directories;
-    for (const auto * directory : {"a", "b"})
-        directories[directory] = {.remote_path = directory, .etag = "", .files = {
-            {"regular", {1, 0, "regular_blob"}}, {"cleanup", {1, 0, "cleanup_blob"}}}, .has_explicit_file_list = true};
-    fs.applyLayout(std::move(directories));
-
-    auto snapshot = fs.takeReadWriteSnapshot();
-    snapshot->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
-    snapshot->removeFile("a/regular");
-    snapshot->removeBlobLink("regular_blob", RemoteIORequestIntent::Cleanup);
-    snapshot->removeFile("b/regular");
-    snapshot->removeBlobLink("regular_blob", RemoteIORequestIntent::Regular);
-    snapshot->removeFile("a/cleanup");
-    snapshot->removeBlobLink("cleanup_blob", RemoteIORequestIntent::Regular);
-    snapshot->removeFile("b/cleanup");
-    snapshot->removeBlobLink("cleanup_blob", RemoteIORequestIntent::Cleanup);
-
-    auto replayed = fs.takeReadWriteSnapshot();
-    replayed->resetToRoot(fs.takeReadOnlySnapshot()->getRoot());
-    replayed->replay(snapshot->getJournal());
-    auto storage = std::make_shared<RecordingRemovalStorage>();
-    auto layout = std::make_shared<PlainRewritableLayout>("prefix/");
-    StoredObjects removed;
-    MetadataStorageFromPlainObjectStoragePublishOperation publish(replayed, fs, storage, layout, removed);
-    publish.execute();
-    publish.finalize();
-
-    ASSERT_EQ(storage->requests.size(), 2);
-    EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("regular_blob")), RemoteIORequestIntent::Regular);
-    EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("cleanup_blob")), RemoteIORequestIntent::Cleanup);
-    EXPECT_EQ(removed.size(), 2);
+            auto storage = std::make_shared<RecordingRemovalStorage>();
+            auto layout = std::make_shared<PlainRewritableLayout>("prefix/");
+            StoredObjects removed;
+            MetadataStorageFromPlainObjectStoragePublishOperation first_publish(first, fs, storage, layout, removed);
+            {
+                ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
+                first_publish.execute();
+                first_publish.finalize();
+            }
+            EXPECT_TRUE(storage->requests.empty());
+            state->request(CancellationRequest::StopWork);
+            MetadataStorageFromPlainObjectStoragePublishOperation second_publish(second, fs, storage, layout, removed);
+            ExecutionPhaseScope phase(final_phase);
+            second_publish.execute();
+            if (final_phase == ExecutionPhase::Work)
+            {
+                EXPECT_THROW(second_publish.finalize(), Exception);
+                EXPECT_TRUE(storage->requests.empty());
+                EXPECT_TRUE(removed.empty());
+            }
+            else
+            {
+                second_publish.finalize();
+                ASSERT_EQ(storage->requests.size(), 1);
+                EXPECT_EQ(storage->requests.at(layout->constructBlobObjectKey("shared_blob")), ExecutionPhase::Cleanup);
+                EXPECT_EQ(removed.size(), 1);
+            }
+        }
+    }).get();
 }
 
 TEST(FsSnapshot, BranchesRemainIndependent)

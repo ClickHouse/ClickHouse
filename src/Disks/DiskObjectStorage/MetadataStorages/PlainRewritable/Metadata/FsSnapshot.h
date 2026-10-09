@@ -2,7 +2,6 @@
 
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsDirectoryEntries.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/NormalizedPath.h>
-#include <IO/RemoteIORequestIntent.h>
 
 #include <Common/CurrentMetrics.h>
 
@@ -101,7 +100,6 @@ namespace FsEdits
     struct RemoveBlobLink
     {
         std::string blob_key;
-        RemoteIORequestIntent intent = RemoteIORequestIntent::Regular;
     };
 }
 
@@ -145,7 +143,7 @@ public:
     /// The number of files sharing the blob.
     uint32_t getBlobLinkCount(const std::string & blob_key) const;
     void addBlobLink(const std::string & blob_key);
-    void removeBlobLink(const std::string & blob_key, RemoteIORequestIntent intent = RemoteIORequestIntent::Regular);
+    void removeBlobLink(const std::string & blob_key);
 
     /// Directory Read Methods
 

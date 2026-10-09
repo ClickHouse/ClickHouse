@@ -1,6 +1,5 @@
 #pragma once
 
-#include <IO/RemoteIORequestIntent.h>
 
 #include <Common/UniqueLock.h>
 
@@ -243,7 +242,7 @@ public:
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
 
-    void remove(RemoteIORequestIntent intent = RemoteIORequestIntent::Regular);
+    void remove();
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;

@@ -1,3 +1,4 @@
+#include <Common/OperationCancellation.h>
 #include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
@@ -190,23 +191,23 @@ void DiskObjectStorageTransaction::removeSharedFile(const std::string & path, bo
 }
 
 void DiskObjectStorageTransaction::removeSharedRecursive(
-    const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent)
+    const std::string & path, bool keep_all_shared_data, const NameSet & file_names_remove_metadata_only)
 {
     if (!keep_all_shared_data && file_names_remove_metadata_only.empty())
     {
-        addOperation([path, intent](MetadataTransactionPtr tx)
+        addOperation([path](MetadataTransactionPtr tx)
         {
-            tx->removeRecursive(path, /*should_remove_objects=*/nullptr, intent);
+            tx->removeRecursive(path, /*should_remove_objects=*/nullptr);
         });
     }
     else
     {
-        addOperation([path, keep_all_shared_data, file_names_remove_metadata_only, intent](MetadataTransactionPtr tx)
+        addOperation([path, keep_all_shared_data, file_names_remove_metadata_only](MetadataTransactionPtr tx)
         {
             tx->removeRecursive(path, /*should_remove_objects=*/[keep_all_shared_data, file_names_remove_metadata_only](const std::string & relative_path)
             {
                 return !keep_all_shared_data && !file_names_remove_metadata_only.contains(relative_path);
-            }, intent);
+            });
         });
     }
 }
@@ -219,11 +220,11 @@ void DiskObjectStorageTransaction::removeSharedFileIfExists(const std::string & 
     });
 }
 
-void DiskObjectStorageTransaction::removeDirectory(const std::string & path, RemoteIORequestIntent intent)
+void DiskObjectStorageTransaction::removeDirectory(const std::string & path)
 {
-    addOperation([path, intent](MetadataTransactionPtr tx)
+    addOperation([path](MetadataTransactionPtr tx)
     {
-        tx->removeDirectory(path, intent);
+        tx->removeDirectory(path);
     });
 }
 
@@ -243,14 +244,14 @@ void DiskObjectStorageTransaction::removeFileIfExists(const std::string & path)
     });
 }
 
-void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only, RemoteIORequestIntent intent)
+void DiskObjectStorageTransaction::removeSharedFiles(const RemoveBatchRequest & files, bool keep_all_batch_data, const NameSet & file_names_remove_metadata_only)
 {
     for (const auto & [path, if_exists] : files)
     {
         const bool should_remove_objects = !keep_all_batch_data && !file_names_remove_metadata_only.contains(fs::path(path).filename());
-        addOperation([path, if_exists, should_remove_objects, intent](MetadataTransactionPtr tx)
+        addOperation([path, if_exists, should_remove_objects](MetadataTransactionPtr tx)
         {
-            tx->unlinkFile(path, if_exists, should_remove_objects, intent);
+            tx->unlinkFile(path, if_exists, should_remove_objects);
         });
     }
 }
@@ -727,13 +728,12 @@ TransactionCommitOutcomeVariant DiskObjectStorageTransaction::tryCommit(const Tr
 
 void DiskObjectStorageTransaction::undo() noexcept
 {
-    /// Rollback deletes already-written blobs with configured retries even after cancellation.
-    /// Cleanup intent applies only to these deletes; regular reads and writes remain cancelled.
+    ExecutionPhaseScope cleanup(ExecutionPhase::Cleanup);
     for (const auto & [location, blobs] : written_blobs)
     {
         try
         {
-            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs, nullptr, RemoteIORequestIntent::Cleanup);
+            object_storages->takePointingTo(location)->removeObjectsIfExist(blobs, nullptr);
         }
         catch (...)
         {

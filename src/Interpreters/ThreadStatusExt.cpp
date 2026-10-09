@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <mutex>
 #include <Common/OSThreadNiceValue.h>
@@ -274,7 +275,7 @@ ThreadGroupPtr ThreadGroup::create(ContextPtr context, Int32 os_threads_nice_val
 }
 
 ThreadGroupPtr ThreadGroup::createForMergeMutate(
-    ContextPtr storage_context, QueryIsCanceledPredicate operation_is_canceled, ThreadGroupPtr foreground_group)
+    ContextPtr storage_context, CancellationRequestPredicate operation_request, ThreadGroupPtr foreground_group)
 {
     const Int32 os_threads_nice_value = storage_context->getServerSettings()[ServerSetting::os_threads_nice_value_merge_mutate];
     auto group = create(storage_context, os_threads_nice_value);
@@ -288,23 +289,14 @@ ThreadGroupPtr ThreadGroup::createForMergeMutate(
         std::lock_guard lock(group->mutex);
         group->shared_data = std::move(parent_shared_data);
     }
-    if (operation_is_canceled)
+    if (operation_request)
     {
         std::lock_guard lock(group->mutex);
-        group->shared_data.query_is_canceled_predicate
-            = [query_is_canceled = std::move(group->shared_data.query_is_canceled_predicate), operation_is_canceled]
+        auto inherited = std::move(group->shared_data.operation_cancellation_request);
+        group->shared_data.operation_cancellation_request = [inherited = std::move(inherited), operation_request = std::move(operation_request)]
         {
-            return operation_is_canceled() || (query_is_canceled && query_is_canceled());
-        };
-        group->shared_data.throw_if_query_canceled_predicate
-            = [throw_if_query_canceled = std::move(group->shared_data.throw_if_query_canceled_predicate),
-               is_canceled = std::move(operation_is_canceled)]
-        {
-            /// Preserve a query's original cancellation exception when available.
-            if (throw_if_query_canceled)
-                throw_if_query_canceled();
-            if (is_canceled())
-                throw Exception(ErrorCodes::ABORTED, "Cancelled merging or mutating parts");
+            auto request = operation_request();
+            return inherited ? std::max(request, inherited()) : request;
         };
     }
     return group;
@@ -454,6 +446,7 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     if (boundToOSThread())
         thread_group_->linkThread(thread_id);
     thread_group = thread_group_;
+    execution_phase = ExecutionPhase::Work;
     try
     {
         /// Lives as long as the thread, not the query that happened to attach first, so it is created before the
@@ -527,6 +520,7 @@ void ThreadStatus::detachFromGroup()
     clearQueryId();
     query_context.reset();
     local_data = {};
+    execution_phase = ExecutionPhase::Work;
     fatal_error_callback = {};
 
     memory_tracker.reset();

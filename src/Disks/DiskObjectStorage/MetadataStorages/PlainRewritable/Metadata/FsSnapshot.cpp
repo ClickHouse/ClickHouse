@@ -352,11 +352,11 @@ void FsSnapshot::addBlobLink(const std::string & blob_key)
     record(FsEdits::AddBlobLink{blob_key});
 }
 
-void FsSnapshot::removeBlobLink(const std::string & blob_key, RemoteIORequestIntent intent)
+void FsSnapshot::removeBlobLink(const std::string & blob_key)
 {
     UniqueLock lock(mutex);
     --blob_link_deltas[blob_key];
-    record(FsEdits::RemoveBlobLink{blob_key, intent});
+    record(FsEdits::RemoveBlobLink{blob_key});
 }
 
 std::vector<std::string> FsSnapshot::listDirectory(const std::string & path) const
@@ -519,7 +519,7 @@ void FsSnapshot::replay(const FsJournal & edits)
             else if constexpr (std::is_same_v<Edit, FsEdits::AddBlobLink>)
                 addBlobLink(concrete_edit.blob_key);
             else if constexpr (std::is_same_v<Edit, FsEdits::RemoveBlobLink>)
-                removeBlobLink(concrete_edit.blob_key, concrete_edit.intent);
+                removeBlobLink(concrete_edit.blob_key);
             else
                 static_assert(false, "Unhandled edit type");
         }, edit);

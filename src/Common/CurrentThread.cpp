@@ -122,6 +122,16 @@ MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
     return getGlobalMemoryPressureMonitor();
 }
 
+CancellationRequest CurrentThread::getCancellationRequest()
+{
+    return current_thread ? current_thread->getCancellationRequest() : CancellationRequest::None;
+}
+
+ExecutionPhase CurrentThread::getExecutionPhase() noexcept
+{
+    return current_thread && current_thread->getThreadGroup() ? current_thread->getExecutionPhase() : ExecutionPhase::Work;
+}
+
 void CurrentThread::checkIfNotCancelled()
 {
     if (unlikely(!current_thread))
