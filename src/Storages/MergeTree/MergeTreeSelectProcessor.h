@@ -185,6 +185,10 @@ private:
     const MergeTreeReaderSettings reader_settings;
     const MergeTreeReadTask::BlockSizeParams block_size_params;
 
+    /// Whether the PREWHERE holds the top-K `__topKFilter` as a conjunct and its query condition cache entry is
+    /// salted with the top-K plan, see `MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere`.
+    const bool prewhere_filters_by_top_k_threshold;
+
     /// Cache key and human-readable condition under which granules fully filtered out by PREWHERE
     /// are recorded in the query condition cache. Computed once at construction from the hash of
     /// the PREWHERE condition if it is deterministic (or only contains `__topKFilter` of a TopK read
