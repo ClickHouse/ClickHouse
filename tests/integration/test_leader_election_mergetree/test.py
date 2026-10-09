@@ -4662,6 +4662,18 @@ def test_backup_rejected_on_follower(started_cluster):
             f"Expected the follower to reject BACKUP with TABLE_IS_READ_ONLY, got: {error}"
         )
 
+        # `FREEZE` / `UNFREEZE` are not supported on `plain_rewritable`, and on a follower they are
+        # rejected with the same `SUPPORT_IS_DISABLED` as on the leader: the check of the disk in
+        # `checkAlterPartitionIsPossible` runs before the leadership check, and nothing is written.
+        for query in (
+            f"ALTER TABLE {table} FREEZE WITH NAME 'test_backup_on_follower'",
+            f"ALTER TABLE {table} UNFREEZE WITH NAME 'test_backup_on_follower'",
+        ):
+            error = follower.query_and_get_error(query)
+            assert "SUPPORT_IS_DISABLED" in error and "is not supported for disk" in error, (
+                f"Expected the follower to reject `{query}` with SUPPORT_IS_DISABLED, got: {error}"
+            )
+
         leader.query(f"BACKUP TABLE {table} TO {backup_destination}")
         # Same pattern as `test_restore_fenced_to_admission_epoch`: the destination is pre-created and
         # its leadership awaited, so that the restore is admitted. It holds the probe rows of
