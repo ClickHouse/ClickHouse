@@ -6,31 +6,41 @@
 -- and the depth reaches the consumers that walk the parsed document.
 SET allow_simdjson = 0;
 
--- Nested objects: traversal of the parsed object when inserting into a JSON column.
-SELECT CAST(concat(repeat('{"x":', 300000), '0', repeat('}', 300000)) AS JSON) FORMAT Null; -- { serverError INCORRECT_DATA }
+-- Each case must have a single possible rejector: which of the limit and the checkStackSize
+-- backstop comes first depends on the build, since frame sizes and the share of the stack the
+-- backstop allows differ.
 
--- Nested arrays: type inference for a value of a dynamic path.
-SELECT CAST(concat('{"a":', repeat('[', 300000), repeat(']', 300000), '}') AS JSON) FORMAT Null; -- { serverError INCORRECT_DATA }
-
--- The same nesting with input_format_json_max_depth raised far above it, so the explicit limit does
--- not short-circuit and the checkStackSize backstop has to reject it (and does so in any build).
+-- Raising the limit above any reachable depth leaves the backstop as the only rejector. Nested
+-- objects go through the object traversal, nested arrays through the type inference of a dynamic
+-- path value.
+SELECT CAST(concat(repeat('{"x":', 300000), '0', repeat('}', 300000)) AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 100000000; -- { serverError TOO_DEEP_RECURSION }
 SELECT CAST(concat('{"a":', repeat('[', 300000), repeat(']', 300000), '}') AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 100000000; -- { serverError TOO_DEEP_RECURSION }
 
--- Writing a parsed document back as a string (JSONExtractRaw, JSONExtract to String, shared data,
--- error messages) is not bounded by input_format_json_max_depth, only by the backstop.
+-- Rendering a document back as raw text is not bounded by the limit, only by the backstop.
 SELECT JSONExtractRaw(concat(repeat('[', 300000), repeat(']', 300000))) FORMAT Null; -- { serverError TOO_DEEP_RECURSION }
-SELECT JSONExtract(concat(repeat('[', 300000), repeat(']', 300000)), 'String') FORMAT Null; -- { serverError TOO_DEEP_RECURSION }
 
--- The limit governs in both directions. The depths stay shallow because a document that survives
--- parsing is walked again by consumers whose recursion this setting does not bound.
+-- Extracting it as a String is bounded by the limit, and a value that exceeds it is a failure to
+-- extract, which yields the default like any other.
+SELECT length(JSONExtract(concat(repeat('[', 300000), repeat(']', 300000)), 'String'));
+
+-- The limit governs in both directions. These depths stay shallow: a document that survives parsing
+-- is walked again by consumers whose recursion this setting does not bound.
 SELECT CAST(concat(repeat('{"x":', 50), '0', repeat('}', 50)) AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 20; -- { serverError INCORRECT_DATA }
 SELECT CAST(concat('{"a":', repeat('[', 50), repeat(']', 50), '}') AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 20; -- { serverError INCORRECT_DATA }
 SELECT CAST(concat(repeat('{"x":', 50), '0', repeat('}', 50)) AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 100;
 SELECT CAST(concat('{"a":', repeat('[', 50), repeat(']', 50), '}') AS JSON) FORMAT Null SETTINGS input_format_json_max_depth = 100;
 
--- A too-deep row is a parse error, so it can be skipped like any other malformed row.
-SELECT count() FROM format(JSONEachRow, 'x JSON', concat('{"x":', repeat('{"a":', 2000), '0', repeat('}', 2000), '}\n{"x":{"a":42}}'))
-SETTINGS input_format_allow_errors_num = 1;
+-- A value written as text into a String column is bounded by the limit as well, and exceeding it is
+-- reported the same way rather than escaping as an exception.
+SELECT CAST(concat('{"a":', repeat('[', 50), repeat(']', 50), '}') AS JSON(a String)) FORMAT Null SETTINGS input_format_json_max_depth = 20; -- { serverError INCORRECT_DATA }
+SELECT CAST(concat('{"a":', repeat('[', 50), repeat(']', 50), '}') AS JSON(a LowCardinality(String))) FORMAT Null SETTINGS input_format_json_max_depth = 20; -- { serverError INCORRECT_DATA }
+
+-- An element quoted in an error message is rendered shallowly, so the message stays small.
+SELECT CAST(concat('{"a":', repeat('[', 200), '1', repeat(']', 200), '}') AS JSON(a UInt32)) FORMAT Null; -- { serverError INCORRECT_DATA }
+
+-- Exceeding the limit is a parse error, so a too-deep row can be skipped like any other malformed row.
+SELECT count() FROM format(JSONEachRow, 'x JSON', concat('{"x":', repeat('{"a":', 50), '0', repeat('}', 50), '}\n{"x":{"a":42}}'))
+SETTINGS input_format_json_max_depth = 20, input_format_allow_errors_num = 1;
 
 -- Shallow documents must still be parsed normally.
 SELECT CAST('{"a" : {"b" : [1, 2, 3]}, "c" : "42"}' AS JSON);
