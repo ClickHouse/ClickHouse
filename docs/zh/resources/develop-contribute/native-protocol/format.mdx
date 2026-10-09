@@ -148,14 +148,14 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
 [VarUInt: 0]
 ```
 
-### 列的线协议布局 {#column-wire-layout}
+### 列的传输格式布局 {#column-wire-layout}
 
-在一个 Block 中，Column 会出现 `num_columns` 次。
+在一个 数据块 中，Column 会出现 `num_columns` 次。
 
 | # | 字段                               | 类型                 | 条件                                 | 描述                                                                                                                                                        |
 | - | -------------------------------- | ------------------ | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1 | name                             | String             | 始终                                 | 列名                                                                                                                                                        |
-| 2 | type                             | String *或* 二进制类型编码 | 始终                                 | 默认情况下为 ClickHouse 类型字符串 (例如 `"UInt64"`、`"Array(String)"`) ；当 `output_format_native_encode_types_in_binary_format = 1` 时为二进制类型编码 (参见下方说明)                  |
+| 2 | type                             | String *或* 二进制类型编码 | 始终                                 | 默认情况下为 ClickHouse 类型字符串 (例如 `"UInt64"`、`"Array(String)"`) ；当 `output_format_native_encode_types_in_binary_format = 1` 时为二进制类型编码，但次级查询除外 (参见下方说明)          |
 | 3 | has&#95;custom&#95;serialization | UInt8              | 特性 `CUSTOM_SERIALIZATION` (v54454) | `0` = 默认，`1` = 自定义 (其后紧跟 kind&#95;stack)                                                                                                                  |
 | 4 | kind&#95;stack                   | bytes              | 当字段 3 = `1` 时                      | 一个 UInt8 枚举字节 (见下文) ，用于描述非默认序列化方式 (如稀疏序列化等) 。若取值为 `COMBINATION`，其后还跟随一个 VarUInt 计数，以及与该计数相同数量的附加 kind 字节。对于 `Tuple` (以及其他带有元素级序列化信息的复合类型) ，其载荷为递归结构——见下文。 |
 | 5 | data                             | bytes              | 始终                                 | 全部 `num_rows` 行的列值。各类型的布局参见[数据类型](#data-types)。稀疏列见下文。                                                                                                    |
@@ -166,9 +166,11 @@ BlockInfo 由一系列字段组成，每个字段前面都有一个 VarUInt 类�
   **二进制类型编码**
 
   `type` 字段仅在默认模式下才是文本形式的 `String`。若启用查询设置 `output_format_native_encode_types_in_binary_format = 1`，该字段将改为**二进制类型编码**——即[数据类型二进制编码](/zh/reference/data-types/data-types-binary-encoding)中所述的基于标签的编码——同时，展平后的 `Dynamic` 类型列表中的各类型名称也采用同样的二进制编码。如果解码器总是将字段 2 按带长度前缀的字符串读取，就会把第一个二进制类型标签误当作字符串长度，导致数据流失去同步，因此解码器必须知道数据流采用的是哪种模式。
+
+  对于 `query_kind = SECONDARY_QUERY` 的查询 (由另一台服务器针对 `remote`、`Distributed` 或并行副本发送，或由 `clickhouse-client --query_kind secondary_query` 发送) ，通信双方在处理该查询的数据块时都会忽略 `output_format_native_encode_types_in_binary_format` 和 `input_format_native_decode_types_in_binary_format`，双向传输的均为文本形式的类型名称。早于该规则的服务器版本则会像对待其他查询一样，对次级查询应用这些设置。
 </Info>
 
-<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="解码器根据类型描述路由到相应的编码族" width="1568" height="854" loading="lazy" />
+<img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="解码器根据类型描述路由到相应的编码家族" width="1568" height="854" loading="lazy" />
 
 #### kind_stack 与稀疏编码 {#kind-stack-and-sparse-encoding}
 
@@ -1275,7 +1277,7 @@ ClickHouse 的 `JSON` 类型有多种传输编码 (参见[序列化版本参考]
 `Dynamic` 有四种编码：`V1 = 1`、`V2 = 2`、`FLATTENED = 3`、`V3 = 4`。服务器输出哪一种编码，取决于所用通道以及查询设置：
 
 * 通过 `clickhouse-client` 和 HTTP `FORMAT Native` 时，写入器的修订版本为 `0` (除非通过 `client_protocol_version` 调高) ，因此默认使用 **V1**。
-* 通过原生 TCP 协议并使用协商后的修订版本时，默认使用 **V2**。写入器不启用统计信息，因此默认的 `V2` 载荷不包含按变体划分的统计信息：类型列表之后紧跟嵌套的 `Variant` 前缀和数据。 (按变体划分的统计信息属于 MergeTree 磁盘存储层面的内容，不属于 Native 传输格式。)
+* 通过原生 TCP 协议并使用协商后的修订版本时，默认使用 **V2**。`Native` 写入器不启用统计信息，因此默认的 `V2` 载荷不包含按变体划分的统计信息：类型列表之后紧跟嵌套的 `Variant` 前缀和数据。 (按变体划分的统计信息属于 MergeTree 磁盘存储层面的内容，不属于 Native 传输格式。)
 * 查询设置 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` 会覆盖上述两种情况，无论修订版本为何，均输出 **FLATTENED (版本 3)&#x20;**。
 
 <Info>
@@ -1291,7 +1293,8 @@ ClickHouse 的 `JSON` 类型有多种传输编码 (参见[序列化版本参考]
   [8 bytes:  UInt64 LE version = 3]                ← state prefix, repeated at the start of every non-empty block
   [VarUInt num_types]                              ← number of runtime types
   [num_types × type]                               ← type names, in wire order; each a String, or a binary
-                                                     type encoding when output_format_native_encode_types_in_binary_format = 1
+                                                     type encoding when output_format_native_encode_types_in_binary_format = 1,
+                                                     except for a secondary query (see the type field note)
   [per type: its own state prefix]                 ← empty for leaf types; + indexes-type prefix (empty, integer)
   [num_rows × discriminator]                       ← width by num_types (UInt8 if ≤ 255, else UInt16/32/64);
                                                      NULL discriminator = num_types (one past the last type)
@@ -1299,7 +1302,7 @@ ClickHouse 的 `JSON` 类型有多种传输编码 (参见[序列化版本参考]
     [values for the rows whose discriminator == i] ← dense encoding in type i
 ```
 
-判别值的宽度取能够索引 `num_types` 种类型外加一个 NULL 槽位的最小无符号整数类型：当 `num_types ≤ 255` 时为 `UInt8`，更大时依次为 `UInt16`、`UInt32`、`UInt64`。NULL 对应的判别值就是 `num_types` 本身，这一点与 `Variant` 不同，后者的 NULL 固定为 `255`。重建方式与 `Variant` 相同，同样采用稠密遍历：为每种类型维护一个计数器，对于判别值为 `d` (≠ `num_types`) 的行 `r`，从类型 `d` 的数据段中取第 `counter[d]` 个值。
+判别值的宽度取能够索引 `num_types` 种类型外加一个 NULL 槽位的最小无符号整数类型：当 `num_types ≤ 255` 时为 `UInt8`，更大时依次为 `UInt16`、`UInt32`、`UInt64`。NULL 对应的判别值就是 `num_types` 本身，这一点与 `Variant` 不同，后者的 NULL 固定为 `255`。重建方式与 `Variant` 相同，同样采用紧凑遍历：为每种类型维护一个计数器，对于判别值为 `d` (≠ `num_types`) 的行 `r`，从类型 `d` 的连续序列中取第 `counter[d]` 个值。
 
 状态前缀 (版本号 + 类型列表) 在每个行数 &gt; 0 的块开头读取；请求头 块和空块不输出任何内容。
 

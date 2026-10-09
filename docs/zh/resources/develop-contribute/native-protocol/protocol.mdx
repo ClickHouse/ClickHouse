@@ -1069,12 +1069,12 @@ tcp_keep_alive_timeout (290s)
 
 * `max_threads` — 查询执行的并行度。
 * `max_memory_usage` — 单个查询的内存上限。
-* `max_block_size`、`preferred_block_size_bytes` — 查询处理过程中的内部块大小；传输块不受这些设置影响。
+* `max_block_size`、`preferred_block_size_bytes` — 查询处理过程中的内部数据块大小；传输数据块不受这些设置影响。
 * `compile_expressions` — JIT 编译；仅涉及 CPU。
 * `async_insert_max_data_size` — 服务器端队列缓冲区。
-* 所有 `input_format_*` 和 `output_format_*` 设置 (`input_format_native_*` / `output_format_native_*` 家族**除外**) — 非 `native` 设置用于选择或调优其他格式 (例如通过 HTTP 使用的格式) ，不会改变原生协议的 `Data` 块。
+* 所有 `input_format_*` 和 `output_format_*` 设置 (`input_format_native_*` / `output_format_native_*` 家族**除外**) — 非 `native` 设置用于选择或调优其他格式 (例如通过 HTTP 使用的格式) ，不会改变原生协议的 `Data` 数据块。
 
-`*_native_*` 设置则是例外：它们会改变原生 TCP `Data` 块内部的字节，因此协议实现必须将其纳入考虑。`output_format_native_encode_types_in_binary_format` 会将列的 `type` 字段从文本字符串改为二进制类型编码；`output_format_native_write_json_as_string` 会将 `JSON` 列以 `String` 形式输出；`output_format_native_use_flattened_dynamic_and_json_serialization` 则会选用 FLATTENED 的 `Dynamic`/`JSON` 布局。由于这些设置影响的是块请求正文而非数据包封装，因此在 [Native Format](/zh/resources/develop-contribute/native-protocol/format) 规范中加以说明，请参阅[列的线协议布局](/zh/resources/develop-contribute/native-protocol/format#column-wire-layout)和[版本化类型](/zh/resources/develop-contribute/native-protocol/format#versioned-types)。
+`*_native_*` 设置则是例外：它们会改变原生 TCP `Data` 数据块内部的字节，因此协议实现必须将其纳入考虑。`output_format_native_encode_types_in_binary_format` 会将列的 `type` 字段从文本字符串改为二进制类型编码 (次级查询除外，请参阅[列的线协议布局](/zh/resources/develop-contribute/native-protocol/format#column-wire-layout)) ；`output_format_native_write_json_as_string` 会将 `JSON` 列以 `String` 形式输出；`output_format_native_use_flattened_dynamic_and_json_serialization` 则会选用 FLATTENED 的 `Dynamic`/`JSON` 布局。由于这些设置影响的是数据块请求正文而非数据包封装，因此在 [Native Format](/zh/resources/develop-contribute/native-protocol/format) 规范中加以说明，请参阅[列的线协议布局](/zh/resources/develop-contribute/native-protocol/format#column-wire-layout)和[版本化类型](/zh/resources/develop-contribute/native-protocol/format#versioned-types)。
 
 ## 术语表 {#glossary}
 

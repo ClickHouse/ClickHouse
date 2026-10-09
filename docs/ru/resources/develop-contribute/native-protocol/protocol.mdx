@@ -1063,7 +1063,7 @@ tcp_keep_alive_timeout (290s)
 | --------------------------------------- | --------------------- | --------------------- | ----------------------------------------------------------------------------------------------------- |
 | `opentelemetry_start_trace_probability` | 0.0                   | вероятность от 0 до 1 | Вероятность (на стороне сервера) того, что к телеметрии ответа будет добавлен контекст OpenTelemetry. |
 
-### Настройки вне области рассмотрения {#settings-out-of-scope}
+### Настройки, не относящиеся к протоколу {#settings-out-of-scope}
 
 Эти настройки иногда ошибочно принимают за настройки уровня протокола, однако они управляют выполнением SQL, хранилищем или использованием CPU, а не форматом передачи данных. Реализации протокола не нужно обрабатывать их особым образом.
 
@@ -1074,7 +1074,7 @@ tcp_keep_alive_timeout (290s)
 * `async_insert_max_data_size` — буфер очереди на стороне сервера.
 * Все настройки `input_format_*` и `output_format_*`, **за исключением** семейства `input_format_native_*` / `output_format_native_*`: остальные (не `native`) настройки выбирают или настраивают другие форматы (например, при работе через HTTP) и не влияют на блоки `Data` собственного протокола.
 
-Исключение составляют настройки `*_native_*`: они меняют байты внутри блоков `Data`, передаваемых по нативному TCP, поэтому реализация протокола должна их учитывать. `output_format_native_encode_types_in_binary_format` заменяет текстовую строку в поле `type` столбца на бинарное кодирование типа, `output_format_native_write_json_as_string` передаёт `JSON`-столбцы как `String`, а `output_format_native_use_flattened_dynamic_and_json_serialization` включает структуру FLATTENED для `Dynamic`/`JSON`. Поскольку эти настройки влияют на тело блока, а не на оболочку пакета, они описаны в спецификации [формата Native](/ru/resources/develop-contribute/native-protocol/format) — см. разделы [формат передачи данных столбца](/ru/resources/develop-contribute/native-protocol/format#column-wire-layout) и [версионируемые типы](/ru/resources/develop-contribute/native-protocol/format#versioned-types).
+Исключение составляют настройки `*_native_*`: они меняют байты внутри блоков `Data`, передаваемых по нативному TCP, поэтому реализация протокола должна их учитывать. `output_format_native_encode_types_in_binary_format` заменяет текстовую строку в поле `type` столбца на бинарное кодирование типа (кроме вторичного запроса, см. [формат передачи данных столбца](/ru/resources/develop-contribute/native-protocol/format#column-wire-layout)), `output_format_native_write_json_as_string` передаёт `JSON`-столбцы как `String`, а `output_format_native_use_flattened_dynamic_and_json_serialization` включает структуру FLATTENED для `Dynamic`/`JSON`. Поскольку эти настройки влияют на тело блока, а не на оболочку пакета, они описаны в спецификации [формата Native](/ru/resources/develop-contribute/native-protocol/format) — см. разделы [формат передачи данных столбца](/ru/resources/develop-contribute/native-protocol/format#column-wire-layout) и [версионируемые типы](/ru/resources/develop-contribute/native-protocol/format#versioned-types).
 
 ## Глоссарий {#glossary}
 

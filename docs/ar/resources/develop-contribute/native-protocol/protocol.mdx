@@ -1065,16 +1065,16 @@ tcp_keep_alive_timeout (290s)
 
 ### إعدادات خارج النطاق {#settings-out-of-scope}
 
-يُخلط أحيانًا بين هذه الإعدادات وإعدادات مستوى البروتوكول، غير أنها تتحكم في تنفيذ SQL أو التخزين أو استخدام CPU، لا في سلوك wire. ولا يحتاج تطبيق البروتوكول إلى معالجتها معالجةً خاصة.
+يُخلط أحيانًا بين هذه الإعدادات وإعدادات مستوى البروتوكول، غير أنها تتحكم في تنفيذ SQL أو التخزين أو استخدام CPU، لا في سلوك صيغة النقل. ولا يحتاج تطبيق البروتوكول إلى معالجتها معالجةً خاصة.
 
 * `max_threads` — درجة التوازي أثناء تنفيذ الاستعلام.
 * `max_memory_usage` — الحد الأقصى للذاكرة لكل استعلام.
-* `max_block_size`، `preferred_block_size_bytes` — تحديد أحجام الكتل داخليًا أثناء معالجة الاستعلام؛ أما كتل wire فمستقلة عنها.
+* `max_block_size`، `preferred_block_size_bytes` — تحديد أحجام الكتل داخليًا أثناء معالجة الاستعلام؛ أما كتل صيغة النقل فمستقلة عنها.
 * `compile_expressions` — التصريف الفوري (JIT)؛ ويقتصر أثره على CPU.
 * `async_insert_max_data_size` — المخزن المؤقت لقائمة الانتظار على جانب الخادم.
 * جميع إعدادات `input_format_*` و`output_format_*` **باستثناء** عائلة `input_format_native_*` / `output_format_native_*` — فالإعدادات غير الخاصة بـ `native` تختار صيغًا أخرى أو تضبطها (عبر HTTP مثلًا)، ولا تغيّر كتل `Data` في البروتوكول الأصلي.
 
-أما إعدادات `*_native_*` فهي الاستثناء: إذ تغيّر البايتات داخل كتل `Data` في البروتوكول الأصلي، ولذا يجب على تطبيق البروتوكول أن يأخذها في الحسبان. فالإعداد `output_format_native_encode_types_in_binary_format` يحوّل حقل `type` الخاص بالعمود من سلسلة نصية إلى ترميز ثنائي للنوع، والإعداد `output_format_native_write_json_as_string` يُخرج أعمدة `JSON` بنوع `String`، والإعداد `output_format_native_use_flattened_dynamic_and_json_serialization` يختار تخطيط `Dynamic`/`JSON` المسطّح (FLATTENED). ولأن هذه الإعدادات تؤثر في جسم الكتلة لا في الغلاف الخارجي للحزمة، فهي موصوفة في مواصفة [صيغة Native](/ar/resources/develop-contribute/native-protocol/format) — راجع [تخطيط wire للعمود](/ar/resources/develop-contribute/native-protocol/format#column-wire-layout) و[الأنواع ذات الإصدارات](/ar/resources/develop-contribute/native-protocol/format#versioned-types).
+أما إعدادات `*_native_*` فهي الاستثناء: إذ تغيّر البايتات داخل كتل `Data` في البروتوكول الأصلي، ولذا يجب على تطبيق البروتوكول أن يأخذها في الحسبان. فالإعداد `output_format_native_encode_types_in_binary_format` يحوّل حقل `type` الخاص بالعمود من سلسلة نصية إلى ترميز ثنائي للنوع (باستثناء الاستعلام الثانوي، راجع [تخطيط صيغة النقل للعمود](/ar/resources/develop-contribute/native-protocol/format#column-wire-layout))، والإعداد `output_format_native_write_json_as_string` يُخرج أعمدة `JSON` بنوع `String`، والإعداد `output_format_native_use_flattened_dynamic_and_json_serialization` يختار تخطيط `Dynamic`/`JSON` المسطّح (FLATTENED). ولأن هذه الإعدادات تؤثر في متن الكتلة لا في الغلاف الخارجي للحزمة، فهي موصوفة في مواصفة [التنسيق الأصلي](/ar/resources/develop-contribute/native-protocol/format) — راجع [تخطيط صيغة النقل للعمود](/ar/resources/develop-contribute/native-protocol/format#column-wire-layout) و[الأنواع ذات الإصدارات](/ar/resources/develop-contribute/native-protocol/format#versioned-types).
 
 ## مسرد المصطلحات {#glossary}
 

@@ -152,13 +152,13 @@ BlockInfo는 필드의 시퀀스로, 각 필드 앞에는 VarUInt 필드 ID가 �
 
 컬럼은 하나의 블록 안에 `num_columns`번 나타납니다.
 
-| # | 필드                               | 유형                      | 조건                                 | 설명                                                                                                                                                                              |
-| - | -------------------------------- | ----------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 | name                             | String                  | 항상                                 | 컬럼명                                                                                                                                                                             |
-| 2 | type                             | String *또는* 바이너리 타입 인코딩 | 항상                                 | 기본적으로 ClickHouse 타입 문자열(예: `"UInt64"`, `"Array(String)"`)이며, `output_format_native_encode_types_in_binary_format = 1`인 경우에는 바이너리 타입 인코딩입니다(아래 참고 사항 참조)                         |
-| 3 | has&#95;custom&#95;serialization | UInt8                   | `CUSTOM_SERIALIZATION` 기능 (v54454) | `0` = 기본, `1` = 사용자 정의(뒤에 kind&#95;stack이 이어짐)                                                                                                                                  |
-| 4 | kind&#95;stack                   | bytes                   | 필드 3 = `1`인 경우                     | 기본이 아닌 직렬화(희소 등)를 나타내는 UInt8 enum 바이트 1개(아래 참조). `COMBINATION` 값이면 VarUInt 개수와 그 개수만큼의 추가 kind 바이트가 뒤따릅니다. `Tuple`(및 요소 수준 직렬화 정보를 갖는 기타 복합 타입)은 payload가 재귀적으로 구성됩니다. 아래를 참조하십시오. |
-| 5 | data                             | bytes                   | 항상                                 | 전체 `num_rows`개 행의 컬럼 값. 타입별 레이아웃은 [데이터 타입](#data-types)을 참조하십시오. 희소 컬럼은 아래를 참조하십시오.                                                                                             |
+| # | 필드                               | 유형                      | 조건                                 | 설명                                                                                                                                                                                        |
+| - | -------------------------------- | ----------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 | name                             | String                  | 항상                                 | 컬럼명                                                                                                                                                                                       |
+| 2 | type                             | String *또는* 바이너리 타입 인코딩 | 항상                                 | 기본적으로 ClickHouse 타입 문자열(예: `"UInt64"`, `"Array(String)"`)이며, `output_format_native_encode_types_in_binary_format = 1`인 경우에는 바이너리 타입 인코딩입니다. 단, 보조 쿼리(secondary query)는 예외입니다(아래 참고 사항 참조) |
+| 3 | has&#95;custom&#95;serialization | UInt8                   | `CUSTOM_SERIALIZATION` 기능 (v54454) | `0` = 기본, `1` = 사용자 정의(뒤에 kind&#95;stack이 이어짐)                                                                                                                                            |
+| 4 | kind&#95;stack                   | bytes                   | 필드 3 = `1`인 경우                     | 기본이 아닌 직렬화(희소 등)를 나타내는 UInt8 enum 바이트 1개(아래 참조). `COMBINATION` 값이면 VarUInt 개수와 그 개수만큼의 추가 kind 바이트가 뒤따릅니다. `Tuple`(및 원소 수준 직렬화 정보를 갖는 기타 복합 타입)은 payload가 재귀적으로 구성됩니다. 아래를 참조하십시오.        |
+| 5 | data                             | bytes                   | 항상                                 | 전체 `num_rows`개 행의 컬럼 값. 타입별 레이아웃은 [데이터 타입](#data-types)을 참조하십시오. 희소 컬럼은 아래를 참조하십시오.                                                                                                       |
 
 디코더는 `type` 문자열에 따라 처리를 분기합니다. 타입 문자열에는 괄호 안에 매개변수가 포함되는 경우가 많습니다. 디코더는 `(...)` 접미사를 제거해 기본 타입을 확인한 다음, 매개변수를 파싱하여 크기, 스케일 또는 내부 타입을 결정합니다. 중첩 타입(예: `Array` 안의 `Tuple`)이 포함된 매개변수 목록을 파싱하려면 `,`로 단순히 분할하는 대신 괄호 중첩 깊이를 추적하는 쉼표 분할기가 필요합니다.
 
@@ -166,6 +166,8 @@ BlockInfo는 필드의 시퀀스로, 각 필드 앞에는 VarUInt 필드 ID가 �
   **바이너리 타입 인코딩**
 
   `type` 필드가 텍스트 `String`인 것은 기본 모드에서뿐입니다. 쿼리 설정 `output_format_native_encode_types_in_binary_format = 1`을 지정하면 이 필드는 **바이너리 타입 인코딩**이 됩니다. 이는 [데이터 타입 바이너리 인코딩](/ko/reference/data-types/data-types-binary-encoding)에 설명된 것과 동일한 태그 기반 인코딩이며, 평탄화된 `Dynamic` 타입 목록의 타입별 이름에도 같은 바이너리 인코딩이 사용됩니다. 필드 2를 항상 길이 접두사가 붙은 문자열로 읽는 디코더는 첫 번째 바이너리 타입 태그를 문자열 길이로 잘못 해석해 동기화가 어긋나게 됩니다. 따라서 디코더는 스트림이 어떤 모드를 사용하는지 반드시 알고 있어야 합니다.
+
+  `query_kind = SECONDARY_QUERY`인 쿼리(`remote`, `Distributed` 또는 병렬 레플리카를 위해 다른 서버가 보내거나 `clickhouse-client --query_kind secondary_query`로 보낸 쿼리)에서는 양쪽 모두 해당 쿼리의 블록에 대해 `output_format_native_encode_types_in_binary_format`과 `input_format_native_decode_types_in_binary_format`을 무시하므로, 양방향 모두 텍스트 타입 이름이 전달됩니다. 이 규칙이 도입되기 전 버전의 서버는 보조 쿼리에도 다른 쿼리와 마찬가지로 이 설정들을 적용합니다.
 </Info>
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="타입 설명에서 해당 인코딩 계열로 이어지는 디코더 라우팅" width="1568" height="854" loading="lazy" />
@@ -1276,7 +1278,7 @@ ClickHouse의 `JSON` 타입에는 여러 가지 wire 인코딩이 있습니다([
 
 * `clickhouse-client` 및 HTTP `FORMAT Native`에서는 writer의 revision이 `0`이므로(`client_protocol_version`으로 올리지 않는 한) 기본값은 **V1**입니다.
 * 네이티브 TCP 프로토콜에서 협상된 revision을 사용하면 기본값은 **V2**입니다. `Native` writer는 통계를 비활성화하므로 기본 `V2` payload에는 variant별 통계가 포함되지 않으며, 타입 목록 바로 뒤에 중첩된 `Variant` 접두사와 데이터가 이어집니다. (variant별 통계는 MergeTree의 디스크 저장 형식에 해당하는 사항이며 Native wire에는 포함되지 않습니다.)
-* 쿼리 설정 `output_format_native_use_flattened_dynamic_and_json_serialization = 1`은 위 두 경우를 모두 재정의하며, revision과 관계없이 **FLATTENED (version 3)**를 내보냅니다.
+* 쿼리 설정 `output_format_native_use_flattened_dynamic_and_json_serialization = 1`은 위 두 경우를 모두 재정의하며, revision과 관계없이 **FLATTENED (version 3)**&#xB97C; 내보냅니다.
 
 <Info>
   **범위**
@@ -1291,7 +1293,8 @@ ClickHouse의 `JSON` 타입에는 여러 가지 wire 인코딩이 있습니다([
   [8 bytes:  UInt64 LE version = 3]                ← state prefix, repeated at the start of every non-empty block
   [VarUInt num_types]                              ← number of runtime types
   [num_types × type]                               ← type names, in wire order; each a String, or a binary
-                                                     type encoding when output_format_native_encode_types_in_binary_format = 1
+                                                     type encoding when output_format_native_encode_types_in_binary_format = 1,
+                                                     except for a secondary query (see the type field note)
   [per type: its own state prefix]                 ← empty for leaf types; + indexes-type prefix (empty, integer)
   [num_rows × discriminator]                       ← width by num_types (UInt8 if ≤ 255, else UInt16/32/64);
                                                      NULL discriminator = num_types (one past the last type)

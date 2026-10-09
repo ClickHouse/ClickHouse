@@ -155,7 +155,7 @@ Column は 1 つの Block 内に `num_columns` 回出現します。
 | # | フィールド                            | 型                          | 条件                                 | 説明                                                                                                                                                                                              |
 | - | -------------------------------- | -------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1 | name                             | String                     | 常に                                 | カラム名                                                                                                                                                                                            |
-| 2 | type                             | String *または* バイナリ型エンコーディング | 常に                                 | デフォルトでは ClickHouse の型文字列 (例: `"UInt64"`、`"Array(String)"`)。`output_format_native_encode_types_in_binary_format = 1` の場合はバイナリ型エンコーディング (下記の注記を参照)                                                |
+| 2 | type                             | String *または* バイナリ型エンコーディング | 常に                                 | デフォルトでは ClickHouse の型文字列 (例: `"UInt64"`、`"Array(String)"`)。`output_format_native_encode_types_in_binary_format = 1` の場合はバイナリ型エンコーディング。ただしセカンダリクエリの場合を除く (下記の注記を参照)                              |
 | 3 | has&#95;custom&#95;serialization | UInt8                      | 機能 `CUSTOM_SERIALIZATION` (v54454) | `0` = デフォルト、`1` = カスタム (この後に kind&#95;stack が続く)                                                                                                                                                |
 | 4 | kind&#95;stack                   | bytes                      | フィールド 3 が `1` の場合                  | デフォルト以外のシリアライゼーション (スパースなど) を表す 1 バイトの UInt8 列挙値 (下記参照)。`COMBINATION` 値の場合は、その後に VarUInt のカウントと、その個数分の追加の kind バイトが続きます。`Tuple` (および要素レベルのシリアライゼーション情報を持つその他の複合型) の場合、ペイロードは再帰的な構造になります (下記参照)。 |
 | 5 | data                             | bytes                      | 常に                                 | 全 `num_rows` 行分のカラム値。型ごとのレイアウトについては [データ型](#data-types) を参照してください。スパースカラムについては下記を参照してください。                                                                                                      |
@@ -166,6 +166,8 @@ Column は 1 つの Block 内に `num_columns` 回出現します。
   **バイナリ型エンコーディング**
 
   `type` フィールドがテキストの `String` になるのは、デフォルトのモードの場合だけです。クエリ設定 `output_format_native_encode_types_in_binary_format = 1` が設定されている場合、このフィールドは **バイナリ型エンコーディング** になります。これは [データ型のバイナリエンコーディング](/ja/reference/data-types/data-types-binary-encoding) で説明しているものと同じタグベースのエンコーディングです。また、フラット化された `Dynamic` 型のリストでも、各型の名前に同じバイナリエンコーディングが使用されます。フィールド 2 を常に長さプレフィックス付きの文字列として読み取るデコーダは、最初のバイナリ型タグを文字列長と誤認して同期がずれてしまいます。そのため、デコーダはストリームがどちらのモードを使用しているかを把握しておく必要があります。
+
+  `query_kind = SECONDARY_QUERY` のクエリ (`remote`、`Distributed`、並列レプリカのために別のサーバーから送信されたもの、または `clickhouse-client --query_kind secondary_query` で送信されたもの) では、送受信の双方が、そのクエリのブロックについて `output_format_native_encode_types_in_binary_format` と `input_format_native_decode_types_in_binary_format` を無視します。つまり、どちらの方向でもブロックにはテキストの型名が含まれます。このルールが導入される前のサーバーは、セカンダリクエリにも他のクエリと同様にこれらの設定を適用します。
 </Info>
 
 <img className="w-full h-auto" src="/images/interfaces/native-format/decoder-dispatch.webp" alt="型記述から対応するエンコーディングファミリーへのデコーダのルーティング" width="1568" height="854" loading="lazy" />
@@ -1275,13 +1277,13 @@ state prefix (モードを表す `UInt64`) は、行数が 0 より大きいす�
 `Dynamic` には `V1 = 1`、`V2 = 2`、`FLATTENED = 3`、`V3 = 4` の 4 つのエンコーディングがあります。サーバーがどれを出力するかは、チャネルとクエリ設定によって決まります。
 
 * `clickhouse-client` および HTTP の `FORMAT Native` 経由では、writer のリビジョンは (`client_protocol_version` で引き上げない限り) `0` であるため、デフォルトは **V1** です。
-* ネイティブ TCP プロトコル経由では、ネゴシエートされたリビジョンにおいてデフォルトは **V2** です。`Native` writer は統計情報を無効のままにするため、デフォルトの `V2` ペイロードにはバリアントごとの統計情報が含まれず、type list の直後にネストされた `Variant` のプレフィックスとデータが続きます。 (バリアントごとの統計情報は MergeTree のディスク上の表現に関わるものであり、Native の wire には含まれません。)
+* ネイティブ TCP プロトコル経由では、ネゴシエートされたリビジョンにおいてデフォルトは **V2** です。`Native` writer は統計情報を無効のままにするため、デフォルトの `V2` ペイロードにはバリアントごとの統計情報が含まれず、型リスト の直後にネストされた `Variant` のプレフィックスとデータが続きます。 (バリアントごとの統計情報は MergeTree のディスク上の表現に関わるものであり、Native の wire には含まれません。)
 * クエリ設定 `output_format_native_use_flattened_dynamic_and_json_serialization = 1` を指定すると上記の両方がオーバーライドされ、リビジョンに関係なく **FLATTENED (version 3)** が出力されます。
 
 <Info>
   **対象範囲**
 
-  このページでは **`FLATTENED`** レイアウトのみを規定します。フラット化されていない `V1`/`V2`/`V3` のバイナリレイアウトは内部表現／ディスク上の表現 (バイナリエンコードされた type list、バリアントごとの統計情報) であり、ここでは規定**しません**。このページに基づいて `Dynamic` をデコードするクライアントは、`output_format_native_use_flattened_dynamic_and_json_serialization = 1` を設定して `FLATTENED` を要求する必要があります。以下のレイアウトはこの設定を前提としています。プレフィックスの先頭にバージョンバイトがあるため、デコーダは実際に受信したエンコーディングを判別でき、`FLATTENED` のみを実装している場合は `V1`/`V2`/`V3` を拒否できます。
+  このページでは **`FLATTENED`** レイアウトのみを規定します。フラット化されていない `V1`/`V2`/`V3` のバイナリレイアウトは内部表現／ディスク上の表現 (バイナリエンコードされた 型リスト、バリアントごとの統計情報) であり、ここでは規定**しません**。このページに基づいて `Dynamic` をデコードするクライアントは、`output_format_native_use_flattened_dynamic_and_json_serialization = 1` を設定して `FLATTENED` を要求する必要があります。以下のレイアウトはこの設定を前提としています。プレフィックスの先頭にバージョンバイトがあるため、デコーダは実際に受信したエンコーディングを判別でき、`FLATTENED` のみを実装している場合は `V1`/`V2`/`V3` を拒否できます。
 </Info>
 
 この設定によって選択される **FLATTENED (version 3)** レイアウトは次のとおりです。
@@ -1291,7 +1293,8 @@ state prefix (モードを表す `UInt64`) は、行数が 0 より大きいす�
   [8 bytes:  UInt64 LE version = 3]                ← state prefix, repeated at the start of every non-empty block
   [VarUInt num_types]                              ← number of runtime types
   [num_types × type]                               ← type names, in wire order; each a String, or a binary
-                                                     type encoding when output_format_native_encode_types_in_binary_format = 1
+                                                     type encoding when output_format_native_encode_types_in_binary_format = 1,
+                                                     except for a secondary query (see the type field note)
   [per type: its own state prefix]                 ← empty for leaf types; + indexes-type prefix (empty, integer)
   [num_rows × discriminator]                       ← width by num_types (UInt8 if ≤ 255, else UInt16/32/64);
                                                      NULL discriminator = num_types (one past the last type)
@@ -1299,7 +1302,7 @@ state prefix (モードを表す `UInt64`) は、行数が 0 より大きいす�
     [values for the rows whose discriminator == i] ← dense encoding in type i
 ```
 
-判別子の幅は、`num_types` 個の型と NULL 用のスロットを合わせて索引付けできる最小の符号なし整数型です。`num_types ≤ 255` の場合は `UInt8` となり、それを超えると順に `UInt16`、`UInt32`、`UInt64` が使われます。NULL は判別子の値 `num_types` そのもので表されます。この点は、NULL が固定値 `255` で表される `Variant` とは異なります。復元処理は `Variant` と同じく密な走査で行います。型ごとにカウンターを保持し、判別子 `d` (≠ `num_types`) を持つ行 `r` は、型 `d` のランから `counter[d]` 番目の値を取得します。
+判別子の幅は、`num_types` 個の型と NULL 用のスロットを合わせて索引付けできる最小の符号なし整数型です。`num_types ≤ 255` の場合は `UInt8` となり、それを超えると順に `UInt16`、`UInt32`、`UInt64` が使われます。NULL は判別子の値 `num_types` そのもので表されます。この点は、NULL が固定値 `255` で表される `Variant` とは異なります。復元処理は `Variant` と同じく密な走査で行います。型ごとにカウンターを保持し、判別子 `d` (≠ `num_types`) を持つ行 `r` は、型 `d` の並びから `counter[d]` 番目の値を取得します。
 
 state prefix (バージョン + 型リスト) は、行数 &gt; 0 のすべてのBlockの先頭で読み取られます。ヘッダーBlockおよび空のBlockでは何も出力されません。
 
