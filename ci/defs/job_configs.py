@@ -150,12 +150,11 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
-# The Darwin fast test additionally consumes the Darwin skip list and its wrapper
-# script, so changes to either must schedule the job (the shared digest above does
-# not cover them).
+# The Darwin fast test additionally consumes its wrapper script, so changes to it
+# must schedule the job (the shared digest above does not cover it).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=fast_test_digest_config.include_paths
-    + ["./ci/defs/darwin.skip", "./ci/jobs/scripts/fast_test_darwin.sh"],
+    + ["./ci/jobs/scripts/fast_test_darwin.sh"],
 )
 
 TIDY_SHARDS = 4
@@ -185,6 +184,7 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/seaweedfs_service.py",
             # clickhouse_proc.py's "No such key" check runs this script, and so does
             # check_logs_for_critical_errors in tests/docker_scripts/stress_tests.lib.
             "./ci/jobs/scripts/s3_key_lifecycle.py",
@@ -1449,6 +1449,65 @@ class JobConfigs:
         )
     )
 
+    # Pull requests run the LLVM coverage jobs only with the `ci-coverage` label. By default they
+    # run the same configurations on the `arm_binary` build instead, which is several times faster
+    # than the coverage build and randomizes settings and runs `long` tests, which the coverage runs
+    # do not. The plain coverage batches and `excluded_from_llvm` need no replacement: the full
+    # `arm_binary, parallel`/`sequential` stateless jobs already run the whole suite. The parallel
+    # jobs use the same runner shape as the coverage jobs (16 vCPU, 64 GiB): with 32 vCPU and the
+    # same memory, the stateful data load and the doubled test concurrency exceed the memory limits.
+    functional_tests_arm_binary_coverage_replacement_pr_jobs = common_ft_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"arm_binary, s3 storage, DBReplicated, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.ARM_MEDIUM,
+                requires=[ArtifactNames.CH_ARM_BINARY],
+            )
+            for total_batches in (2,)
+            for batch in range(1, total_batches + 1)
+        ],
+        Job.ParamSet(
+            parameter="arm_binary, s3 storage, DBReplicated, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, ParallelReplicas, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, AsyncInsert, s3 storage, parallel",
+            runs_on=RunnerLabels.ARM_MEDIUM,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+        Job.ParamSet(
+            parameter="arm_binary, AsyncInsert, s3 storage, sequential",
+            runs_on=RunnerLabels.ARM_SMALL,
+            requires=[ArtifactNames.CH_ARM_BINARY],
+        ),
+    )
+    # The same for the full integration run: all test modules, including the ones the coverage
+    # run leaves to `excluded_from_llvm`.
+    integration_test_arm_binary_coverage_replacement_pr_jobs = (
+        common_integration_test_job_config.parametrize(
+            *[
+                Job.ParamSet(
+                    parameter=f"arm_binary, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.ARM_MEDIUM,
+                    requires=[ArtifactNames.CH_ARM_BINARY],
+                )
+                for total_batches in (4,)
+                for batch in range(1, total_batches + 1)
+            ],
+        )
+    )
+
     # PR replacement for the full integration runs: one job per configuration runs once
     # the changed test modules, the modules covering the changed lines (per-module
     # coverage from `integration_test_per_test_coverage_jobs`) and the tests that failed
@@ -1646,12 +1705,16 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                # Provisions the job-local S3 endpoint (ci/jobs/scripts/perf/s3_service.py)
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             ],
         ),
         timeout=2 * 3600,
@@ -1687,12 +1750,16 @@ class JobConfigs:
                 "./tests/performance/",
                 "./ci/jobs/scripts/perf/",
                 "./ci/jobs/performance_tests.py",
+                "./ci/jobs/scripts/seaweedfs_service.py",
+                "./ci/jobs/scripts/dataset_download.py",
                 "./ci/docker/performance-comparison",
                 # Both servers export their system logs to the CI Logs cluster
                 "./ci/jobs/scripts/log_export.py",
                 "./ci/jobs/scripts/log_cluster.py",
                 "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
                 "./tests/config/users.d/ci_logs_sender.yaml",
+                # Provisions the job-local S3 endpoint (ci/jobs/scripts/perf/s3_service.py)
+                "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
             ],
         ),
         timeout=2 * 3600,
@@ -2022,6 +2089,8 @@ class JobConfigs:
             include_paths=[
                 "./ci/jobs/collect_clickhouse_profiles.py",
                 "./ci/jobs/scripts/server_cleanup.py",
+                # Classifies tests (needs-S3 / shell-query) for the skip decisions
+                "./ci/jobs/scripts/perf/test_discovery.py",
                 "./cmake/profile_optimization.cmake",
                 "./tests/performance/",
             ],

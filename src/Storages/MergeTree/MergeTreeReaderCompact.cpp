@@ -333,6 +333,7 @@ void MergeTreeReaderCompact::readData(
             else
             {
                 const auto & serialization = serializations[column_idx];
+                deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
                 auto & states = !has_substream_marks && !columns_for_offsets[column_idx]
                     ? deserialize_binary_bulk_state_map_for_subcolumns : deserialize_binary_bulk_state_map;
                 serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, states[name], substreams_cache);
@@ -550,7 +551,7 @@ void MergeTreeReaderCompact::readPrefix(
         deserialize_settings.getter = buffer_getter;
         if (const auto part = data_part_info_for_read->getDataPart())
             deserialize_settings.map_key_columns_manifest = part->tryGetMapKeyColumnsManifest(name_and_type.getNameInStorage());
-        deserialize_settings.object_and_dynamic_read_statistics = true;
+        deserialize_settings.read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
         deserialize_settings.check_stream_exists_callback = std::move(check_stream_exists_callback);

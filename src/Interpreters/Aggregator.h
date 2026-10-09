@@ -1263,7 +1263,10 @@ private:
         UntruncatedAggregationKeys * untruncated_keys,
         size_t * full_group_count) const;
 
-    AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
+    /// `untruncated_keys` is the out-parameter of the overload above, forwarded for the
+    /// skip-merging conversion, which prices its own output for the dataflow statistics.
+    AggregatedChunk convertOneBucketToChunk(
+        AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const;
 
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
