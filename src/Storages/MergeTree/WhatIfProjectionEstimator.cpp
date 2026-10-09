@@ -52,9 +52,8 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsUInt64 max_rows_to_read;
-    extern const SettingsUInt64 min_insert_block_size_rows;
-    extern const SettingsUInt64 min_insert_block_size_bytes;
     extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsOverflowMode read_overflow_mode;
     extern const SettingsBool optimize_use_projections;
     extern const SettingsBool force_optimize_projection;
@@ -219,47 +218,41 @@ bool buildProjectionPart(
     pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
     PullingPipelineExecutor executor(pipeline);
 
-    MutableColumns key_columns;
-    /// the stored columns of a batch, as the writer gets them
-    auto add_projected = [&](Block block)
-    {
-        /// the writer chooses the part format before the key expression and sizes the granules after it
-        out.format_bytes += block.bytes();
-        /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
-        for (const auto & required : proj_key.expression->getRequiredColumns())
-            if (!block.has(required))
-                block.insert(block.getSubcolumnByName(required));
-        proj_key.expression->execute(block);
-        out.bytes += getBlockSizeForGranularity(block);
-        if (need_row_bytes)
-            appendRowSizes(out.row_bytes, out.variable_width, block);
-
-        if (key_columns.empty())
-            for (const auto & name : proj_key.column_names)
-                key_columns.push_back(block.getByName(name).column->convertToFullColumnIfConst()->cloneEmpty());
-
-        for (size_t i = 0; i < key_columns.size(); ++i)
-        {
-            auto source = block.getByName(proj_key.column_names[i]).column->convertToFullColumnIfConst();
-            key_columns[i]->insertRangeFrom(*source, 0, source->size());
-        }
-    };
-
-    /// the writer computes the projection of each insert block, so compute it for batches of that size
-    const auto & settings = context->getSettingsRef();
+    /// the source gives one block for each granule, and each `calculate` builds an interpreter, so call it for each batch
+    /// the filter of the projection works row by row, so the size of the batch does not change the result
+    const size_t batch_limit = context->getSettingsRef()[Setting::max_block_size];
     Blocks batch;
     size_t batch_rows = 0;
-    size_t batch_bytes = 0;
+    MutableColumns key_columns;
     auto flush = [&]
     {
         if (batch.empty())
             return;
+        /// the stored columns, as the writer gets them
         auto projected = projection.calculate(concatenateBlocks(batch), out.read_rows - batch_rows, context);
         batch.clear();
         batch_rows = 0;
-        batch_bytes = 0;
-        if (projected.rows())
-            add_projected(std::move(projected));
+
+        /// the writer chooses the part format before the key expression and sizes the granules after it
+        out.format_bytes += projected.bytes();
+        /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
+        for (const auto & required : proj_key.expression->getRequiredColumns())
+            if (!projected.has(required))
+                projected.insert(projected.getSubcolumnByName(required));
+        proj_key.expression->execute(projected);
+        out.bytes += getBlockSizeForGranularity(projected);
+        if (need_row_bytes)
+            appendRowSizes(out.row_bytes, out.variable_width, projected);
+
+        if (key_columns.empty())
+            for (const auto & name : proj_key.column_names)
+                key_columns.push_back(projected.getByName(name).column->convertToFullColumnIfConst()->cloneEmpty());
+
+        for (size_t i = 0; i < key_columns.size(); ++i)
+        {
+            auto source = projected.getByName(proj_key.column_names[i]).column->convertToFullColumnIfConst();
+            key_columns[i]->insertRangeFrom(*source, 0, source->size());
+        }
     };
 
     Block block;
@@ -287,9 +280,8 @@ bool buildProjectionPart(
 
         out.read_rows += block.rows();
         batch_rows += block.rows();
-        batch_bytes += block.bytes();
         batch.push_back(std::move(block));
-        if (batch_rows >= settings[Setting::min_insert_block_size_rows] || batch_bytes >= settings[Setting::min_insert_block_size_bytes])
+        if (batch_rows >= batch_limit)
             flush();
     }
     flush();
