@@ -7,9 +7,13 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#if CLICKHOUSE_CLOUD
+#include <Storages/MergeTree/BorrowedMergeTreeDataPartInfoForReader.h>
+#endif
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -100,6 +104,70 @@ IMergeTreeReader::IMergeTreeReader(
         else
             serializations.emplace_back(std::move(serialization));
     }
+
+    /// On-fly `UPDATE` and `DELETE` mutations are executed as steps ahead of PREWHERE, and their
+    /// expressions (assignments and `WHERE` conditions) may read any column, so they would observe
+    /// the substituted empty strings of the rows that PREWHERE rejects afterwards: for example,
+    /// a pending `DELETE WHERE throwIf(empty(s)) = 0` would start throwing. Read the values in full then.
+    const bool has_mutations_on_fly = alter_conversions && alter_conversions->hasMutations();
+
+    /// The columns read from the part may be written to the columns cache and then served to other
+    /// queries, which must not see the substituted empty strings. Read the values in full then.
+    const bool may_write_to_columns_cache = columns_cache && settings.enable_columns_cache_writes;
+
+    if (settings.string_value_filters && !settings.string_value_filters->empty() && !has_mutations_on_fly && !may_write_to_columns_cache)
+    {
+        /// Count how many requested columns read from each storage column
+        /// (e.g. a column requested together with its subcolumn).
+        std::unordered_map<String, size_t> storage_column_use_count;
+        for (const auto & column : getColumns())
+            ++storage_column_use_count[column.getNameInStorage()];
+
+        size_t pos = 0;
+        for (const auto & column : getColumns())
+        {
+            size_t current_pos = pos++;
+
+            /// Only full String and Nullable(String) columns are supported.
+            if (column.isSubcolumn() || !isString(removeNullable(column.type)))
+                continue;
+
+            auto it = settings.string_value_filters->find(column.name);
+            if (it == settings.string_value_filters->end())
+                continue;
+
+            /// If some other requested column reads from the same storage column (e.g. the `.size` subcolumn),
+            /// the deserialized data may be shared between them through caches, so the values must be read in full.
+            if (storage_column_use_count[column.getNameInStorage()] > 1)
+                continue;
+
+            /// If the column is overwritten by an on-fly mutation, PREWHERE is evaluated
+            /// on the values computed by the mutation expression, not on the stored values,
+            /// so the stored values must be read in full.
+            if (alter_conversions && alter_conversions->getAllUpdatedColumns().contains(column.name))
+                continue;
+
+            /// Only the plain serialization reads values one by one and supports filtering.
+            if (serializations[current_pos]->getKindStack() != ISerialization::KindStack{ISerialization::Kind::DEFAULT})
+                continue;
+
+            /// The key is the name in the part: it may differ from the requested name
+            /// when the column is affected by a pending RENAME.
+            string_value_filters_by_part_column_name.emplace(columns_to_read[current_pos].name, it->second);
+        }
+    }
+}
+
+StringValueFilterPtr IMergeTreeReader::getStringValueFilter(const NameAndTypePair & column_in_part) const
+{
+    if (string_value_filters_by_part_column_name.empty())
+        return nullptr;
+
+    auto it = string_value_filters_by_part_column_name.find(column_in_part.name);
+    if (it == string_value_filters_by_part_column_name.end())
+        return nullptr;
+
+    return it->second;
 }
 
 const ValueSizeMap & IMergeTreeReader::getAvgValueSizeHints() const
@@ -132,10 +200,13 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
     chassert(columns.size() == getColumns().size());
 
     const auto * loaded_part_info = typeid_cast<const LoadedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get());
-    if (!loaded_part_info)
+    bool is_borrowed = false;
+#if CLICKHOUSE_CLOUD
+    is_borrowed = typeid_cast<const BorrowedMergeTreeDataPartInfoForReader *>(data_part_info_for_read.get()) != nullptr;
+#endif
+    if (!loaded_part_info && !is_borrowed)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Filling of virtual columns is supported only for LoadedMergeTreeDataPartInfoForReader");
 
-    const auto & data_part = loaded_part_info->getDataPart();
     const auto & storage_columns = storage_snapshot->metadata->columns;
     const auto & virtual_columns = storage_snapshot->metadata->virtuals;
 
@@ -169,8 +240,10 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
+        else if (loaded_part_info)
+            field = getFieldForConstVirtualColumn(it->name, *loaded_part_info->getDataPart());
         else
-            field = getFieldForConstVirtualColumn(it->name, *data_part);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Virtual column {} is not supported for this part", it->name);
 
         columns[pos] = virtual_column->type->createColumnConst(rows, field)->convertToFullColumnIfConst();
     }

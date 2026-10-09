@@ -1423,7 +1423,11 @@ struct ContextSharedPart : boost::noncopyable
             remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+        {
+            auto throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
+            throttler->setLimitsBlockDeviceBandwidth();
+            local_read_throttler = std::move(throttler);
+        }
 
         if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
             local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
@@ -1531,6 +1535,7 @@ ContextData::ContextData(const ContextData &o) :
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_recovery_from_stored_metadata(o.is_recovery_from_stored_metadata),
+    skip_forced_projection_check(o.skip_forced_projection_check),
     is_view_inner_query(o.is_view_inner_query),
     positional_arguments_already_resolved(o.positional_arguments_already_resolved),
     join_analyze_mode(o.join_analyze_mode),
@@ -3943,8 +3948,14 @@ void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingS
 
 void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source)
 {
+    if (names.empty())
+        return;
+    /// Under `compatibility` a reset lands on the value of that version, so perform it on a copy to learn the value.
+    auto after_reset = Context::createCopy(shared_from_this());
+    after_reset->resetSettingsToDefaultValue(names);
     SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(*settings, names, source);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkResetToDefault(
+        *settings, after_reset->getSettingsRef(), names, source);
 }
 
 void Context::checkSettingsConstraintsForSettingsReset(
@@ -3999,6 +4010,8 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
 
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
+    if (names.empty())
+        return;
     std::lock_guard lock(mutex);
     for (const String & name : names)
     {
@@ -4008,6 +4021,16 @@ void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
         for (const auto & equivalent_name : settingEquivalentNames(name))
             settings->setDefaultValue(equivalent_name);
     }
+    /// A setting nothing assigned holds what the active `compatibility` gives it.
+    if ((*settings)[Setting::compatibility].value.empty())
+        settings->resetSettingsChangedByCompatibility();
+    else
+    {
+        settings->set(COMPATIBILITY_SETTING_NAME, (*settings)[Setting::compatibility].value);
+        restrictSettingsChangedByCompatibilityWithLock(lock);
+    }
+    applySettingsQuirks(*settings);
+    adjustSettingsForMakeDistributedPlan(*settings);
 }
 
 std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
@@ -6208,13 +6231,33 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
+ThrottlerPtr Context::getServerWideRemoteReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideRemoteWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_write_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_write_throttler;
+}
+
 ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteReadThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6239,11 +6282,7 @@ ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) co
 
 ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteWriteThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6268,11 +6307,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) c
 
 ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalReadThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6285,7 +6320,11 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
     {
         std::lock_guard lock(mutex);
         if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+        {
+            auto query_throttler = std::make_shared<Throttler>(*bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
+            query_throttler->setLimitsBlockDeviceBandwidth();
+            local_read_query_throttler = std::move(query_throttler);
+        }
         throttler = local_read_query_throttler;
     }
     return throttler;
@@ -6293,11 +6332,7 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
 
 ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalWriteThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6337,6 +6372,18 @@ ThrottlerPtr Context::getMutationsThrottler() const
 ThrottlerPtr Context::getMergesThrottler() const
 {
     return shared->merges_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_write_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
@@ -6393,7 +6440,11 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
     {
         std::lock_guard lock(shared->mutex);
         if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+        {
+            auto throttler = std::make_shared<Throttler>(read_bandwidth);
+            throttler->setLimitsBlockDeviceBandwidth();
+            shared->local_read_throttler = std::move(throttler);
+        }
     }
 
     if (shared->local_read_throttler)

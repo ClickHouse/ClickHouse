@@ -2,6 +2,7 @@
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -11,8 +12,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/isDiskFunction.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <base/defines.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
@@ -140,12 +141,22 @@ static std::pair<std::string, CustomDiskRegistrationPtr> getOrCreateCustomDisk(
     return {disk_name, std::move(registration)};
 }
 
+template <typename Matcher>
+static void visitBottomUp(ASTPtr & ast, typename Matcher::Data & data)
+{
+    checkStackSize();
+    for (auto & child : ast->children)
+        visitBottomUp<Matcher>(child, data);
+    Matcher::visit(ast, data);
+}
+
 /// Replaces every `disk(...)` function in `ast` with the name of the disk it describes, creating the
 /// disks that do not exist yet. Nested definitions are processed first, since the definition of a
 /// wrapper disk refers to the disks it wraps by name. Returns the registrations of the outermost
 /// disks found; each of them owns the registrations of the disks nested in its definition.
 static CustomDiskRegistrations flattenDiskFunctions(ASTPtr & ast, ContextPtr context, bool attach, bool for_system_database)
 {
+    checkStackSize();
     CustomDiskRegistrations nested_registrations;
     for (auto & child : ast->children)
     {
@@ -182,8 +193,6 @@ public:
         ContextPtr context;
         bool for_system_database;
     };
-
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
 
     static void visit(ASTPtr & ast, Data & data)
     {
@@ -245,9 +254,8 @@ CustomDiskFromAST DiskFromAST::createCustomDisk(const ASTPtr & disk_function_ast
     if (!attach)
     {
         ASTPtr to_mark = disk_function_ast;
-        using MarkerInjector = InDepthNodeVisitor<ServerCredentialMarkerInjector, false>;
-        MarkerInjector::Data inject_data{context, for_system_database};
-        MarkerInjector{inject_data}.visit(to_mark);
+        ServerCredentialMarkerInjector::Data inject_data{context, for_system_database};
+        visitBottomUp<ServerCredentialMarkerInjector>(to_mark, inject_data);
     }
 
     auto ast = disk_function_ast->clone();

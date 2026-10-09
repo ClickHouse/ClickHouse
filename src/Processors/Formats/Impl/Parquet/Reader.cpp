@@ -20,6 +20,7 @@
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/extractStringValueFilters.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
@@ -509,6 +510,32 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     return !tracker.isValueInsideThreshold(boundary);
 }
 
+void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) const
+{
+    if (column.empty())
+        return;
+
+    /// The same comparison the sorting transforms use, so "best" means "sorts first".
+    const auto & tracker = *format_filter_info->top_k_filter->threshold_tracker;
+    const int direction = tracker.getDirection();
+    const int nulls_direction = tracker.getNullsDirection();
+    const Collator * collator = tracker.getCollator().get();
+    auto compare = [&](const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row)
+    {
+        int res = collator ? lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_direction, *collator)
+                           : lhs.compareAt(lhs_row, rhs_row, rhs, nulls_direction);
+        return direction * res;
+    };
+
+    size_t best_row = 0;
+    for (size_t row = 1; row < column.size(); ++row)
+        if (compare(column, row, column, best_row) < 0)
+            best_row = row;
+
+    if (!row_group.top_k_best_value || compare(column, best_row, *row_group.top_k_best_value, 0) < 0)
+        row_group.top_k_best_value = column.cut(best_row, 1);
+}
+
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
 {
     for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
@@ -886,6 +913,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     && output_info.is_primitive
                     && primitive_columns[output_info.primitive_start].decoder.allow_stats)
                     top_k_primitive_idx = output_info.primitive_start;
+
+                if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
+                    top_k_best_value_column_pos = sample_block->findPositionByName(format_filter_info->top_k_filter->column_name);
             }
         }
     }
@@ -1125,6 +1155,8 @@ void Reader::prepareBloomFilterCondition()
     {
         const PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
         if (!column_info.used_by_key_condition)
+            continue;
+        if (!column_info.decoder.allow_hash_filters)
             continue;
 
         /// We hash query constants for any column that has either a bloom filter or a usable
@@ -1596,6 +1628,36 @@ void Reader::preparePrewhere()
             && pc.idx_in_output_block < extended_sample_block.columns()
             && pc.idx_in_output_block >= sample_block->columns())
             pc.first_step_to_calculate = SIZE_MAX;
+
+    /// Push down substring search conditions from PREWHERE into string decoding: values that do not
+    /// match are decoded as empty strings without copying their data (see `StringValueFilter`).
+    /// This is allowed only when PREWHERE is guaranteed to filter out the non-matching rows
+    /// (`need_filter`), so that the replaced values can never appear in the output. Only columns
+    /// decoded for prewhere steps can benefit: the remaining columns are decoded after the filter
+    /// is applied, i.e. only for the rows that passed it.
+    if (options.format.parquet.apply_string_filters && prewhere_info && prewhere_info->need_filter)
+    {
+        if (auto filters = extractStringValueFilters(
+                prewhere_info->prewhere_actions,
+                prewhere_info->prewhere_column_name,
+                row_level_filter ? &row_level_filter->actions : nullptr))
+        {
+            for (auto & pc : primitive_columns)
+            {
+                if (pc.first_step_to_calculate == 0 || pc.first_step_to_calculate == SIZE_MAX)
+                    continue;
+                if (pc.idx_in_output_block >= extended_sample_block.columns())
+                    continue;
+                /// Only plain String leaves, not inside arrays, decoded without conversion.
+                if (pc.max_array_def != 0 || !pc.decoder.string_converter || !pc.decoder.string_converter->isTrivial())
+                    continue;
+
+                auto it = filters->find(extended_sample_block.getByPosition(pc.idx_in_output_block).name);
+                if (it != filters->end())
+                    pc.string_value_filter = it->second;
+            }
+        }
+    }
 }
 
 void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColumnInfo & column_info)
@@ -1722,7 +1784,8 @@ bool Reader::decodeDictionaryPage(
             : size_t(header.uncompressed_page_size);
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
-            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
+            size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type,
+            column_info.string_value_filter != nullptr && column_info.string_value_filter->isEnabled());
         if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
@@ -1810,6 +1873,13 @@ void Reader::decodeDictionaryPageImpl(const parq::PageHeader & header, std::span
     if (header.dictionary_page_header.num_values < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative number of values in dictionary page");
     column.dictionary.decode(header.dictionary_page_header.encoding, column_info.decoder, size_t(header.dictionary_page_header.num_values), data, *column_info.decoded_type);
+
+    /// Check the string filter from PREWHERE once per dictionary entry: the rows referencing
+    /// non-matching entries then materialize empty strings without copying the data.
+    /// Once the shared filter has disabled itself (it turned out to be non-selective), the mask
+    /// would never be consulted, so do not pay for the dictionary scan and the mask allocation.
+    if (column_info.string_value_filter && column_info.string_value_filter->isEnabled())
+        column.dictionary.buildStringValueFilterMask(*column_info.string_value_filter);
 }
 
 bool Reader::BloomFilterLookup::findAnyHash(const std::vector<uint64_t> & hashes)
@@ -2076,7 +2146,9 @@ static std::optional<DictionaryValueHashes> hashDictionaryValues(
 
         auto values = column_info.decoded_type->createColumn();
         values->reserve(count);
-        column.dictionary.index(*indexes, *values);
+        /// Pruning sees each distinct value once, which says nothing about how often the scan will
+        /// meet it, so this materialization must not feed the shared `StringValueFilter` statistics.
+        column.dictionary.index(*indexes, *values, /*use_string_value_filter*/ false);
         hashes = parquetTryHashColumn(values.get(), &desc);
     }
     if (!hashes.has_value())
@@ -3296,7 +3368,7 @@ void Reader::createPageDecoder(PageState & page, ColumnChunk & column, const Pri
     if (page.is_dictionary_encoded)
         page.decoder = makeDictionaryIndicesDecoder(page.encoding, column.dictionary.count, page.data);
     else
-        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data);
+        page.decoder = column_info.decoder.makeDecoder(page.encoding, page.data, column_info.string_value_filter.get());
 }
 
 /// Returns true if this row is found in this page, and value_idx is at the first value of this row.
