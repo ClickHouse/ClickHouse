@@ -188,7 +188,7 @@ class Info:
 
         if not self.workflow:
             self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
-        return self.workflow.get_secret(name)
+        return self.workflow.get_secret(name, job_name=self.job_name)
 
     def get_job_url(self):
         if not self.env.WORKFLOW_JOB_DATA:
