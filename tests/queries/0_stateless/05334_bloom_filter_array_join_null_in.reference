@@ -5,13 +5,10 @@ Granules: 1/10
 Name: idx_tags
 Granules: 1/10
 1
--- set with NULL, empty arrays become NULL
-3
--- emptyArrayToSingle, Dynamic round trip and Nullable result on a JSON path
-Name: idx_doc_tags
+Name: idx_tags
 Granules: 1/10
 1
--- the same, arrayJoin stays a function
-Name: idx_doc_tags
+-- a NULL in the set cannot match a String element
+Name: idx_tags
 Granules: 1/10
 1
