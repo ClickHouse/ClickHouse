@@ -8987,7 +8987,10 @@ function docsURL() {
         try {
             url = docsURL();
         } catch (e) {
-            /// Leave the previous href in place while the configured URL is not parsable.
+            /// Drop the `href` while the configured URL is not parsable, like `updateTerminalHref` does.
+            /// Keeping the previous one would let a plain click open the relay for the old server and
+            /// forward the current `url` / `user` / `password` tuple, typed for another server, to it.
+            docs_icon.removeAttribute('href');
             return;
         }
         /// An unsupported scheme is not a transient typing state but a URL that must never be
