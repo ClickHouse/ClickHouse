@@ -35,6 +35,7 @@
 #include <Interpreters/Context.h>
 
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -821,10 +822,13 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings, const StorageID * table_id)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(
+    ASTs engine_args, ContextPtr context, PostgreSQLSettings * storage_settings,
+    const StorageID * table_id, const ASTSetQuery * settings)
 {
     StoragePostgreSQL::Configuration configuration;
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(
+            engine_args, context, /*throw_unknown_collection=*/ true, /*complex_args=*/ nullptr, table_id, settings))
     {
         configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context, /*require_table=*/ true);
     }
@@ -903,7 +907,8 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.getLocalContext());
 
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id);
+        auto configuration = StoragePostgreSQL::getConfiguration(
+            args.engine_args, args.getLocalContext(), &postgresql_settings, &args.table_id, args.storage_def->settings);
 
         if (args.storage_def)
             postgresql_settings.loadFromQuery(*args.storage_def);
@@ -930,6 +935,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             configuration.schema,
             configuration.on_conflict);
     },
+    mysqlPostgreSQLSecretArguments(4),
     {
         .supports_settings = true,
         .supports_schema_inference = true,
@@ -1097,6 +1103,14 @@ Instead of a table name, the `table` argument can be a `SELECT` query that is pa
 ```sql
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
 CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Passing a query is supported starting from version 26.7. ClickHouse wraps the query into `SELECT ... FROM (<query>)` before sending it to PostgreSQL, so it must not end with a semicolon. The `schema` parameter does not apply to a passed query: qualify the table names in the query instead.
+
+With a named collection, pass the query in the `query` key instead of `table`, either in the collection itself or as a key-value argument. `query` and `table` cannot be specified together:
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL(postgres_creds, database = 'test', query = 'SELECT a, b FROM schema1.t1 JOIN schema1.t2 USING (id) WHERE a > 0');
 ```
 
 This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/reference/functions/table-functions/postgresql) table function.
