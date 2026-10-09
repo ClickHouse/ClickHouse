@@ -306,8 +306,11 @@ def test_s3_disk_move_partition_resource_scheduling():
     Test that workload IO scheduling works when data is moved between S3 disks
     via `ALTER TABLE ... MOVE PARTITION`, which goes through
     `MultipleDisksObjectStorageTransaction::copyFile`.
+    `ALTER` is a DDL query, so it is scheduled under `ddl_workload` with `use_ddl_workload` enabled.
     """
     import uuid
+
+    update_workloads_config(use_ddl_workload="true")
 
     node.query(
         """
@@ -335,7 +338,7 @@ def test_s3_disk_move_partition_resource_scheduling():
     query_id = str(uuid.uuid4())
     node.query(
         "alter table data_move move partition 0 to disk 's3_no_fake_tx_2'"
-        " SETTINGS workload='admin'",
+        " SETTINGS ddl_workload='admin'",
         query_id=query_id,
     )
 
