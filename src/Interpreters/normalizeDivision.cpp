@@ -27,7 +27,8 @@ bool normalize(IAST & ast, bool exact)
 
     if (const auto * select = ast.as<ASTSelectQuery>(); select && select->settings())
     {
-        for (const auto & change : select->settings()->as<ASTSetQuery &>().changes)
+        const auto & query_settings = select->settings()->as<ASTSetQuery &>();
+        for (const auto & change : query_settings.changes)
         {
             if (change.name == "exact_division_for_integers")
             {
@@ -36,6 +37,11 @@ bool normalize(IAST & ast, bool exact)
                 exact = settings[Setting::exact_division_for_integers];
             }
         }
+
+        /// `InterpreterSetQuery` applies resets after explicit changes.
+        for (const auto & name : query_settings.default_settings)
+            if (name == "exact_division_for_integers")
+                exact = Settings{}[Setting::exact_division_for_integers];
     }
 
     /// Type names and storage engine names are not scalar function calls.
