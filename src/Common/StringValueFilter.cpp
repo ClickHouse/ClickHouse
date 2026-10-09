@@ -149,7 +149,7 @@ void StringValueFilter::updateStats(size_t checked, size_t replaced, size_t repl
     updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ true);
 }
 
-void StringValueFilter::updateStatsForMaskedValues(size_t checked, size_t replaced, size_t replaced_bytes) const
+void StringValueFilter::updateStatsWithoutPerValueChecks(size_t checked, size_t replaced, size_t replaced_bytes) const
 {
     updateStatsImpl(checked, replaced, replaced_bytes, /* checked_individually = */ false);
 }
@@ -180,7 +180,7 @@ void StringValueFilter::updateStatsImpl(size_t checked, size_t replaced, size_t 
 
     /// The same is true when the replaced values are short (e.g. `l_returnflag = 'R'`):
     /// skipping the copy of a few bytes does not compensate for the check of every value.
-    /// This does not apply to the values decided by a mask lookup, see `updateStatsForMaskedValues`.
+    /// This does not apply to the values decided by a mask lookup or a bulk scan, see `updateStatsWithoutPerValueChecks`.
     size_t total_checked_individually = values_checked_individually.fetch_add(checked, std::memory_order_relaxed) + checked;
     size_t total_bytes_skipped = bytes_skipped_individually.fetch_add(replaced_bytes, std::memory_order_relaxed) + replaced_bytes;
     if (total_checked_individually >= MIN_VALUES_TO_EVALUATE_SELECTIVITY

@@ -81,12 +81,12 @@ public:
     /// match, `replaced_bytes` is the total size of their data.
     void updateStats(size_t checked, size_t replaced, size_t replaced_bytes) const;
 
-    /// Same as `updateStats`, for values that were decided by a lookup in a precomputed mask
-    /// instead of a check of every value (e.g. rows of a dictionary-encoded `Parquet` page, where
-    /// every distinct dictionary entry is checked once). Such values are cheap to filter even when
-    /// they are short, so they only participate in the selectivity rule, not in the minimum
-    /// average size of skipped values.
-    void updateStatsForMaskedValues(size_t checked, size_t replaced, size_t replaced_bytes) const;
+    /// Same as `updateStats`, for values that were decided without a separate check of every value:
+    /// by a lookup in a precomputed mask (rows of a dictionary-encoded `Parquet` page, where every
+    /// distinct dictionary entry is checked once), or by a single scan of a buffer of concatenated
+    /// values (see `findBulkScanMatches`). Such values are cheap to filter even when they are short,
+    /// so they only participate in the selectivity rule, not in the minimum average size of skipped values.
+    void updateStatsWithoutPerValueChecks(size_t checked, size_t replaced, size_t replaced_bytes) const;
 
     const std::vector<Condition> & getConditions() const { return conditions; }
 
@@ -111,7 +111,7 @@ private:
 
     mutable std::atomic<size_t> values_checked{0};
     mutable std::atomic<size_t> values_replaced{0};
-    /// Values accounted by `updateStats` only (not by `updateStatsForMaskedValues`), and the size of the replaced ones.
+    /// Values accounted by `updateStats` only (not by `updateStatsWithoutPerValueChecks`), and the size of the replaced ones.
     mutable std::atomic<size_t> values_checked_individually{0};
     mutable std::atomic<size_t> bytes_skipped_individually{0};
     mutable std::atomic<bool> disabled{false};
