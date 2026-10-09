@@ -535,7 +535,9 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Projections cannot contain constant columns: {}", column_with_type_name.name);
 
         /// Subcolumns can be used in projection only when the original column is used.
-        if (columns.hasSubcolumn(GetColumnsOptions::All, column_with_type_name.name))
+        /// A table column named like a subcolumn of another column (e.g. `a.size0` next to an `Array` column `a`)
+        /// shadows that subcolumn, so it is stored in the projection as a column of its own.
+        if (!columns.has(column_with_type_name.name) && columns.hasSubcolumn(GetColumnsOptions::All, column_with_type_name.name))
         {
             auto subcolumn = columns.getColumnOrSubcolumn(GetColumnsOptions::All, column_with_type_name.name);
             if (!result.sample_block.has(subcolumn.getNameInStorage()))
