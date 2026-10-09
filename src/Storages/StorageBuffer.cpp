@@ -278,8 +278,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        /// `read` unites the destination with the buffers, so a query past a plain read of columns has to be merged
-        /// above both: the destination is asked for at most `WithMergeableState`, as by a nested `Distributed`.
+        /// `read` unites the destination with the buffers, so anything past `FetchColumns` has to be merged above both.
         const bool merged_above = to_stage > QueryProcessingStage::FetchColumns;
         if (merged_above)
             to_stage = QueryProcessingStage::WithMergeableState;
