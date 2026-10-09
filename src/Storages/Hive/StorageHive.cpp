@@ -995,7 +995,7 @@ HiveFilesWithSkipSplits StorageHive::collectHiveFiles(
     if (!partition_name_types.empty() && partitions.empty())
         return {};
 
-    /// Both conditions depend only on table-level keys, so build them once, before the pool.
+    /// Not built on the pool: constructing a `KeyCondition` may build the filter's shared IN sets.
     std::optional<KeyCondition> partition_key_condition;
     std::optional<KeyCondition> hivefile_key_condition;
     if (filter_actions_dag && prune_level >= PruneLevel::Partition && partition_minmax_idx_expr)
