@@ -70,6 +70,10 @@ void IAIProvider::embed(
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version)
 {
+    /// The key is sent as an HTTP header value.
+    if (api_key.find_first_of("\r\n") != String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI provider API key contains CR or LF");
+
     if (provider_name == "openai" || provider_name == "huggingface" || provider_name == "tei")
         return std::make_unique<OpenAIProvider>(endpoint, api_key);
     else if (provider_name == "anthropic")
