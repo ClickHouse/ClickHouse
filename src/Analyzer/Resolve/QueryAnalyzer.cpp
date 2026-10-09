@@ -2016,6 +2016,9 @@ static std::unordered_map<String, String> buildSubqueryInternalToDisplayNameMap(
 
 static String getDisplayName(const std::unordered_map<String, String> & internal_to_display, const String & internal_name)
 {
+    if (internal_to_display.empty())
+        return internal_name;
+
     auto it = internal_to_display.find(internal_name);
     return it == internal_to_display.end() ? internal_name : it->second;
 }
@@ -7999,6 +8002,33 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         query_node_typed.setProjectionColumnDisplayNames(std::move(projection_column_display_names));
 }
 
+/// Equal expressions hold equal values only if each column reads the same table expression: the same column of
+/// two identical table expressions on the two sides of an outer JOIN holds different values.
+static bool readSameColumnSources(const IQueryTreeNode & lhs, const IQueryTreeNode & rhs)
+{
+    std::vector<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> nodes{{&lhs, &rhs}};
+    while (!nodes.empty())
+    {
+        auto [lhs_node, rhs_node] = nodes.back();
+        nodes.pop_back();
+
+        if (const auto * lhs_column = lhs_node->as<ColumnNode>())
+        {
+            auto lhs_source = lhs_column->getColumnSourceOrNull();
+            if (lhs_source && lhs_source->getNodeType() != QueryTreeNodeType::LAMBDA
+                && lhs_source != rhs_node->as<ColumnNode>()->getColumnSourceOrNull())
+                return false;
+        }
+
+        const auto & lhs_children = lhs_node->getChildren();
+        const auto & rhs_children = rhs_node->getChildren();
+        for (size_t i = 0; i < lhs_children.size(); ++i)
+            if (lhs_children[i])
+                nodes.emplace_back(lhs_children[i].get(), rhs_children[i].get());
+    }
+    return true;
+}
+
 Names QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
     const QueryNode & query_node,
     NamesAndTypes & projection_columns,
@@ -8043,9 +8073,9 @@ Names QueryAnalyzer::disambiguateDuplicateProjectionColumnNames(
         if (inserted)
             continue;
 
-        /// Equal expressions with the same name (e.g. `SELECT number, number`) produce the same
-        /// value, so collapsing them is harmless. Only disambiguate genuinely different expressions.
-        if (projection_nodes[i]->isEqual(*projection_nodes[it->second]))
+        /// Equal expressions over the same sources (e.g. `SELECT number, number`) hold the same values, so collapsing them is harmless.
+        if (projection_nodes[i]->isEqual(*projection_nodes[it->second])
+            && readSameColumnSources(*projection_nodes[i], *projection_nodes[it->second]))
             continue;
 
         /// Intentional shadowing (#14739): a later explicit alias `expr AS name` that redefines an

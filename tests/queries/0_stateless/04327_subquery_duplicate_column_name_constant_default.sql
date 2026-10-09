@@ -212,3 +212,9 @@ SELECT a, t1.a, t2.a FROM t1_118986 AS t1 FULL OUTER JOIN t2_118986 AS t2 USING 
 SELECT * FROM (SELECT a, t1.a, t2.a FROM t1_118986 AS t1 FULL OUTER JOIN t2_118986 AS t2 USING (a)) ORDER BY ALL;
 DROP TABLE t1_118986;
 DROP TABLE t2_118986;
+
+-- Equal expressions over two identical table expressions are different columns.
+SELECT * FROM numbers(1, 1) RIGHT JOIN numbers(1, 1) ON 0 SETTINGS joined_subquery_requires_alias = 0;
+SELECT * FROM (SELECT * FROM numbers(1, 1) RIGHT JOIN numbers(1, 1) ON 0) SETTINGS joined_subquery_requires_alias = 0;
+SELECT * FROM (SELECT materialize(1) AS x) ALL LEFT JOIN (SELECT materialize(1) AS x) ON 0 SETTINGS joined_subquery_requires_alias = 0;
+SELECT * FROM (SELECT * FROM (SELECT materialize(1) AS x) ALL LEFT JOIN (SELECT materialize(1) AS x) ON 0) SETTINGS joined_subquery_requires_alias = 0;
