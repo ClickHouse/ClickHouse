@@ -31,6 +31,14 @@ with engine.connect() as conn:
     print(version)
 ```
 
+Use these explicit URL forms when `clickhouse-sqlalchemy` is also installed.
+Importing `clickhouse_connect.cc_sqlalchemy` leaves that package's `clickhouse://`
+registration in place. If another installed provider prevents our alias
+registration, the import emits a `UserWarning` that recommends an explicit
+ClickHouse Connect URL. Existing runtime registrations are left untouched without
+a warning. If no other provider claims `clickhouse://`, this import makes it
+available as a ClickHouse Connect compatibility alias.
+
 ### ClickHouse session IDs {#sqlalchemy-session-ids}
 
 Each pooled connection in either the synchronous or async dialect generates a distinct ClickHouse session ID by default. When requests for that connection reach the same ClickHouse server process, settings changed with `SET` and temporary tables persist for that connection. Named-session state and same-session overlap checks are process-local. On one server process, an overlapping request for the same user and session ID is rejected immediately with server code 373 instead of being queued. If you configure a fixed `session_id`, use `pool_size=1, max_overflow=0` or serialize access before requests reach ClickHouse. In ClickHouse Cloud or other load-balanced deployments, requests with the same session ID can reach different servers, so do not rely on a fixed `session_id` as distributed state or as a distributed mutex.
@@ -134,6 +142,8 @@ with engine.connect() as conn:
 ### Error handling {#sqlalchemy-error-handling}
 
 Errors raised by the driver through a SQLAlchemy connection use the DB-API classes exported from `clickhouse_connect.dbapi`. They are the same class objects as the corresponding classes in `clickhouse_connect.driver.exceptions`, so SQLAlchemy wraps them in the matching `sqlalchemy.exc.DBAPIError` subclass. `StreamFailureError` is an `OperationalError` and is wrapped as `sqlalchemy.exc.OperationalError`.
+
+SQL execution follows the driver's [HTTP retry policy](/integrations/language-clients/python/driver-api#http-retries). Native bulk inserts use the [insert retry policy](/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 If caller cancellation can interrupt an explicit `AsyncConnection.invalidate()`, run invalidation in an owned task and wait for that task before propagating cancellation. This lets SQLAlchemy finish its connection-record bookkeeping:
 
@@ -432,6 +442,8 @@ ClickHouse does not support recursive materialized CTEs. The SQLAlchemy helpers 
 
 ClickHouse Connect provides ClickHouse data types, table engines, dictionary constructs, database DDL, and table reflection.
 
+`Nullable()` and `LowCardinality()` from `clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes` accept a ClickHouse SQLAlchemy type class or instance and preserve its concrete type for type checkers. For example, `Nullable(String)` returns a `String` instance and can be passed directly to `Column`. Type checkers infer `list[String]` for `[Nullable(String)]`. If the list also holds other ClickHouse types, annotate it as `list[ChSqlaType]` and import `ChSqlaType` from `clickhouse_connect.cc_sqlalchemy.datatypes.base`.
+
 Standalone `Variant` columns reflect through an internal SQLAlchemy type, and Alembic autogenerate preserves their canonical raw type names without repeated type changes. `Geometry` and `MultiPoint` columns reflect as public SQLAlchemy types.
 
 ```python
@@ -460,7 +472,24 @@ with engine.connect() as conn:
     assert reflected.engine is not None
 ```
 
-Reflected columns carry `server_default` for `DEFAULT` expressions and dialect-specific attributes such as `clickhouse_codec`, `clickhouse_ttl`, `clickhouse_materialized`, and `clickhouse_alias` when present.
+Reflected columns carry `server_default` for `DEFAULT` expressions. Reflected
+SQLAlchemy objects use dialect-specific options such as `clickhousedb_codec`,
+`clickhousedb_ttl`, `clickhousedb_materialized`, and `clickhousedb_alias` when present.
+The public dictionaries returned by `Inspector.get_columns()` retain the
+corresponding `clickhouse_*` keys.
+
+Use `clickhousedb_*` for new table and column declarations. Driver-generated
+metadata and Alembic revisions use these names. ClickHouse Connect also reads
+explicit legacy `clickhouse_*` options, but SQLAlchemy validates them against the
+dialect that owns `clickhouse`. In a mixed install, ClickHouse Connect options such
+as `clickhouse_engine`, `clickhouse_ttl`, `clickhouse_settings`,
+`clickhouse_table_type`, and `clickhouse_dictionary_*` can raise `ArgumentError`.
+Rename them to `clickhousedb_*`.
+
+ClickHouse Connect reads defaults only from `clickhousedb`. Register them with
+`Table.argument_for("clickhousedb", ...)` or
+`Column.argument_for("clickhousedb", ...)`. Alembic operation arguments such as
+`op.add_column(..., clickhouse_settings={...})` keep their existing names.
 
 String values in `DEFAULT`, `MATERIALIZED`, `ALIAS`, and `TTL` clauses use ClickHouse string escaping. The same escaping applies to table, dictionary, and column comments, including comments emitted by Alembic.
 
@@ -550,6 +579,10 @@ alembic init -t async alembic
 The generated `alembic.ini` uses `script_location = %(here)s/alembic`. Keep that setting when the migration directory is named `alembic`, or update it to the directory passed to `alembic init`. Replace `alembic/env.py` with the checked-in [async Alembic `env.py` example](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py), then set `sqlalchemy.url` in `alembic.ini`.
 
 Import `clickhouse_connect.cc_sqlalchemy.alembic` in Alembic's `env.py` to register the dialect integration. Autogenerate supports common table evolution, including table creation and removal, column add/alter/drop, defaults, and comments. Use manual operations for table and column renames. Review every generated migration before applying it.
+
+When metadata omits an `AggregateFunction` state version, autogenerate accepts the existing reflected version. For example, `AggregateFunction(uniq, UInt32)` matches reflected `AggregateFunction(1, uniq, UInt32)`. This also applies inside nested types. Changes to the aggregate function, its parameters, or its argument types still produce a type change.
+
+An explicit metadata version must match the reflected version. Legacy reflected types without a version match explicit version `0`. Omitting the version does not request an upgrade of an existing state format after a server upgrade. Declare an explicit version when you intend to change the state format.
 
 Alembic's migration functions remain synchronous. An async environment creates an `AsyncEngine`, opens an `AsyncConnection`, and passes the synchronous migration function to `await connection.run_sync(...)`. Offline migrations call `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})` directly and do not create an engine. The checked-in [async Alembic `env.py` example](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) includes both paths and reads the connection URL through Alembic's standard `sqlalchemy.url` configuration. It keeps the ClickHouse Alembic hooks and options from the worked example, including `include_object`, `make_include_name(...)`, `clickhouse_writer`, and `version_table`. Do not use `engine.sync_engine` to run or dispose async migrations.
 
