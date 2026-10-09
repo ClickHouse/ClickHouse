@@ -3257,6 +3257,25 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
                 "keeping the previous storage policy for table {}",
                 disk->getName(), getStorageID().getNameForLogs());
 
+    /// A newly added disk may already hold queued `N.bin` files. Advance `file_names_increment` past
+    /// them before the new policy is published, as `startup` does, so that the next async INSERT
+    /// cannot reuse a number that is already taken on that disk.
+    for (const DiskPtr & disk : new_data_volume->getDisks())
+    {
+        if (!new_added_disks.contains(disk->getName()))
+            continue;
+
+        const String path = disk->getPath() + relative_data_path;
+        if (!fs::exists(path))
+            continue;
+
+        const UInt64 max_number = getMaximumFileNumber(path);
+        UInt64 current = file_names_increment.value.load();
+        while (current < max_number && !file_names_increment.value.compare_exchange_weak(current, max_number))
+        {
+        }
+    }
+
     std::atomic_store(&storage_policy, new_storage_policy);
     std::atomic_store(&data_volume, new_data_volume);
 
