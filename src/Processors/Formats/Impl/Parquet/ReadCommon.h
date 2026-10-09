@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Formats/FormatSettings.h>
 
@@ -26,7 +27,10 @@ struct ColumnsCacheOptions
     /// Shown as the `part` of the entries in `system.columns_cache`.
     String file_path;
 
-    /// A hash of what identifies the content of the file - the path, the ETag (or the version token
+    /// The source whose `READ` grant is required to see the entries in `system.columns_cache`.
+    AccessTypeObjects::Source source = AccessTypeObjects::Source::FILE;
+
+    /// A hash of what identifies the content of the file - the path among all storages, the ETag (or the version token
     /// of a local file) and the size - and of the format settings that change the values decoded
     /// from it. Part of the key of every entry of the file.
     UInt64 file_identity = 0;

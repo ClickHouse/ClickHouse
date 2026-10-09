@@ -671,7 +671,7 @@ std::vector<ColumnsCache::EntryMetadata> ColumnsCache::getAllEntriesMetadata()
             /// `bytes` reports the memory the entry retains, the same quantity the cache is bounded
             /// by, so that the sum over `system.columns_cache` can be compared with
             /// `columns_cache_size`. See `ColumnsCacheWeightFunction`.
-            result.push_back(EntryMetadata{entry.table_uuid, entry.part_name, entry.column_name, entry.row_begin, entry.rows, ColumnsCacheWeightFunction{}(entry)});
+            result.push_back(EntryMetadata{entry.table_uuid, entry.part_name, entry.column_name, entry.source, entry.row_begin, entry.rows, ColumnsCacheWeightFunction{}(entry)});
         }
     }
     return result;

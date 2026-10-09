@@ -138,7 +138,19 @@ protected:
             /// without SHOW TABLES / SHOW COLUMNS on another database could learn its table
             /// name, UUID, part names, column names, row ranges, and cached sizes once the
             /// cache is warmed.
-            if (!database || !table)
+            if (meta.table_uuid == UUIDHelpers::Nil)
+            {
+                /// An entry of a file read by a table function or an external table engine: its
+                /// path is visible only to a user who may read from its source (`FILE`, `S3`, ...)
+                /// without restrictions, besides holding `SHOW COLUMNS` globally.
+                if (!has_global_show_columns || !meta.source
+                    || !access->isGranted(AccessType::READ, toStringSource(*meta.source)))
+                {
+                    ++current_index;
+                    continue;
+                }
+            }
+            else if (!database || !table)
             {
                 /// For unresolved or dropped UUIDs we cannot evaluate per-table access, so
                 /// fail closed: only the global SHOW COLUMNS privilege grants visibility of

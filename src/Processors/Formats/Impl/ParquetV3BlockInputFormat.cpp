@@ -51,10 +51,27 @@ static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_set
     return options;
 }
 
+/// The source whose `READ` grant is required to see the cached entries of a file in `system.columns_cache`.
+static std::optional<AccessTypeObjects::Source> getColumnsCacheSource(ObjectStorageType storage_type)
+{
+    switch (storage_type)
+    {
+        case ObjectStorageType::S3: return AccessTypeObjects::Source::S3;
+        case ObjectStorageType::Azure: return AccessTypeObjects::Source::AZURE;
+        case ObjectStorageType::HDFS: return AccessTypeObjects::Source::HDFS;
+        case ObjectStorageType::Web: return AccessTypeObjects::Source::URL;
+        case ObjectStorageType::Local: return AccessTypeObjects::Source::FILE;
+        case ObjectStorageType::None:
+        case ObjectStorageType::Max:
+            return std::nullopt;
+    }
+}
+
 /// The columns cache options for reading a file, or nullptr if the read does not use the cache.
 /// The cache is used only for a file whose content is identified by a strong version token:
 /// an ETag of an object in an object storage, or the version token of a local file once it has
-/// settled (see `StorageFile`), the same as for the userspace page cache.
+/// settled (see `StorageFile`), the same as for the userspace page cache. The file must also be
+/// identified among all storages, see `RelativePathWithMetadata::path_for_content_cache`.
 static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOptions(
     const ContextPtr & context, const FormatSettings & format_settings, const std::optional<RelativePathWithMetadata> & object_with_metadata)
 {
@@ -70,6 +87,12 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     if (!object_with_metadata || !object_with_metadata->metadata || !object_with_metadata->metadata->isEtagUsableAsCacheKey())
         return nullptr;
 
+    if (!object_with_metadata->path_for_content_cache)
+        return nullptr;
+    const auto source = getColumnsCacheSource(object_with_metadata->storage_type_for_content_cache);
+    if (!source)
+        return nullptr;
+
     /// A zero-sized cache accepts nothing, so it is not even looked up.
     ColumnsCachePtr cache = context->getColumnsCache();
     if (!cache || cache->maxSizeInBytes() == 0)
@@ -78,6 +101,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
     auto options = std::make_shared<Parquet::ColumnsCacheOptions>();
     options->cache = std::move(cache);
     options->file_path = object_with_metadata->getPath();
+    options->source = *source;
     options->enable_reads = enable_reads;
     options->enable_writes = enable_writes;
     options->max_bytes_to_write = settings[Setting::columns_cache_max_bytes_to_write_to_cache];
@@ -88,7 +112,7 @@ static std::shared_ptr<const Parquet::ColumnsCacheOptions> getColumnsCacheOption
 
     const ObjectMetadata & metadata = *object_with_metadata->metadata;
     SipHash hash;
-    hash.update(options->file_path);
+    hash.update(*object_with_metadata->path_for_content_cache);
     hash.update(metadata.etag);
     hash.update(metadata.size_bytes);
     /// The format settings that change the values decoded from the file without changing their

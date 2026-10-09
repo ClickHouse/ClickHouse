@@ -167,6 +167,13 @@ struct RelativePathWithMetadata
     std::optional<String> path_for_glob_matching;
     std::optional<String> path_for_deduplication;
     bool derive_file_name_from_url_path = false;
+    /// For the caches of the decoded content of the object, such as the columns cache: the path that
+    /// identifies the object among all storages (with its namespace and connection, see
+    /// `StorageObjectStorageSource::getUniqueStoragePathIdentifier`), and the type of the storage,
+    /// which decides the source grant required to see the cached entries. Such caches are not used
+    /// for an object without them.
+    std::optional<String> path_for_content_cache;
+    ObjectStorageType storage_type_for_content_cache = ObjectStorageType::None;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
 

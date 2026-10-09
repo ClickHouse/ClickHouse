@@ -4100,6 +4100,7 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
         auto entry = std::make_shared<ColumnsCacheEntry>();
         entry->table_uuid = UUIDHelpers::Nil;
         entry->part_name = cache_options.file_path;
+        entry->source = cache_options.source;
         entry->column_name = extended_sample_block.getByPosition(idx).name;
         entry->schema_identity = cache_options.file_identity;
         entry->first_mark = 0;

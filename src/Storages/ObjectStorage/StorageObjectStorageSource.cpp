@@ -1592,6 +1592,10 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
                 object_with_metadata->relative_path = object_info->getPath();
+            /// The relative path alone does not identify the object: another bucket, container or
+            /// endpoint can have an object with the same key and version token.
+            object_with_metadata->path_for_content_cache = getUniqueStoragePathIdentifier(*configuration, *object_info);
+            object_with_metadata->storage_type_for_content_cache = configuration->getType();
             input_format = FormatFactory::instance().getInputWithMetadata(
                 format_name,
                 *read_buf,

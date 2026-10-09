@@ -2023,6 +2023,9 @@ Chunk StorageFileSource::generate()
                 /// cache, check `isEtagUsableAsCacheKey`.
                 md.etag_is_strong = current_file_version_settled;
                 object_with_metadata.emplace(current_path, std::move(md));
+                /// The path of a local file is absolute, so it identifies the file on the server.
+                object_with_metadata->path_for_content_cache = current_path;
+                object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
             }
 
             /// Consult the Query Condition Cache. If a previous query with the same predicate already
@@ -2737,6 +2740,8 @@ public:
                     md.etag = file.file.version_token;
                     md.etag_is_strong = isFileCacheVersionTokenSettled(file_stat);
                     object_with_metadata.emplace(path, std::move(md));
+                    object_with_metadata->path_for_content_cache = path;
+                    object_with_metadata->storage_type_for_content_cache = ObjectStorageType::Local;
                 }
 
                 /// The rows of a file must be returned in ascending order, otherwise
