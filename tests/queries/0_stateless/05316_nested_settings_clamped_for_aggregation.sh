@@ -6,6 +6,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Pin (randomized in CI): GROUP BY LIMIT stops at LIMIT keys only with this optimization.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --optimize_trivial_group_by_limit_query 1"
+
 # A settings profile is server-global, so its name carries the test database to keep this test safe
 # against a concurrent copy of itself.
 PROFILE="profile_05316_${CLICKHOUSE_DATABASE}"

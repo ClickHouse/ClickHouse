@@ -6,6 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Pin (randomized in CI): a spilled `IN` set keeps no explicit elements, so the primary key
+# analysis by the set that the `SelectedMarks` check below relies on does not happen.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --max_bytes_before_external_set 0"
+
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t1
