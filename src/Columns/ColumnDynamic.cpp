@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeString.h>
@@ -60,10 +59,16 @@ void sortAndKeepTop(Container & container, size_t limit, Compare compare)
     std::sort(container.begin(), container.end(), compare);
 }
 
-/// Static default format settings to avoid creating it every time.
+/// Static format settings to avoid creating it every time.
 const FormatSettings & getFormatSettings()
 {
-    static const FormatSettings settings;
+    static const FormatSettings settings = []
+    {
+        FormatSettings result;
+        /// Values in the shared variant are in the column binary form, also when written or read as a `Field`.
+        result.binary.aggregate_function_field_as_column = true;
+        return result;
+    }();
     return settings;
 }
 
@@ -294,14 +299,6 @@ void ColumnDynamic::insert(const Field & x)
         /// We reached maximum number of variants and couldn't add new variant.
         /// In this case we add the value of this new variant into special shared variant.
         /// We store values in shared variant in binary form with binary encoded type.
-        if (hasAggregateFunctionType(field_data_type))
-        {
-            auto tmp_column = field_data_type->createColumn();
-            tmp_column->insert(x);
-            insertValueIntoSharedVariant(*tmp_column, field_data_type, field_data_type_name, 0);
-            return;
-        }
-
         auto & shared_variant = getSharedVariant();
         auto & chars = shared_variant.getChars();
         {
@@ -349,18 +346,7 @@ void ColumnDynamic::get(size_t n, Field & res) const
     auto value_data = shared_variant.getDataAt(variant_col.offsetAt(n));
     ReadBufferFromMemory buf(value_data);
     auto type = decodeDataType(buf);
-    /// The binary form of a `Field` differs from the binary form of a column only for aggregate function states.
-    if (!hasAggregateFunctionType(type))
-    {
-        type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
-        return;
-    }
-
-    auto tmp_column = type->createColumn();
-    type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, getFormatSettings());
-    tmp_column->get(0, res);
-    if (!res.isNull())
-        res = convertFieldToType(res, *type);
+    type->getDefaultSerialization()->deserializeBinary(res, buf, getFormatSettings());
 }
 
 void ColumnDynamic::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
