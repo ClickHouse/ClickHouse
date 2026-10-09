@@ -153,7 +153,7 @@ void WindowFrame::checkValid() const
     }
     else
     {
-        // Checked before the coercion in `WindowTransform`: coercion to a lower scale can
+        // Checked before the coercion in `WindowTransformParams`: coercion to a lower scale can
         // truncate a negative offset to zero, and coercion of a non-finite offset to an
         // integer or `Decimal` column rejects it as out of range instead.
         if (begin_type == BoundaryType::Offset && !isValidRangeOffset(begin_offset))

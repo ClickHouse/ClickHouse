@@ -1,5 +1,6 @@
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 
@@ -52,9 +53,12 @@ int compareRangeOffset(
     const IColumn * rhs_column, size_t rhs_row,
     const Field & offset, bool offset_is_preceding)
 {
-    const T lhs_value = assert_cast<const ColumnVector<T> &>(*lhs_column).getData()[lhs_row];
-    const T rhs_value = assert_cast<const ColumnVector<T> &>(*rhs_column).getData()[rhs_row];
-    const std::optional<T> shifted_rhs = shift(rhs_value, static_cast<T>(offset.safeGet<T>()), offset_is_preceding);
+    /// A `Decimal` is shifted as its underlying integer: `prepareRangeOffsets` gave the offset the key's scale.
+    using Value = NativeType<T>;
+    const Value lhs_value = assert_cast<const ColumnVectorOrDecimal<T> &>(*lhs_column).getData()[lhs_row];
+    const Value rhs_value = assert_cast<const ColumnVectorOrDecimal<T> &>(*rhs_column).getData()[rhs_row];
+    const Value offset_value = static_cast<T>(offset.safeGet<T>());
+    const std::optional<Value> shifted_rhs = shift(rhs_value, offset_value, offset_is_preceding);
 
     if (!shifted_rhs)
         return offset_is_preceding ? 1 : -1;
@@ -99,6 +103,10 @@ RangeOffsetComparator chooseRangeOffsetComparatorForValueType(const IColumn & co
         case TypeIndex::Int32: return nullable ? compareNullableRangeOffset<Int32> : compareRangeOffset<Int32>;
         case TypeIndex::Int64: return nullable ? compareNullableRangeOffset<Int64> : compareRangeOffset<Int64>;
         case TypeIndex::Int128: return nullable ? compareNullableRangeOffset<Int128> : compareRangeOffset<Int128>;
+        case TypeIndex::Decimal32: return nullable ? compareNullableRangeOffset<Decimal32> : compareRangeOffset<Decimal32>;
+        case TypeIndex::Decimal64: return nullable ? compareNullableRangeOffset<Decimal64> : compareRangeOffset<Decimal64>;
+        case TypeIndex::Decimal128: return nullable ? compareNullableRangeOffset<Decimal128> : compareRangeOffset<Decimal128>;
+        case TypeIndex::Decimal256: return nullable ? compareNullableRangeOffset<Decimal256> : compareRangeOffset<Decimal256>;
         case TypeIndex::Float32: return nullable ? compareNullableRangeOffset<Float32> : compareRangeOffset<Float32>;
         case TypeIndex::Float64: return nullable ? compareNullableRangeOffset<Float64> : compareRangeOffset<Float64>;
         default:
@@ -155,7 +163,7 @@ std::vector<bool> markColumnsToMaterialize(
     for (const auto & column : partition_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
-    /// Compared across blocks for peer groups, and cast to a concrete ColumnVector by the RANGE comparator.
+    /// Compared across blocks for peer groups, and cast to a concrete ColumnVector or ColumnDecimal by the RANGE comparator.
     for (const auto & column : order_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
