@@ -26,9 +26,9 @@ namespace
 {
     /// Exactly one worker source is required per cluster: zero cannot provide workers, and more than one
     /// is an ambiguous config that would silently pick a single source (wrong-pool risk).
-    size_t countWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & prefix)
+    Strings getWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & prefix)
     {
-        return StatelessWorkersProviderFactory::instance().countWorkerSources(config, prefix);
+        return StatelessWorkersProviderFactory::instance().getWorkerSources(config, prefix);
     }
 }
 
@@ -54,8 +54,8 @@ String StatelessWorkersProviderRegistry::canonicalizeClusterName(
     {
         /// A default exists only when the flat block names a worker source; otherwise a query must
         /// name its cluster.
-        const size_t sources = countWorkerSources(config, "stateless_worker_client");
-        if (sources == 0)
+        const Strings sources = getWorkerSources(config, "stateless_worker_client");
+        if (sources.empty())
         {
             Poco::Util::AbstractConfiguration::Keys names;
             config.keys("stateless_worker_client.clusters", names);
@@ -63,9 +63,10 @@ String StatelessWorkersProviderRegistry::canonicalizeClusterName(
                 "No default stateless worker cluster is configured; set `distributed_plan_worker_cluster` to one of: {}",
                 fmt::join(names, ", "));
         }
-        if (sources > 1)
+        if (sources.size() > 1)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-                "The default stateless worker cluster configures multiple worker sources; set exactly one");
+                "The default stateless worker cluster configures multiple worker sources ({}); set exactly one",
+                fmt::join(sources, ", "));
         return {};
     }
 
@@ -74,15 +75,15 @@ String StatelessWorkersProviderRegistry::canonicalizeClusterName(
     if (!config.has(prefix))
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Stateless worker cluster '{}' is not configured", worker_cluster);
-    const size_t sources = countWorkerSources(config, prefix);
-    if (sources == 0)
+    const Strings sources = getWorkerSources(config, prefix);
+    if (sources.empty())
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "Stateless worker cluster '{}' configures no worker source",
             worker_cluster);
-    if (sources > 1)
+    if (sources.size() > 1)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER,
-            "Stateless worker cluster '{}' configures multiple worker sources; set exactly one",
-            worker_cluster);
+            "Stateless worker cluster '{}' configures multiple worker sources ({}); set exactly one",
+            worker_cluster, fmt::join(sources, ", "));
     return worker_cluster;
 }
 
@@ -144,9 +145,9 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(cons
     /// Only the worker source is per-cluster; other settings are read from the top-level block and
     /// shared across clusters. `getProvider` has already validated the cluster name.
     const String config_prefix = clusterConfigPrefix(cluster_name);
-    const auto & [kind_name, kind] = StatelessWorkersProviderFactory::instance().getKind(config, config_prefix);
-    LOG_DEBUG(log, "Building {} stateless worker provider for cluster '{}'", kind_name, cluster_name);
-    return kind.create(config, config_prefix);
+    const String source = getWorkerSources(config, config_prefix).front();
+    LOG_DEBUG(log, "Building stateless worker provider for cluster '{}' from `{}`", cluster_name, source);
+    return StatelessWorkersProviderFactory::instance().get(source).create(config, config_prefix);
 }
 
 String StatelessWorkersProviderRegistry::computeConfigSignature(const Poco::Util::AbstractConfiguration & config, const String & cluster_name)
@@ -163,10 +164,10 @@ String StatelessWorkersProviderRegistry::computeConfigSignature(const Poco::Util
     }
 
     /// A cluster that no longer names exactly one worker source cannot be rebuilt as it was.
-    if (countWorkerSources(config, config_prefix) != 1)
+    const Strings sources = getWorkerSources(config, config_prefix);
+    if (sources.size() != 1)
         return {};
-    const auto & [kind_name, kind] = StatelessWorkersProviderFactory::instance().getKind(config, config_prefix);
-    return kind_name + "|" + kind.config_signature(config, config_prefix);
+    return sources.front() + "|" + StatelessWorkersProviderFactory::instance().get(sources.front()).config_signature(config, config_prefix);
 }
 
 void StatelessWorkersProviderRegistry::reloadConfig(const Poco::Util::AbstractConfiguration & config)

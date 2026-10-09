@@ -2,6 +2,7 @@
 
 #include <Server/StatelessWorker/StatelessWorkersProviderFactory.h>
 #include <Common/Exception.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -25,29 +26,27 @@ StatelessWorkersProviderFactory & StatelessWorkersProviderFactory::instance()
     return factory;
 }
 
-void StatelessWorkersProviderFactory::registerProviderKind(const String & name, ProviderKind kind)
+void StatelessWorkersProviderFactory::registerProviderKind(const String & source_key, ProviderKind kind)
 {
-    if (!kinds.emplace(name, std::move(kind)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker provider kind '{}' is already registered", name);
+    if (!kinds.emplace(source_key, std::move(kind)).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Stateless worker provider kind '{}' is already registered", source_key);
 }
 
-size_t StatelessWorkersProviderFactory::countWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const
+Strings StatelessWorkersProviderFactory::getWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const
 {
-    size_t sources = 0;
-    for (const auto & [_, kind] : kinds)
-        sources += kind.count_worker_sources(config, config_prefix);
+    Strings sources;
+    for (const auto & [source_key, _] : kinds)
+        if (!config.getString(config_prefix + "." + source_key, "").empty())
+            sources.push_back(source_key);
     return sources;
 }
 
-const std::pair<const String, StatelessWorkersProviderFactory::ProviderKind> & StatelessWorkersProviderFactory::getKind(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const
+const StatelessWorkersProviderFactory::ProviderKind & StatelessWorkersProviderFactory::get(const String & source_key) const
 {
-    for (const auto & entry : kinds)
-    {
-        if (entry.second.count_worker_sources(config, config_prefix) > 0)
-            return entry;
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "No stateless worker provider kind serves '{}'", config_prefix);
+    auto it = kinds.find(source_key);
+    if (it == kinds.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown stateless worker provider kind '{}'", source_key);
+    return it->second;
 }
 
 }

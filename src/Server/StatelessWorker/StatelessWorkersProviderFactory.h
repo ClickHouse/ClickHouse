@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Server/StatelessWorker/IStatelessWorkersProvider.h>
-#include <base/types.h>
+#include <Core/Types.h>
 #include <boost/core/noncopyable.hpp>
 #include <functional>
 #include <map>
@@ -17,16 +17,14 @@ namespace Util
 namespace DB
 {
 
-/// Builds stateless-worker providers by kind. Each kind recognizes its own worker-source keys in a
-/// cluster's configuration; the registry requires exactly one source per cluster and builds the
-/// provider of the kind that owns it.
+/// Builds stateless-worker providers. A provider kind is registered under the configuration key that
+/// selects it (its worker source, e.g. `host`), relative to a cluster's configuration; a cluster sets
+/// exactly one worker source.
 class StatelessWorkersProviderFactory : private boost::noncopyable
 {
 public:
     struct ProviderKind
     {
-        /// How many worker sources of this kind the cluster at `config_prefix` configures.
-        std::function<size_t(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)> count_worker_sources;
         /// Builds and starts the provider for the cluster at `config_prefix`.
         std::function<StatelessWorkersProviderPtr(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)> create;
         /// A digest of the configuration `create` reads, so a config reload rebuilds the provider only on change.
@@ -35,14 +33,12 @@ public:
 
     static StatelessWorkersProviderFactory & instance();
 
-    void registerProviderKind(const String & name, ProviderKind kind);
+    void registerProviderKind(const String & source_key, ProviderKind kind);
 
-    /// Total number of worker sources the cluster at `config_prefix` configures, over all kinds.
-    size_t countWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const;
+    /// The worker sources the cluster at `config_prefix` sets.
+    Strings getWorkerSources(const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const;
 
-    /// The kind (name and callbacks) that serves the cluster at `config_prefix`. The cluster must configure
-    /// exactly one worker source.
-    const std::pair<const String, ProviderKind> & getKind(const Poco::Util::AbstractConfiguration & config, const String & config_prefix) const;
+    const ProviderKind & get(const String & source_key) const;
 
 private:
     StatelessWorkersProviderFactory();

@@ -74,12 +74,7 @@ StatelessWorkerAllocationPtr StaticStatelessWorkersProvider::allocate(
 
 void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & factory)
 {
-    factory.registerProviderKind("static", StatelessWorkersProviderFactory::ProviderKind{
-        .count_worker_sources = [](const Poco::Util::AbstractConfiguration & config, const String & config_prefix) -> size_t
-        {
-            return (config.getString(config_prefix + ".cluster", "").empty() ? 0 : 1)
-                + (config.getString(config_prefix + ".host", "").empty() ? 0 : 1);
-        },
+    StatelessWorkersProviderFactory::ProviderKind kind{
         .create = [](const Poco::Util::AbstractConfiguration &, const String & config_prefix) -> StatelessWorkersProviderPtr
         {
             return std::make_shared<StaticStatelessWorkersProvider>(config_prefix);
@@ -93,7 +88,9 @@ void registerStaticStatelessWorkersProvider(StatelessWorkersProviderFactory & fa
                     + ":" + std::to_string(address.streaming_exchange_port) + "|";
             return signature;
         },
-    });
+    };
+    factory.registerProviderKind("cluster", kind);
+    factory.registerProviderKind("host", kind);
 }
 
 std::vector<StatelessWorkerState> StaticStatelessWorkersProvider::getWorkersState() const
