@@ -218,3 +218,6 @@ SELECT * FROM numbers(1, 1) RIGHT JOIN numbers(1, 1) ON 0 SETTINGS joined_subque
 SELECT * FROM (SELECT * FROM numbers(1, 1) RIGHT JOIN numbers(1, 1) ON 0) SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT materialize(1) AS x) ALL LEFT JOIN (SELECT materialize(1) AS x) ON 0 SETTINGS joined_subquery_requires_alias = 0;
 SELECT * FROM (SELECT * FROM (SELECT materialize(1) AS x) ALL LEFT JOIN (SELECT materialize(1) AS x) ON 0) SETTINGS joined_subquery_requires_alias = 0;
+
+-- A correlated union subquery whose first branch repeats a name.
+SELECT o.number, (SELECT max(number) FROM ((SELECT number, o.number FROM numbers(10, 1)) UNION ALL (SELECT 20, o.number))) FROM numbers(2) AS o ORDER BY 1 SETTINGS allow_correlated_subqueries = 1;
