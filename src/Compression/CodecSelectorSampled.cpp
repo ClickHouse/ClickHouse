@@ -34,10 +34,10 @@ Candidates CodecSelectorSampled::select(CompressionState * state, const Outcome 
         const UInt64 block = stream.block_index++;
         /// intHash64(block / selection_period) s.t. we get same hash for each block in the window.
         stream.in_sample = block % selection_period == intHash64(block / selection_period) % selection_period;
-        /// No winner → either this is stream's first block or last block did full pricing and chose NONE. In either case, price all candidates.
+        /// No winner → either this is stream's first block or last block did full pricing and chose NONE.
         if (!stream.winner || stream.in_sample)
         {
-            /// A stream with a single candidate is not adaptive, so its blocks are not counted.
+            /// A stream with a single candidate is not adaptive.
             if (outcome.all.count() > 1)
                 ProfileEvents::increment(ProfileEvents::AdaptiveCodecBlocksPriced);
             return outcome.all;
@@ -45,10 +45,9 @@ Candidates CodecSelectorSampled::select(CompressionState * state, const Outcome 
         return Candidates{}.set(*stream.winner);
     }
 
-    /// We ran all candidates on this block, remember the pricing.
     if (outcome.ran == outcome.all)
     {
-        stream.winner = outcome.best; /// Empty when nothing shrank the block, so no winner is remembered.
+        stream.winner = outcome.best;
         stream.runner_up_size = outcome.runner_up_size;
         stream.source_size = outcome.source_size;
 

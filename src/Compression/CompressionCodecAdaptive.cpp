@@ -57,10 +57,9 @@ constexpr size_t codecPosition(size_t entry) { return 2 * entry; }
 constexpr size_t chainPosition(size_t entry) { return 2 * entry + 1; }
 constexpr size_t entryOf(size_t position) { return position / 2; }
 
-/// The default and every specialized codec, each with its chain, fit the positions.
 static_assert(chainPosition(SPECIALIZED_CODECS.size()) < AdaptiveCodec::MAX_POSITIONS);
 
-/// Every candidate the pool offers: each entry's codec, and its chain where it has one.
+/// Every candidate the pool offers
 AdaptiveCodec::Candidates candidatesOf(const AdaptiveCodec::Pool & pool)
 {
     AdaptiveCodec::Candidates all;
@@ -142,7 +141,7 @@ AdaptiveCodec::Pool AdaptiveCodec::poolForType(const DataTypePtr & type, const C
     if (deployment_default->isEncryption())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec pool must not be built from an encrypting default");
 
-    Pool pool{{deployment_default}};
+    Pool pool{Entry{deployment_default}};
     if (!type)
         return pool;
 
@@ -206,7 +205,6 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
         record(chainPosition(entry), size, chained);
     };
 
-    /// Runs the candidates the selector picks until it picks none.
     AdaptiveCodec::Candidates plan = selector->select(state, outcome);
     while (plan.any())
     {
@@ -256,7 +254,6 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
 
 UInt32 CompressionCodecAdaptive::getMaxCompressedDataSize(UInt32 uncompressed_size) const
 {
-    /// The raw block must fit too
     UInt32 max_reserve = getNoneCodec().getCompressedReserveSize(uncompressed_size);
     for (const auto & [codec, chain] : pool)
     {
