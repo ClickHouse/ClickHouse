@@ -87,6 +87,8 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
         optimization_settings.top_k_optimization_shared_boundary,
+        optimization_settings.enable_group_by_top_k_dynamic_filtering,
+        optimization_settings.use_query_condition_cache_for_top_k,
         optimization_settings.is_explain,
         optimization_settings.max_block_size,
         optimization_settings.parallel_replicas_filter_pushdown,
@@ -431,10 +433,12 @@ void optimizeTreeSecondPass(
                     trySplitFilter(&frame_node, nodes, extra_settings);
             });
 
-        /// After the __applyFilter filters been fixed, do work to indicate index analysis again
-        if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
-            traverseQueryPlan(stack, root,
-                [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
+        /// After the __applyFilter conjuncts settled, register them on the reading steps
+        /// (both the read-time index analysis and seal-gated reading consume them).
+        if (join_runtime_filters_were_added
+            && (optimization_settings.enable_join_runtime_filters_index_analysis
+                || optimization_settings.join_seal_gated_reading))
+            traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
     }
 
     /// The runtime `FilterStep`s added and pushed down just above are invisible to the
@@ -939,6 +943,11 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    /// Runs after the filters were pushed down into the reading steps: the mark is detected
+    /// from the `__applyFilter` conjunct of the reading step's own filter.
+    if (optimization_settings.join_seal_gated_reading)
+        markSealGatedReading(root);
 
     /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
     /// choice is the gate (this is a no-op unless a join uses that algorithm).
