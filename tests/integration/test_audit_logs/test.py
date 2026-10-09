@@ -885,6 +885,43 @@ def test_audit_log_create_token_is_dcl(start_cluster):
     node_user_dcl.query("DROP USER IF EXISTS audit_token_user")
 
 
+def test_audit_log_fire_and_forget_async_insert_flush_failure(start_cluster):
+    """With `wait_for_async_insert = 0` the `INSERT` is audited as soon as its data is queued, before
+    it is parsed and written. A flush that fails afterwards must leave its own DML record with a
+    non-zero exception code, so the audit trail does not show only a successful `INSERT`."""
+    node_dml_misc.query("DROP TABLE IF EXISTS audit_async_flush_table")
+    node_dml_misc.query(
+        "CREATE TABLE audit_async_flush_table (a UInt32, CONSTRAINT c CHECK a < 10) ENGINE = Memory"
+    )
+
+    # The constraint is checked only by the flush, so the insert is accepted and the flush fails.
+    node_dml_misc.http_query(
+        "INSERT INTO default.audit_async_flush_table FORMAT CSV",
+        data="100\n",
+        params={"async_insert": 1, "wait_for_async_insert": 0},
+    )
+    node_dml_misc.query("SYSTEM FLUSH ASYNC INSERT QUEUE")
+
+    for _ in range(20):
+        log_content = node_dml_misc.grep_in_log(
+            "audit_async_flush_table", from_host=True, filename="clickhouse-server.audit.log"
+        )
+        failed = [
+            line for line in log_content.strip().split("\n")
+            if "AUDIT:" in line
+            and line.split("AUDIT: ", 1)[1].split(", ")[1] == "Insert"
+            and line.split("AUDIT: ", 1)[1].split(", ")[2] != "0"
+        ]
+        if failed:
+            break
+        time.sleep(0.5)
+    assert failed, f"the failed flush of a fire-and-forget async insert must be audited: {log_content}"
+    for line in failed:
+        assert line.split("AUDIT: ", 1)[1].split(", ")[0] == "DML", line
+
+    node_dml_misc.query("DROP TABLE IF EXISTS audit_async_flush_table")
+
+
 def test_audit_log_execute_as_wrapped_statement_is_audited(start_cluster):
     """`EXECUTE AS <user> <statement>` runs the wrapped statement through
     `executeQuery(..., internal = true)`, which by itself would leave it out of the audit log. The
