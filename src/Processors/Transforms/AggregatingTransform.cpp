@@ -205,11 +205,15 @@ namespace
         return res;
     }
 
+    /// Serializes the read-modify-write of the bucket Top-K verdict entries by concurrent queries.
+    std::mutex bucket_top_k_verdict_mutex;
+
     bool shouldCountBucketTopKBins(const Aggregator::Params & params)
     {
         const auto stats_params = bucketTopKStatsParams(params);
         if (!stats_params)
             return true;
+        std::lock_guard lock(bucket_top_k_verdict_mutex);
         auto & stats = getHashTablesStatistics<AggregationBucketTopKEntry>();
         const auto entry = stats.getSizeHint(*stats_params);
         if (!entry || entry->runs_to_skip == 0)
@@ -221,8 +225,11 @@ namespace
     void recordBucketTopKVerdict(const Aggregator::Params & params, bool productive)
     {
         if (const auto stats_params = bucketTopKStatsParams(params))
+        {
+            std::lock_guard lock(bucket_top_k_verdict_mutex);
             getHashTablesStatistics<AggregationBucketTopKEntry>().update(
                 {.runs_to_skip = productive ? 0 : BUCKET_TOP_K_PROBE_PERIOD - 1}, *stats_params);
+        }
     }
 
     /// Adds the groups of one finished producer to the bins of the merge.

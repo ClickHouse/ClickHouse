@@ -58,7 +58,7 @@ SELECT s, count() AS c FROM t_bucket_top_k_skip GROUP BY s ORDER BY c DESC LIMIT
 SETTINGS enable_packed_string_keys_in_aggregation = 0, log_comment = 'bucket_top_k_skip 5 legacy String table';
 
 SELECT 'adaptive aggregator';
-SELECT k, count() AS c FROM t_bucket_top_k_skip GROUP BY k ORDER BY c DESC LIMIT 10 SETTINGS enable_adaptive_aggregator = 1;
+SELECT k, count() AS c FROM t_bucket_top_k_skip GROUP BY k ORDER BY c DESC LIMIT 10 SETTINGS enable_adaptive_aggregator = 1, adaptive_aggregator_freeze_threshold = 0, log_comment = 'bucket_top_k_skip 9 adaptive aggregator';
 
 -- One stream holds three keys only and stays single-level, while the other one becomes two-level.
 SELECT 'a single-level stream';
@@ -78,6 +78,18 @@ SELECT k, count() AS c FROM t_bucket_top_k_skip GROUP BY k ORDER BY c DESC LIMIT
 SELECT k, count() AS c FROM t_bucket_top_k_skip GROUP BY k ORDER BY c DESC LIMIT 10 SETTINGS log_comment = 'bucket_top_k_skip 8 after a larger limit';
 SET collect_hash_table_stats_during_aggregation = 0;
 
+-- Every key is seen once, so the first run skips nothing and the next run of the same query does not count the bins.
+SELECT 'counting cooldown';
+CREATE TABLE t_bucket_top_k_cooldown (k UInt64) ENGINE = Memory;
+INSERT INTO t_bucket_top_k_cooldown SELECT 1000000 + number FROM numbers(100000);
+SET collect_hash_table_stats_during_aggregation = 1;
+SELECT k, count() AS c FROM t_bucket_top_k_cooldown GROUP BY k ORDER BY c DESC LIMIT 10 FORMAT Null;
+INSERT INTO t_bucket_top_k_cooldown SELECT number % 20 FROM numbers(4000);
+SELECT k, count() AS c FROM t_bucket_top_k_cooldown GROUP BY k ORDER BY c DESC LIMIT 10 SETTINGS log_comment = 'bucket_top_k_skip 10 cooldown' FORMAT Null;
+SET collect_hash_table_stats_during_aggregation = 0;
+SELECT k, count() AS c FROM t_bucket_top_k_cooldown GROUP BY k ORDER BY c DESC LIMIT 10 SETTINGS log_comment = 'bucket_top_k_skip 11 cooldown without statistics' FORMAT Null;
+DROP TABLE t_bucket_top_k_cooldown;
+
 SYSTEM FLUSH LOGS query_log;
 SELECT 'skipped buckets';
 SELECT
@@ -85,6 +97,11 @@ SELECT
     if(ProfileEvents['AggregationBucketTopKSkippedBuckets'] > 200, 'most', toString(ProfileEvents['AggregationBucketTopKSkippedBuckets']))
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'bucket_top_k_skip %'
-ORDER BY log_comment;
+ORDER BY event_time_microseconds;
+
+SELECT 'adaptive aggregator engaged';
+SELECT ProfileEvents['AdaptiveAggregationLocalFreezes'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = 'bucket_top_k_skip 9 adaptive aggregator';
 
 DROP TABLE t_bucket_top_k_skip;

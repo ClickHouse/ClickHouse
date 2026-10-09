@@ -61,12 +61,18 @@ a larger limit before
 42	368
 41	364
 40	360
+counting cooldown
 skipped buckets
 1 numeric key	most
 2 String key	most
 3 two keys	most
 4 ascending	0
 5 legacy String table	0
+9 adaptive aggregator	0
 6 a single-level stream	most
 7 a larger limit	0
 8 after a larger limit	most
+10 cooldown	0
+11 cooldown without statistics	most
+adaptive aggregator engaged
+1
