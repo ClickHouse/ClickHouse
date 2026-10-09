@@ -1758,19 +1758,24 @@ def auto_statistics_generator():
 
 
 def randomize_external_sort_group_by():
-    """Returns a dict of 6 settings for external sort/group by/distinct.
+    """Returns a dict of 8 settings for external sort/group by/distinct/set.
     The Bytes-vs-Ratio choice is made per call (not per process),
     so each test run gets an independent choice. Each family takes the
     smaller of its two thresholds, so the unused one is pinned to 0."""
     if random.choice(["Bytes", "Ratio"]) == "Bytes":
         generator = threshold_generator(0.3, 0.5, 0, 10 * 1024 * 1024 * 1024)
+        # The `IN` set spill is new and off by default, so draw thresholds low enough to spill
+        # (1 byte spills every set before its first chunk).
+        set_generator = threshold_generator(0.2, 0.3, 1, 64 * 1024 * 1024)
         return {
             "max_bytes_before_external_sort": generator(),
             "max_bytes_before_external_group_by": generator(),
             "max_bytes_before_external_distinct": generator(),
+            "max_bytes_before_external_set": set_generator(),
             "max_bytes_ratio_before_external_sort": 0,
             "max_bytes_ratio_before_external_group_by": 0,
             "max_bytes_ratio_before_external_distinct": 0,
+            "max_bytes_ratio_before_external_set": 0,
         }
 
     generator = threshold_generator(0.3, 0.5, 0.0, 0.20)
@@ -1778,9 +1783,11 @@ def randomize_external_sort_group_by():
         "max_bytes_before_external_sort": 0,
         "max_bytes_before_external_group_by": 0,
         "max_bytes_before_external_distinct": 0,
+        "max_bytes_before_external_set": 0,
         "max_bytes_ratio_before_external_sort": round(generator(), 2),
         "max_bytes_ratio_before_external_group_by": round(generator(), 2),
         "max_bytes_ratio_before_external_distinct": round(generator(), 2),
+        "max_bytes_ratio_before_external_set": round(generator(), 2),
     }
 
 
@@ -2063,6 +2070,9 @@ class SettingsRandomizer:
         "execute_exists_as_scalar_subquery": lambda: random.random() > 0.05,
         "normalize_function_names": lambda: random.random() > 0.05,
         "enable_join_runtime_filters": lambda: random.random() > 0.05,
+        # Experimental: the probe side waits for the complete runtime filter, which then prunes mark
+        # ranges by the primary key. An unsound prune is a wrong-results bug.
+        "enable_join_seal_gated_reading": lambda: random.random() < 0.3,
         # 0 always builds the runtime filter, a huge value never does
         # Capped below a typical probe side: a threshold above it suppresses the runtime filter for
         # every test, which is a blanket feature-disable rather than coverage.
@@ -2290,6 +2300,7 @@ class SettingsRandomizer:
         # "query_plan_lower_array_join_function": lambda: random.randint(0, 1),
         "query_plan_aggregation_bucket_top_k": lambda: random.random() > 0.05,
         "enable_group_by_top_k_optimization": lambda: random.random() > 0.05,
+        "enable_group_by_top_k_dynamic_filtering": lambda: random.random() > 0.05,
         # Low values freeze the top-K heaps almost immediately, 0 never freezes them
         "group_by_top_k_optimization_observation_rows": lambda: random.choice([0, 1, 1024, 65536]),
         "query_plan_push_down_volume_reducing_functions": lambda: random.random() > 0.05,
@@ -2319,6 +2330,10 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
         # variable-length opt-in only matters when the parent dynamic filter is on
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
+        # the GROUP BY variant publishes the boundary of the top-K heap, which needs the heap
+        "enable_group_by_top_k_dynamic_filtering": "enable_group_by_top_k_optimization",
+        # the gate waits for the runtime filter, so it does nothing without one
+        "enable_join_seal_gated_reading": "enable_join_runtime_filters",
         # statistics cache is pointless when statistics are disabled
         "use_statistics_cache": "use_statistics",
         # part pruning via statistics requires statistics to be enabled
