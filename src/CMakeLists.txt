@@ -424,6 +424,7 @@ add_object_library(clickhouse_storages_materializedview Storages/MaterializedVie
 add_object_library(clickhouse_storages_time_series Storages/TimeSeries)
 add_object_library(clickhouse_storages_time_series_prometheus_query_to_sql Storages/TimeSeries/PrometheusQueryToSQL)
 add_object_library(clickhouse_storages_arrowflight Storages/ArrowFlight)
+add_object_library(clickhouse_storages_abr Storages/ABR)
 add_object_library(clickhouse_client Client)
 # Always compile this file with the highest possible level of optimizations, even in Debug builds.
 # https://github.com/ClickHouse/ClickHouse/issues/65745
@@ -530,6 +531,7 @@ add_object_library(clickhouse_processors_queryplan_profiling_analysis Processors
 add_object_library(clickhouse_processors_queryplan_streaming Processors/QueryPlan/Streaming)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades Processors/QueryPlan/Optimizations/Cascades)
 add_object_library(clickhouse_processors_queryplan_optimizations_cascades_rules Processors/QueryPlan/Optimizations/Cascades/Rules)
+add_object_library(clickhouse_processors_queryplan_abr Processors/QueryPlan/ABR)
 
 # Work around LLVM x86 backend bug https://github.com/llvm/llvm-project/issues/191800
 # At -Og with AVX2+ targets, the compiler miscompiles functions that combine

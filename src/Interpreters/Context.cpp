@@ -1511,6 +1511,7 @@ ContextData::ContextData(const ContextData &o) :
     query_factories_info(o.query_factories_info),
     distributed_plan_local_object(o.distributed_plan_local_object),
     query_privileges_info(o.query_privileges_info),
+    abr_query_info(o.abr_query_info),
     async_read_counters(o.async_read_counters),
     query_execution_counters(o.query_execution_counters),
     view_source(o.view_source),
@@ -4281,6 +4282,7 @@ void Context::makeQueryContext()
 {
     query_context = shared_from_this();
     distributed_plan_local_object = std::make_shared<DistributedPlanLocalObject>();
+    abr_query_info = std::make_shared<ABRQueryInfo>();
 
     /// Throttling should not be inherited, otherwise if you will set
     /// throttling for default profile you will not able to overwrite it
