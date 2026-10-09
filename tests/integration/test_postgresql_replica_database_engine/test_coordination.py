@@ -2842,12 +2842,32 @@ def test_plain_refused_drop_with_user_managed_slot_refuses_to_resume(started_clu
 
     # Exactly one of the two tables was removed by the refused drop, and the survivor keeps all of its
     # rows: the recovery must not have truncated it in preparation for a snapshot it cannot reload.
-    surviving_tables = instance.query("SHOW TABLES FROM test_database").split()
+    # `system.parts` keeps exposing the physical nested tables.
+    surviving_tables = instance.query(
+        "SELECT DISTINCT table FROM system.parts WHERE database = 'test_database' AND active"
+    ).split()
     assert len(surviving_tables) == 1, surviving_tables
     assert (
-        int(instance.query(f"SELECT count() FROM test_database.{surviving_tables[0]}"))
+        int(
+            instance.query(
+                "SELECT sum(rows) FROM system.parts WHERE database = 'test_database' "
+                f"AND table = '{surviving_tables[0]}' AND active"
+            )
+        )
         == 50
     )
+
+    # But the survivor is not a consistent database until the operator repairs it, so user-facing
+    # lookups fail closed instead of wrapping it on the fly as in the ordinary startup window.
+    assert instance.query("SHOW TABLES FROM test_database").strip() == ""
+    error = instance.query_and_get_error(
+        f"SELECT count() FROM test_database.{surviving_tables[0]}"
+    )
+    assert "UNKNOWN_TABLE" in error, error
+    error = instance.query_and_get_error(
+        "SELECT count() FROM merge('test_database', '')"
+    )
+    assert "recovering from a partially applied DROP DATABASE" in error, error
 
     # A user-managed slot is never removed by ClickHouse, so the database can still be dropped and the
     # slot has to be dropped explicitly afterwards.

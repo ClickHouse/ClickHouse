@@ -132,6 +132,11 @@ public:
     /// wrap it themselves.
     bool isCoordinatedTableAvailable(const String & table_name) const;
 
+    /// Whether user-facing lookups must consult `isCoordinatedTableAvailable` before exposing a table: always in
+    /// coordinated mode, and while the database recovers from a partially applied `DROP DATABASE`
+    /// (see `partial_drop_recovery_in_progress`).
+    bool isTableVisibilityGated() const;
+
     Exception makeCoordinatedTableNotAvailableException(const String & table_name) const;
 
 protected:
@@ -201,6 +206,15 @@ private:
     /// startup window user-facing reads must wrap the nested tables on the fly instead of exposing
     /// them directly (see `tryGetTable` and `getTableForRead`).
     bool replication_stopped TSA_GUARDED_BY(tables_mutex) = false;
+
+    /// A third state of an empty `materialized_tables`, besides the startup window and the stopped replication:
+    /// a refused `DROP DATABASE` has removed some of the nested tables. The surviving ones are stale - a
+    /// create-style startup clears and reloads them, and with a user-managed replication slot they stay stale
+    /// until the operator repairs the database - so user-facing lookups (`tryGetTable`, `getTableForRead`,
+    /// `SHOW TABLES`, the UUID lookup in `DatabaseCatalog`) fail closed instead of wrapping them on the fly.
+    /// Set by `applyPartialDropRecoveryMode` (and from the persisted marker on construction), cleared once
+    /// `startSynchronization` publishes a consistent set of wrappers.
+    bool partial_drop_recovery_in_progress TSA_GUARDED_BY(tables_mutex) = false;
 
     mutable std::mutex handler_mutex;
     /// Whether `startSynchronization` completed successfully (guarded by `handler_mutex`). Makes the startup

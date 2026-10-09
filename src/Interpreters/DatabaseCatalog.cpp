@@ -535,7 +535,8 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             /// The nested table resolved by UUID exists on a coordinated replica before this replica holds the
             /// complete initial snapshot, so apply the same visibility gate as the name-based lookup does instead
             /// of wrapping it unconditionally (the wrapper built below is immediately readable).
-            if (mat_pg_database->isCoordinated() && !mat_pg_database->isCoordinatedTableAvailable(table_id.getTableName()))
+            /// The same applies while the database recovers from a partially applied `DROP DATABASE`.
+            if (mat_pg_database->isTableVisibilityGated() && !mat_pg_database->isCoordinatedTableAvailable(table_id.getTableName()))
             {
                 if (exception)
                     exception->emplace(mat_pg_database->makeCoordinatedTableNotAvailableException(table_id.getTableName()));
@@ -1055,7 +1056,7 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id, ContextPtr co
     if (!context_->isInternalQuery() && db->getEngineName() == "MaterializedPostgreSQL")
     {
         const auto * mat_pg_database = assert_cast<const DatabaseMaterializedPostgreSQL *>(db.get());
-        if (mat_pg_database->isCoordinated() && !mat_pg_database->isCoordinatedTableAvailable(table_id.table_name))
+        if (mat_pg_database->isTableVisibilityGated() && !mat_pg_database->isCoordinatedTableAvailable(table_id.table_name))
             return false;
     }
 #endif

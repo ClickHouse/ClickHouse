@@ -101,6 +101,15 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , table_overrides(std::move(table_overrides_))
     , startup_task(getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "MaterializedPostgreSQLDatabaseStartup", [this]{ tryStartSynchronization(); }))
 {
+    /// A partially applied `DROP DATABASE` survives a server restart as a marker file (see
+    /// `persistPartialDropRecoveryMarker`). `startSynchronization` re-applies the recovery decision from it,
+    /// but user-facing lookups can arrive before the startup task runs, so hide the surviving nested tables
+    /// from the very beginning (see `partial_drop_recovery_in_progress`).
+    if (getDisk()->existsFile(getPartialDropRecoveryMarkerPath()))
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        partial_drop_recovery_in_progress = true;
+    }
 }
 
 void DatabaseMaterializedPostgreSQL::tryStartSynchronization()
@@ -248,6 +257,8 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     {
         std::lock_guard tables_lock(tables_mutex);
         materialized_tables = std::move(new_materialized_tables);
+        /// A consistent set of wrappers is published, so from now on visibility is decided per table.
+        partial_drop_recovery_in_progress = false;
     }
 
     replication_handler->startup(/* delayed */false);
@@ -422,7 +433,10 @@ StoragePtr DatabaseMaterializedPostgreSQL::tryGetTable(const String & name, Cont
             /// and only `PostgreSQLReplicationHandler::markCaughtUpNestedTablesAvailable` can tell, so the
             /// table stays invisible until `startSynchronization` has published the wrappers and that check
             /// has marked it available.
-            if (!replication_stopped && isCoordinated())
+            /// The same applies while the database recovers from a partially applied `DROP DATABASE`: the
+            /// surviving nested tables are stale (a create-style startup will clear and reload them), and with
+            /// a user-managed replication slot they stay stale until the operator repairs the database.
+            if (!replication_stopped && (isCoordinated() || partial_drop_recovery_in_progress))
                 return StoragePtr{};
 
             wrap_nested = !replication_stopped;
@@ -1220,7 +1234,8 @@ void DatabaseMaterializedPostgreSQL::recoverAfterRefusedDrop(bool force_resnapsh
         /// republishes the wrappers - indefinitely, if startup keeps failing and retrying - user-facing
         /// reads must wrap the nested tables on the fly again (see `tryGetTable` / `getTableForRead`)
         /// instead of falling back to the raw nested tables, which would expose stale and deleted row
-        /// versions. `handler_mutex` is held by the caller; taking `tables_mutex` inside it is the
+        /// versions. After a partially applied drop (`force_resnapshot`) they stay hidden instead, because
+        /// `applyPartialDropRecoveryMode` has set `partial_drop_recovery_in_progress`. `handler_mutex` is held by the caller; taking `tables_mutex` inside it is the
         /// documented lock order.
         {
             std::lock_guard tables_lock(tables_mutex);
@@ -1293,6 +1308,16 @@ void DatabaseMaterializedPostgreSQL::applyPartialDropRecoveryMode()
     /// replication until the operator repairs the database. Resuming would be worse than refusing: the tables
     /// the refused drop removed would be silently skipped while the shared slot's `confirmed_flush_lsn`
     /// advances past their changes, so their data would be lost for good.
+    ///
+    /// In both cases the nested tables that survived the partial drop are not a consistent database until
+    /// `startSynchronization` publishes the wrappers again, so user-facing lookups must not wrap them on the fly
+    /// as in the ordinary startup window (see `tryGetTable` / `getTableForRead`). `handler_mutex` is held by the
+    /// caller; taking `tables_mutex` inside it is the documented lock order.
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        partial_drop_recovery_in_progress = true;
+    }
+
     if (!(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
     {
         manual_repair_required = true;
@@ -1396,7 +1421,7 @@ std::vector<LightWeightTableDetails> DatabaseMaterializedPostgreSQL::getLightwei
     /// `getTablesIterator`), but the name-only listing is what users see as "the table exists". Hide a coordinated
     /// table there until this replica has caught up, by the same rule as `tryGetTable`. The availability check takes
     /// `tables_mutex`, so it runs after the base class has released its own mutex.
-    if (isCoordinated() && !local_context->isInternalQuery())
+    if (!local_context->isInternalQuery() && isTableVisibilityGated())
         std::erase_if(result, [this](const LightWeightTableDetails & details) { return !isCoordinatedTableAvailable(details.name); });
 
     return result;
@@ -1408,10 +1433,20 @@ VectorWithMemoryTracking<String> DatabaseMaterializedPostgreSQL::getAllTableName
     auto result = DatabaseAtomic::getAllTableNames(local_context);
 
     /// Do not suggest a coordinated table that user-facing lookups do not expose yet, see `getLightweightTablesIterator`.
-    if (isCoordinated() && !local_context->isInternalQuery())
+    if (!local_context->isInternalQuery() && isTableVisibilityGated())
         std::erase_if(result, [this](const String & name) { return !isCoordinatedTableAvailable(name); });
 
     return result;
+}
+
+
+bool DatabaseMaterializedPostgreSQL::isTableVisibilityGated() const
+{
+    if (isCoordinated())
+        return true;
+
+    std::lock_guard lock(tables_mutex);
+    return partial_drop_recovery_in_progress;
 }
 
 
@@ -1431,6 +1466,13 @@ bool DatabaseMaterializedPostgreSQL::isCoordinatedTableAvailable(const String & 
 
 Exception DatabaseMaterializedPostgreSQL::makeCoordinatedTableNotAvailableException(const String & table_name) const
 {
+    if (!isCoordinated())
+        return Exception(ErrorCodes::UNKNOWN_TABLE,
+            "Table {}.{} is not available: the database is recovering from a partially applied DROP DATABASE and its "
+            "nested tables are not consistent until replication is started again. Failing closed instead of reading "
+            "stale data. Retry the query once replication has been restarted",
+            backQuoteIfNeed(getDatabaseName()), backQuoteIfNeed(table_name));
+
     return Exception(ErrorCodes::UNKNOWN_TABLE,
         "Table {}.{} is not available yet: this replica of the coordinated MaterializedPostgreSQL setup has not "
         "caught up with its initial snapshot. Failing closed instead of reading a partial result. Retry the query "
@@ -1448,6 +1490,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
     /// Everything that touches `materialized_tables`, including the emptiness check, has to happen
     /// under `tables_mutex`: `stopReplication` clears the map and destroys the wrappers, so both the
     /// lookup and the `hasNested` call on a stored pointer would otherwise race with it.
+    bool fail_closed = false;
     {
         std::lock_guard lock(tables_mutex);
 
@@ -1478,11 +1521,14 @@ StoragePtr DatabaseMaterializedPostgreSQL::getTableForRead(const String & table_
             /// legitimately falls back to the nested tables, see tryGetTable.
             return table;
         }
+        else
+            fail_closed = partial_drop_recovery_in_progress;
     }
 
     /// Either the coordinated table found above is not available yet, or this is the startup window, in which
-    /// a coordinated table stays invisible (see tryGetTable). Fail closed in both cases, for the reason above.
-    if (isCoordinated())
+    /// a coordinated table stays invisible (see tryGetTable), or the database is recovering from a partially
+    /// applied `DROP DATABASE` and its nested tables are stale. Fail closed in all cases, for the reason above.
+    if (isCoordinated() || fail_closed)
         throw makeCoordinatedTableNotAvailableException(table_name);
 
     /// Startup window: the map is empty because `startSynchronization` has not published the wrappers
