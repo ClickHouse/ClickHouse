@@ -541,6 +541,28 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload entity cycles are not allowed");
             });
 
+        // An entity of the next storage may already reference this name (see `setLocalEntities`),
+        // so the created entity must have the type that reference expects.
+        if (auto inbound = references.find(entity_name); inbound != references.end())
+        {
+            for (const String & referencer : inbound->second)
+            {
+                auto referencer_it = entities.find(referencer);
+                if (referencer_it == entities.end())
+                    continue;
+                forEachReference(referencer_it->second,
+                    [&] (const String & target, const String &, ReferenceType type)
+                    {
+                        if (target != entity_name)
+                            return;
+                        if (type == ReferenceType::Parent && !workload)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload parent should reference another workload, not '{}'.", entity_name);
+                        if (type == ReferenceType::ForResource && !resource)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", entity_name);
+                    });
+            }
+        }
+
         auto result = storeEntityImpl(
             current_context,
             entity_type,

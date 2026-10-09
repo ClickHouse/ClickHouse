@@ -3913,6 +3913,12 @@ TEST(SchedulerWorkloadResourceManager, ConfigLoadAllowsParentFromAnotherStorage)
     WorkloadEntityTestStorage sql(std::move(next));
 
     EXPECT_NO_THROW(config.loadFromString("CREATE WORKLOAD cfg_child IN sql_parent"));
+
+    // The parent created later must be a workload, on both the SQL and the reload path.
+    EXPECT_THROW(sql.executeQuery("CREATE RESOURCE sql_parent (MASTER THREAD)"), DB::Exception);
+    EXPECT_THROW(sql.loadFromString("CREATE RESOURCE sql_parent (MASTER THREAD)"), DB::Exception);
+    EXPECT_FALSE(sql.has("sql_parent"));
+
     EXPECT_NO_THROW(sql.loadFromString("CREATE WORKLOAD sql_parent"));
     EXPECT_TRUE(sql.has("cfg_child"));
     EXPECT_TRUE(sql.has("sql_parent"));
