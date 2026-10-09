@@ -223,7 +223,7 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 
 - [SQLite](/reference/engines/table-engines/integrations/sqlite) table engine
 - [SQLite database engine](/reference/engines/database-engines/sqlite) — Data types support section
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
 }
 
 }
