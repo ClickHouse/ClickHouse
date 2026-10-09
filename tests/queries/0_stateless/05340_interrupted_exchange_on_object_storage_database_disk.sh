@@ -4,7 +4,8 @@
 
 # An object storage disk emulates `EXCHANGE TABLES` (also used by `CREATE OR REPLACE` and `REPLACE TABLE`) with three
 # moves, so a crash can stop between them. Every state such a crash can leave is built here by hand, together with the
-# journal record the exchange writes first; opening the disk again must finish the exchange.
+# journal record the exchange writes first; opening the disk again must finish the exchange. It also checks that a real
+# exchange records itself first.
 # https://github.com/ClickHouse/ClickHouse/issues/124833
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -38,6 +39,16 @@ function show_files()
     echo "journal: [$(disks "ls $journal" | xargs)], metadata: [$(disks "ls $metadata_dir" | xargs)]"
 }
 
+# Counts the journal records on the disk's own files, without opening the disk (opening it finishes and removes them).
+function stored_records()
+{
+    if [ "$disk" = test_db_disk_plain_rewritable_05340 ]; then
+        grep -rlF --binary-files=text 'rename exchange journal v1' "$base_dir/plain_rewritable" | wc -l
+    else
+        find "$base_dir/local/metadata/$journal" -type f 2>/dev/null | wc -l
+    fi
+}
+
 # Builds the state left by `ops` and the record of the exchange of `a` and `b`, opens the database, and exchanges the
 # tables back for the next state.
 function check_state()
@@ -57,12 +68,12 @@ for disk in test_db_disk_plain_rewritable_05340 test_db_disk_local_metadata_0534
         INSERT INTO db.b VALUES (10), (20);
         EXCHANGE TABLES db.a AND db.b;
         EXCHANGE TABLES db.a AND db.b;"
+    echo "-- $disk: a finished exchange leaves no record"
+    echo "records on storage: $(stored_records)"
     metadata_dir=$($CLICKHOUSE_LOCAL -C "$config" --path "$base_dir/local_path_$disk" -q "SELECT metadata_path FROM system.databases WHERE name = 'db'")
     x="${metadata_dir}a.sql"
     y="${metadata_dir}b.sql"
     t="${x}_tmp_rename_exchange"
-
-    echo "-- $disk: a finished exchange leaves no record"
     show_files
 
     if [ "$disk" = test_db_disk_plain_rewritable_05340 ]; then
@@ -72,6 +83,15 @@ for disk in test_db_disk_plain_rewritable_05340 test_db_disk_local_metadata_0534
         check_state "second move copied" "move $x $t; copy $y $x"
         check_state "second move done" "move $x $t; move $y $x"
         check_state "third move copied" "move $x $t; move $y $x; copy $t $y"
+
+        echo "-- $disk: an exchange that fails in its first move leaves its record, the next start discards it"
+        local_query "SYSTEM ENABLE FAILPOINT plain_object_storage_fail_after_copy_on_file_move; EXCHANGE TABLES db.a AND db.b;" | grep -o 'FAULT_INJECTED' | head -n1
+        echo "records on storage: $(stored_records)"
+        record_file=$(grep -rlF --binary-files=text 'rename exchange journal v1' "$base_dir/plain_rewritable")
+        [ "$(cat "$record_file")" = "$(printf 'rename exchange journal v1\n%s\n%s' "$x" "$y")" ] && echo "the record names both files"
+        local_query "SELECT 'a', sum(x) FROM db.a; SELECT 'b', sum(x) FROM db.b;"
+        echo "records on storage: $(stored_records)"
+        show_files
     else
         check_state "first move done" "move $x $t"
         check_state "second move done" "move $x $t; move $y $x"
