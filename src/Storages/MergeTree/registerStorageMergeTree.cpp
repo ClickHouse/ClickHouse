@@ -584,8 +584,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
     /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
     /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
-    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+    const bool is_ddl_replay = isSecondaryDDLReplay(args.getLocalContext());
 
     /// Extract zookeeper path and replica name from engine arguments.
     TableZnodeInfo zookeeper_info;
@@ -710,20 +709,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
     const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
 
-    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
-    /// they are told apart by the client info instead (the same marker `AlterCommands` and
-    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
-        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-
     /// Statistics of a column that is not physically stored can never be built: the column is absent
     /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
     /// so a new replica of a table predating this check still starts.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
     {
         for (const auto & column : columns)
         {
@@ -1188,7 +1177,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     }
 
     /// Only a fresh definition, so that a table stored by an earlier version keeps loading.
-    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !args.columns.empty())
         MergeTreeData::checkColumnTTLsForKeyColumns(metadata, metadata);
 
     DataTypes data_types = metadata.partition_key.data_types;
@@ -1240,7 +1229,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
           * of a definition an older initiator committed. `ALTER TABLE ... RESET SETTING table_readonly`
           * is the way out of that state.
           */
-        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay
+        if (is_fresh_definition && !is_ddl_replay && !is_stored_definition
             && (*storage_settings)[MergeTreeSetting::table_readonly])
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
 
@@ -1294,7 +1283,7 @@ void registerStorageMergeTree(StorageFactory & factory)
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
-    factory.registerStorage("MergeTree", create, features, Documentation{
+    factory.registerStorage("MergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = String(R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -2700,7 +2689,7 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
         .syntax = "ENGINE = MergeTree() ORDER BY expr [PARTITION BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [TTL expr] [SETTINGS ...]",
         .related = {"ReplicatedMergeTree"}});
 
-    factory.registerStorage("CollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("CollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 ## Description {#description}
 
@@ -3063,7 +3052,7 @@ SELECT * FROM UAct
         .syntax = "ENGINE = CollapsingMergeTree(sign) ORDER BY expr",
         .related = {"MergeTree", "VersionedCollapsingMergeTree", "ReplicatedCollapsingMergeTree"}});
 
-    factory.registerStorage("ReplacingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine differs from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
@@ -3284,7 +3273,7 @@ For further details on `FINAL`, including how to optimize `FINAL` performance, w
         .syntax = "ENGINE = ReplacingMergeTree([ver [, is_deleted]]) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedReplacingMergeTree"}});
 
-    factory.registerStorage("CoalescingMergeTree", create, features, Documentation{
+    factory.registerStorage("CoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 <Note title="Available from version 25.6">
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
@@ -3452,7 +3441,7 @@ SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tupl
         .syntax = "ENGINE = CoalescingMergeTree([columns]) ORDER BY expr",
         .related = {"MergeTree", "SummingMergeTree", "AggregatingMergeTree", "ReplicatedCoalescingMergeTree"}});
 
-    factory.registerStorage("AggregatingMergeTree", create, features, Documentation{
+    factory.registerStorage("AggregatingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
@@ -3678,7 +3667,7 @@ SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY 
         .syntax = "ENGINE = AggregatingMergeTree() ORDER BY expr",
         .related = {"MergeTree", "SummingMergeTree", "ReplicatedAggregatingMergeTree"}});
 
-    factory.registerStorage("SummingMergeTree", create, features, Documentation{
+    factory.registerStorage("SummingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 The engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
@@ -3912,7 +3901,7 @@ SELECT key, metrics.impressions, metrics.clicks, metrics.nested.conversions FROM
         .syntax = "ENGINE = SummingMergeTree([columns]) ORDER BY expr",
         .related = {"MergeTree", "AggregatingMergeTree", "ReplicatedSummingMergeTree"}});
 
-    factory.registerStorage("GraphiteMergeTree", create, features, Documentation{
+    factory.registerStorage("GraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
@@ -4178,7 +4167,7 @@ Data rollup is performed during merges. Usually, for old partitions, merges are 
         .syntax = "ENGINE = GraphiteMergeTree(config_section) ORDER BY expr",
         .related = {"MergeTree", "ReplicatedGraphiteMergeTree"}});
 
-    factory.registerStorage("VersionedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("VersionedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 This engine:
 
@@ -4414,7 +4403,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_schema_inference = true;
     features.supports_unique_key = false;
 
-    factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 <Note>
 In ClickHouse Cloud replication is managed for you. Please create your tables without adding arguments.  For example, in the text below you would replace:
@@ -4755,37 +4744,37 @@ If the data in ClickHouse Keeper was lost or damaged, you can save data by movin
         .syntax = "ENGINE = ReplicatedMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"MergeTree"}});
 
-    factory.registerStorage("ReplicatedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the CollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCollapsingMergeTree('zoo_path', 'replica_name', sign) ORDER BY expr",
         .related = {"CollapsingMergeTree"}});
 
-    factory.registerStorage("ReplicatedReplacingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedReplacingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the ReplacingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedReplacingMergeTree('zoo_path', 'replica_name'[, ver [, is_deleted]]) ORDER BY expr",
         .related = {"ReplacingMergeTree"}});
 
-    factory.registerStorage("ReplicatedAggregatingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedAggregatingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the AggregatingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedAggregatingMergeTree('zoo_path', 'replica_name') ORDER BY expr",
         .related = {"AggregatingMergeTree"}});
 
-    factory.registerStorage("ReplicatedSummingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedSummingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the SummingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedSummingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"SummingMergeTree"}});
 
-    factory.registerStorage("ReplicatedCoalescingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedCoalescingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the CoalescingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedCoalescingMergeTree('zoo_path', 'replica_name'[, columns]) ORDER BY expr",
         .related = {"CoalescingMergeTree"}});
 
-    factory.registerStorage("ReplicatedGraphiteMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedGraphiteMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the GraphiteMergeTree engine.",
         .syntax = "ENGINE = ReplicatedGraphiteMergeTree('zoo_path', 'replica_name', config_section) ORDER BY expr",
         .related = {"GraphiteMergeTree"}});
 
-    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, features, Documentation{
+    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create, SecretArgumentsSpec{}, features, Documentation{
         .description = "Replicated version of the VersionedCollapsingMergeTree engine.",
         .syntax = "ENGINE = ReplicatedVersionedCollapsingMergeTree('zoo_path', 'replica_name', sign, version) ORDER BY expr",
         .related = {"VersionedCollapsingMergeTree"}});
