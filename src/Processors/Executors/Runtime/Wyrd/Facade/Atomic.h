@@ -27,7 +27,9 @@ auto formatArgument(const T & value)
     if constexpr (std::is_pointer_v<T>)
         return fmt::ptr(value);
     else if constexpr (std::is_enum_v<T>)
-        return fmt::underlying(value);
+        return formatArgument(fmt::underlying(value));
+    else if constexpr (std::is_same_v<T, char8_t>)
+        return unsigned{value};
     else
         return value;
 }
