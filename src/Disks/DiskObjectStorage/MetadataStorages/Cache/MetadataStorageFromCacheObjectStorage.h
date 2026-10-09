@@ -13,7 +13,8 @@ class MetadataStorageFromCacheObjectStorage : public IMetadataStorage
     friend class MetadataStorageFromCacheObjectStorageTransaction;
 
 public:
-    explicit MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_);
+    /// `object_storage_is_read_only_` tells whether the object storage of the wrapped disk is read-only.
+    MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, bool object_storage_is_read_only_);
     ~MetadataStorageFromCacheObjectStorage() override = default;
 
     MetadataStoragePtr getUnderlying() const;
@@ -93,6 +94,7 @@ public:
 
 private:
     const MetadataStoragePtr underlying;
+    const bool object_storage_is_read_only;
 
     mutable std::mutex removed_objects_mutex;
     InMemoryRemovalQueue objects_to_remove TSA_GUARDED_BY(removed_objects_mutex);

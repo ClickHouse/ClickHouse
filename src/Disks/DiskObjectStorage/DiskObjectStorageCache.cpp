@@ -14,6 +14,7 @@ namespace DB
 /// TODO: This is crap, we need to reimplement cache disk, it is too bad :(
 DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const FileCacheSettings & cache_settings, const String & layer_name) const
 {
+    const bool object_storage_is_read_only = isReadOnly();
     auto registry = object_storages->getRegistry();
     auto local_location = cluster->getLocalLocation();
     registry[local_location] = std::make_shared<CachedObjectStorage>(registry[local_location], cache, cache_settings, layer_name);
@@ -21,7 +22,7 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const 
     auto cache_disk = std::make_shared<DiskObjectStorage>(
         layer_name,
         std::make_shared<ClusterConfiguration>(layer_name, cluster->getConfiguration()),
-        std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage),
+        std::make_shared<MetadataStorageFromCacheObjectStorage>(metadata_storage, object_storage_is_read_only),
         std::make_shared<ObjectStorageRouter>(std::move(registry)),
         std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this()),
         Context::getGlobalContextInstance()->getConfigRef(),

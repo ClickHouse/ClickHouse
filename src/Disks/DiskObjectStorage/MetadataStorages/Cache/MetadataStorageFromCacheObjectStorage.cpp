@@ -4,8 +4,9 @@
 namespace DB
 {
 
-MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_)
+MetadataStorageFromCacheObjectStorage::MetadataStorageFromCacheObjectStorage(MetadataStoragePtr underlying_, bool object_storage_is_read_only_)
     : underlying(std::move(underlying_))
+    , object_storage_is_read_only(object_storage_is_read_only_)
 {
 }
 
@@ -253,7 +254,17 @@ bool MetadataStorageFromCacheObjectStorage::hasDeadBlobsQueue() const
     /// drops the stale cache entries for them. That is exactly what a cached `plain` or `plain_rewritable`
     /// disk needs, where blob paths are not random and a new file reuses the path of a deleted one.
     /// A read-only storage never removes anything, so nothing is ever queued for it.
-    return !underlying->isReadOnly();
+    if (underlying->isReadOnly())
+        return false;
+
+    /// `plain` and `plain_rewritable` answer `isReadOnly` with `false` even over a read-only object storage.
+    /// A storage that removes its blobs synchronously has to write to the object storage for that, so over
+    /// a read-only one it never removes anything either. A storage with a deferred removal queue of its own
+    /// (`local`) may still commit a removal, so the queue is kept for it.
+    if (object_storage_is_read_only && !underlying->hasDeadBlobsQueue())
+        return false;
+
+    return true;
 }
 
 IMetadataStorage::BlobsToReplicate MetadataStorageFromCacheObjectStorage::getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count)
