@@ -98,7 +98,14 @@ WHERE path = '/clickhouse/' || currentDatabase() || '/q_block' AND name = 'proce
 SELECT 'block / bucket 0 after', count() FROM system.zookeeper
 WHERE path = '/clickhouse/' || currentDatabase() || '/q_block/buckets/0' AND name = 'processed';
 
--- The four tables are left to the teardown of the test database, which drops them in one
+-- The helper queue sits inside `q_block`'s own Keeper subtree, so it has to go away while that
+-- subtree is still there. The teardown `DROP DATABASE` does not order table drops by
+-- `keeper_path` nesting, and dropping `q_block` first removes the helper's own path with it
+-- (`ObjectStorageQueueMetadata::unregisterNonActive` deletes the whole `zookeeper_path` when the
+-- last registration goes), which then aborts a debug build.
+DROP TABLE q_block_child;
+
+-- The other three tables are left to the teardown of the test database, which drops them in one
 -- batch. An explicit `DROP TABLE` costs about a second each here: the test profile waits for
 -- the dropped table to leave the drop queue of DatabaseCatalog, and that queue is polled once
 -- a second (tests/config/users.d/database_atomic_drop_detach_sync.xml).
