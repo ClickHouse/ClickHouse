@@ -361,6 +361,9 @@ def add_errors_explained():
 if args.report == "main":
     print((header_template.format()))
 
+    if os.path.exists("run-warnings.tsv"):
+        addSimpleTable("Warnings", ["Warning"], tsvRows("run-warnings.tsv"))
+
     add_tested_commits()
 
     def print_status(status, message):
