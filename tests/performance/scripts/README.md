@@ -88,6 +88,9 @@ In CI, most tests run only a random sample of their queries (`perf.py --max-quer
 
 Tests can reuse ordered setup and measured queries with `<include file="shared_workload.xml.inc"/>` inside `<test>`. An included file has a `<fragment>` root; its children are inserted at the include's position before substitutions are expanded. Nested includes and `file` attributes inside fragments resolve relative to the fragment that declares them. Keep fragments outside the `*.xml` test selection (for example, use `.xml.inc`).
 
+To compare a test with a server failpoint active, add `<failpoint action="enable">name</failpoint>` under `<test>`. The runner enables it on both servers before setup; if either server rejects it, the whole test appears in Skipped Tests with `failpoint name not supported - skip`.
+Add `<failpoint action="disable">name</failpoint>` to explicitly disable it after teardown. The runner also disables any remaining enabled failpoints on exit, including after a failed query or a partially successful enable. Failpoint names must be identifiers; each enable and optional disable may appear only once per test.
+
 #### Unstable Queries
 Action required for the cells marked in red.
 
