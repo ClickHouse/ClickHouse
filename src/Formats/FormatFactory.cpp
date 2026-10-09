@@ -42,6 +42,7 @@ namespace Setting
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
+    extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
@@ -249,6 +250,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
+    format_settings.parquet.apply_string_filters = settings[Setting::apply_string_filters_during_scan];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
@@ -281,6 +283,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.verify_checksums = settings[Setting::input_format_parquet_verify_checksums];
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
+    format_settings.parquet.detect_variant_by_structure = settings[Setting::input_format_parquet_detect_variant_by_structure];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
@@ -310,6 +313,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.squash_consecutive_ms = settings[Setting::output_format_pretty_squash_consecutive_ms];
     format_settings.pretty.squash_max_wait_ms = settings[Setting::output_format_pretty_squash_max_wait_ms];
     format_settings.pretty.highlight_trailing_spaces = settings[Setting::output_format_pretty_highlight_trailing_spaces];
+    format_settings.pretty.display_control_characters = settings[Setting::output_format_pretty_display_control_characters];
     format_settings.pretty.multiline_fields = settings[Setting::output_format_pretty_multiline_fields];
     format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
@@ -465,6 +469,17 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         format_settings.xml.valid_output_on_exception = true;
     }
 
+    return format_settings;
+}
+
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context)
+{
+    auto format_settings = getFormatSettings(context);
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        format_settings.native.encode_types_in_binary_format = false;
+        format_settings.native.decode_types_in_binary_format = false;
+    }
     return format_settings;
 }
 
