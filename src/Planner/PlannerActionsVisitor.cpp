@@ -1,4 +1,6 @@
 #include <map>
+#include <optional>
+#include <unordered_set>
 #include <utility>
 #include <ranges>
 #include <Planner/PlannerActionsVisitor.h>
@@ -789,8 +791,11 @@ private:
 
     std::vector<ActionsScopeNode> actions_stack;
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
-    /// Names derived by `getShadowedColumnName` for columns without a column identifier, by column source and name.
-    std::map<std::pair<const IQueryTreeNode *, std::string>, std::string> derived_shadowed_column_names;
+    /// Names chosen by `getShadowedColumnName`, by column source and name.
+    std::map<std::pair<const IQueryTreeNode *, std::string>, std::string> shadowed_column_names;
+    /// The expression being visited, and the action names of all its columns, collected on demand by `getShadowedColumnName`.
+    QueryTreeNodePtr root_expression_node;
+    std::optional<std::unordered_set<std::string>> expression_column_names;
     CorrelatedSubtrees correlated_subtrees;
     const PlannerContextPtr planner_context;
     const ColumnNodePtrWithHashSet & correlated_columns_set;
@@ -815,6 +820,7 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
 std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitorImpl::visit(QueryTreeNodePtr expression_node)
 {
     ActionsDAG::NodeRawConstPtrs result;
+    root_expression_node = expression_node;
 
     if (auto * expression_list_node = expression_node->as<ListNode>())
     {
@@ -990,39 +996,67 @@ String PlannerActionsVisitorImpl::getShadowedColumnName(
     const QueryTreeNodePtr & node, std::string_view source_kind, const String & column_node_name)
 {
     /// The name must not coincide with a lambda argument, or it would be taken for that argument, and must not
-    /// coincide with the name of another column, or the two columns would share one node.
+    /// coincide with the name of another column or action, or the two would share one node. Columns of the
+    /// expression may be visited after this one, so the names of all columns of the expression are checked,
+    /// not only the nodes already registered: e.g. a table column may be named `__table1.x` by a quoted identifier.
     ///
-    /// Prefer the column identifier (e.g. `__table1.x`, or `t1.x` for a correlated column of the outer query).
-    /// It is deterministic (same for the same query), and column identifiers are unique within the query.
-    if (const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
-        column_identifier && !isLambdaArgumentName(*column_identifier))
-        return *column_identifier;
+    /// The chosen name is remembered, because after the first reference to the column it is registered itself.
+    auto & chosen_name = shadowed_column_names[{node->as<ColumnNode &>().getColumnSourceOrNull().get(), column_node_name}];
+    if (!chosen_name.empty() && !isLambdaArgumentName(chosen_name))
+        return chosen_name;
 
-    /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
-    /// so it has no column identifier. Derive a name that is neither a column identifier of the query
-    /// (a table expression may have any alias, e.g. `__CORRELATED`), nor a lambda argument, nor the name
-    /// of a node already registered in any scope of the stack (an action may have any name, e.g. by a quoted alias).
-    /// The derived name is remembered, because after the first reference to the column it is registered itself.
-    auto & derived_name = derived_shadowed_column_names[{node->as<ColumnNode &>().getColumnSourceOrNull().get(), column_node_name}];
-    if (!derived_name.empty() && !isLambdaArgumentName(derived_name))
-        return derived_name;
+    if (!expression_column_names)
+    {
+        expression_column_names.emplace();
+        std::vector<QueryTreeNodePtr> nodes_to_process{root_expression_node};
+        while (!nodes_to_process.empty())
+        {
+            auto current = std::move(nodes_to_process.back());
+            nodes_to_process.pop_back();
 
-    const auto & global_planner_context = planner_context->getGlobalPlannerContext();
+            if (const auto * column = current->as<ColumnNode>())
+            {
+                auto source = column->getColumnSourceOrNull();
+                if (!source || source->getNodeType() != QueryTreeNodeType::LAMBDA_ARGS)
+                    expression_column_names->insert(action_node_name_helper.calculateActionNodeName(current));
+            }
+
+            for (const auto & child : current->getChildren())
+            {
+                if (child && child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION)
+                    nodes_to_process.push_back(child);
+            }
+        }
+    }
+
     auto is_name_taken = [&](const String & candidate)
     {
-        if (global_planner_context->hasColumnIdentifier(candidate) || isLambdaArgumentName(candidate))
+        if (isLambdaArgumentName(candidate) || expression_column_names->contains(candidate))
             return true;
 
         return std::any_of(actions_stack.begin(), actions_stack.end(), [&](const auto & scope) { return scope.containsNode(candidate); });
     };
 
+    /// Prefer the column identifier (e.g. `__table1.x`, or `t1.x` for a correlated column of the outer query).
+    /// It is deterministic (same for the same query), and column identifiers are unique within the query.
+    if (const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
+        column_identifier && !is_name_taken(*column_identifier))
+    {
+        chosen_name = *column_identifier;
+        return chosen_name;
+    }
+
+    /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
+    /// so it has no column identifier. Derive a name that is not taken and is not a column identifier
+    /// of the query either (a table expression may have any alias, e.g. `__CORRELATED`).
+    const auto & global_planner_context = planner_context->getGlobalPlannerContext();
     String base_name = fmt::format("__{}.{}", source_kind, column_node_name);
     String name = base_name;
-    for (size_t i = 1; is_name_taken(name); ++i)
+    for (size_t i = 1; global_planner_context->hasColumnIdentifier(name) || is_name_taken(name); ++i)
         name = fmt::format("{}_{}", base_name, i);
 
-    derived_name = name;
-    return name;
+    chosen_name = name;
+    return chosen_name;
 }
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitConstant(const QueryTreeNodePtr & node, const std::string & override_column_name)

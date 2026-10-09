@@ -37,6 +37,15 @@ SELECT 1 FROM t_05233 AS t1 WHERE EXISTS (SELECT 1 FROM t_05233 AS t2 PREWHERE t
 
 DROP TABLE t_05233;
 
+-- A quoted column name may coincide with the column identifier of another column, here `__table1.value`.
+-- It must not share a node with the shadowed column `t.value`, whichever is visited first. 100 + 10 + 1 = 111.
+DROP TABLE IF EXISTS t_05233_identifier;
+CREATE TABLE t_05233_identifier (`__table1.value` UInt64, value UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_05233_identifier VALUES (100, 10);
+SELECT value FROM t_05233_identifier AS t PREWHERE arrayMap(value -> `__table1.value` + t.value + value, [toUInt8(1)])[1] = 111;
+SELECT value FROM t_05233_identifier AS t PREWHERE arrayMap(value -> t.value + `__table1.value` + value, [toUInt8(1)])[1] = 111;
+DROP TABLE t_05233_identifier;
+
 -- The synthetic column of an `INTERPOLATE` expression has no column identifier at all.
 -- The interpolated `value` is 10, so `d` is `10 % 3` = 1 and the fill row is 1 + (1 + 1) = 3.
 SELECT number, toUInt64(10) AS value
