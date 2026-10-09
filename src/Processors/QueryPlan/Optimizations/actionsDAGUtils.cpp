@@ -661,6 +661,15 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
     return result;
 }
 
+ColumnsWithTypeAndName getFunctionArgumentColumns(const ActionsDAG::Node & node)
+{
+    ColumnsWithTypeAndName arguments;
+    arguments.reserve(node.children.size());
+    for (const auto & child : node.children)
+        arguments.push_back({child->column, child->result_type, child->result_name});
+    return arguments;
+}
+
 HeaderColumnsToInputs mapHeaderColumnsToInputs(const ActionsDAG::NodeRawConstPtrs & inputs, const Block & header)
 {
     /// Input positions are pushed in reverse so that the front-most one is taken first, which pairs the
@@ -720,7 +729,7 @@ NodeSet findReachableNodes(
 
 bool isInjectiveFunction(const ActionsDAG::Node * node)
 {
-    if (node->function_base->isInjective({}))
+    if (node->function_base->isInjective(getFunctionArgumentColumns(*node)))
         return true;
 
     const auto & name = node->function_base->getName();
