@@ -59,8 +59,9 @@ DiskSetBuilder::estimateMemoryToWriteRun(size_t max_bytes_before_external_set, s
 /// Each column of keys is sorted and deduplicated on arrival and merged by the external sorter, which keeps
 /// one row per key, in blocks of `max_block_size` rows. The sorter writes a run once it buffers at least
 /// `getMinBytesInRun` bytes and tracked query memory exceeds `max_bytes_before_external_set`. Its final
-/// merge writes the keys into a `DiskSetImpl`, checks the size limits after each merged block and, in the
-/// `break` mode, stops at the block that reaches them.
+/// merge writes the keys into a `DiskSetImpl`. The builder checks the size limits after each merged block and
+/// once more after the set writes its last block. In the `break` mode, it stops the merge at the block that
+/// reaches the limits.
 template <typename Key>
 class DiskSetBuilderImpl final : public DiskSetBuilder
 {
@@ -84,6 +85,11 @@ private:
     /// Appends the next block of the sorter's output to the set and checks the size limits. The sorter
     /// also deduplicates the keys.
     void appendSortedDistinctKeys(const IColumn & keys);
+
+    /// Checks the size limits, which apply to the distinct keys of the set and to the memory of its
+    /// directory. In the `break` mode, a set that reaches the limits keeps the keys that reached them. A set
+    /// in memory does the same with the block that reaches its limits.
+    void checkLimits();
 
     TemporaryDataOnDiskScopePtr tmp_data;
     SizeLimits limits;
@@ -216,13 +222,15 @@ void DiskSetBuilderImpl<Key>::appendSortedDistinctKeys(const IColumn & keys)
         set = std::make_unique<DiskSetImpl<Key>>(tmp_data, min_free_disk_space);
 
     set->add({values.data(), values.size()});
+    checkLimits();
+}
 
-    /// The limits apply to the distinct keys of the set and to the memory of its directory. In the
-    /// `break` mode, the set keeps the keys of this block, as the set in memory keeps the keys of the
-    /// block that reaches the limits.
+template <typename Key>
+void DiskSetBuilderImpl<Key>::checkLimits()
+{
     if (!limits.check(set->getTotalRowCount(), set->getTotalByteCount(), "IN-set", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
     {
-        LOG_TRACE(getLogger("DiskSetBuilder"), "The set reached its size limits with {} keys, stopping the merge", set->getTotalRowCount());
+        LOG_TRACE(getLogger("DiskSetBuilder"), "The set reached its size limits with {} keys", set->getTotalRowCount());
         truncated = true;
     }
 }
@@ -247,6 +255,12 @@ std::unique_ptr<DiskSet> DiskSetBuilderImpl<Key>::finish()
     if (!set)
         set = std::make_unique<DiskSetImpl<Key>>();
     set->finishWriting();
+
+    /// `finishWriting` writes the last block, which can take the directory past the limits. A set that the
+    /// merge truncated keeps no more keys, so it needs no second check.
+    if (!truncated)
+        checkLimits();
+
     return std::move(set);
 }
 

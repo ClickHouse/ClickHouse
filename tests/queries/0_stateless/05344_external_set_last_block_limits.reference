@@ -1,0 +1,4 @@
+break	16700
+throw	SET_SIZE_LIMIT_EXCEEDED	1	0
+break	finished	1	1
+Limit for IN-set exceeded, max bytes: 1000.00 B, current bytes: 1.00 KiB
