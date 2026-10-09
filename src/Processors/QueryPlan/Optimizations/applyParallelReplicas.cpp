@@ -372,6 +372,11 @@ public:
         if (coordinated_side == JoinSide::None)
             return;
 
+        /// RightAny picks one right row per left row out of the whole right table, so the join must see all of it.
+        if (coordinated_side == JoinSide::Right
+            && typeid_cast<const JoinStepLogical *>(node->step.get())->getJoinOperator().strictness == JoinStrictness::RightAny)
+            return;
+
         auto * coordinated_child = node->children[static_cast<size_t>(coordinated_side)];
         if (!typeid_cast<const ParallelReplicasSplitStep *>(coordinated_child->step.get()))
             return;
