@@ -2817,8 +2817,7 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
 void ReadFromFile::orderFilesByTopKBound(const FormatFilterInfoPtr & format_filter_info, size_t num_streams)
 {
 #if USE_PARQUET
-    /// The footers are read with one task per stream, and with 8 streams the concurrent reads already
-    /// cost more than 5% extra CPU when the order gains nothing.
+    /// The footers are read with one task per stream; with more streams those reads cost more than the order saves.
     static constexpr size_t max_streams_to_order = 4;
     if (num_streams > max_streams_to_order)
         return;
