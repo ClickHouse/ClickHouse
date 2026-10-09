@@ -57,7 +57,7 @@ void TaskRunner::runWork(ProcessorState & state) /// NOLINT
     IProcessor & processor = *state.processor;
 
     std::unique_ptr<OpenTelemetry::SpanHolder> span;
-    if (pipeline.trace_processors)
+    if (options.trace_processors)
     {
         span = std::make_unique<OpenTelemetry::SpanHolder>(processor.getUniqID());
         span->addAttribute("thread_number", worker_id);
@@ -65,11 +65,11 @@ void TaskRunner::runWork(ProcessorState & state) /// NOLINT
 
     const auto * step = processor.getQueryPlanStep();
     StepWallClock * clock = nullptr;
-    if (pipeline.step_profiler && step)
+    if (options.step_profiler && step)
     {
         auto & cached_clock = processor.query_plan_step_wall_clock_ptr;
         if (!cached_clock)
-            cached_clock = pipeline.step_profiler->findClockForStep(step, processor.getQueryPlanStepGroup());
+            cached_clock = options.step_profiler->findClockForStep(step, processor.getQueryPlanStepGroup());
 
         clock = cached_clock;
         if (clock)
@@ -77,7 +77,7 @@ void TaskRunner::runWork(ProcessorState & state) /// NOLINT
     }
 
     std::optional<Stopwatch> execution_time_watch;
-    if (pipeline.profile_processors || pipeline.trace_processors || pipeline.step_profiler)
+    if (options.profile_processors || options.trace_processors || options.step_profiler)
         execution_time_watch.emplace();
 
     SCOPE_EXIT({
@@ -102,17 +102,17 @@ void TaskRunner::runWork(ProcessorState & state) /// NOLINT
     ++processor.num_executed_jobs;
 
     const bool is_source = processor.getInputs().empty();
-    if (is_source && pipeline.read_progress_callback)
+    if (is_source && options.read_progress_callback)
     {
         if (auto progress = processor.getReadProgress())
         {
             if (progress->counters.total_rows_approx)
-                pipeline.read_progress_callback->addTotalRowsApprox(progress->counters.total_rows_approx);
+                options.read_progress_callback->addTotalRowsApprox(progress->counters.total_rows_approx);
 
             if (progress->counters.total_bytes)
-                pipeline.read_progress_callback->addTotalBytes(progress->counters.total_bytes);
+                options.read_progress_callback->addTotalBytes(progress->counters.total_bytes);
 
-            if (!pipeline.read_progress_callback->onProgress(progress->counters.read_rows, progress->counters.read_bytes, progress->limits))
+            if (!options.read_progress_callback->onProgress(progress->counters.read_rows, progress->counters.read_bytes, progress->limits))
                 processor.cancel();
         }
     }
@@ -194,7 +194,7 @@ void TaskRunner::prepareRound(ProcessorState & state, std::unique_lock<Wyrd::Mut
     const auto new_status = processor.prepare(hint_inputs, hint_outputs);
     state.last_status = new_status;
 
-    if (pipeline.profile_processors)
+    if (options.profile_processors)
         profileWaits(processor, last_status, new_status);
 
     state.round_updates.drain(changed_inputs, changed_outputs);
@@ -253,10 +253,11 @@ void TaskRunner::profileWaits(IProcessor & processor, std::optional<IProcessor::
         processor.output_wait_elapsed_ns += processor.output_wait_watch.elapsedNanoseconds();
 }
 
-TaskRunner::TaskRunner(ExecutingPipeline & pipeline_, size_t worker_id_)
+TaskRunner::TaskRunner(ExecutingPipeline & pipeline_, const RunOptions & options_, size_t worker_id_)
     : pipeline(pipeline_)
+    , options(options_)
     , worker_id(worker_id_)
-    , collect_work_intervals(pipeline.step_profiler && pipeline.step_profiler->needCollectWorkIntervals())
+    , collect_work_intervals(options.step_profiler && options.step_profiler->needCollectWorkIntervals())
 {
 }
 

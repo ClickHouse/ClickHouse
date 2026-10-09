@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/IExecutor.h>
+#include <Processors/Executors/Runtime/V2/Engine/RunOptions.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkerPool.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
@@ -39,6 +40,7 @@ private:
     const QueryStatusPtr process_list_element;
     ReadProgressCallbackPtr read_progress_callback;
     StepProfilerPtr step_profiler;
+    RunOptions options;
 
     /// Built by start, when the thread count is known; the mutex orders that against cancel from another thread
     Wyrd::Mutex mutex;

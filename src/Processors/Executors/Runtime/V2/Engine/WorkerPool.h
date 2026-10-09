@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/V2/Engine/Polling/Poller.h>
+#include <Processors/Executors/Runtime/V2/Engine/RunOptions.h>
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/GlobalTasks.h>
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
@@ -12,15 +13,12 @@
 
 #include <atomic>
 #include <deque>
+#include <exception>
 #include <optional>
 #include <vector>
 
-class MemoryTracker;
-
 namespace DB
 {
-
-struct MemoryReservation;
 
 namespace Runtime::V2
 {
@@ -39,17 +37,22 @@ class WorkerPool
     void resume(size_t worker_id);
 
 public:
-    WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control);
+    WorkerPool(ExecutingPipeline & pipeline_, const RunOptions & options_, size_t max_threads_, bool concurrency_control);
     ~WorkerPool();
 
     void run();
     void runUntil(std::atomic_bool * yield_flag);
+
+    void fail(std::exception_ptr exception);
     void stop();
     bool isStopped() const;
+
     void join();
+    void rethrowIfFailed();
 
 private:
     ExecutingPipeline & pipeline;
+    const RunOptions & options;
     const size_t max_threads;
 
     /// Scheduling state
@@ -68,9 +71,9 @@ private:
     Wyrd::Mutex spawn_mutex;
     Wyrd::Atomic<size_t> workers_count = 0;
 
-    /// Memory reservations
-    MemoryReservation * reservation = nullptr;
-    MemoryTracker * tracker = nullptr;
+    /// First failure
+    Wyrd::Atomic<bool> failed = false;
+    std::exception_ptr exception;
 };
 
 }

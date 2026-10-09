@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Executors/Runtime/V2/Engine/Polling/PollRequest.h>
+#include <Processors/Executors/Runtime/V2/Engine/RunOptions.h>
 #include <Processors/Executors/Runtime/V2/Engine/Tasks/Task.h>
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
@@ -32,7 +33,7 @@ class TaskRunner
     void profileWaits(IProcessor & processor, std::optional<IProcessor::Status> last_status, IProcessor::Status status) const;
 
 public:
-    TaskRunner(ExecutingPipeline & pipeline_, size_t worker_id_);
+    TaskRunner(ExecutingPipeline & pipeline_, const RunOptions & options_, size_t worker_id_);
 
     void run(Task task);
     const std::vector<Task> & getFoundTasks() const;
@@ -41,6 +42,7 @@ public:
 
 private:
     ExecutingPipeline & pipeline;
+    const RunOptions & options;
     const size_t worker_id;
     const bool collect_work_intervals;
     WorkIntervals work_intervals;

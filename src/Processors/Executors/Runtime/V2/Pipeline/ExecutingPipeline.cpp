@@ -1,9 +1,6 @@
 #include <Processors/Executors/Runtime/V2/Pipeline/ExecutingPipeline.h>
 #include <Processors/Port.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
-#include <Core/Settings.h>
 #include <Common/Exception.h>
 
 #include <algorithm>
@@ -11,12 +8,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool log_processors_profiles;
-    extern const SettingsBool opentelemetry_trace_processors;
-}
 
 namespace ErrorCodes
 {
@@ -28,20 +19,6 @@ namespace Runtime::V2
 
 namespace
 {
-
-bool profileProcessors(const QueryStatusPtr & process_list_element)
-{
-    if (!process_list_element)
-        return false;
-
-    const auto & context = process_list_element->getContext();
-    return context->getSettingsRef()[Setting::log_processors_profiles] && context->getProcessorsProfileLog();
-}
-
-bool traceProcessors(const QueryStatusPtr & process_list_element)
-{
-    return process_list_element && process_list_element->getContext()->getSettingsRef()[Setting::opentelemetry_trace_processors];
-}
 
 bool supersedes(IProcessor::CancelReason current, IProcessor::CancelReason reason)
 {
@@ -81,14 +58,10 @@ void checkConnectedOnlyInside(const Processors & group)
 
 }
 
-ExecutingPipeline::ExecutingPipeline(std::shared_ptr<Processors> processors_, QueryStatusPtr process_list_element_)
-    : profile_processors(profileProcessors(process_list_element_))
-    , trace_processors(traceProcessors(process_list_element_))
-    , process_list_element(std::move(process_list_element_))
-    , states(std::move(processors_))
+ExecutingPipeline::ExecutingPipeline(std::shared_ptr<Processors> processors_)
+    : states(std::move(processors_))
 {
     Wyrd::setName(cancel_reason, "pipeline.cancel_reason");
-    Wyrd::setName(failed, "pipeline.failed");
 }
 
 std::vector<ProcessorState *> ExecutingPipeline::sinks()
@@ -150,21 +123,13 @@ void ExecutingPipeline::cancel(IProcessor::CancelReason reason)
     states.forEachProcessor([&](IProcessor & processor, ProcessorState &) { processor.cancel(reason_in_force); });
 }
 
-void ExecutingPipeline::fail(std::exception_ptr exception_)
-{
-    if (!failed.exchange(true))
-        exception = std::move(exception_);
-
-    cancel(IProcessor::CancelReason::Exception);
-}
-
 bool ExecutingPipeline::cancelled() const
 {
     const auto reason = cancel_reason.load();
     return reason != IProcessor::CancelReason::NotCancelled && reason != IProcessor::CancelReason::PartialResult;
 }
 
-bool ExecutingPipeline::allFinished()
+bool ExecutingPipeline::allProcessorsFinished()
 {
     bool all_finished = true;
     states.forEachProcessor([&](IProcessor &, ProcessorState & state) { all_finished = all_finished && state.lock.isFinished(); });

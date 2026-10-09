@@ -31,6 +31,7 @@ bool checkTimeLimit(const QueryStatusPtr & process_list_element)
 PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> processors_, QueryStatusPtr elem)
     : processors(std::move(processors_))
     , process_list_element(std::move(elem))
+    , options(makeRunOptions(process_list_element))
 {
     Wyrd::setName(mutex, "executor.mutex");
     if (process_list_element)
@@ -49,10 +50,8 @@ void PipelineExecutor::start(size_t num_threads, bool concurrency_control)
 
     try
     {
-        pipeline.emplace(processors, process_list_element);
-        pipeline->read_progress_callback = read_progress_callback.get();
-        pipeline->step_profiler = step_profiler.get();
-        pool.emplace(*pipeline, num_threads, concurrency_control);
+        pipeline.emplace(processors);
+        pool.emplace(*pipeline, options, num_threads, concurrency_control);
     }
     catch (Exception & exception)
     {
@@ -78,7 +77,7 @@ void PipelineExecutor::finalize()
     if (pipeline->cancelled())
         return;
 
-    if (!pipeline->allFinished())
+    if (!pipeline->allProcessorsFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}", pipeline->dump());
 
     if (read_progress_callback)
@@ -108,10 +107,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
         start(num_threads, concurrency_control);
         pool->run();
         pool->join();
-
-        if (pipeline->exception)
-            std::rethrow_exception(pipeline->exception);
-
+        pool->rethrowIfFailed();
         finalize();
     }
     catch (...)
@@ -132,10 +128,7 @@ bool PipelineExecutor::executeUntil(std::atomic_bool * yield_flag)
         return true;
 
     pool->join();
-
-    if (pipeline->exception)
-        std::rethrow_exception(pipeline->exception);
-
+    pool->rethrowIfFailed();
     finalize();
     return false;
 }
@@ -175,8 +168,7 @@ void PipelineExecutor::setReadProgressCallback(ReadProgressCallbackPtr callback)
     std::lock_guard lock(mutex);
 
     read_progress_callback = std::move(callback);
-    if (pipeline)
-        pipeline->read_progress_callback = read_progress_callback.get();
+    options.read_progress_callback = read_progress_callback.get();
 }
 
 void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
@@ -184,8 +176,7 @@ void PipelineExecutor::setStepProfiler(StepProfilerPtr step_profiler_)
     std::lock_guard lock(mutex);
 
     step_profiler = std::move(step_profiler_);
-    if (pipeline)
-        pipeline->step_profiler = step_profiler.get();
+    options.step_profiler = step_profiler.get();
 }
 
 }

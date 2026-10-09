@@ -84,50 +84,6 @@ SlotAllocationPtr WorkerPool::allocateCPU(bool concurrency_control, SlotCount in
         initial_max);
 }
 
-WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, size_t max_threads_, bool concurrency_control)
-    : pipeline(pipeline_)
-    , max_threads(max_threads_)
-    , coordinator(*this, max_threads)
-    , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
-    , cpu_slots(allocateCPU(concurrency_control, requested_threads))
-    , threads(max_threads)
-{
-    Wyrd::setName(spawn_mutex, "pool.spawn_mutex");
-    Wyrd::setName(workers_count, "pool.workers_count");
-
-    for (size_t worker_id = 0; worker_id < max_threads; ++worker_id)
-        workers.emplace_back(*this, worker_id);
-
-    if (pipeline.process_list_element)
-    {
-        reservation = pipeline.process_list_element->getMemoryReservation();
-        tracker = pipeline.process_list_element->getMemoryTracker();
-    }
-}
-
-WorkerPool::~WorkerPool()
-{
-    chassert(std::ranges::none_of(threads, [](const auto & thread) { return thread.has_value(); }));
-}
-
-void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
-{
-    const size_t worker_id = slot->slot_id;
-
-    coordinator.enter(worker_id);
-    try
-    {
-        WorkerSlot worker_slot(std::move(slot), reservation, tracker);
-        workers[worker_id].run(worker_slot, yield_flag);
-    }
-    catch (...)
-    {
-        pipeline.fail(std::current_exception());
-        coordinator.stop();
-    }
-    coordinator.leave(worker_id);
-}
-
 void WorkerPool::initializeExecution()
 {
     std::vector<Task> root_tasks;
@@ -139,75 +95,21 @@ void WorkerPool::initializeExecution()
     global_tasks.pushManyFifo(root_tasks);
 }
 
-void WorkerPool::preempt(size_t worker_id)
+void WorkerPool::runSlot(AcquiredSlotPtr slot, std::atomic_bool * yield_flag)
 {
-    workers[worker_id].handOverTasks();
-    coordinator.leave(worker_id);
-}
+    const size_t worker_id = slot->slot_id;
 
-void WorkerPool::resume(size_t worker_id)
-{
     coordinator.enter(worker_id);
-}
-
-void WorkerPool::run()
-{
-    auto slot = cpu_slots->acquire();
-    workers_count.fetch_add(1);
-
     try
     {
-        initializeExecution();
-        if (const size_t initial_tasks = global_tasks.size(); initial_tasks > 1)
-            grow(initial_tasks - 1);
+        WorkerSlot worker_slot(std::move(slot), options.reservation, options.tracker);
+        workers[worker_id].run(worker_slot, yield_flag);
     }
     catch (...)
     {
-        pipeline.fail(std::current_exception());
-        coordinator.stop();
+        fail(std::current_exception());
     }
-
-    runSlot(std::move(slot), nullptr);
-    workers_count.fetch_sub(1);
-}
-
-void WorkerPool::runUntil(std::atomic_bool * yield_flag)
-{
-    if (max_threads != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step by step execution needs a pool of one thread, got {}", max_threads);
-
-    if (!single_slot)
-    {
-        initializeExecution();
-        single_slot = cpu_slots->acquire();
-    }
-
-    workers_count.fetch_add(1);
-    runSlot(single_slot, yield_flag);
-    workers_count.fetch_sub(1);
-}
-
-void WorkerPool::grow(size_t threads_needed)
-{
-    if (max_threads == 1 || threads_needed == 0 || workers_count.load() >= max_threads)
-        return;
-
-    std::lock_guard lock(spawn_mutex);
-
-    const size_t target = std::min(max_threads, workers_count.load() + threads_needed);
-    if (requested_threads < target)
-    {
-        requested_threads = target;
-        cpu_slots->setMax(requested_threads);
-    }
-
-    while (workers_count.load() < target)
-    {
-        if (auto slot = cpu_slots->tryAcquire())
-            spawn(std::move(slot));
-        else
-            break;
-    }
+    coordinator.leave(worker_id);
 }
 
 void WorkerPool::spawn(AcquiredSlotPtr slot)
@@ -234,6 +136,108 @@ void WorkerPool::spawn(AcquiredSlotPtr slot)
         workers_count.fetch_sub(1);
         throw;
     }
+}
+
+void WorkerPool::grow(size_t threads_needed)
+{
+    if (max_threads == 1 || threads_needed == 0 || workers_count.load() >= max_threads)
+        return;
+
+    std::lock_guard lock(spawn_mutex);
+
+    const size_t target = std::min(max_threads, workers_count.load() + threads_needed);
+    if (requested_threads < target)
+    {
+        requested_threads = target;
+        cpu_slots->setMax(requested_threads);
+    }
+
+    while (workers_count.load() < target)
+    {
+        if (auto slot = cpu_slots->tryAcquire())
+            spawn(std::move(slot));
+        else
+            break;
+    }
+}
+
+void WorkerPool::preempt(size_t worker_id)
+{
+    workers[worker_id].handOverTasks();
+    coordinator.leave(worker_id);
+}
+
+void WorkerPool::resume(size_t worker_id)
+{
+    coordinator.enter(worker_id);
+}
+
+WorkerPool::WorkerPool(ExecutingPipeline & pipeline_, const RunOptions & options_, size_t max_threads_, bool concurrency_control)
+    : pipeline(pipeline_)
+    , options(options_)
+    , max_threads(max_threads_)
+    , coordinator(*this, max_threads)
+    , requested_threads(concurrency_control && ConcurrencyControl::instance().getLazyAllocation() ? 1 : max_threads)
+    , cpu_slots(allocateCPU(concurrency_control, requested_threads))
+    , threads(max_threads)
+{
+    Wyrd::setName(spawn_mutex, "pool.spawn_mutex");
+    Wyrd::setName(workers_count, "pool.workers_count");
+    Wyrd::setName(failed, "pool.failed");
+
+    for (size_t worker_id = 0; worker_id < max_threads; ++worker_id)
+        workers.emplace_back(*this, worker_id);
+}
+
+WorkerPool::~WorkerPool()
+{
+    chassert(std::ranges::none_of(threads, [](const auto & thread) { return thread.has_value(); }));
+}
+
+void WorkerPool::run()
+{
+    auto slot = cpu_slots->acquire();
+    workers_count.fetch_add(1);
+
+    try
+    {
+        initializeExecution();
+        if (const size_t initial_tasks = global_tasks.size(); initial_tasks > 1)
+            grow(initial_tasks - 1);
+    }
+    catch (...)
+    {
+        fail(std::current_exception());
+    }
+
+    runSlot(std::move(slot), nullptr);
+    workers_count.fetch_sub(1);
+}
+
+void WorkerPool::runUntil(std::atomic_bool * yield_flag)
+{
+    if (max_threads != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Step by step execution needs a pool of one thread, got {}", max_threads);
+
+    if (!single_slot)
+    {
+        initializeExecution();
+        single_slot = cpu_slots->acquire();
+    }
+
+    workers_count.fetch_add(1);
+    runSlot(single_slot, yield_flag);
+    workers_count.fetch_sub(1);
+}
+
+void WorkerPool::fail(std::exception_ptr exception_)
+{
+    if (failed.exchange(true))
+        return;
+
+    exception = std::move(exception_);
+    pipeline.cancel(IProcessor::CancelReason::Exception);
+    coordinator.stop();
 }
 
 void WorkerPool::stop()
@@ -263,6 +267,12 @@ void WorkerPool::join()
 
     single_slot.reset();
     cpu_slots.reset();
+}
+
+void WorkerPool::rethrowIfFailed()
+{
+    if (exception)
+        std::rethrow_exception(exception);
 }
 
 }

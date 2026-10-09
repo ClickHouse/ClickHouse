@@ -23,7 +23,7 @@ static constexpr size_t max_take_from_global = LocalTasks::capacity / 2;
 Worker::Worker(WorkerPool & pool_, size_t worker_id_)
     : pool(pool_)
     , worker_id(worker_id_)
-    , runner(pool.pipeline, worker_id)
+    , runner(pool.pipeline, pool.options, worker_id)
     , local_tasks(fmt::format("worker[{}].local_tasks", worker_id))
 {
     Wyrd::setName(wakeups, fmt::format("worker[{}].wakeups", worker_id));
@@ -37,7 +37,7 @@ bool Worker::keepRunning(WorkerSlot & slot, std::atomic_bool * yield_flag)
     if (yield_flag && yield_flag->load())
         return false;
 
-    if (pool.pipeline.process_list_element && !pool.pipeline.process_list_element->checkTimeLimitSoft())
+    if (pool.options.process_list_element && !pool.options.process_list_element->checkTimeLimitSoft())
     {
         pool.pipeline.cancel(IProcessor::CancelReason::CancelledByTimeout);
         pool.coordinator.stop();
@@ -213,8 +213,8 @@ void Worker::finishRun()
 {
     handOverTasks();
 
-    if (pool.pipeline.step_profiler)
-        pool.pipeline.step_profiler->addWorkIntervals(runner.takeWorkIntervals());
+    if (pool.options.step_profiler)
+        pool.options.step_profiler->addWorkIntervals(runner.takeWorkIntervals());
 }
 
 UInt32 Worker::stealFifo(std::span<Task> out)
