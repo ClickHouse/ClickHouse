@@ -292,10 +292,10 @@ ThreadGroupPtr ThreadGroup::createForMergeMutate(
     {
         std::lock_guard lock(group->mutex);
         auto inherited = std::move(group->shared_data.operation_cancellation_request);
-        group->shared_data.operation_cancellation_request = [inherited = std::move(inherited), operation_request = std::move(operation_request)]
+        group->shared_data.operation_cancellation_request = [inherited_request = std::move(inherited), current_request = std::move(operation_request)]
         {
-            auto request = operation_request();
-            return inherited ? std::max(request, inherited()) : request;
+            auto request = current_request();
+            return inherited_request ? std::max(request, inherited_request()) : request;
         };
     }
     return group;
