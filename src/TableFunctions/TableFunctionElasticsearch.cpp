@@ -121,7 +121,7 @@ void registerTableFunctionElasticsearch(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionElasticsearch>(
         {
-            .description = R"DOCS_MD()DOCS_MD",
+            .description = R"DOCS_MD(Table function for elasticsearch)DOCS_MD",
             .category = FunctionDocumentation::Category::TableFunction
         });
 }

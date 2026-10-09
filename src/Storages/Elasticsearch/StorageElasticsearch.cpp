@@ -276,7 +276,7 @@ void registerStorageElasticsearch(StorageFactory & factory)
             .has_builtin_setting_fn = ElasticsearchSettings::hasBuiltin,
         },
         Documentation{
-            .description = R"DOCS_MD(Elasticsearch docs))DOCS_MD",
+            .description = R"DOCS_MD(Table Engine for Elasticsearch))DOCS_MD",
             .syntax ="",
             .related={}
         });
