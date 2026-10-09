@@ -30,7 +30,10 @@ class DiskSetBlockFormat
 {
 public:
     /// A block holds at most this many bytes of keys, packed or not, after a header of a few bytes. A lookup
-    /// reads and decodes whole blocks.
+    /// reads and decodes whole blocks, so small blocks keep the lookups that need few of them cheap, while
+    /// the lookups that need most of them read neighboring blocks together (see `DiskSetImpl::BlockReader`).
+    /// Bigger blocks would also stop packing, because a block of packed gaps holds at least twice the keys of
+    /// an unpacked block and at most `max_keys_per_packed_block` keys.
     static constexpr size_t block_bytes = 4096;
 
     /// A block takes at most this many bytes with its header, which records the layout and the number of
