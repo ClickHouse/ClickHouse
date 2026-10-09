@@ -363,6 +363,60 @@ bool ReadFromFormatInfo::formatReadsHivePartitionColumns() const
     return false;
 }
 
+namespace
+{
+
+bool isRowLineageColumn(const String & name)
+{
+    return name == "_row_id" || name == "_last_updated_sequence_number";
+}
+
+}
+
+std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns) const
+{
+    if (!filter_actions_dag || (hive_partition_columns_to_read_from_file_path.empty() && requested_virtual_columns.empty()))
+        return filter_actions_dag;
+    if (formatReadsHivePartitionColumns())
+        return nullptr;
+
+    auto is_added_after_format = [&](const String & name)
+    {
+        return hive_partition_columns_to_read_from_file_path.contains(name)
+            || (requested_virtual_columns.contains(name) && !(keep_row_lineage_columns && isRowLineageColumn(name)));
+    };
+    if (std::ranges::none_of(filter_actions_dag->getInputs(), [&](const auto * input) { return is_added_after_format(input->result_name); }))
+        return filter_actions_dag;
+
+    auto reads_added_column = [&](const ActionsDAG::Node * atom)
+    {
+        std::vector<const ActionsDAG::Node *> stack{atom};
+        while (!stack.empty())
+        {
+            const auto * node = stack.back();
+            stack.pop_back();
+            if (node->type == ActionsDAG::ActionType::INPUT && is_added_after_format(node->result_name))
+                return true;
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+        }
+        return false;
+    };
+
+    auto atoms = ActionsDAG::extractConjunctionAtoms(filter_actions_dag->getOutputs().at(0));
+    ActionsDAG::NodeRawConstPtrs kept;
+    for (const auto * atom : atoms)
+        if (!reads_added_column(atom))
+            kept.push_back(atom);
+
+    if (kept.size() == atoms.size())
+        return filter_actions_dag;
+    if (kept.empty())
+        return nullptr;
+    auto dag = ActionsDAG::buildFilterActionsDAG(kept);
+    return std::make_shared<const ActionsDAG>(std::move(*dag));
+}
+
 void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
 {
     source_header.getNamesAndTypesList().writeTextWithNamesInStorage(ctx.out);
