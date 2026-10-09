@@ -216,8 +216,16 @@ size_t Set::getDiskSetKeyBytes() const
 template <typename Method>
 std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const
 {
+    /// The disk keys of the methods without fixed-size keys are 128-bit hashes, which compress poorly. `LZ4`
+    /// makes their blocks slightly larger, and `ZSTD` saves only about 2%, which does not pay for
+    /// decompressing every block that a lookup reads. So the runs and the file of such a set are written
+    /// uncompressed, whatever `temporary_files_codec` is.
+    TemporaryDataOnDiskScopePtr tmp_data = spill_settings.tmp_data;
+    if constexpr (!set_method_has_fixed_size_keys<Method>)
+        tmp_data = tmp_data->childScope(tmp_data->getSettings().metrics, /*buffer_size_=*/0, "NONE");
+
     auto builder = createDiskSetBuilder<DiskSetKey<Method>>(
-        spill_settings.tmp_data,
+        std::move(tmp_data),
         builder_limits,
         spill_settings.max_bytes_before_external_set,
         spill_settings.max_block_size,
