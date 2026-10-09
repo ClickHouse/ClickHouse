@@ -2959,7 +2959,8 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(config()))
+                /// `reloadZooKeeperIfChanged` reads `loaded_config` alone, so the check must look at it too.
+                if (zkutil::hasZooKeeperConfig(*loaded_config))
                     global_context->reloadZooKeeperIfChanged(loaded_config);
 
                 global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);

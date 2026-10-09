@@ -189,6 +189,21 @@ bool LayeredConfiguration::getRaw(const std::string& key, std::string& value) co
 		if (it->pConfig->getRaw(key, value))
 			return true;
 	}
+	/// A flat layer such as `MapConfiguration` has `a.b` but no key `a`. Node `a` still exists in the merged
+	/// configuration, so report it, with an empty value, if no layer has a value for it.
+	if (!key.empty())
+	{
+		for (ConfigList::const_iterator it = _configs.begin(); it != _configs.end(); ++it)
+		{
+			Keys range;
+			it->pConfig->enumerate(key, range);
+			if (!range.empty())
+			{
+				value.clear();
+				return true;
+			}
+		}
+	}
 	return false;
 }
 
