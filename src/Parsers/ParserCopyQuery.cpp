@@ -116,7 +116,8 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        if (isEndOfStatement(pos))
+        /// The terminating `;` is not accepted here: `STDOUT` or `STDIN` is still to come.
+        if (pos->isEnd())
             return true;
 
         return parseOptions(pos, copy_element, expected);
@@ -139,7 +140,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     }
 
-    if (isEndOfStatement(pos))
+    if (pos->isEnd())
         return true;
 
     return parseOptions(pos, copy_element, expected);

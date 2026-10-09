@@ -213,6 +213,12 @@ public:
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
+
+            /// Set by the plan optimization when the first ranked key is a column read straight from a `MergeTree`
+            /// table: the heaps publish their boundary into it and the reading step filters rows and skips granules
+            /// by the published value (see `enable_group_by_top_k_dynamic_filtering`). Never serialized: it is a
+            /// link between two steps of the same local plan.
+            TopKThresholdTrackerPtr threshold_tracker;
         };
         std::optional<TopKParams> top_k;
 
@@ -1263,7 +1269,10 @@ private:
         UntruncatedAggregationKeys * untruncated_keys,
         size_t * full_group_count) const;
 
-    AggregatedChunk convertOneBucketToChunk(AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket) const;
+    /// `untruncated_keys` is the out-parameter of the overload above, forwarded for the
+    /// skip-merging conversion, which prices its own output for the dataflow statistics.
+    AggregatedChunk convertOneBucketToChunk(
+        AggregatedDataVariants & variants, Arena * arena, bool final, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys) const;
 
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter

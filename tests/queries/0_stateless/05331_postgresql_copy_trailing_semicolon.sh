@@ -19,25 +19,26 @@ CREATE TABLE ${CLICKHOUSE_DATABASE}.tbl_05331 (id UInt32, s String) ENGINE = Mer
 INSERT INTO ${CLICKHOUSE_DATABASE}.tbl_05331 VALUES (1, 'a');
 "
 
-# Each `COPY ... FROM STDIN` gets an invocation of its own, so that end of input terminates the
-# data: a `psql` that forwards the `\.` marker to the server instead of consuming it would hand
-# the server a row that is not data.
-psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only --quiet 2>&1 <<'EOF2'
-COPY tbl_05331 FROM STDIN;
-2	b
-EOF2
+# The data is read from the standard input until its end, so the `\.` that marks the end of the
+# data in a script is not needed: `psql` before version 18 sends that marker on to the server.
+PSQL=(psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only --quiet)
 
-psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only --quiet 2>&1 <<'EOF2'
-COPY tbl_05331 (id, s) FROM STDIN WITH (FORMAT csv);
-3,c
-EOF2
+printf '2\tb\n' | "${PSQL[@]}" -c "COPY tbl_05331 FROM STDIN;" 2>&1
+printf '3,c\n' | "${PSQL[@]}" -c "COPY tbl_05331 (id, s) FROM STDIN WITH (FORMAT csv);" 2>&1
+printf '4,d\n' | "${PSQL[@]}" -c "COPY tbl_05331 FROM STDIN WITH CSV;" 2>&1
 
 ${CLICKHOUSE_CLIENT} -q "OPTIMIZE TABLE ${CLICKHOUSE_DATABASE}.tbl_05331 FINAL"
 
-psql --host localhost --port "${CLICKHOUSE_PORT_POSTGRESQL}" "${CLICKHOUSE_DATABASE}" --user "${PG_USER}" --no-align --tuples-only --quiet 2>&1 <<'EOF2'
+"${PSQL[@]}" 2>&1 <<'EOF2'
 COPY tbl_05331 TO STDOUT;
 COPY tbl_05331 TO STDOUT WITH (FORMAT csv);
+COPY tbl_05331 TO STDOUT WITH CSV;
 EOF2
+
+# The `;` ends the command only after `STDOUT` or `STDIN`, which is not optional.
+"${PSQL[@]}" -c "COPY tbl_05331 TO;" 2>&1 | grep -o -m1 "Syntax error"
+"${PSQL[@]}" -c "COPY tbl_05331 FROM;" 2>&1 | grep -o -m1 "Syntax error"
+"${PSQL[@]}" -c "COPY (SELECT 1) TO;" 2>&1 | grep -o -m1 "Syntax error"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP TABLE ${CLICKHOUSE_DATABASE}.tbl_05331;

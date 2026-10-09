@@ -4,6 +4,7 @@
 #include <Parsers/formatSettingName.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/HiddenSecret.h>
 #include <Common/SipHash.h>
 
 
@@ -69,7 +70,7 @@ void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::F
         if (settings.show_secrets)
             ostr << " = " << applyVisitor(FieldVisitorToString(), change.value);
         else
-            ostr << " = '[HIDDEN]'";
+            ostr << " = " << HIDDEN_SECRET_LITERAL;
         auto override_value = overridability.find(change.name);
         if (override_value != overridability.end())
             ostr << " " << (override_value->second ? "" : "NOT ") << "OVERRIDABLE";
