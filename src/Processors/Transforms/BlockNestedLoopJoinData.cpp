@@ -1,4 +1,5 @@
 #include <Columns/ColumnSparse.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Block.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/Transforms/BlockNestedLoopJoinData.h>
@@ -296,7 +297,7 @@ BlockNestedLoopJoinData::StoreSize BlockNestedLoopJoinData::appendBlock(BuildBlo
 
     /// What this call writes once the lock is released, in the order the file takes them: whatever a
     /// flush took out of memory, and this block after it.
-    std::vector<BuildBlockPtr> to_spill;
+    VectorWithMemoryTracking<BuildBlockPtr> to_spill;
     {
         std::lock_guard lock(mutex);
 
@@ -349,7 +350,7 @@ void BlockNestedLoopJoinData::storeBlock(
         has_compressed_blocks.store(true, std::memory_order_relaxed);
 }
 
-void BlockNestedLoopJoinData::writeSpilledBlocks(size_t stream_index, std::vector<BuildBlockPtr> blocks_to_write)
+void BlockNestedLoopJoinData::writeSpilledBlocks(size_t stream_index, VectorWithMemoryTracking<BuildBlockPtr> blocks_to_write)
 {
     if (blocks_to_write.empty())
         return;
@@ -373,7 +374,7 @@ void BlockNestedLoopJoinData::writeSpilledBlocks(size_t stream_index, std::vecto
 /// would replace that with one pass per partition pair.
 bool BlockNestedLoopJoinData::spillInMemoryBlocks(size_t min_bytes, size_t stream_index)
 {
-    std::vector<BuildBlockPtr> taken;
+    VectorWithMemoryTracking<BuildBlockPtr> taken;
     {
         std::lock_guard lock(mutex);
 
@@ -393,11 +394,11 @@ bool BlockNestedLoopJoinData::spillInMemoryBlocks(size_t min_bytes, size_t strea
     return true;
 }
 
-std::vector<BuildBlockPtr> BlockNestedLoopJoinData::takeInMemoryBlocksLocked(size_t stream_index)
+VectorWithMemoryTracking<BuildBlockPtr> BlockNestedLoopJoinData::takeInMemoryBlocksLocked(size_t stream_index)
 {
     /// In increasing index order, so that the file keeps its blocks in that order: every block added
     /// after this point is written out too, and gets a higher index.
-    std::vector<BuildBlockPtr> taken;
+    VectorWithMemoryTracking<BuildBlockPtr> taken;
     for (auto & entry : blocks)
     {
         if (!entry.block)
@@ -452,7 +453,7 @@ void BlockNestedLoopJoinData::finish()
             "a block nested loop join build side that spilled kept a block in memory");
         std::ranges::stable_sort(state->blocks, {}, &BuildBlockEntry::sink_index);
 
-        std::vector<size_t> next_ordinal(state->spill_sinks.size(), 0);
+        VectorWithMemoryTracking<size_t> next_ordinal(state->spill_sinks.size(), 0);
         for (auto & entry : state->blocks)
             entry.spill_ordinal = next_ordinal[entry.sink_index]++;
     }
@@ -565,7 +566,7 @@ TemporaryBlockStreamReaderHolder BlockNestedLoopJoinData::createSpillReadStream(
     return sink->getReadStream();
 }
 
-const std::vector<size_t> & BlockNestedLoopJoinData::getRowOffsets() const
+const VectorWithMemoryTracking<size_t> & BlockNestedLoopJoinData::getRowOffsets() const
 {
     return finishedState("the row offsets").row_offsets;
 }

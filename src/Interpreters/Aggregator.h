@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/ListWithMemoryTracking.h>
 #include <array>
 #include <atomic>
 #include <memory>
@@ -646,7 +647,7 @@ public:
     /// arrive pre-allocated (merge-only aggregation) and cannot be tracked.
     std::optional<UInt64> getPeakMemoryUsage() const;
 
-    std::list<TemporaryBlockStreamHolder> detachTemporaryData();
+    ListWithMemoryTracking<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Part of automatic parallel replicas implementation.
     size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
@@ -738,7 +739,7 @@ private:
     /// For external aggregation.
     TemporaryDataOnDiskScopePtr tmp_data;
     mutable std::mutex tmp_files_mutex;
-    mutable std::list<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
+    mutable ListWithMemoryTracking<TemporaryBlockStreamHolder> tmp_files TSA_GUARDED_BY(tmp_files_mutex);
 
     size_t min_bytes_for_prefetch = 0;
 

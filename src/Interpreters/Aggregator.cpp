@@ -1,3 +1,4 @@
+#include <Common/ListWithMemoryTracking.h>
 #include <optional>
 #include <unordered_map>
 #include <Core/Settings.h>
@@ -3236,7 +3237,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     return agg_chunk;
 }
 
-std::list<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
+ListWithMemoryTracking<TemporaryBlockStreamHolder> Aggregator::detachTemporaryData()
 {
     std::lock_guard lk(tmp_files_mutex);
     return std::move(tmp_files);

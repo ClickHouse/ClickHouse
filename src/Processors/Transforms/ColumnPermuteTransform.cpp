@@ -1,4 +1,5 @@
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -7,16 +8,16 @@ namespace
 {
 
 template <typename T, typename Allocator>
-void applyPermutation(std::vector<T, Allocator> & data, const std::vector<size_t> & permutation)
+void applyPermutation(std::vector<T, Allocator> & data, const VectorWithMemoryTracking<size_t> & permutation) // STYLE_CHECK_ALLOW_STD_CONTAINERS -- generic over the allocator, so it takes tracked vectors too
 {
-    std::vector<T, Allocator> res;
+    std::vector<T, Allocator> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS -- the caller's own vector type, moved back into `data`
     res.reserve(permutation.size());
     for (size_t i : permutation)
         res.push_back(data[i]);
     data = std::move(res);
 }
 
-void permuteChunk(Chunk & chunk, const std::vector<size_t> & permutation)
+void permuteChunk(Chunk & chunk, const VectorWithMemoryTracking<size_t> & permutation)
 {
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -26,14 +27,14 @@ void permuteChunk(Chunk & chunk, const std::vector<size_t> & permutation)
 
 }
 
-Block ColumnPermuteTransform::permute(const Block & block, const std::vector<size_t> & permutation)
+Block ColumnPermuteTransform::permute(const Block & block, const VectorWithMemoryTracking<size_t> & permutation)
 {
     auto columns = block.getColumnsWithTypeAndName();
     applyPermutation(columns, permutation);
     return Block(columns);
 }
 
-ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const std::vector<size_t> & permutation_)
+ColumnPermuteTransform::ColumnPermuteTransform(SharedHeader header_, const VectorWithMemoryTracking<size_t> & permutation_)
     : ISimpleTransform(header_, std::make_shared<const Block>(permute(*header_, permutation_)), false)
     , permutation(permutation_)
 {
