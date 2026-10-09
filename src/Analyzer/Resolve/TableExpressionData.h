@@ -54,11 +54,8 @@ struct AnalysisTableExpressionData
     mutable std::unordered_set<std::string, StringTransparentHash, std::equal_to<>> column_identifier_first_parts;
     mutable bool column_membership_sets_populated = false;
 
-    /// Internal (generated) names of subquery/union output columns that were renamed to be unique
-    /// for the planner (see `QueryAnalyzer::disambiguateDuplicateProjectionColumnNames`). They are
-    /// present in `column_names_and_types` / the column-node map so the planner addresses each
-    /// duplicate distinctly, but they are NOT user-addressable: a direct identifier reference to a
-    /// generated name like `7_1` must not bind to the hidden column. Empty for ordinary tables.
+    /// Generated internal names of disambiguated duplicate subquery columns (e.g. `7_1`): in the column-node
+    /// map so the planner addresses each duplicate distinctly, but not user-addressable.
     NameSet hidden_column_names;
 
     bool isHiddenColumnName(std::string_view name) const

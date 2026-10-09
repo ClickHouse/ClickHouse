@@ -283,10 +283,8 @@ private:
         QueryTreeNodePtr & projection_node_list, IdentifierResolveScope & scope, std::vector<bool> * projection_from_matcher = nullptr,
         std::vector<bool> * projection_has_explicit_alias = nullptr);
 
-    /// Renames duplicate same-named projection columns backed by different expressions to unique
-    /// internal names (mutating `projection_columns`) and returns the original display names parallel
-    /// to it (empty when nothing was disambiguated). The caller records the returned names on the
-    /// query node AFTER `resolveProjectionColumns`, which clears any prior sidecar.
+    /// Renames later same-named projection columns backed by different expressions to unique internal
+    /// names and returns the original display names, or an empty list if nothing was renamed.
     static Names disambiguateDuplicateProjectionColumnNames(
         const QueryNode & query_node,
         NamesAndTypes & projection_columns,

@@ -171,7 +171,6 @@ void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
             union_node_typed->removeUnusedProjectionColumns(used_projection_columns_indexes);
     }
 
-    /// Keep the display-name sidecar (if any) compacted in lock-step with computeProjectionColumns().
     if (!projection_column_display_names.empty())
     {
         Names kept_display_names;

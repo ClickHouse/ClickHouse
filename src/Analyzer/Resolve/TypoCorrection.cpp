@@ -44,8 +44,6 @@ void TypoCorrection::collectTableExpressionValidIdentifiers(
     /// Typo correction is on the error path: build the full map so we can iterate `ColumnNode`s.
     for (const auto & [column_name, column_node] : table_expression_data.getColumnNodeMap())
     {
-        /// Do not suggest a generated internal name of a disambiguated duplicate subquery column
-        /// (e.g. `7_1`): it is not user-addressable, so it must not appear as a "maybe you meant" hint.
         if (table_expression_data.isHiddenColumnName(column_name))
             continue;
 

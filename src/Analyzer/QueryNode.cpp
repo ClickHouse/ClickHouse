@@ -76,9 +76,6 @@ void QueryNode::resolveProjectionColumns(NamesAndTypes projection_columns_value)
             projection_columns_value[i].name = this->projection_aliases_to_override[i];
     }
     projection_columns = std::move(projection_columns_value);
-    /// Drop any display-name sidecar from a prior resolution: it is parallel to the old columns and
-    /// would be stale against the new set. A caller that disambiguates duplicate names records a
-    /// fresh sidecar after this call (see QueryAnalyzer::disambiguateDuplicateProjectionColumnNames).
     projection_column_display_names.clear();
 }
 
@@ -87,7 +84,6 @@ void QueryNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> &
     auto & projection_nodes = getProjection().getNodes();
     size_t projection_columns_size = projection_columns.size();
     size_t write_index = 0;
-    /// Keep the display-name sidecar (if any) compacted in lock-step with projection_columns.
     const bool has_display_names = projection_column_display_names.size() == projection_columns_size;
 
     for (size_t i = 0; i < projection_columns_size; ++i)

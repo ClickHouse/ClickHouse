@@ -184,18 +184,13 @@ public:
     /// Compute union node projection columns
     NamesAndTypes computeProjectionColumns() const;
 
-    /// User-visible display name for each projection column, parallel to `computeProjectionColumns()`.
-    /// Mirrors `QueryNode::getProjectionColumnDisplayNames`: when a union subquery exposes several
-    /// columns with the same name backed by different first-branch expressions, the first branch's
-    /// columns are renamed to unique internal names so an outer `SELECT *` addresses them distinctly,
-    /// and this list keeps the original display names. Empty when no disambiguation was needed.
+    /// Display names parallel to `computeProjectionColumns()` when the first branch's duplicate names were
+    /// made internally unique. Empty otherwise.
     const Names & getProjectionColumnDisplayNames() const
     {
         return projection_column_display_names;
     }
 
-    /// Record the original display names after the first branch's duplicate projection columns were
-    /// renamed to unique internal names. Parallel to `computeProjectionColumns()`.
     void setProjectionColumnDisplayNames(Names display_names)
     {
         projection_column_display_names = std::move(display_names);
@@ -249,9 +244,6 @@ private:
     bool is_recursive_cte = false;
     std::optional<RecursiveCTETable> recursive_cte_table;
     std::string cte_name;
-    /// Parallel to `computeProjectionColumns()`; non-empty only when the first branch's duplicate
-    /// projection column names were disambiguated. Holds the original display names (see
-    /// `getProjectionColumnDisplayNames`).
     Names projection_column_display_names;
     ContextMutablePtr context;
     SelectUnionMode union_mode;
