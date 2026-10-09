@@ -744,14 +744,19 @@ def _discover_log_tables(instance):
 
 
 def _active_tables_query(tables):
-    """The names of the `_watcher` views of `tables` that exist on the instance,
-    i.e. the tables whose export is actually running. It is appended to the DDL
-    batch instead of assuming that every statement of the batch succeeded, so
-    that a partial failure gives a correct list rather than one that makes the
-    shutdown flush fail on a `_sender` table which was never created. It is
-    scoped to the views this helper attempted to create, so that an unrelated
+    """The names of the `_watcher` views and the `_sender` tables of `tables`
+    that exist on the instance; a table whose `_watcher` exists is one whose
+    export is actually running. It is appended to the DDL batch instead of
+    assuming that every statement of the batch succeeded, so that a partial
+    failure gives a correct list rather than one that makes the shutdown flush
+    fail on a `_sender` table which was never created. It is scoped to the
+    tables this helper attempted to create, so that an unrelated
     `system.<name>_watcher` is never flushed or dropped as if it were ours."""
-    names = ", ".join(f"'{_escape_sql_string(table + '_watcher')}'" for table in tables)
+    names = ", ".join(
+        f"'{_escape_sql_string(table + suffix)}'"
+        for table in tables
+        for suffix in ("_watcher", "_sender")
+    )
     return f"SELECT name FROM system.tables WHERE database = 'system' AND name IN ({names})"
 
 
@@ -789,10 +794,32 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
         )
         # The statements before the failing one did take effect
         output = instance.query(active_tables_query, timeout=60)
-    suffix = "_watcher"
-    return sorted(
-        line[: -len(suffix)] for line in output.split() if line.endswith(suffix)
+    names = output.split()
+    active = sorted(name[: -len("_watcher")] for name in names if name.endswith("_watcher"))
+    # A batch that failed between the `CREATE TABLE` of a `_sender` and the
+    # `CREATE MATERIALIZED VIEW` of its `_watcher` leaves the `_sender` behind.
+    # Nothing records it, so it must not survive: the next attempt would reuse
+    # it through `CREATE TABLE IF NOT EXISTS`, while the destination table of a
+    # changed structure needs a new one, see refresh_after_start.
+    orphans = sorted(
+        name[: -len("_sender")]
+        for name in names
+        if name.endswith("_sender") and name[: -len("_sender")] not in active
     )
+    if orphans:
+        try:
+            instance.query(
+                "".join(f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n" for table in orphans),
+                timeout=120,
+            )
+        except Exception:
+            logging.warning(
+                "CI logs export: failed to drop the sender tables left without a watcher on %s: %s",
+                instance.name,
+                ", ".join(orphans),
+                exc_info=True,
+            )
+    return active
 
 
 def _shutdown_statements(tables):

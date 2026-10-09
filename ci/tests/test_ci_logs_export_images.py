@@ -611,22 +611,53 @@ def test_an_unrelated_watcher_is_not_taken_for_an_exported_table():
     views the helper attempted to create, otherwise `flush_before_shutdown` and
     `teardown_for_instance` would flush and drop a test's own
     `system.<name>_watcher` as if the export owned it."""
+    scope = (
+        "name IN ('query_log_watcher', 'query_log_sender', "
+        "'text_log_watcher', 'text_log_sender')"
+    )
     query = HELPER._active_tables_query(["query_log", "text_log"])
-    assert "name IN ('query_log_watcher', 'text_log_watcher')" in query
+    assert scope in query
 
     class Instance:
         name = "node"
 
         def query(self, sql, timeout=None):
             # The DDL batch ends with the scoped query, never an unscoped one
-            assert "name IN ('query_log_watcher', 'text_log_watcher')" in sql
-            return "query_log_watcher\ntext_log_watcher\n"
+            assert scope in sql
+            return "query_log_watcher\nquery_log_sender\ntext_log_watcher\ntext_log_sender\n"
 
     tables = [("query_log", "h1", ""), ("text_log", "h2", ""), ("trace_log", "h3", "")]
     active = HELPER._create_senders_and_watchers(
         Instance(), tables, {"query_log", "text_log"}, "1 AS c"
     )
     assert active == ["query_log", "text_log"]
+
+
+def test_a_sender_left_without_a_watcher_is_dropped():
+    """A DDL batch that failed after the `CREATE TABLE` of a `_sender` but
+    before the `CREATE MATERIALIZED VIEW` of its `_watcher` leaves the `_sender`
+    behind; it must be dropped rather than reused by the next attempt, which
+    may need a `_sender` for a destination table of another structure."""
+
+    class Instance:
+        name = "node"
+        queries = []
+
+        def query(self, sql, timeout=None):
+            self.queries.append(sql)
+            if "CREATE" in sql:
+                raise RuntimeError("the batch failed half way")
+            if "DROP" in sql:
+                return ""
+            return "query_log_watcher\nquery_log_sender\ntext_log_sender\n"
+
+    instance = Instance()
+    tables = [("query_log", "h1", ""), ("text_log", "h2", "")]
+    active = HELPER._create_senders_and_watchers(
+        instance, tables, {"query_log", "text_log"}, "1 AS c"
+    )
+    assert active == ["query_log"]
+    assert instance.queries[-1] == "DROP TABLE IF EXISTS system.text_log_sender SYNC;\n"
 
 
 def test_test_name_of_a_single_file_suite_is_the_suite(tmp_path):
