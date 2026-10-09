@@ -108,6 +108,7 @@ namespace FailPoints
     extern const char mt_fail_selected_merge_before_start_once[];
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_settings_throw_before_metadata_commit[];
+    extern const char mt_throw_after_renaming_empty_parts[];
     extern const char mt_alter_settings_pause_before_metadata_commit[];
     extern const char mt_alter_readonly_pause_after_metadata_commit[];
     extern const char mt_move_partition_pause_before_commit[];
@@ -3452,6 +3453,98 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
 }
 
 
+void StorageMergeTree::removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVector & new_parts, Transaction & transaction)
+{
+    /// Without a transaction nothing on disk marks the empty parts as rolled back. If they stayed on disk until
+    /// the background cleanup, a restart would load them as covering parts and resurrect the failed operation,
+    /// and a merge of the parts inside their ranges would write a part intersecting them, so the table could not
+    /// be loaded. The cleanup cannot remove them earlier, because an empty part waits for the outdated parts in
+    /// its range, which it never covered. So remove them right away. With a transaction, the rolled back
+    /// creation CSN is stored on disk, and the transaction itself takes care of its parts.
+    /// The removal renames the part directory to `delete_tmp_` first, and such directories are not loaded, so only
+    /// a failure of that rename leaves a part to be loaded. No marker could be written to the disk in that case
+    /// either, so report the parts that stay on disk loudly instead of pretending the restart is safe.
+    if (!transaction.getMergeTreeTransaction())
+    {
+        Strings not_removed_parts;
+        try
+        {
+            transaction.rollback();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "while rolling back the empty parts");
+
+            /// `rollback` can throw before it moves the parts out of `PreActive`, e.g. when storing the rolled back
+            /// creation CSN fails. Evict such parts from the working set directly, so that they do not leak there
+            /// (counted by the size limits, awaited by `preactive_parts_cv` waiters) and can be removed below.
+            /// Clear the transaction as well, otherwise its destructor would roll back the parts again.
+            DataPartsVector preactive_parts;
+            {
+                auto parts_lock = lockParts();
+                for (const auto & part : new_parts)
+                    if (part && part->getState() == DataPartState::PreActive)
+                        preactive_parts.push_back(part);
+                removePartsFromWorkingSetImmediatelyAndSetTemporaryState(preactive_parts, parts_lock);
+                transaction.clear();
+            }
+            preactive_parts_cv.notify_all();
+        }
+        for (auto & part : new_parts)
+        {
+            if (!part)
+                continue;
+            String part_name = part->name;
+
+            /// `createEmptyPart` opened a part storage transaction, which is still active unless `commit` reached it.
+            /// On object storage its operations and uploaded blobs are only staged, so the removal below would not see
+            /// them and they would be stranded. Undo it first (it is a no-op for an already committed transaction).
+            try
+            {
+                part->getDataPartStorage().undoTransaction();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("while undoing the transaction of the rolled back empty part {}", part_name));
+            }
+
+            try
+            {
+                if (!tryRemovePartImmediately(std::move(part)))
+                    not_removed_parts.push_back(part_name);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, fmt::format("while removing the rolled back empty part {}", part_name));
+                not_removed_parts.push_back(part_name);
+            }
+        }
+        if (!not_removed_parts.empty())
+        {
+            /// Put the warning into the error returned to the client as well, because only a manual detach fixes it.
+            String warning = fmt::format("Cannot remove the rolled back empty parts {}. They stay on disk and will be loaded as covering"
+                " parts after a restart, which can make the table fail to load. Detach them manually.",
+                fmt::join(not_removed_parts, ", "));
+            LOG_ERROR(log, "{}", warning);
+            try
+            {
+                throw;
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(warning);
+                throw;
+            }
+            catch (...)
+            {
+                throw Exception(getCurrentExceptionCode(), "{}. {}", getCurrentExceptionMessage(false), warning);
+            }
+        }
+    }
+    throw;
+}
+
+
 DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
 {
     DataPartsVector covered_parts;
@@ -3496,14 +3589,29 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
         sleepForMilliseconds(200);
     } while (true);
 
-    transaction.renameParts();
-
     /// `covered_parts` above is only the precommit selection: `commit` reacquires the parts lock and
     /// recomputes the covered set, so it is the only authoritative answer to "what was removed".
     /// Everything below -- and the clone to `detached/` made by the callers -- must use that answer,
     /// otherwise a concurrently appearing covering part makes us report, undelay and detach a part
     /// that is still active.
-    DataPartsVector removed_parts = transaction.commit();
+    DataPartsVector removed_parts;
+    try
+    {
+        transaction.renameParts();
+
+        /// The parts are already renamed on disk, so the rollback has to deal with them, as when committing their metadata fails.
+        fiu_do_on(FailPoints::mt_throw_after_renaming_empty_parts,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after renaming empty parts");
+        });
+
+        removed_parts = transaction.commit();
+    }
+    catch (...)
+    {
+        /// Ok: the function rethrows the current exception.
+        removeRolledBackEmptyPartsAndRethrow(new_parts, transaction);
+    }
 
     LOG_INFO(log, "Removed {} parts out of the {} selected by covering them with empty {} parts. With txn {}.",
              removed_parts.size(), covered_parts.size(), new_parts.size(), transaction.getTID());
@@ -4239,6 +4347,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Transaction dest_transaction(*dest_table_storage, txn.get());
         Transaction src_transaction(*this, txn.get());
 
+        bool src_empty_parts_renaming = false;
+        try
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
             auto src_data_parts_lock = lockParts();
@@ -4270,8 +4380,23 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             dest_transaction.renameParts();
             dest_transaction.commit(dest_data_parts_lock);
 
+            src_empty_parts_renaming = true;
             src_transaction.renameParts();
+
+            fiu_do_on(FailPoints::mt_throw_after_renaming_empty_parts,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after renaming empty parts");
+            });
+
             src_transaction.commit(src_data_parts_lock);
+        }
+        catch (...)
+        {
+            /// The empty parts covering the source parts are renamed on disk, so they have to be removed right away,
+            /// see `removeRolledBackEmptyPartsAndRethrow`. It locks the parts, which the `try` block above has already unlocked.
+            if (src_empty_parts_renaming)
+                removeRolledBackEmptyPartsAndRethrow(new_empty_covering_src_parts, src_transaction);
+            throw;
         }
 
         /// Note: same elapsed time and profile events for all parts is used

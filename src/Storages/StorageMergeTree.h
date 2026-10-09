@@ -217,6 +217,10 @@ private:
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
     DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
 
+    /// Must be called from a `catch` block after renaming the empty parts of `transaction` failed or committing them failed.
+    /// Without a `MergeTreeTransaction`, removes the rolled back empty parts from disk right away. Rethrows the current exception.
+    [[noreturn]] void removeRolledBackEmptyPartsAndRethrow(MutableDataPartsVector & new_parts, Transaction & transaction);
+
     /// Copy the parts to `detached/`. Must run after the removal is committed: cloning first would
     /// leave an orphan copy behind whenever the removal is still refused, and every retry of the
     /// statement would add another `_tryN` directory next to it.

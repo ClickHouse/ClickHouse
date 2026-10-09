@@ -379,7 +379,7 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context, is_internal_metadata_replay);
     };
-    factory.registerDatabase("Filesystem", create_fn, {
+    factory.registerDatabase("Filesystem", create_fn, SecretArgumentsSpec{}, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::FILE,
