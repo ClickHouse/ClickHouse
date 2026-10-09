@@ -484,7 +484,9 @@ public:
 
     void recordStatistics(size_t num_distinct) override
     {
-        if (!stats_collecting_params.isCollectionAndUseEnabled() || num_built_buckets.load(std::memory_order_relaxed) != num_buckets)
+        /// A run without keys tells nothing about the next one: it would start every stream in an unbounded set.
+        if (!stats_collecting_params.isCollectionAndUseEnabled() || num_built_buckets.load(std::memory_order_relaxed) != num_buckets
+            || num_distinct == 0)
             return;
 
         std::vector<size_t> stream_distinct;
