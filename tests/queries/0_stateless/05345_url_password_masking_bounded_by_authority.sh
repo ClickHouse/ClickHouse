@@ -31,9 +31,15 @@ $CLICKHOUSE_CLIENT -q "SELECT 1 SETTINGS format_avro_schema_registry_url = 'mong
 # The same in the query text of `system.query_log`. Sent over HTTP, because the client rejects the value before sending it.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query_id=${CLICKHOUSE_DATABASE}_settings_in_query_log" \
     -d "SELECT 1 SETTINGS format_avro_schema_registry_url = 'mongodb://usr:999999?TOPSECRET@localhost:27017/db'" | grep -o 'BAD_ARGUMENTS'
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "
-    SELECT type, countIf(query LIKE '%TOPSECRET%'), countIf(query LIKE '%usr:[HIDDEN]@localhost%')
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_settings_in_query_log'
-    GROUP BY type"
+# The entry is written after the HTTP response is sent, so wait for it.
+for _ in {1..100}; do
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+    result=$($CLICKHOUSE_CLIENT -q "
+        SELECT type, countIf(query LIKE '%TOPSECRET%'), countIf(query LIKE '%usr:[HIDDEN]@localhost%')
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_settings_in_query_log'
+        GROUP BY type")
+    [ -n "$result" ] && break
+    sleep 0.1
+done
+echo "$result"
