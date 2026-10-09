@@ -211,5 +211,5 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_est_x SELECT number, number % 100 FROM numbers(1000);
     DELETE FROM t_est_x WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
     CREATE HYPOTHETICAL PROJECTION p_x ON t_est_x (SELECT a, b, _row_exists ORDER BY b);
-    EXPLAIN WHATIF SELECT a, b FROM t_est_x WHERE b = 1 SETTINGS ${PIN};
+    EXPLAIN WHATIF SELECT a, b FROM t_est_x WHERE b < 30 SETTINGS ${PIN};
 " | grep -E '^\s+(marks|rows|status):' | awk '{$1=$1; print}'
