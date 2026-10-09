@@ -409,7 +409,6 @@ void DiskObjectStorage::renameExchange(const std::string & old_path, const std::
                 old_path, new_path, temp_old_path);
 
         /// The moves below are persisted one by one, so a crash can stop between them.
-        /// The record names both files for `finishInterruptedRenameExchanges`.
         const String record_path = String(RENAME_EXCHANGE_JOURNAL_DIR) + sipHash128String(old_path);
         createDirectories(String(RENAME_EXCHANGE_JOURNAL_DIR));
         {
@@ -474,9 +473,8 @@ void DiskObjectStorage::finishInterruptedRenameExchanges()
 
 void DiskObjectStorage::finishRenameExchange(const String & old_path, const String & new_path)
 {
-    /// Completes `renameExchange` from any state its three moves can leave. A file is removed only when
-    /// another of the three holds the same bytes, and a file is moved only onto a path just read as absent,
-    /// so recovery never destroys unique bytes.
+    /// Never destroys unique bytes: a file is removed only when another of the three holds the same bytes,
+    /// and a file is moved only onto a path just read as absent.
     const String temp_path = old_path + String(RENAME_EXCHANGE_TEMP_SUFFIX);
     auto read = [&](const String & path) -> std::optional<String>
     {
