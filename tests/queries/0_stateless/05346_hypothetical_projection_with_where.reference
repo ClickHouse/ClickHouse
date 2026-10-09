@@ -1,0 +1,13 @@
+-- the query filter implies the filter of the projection
+marks:       350
+status:       applicable
+marks:        54
+verdict:      chosen
+-- the same with a sample, the span contains the read of the optimizer
+marks_span:   31 to 77
+verdict:      chosen
+-- the query filter does not imply it
+status:       not_applicable
+reason:       the query WHERE does not imply the projection WHERE
+05346_implies	54	1
+05346_not_implies	350	0
