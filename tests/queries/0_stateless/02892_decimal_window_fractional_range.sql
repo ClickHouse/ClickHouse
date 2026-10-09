@@ -13,10 +13,6 @@ select arrayJoin([0.1, 1.1, 1.2, 1.3, 5.5, 5.6])::Decimal32(1) n, groupArray(n) 
 select arrayJoin(['2022-01-01 01:01:01.111', '2022-01-01 01:01:01.222', '2022-01-01 01:01:03.333'])::DateTime64 t,
     groupArray(t) over (order by t::Decimal64(3) range 1.5 preceding) g;
 
--- Every decimal width, plain and nullable
+-- Every decimal width
 select arrayJoin([0.1, 1.1, 1.2, 1.3, 5.5, 5.6])::Decimal128(5) n, groupArray(n) over (order by n range 0.5 preceding) g;
 select arrayJoin([0.1, 1.1, 1.2, 1.3, 5.5, 5.6])::Decimal256(5) n, groupArray(n) over (order by n range between 0.5 preceding and 0.5 following) g;
-select arrayJoin([0.1, 1.1, 1.2, 1.3, 5.5, 5.6])::Nullable(Decimal32(1)) n, groupArray(n) over (order by n range 0.5 preceding) g;
-select arrayJoin([0.1, 1.1, 1.2, 1.3, 5.5, 5.6])::Nullable(Decimal64(3)) n, groupArray(n) over (order by n range 0.5 preceding) g;
-select arrayJoin([0.1, 1.1, 1.2, 1.3, 5.5, 5.6])::Nullable(Decimal128(5)) n, groupArray(n) over (order by n range 0.5 preceding) g;
-select arrayJoin([0.1, 1.1, 1.2, 1.3, 5.5, 5.6])::Nullable(Decimal256(5)) n, groupArray(n) over (order by n range between 0.5 preceding and 0.5 following) g;

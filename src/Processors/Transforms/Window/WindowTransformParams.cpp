@@ -103,15 +103,16 @@ RangeOffsetComparator chooseRangeOffsetComparatorForValueType(const IColumn & co
         case TypeIndex::Int32: return nullable ? compareNullableRangeOffset<Int32> : compareRangeOffset<Int32>;
         case TypeIndex::Int64: return nullable ? compareNullableRangeOffset<Int64> : compareRangeOffset<Int64>;
         case TypeIndex::Int128: return nullable ? compareNullableRangeOffset<Int128> : compareRangeOffset<Int128>;
-        case TypeIndex::Decimal32: return nullable ? compareNullableRangeOffset<Decimal32> : compareRangeOffset<Decimal32>;
-        case TypeIndex::Decimal64: return nullable ? compareNullableRangeOffset<Decimal64> : compareRangeOffset<Decimal64>;
-        case TypeIndex::Decimal128: return nullable ? compareNullableRangeOffset<Decimal128> : compareRangeOffset<Decimal128>;
-        case TypeIndex::Decimal256: return nullable ? compareNullableRangeOffset<Decimal256> : compareRangeOffset<Decimal256>;
+        case TypeIndex::Decimal32: if constexpr (!nullable) return compareRangeOffset<Decimal32>; else break;
+        case TypeIndex::Decimal64: if constexpr (!nullable) return compareRangeOffset<Decimal64>; else break;
+        case TypeIndex::Decimal128: if constexpr (!nullable) return compareRangeOffset<Decimal128>; else break;
+        case TypeIndex::Decimal256: if constexpr (!nullable) return compareRangeOffset<Decimal256>; else break;
         case TypeIndex::Float32: return nullable ? compareNullableRangeOffset<Float32> : compareRangeOffset<Float32>;
         case TypeIndex::Float64: return nullable ? compareNullableRangeOffset<Float64> : compareRangeOffset<Float64>;
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
+            break;
     }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
 }
 
 bool isRangeOffsetFrame(const WindowFrame & frame)

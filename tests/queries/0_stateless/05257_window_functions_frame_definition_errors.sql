@@ -9,6 +9,8 @@ SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number, number % 2 RANG
 SELECT '-- ORDER BY key types without RANGE offset support';
 SELECT count() OVER (ORDER BY toString(number) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toFixedString(toString(number), 1) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
+-- Waits for the `NULLS LAST` ordering of `RANGE` frames over a `Nullable` key, see `05269`
+SELECT count() OVER (ORDER BY toNullable(toDecimal32(number, 2)) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toDateTime64(number, 3, 'UTC') RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toUInt128(number) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toInt256(number) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
