@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int QUERY_SLOT_ACQUISITION_TIMEOUT;
 }
 
-QuerySlot::QuerySlot(ResourceLink link_, const String & id_, std::chrono::steady_clock::time_point admission_deadline_)
+QuerySlot::QuerySlot(ResourceLink link_, std::chrono::steady_clock::time_point admission_deadline_, const String & id_)
     : ResourceAllocation(*link_.allocation_queue, id_)
 {
     chassert(link_.allocation_queue);

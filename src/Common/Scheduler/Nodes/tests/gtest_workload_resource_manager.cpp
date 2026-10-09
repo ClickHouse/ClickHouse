@@ -4273,15 +4273,15 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxConcurrentQueriesBlocksWithou
     ClassifierPtr c = t.manager->acquire("all");
     ResourceLink link = c->get("query");
 
-    auto s1 = std::make_unique<QuerySlot>(link, "q1");
-    auto s2 = std::make_unique<QuerySlot>(link, "q2");
+    auto s1 = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "q1");
+    auto s2 = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "q2");
 
     // The third query must wait for a slot: the limit blocks admission and never evicts a running query.
     std::atomic<bool> acquired = false;
     std::unique_ptr<QuerySlot> s3;
     auto * waiter = t.async([&]
     {
-        s3 = std::make_unique<QuerySlot>(link, "q3");
+        s3 = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "q3");
         acquired = true;
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -4304,11 +4304,11 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionTimeout)
     ClassifierPtr c = t.manager->acquire("all");
     ResourceLink link = c->get("query");
 
-    QuerySlot holder(link, "holder");
+    QuerySlot holder(link, std::chrono::steady_clock::time_point::max(), "holder");
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     try
     {
-        QuerySlot waiter(link, "waiter", deadline);
+        QuerySlot waiter(link, deadline, "waiter");
         FAIL() << "QuerySlot must time out";
     }
     catch (const Exception & e)
@@ -4328,15 +4328,15 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxWaitingQueries)
     ClassifierPtr c = t.manager->acquire("all");
     ResourceLink link = c->get("query");
 
-    auto holder = std::make_unique<QuerySlot>(link, "holder");
+    auto holder = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "holder");
     std::unique_ptr<QuerySlot> waiting;
-    auto * waiter = t.async([&] { waiting = std::make_unique<QuerySlot>(link, "waiting"); });
+    auto * waiter = t.async([&] { waiting = std::make_unique<QuerySlot>(link, std::chrono::steady_clock::time_point::max(), "waiting"); });
     while (static_cast<AllocationQueue *>(link.allocation_queue)->getQueueLengthAndSize().first == 0)
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
     try
     {
-        QuerySlot rejected(link, "rejected");
+        QuerySlot rejected(link, std::chrono::steady_clock::time_point::max(), "rejected");
         FAIL() << "QuerySlot must be rejected";
     }
     catch (const Exception & e)
@@ -4363,13 +4363,13 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotAdmissionFollowsPriority)
     ResourceLink admin = c_admin->get("query");
     ResourceLink user = c_user->get("query");
 
-    auto holder = std::make_unique<QuerySlot>(user, "holder");
+    auto holder = std::make_unique<QuerySlot>(user, std::chrono::steady_clock::time_point::max(), "holder");
 
     std::mutex order_mutex;
     std::vector<String> order;
     auto run = [&] (ResourceLink link, const String & name)
     {
-        QuerySlot slot(link, name);
+        QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), name);
         std::scoped_lock lock{order_mutex};
         order.push_back(name);
     };
@@ -4404,7 +4404,7 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotMaxQueriesPerSecond)
 
     Stopwatch watch;
     for (int i = 0; i < 6; ++i)
-        QuerySlot slot(link, fmt::format("q{}", i));
+        QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), fmt::format("q{}", i));
     // The bucket admits while it is not in debt, so the first two queries start at once and the other 4 wait 50ms each
     EXPECT_GE(watch.elapsedMilliseconds(), 150);
 }
@@ -4420,14 +4420,14 @@ TEST(SchedulerWorkloadResourceManager, QuerySlotUpdateRateLimitAndConcurrency)
     ResourceLink link = c->get("query");
 
     // The bucket admits while it is not in debt: the first query uses the token, the second goes into debt
-    { QuerySlot slot(link, "first"); }
-    { QuerySlot slot(link, "second"); }
+    { QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "first"); }
+    { QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "second"); }
 
     // The next query is throttled for ~1000 seconds; removing the rate limit must admit it
     std::atomic<bool> acquired = false;
     auto * waiter = t.async([&]
     {
-        QuerySlot slot(link, "third");
+        QuerySlot slot(link, std::chrono::steady_clock::time_point::max(), "third");
         acquired = true;
     });
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

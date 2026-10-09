@@ -32,8 +32,8 @@ public:
     /// `QUERY_SLOT_ACQUISITION_TIMEOUT` exception is thrown. `time_point::max()` means no timeout.
     explicit QuerySlot(
         ResourceLink link_,
-        const String & id_ = {},
-        std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());
+        std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max(),
+        const String & id_ = {});
     ~QuerySlot() override;
 
 private:
