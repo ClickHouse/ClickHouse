@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- Merged after ssl_config.xml, whose <openSSL replace="replace"> would otherwise drop this. -->
+    <openSSL>
+        <server>
+            <cipherSuites>TLS_AES_256_GCM_SHA384</cipherSuites>
+        </server>
+    </openSSL>
+</clickhouse>

@@ -140,14 +140,9 @@ void MergeSortingTransform::consume(Chunk chunk)
             size_t reserve_size = sum_bytes_in_blocks + min_free_disk_space;
             SharedHeader shared_header_without_constants = std::make_shared<const Block>(header_without_constants);
             TemporaryBlockStreamHolder tmp_stream(shared_header_without_constants, tmp_data, reserve_size);
-            size_t max_merged_block_size = this->max_merged_block_size;
-            if (max_block_bytes > 0 && sum_rows_in_blocks > 0 && sum_bytes_in_blocks > 0)
-            {
-                auto avg_row_bytes = sum_bytes_in_blocks / sum_rows_in_blocks;
-                /// max_merged_block_size >= 128
-                max_merged_block_size = std::max(std::min(max_merged_block_size, max_block_bytes / avg_row_bytes), 128UL);
-            }
-            merge_sorter = std::make_unique<MergeSorter>(shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit);
+            merge_sorter = std::make_unique<MergeSorter>(
+                shared_header_without_constants, std::move(chunks), description, max_merged_block_size, limit,
+                MergeSorter::Mode::PreserveRows, max_block_bytes);
             auto sink = std::make_shared<BufferingToFileSink>(shared_header_without_constants, std::move(tmp_stream), log);
             auto source = std::make_shared<BufferingFromFileSource>(shared_header_without_constants, sink->getHolder(), log);
 
@@ -164,7 +159,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                         shared_header_without_constants,
                         0,
                         description,
-                        max_merged_block_size,
+                        merge_sorter->getMaxMergedBlockSize(),
                         /*max_merged_block_size_bytes=*/0,
                         /*max_dynamic_subcolumns=*/std::nullopt,
                         SortingQueueStrategy::Batch,
@@ -176,6 +171,12 @@ void MergeSortingTransform::consume(Chunk chunk)
                         apply_virtual_row,
                         /*virtual_row_prefetch_window=*/ 0,
                         have_all_inputs);
+
+                /// With external sorting this merge produces the sorted result of the stream, so it
+                /// publishes the value at the limit instead of `generate` (see there).
+                if (threshold_tracker && limit)
+                    static_cast<MergingSortedTransform &>(*external_merging_sorted).setTopKThresholdTracker(
+                        threshold_tracker, description.front().column_name, limit);
 
                 processors.emplace_back(external_merging_sorted);
             }
@@ -218,9 +219,32 @@ void MergeSortingTransform::generate()
     {
         generated_chunk = merge_sorter->read();
         if (!generated_chunk)
+        {
             merge_sorter.reset();
+        }
         else
+        {
+            /// The sorted result is complete, so the row at `limit` is the K-th value of this stream:
+            /// the exact final threshold with a single stream, and never tighter than it with several.
+            /// Publishing it lets a reader judge its data against it once the sorting is done, which
+            /// `remerge` alone does not guarantee.
+            if (threshold_tracker && limit && !generated_threshold_published)
+            {
+                const size_t rows = generated_chunk.getNumRows();
+                if (rows_generated + rows >= limit)
+                {
+                    if (auto sort_column_position = header_without_constants.findPositionByName(description.front().column_name))
+                    {
+                        Field value;
+                        generated_chunk.getColumns()[*sort_column_position]->get(limit - rows_generated - 1, value);
+                        threshold_tracker->testAndSet(value);
+                    }
+                    generated_threshold_published = true;
+                }
+                rows_generated += rows;
+            }
             enrichChunkWithConstants(generated_chunk);
+        }
     }
 }
 
