@@ -560,12 +560,12 @@ static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID &
     /// another server, so the set is unknown.
     /// The query names this table, so loading a lazily attached one is the expected cost.
     return castStorage<const MergeTreeData>(storage, DeferredTable::Load)
-        || typeid_cast<const StorageMemory *>(storage.get())
-        || typeid_cast<const StorageLog *>(storage.get())
-        || typeid_cast<const StorageStripeLog *>(storage.get())
-        || typeid_cast<const StorageFile *>(storage.get())
-        || dynamic_cast<const IStorageURLBase *>(storage.get())
-        || dynamic_cast<const StorageObjectStorage *>(storage.get());
+        || castStorage<const StorageMemory>(storage, DeferredTable::Load)
+        || castStorage<const StorageLog>(storage, DeferredTable::Load)
+        || castStorage<const StorageStripeLog>(storage, DeferredTable::Load)
+        || castStorage<const StorageFile>(storage, DeferredTable::Load)
+        || castStorage<const IStorageURLBase>(storage, DeferredTable::Load)
+        || castStorage<const StorageObjectStorage>(storage, DeferredTable::Load);
 }
 
 static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth)
