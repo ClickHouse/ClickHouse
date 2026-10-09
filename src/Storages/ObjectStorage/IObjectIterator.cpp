@@ -304,8 +304,8 @@ public:
             --num_prefetched_ahead;
         ++num_handed_out;
 
-        for (; num_prefetched_ahead < ahead.size(); ++num_prefetched_ahead)
-            prefetchFooter(*ahead[num_prefetched_ahead]);
+        while (num_prefetched_ahead < ahead.size() && prefetchFooter(*ahead[num_prefetched_ahead]))
+            ++num_prefetched_ahead;
         return object_info;
     }
 
@@ -429,27 +429,29 @@ private:
         return true;
     }
 
-    void prefetchFooter(ObjectInfo & object_info)
+    /// Returns false if the read cannot be scheduled now, so that the object is tried again on the next call.
+    bool prefetchFooter(ObjectInfo & object_info)
     {
         if (!needsFooter(object_info))
-            return;
+            return true;
 
         if (getIOThreadPool().get().getMaxThreads() == 0)
-            return;
+            return false;
 
         auto slot = Slot::tryAcquire(state, window);
         if (!slot)
-            return;
+            return false;
 
         auto footer = std::make_shared<ParquetPrefetchedFooter>();
         auto request = std::make_shared<Request>(
             Request{std::move(slot), state, footer, object_info.relative_path_with_metadata, resources});
 
         if (!getIOThreadPool().get().trySchedule([request] { runRequest(*request); }))
-            return;
+            return false;
 
         ProfileEvents::increment(ProfileEvents::ParquetFooterPrefetchRequests);
         object_info.prefetched_footer = std::move(footer);
+        return true;
     }
 
     static void runRequest(Request & request)
@@ -510,7 +512,8 @@ private:
     QueryConditionCachePtr query_condition_cache;
 
     std::mutex mutex;
-    /// Objects taken from `inner` and not handed out yet. Footers are read ahead for the first `num_prefetched_ahead` of them.
+    /// Objects taken from `inner` and not handed out yet. The first `num_prefetched_ahead` of them have their footer read
+    /// scheduled or need none.
     std::deque<ObjectInfoPtr> ahead;
     size_t num_prefetched_ahead = 0;
     size_t num_handed_out = 0;
