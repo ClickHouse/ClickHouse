@@ -29,11 +29,14 @@ SELECT 'constant out of projection range';
 SELECT * FROM view(SELECT 5, k FROM remote('127.0.0.{1,2}', currentDatabase(), t_pos) ORDER BY ALL)
 SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1;
 
--- The body of a view read through the local replica is still resolved positionally.
+-- The body of a view read through the local replica is still resolved positionally, also when it is inlined.
 CREATE VIEW v_pos AS SELECT src % 2 AS s, count() AS c FROM t_pos GROUP BY 1;
 SELECT 'view body';
 SELECT s, c FROM view(SELECT s, c FROM remote('127.0.0.{1,2}', currentDatabase(), v_pos) ORDER BY s)
 SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1;
+SELECT 'inlined view body';
+SELECT s, c FROM view(SELECT s, c FROM remote('127.0.0.{1,2}', currentDatabase(), v_pos) ORDER BY s)
+SETTINGS prefer_localhost_replica = 1, enable_positional_arguments = 1, analyzer_inline_views = 1;
 
 CREATE TABLE t_pos_m1 (k Int64, src Int64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_pos_m1 SELECT number, 4 - number FROM numbers(5);
