@@ -1,0 +1,5 @@
+<clickhouse>
+<!-- The {uuid} macro does not have to be a whole path component. -->
+<default_replica_path>/clickhouse/tables/pika{uuid}chu/{shard}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+</clickhouse>
