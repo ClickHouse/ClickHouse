@@ -1706,7 +1706,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
                 default_value = (*subcolumn)[0];
             }
 
-            /// Folded from `_CAST` like the analyzer does: a bare literal is re-analyzed by the child as another type or name.
+            /// The child re-analyzes the printed query, so the default must print as `_CAST` to keep its type and name.
             auto default_node = foldConstantCast(createCastFunction(
                 std::make_shared<ConstantNode>(std::move(default_value), merge_column->type), merge_column->type, modified_context));
             column_name_to_node.emplace(column_name, std::move(default_node));
