@@ -1035,7 +1035,10 @@ void SystemLog<LogElement>::prepareTable()
             query_context->makeQueryContext();
             addSettingsForQuery(query_context, IAST::QueryKind::Rename);
 
-            InterpreterRenameQuery(rename, query_context).execute();
+            InterpreterRenameQuery interpreter_rename(rename, query_context);
+            /// Views over the log read it by name, so they stay with the name, not with the archived table.
+            interpreter_rename.setKeepSourceViewDependencies(true);
+            interpreter_rename.execute();
 
             if (rotated_documentation_source)
                 registerSystemTableDocumentationSource(rotated_table_name, rotated_documentation_source);
@@ -1214,6 +1217,10 @@ void SystemLog<LogElement>::prepareUnionTable()
         {
             LOG_DEBUG(log, "Creating new table {} for {}", union_table_id.getNameForLogs(), LogElement::name());
         }
+
+        /// Replacing the table may wait for the previous one to be dropped, which cannot
+        /// happen while it is still referenced here.
+        union_table.reset();
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
