@@ -50,7 +50,8 @@ namespace
 /// - Every bit of the key affects every bit of the hash, so the keys that differ only in their low bits, such as
 ///   sequential identifiers or timestamps, are spread evenly over the buckets. The top bits of the key itself, or of
 ///   a weak hash, would send them all to a few buckets, and the build of these buckets would not be balanced.
-/// - `intHashCRC32` is not good enough for it: it has only 32 bits, and they are not well mixed (see its comment).
+/// - `intHashCRC32` is not good enough for it: it has only 32 bits, and they fail the avalanche and bit independence
+///   tests of SMHasher (see the comment on CRC32C in `Common/HashTable/Hash.h`).
 /// - It is cheap (two multiplications) and computed only once per routed key.
 ALWAYS_INLINE inline UInt64 bucketHash(UInt64 x)
 {
