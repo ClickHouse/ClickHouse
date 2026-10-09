@@ -99,6 +99,16 @@ bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
     return case_insensitive_table_functions.contains(Poco::toLower(canonical_name));
 }
 
+const SecretArgumentsSpec * TableFunctionFactory::tryGetSecretArgumentsSpec(const String & name_param) const
+{
+    String name = getAliasToOrName(name_param);
+    if (auto it = table_functions.find(name); it != table_functions.end())
+        return &it->second.secret_arguments;
+    if (auto it = case_insensitive_table_functions.find(Poco::toLower(name)); it != case_insensitive_table_functions.end())
+        return &it->second.secret_arguments;
+    return nullptr;
+}
+
 std::optional<FunctionDocumentation> TableFunctionFactory::tryGetDocumentation(const String & name) const
 {
     return tryGetDocumentationImpl(name);
