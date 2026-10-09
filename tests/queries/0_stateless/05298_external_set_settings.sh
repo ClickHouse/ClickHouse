@@ -72,11 +72,12 @@ SETTINGS max_rows_in_set = 100, set_overflow_mode = 'break', max_block_size = 50
     log_comment = 'rows break on disk';
 
 -- The set in memory reaches the byte limit with its first block, and the set on disk with the merged block
--- that grows its directory to the limit.
-SELECT 'bytes break', count() FROM numbers(20000) WHERE number IN (SELECT number FROM numbers(20000))
+-- that grows its directory to the limit. The keys are hashes. The set on disk does not pack their gaps, so it
+-- takes a block per 512 keys.
+SELECT 'bytes break', count() FROM numbers(20000) WHERE cityHash64(number) IN (SELECT cityHash64(number) FROM numbers(20000))
 SETTINGS max_bytes_in_set = 1024, set_overflow_mode = 'break', max_block_size = 1000, max_bytes_before_external_set = 0,
     log_comment = 'bytes break in memory';
-SELECT 'bytes break', count() FROM numbers(20000) WHERE number IN (SELECT number FROM numbers(20000))
+SELECT 'bytes break', count() FROM numbers(20000) WHERE cityHash64(number) IN (SELECT cityHash64(number) FROM numbers(20000))
 SETTINGS max_bytes_in_set = 1024, set_overflow_mode = 'break', max_block_size = 1000, max_bytes_before_external_set = 1,
     log_comment = 'bytes break on disk';
 

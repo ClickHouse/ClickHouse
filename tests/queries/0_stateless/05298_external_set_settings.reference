@@ -10,7 +10,7 @@ bytes limit	10
 rows break	100	2
 rows break	100	100
 bytes break	1000
-bytes break	17000
+bytes break	18000
 preliminary distinct	1
 preliminary distinct	20000	10213713121493657055
 preliminary distinct	20000	10213713121493657055

@@ -9,7 +9,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
-#include <array>
+#include <functional>
 
 namespace ProfileEvents
 {
@@ -27,51 +27,71 @@ class DiskSetImpl<Key>::BlockReader
 public:
     explicit BlockReader(const DiskSetImpl & set_)
         : set(set_)
-        , in(set.file->readRaw(block_bytes))
+        , in(set.file->readRaw(BlockFormat::block_bytes))
     {
     }
 
-    /// Returns the keys of `block`, which stay valid until the next call. It reads and decompresses the block
+    /// Returns the keys of `block`, which stay valid until the next call. It reads and decodes the block
     /// unless the previous call already did.
     std::span<const Key> read(size_t block)
     {
         if (block != current_block)
         {
-            num_keys = std::min(keys_per_block, set.rows - block * keys_per_block);
             in->seek(set.directory.getOffset(block), SEEK_SET);
-
             CompressedReadBuffer compressed(*in);
-            compressed.readStrict(reinterpret_cast<char *>(keys.data()), num_keys * sizeof(Key));
+            current_keys = decoder.decode(compressed, set.directory.getFirstKey(block));
 
             ProfileEvents::increment(ProfileEvents::ExternalSetReadBlocks);
             current_block = block;
         }
-        return {keys.data(), num_keys};
+        return current_keys;
     }
 
 private:
     /// The set whose file and directory the reader reads. It outlives the reader, which exists for one call.
     const DiskSetImpl & set;
 
-    /// The reader's own buffer over the file, of `block_bytes`. A frame that does not compress, such as one
-    /// of hashes, is slightly larger and takes two reads.
+    /// The reader reads the file through its own buffer of the size of a block. A frame that does not
+    /// compress, such as one of hashes, is slightly larger, so it takes two reads.
     std::unique_ptr<SeekableReadBuffer> in;
 
-    /// The decompressed keys of `current_block`.
-    std::array<Key, keys_per_block> keys{};
+    typename BlockFormat::Decoder decoder;
 
-    /// The block in `keys`, or nothing before the first read.
+    /// The reader remembers the block that it decoded last and its keys, so that the probes of one block
+    /// share one read.
     std::optional<size_t> current_block;
-
-    /// The number of keys in `current_block`, fewer than `keys_per_block` only in the last block of the file.
-    size_t num_keys = 0;
+    std::span<const Key> current_keys;
 };
+
+template <typename Key>
+void DiskSetImpl<Key>::add(std::span<const Key> keys)
+{
+    chassert(file && !keys.empty());
+    chassert(!rows || keys.front() > last_key);
+    chassert(std::ranges::adjacent_find(keys, std::greater_equal<>()) == keys.end());
+
+    last_key = keys.back();
+    rows += keys.size();
+    encoder->add(keys, *this);
+}
+
+template <typename Key>
+WriteBuffer & DiskSetImpl<Key>::startBlock(const Key & first_key)
+{
+    file->next();
+    directory.addBlock(first_key, file->getCompressedWriteBuffer().getCompressedBytes());
+    return *file;
+}
 
 template <typename Key>
 void DiskSetImpl<Key>::finishWriting()
 {
     if (!file)
         return;
+
+    /// The encoder keeps the keys of the last block pending until now. Lookups need none of its buffers.
+    encoder->finish(*this);
+    encoder.reset();
 
     file->finishWriting();
     LOG_TRACE(
