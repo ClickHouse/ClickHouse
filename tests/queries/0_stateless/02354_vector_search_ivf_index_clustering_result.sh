@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Tests the contract for the result of the clustering function of an IVF vector similarity index: a tree of centroids as named
-# tuples is accepted and stored with its own cluster ids, malformed trees fail training, and other result types are rejected.
+# tuples is accepted (the index assigns its own cluster ids to the leaves, in their order), malformed trees fail training, and
+# other result types are rejected.
 # groupArray over prepared centroids stands in for a clustering function which returns a tree.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -13,12 +14,12 @@ TREE="Tuple(cid UInt32, vec Array(Float32), parent UInt32, level UInt8, radius F
 function create_table()
 {
     $CLICKHOUSE_CLIENT --allow_experimental_vector_ivf_index 1 -q "
-    CREATE TABLE $1 (id UInt64, vec Array(Float32), cid UInt32 DEFAULT assignCentroid(vec, '$1'),
+    CREATE TABLE $1 (id UInt64, vec Array(Float32), cid UInt64 DEFAULT assignCentroid(vec, '$1'),
         INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 2, samples = '$2', clustering = groupArray(4)))
     ENGINE = MergeTree ORDER BY (cid, id)"
 }
 
-# The elements of the tuple are matched by name, and the cluster ids of the function are kept.
+# The elements of the tuple are matched by name; the leaves keep their order.
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE samples_tree (vec $TREE) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO samples_tree VALUES ((10, [0, 0], 0, 0, 1)), ((20, [10, 0], 0, 0, 1)), ((30, [0, 10], 0, 0, 1)), ((40, [10, 10], 0, 0, 1));
@@ -28,7 +29,7 @@ CREATE TABLE samples_top_parent (vec $TREE) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO samples_top_parent VALUES ((10, [0, 0], 7, 0, 1)), ((20, [10, 0], 7, 0, 1)), ((30, [0, 10], 7, 0, 1)), ((40, [10, 10], 7, 0, 1));
 CREATE TABLE samples_unnamed (vec Tuple(Array(Float32), UInt8, UInt32, UInt32)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO samples_unnamed SELECT ([0, 0], 0, number + 1, 0) FROM numbers(4);
-CREATE TABLE samples_no_parent (vec Tuple(vec Array(Float32), level UInt8, cid UInt32)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE samples_no_parent (vec Tuple(vec Array(Float32), level UInt8, cid UInt64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO samples_no_parent SELECT ([0, 0], 0, number + 1) FROM numbers(4);
 "
 
@@ -42,7 +43,7 @@ for _ in {1..600}; do
     sleep 0.2
 done
 $CLICKHOUSE_CLIENT -q "INSERT INTO tab (id, vec) VALUES (1, [1, 1]), (2, [9, 1]), (3, [1, 9]), (4, [9, 9])"
-$CLICKHOUSE_CLIENT -q "SELECT id, cid FROM tab ORDER BY id"
+$CLICKHOUSE_CLIENT -q "SELECT id, dense_rank() OVER (ORDER BY cid) FROM tab ORDER BY id"
 
 echo "Malformed trees fail training"
 for _ in {1..600}; do

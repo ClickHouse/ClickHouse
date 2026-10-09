@@ -18,7 +18,7 @@ CREATE TABLE tab
 (
     id UInt64,
     vec Array(Float32),
-    cid UInt32 DEFAULT assignCentroid(vec, '${CLICKHOUSE_DATABASE}.tab'),
+    cid UInt64 DEFAULT assignCentroid(vec, '${CLICKHOUSE_DATABASE}.tab'),
     INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 16, samples = 'samples', clustering = hierarchicalKMeans(256, 16, 20, 50000, 42))
 )
 ENGINE = MergeTree ORDER BY (cid, id)

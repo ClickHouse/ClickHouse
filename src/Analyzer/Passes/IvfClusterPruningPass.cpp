@@ -328,7 +328,7 @@ public:
         auto in_function_node = std::make_shared<FunctionNode>(*in_function_name);
         in_function_node->markAsOperator();
         QueryTreeNodePtr cluster_ids_node = std::make_shared<ConstantNode>(
-            Field(std::move(cluster_ids)), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()));
+            Field(std::move(cluster_ids)), std::make_shared<DataTypeArray>(data_cid->type));
         in_function_node->getArguments().getNodes() = {data_cid_node, cluster_ids_node};
         resolveOrdinaryFunctionNodeByName(*in_function_node, *in_function_name, context);
 

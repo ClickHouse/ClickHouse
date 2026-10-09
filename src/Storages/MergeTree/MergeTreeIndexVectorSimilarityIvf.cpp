@@ -337,9 +337,9 @@ void MergeTreeIndexAggregatorVectorSimilarityIvf::update(const Block & block, si
     }
 
     const auto & column = block.getByName(cluster_id_column).column;
-    const auto * column_cluster_id = typeid_cast<const ColumnUInt32 *>(column.get());
+    const auto * column_cluster_id = typeid_cast<const ColumnUInt64 *>(column.get());
     if (!column_cluster_id)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt32 cluster id column in IVF index, got {}", column->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected UInt64 cluster id column in IVF index, got {}", column->getName());
 
     const auto & data = column_cluster_id->getData();
 
@@ -413,8 +413,8 @@ void vectorSimilarityIvfIndexValidator(const IndexDescription & index, bool /*at
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "First column of IVF vector similarity index must be of type Array(Float32|Float64|BFloat16)");
 
     /// Check that the cluster id column is UInt32
-    if (!WhichDataType(index.data_types[1]).isUInt32())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second column of IVF vector similarity index (cluster id) must be of type UInt32, got {}", index.data_types[1]->getName());
+    if (!WhichDataType(index.data_types[1]).isUInt64())
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second column of IVF vector similarity index (cluster id) must be of type UInt64, got {}", index.data_types[1]->getName());
 }
 
 namespace
@@ -690,8 +690,8 @@ void createVectorSimilarityIvfInnerObjects(
         /// centroids are read by primary key. Centroids are wide, hence the small granularity.
         executeInternalQuery(fmt::format(
             "CREATE TABLE {} "
-            "(level UInt8, cid UInt32, parent UInt32, vec Array(Float32), active Bool, radius Float32, "
-            "generation UInt32, generation_size UInt32, split_from UInt32{}) "
+            "(level UInt8, cid UInt64, cid_end UInt64, parent UInt64, vec Array(Float32), active Bool, radius Float32, "
+            "generation UInt32, generation_size UInt32, split_from UInt64{}) "
             "ENGINE = {} PARTITION BY level ORDER BY (level, parent, cid) SETTINGS index_granularity = 256",
             centroids_table_id.getFullTableName(), hnsw_index, centroids_engine), internal_context);
 
@@ -701,8 +701,8 @@ void createVectorSimilarityIvfInnerObjects(
             "SELECT max(generation), count(), countIf(active) FROM {}", centroids_table_id.getFullTableName());
         executeInternalQuery(fmt::format(
             "CREATE DICTIONARY {} "
-            "(level UInt8, cid UInt32, parent UInt32, vec Array(Float32), active Bool, generation UInt32, generation_size UInt32, "
-            "split_from UInt32) "
+            "(level UInt8, cid UInt64, cid_end UInt64, parent UInt64, vec Array(Float32), active Bool, generation UInt32, "
+            "generation_size UInt32, split_from UInt64) "
             "PRIMARY KEY level, cid "
             "SOURCE(CLICKHOUSE(DB {} TABLE {} INVALIDATE_QUERY {})) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(MIN 60 MAX 120)",
             centroids_dictionary_id.getFullTableName(),
@@ -790,11 +790,17 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
 
         /// The result is checked as a whole before anything is written, so the table keeps reading all rows instead of using
         /// wrong centroids: k leaves (level 0), the declared dimensions, unique non-zero ids per level, and every centroid below
-        /// the top level has its parent one level up (0 = no parent). All rows are generation 0.
+        /// the top level has its parent one level up (0 = no parent). All rows are generation 0. The leaves, ordered by parent,
+        /// get ranges of cluster ids of equal size spread over the ids below 2^63 (see getVectorSimilarityIvfCentroidsTableID), so
+        /// that cluster ids also fit signed 64-bit integers, e.g. in clients; the leaf ids of the clustering function are not kept.
         const UInt64 num_clusters = arguments.clustering_parameters[0].safeGet<UInt64>();
+        const UInt64 max_cluster_id = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+        const UInt64 leaf_range = max_cluster_id / num_clusters;
         const String insert_query = fmt::format(
-            "INSERT INTO {0} (level, cid, parent, vec, active, radius, generation, generation_size) "
-            "SELECT node.2, node.3, node.4, {1}, true, node.5, 0, length(nodes) "
+            "INSERT INTO {0} (level, cid, cid_end, parent, vec, active, radius, generation, generation_size) "
+            "SELECT node.2, if(node.2 = 0, 1 + (leaf - 1) * {9}, node.3), "
+            "if(node.2 = 0, if(leaf = {8}, {10}, 1 + leaf * {9}), 0), node.4, {1}, true, node.5, 0, length(nodes) "
+            "FROM (SELECT nodes, node, row_number() OVER (PARTITION BY node.2 ORDER BY node.4, node.3) AS leaf "
             "FROM (SELECT {2} AS nodes, arrayMap(n -> (toUInt16(n.2), n.3), nodes) AS keys, arrayMax(n -> n.2, nodes) AS top "
             "FROM (SELECT {3}({4})({5}) AS result FROM {6}) "
             "WHERE throwIf(NOT arrayAll(n -> length(n.1) = {7}, nodes), "
@@ -806,11 +812,11 @@ void scheduleVectorSimilarityIvfTraining(const StorageID & table_id, const Stora
             "+ throwIf(NOT arrayAll(n -> n.2 < top OR n.4 = 0, nodes) "
             "OR length(arrayDistinct(arrayConcat(keys, arrayMap(n -> (toUInt16(n.2 + 1), n.4), arrayFilter(n -> n.2 < top, nodes))))) != length(arrayDistinct(keys)), "
             "'The clustering function must return a parent one level up for each centroid below the top level, and parent 0 at the top level') = 0) "
-            "ARRAY JOIN nodes AS node",
+            "ARRAY JOIN nodes AS node)",
             centroids_table_id.getFullTableName(), centroid, nodes,
             backQuoteIfNeed(arguments.clustering_function), fmt::join(clustering_parameters, ", "),
             backQuoteIfNeed(index.column_names[0]), samples_storage->getStorageID().getFullTableName(),
-            arguments.dimensions, num_clusters);
+            arguments.dimensions, num_clusters, leaf_range, max_cluster_id);
         const String reload_query = fmt::format("SYSTEM RELOAD DICTIONARY {}", centroids_dictionary_id.getFullTableName());
 
         /// The training runs after CREATE returns and outlives the session, so it gets a context of its own, with the settings
@@ -888,15 +894,15 @@ bool rewriteVectorSimilarityIvfSelfReferences(const StorageID & table_id, const 
 namespace
 {
 
-/// A cluster is split when it has more than this many times the target cluster size of its index, into round(rows / target)
-/// children, at least 2 and at most IVF_SPLIT_MAX_CHILDREN; a cluster much larger than that is split again in later rounds.
-constexpr UInt64 IVF_SPLIT_FACTOR = 2;
-constexpr UInt64 IVF_SPLIT_MAX_CHILDREN = 16;
+/// A cluster is split when it has more rows than the target cluster size of its index, into IVF_SPLIT_CHILDREN children. Rows
+/// are not moved: the split cluster keeps its rows, and the children receive the new ones, so every cluster stops growing at
+/// about the target size; a region which keeps receiving rows is split again in later rounds.
+constexpr UInt64 IVF_SPLIT_CHILDREN = 2;
 /// At most this many clusters are split per round, all in one generation.
 constexpr UInt64 IVF_SPLITS_PER_ROUND = 64;
-/// The children of a cluster are trained on a random sample of at most this many of its rows per child, which bounds the
-/// memory of a split independently of the clustering function.
-constexpr UInt64 IVF_SPLIT_SAMPLE_ROWS_PER_CHILD = 10000;
+/// The children of a cluster are trained on a random sample of at most this many of its rows, which bounds the memory of a
+/// split independently of the clustering function.
+constexpr UInt64 IVF_SPLIT_SAMPLE_ROWS = 20000;
 
 /// Runs an internal query and returns its result as one block (for small results).
 Block executeInternalSelect(const String & query, ContextPtr context)
@@ -917,11 +923,11 @@ Block executeInternalSelect(const String & query, ContextPtr context)
     return blocks.empty() ? Block{} : concatenateBlocks(blocks);
 }
 
-/// Splits the active clusters of an IVF index with more than IVF_SPLIT_FACTOR times its target cluster size (at most
-/// IVF_SPLITS_PER_ROUND, the largest first): trains round(rows / target) centroids for each on a sample of its rows, written as
-/// one new generation with split_from = the cluster, which retires the cluster, and reloads the dictionary. All children are
-/// written by one insert, so a round of splits happens completely or not at all. The rows of a retired cluster keep its id and
-/// are still found by the search, which ranks retired clusters too; new rows are assigned to the active ones.
+/// Splits the active clusters of an IVF index with more rows than its target cluster size (at most IVF_SPLITS_PER_ROUND, the
+/// largest first): trains IVF_SPLIT_CHILDREN centroids for each on a sample of its rows, written as one new generation with
+/// split_from = the cluster, which retires the cluster, and reloads the dictionary. All children are written by one insert, so a
+/// round of splits happens completely or not at all. The rows of a retired cluster keep its id and are still found by the
+/// search, which ranks retired clusters too; new rows are assigned to the active ones.
 void trySplitLargeClusters(const StorageID & table_id, const StorageInMemoryMetadata & metadata, const IndexDescription & index, ContextPtr context)
 {
     const IvfIndexArguments arguments = parseVectorSimilarityIvfIndexArguments(index.arguments);
@@ -939,86 +945,87 @@ void trySplitLargeClusters(const StorageID & table_id, const StorageInMemoryMeta
     /// it is not active or another leaf was split from it.
     const String cluster_id_column = backQuoteIfNeed(index.column_names[1]);
     const Block large = executeInternalSelect(fmt::format(
-        "WITH active_leaves AS (SELECT cid, parent FROM {0} WHERE level = 0 AND active "
+        "WITH active_leaves AS (SELECT cid, cid_end, parent FROM {0} WHERE level = 0 AND active "
         "AND cid NOT IN (SELECT split_from FROM {0} WHERE split_from != 0)) "
-        "SELECT s.cid, s.n, c.parent "
+        "SELECT s.cid, s.n, c.parent, c.cid_end "
         "FROM (SELECT {2} AS cid, count() AS n FROM {1} GROUP BY cid) AS s "
         "INNER JOIN active_leaves AS c ON s.cid = c.cid "
         "WHERE s.n > {3} "
-        "ORDER BY s.n DESC, s.cid LIMIT {4}",
-        centroids, table, cluster_id_column, IVF_SPLIT_FACTOR * arguments.target_cluster_size, IVF_SPLITS_PER_ROUND), context);
+        "ORDER BY c.cid_end - s.cid >= 3 DESC, s.n DESC, s.cid LIMIT {4}",
+        centroids, table, cluster_id_column, arguments.target_cluster_size, IVF_SPLITS_PER_ROUND), context);
     if (large.rows() == 0)
         return;
 
-    /// The number of children differs between clusters, while the number of clusters is a parameter of the clustering function,
-    /// so the clusters are trained in one subquery per number of children.
-    struct Split
-    {
-        Strings clusters;
-        Strings sample_rates;
-    };
-    std::map<UInt64, Split> splits_by_children;
-    Strings all_clusters;
-    Strings all_parents;
+    /// The children of a cluster with the ids [cid, cid_end) get [cid + 1, middle) and [middle, cid_end). A cluster whose range has
+    /// fewer than 3 ids can not be split (this needs about 40 consecutive splits of one cluster with 10 million initial clusters).
+    auto log = getLogger("VectorSimilarityIvfMaintenance");
+    Strings clusters;
+    Strings parents;
+    Strings sample_rates;
+    Strings first_children;
+    Strings first_children_ends;
+    Strings second_children_ends;
     for (size_t row = 0; row < large.rows(); ++row)
     {
         const UInt64 cluster = large.getByPosition(0).column->getUInt(row);
         const UInt64 rows = large.getByPosition(1).column->getUInt(row);
-        const UInt64 children = std::clamp<UInt64>(
-            static_cast<UInt64>(std::llround(static_cast<Float64>(rows) / static_cast<Float64>(arguments.target_cluster_size))),
-            2, IVF_SPLIT_MAX_CHILDREN);
-        auto & split = splits_by_children[children];
-        split.clusters.push_back(toString(cluster));
-        split.sample_rates.push_back(toString(std::min(1.0, static_cast<Float64>(IVF_SPLIT_SAMPLE_ROWS_PER_CHILD * children) / static_cast<Float64>(rows))));
-        all_clusters.push_back(toString(cluster));
-        all_parents.push_back(toString(large.getByPosition(2).column->getUInt(row)));
+        const UInt64 cluster_end = large.getByPosition(3).column->getUInt(row);
+        if (cluster_end - cluster < 3)
+        {
+            LOG_WARNING(log, "Cluster {} of IVF index {} of table {} has {} rows but can not be split: its range of cluster ids is used up",
+                cluster, index.name, table_id.getNameForLogs(), rows);
+            continue;
+        }
+        const UInt64 middle = cluster + 1 + (cluster_end - cluster - 1) / 2;
+        clusters.push_back(toString(cluster));
+        parents.push_back(toString(large.getByPosition(2).column->getUInt(row)));
+        sample_rates.push_back(toString(std::min(1.0, static_cast<Float64>(IVF_SPLIT_SAMPLE_ROWS) / static_cast<Float64>(rows))));
+        first_children.push_back(toString(cluster + 1));
+        first_children_ends.push_back(toString(middle));
+        second_children_ends.push_back(toString(cluster_end));
     }
+    if (clusters.empty())
+        return;
 
+    /// The clustering function of the index, with IVF_SPLIT_CHILDREN clusters. Only plain centroids for now.
     const String & vector_column = index.column_names[0];
-    const auto vector_type = metadata.getColumns().getPhysical(vector_column).type;
-    Strings subqueries;
-    for (const auto & [children, split] : splits_by_children)
-    {
-        /// The clustering function of the index, with the number of children as the number of clusters. Only plain centroids.
-        Array parameters = arguments.clustering_parameters;
-        parameters[0] = children;
-        AggregateFunctionProperties properties;
-        const auto clustering = AggregateFunctionFactory::instance().get(
-            arguments.clustering_function, NullsAction::EMPTY, {vector_type}, parameters, properties);
-        if (checkClusteringResultType(clustering->getResultType(), arguments.clustering_function, index.name).is_tree)
-            return;
-        Strings parameter_strings;
-        for (const auto & parameter : parameters)
-            parameter_strings.push_back(applyVisitor(FieldVisitorToString(), parameter));
+    Array parameters = arguments.clustering_parameters;
+    parameters[0] = IVF_SPLIT_CHILDREN;
+    AggregateFunctionProperties properties;
+    const auto clustering = AggregateFunctionFactory::instance().get(
+        arguments.clustering_function, NullsAction::EMPTY, {metadata.getColumns().getPhysical(vector_column).type}, parameters, properties);
+    if (checkClusteringResultType(clustering->getResultType(), arguments.clustering_function, index.name).is_tree)
+        return;
+    Strings parameter_strings;
+    for (const auto & parameter : parameters)
+        parameter_strings.push_back(applyVisitor(FieldVisitorToString(), parameter));
 
-        /// Clusters whose sample does not give the centroids (e.g. identical vectors) are skipped.
-        const String clusters = fmt::format("[{}]", fmt::join(split.clusters, ", "));
-        subqueries.push_back(fmt::format(
-            "SELECT {0} AS cluster, {1}({2})({3}) AS result FROM {4} "
-            "WHERE {0} IN {5} AND rand() / 4294967295. < transform({0}, {5}, [{6}], 0.) GROUP BY cluster "
-            "HAVING length(result) = {7} AND arrayAll(c -> length(c) = {8}, result)",
-            cluster_id_column, backQuoteIfNeed(arguments.clustering_function), fmt::join(parameter_strings, ", "),
-            backQuoteIfNeed(vector_column), table, clusters, fmt::join(split.sample_rates, ", "), children, arguments.dimensions));
-    }
-
-    auto log = getLogger("VectorSimilarityIvfMaintenance");
     LOG_INFO(log, "Splitting clusters [{}] of IVF index {} of table {} (target size {})",
-        fmt::join(all_clusters, ", "), index.name, table_id.getNameForLogs(), arguments.target_cluster_size);
+        fmt::join(clusters, ", "), index.name, table_id.getNameForLogs(), arguments.target_cluster_size);
 
-    /// One insert writes all children as one generation, whose size is the number of rows actually written.
+    /// Clusters whose sample does not give the centroids (e.g. identical vectors) are skipped. One insert writes all children
+    /// as one generation, whose size is the number of rows actually written.
     const String centroid = arguments.distance_function == "cosineDistance" ? "L2Normalize(centroid)" : "centroid";
+    const String cluster_list = fmt::format("[{}]", fmt::join(clusters, ", "));
+    const String first_child_ends = fmt::format("[{}]", fmt::join(first_children_ends, ", "));
     executeInternalQuery(fmt::format(
-        "INSERT INTO {0} (level, cid, parent, vec, active, radius, generation, generation_size, split_from) "
-        "SELECT 0, toUInt32((SELECT max(cid) FROM {0}) + row_number() OVER (ORDER BY cluster, position)), "
-        "transform(cluster, [{1}], [{2}], 0), {3}, true, 0, (SELECT max(generation) FROM {0}) + 1, count() OVER (), cluster "
-        "FROM ({4}) ARRAY JOIN result AS centroid, arrayEnumerate(result) AS position",
-        centroids, fmt::join(all_clusters, ", "), fmt::join(all_parents, ", "), centroid, fmt::join(subqueries, " UNION ALL ")),
-        context);
+        "INSERT INTO {0} (level, cid, cid_end, parent, vec, active, radius, generation, generation_size, split_from) "
+        "SELECT 0, if(position = 1, transform(cluster, {1}, [{12}], toUInt64(0)), transform(cluster, {1}, {13}, toUInt64(0))), "
+        "if(position = 1, transform(cluster, {1}, {13}, toUInt64(0)), transform(cluster, {1}, [{14}], toUInt64(0))), "
+        "transform(cluster, {1}, [{2}], toUInt64(0)), {3}, true, 0, (SELECT max(generation) FROM {0}) + 1, count() OVER (), cluster "
+        "FROM (SELECT {4} AS cluster, {5}({6})({7}) AS result FROM {8} "
+        "WHERE {4} IN {1} AND rand() / 4294967295. < transform({4}, {1}, [{9}], 0.) GROUP BY cluster "
+        "HAVING length(result) = {10} AND arrayAll(c -> length(c) = {11}, result)) "
+        "ARRAY JOIN result AS centroid, arrayEnumerate(result) AS position",
+        centroids, cluster_list, fmt::join(parents, ", "), centroid, cluster_id_column,
+        backQuoteIfNeed(arguments.clustering_function), fmt::join(parameter_strings, ", "), backQuoteIfNeed(vector_column),
+        table, fmt::join(sample_rates, ", "), IVF_SPLIT_CHILDREN, arguments.dimensions,
+        fmt::join(first_children, ", "), first_child_ends, fmt::join(second_children_ends, ", ")), context);
 
     executeInternalQuery(fmt::format("SYSTEM RELOAD DICTIONARY {}",
         getVectorSimilarityIvfCentroidsDictionaryID(table_id, index.name).getFullTableName()), context);
 
-    LOG_INFO(log, "Split clusters [{}] of IVF index {} of table {}", fmt::join(all_clusters, ", "), index.name, table_id.getNameForLogs());
+    LOG_INFO(log, "Split clusters [{}] of IVF index {} of table {}", fmt::join(clusters, ", "), index.name, table_id.getNameForLogs());
 }
 
 void runVectorSimilarityIvfMaintenance(ContextPtr global_context)

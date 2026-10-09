@@ -27,14 +27,14 @@ struct IvfIndexArguments
     Array clustering_parameters;
     /// Option to enable advanced vector math
     bool cluster_statistics = false;
-    /// If not 0, clusters with more than twice this number of rows are split in the background into clusters of about this size.
+    /// If not 0, clusters with more than this number of rows are split in two in the background (their rows stay where they are).
     UInt64 target_cluster_size = 0;
 };
 
 /// Parses and checks the arguments of an IVF index (not the specific parameters of the clustering function).
 IvfIndexArguments parseVectorSimilarityIvfIndexArguments(const ASTPtr & arguments);
 
-using IvfClusterId = UInt32;
+using IvfClusterId = UInt64;
 using IvfClusterCounts = std::map<IvfClusterId, UInt64>;
 
 struct MergeTreeIndexGranuleVectorSimilarityIvf final : public IMergeTreeIndexGranule
@@ -113,9 +113,11 @@ void checkVectorSimilarityIvfIndexForTable(
     const String & current_database,
     ContextPtr context);
 
-/// Internal objects of an IVF table : the centroids table (level, cid, parent, vec, active, radius, generation, generation_size,
-/// split_from) and a dictionary over it. Level 0 holds the leaves; each write (training, split) is a generation with its expected
-/// size. A leaf is retired if it is not active or another leaf has it as split_from.
+/// Internal objects of an IVF table : the centroids table (level, cid, cid_end, parent, vec, active, radius, generation,
+/// generation_size, split_from) and a dictionary over it. Level 0 holds the leaves; each write (training, split) is a generation
+/// with its expected size. A leaf is retired if it is not active or another leaf has it as split_from. Every leaf owns the range of
+/// cluster ids [cid, cid_end): training spreads the leaves over the ids below 2^63, and the children of a split take the two halves of
+/// the rest of the range of their parent, so that a cluster and all clusters split from it are one range of the primary key.
 StorageID getVectorSimilarityIvfCentroidsTableID(const StorageID & table_id, const String & index_name);
 StorageID getVectorSimilarityIvfCentroidsDictionaryID(const StorageID & table_id, const String & index_name);
 /// Starts (once per server) the background task which splits overgrown clusters of IVF indexes.

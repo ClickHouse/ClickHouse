@@ -31,7 +31,8 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <utility>
 
-/// assignCentroid(vec, centroids) -> UInt32 cluster id: the index of the nearest (L2) centroid to vec.
+/// assignCentroid(vec, centroids) -> cluster id: the position (UInt32) of the nearest (L2) centroid to vec, or its cid (UInt64)
+/// for a dictionary.
 ///
 /// The second argument is a CONSTANT and may be either:
 ///   * Array(Array(Float32)) - the centroids inline. The returned id is the position in this array
@@ -197,6 +198,8 @@ struct CentroidMatrix
 
     VectorWithMemoryTracking<Float32> centroid_sq_norms;   /// the squared norm of each centroid
     VectorWithMemoryTracking<UInt32> ids;                  /// the id to return when that centroid is nearest
+    /// For the dictionary form: the cid of each centroid, which may be wider than UInt32. Then `ids` are positions into it.
+    VectorWithMemoryTracking<UInt64> cids;
 
     /// Pack the centroids into the layout the kernel reads. `id_values` gives the id per centroid, or null
     /// to use 0..num_centroids-1. Runs once per block for the inline form, and once per dictionary version
@@ -369,6 +372,12 @@ public:
             [[maybe_unused]] const auto qualified_table_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dict_name_col->getValue<String>(), context);
         }
 
+        /// The dictionary form returns the cid of the dictionary as UInt64 (the cluster ids of IVF indexes use the whole range), the
+        /// array form the position of the centroid. The dictionary is not looked up here: it may not exist yet, e.g. while the
+        /// DEFAULT expression of the cluster id column of an IVF table is analyzed by its CREATE TABLE.
+        if (isString(arguments[1].type))
+            return std::make_shared<DataTypeUInt64>();
+
         return std::make_shared<DataTypeUInt32>();
     }
 
@@ -377,7 +386,7 @@ public:
         /// A distributed initiator can see zero rows with no local copy of the dictionary, so resolving one
         /// here would throw where an empty column is the answer.
         if (input_rows_count == 0)
-            return ColumnUInt32::create();
+            return isString(arguments[1].type) ? ColumnPtr(ColumnUInt64::create()) : ColumnPtr(ColumnUInt32::create());
 
         /// Shared, not owned: the dictionary form hands back the cached matrix, which another thread may
         /// swap, so the refcount is what keeps this one alive for the duration of the call.
@@ -397,9 +406,20 @@ public:
         const auto & vec_data = assert_cast<const ColumnFloat32 &>(vec.getData()).getData();
         const auto & vec_offsets = vec.getOffsets();
 
-        auto result = ColumnUInt32::create(input_rows_count);
+        if (matrix->cids.empty())
+        {
+            auto result = ColumnUInt32::create(input_rows_count);
+            matrix->assignBlock(vec_data.data(), vec_offsets, input_rows_count, result->getData());
+            return result;
+        }
+
+        /// The kernel returns positions of centroids, which are mapped to their cids.
+        PaddedPODArray<UInt32> positions(input_rows_count);
+        matrix->assignBlock(vec_data.data(), vec_offsets, input_rows_count, positions);
+        auto result = ColumnUInt64::create(input_rows_count);
         auto & res = result->getData();
-        matrix->assignBlock(vec_data.data(), vec_offsets, input_rows_count, res);
+        for (size_t row = 0; row < input_rows_count; ++row)
+            res[row] = matrix->cids[positions[row]];
         return result;
     }
 
@@ -607,7 +627,7 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "assignCentroid: dictionary {} has zero-dimension centroids", dict_name);
 
         VectorWithMemoryTracking<Float32> row_major(num_centroids * dim);
-        VectorWithMemoryTracking<UInt32> ids(num_centroids);
+        VectorWithMemoryTracking<UInt64> cids(num_centroids);
         for (size_t centroid_index = 0; centroid_index < num_centroids; ++centroid_index)
         {
             if (centroids[centroid_index].second.size() != dim)
@@ -615,17 +635,13 @@ private:
                     "assignCentroid: dictionary {} centroid {} has {} dimensions, expected {}",
                     dict_name, centroids[centroid_index].first, centroids[centroid_index].second.size(), dim);
             std::copy(centroids[centroid_index].second.begin(), centroids[centroid_index].second.end(), &row_major[centroid_index * dim]);
-
-            /// The result type is exactly UInt32 - reject anything greater
-            if (centroids[centroid_index].first > std::numeric_limits<UInt32>::max())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "assignCentroid: dictionary {} has cid {} which exceeds the UInt32 range of the result",
-                    dict_name, centroids[centroid_index].first);
-            ids[centroid_index] = static_cast<UInt32>(centroids[centroid_index].first);
+            cids[centroid_index] = centroids[centroid_index].first;
         }
 
+        /// The kernel works with positions; the cids, possibly wider than UInt32, are applied to its result.
         auto matrix = std::make_shared<CentroidMatrix>();
-        matrix->build(row_major.data(), num_centroids, dim, ids.data());
+        matrix->build(row_major.data(), num_centroids, dim, /*id_values=*/ nullptr);
+        matrix->cids = std::move(cids);
 
         cached_matrix = matrix;
         cached_dict = dictionary;
@@ -649,13 +665,13 @@ REGISTER_FUNCTION(AssignCentroid)
          {"Array(Float32)", "Array(Float64)", "Array(BFloat16)"}},
         {"centroids", "The centroids to score against, which must be constant. Given as an array of equally sized, "
                       "non-empty float arrays, the id then being the 0-based position in that array; or as the name of "
-                      "a `Dictionary` with an attribute `cid` of an unsigned integer type that fits `UInt32` and an "
+                      "a `Dictionary` with an attribute `cid` of an unsigned integer type and an "
                       "attribute `vec` of type `Array(Float32)`, the id then being `cid`; or as the name of a table "
                       "with an IVF vector similarity index, the id then being a cluster of the index. The dictionary is "
                       "read once and cached until it reloads.",
          {"Array(Array(Float32))", "Array(Array(Float64))", "Array(Array(BFloat16))", "String"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The nearest centroid id.", {"UInt32"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The nearest centroid id: its position as `UInt32` for an array of centroids, its `cid` as `UInt64` for a dictionary or a table with an IVF index.", {"UInt32", "UInt64"}};
     FunctionDocumentation::Examples examples = {
         {"Inline centroids",
          "SELECT assignCentroid([1.0, 2.0]::Array(Float32), [[0.0, 0.0], [1.0, 2.0]]::Array(Array(Float32)))", "1"}

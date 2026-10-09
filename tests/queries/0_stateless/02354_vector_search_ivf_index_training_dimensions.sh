@@ -11,7 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE samples (vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO samples SELECT [toFloat32(number), 0, 1] FROM numbers(100);
-CREATE TABLE tab (id UInt64, cid UInt32, vec Array(Float32),
+CREATE TABLE tab (id UInt64, cid UInt64, vec Array(Float32),
     INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 2, samples = 'samples', clustering = hierarchicalKMeans(4)))
 ENGINE = MergeTree ORDER BY (cid, id);
 " --allow_experimental_vector_ivf_index 1

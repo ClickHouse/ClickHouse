@@ -12,7 +12,7 @@ POINT="arrayMap(j -> toFloat32((cityHash64(number % 8, j) % 2001) / 100 - 10 + (
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE samples (vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO samples SELECT $POINT FROM numbers(2000);
-CREATE TABLE tab (id UInt64, vec Array(Float32), cid UInt32 DEFAULT assignCentroid(vec, 'tab'),
+CREATE TABLE tab (id UInt64, vec Array(Float32), cid UInt64 DEFAULT assignCentroid(vec, 'tab'),
     INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 4, samples = 'samples', clustering = hierarchicalKMeans(8, 2, 20, 2000, 1)))
 ENGINE = MergeTree ORDER BY (cid, id);
 " --allow_experimental_vector_ivf_index 1

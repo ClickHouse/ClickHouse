@@ -866,7 +866,7 @@ CREATE TABLE docs
 (
     id  UInt64,
     vec Array(BFloat16) CODEC(Quantized('rabitq', 768)),
-    cid UInt32 DEFAULT assignCentroid(vec, 'docs'),
+    cid UInt64 DEFAULT assignCentroid(vec, 'docs'),
     INDEX ivf (vec, cid) TYPE vector_similarity(
         'ivf', 'cosineDistance', 768,
         samples    = 'docs_sample',
@@ -885,14 +885,14 @@ The index arguments are:
 | `768` | The number of vector dimensions. Inserted vectors must have this length. |
 | `samples` | The sample table. An unqualified name refers to the database of the IVF table. |
 | `clustering` | The aggregate function which trains the centroids, with its parameters. The first parameter is always the number of clusters. |
-| `target_cluster_size` | Optional. Clusters with more than twice this number of rows are split in the background into clusters of about this size, so that the number of clusters grows with the table. Without it, clusters are not split. |
+| `target_cluster_size` | Optional. Clusters with more than this number of rows are split in two in the background, so that the number of clusters grows with the table. A split cluster keeps its rows; new rows go to the two new clusters. Without it, clusters are not split. |
 
-The index is declared on `(vec, cid)`, where `cid` is the cluster id column of type `UInt32`. It must be a column of the primary key, normally the first one; columns before it should have few distinct values (see [Limitations](#ivf-limitations)).
+The index is declared on `(vec, cid)`, where `cid` is the cluster id column of type `UInt64`. It must be a column of the primary key, normally the first one; columns before it should have few distinct values (see [Limitations](#ivf-limitations)).
 The parameters of `hierarchicalKMeans` are `(k, branching, max_iter, sample_cap, seed, cosine_distance)`; use `cosine_distance = 1` together with `cosineDistance`.
 
 The clustering function returns either the `k` centroids as `Array(Array(Float32))`, or a tree of centroids as `Array(Tuple(vec Array(Float32), level UInt8, cid UInt32, parent UInt32[, radius Float32]))`.
 In a tree, level 0 holds the `k` leaves, which are the clusters of the table, and every centroid below the top level has its `parent` at the next level.
-Cluster ids are non-zero, and `parent` is 0 at the top level.
+Cluster ids are non-zero, and `parent` is 0 at the top level. The index replaces the ids of the leaves by its own: each leaf gets a range of cluster ids below 2<sup>63</sup> (so that they also fit signed 64-bit integers), and clusters split from it later take their ids from this range, so that they are stored next to it.
 `hierarchicalKMeans` returns the first form.
 If the result does not satisfy these rules, training fails and no centroids are stored.
 

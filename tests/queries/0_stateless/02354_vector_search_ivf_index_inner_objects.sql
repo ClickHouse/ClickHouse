@@ -9,7 +9,7 @@ INSERT INTO samples SELECT [toFloat32(number), toFloat32(number % 10)] FROM numb
 
 SET allow_experimental_vector_ivf_index = 1;
 
-CREATE TABLE tab (id UInt64, cid UInt32, vec Array(Float32), INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'cosineDistance', 2, samples = 'samples', clustering = hierarchicalKMeans(4))) ENGINE = MergeTree ORDER BY (cid, id);
+CREATE TABLE tab (id UInt64, cid UInt64, vec Array(Float32), INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'cosineDistance', 2, samples = 'samples', clustering = hierarchicalKMeans(4))) ENGINE = MergeTree ORDER BY (cid, id);
 
 SELECT 'Hidden objects';
 SELECT replaceOne(name, (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'tab'), '<uuid>') AS name, engine, partition_key, sorting_key

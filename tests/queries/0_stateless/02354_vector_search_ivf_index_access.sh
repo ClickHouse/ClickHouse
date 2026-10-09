@@ -17,7 +17,7 @@ INDEX="INDEX idx (vec, cid) TYPE vector_similarity('ivf', 'L2Distance', 2, sampl
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE samples (vec Array(Float32)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO samples SELECT [toFloat32(number % 10), toFloat32(number % 7)] FROM numbers(1000);
-CREATE TABLE tab (id UInt64, vec Array(Float32), cid UInt32 DEFAULT assignCentroid(vec, 'tab'), $INDEX)
+CREATE TABLE tab (id UInt64, vec Array(Float32), cid UInt64 DEFAULT assignCentroid(vec, 'tab'), $INDEX)
 ENGINE = MergeTree ORDER BY (cid, id);
 DROP USER IF EXISTS $USER_RW, $USER_NONE, $USER_CREATE;
 CREATE USER $USER_RW IDENTIFIED WITH no_password;
@@ -42,7 +42,7 @@ $CLICKHOUSE_CLIENT --user "$USER_NONE" -q "SELECT assignCentroid([toFloat32(0), 
 
 echo "CREATE TABLE requires SELECT on the samples table"
 $CLICKHOUSE_CLIENT --user "$USER_CREATE" --allow_experimental_vector_ivf_index 1 -q "
-CREATE TABLE $DB.tab2 (id UInt64, vec Array(Float32), cid UInt32, $INDEX) ENGINE = MergeTree ORDER BY (cid, id)" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+CREATE TABLE $DB.tab2 (id UInt64, vec Array(Float32), cid UInt64, $INDEX) ENGINE = MergeTree ORDER BY (cid, id)" 2>&1 | grep -o "ACCESS_DENIED" | head -1
 $CLICKHOUSE_CLIENT -q "EXISTS TABLE tab2"
 
 $CLICKHOUSE_CLIENT -q "DROP USER $USER_RW, $USER_NONE, $USER_CREATE"

@@ -3,16 +3,17 @@ _ivf_centroids_dict_idx_<uuid>	Dictionary
 _ivf_quantizer_idx_<uuid>	MergeTree	level	level, parent, cid
 Centroids table
 level	UInt8
-cid	UInt32
-parent	UInt32
+cid	UInt64
+cid_end	UInt64
+parent	UInt64
 vec	Array(Float32)
 active	Bool
 radius	Float32
 generation	UInt32
 generation_size	UInt32
-split_from	UInt32
+split_from	UInt64
 Centroids dictionary
-['level','cid']	['UInt8','UInt32']	['parent','vec','active','generation','generation_size','split_from']	['UInt32','Array(Float32)','Bool','UInt32','UInt32','UInt32']
+['level','cid']	['UInt8','UInt64']	['cid_end','parent','vec','active','generation','generation_size','split_from']	['UInt64','UInt64','Array(Float32)','Bool','UInt32','UInt32','UInt64']
 Objects keep their names after RENAME
 2
 Objects are dropped with the table
