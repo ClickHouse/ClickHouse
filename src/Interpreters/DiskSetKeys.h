@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/SetVariants.h>
 
 
@@ -37,8 +37,8 @@ template <typename Key>
 ColumnPtr encodeFixedSizeKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map);
 
 /// Computes the 128-bit hashes that the `hashed` method computes for the rows of key columns, so that the
-/// disk keys of LHS values match the hashes of RHS keys that the table of the `hashed` method keeps. Skips
-/// the rows marked in `null_map`.
+/// disk keys of LHS values match the hashes of the RHS keys: those that the table of the `hashed` method
+/// keeps, and those that `getHashedKey` computes for strings. Skips the rows marked in `null_map`.
 ColumnPtr computeHashedKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map);
 
 /// Computes the disk keys of the rows of key columns, RHS keys or LHS values, for a set with `Method`,
@@ -54,18 +54,17 @@ ColumnPtr computeDiskSetKeys(const ColumnRawPtrs & key_columns, const Sizes & ke
 }
 
 /// Computes the disk keys of the RHS keys in the table of `method`, when the set spills, and passes them to
-/// `consume` in batches of at most `max_rows` keys.
+/// `consume` in batches of at most `max_rows` keys. The tables of the methods with fixed-size keys keep the
+/// RHS keys packed as in memory, which are read back into columns of `key_types` and converted as LHS values
+/// are, so that equal values get equal disk keys. These columns take at most `max_rows` times the width of a
+/// key. The table of the `hashed` method keeps the disk keys themselves, and the strings of `key_string` and
+/// `key_fixed_string` are hashed in place: copying them out of the arena would take memory in proportion to
+/// their length, while the set spills because memory is short.
 template <typename Method, typename Consume>
 void computeDiskSetKeysOfTable(
     const Method & method, const DataTypes & key_types, const Sizes & key_sizes, size_t max_rows, Consume && consume)
 {
-    if constexpr (std::is_same_v<Method, decltype(SetVariants::hashed)::element_type>)
-    {
-        SetMethodKeyReader<Method> reader(method, {std::make_shared<DataTypeNumber<typename Method::Key>>()}, key_sizes);
-        while (!reader.atEnd())
-            consume(std::move(reader.read(max_rows, /*max_bytes=*/0).front()));
-    }
-    else
+    if constexpr (set_method_has_fixed_size_keys<Method>)
     {
         SetMethodKeyReader<Method> reader(method, key_types, key_sizes);
         while (!reader.atEnd())
@@ -76,6 +75,24 @@ void computeDiskSetKeysOfTable(
                 key_columns.push_back(column.get());
             consume(computeDiskSetKeys<Method>(key_columns, key_sizes, columns.front()->size(), /*null_map=*/nullptr));
         }
+    }
+    else
+    {
+        using KeysColumn = ColumnVector<DiskSetKey<Method>>;
+        auto keys = KeysColumn::create();
+        for (auto it = method.data.begin(); it != method.data.end(); ++it)
+        {
+            if constexpr (std::is_same_v<Method, decltype(SetVariants::hashed)::element_type>)
+                keys->getData().push_back(it->getValue());
+            else
+                keys->getData().push_back(Method::getHashedKey(it->getValue()));
+
+            if (keys->size() == max_rows)
+                consume(std::exchange(keys, KeysColumn::create()));
+        }
+
+        if (!keys->empty())
+            consume(std::move(keys));
     }
 }
 
