@@ -4413,8 +4413,7 @@ the set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_
 part in memory. With `set_overflow_mode = 'break'`, the set keeps the keys that come first in the order
 in which it stores them on disk, up to the limits, and not the keys of the first rows of the subquery.
 For keys of numbers, dates and short `FixedString` values, alone or in a tuple, these are the smallest
-keys. Other keys, such as `String`, form an arbitrary subset, since the set stores only the 128-bit
-SipHash of each such key on disk.
+keys. Other keys, such as `String`, form an arbitrary subset.
 
 ## Distributed Subqueries {#distributed-subqueries}
 
