@@ -8319,7 +8319,7 @@ void QueryAnalyzer::disambiguateDuplicateUnionProjectionColumnNames(UnionNode & 
     /// branch, addressing each column distinctly. The originals are kept as display names on the
     /// union and restored by the outer matcher. Only a union subquery feeds an outer matcher; a
     /// top-level union's names are user-visible and must be left untouched.
-    if (!union_node.isSubquery() || union_node.isCorrelated())
+    if (!union_node.isSubquery())
         return;
 
     const auto & query_nodes = union_node.getQueries().getNodes();
