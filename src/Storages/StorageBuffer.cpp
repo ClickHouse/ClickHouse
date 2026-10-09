@@ -278,8 +278,16 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
+        /// `read` unites the destination with the buffers, so a query past a plain read of columns has to be merged
+        /// above both: the destination is asked for at most `WithMergeableState`, as by a nested `Distributed`.
+        const bool merged_above = to_stage > QueryProcessingStage::FetchColumns;
+        if (merged_above)
+            to_stage = QueryProcessingStage::WithMergeableState;
+
         const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
-        return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        const auto stage = destination->getQueryProcessingStage(
+            local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
+        return merged_above ? std::min(stage, QueryProcessingStage::WithMergeableState) : stage;
     }
 
     return QueryProcessingStage::FetchColumns;
