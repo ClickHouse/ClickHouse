@@ -29,6 +29,7 @@ public:
     explicit BlockReader(const DiskSetImpl & set_)
         : set(set_)
         , in(set.file->readRaw(getBufferSize(set)))
+        , compressed(*in, /*allow_different_codecs_=*/true)
     {
     }
 
@@ -38,8 +39,10 @@ public:
     {
         if (block != current_block)
         {
+            /// The decoder has read the whole previous block, so the compressed buffer takes the next frame
+            /// from the new position, which the buffer of the file may already hold.
             in->seek(set.directory.getOffset(block), SEEK_SET);
-            CompressedReadBuffer compressed(*in);
+            compressed.next();
             current_keys = decoder.decode(compressed, set.directory.getFirstKey(block));
 
             ProfileEvents::increment(ProfileEvents::ExternalSetReadBlocks);
@@ -64,6 +67,10 @@ private:
     /// The buffer holds the largest frame of a block, so that each block takes one read and its frame is
     /// decompressed where it is read instead of being copied first.
     std::unique_ptr<SeekableReadBuffer> in;
+
+    /// One compressed buffer serves all the blocks of the call, so that it allocates its memory once. It
+    /// accepts frames of both codecs, because the file compresses only the blocks that a codec can shrink.
+    CompressedReadBuffer compressed;
 
     typename BlockFormat::Decoder decoder;
 
