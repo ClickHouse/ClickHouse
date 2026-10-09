@@ -19,20 +19,37 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
 }
 
+static bool canUseParallelReplicas(const ContextPtr & context)
+{
+    return context->canUseParallelReplicasOnInitiator() || context->canUseParallelReplicasCustomKey();
+}
+
 /// Only `Memory` temporary tables are sent to the replicas, so a query that would make a replica read another
 /// temporary table runs without parallel replicas.
 class FindTemporaryTableNotSentToReplicasVisitor : public InDepthQueryTreeVisitorWithContext<FindTemporaryTableNotSentToReplicasVisitor>
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<FindTemporaryTableNotSentToReplicasVisitor>;
-    using Base::Base;
 
-    bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr &) const { return !found; }
+    explicit FindTemporaryTableNotSentToReplicasVisitor(ContextPtr context)
+        : Base(context)
+        , parallel_replicas_possible(canUseParallelReplicas(context))
+    {}
+
+    bool found() const { return parallel_replicas_possible && reads_temporary_table; }
+
+    bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr &) const { return !found(); }
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>() || node->as<UnionNode>())
+        {
+            parallel_replicas_possible |= canUseParallelReplicas(getContext());
+            return;
+        }
+
         const auto * table_node = node->as<TableNode>();
-        if (found || !table_node)
+        if (reads_temporary_table || !table_node)
             return;
 
         const auto & storage = table_node->getStorage();
@@ -42,10 +59,13 @@ public:
         if (typeid_cast<const StorageView *>(storage.get()) && !getSettings()[Setting::parallel_replicas_allow_view_over_mergetree])
             return;
 
-        found = true;
+        reads_temporary_table = true;
     }
 
-    bool found = false;
+private:
+    /// A subquery's own `SETTINGS` can enable parallel replicas that the outer query does not use.
+    bool parallel_replicas_possible;
+    bool reads_temporary_table = false;
 };
 
 class DisableParallelReplicasVisitor : public InDepthQueryTreeVisitorWithContext<DisableParallelReplicasVisitor>
@@ -90,13 +110,9 @@ private:
 
 void DisableParallelReplicasPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    bool reads_temporary_table_not_sent = false;
-    if (context->canUseParallelReplicasOnInitiator() || context->canUseParallelReplicasCustomKey())
-    {
-        FindTemporaryTableNotSentToReplicasVisitor finder(context);
-        finder.visit(query_tree_node);
-        reads_temporary_table_not_sent = finder.found;
-    }
+    FindTemporaryTableNotSentToReplicasVisitor finder(context);
+    finder.visit(query_tree_node);
+    const bool reads_temporary_table_not_sent = finder.found();
 
     if (!context->canUseParallelReplicasOnInitiator() && !reads_temporary_table_not_sent)
         return;
