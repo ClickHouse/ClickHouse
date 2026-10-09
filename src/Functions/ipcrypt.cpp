@@ -192,7 +192,10 @@ private:
             ip_col.column->getName(), getName());
     }
 
-    static void ipv4ToMappedIP16(UInt32 ipv4_host, uint8_t buf[16])
+    /// All `ipcrypt` transforms work on 16-byte addresses. An IPv4 address is represented as an IPv4-mapped
+    /// IPv6 address `::ffff:a.b.c.d` (the first 10 bytes are zero, the next 2 bytes are `0xFF`, the last 4 bytes
+    /// are the IPv4 address in network byte order), as specified by the `ipcrypt` specification.
+    static void ipv4ToIPv4MappedIPv6(UInt32 ipv4_host, uint8_t buf[16])
     {
         memset(buf, 0, 10);
         buf[10] = 0xFF;
@@ -209,7 +212,11 @@ private:
         return memcmp(buf, ipv4_mapped_prefix, 12) == 0;
     }
 
-    static UInt32 ip16ToIPv4(const uint8_t buf[16])
+    /// The inverse of `ipv4ToIPv4MappedIPv6`: takes the IPv4 address from the last 4 bytes of an IPv4-mapped IPv6 address.
+    /// This is not a folding of the 16 bytes into 4: the bytes go to disjoint bit positions of the result,
+    /// so `|` only assembles them in host byte order, and no information is lost. The caller must check
+    /// `isIPv4Mapped` first: the first 12 bytes are dropped, and for an IPv4-mapped address they are the constant prefix.
+    static UInt32 ipv4MappedIPv6ToIPv4(const uint8_t buf[16])
     {
         return (static_cast<UInt32>(buf[12]) << 24)
              | (static_cast<UInt32>(buf[13]) << 16)
@@ -217,8 +224,8 @@ private:
              |  static_cast<UInt32>(buf[15]);
     }
 
-    /// Parse a string to an ip16 buffer. Returns true if IPv4-mapped, false if native IPv6.
-    static bool parseStringToIP16(const char * src, size_t str_len, uint8_t buf[16])
+    /// Parse a string to a 16-byte IPv6 address (IPv4 text becomes an IPv4-mapped address). Returns true if it is IPv4-mapped.
+    static bool parseStringToIPv6(const char * src, size_t str_len, uint8_t buf[16])
     {
         const char * pos = src;
         const char * end = src + str_len;
@@ -252,12 +259,16 @@ private:
     {
         if constexpr (is_prefix_preserving)
         {
+            /// `ipcrypt-pfx` encrypts an IPv4-mapped address bit by bit starting from bit 96, so the `::ffff:0:0/96`
+            /// prefix is kept, and the encrypted address is again IPv4-mapped. Its last 4 bytes are the encrypted IPv4
+            /// address, and nothing is lost by returning `IPv4`: the specification defines `ipcrypt-pfx` of an IPv4 address
+            /// as an IPv4 address, and this is what the reference implementation returns for IPv4 text input.
             auto col_res = ColumnIPv4::create(count);
             auto & vec_res = col_res->getData();
             for (size_t i = 0; i < count; ++i)
             {
                 uint8_t buf[16];
-                ipv4ToMappedIP16(vec_in[i].toUnderType(), buf);
+                ipv4ToIPv4MappedIPv6(vec_in[i].toUnderType(), buf);
                 applyTransform(ctx, buf);
 
                 if (!isIPv4Mapped(buf))
@@ -266,18 +277,20 @@ private:
                         "Prefix-preserving transform on IPv4-mapped address produced non-IPv4-mapped result in function {}",
                         getName());
 
-                vec_res[i] = IPv4(ip16ToIPv4(buf));
+                vec_res[i] = IPv4(ipv4MappedIPv6ToIPv4(buf));
             }
             return col_res;
         }
         else
         {
+            /// The deterministic `ipcrypt` encrypts all 16 bytes, so the result is an arbitrary IPv6 address,
+            /// and it is returned as `IPv6` as is: it cannot be folded to an `IPv4` without losing information.
             auto col_res = ColumnIPv6::create(count);
             auto & vec_res = col_res->getData();
             for (size_t i = 0; i < count; ++i)
             {
                 uint8_t buf[16];
-                ipv4ToMappedIP16(vec_in[i].toUnderType(), buf);
+                ipv4ToIPv4MappedIPv6(vec_in[i].toUnderType(), buf);
                 applyTransform(ctx, buf);
                 memcpy(&vec_res[i], buf, 16);
             }
@@ -301,7 +314,7 @@ private:
             size_t str_len = (raw_len > 0 && chars[offsets[i] - 1] == 0) ? raw_len - 1 : raw_len;
 
             uint8_t buf[16]{};
-            [[maybe_unused]] bool was_ipv4 = parseStringToIP16(src, str_len, buf);
+            [[maybe_unused]] bool was_ipv4 = parseStringToIPv6(src, str_len, buf);
             applyTransform(ctx, buf);
 
             if constexpr (is_prefix_preserving)
@@ -319,7 +332,7 @@ private:
             /// Like `ipcrypt_ip16_to_str` of the reference implementation: an IPv4-mapped result is written as IPv4 text.
             if (isIPv4Mapped(buf))
             {
-                UInt32 ipv4_host = ip16ToIPv4(buf);
+                UInt32 ipv4_host = ipv4MappedIPv6ToIPv4(buf);
                 formatIPv4(reinterpret_cast<const unsigned char *>(&ipv4_host), p);
             }
             else
