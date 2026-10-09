@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-
 #include <memory>
 #include <string_view>
 #include <unordered_map>
@@ -53,7 +51,7 @@ void validateSubqueryDepth(const QueryTreeNodePtr & node, size_t initial_subquer
 /**
   * Validate that correlated subqueries do not present in the context of distributed query.
   */
-void validateCorrelatedSubqueries(const QueryTreeNodePtr & node, const ContextPtr & context);
+void validateCorrelatedSubqueries(const QueryTreeNodePtr & node);
 
 /**
   * Validate that if correlated subquery appears in the FROM clause then it uses columns from outer query.

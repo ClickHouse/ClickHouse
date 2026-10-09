@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import random
 import sys
 import time
 import shutil
@@ -41,7 +40,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 78
+    version: int = 75
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -57,14 +56,6 @@ class RunnerConfig:
     max_jobs: int = 1
     max_chill: int = 600
     max_life: int = 3600 * 24
-
-    # When true, the per-job _work wipe in run_job is skipped so the git checkout
-    # survives between jobs. Set for the incremental-sync runner type below, whose
-    # dedicated always-warm ASG reuses one instance to fetch into an existing
-    # checkout instead of re-cloning the full ClickHouse history every cron run.
-    keep_workspace: bool = False
-    # Runner type that reuses its checkout across jobs (see keep_workspace).
-    incremental_sync_runner_type: str = "private-incremental-sync"
 
     free_blocks_threshold: int = 3_000_000
     free_blocks_threshold_percent: int = 5
@@ -211,21 +202,9 @@ class Runner:
             raise RuntimeError("github:runner-type tag is not set for the instance")
         self.labels = f"self-hosted,{sys.platform},{self.runner_type}"
 
-        if "style" in self.runner_type or "tiny" in self.runner_type:
+        if "style" in self.runner_type:
             config.max_chill = 7200
             config.max_jobs = 10
-
-        if self.runner_type == config.incremental_sync_runner_type:
-            # Serve many cron runs on one warm instance and keep its checkout;
-            # max_life still recycles the instance daily for a clean re-clone.
-            config.max_jobs = 1_000_000
-            config.keep_workspace = True
-
-        if config.init_environment == Environment.MACOS:
-            # Drop swap files and other accumulated state; the random offset staggers reboots across the fleet.
-            config.max_life = 3600 * 24 * 3 + 900 * random.randint(0, 24)
-            # 20 GiB in KiB; a Fast test job uses several GiB of the rootfs.
-            config.free_blocks_threshold = 20 * 1024 * 1024
 
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
@@ -245,12 +224,11 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # Checked before every job on all runners, including macOS: a host that
-        # boots still full has to refuse the next job, not just the one after it.
-        Runner.check_free_disk_space()
-
+        # macOS runners run continuously without lifetime limits, so they exit
+        # to pick up a newer init script instead of ageing out like Linux.
         if config.init_environment == Environment.MACOS:
             self._exit_if_init_script_upgraded()
+            return
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
@@ -278,15 +256,10 @@ class Runner:
 
     def _cleanup_workspace(self) -> None:
         """Remove _work directory to clean up workspace."""
-        # Diagnostic logs are always rotated; the _work checkout is preserved
-        # for runner types that reuse it across jobs (see config.keep_workspace).
-        shutil.rmtree(config.log_dir, ignore_errors=True)
-        if config.keep_workspace:
-            log("keep_workspace is set: preserving _work checkout between jobs")
-            return
         work_dir = Path(config.runner_home) / "_work"
         if work_dir.exists():
             shutil.rmtree(work_dir)
+        shutil.rmtree(config.log_dir, ignore_errors=True)
 
     def remove_if_not_running(self) -> bool:
         """Unregister the runner from GitHub.
@@ -353,8 +326,6 @@ class Runner:
     def run(self) -> None:
         """Main runner loop."""
         if config.init_environment == Environment.MACOS:
-            # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
-            run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
         else:
             Runner.configure_linux()
@@ -455,27 +426,23 @@ class Runner:
             return
 
     @staticmethod
-    def check_free_disk_space() -> None:
-        usage = shutil.disk_usage("/")
-        free_blocks = usage.free // 1024
-        free_percent = usage.free * 100 // usage.total
+    def check_post_run() -> None:
+        if config.init_environment == Environment.MACOS:
+            return
+        result = subprocess.run(["df", "/"], capture_output=True, text=True, check=True)
         if config.verbose:
-            log(f"rootfs: {free_blocks} KiB free, {free_percent}%", "disk-space")
+            log(f"df / output:\n{result.stdout}", "post-run")
+        last = result.stdout.splitlines()[-1].split()
+
+        free_blocks = int(last[3])
+        free_percent = int(last[3]) * 100 // int(last[1])
 
         if free_blocks < config.free_blocks_threshold:
-            raise RuntimeError(f"Out of disk space: {free_blocks} KiB free on rootfs")
+            raise RuntimeError(f"Out of disk space: {free_blocks} blocks on rootfs")
         if free_percent < config.free_blocks_threshold_percent:
             raise RuntimeError(
                 f"Out of disk space: {free_percent}% of free space on rootfs"
             )
-
-    @staticmethod
-    def check_post_run() -> None:
-        Runner.check_free_disk_space()
-
-        # Docker is not installed on the macOS runners
-        if config.init_environment == Environment.MACOS:
-            return
 
         run_bash(
             """
@@ -609,21 +576,6 @@ launchctl disable system/com.apple.bluetoothd || true
 mdutil -a -i off || true
 rm -rf /.Spotlight-V100 || true
 
-# No backup destination exists, but enabled Time Machine can still take local APFS snapshots.
-tmutil disable || true
-
-# Photos analysis, Siri, iCloud and location services have no use on a runner.
-RUNNER_UID=$(id -u "$SUDO_USER")
-for agent in photoanalysisd mediaanalysisd Siri.agent assistantd cloudd bird cloudphotod; do
-    launchctl disable "gui/$RUNNER_UID/com.apple.$agent" || true
-done
-launchctl disable system/com.apple.locationd || true
-
-# Stop persisting file-change history; CI churn grows `/.fseventsd` to several GB. Takes effect after reboot.
-rm -rf /System/Volumes/Data/.fseventsd || true
-mkdir -p /System/Volumes/Data/.fseventsd
-touch /System/Volumes/Data/.fseventsd/no_log
-
 # CloudWatch agent
 case $(uname -m) in
     x86_64) CLOUDWATCH_ARCH=amd64 ;;
@@ -682,7 +634,6 @@ brew install \
     bash \
     coreutils \
     llvm
-brew cleanup --prune=all -s
 
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.

@@ -1,6 +1,6 @@
 #include <Client/PacketReceiver.h>
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 namespace DB
 {
