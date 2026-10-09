@@ -27,9 +27,11 @@ function query()
 }
 
 # One stream: the footers are read ahead from its third object on.
-OFF="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 0, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0"
-ON="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0"
-CACHE="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0"
+OFF="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 0, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0, s3_validate_etag_on_read = 1"
+ON="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0, s3_validate_etag_on_read = 1"
+# The footer and the data are read by different requests, so nothing is read ahead unless both are pinned to the listed ETag.
+UNPINNED="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0, s3_validate_etag_on_read = 0"
+CACHE="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0, s3_validate_etag_on_read = 1"
 
 function run()
 {
@@ -38,6 +40,7 @@ function run()
 
 run off "$(query data) SETTINGS ${OFF}"
 run on "$(query data) SETTINGS ${ON}"
+run unpinned "$(query data) SETTINGS ${UNPINNED}"
 
 # Stops in the third object, while the footers of the next ones are being read.
 run limit "SELECT count() FROM (SELECT number FROM s3(s3_conn, filename = '${DIR}/data/f_*.parquet', format = Parquet, structure = 'number UInt64, s String') LIMIT 50000) SETTINGS ${ON}"
@@ -55,7 +58,8 @@ ${CLICKHOUSE_CLIENT} --query "
         sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'on') > 0,
         sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'off') = 0,
         sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'on') > 0,
-        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'limit_1') = 0
+        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'limit_1') = 0,
+        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'unpinned') = 0
     FROM
     (
         SELECT replaceOne(log_comment, '${CLICKHOUSE_DATABASE}_05340_', '') AS arm, ProfileEvents

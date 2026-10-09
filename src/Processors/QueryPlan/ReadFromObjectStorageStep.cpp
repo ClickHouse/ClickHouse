@@ -167,9 +167,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     format_filter_info->top_k_filter = top_k_filter;
 
     /// `_headers` are the response headers of the reader's own request, which a reader of a prefetched footer may not make.
+    /// A prefetched footer and the data are read by different requests, so both must read the listed generation.
     ObjectIterator iterator = iterator_wrapper;
     if (!distributed_processing && estimated_keys_count > 1 && boost::iequals(configuration->format, "Parquet")
-        && typeid_cast<const StorageObjectStorageSource::GlobIterator *>(iterator_wrapper.get()) && object_storage->isRemote()
+        && typeid_cast<const StorageObjectStorageSource::GlobIterator *>(iterator_wrapper.get()) && isReadPinnedToObjectGeneration()
         && context->getReadSettings().remote_fs_settings.prefetch && !info.requested_virtual_columns.contains("_headers")
         && getIOThreadPool().isInitialized() && (format_settings ? *format_settings : getFormatSettings(context)).seekable_read)
         iterator = createIteratorWithParquetFooterPrefetch(
@@ -240,6 +241,20 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
 }
 
+bool ReadFromObjectStorageStep::isReadPinnedToObjectGeneration() const
+{
+#if USE_AWS_S3
+    if (object_storage->getType() == ObjectStorageType::S3)
+    {
+        if (!getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
+            return false;
+        const auto s3_client = object_storage->tryGetS3StorageClient();
+        return s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
+    }
+#endif
+    return object_storage->getType() == ObjectStorageType::Azure && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read];
+}
+
 bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 {
     if (need_only_count)
@@ -281,19 +296,7 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     /// on. Any other provider that unexpectedly yields an empty `ETag` at read time fails close in
     /// `LazyRowsObjectIterator::validateObjectGeneration` instead of degrading to an unpinned read.
     /// For a mutable file on a backend that cannot pin the read, keep the single-pass plan.
-    bool reread_is_generation_pinned = false;
-#if USE_AWS_S3
-    if (object_storage->getType() == ObjectStorageType::S3
-        && getContext()->getSettingsRef()[Setting::s3_validate_etag_on_read])
-    {
-        const auto s3_client = object_storage->tryGetS3StorageClient();
-        reread_is_generation_pinned = s3_client && s3_client->getProviderType() != S3::ProviderType::GCS;
-    }
-#endif
-    if (object_storage->getType() == ObjectStorageType::Azure
-        && getContext()->getSettingsRef()[Setting::azure_validate_etag_on_read])
-        reread_is_generation_pinned = true;
-    if (!configuration->dataFilesAreImmutable() && !reread_is_generation_pinned)
+    if (!configuration->dataFilesAreImmutable() && !isReadPinnedToObjectGeneration())
         return false;
 
 #if CLICKHOUSE_CLOUD
