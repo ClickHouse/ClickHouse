@@ -46,11 +46,12 @@ WITH
         SELECT id, parent_ids, step_uniq_id, plan_step_name, plan_step_estimated_rows, plan_step_estimate_source, output_rows
         FROM system.processors_profile_log
         WHERE event_date >= yesterday()
-          AND query_id IN
+          AND query_id =
           (
               SELECT query_id FROM system.query_log
               WHERE event_date >= yesterday() AND current_database = currentDatabase()
                 AND log_comment = '05326_step_estimates' AND type = 'QueryFinish'
+              ORDER BY event_time_microseconds DESC LIMIT 1
           )
     ),
     internal AS
