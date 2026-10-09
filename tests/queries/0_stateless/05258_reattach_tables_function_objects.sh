@@ -75,9 +75,10 @@ check_if_detached "SELECT joinGet('t_reattach_fn_join', 'v', toUInt64(1))" t_rea
 check_if_detached "SELECT joinGet(t_reattach_fn_join, 'v', toUInt64(1))" t_reattach_fn_join
 
 # A first argument bound to an alias names an object that is not known before the analysis, so the hook
-# cannot preflight it and must skip the query.
+# cannot preflight it and must skip the query, including the `Join` table the name would resolve to.
 echo "unverifiable name"
 check_if_not_detached "WITH 't_reattach_fn_join' AS name SELECT count() FROM t_reattach_fn_src WHERE joinGet(name, 'v', a) = 1" t_reattach_fn_src
+check_last_query_did_not_detach t_reattach_fn_join
 check_if_not_detached "WITH 'd_reattach_fn' AS name SELECT count() FROM t_reattach_fn_src WHERE dictGet(name, 'v', a) = 1" t_reattach_fn_src
 
 ${CLICKHOUSE_CLIENT} -q "

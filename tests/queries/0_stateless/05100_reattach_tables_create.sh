@@ -213,13 +213,17 @@ ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
 
 # 3. Taken destination name. A source-carrying `CREATE` resolves its `AS` source or analyzes its
 # populating `SELECT` before checking the destination, so the source is detached even when the destination
-# turns the statement into a no-op or causes `TABLE_ALREADY_EXISTS`.
+# turns the statement into a no-op or causes `TABLE_ALREADY_EXISTS`. The pre-existing destination itself is
+# never touched, so it must stay attached.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_taken"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_dest_taken (a UInt64) ENGINE = MergeTree ORDER BY a"
 
 check_if_detached "CREATE TABLE IF NOT EXISTS t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
+check_last_query_did_not_detach "t_reattach_dest_taken"
 check_if_detached "CREATE VIEW IF NOT EXISTS t_reattach_dest_taken AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
+check_last_query_did_not_detach "t_reattach_dest_taken"
 check_fails_after_detaching "CREATE TABLE t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "TABLE_ALREADY_EXISTS"
+check_last_query_did_not_detach "t_reattach_dest_taken"
 
 # A parameterized view does not analyze its SELECT at creation time, and validation of an ordinary
 # view's alias list can fail before it does. Neither form may detach its source.

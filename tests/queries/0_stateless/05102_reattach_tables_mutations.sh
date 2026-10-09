@@ -31,10 +31,12 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_src"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_log (a UInt64) ENGINE = Log"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_src (a UInt64) ENGINE = MergeTree ORDER BY a"
 
+# The target is checked too: a statement failing on its own target must not reattach the target either.
 function check_source_not_detached_for_failing_mutation()
 {
     query="$1"
     expected_error="$2"
+    target="$3"
     check_if_detached_impl "$query" "t_reattach_mut_src"
     if [ "$REATTACH_STATUS" -eq 0 ]; then
         echo "FAIL (query unexpectedly succeeded)"
@@ -42,17 +44,19 @@ function check_source_not_detached_for_failing_mutation()
         echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
     elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mut_src"; then
         echo "FAIL (source detached for a query failing on its target)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$target\b"; then
+        echo "FAIL (target detached for a query failing on it)"
     else
         echo "OK"
     fi
 }
 
-check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_log WHERE a IN (SELECT a FROM t_reattach_mut_src)" "BAD_ARGUMENTS"
-check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_log SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log REPLACE PARTITION ID 'all' FROM t_reattach_mut_src" "NOT_IMPLEMENTED"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log MOVE PARTITION ID 'all' TO TABLE t_reattach_mut_src" "NOT_IMPLEMENTED"
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_log WHERE a IN (SELECT a FROM t_reattach_mut_src)" "BAD_ARGUMENTS" "t_reattach_mut_log"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_log SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED" "t_reattach_mut_log"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log DELETE WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED" "t_reattach_mut_log"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED" "t_reattach_mut_log"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log REPLACE PARTITION ID 'all' FROM t_reattach_mut_src" "NOT_IMPLEMENTED" "t_reattach_mut_log"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_log MOVE PARTITION ID 'all' TO TABLE t_reattach_mut_src" "NOT_IMPLEMENTED" "t_reattach_mut_log"
 
 # Positive controls: the same statement shapes on a supporting (`MergeTree`) target succeed and do
 # randomize their sources. Mutations are synchronous here so a background mutation cannot outlive the
@@ -76,15 +80,15 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_kv"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_kv (a UInt64, v UInt64) ENGINE = EmbeddedRocksDB PRIMARY KEY a"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_mut_kv VALUES (2, 20)"
 
-check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_kv IN PARTITION ID 'all' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
-check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_kv IN PARTITION ID 'all', ID 'other' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_kv IN PARTITION ID 'all' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED" "t_reattach_mut_kv"
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_kv IN PARTITION ID 'all', ID 'other' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED" "t_reattach_mut_kv"
 
 # The `ALTER` carrier reaches the same clause through `getPartitionAndPredicateExpressionForMutationCommand`,
 # which `MutationsInterpreter::prepare` calls before it resolves the commands' predicates and expressions:
 # a target outside the `MergeTree` family rejects the clause there with `NOT_IMPLEMENTED`, again before the
 # predicate's tables are read.
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_kv DELETE IN PARTITION ID 'all' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_kv UPDATE v = 1 IN PARTITION ID 'all', ID 'other' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_kv DELETE IN PARTITION ID 'all' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED" "t_reattach_mut_kv"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_kv UPDATE v = 1 IN PARTITION ID 'all', ID 'other' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NOT_IMPLEMENTED" "t_reattach_mut_kv"
 
 # Without the clause the same target accepts the statement and its mutation does read the predicate's table,
 # so that source must still be randomized: the skip above is about the rejected shape only.
@@ -96,14 +100,14 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_reattach_mut_kv"
 # (`getPartitionIDFromQuery`), on the lightweight `DELETE` carrier as well as on the `ALTER` one, and a
 # rejection there also precedes the predicate's tables. A clause that does match is resolved fine, so the
 # statement goes on to read the source and must randomize it.
-check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_mt IN PARTITION ID 'no_such' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "INVALID_PARTITION_VALUE"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_mt DELETE IN PARTITION tuple(1, 2, 3) WHERE a IN (SELECT a FROM t_reattach_mut_src)" "INVALID_PARTITION_VALUE"
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_mt IN PARTITION ID 'no_such' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "INVALID_PARTITION_VALUE" "t_reattach_mut_mt"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_mt DELETE IN PARTITION tuple(1, 2, 3) WHERE a IN (SELECT a FROM t_reattach_mut_src)" "INVALID_PARTITION_VALUE" "t_reattach_mut_mt"
 check_if_detached "ALTER TABLE t_reattach_mut_mt DELETE IN PARTITION ID 'all' WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS mutations_sync = 1" "t_reattach_mut_src"
 
 # A lightweight `UPDATE` throws on `enable_lightweight_update = 0` as the very first thing its interpreter
 # does, and SQL UDF substitution runs before the predicate's tables are read in both the `UPDATE` and the
 # `ALTER` carriers. Neither rejection may detach the source.
-check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS enable_lightweight_update = 0" "SUPPORT_IS_DISABLED"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS enable_lightweight_update = 0" "SUPPORT_IS_DISABLED" "t_reattach_mut_mt"
 
 # `MutationsInterpreter::prepare` validates the updated columns against the TARGET's metadata before it
 # resolves the predicate's and the assignments' subqueries, so an update it rejects — of a key column, or of
@@ -114,10 +118,10 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_lw"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mut_lw (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_reattach_mut_lw VALUES (1, 1)"
 
-check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "CANNOT_UPDATE_COLUMN"
-check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET no_such_column = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NO_SUCH_COLUMN_IN_TABLE"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_lw UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS alter_update_mode = 'lightweight'" "CANNOT_UPDATE_COLUMN"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_lw UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "CANNOT_UPDATE_COLUMN"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "CANNOT_UPDATE_COLUMN" "t_reattach_mut_lw"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET no_such_column = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "NO_SUCH_COLUMN_IN_TABLE" "t_reattach_mut_lw"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_lw UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src) SETTINGS alter_update_mode = 'lightweight'" "CANNOT_UPDATE_COLUMN" "t_reattach_mut_lw"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_lw UPDATE a = 1 WHERE a IN (SELECT a FROM t_reattach_mut_src)" "CANNOT_UPDATE_COLUMN" "t_reattach_mut_lw"
 
 # Updating an ordinary non-key column instead passes that validation, so the statement does read the source
 # and must randomize it — on the lightweight carrier and on the heavy `ALTER` one.
@@ -127,16 +131,16 @@ check_if_detached "ALTER TABLE t_reattach_mut_lw UPDATE b = 1 WHERE a IN (SELECT
 # The `UPDATE` carrier resolves an `IN PARTITION` clause against the target through the same
 # `getPartitionAndPredicateExpressionForMutationCommand`, so a clause that does not match the partition key
 # is rejected before the predicate's tables are read, while a matching one lets the statement reach them.
-check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET b = 1 IN PARTITION ID 'no_such' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "INVALID_PARTITION_VALUE"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_lw SET b = 1 IN PARTITION ID 'no_such' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "INVALID_PARTITION_VALUE" "t_reattach_mut_lw"
 check_if_detached "UPDATE t_reattach_mut_lw SET b = 1 IN PARTITION ID 'all' WHERE a IN (SELECT a FROM t_reattach_mut_src)" "t_reattach_mut_src"
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mut_lw"
 
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION IF EXISTS reattach_recursive_mut_udf"
 ${CLICKHOUSE_CLIENT} -q "CREATE FUNCTION reattach_recursive_mut_udf AS x -> reattach_recursive_mut_udf(x)"
-check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
-check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_mt UPDATE a = reattach_recursive_mut_udf(a) WHERE a IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
-check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_mt WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD"
+check_source_not_detached_for_failing_mutation "UPDATE t_reattach_mut_mt SET a = 1 WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD" "t_reattach_mut_mt"
+check_source_not_detached_for_failing_mutation "ALTER TABLE t_reattach_mut_mt UPDATE a = reattach_recursive_mut_udf(a) WHERE a IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD" "t_reattach_mut_mt"
+check_source_not_detached_for_failing_mutation "DELETE FROM t_reattach_mut_mt WHERE reattach_recursive_mut_udf(a) IN (SELECT a FROM t_reattach_mut_src)" "UNSUPPORTED_METHOD" "t_reattach_mut_mt"
 ${CLICKHOUSE_CLIENT} -q "DROP FUNCTION reattach_recursive_mut_udf"
 
 # An unqualified table inside a mutation's predicate is resolved against the *target table's* database

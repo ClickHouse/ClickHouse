@@ -65,3 +65,14 @@ function check_fails_kind_without_detach()
         echo "OK"
     fi
 }
+
+# A companion assertion for the check run last: the query it ran (its output is still in `REATTACH_OUTPUT`)
+# must not have detached the given table, which the check itself does not look at.
+function check_last_query_did_not_detach()
+{
+    if echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$1\b"; then
+        echo "FAIL ($1 was detached)"
+    else
+        echo "OK"
+    fi
+}
