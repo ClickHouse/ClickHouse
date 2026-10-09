@@ -2957,14 +2957,19 @@ try
 
             if (!initial_loading)
             {
+                /// These keep the configuration they are given, so it must have the command line on top of the file.
+                Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
+                file_and_command_line->add(loaded_config, PRIO_DEFAULT);
+                argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+                const ConfigurationPtr reload_config = file_and_command_line;
+
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                /// `reloadZooKeeperIfChanged` reads `loaded_config` alone, so the check must look at it too.
-                if (zkutil::hasZooKeeperConfig(*loaded_config))
-                    global_context->reloadZooKeeperIfChanged(loaded_config);
+                if (zkutil::hasZooKeeperConfig(*reload_config))
+                    global_context->reloadZooKeeperIfChanged(reload_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
-                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(reload_config);
+                global_context->reloadQueryMaskingRulesIfChanged(reload_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
