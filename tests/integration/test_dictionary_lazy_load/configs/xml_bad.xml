@@ -1,0 +1,25 @@
+<clickhouse>
+    <dictionary>
+        <name>xml_bad</name>
+        <source>
+            <null/>
+        </source>
+        <layout>
+            <flat/>
+        </layout>
+        <lifetime>0</lifetime>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>val</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+        <settings>
+            <dictionary_lazy_load>yes</dictionary_lazy_load>
+        </settings>
+    </dictionary>
+</clickhouse>

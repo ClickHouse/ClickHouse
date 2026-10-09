@@ -26,3 +26,11 @@ SOURCE(CLICKHOUSE(TABLE 'no_such_table'))
 LAYOUT(HASHED())
 LIFETIME(0)
 SETTINGS(dictionary_lazy_load = 0); -- { serverError UNKNOWN_TABLE }
+
+CREATE DICTIONARY dict_invalid (id UInt64, val String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'src'))
+LAYOUT(HASHED())
+LIFETIME(0)
+SETTINGS(dictionary_lazy_load = 'yes'); -- { serverError CANNOT_PARSE_BOOL }
+
+SELECT name, status, is_lazy FROM system.dictionaries WHERE database = currentDatabase() ORDER BY name;

@@ -1,0 +1,22 @@
+<clickhouse>
+    <dictionary>
+        <name>xml_ok</name>
+        <source>
+            <null/>
+        </source>
+        <layout>
+            <flat/>
+        </layout>
+        <lifetime>0</lifetime>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>val</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</clickhouse>

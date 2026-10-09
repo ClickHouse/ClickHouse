@@ -396,10 +396,11 @@ void registerStorageDictionary(StorageFactory & factory)
             const auto & source_type = source_keys.front() == "settings" ? source_keys.back() : source_keys.front();
             checkNamedCollectionOverridesInDictionarySource(
                 *abstract_dictionary_configuration, "dictionary.source." + source_type, local_context);
+            /// Before the storage registers the configuration in the loader, so a rejected query registers nothing.
+            bool lazy_load = ExternalDictionariesLoader::parseLazyLoadOverride(*abstract_dictionary_configuration, "dictionary")
+                .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             auto result_storage = std::make_shared<StorageDictionary>(dictionary_id, abstract_dictionary_configuration, local_context);
 
-            bool lazy_load = external_dictionaries_loader.getObjectLazyLoadOverride(*abstract_dictionary_configuration, "dictionary")
-                .value_or(local_context->getServerSettings()[ServerSetting::dictionaries_lazy_load].value);
             if (args.mode <= LoadingStrictnessLevel::CREATE && !lazy_load)
             {
                 /// load() is called here to force loading the dictionary, wait until the loading is finished,

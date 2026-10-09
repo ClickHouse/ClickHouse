@@ -49,6 +49,8 @@ ExternalLoader::LoadableMutablePtr ExternalDictionariesLoader::createObject(
         const std::string & name, const Poco::Util::AbstractConfiguration & config,
         const std::string & key_in_config, const std::string & repository_name, const std::string & /* config_file_path */) const
 {
+    parseLazyLoadOverride(config, key_in_config);
+
     /// For dictionaries from databases (created with DDL queries) we have to perform
     /// additional checks, so we identify them here.
     bool created_from_ddl = !repository_name.empty();
@@ -71,11 +73,24 @@ bool ExternalDictionariesLoader::doesConfigChangeRequiresReloadingObject(const P
     return !isSameConfiguration(old_config, old_key_in_config, new_config, new_key_in_config, ignore_keys);
 }
 
-std::optional<bool> ExternalDictionariesLoader::getObjectLazyLoadOverride(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+std::optional<bool> ExternalDictionariesLoader::parseLazyLoadOverride(const Poco::Util::AbstractConfiguration & config, const String & key_in_config)
 {
     SettingFieldBoolAuto lazy_load;
     lazy_load.parseFromString(config.getString(key_in_config + ".settings.dictionary_lazy_load", SettingFieldBoolAuto::keyword));
     return lazy_load.valueOrNullopt();
+}
+
+std::optional<bool> ExternalDictionariesLoader::getObjectLazyLoadOverride(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const
+{
+    try
+    {
+        return parseLazyLoadOverride(config, key_in_config);
+    }
+    catch (const Exception &)
+    {
+        /// Loaded eagerly, so that `createObject` reports the invalid value as the loading error.
+        return false;
+    }
 }
 
 void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const

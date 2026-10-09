@@ -242,6 +242,7 @@ protected:
         IExternalLoadable & /* object */, const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const {}
 
     /// Returns whether the object's configuration overrides lazy loading, or no value to follow the loader-wide setting.
+    /// Must not throw: it is called while a new configuration is applied and while `system.dictionaries` is read.
     virtual std::optional<bool> getObjectLazyLoadOverride(
         const Poco::Util::AbstractConfiguration & /* config */, const String & /* key_in_config */) const { return {}; }
 

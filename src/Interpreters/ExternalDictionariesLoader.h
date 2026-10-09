@@ -67,6 +67,9 @@ public:
 
     static DictionaryStructure getDictionaryStructure(const ObjectConfig & config);
 
+    /// Throws for an invalid `dictionary_lazy_load`.
+    static std::optional<bool> parseLazyLoadOverride(const Poco::Util::AbstractConfiguration & config, const String & key_in_config);
+
     std::optional<bool> getObjectLazyLoadOverride(const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 
     static void resetAll();
