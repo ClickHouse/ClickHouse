@@ -1,11 +1,14 @@
 #include <bit>
 
+#include <AggregateFunctions/AggregateFunctionCount.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Common/Arena.h>
 #include <Interpreters/AdaptiveAggregationImpl.h>
+#include <Interpreters/HashTablesStatistics.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/CurrentThread.h>
 #include <Core/ProtocolDefines.h>
 #include <Formats/NativeReader.h>
@@ -37,6 +40,7 @@ namespace CurrentMetrics
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationMerge;
+    extern const Event AggregationBucketTopKSkippedBuckets;
     extern const Event AggregationSharedKeptKeysRebuilds;
 }
 
@@ -124,6 +128,140 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk should have AggregatedChunkInfo.");
 
         return agg_info.get();
+    }
+
+    /// The bucket Top-K bound: the inline counts of the groups are summed into 256 bins per two-level bucket, picked by
+    /// eight more bits of the key hash. A group's merged count cannot exceed its bin's sum, so the largest bin of a
+    /// bucket bounds every group of the bucket.
+    constexpr size_t BUCKET_TOP_K_BINS_PER_BUCKET = 256;
+    constexpr size_t BUCKET_TOP_K_BINS = 256 * BUCKET_TOP_K_BINS_PER_BUCKET;
+
+    /// A query whose bound skipped too few buckets to pay for counting the bins counts them only every this many runs.
+    constexpr size_t BUCKET_TOP_K_PROBE_PERIOD = 16;
+
+    /// The bound needs the counts of the groups: a lone `count()` is stored inline in the cell.
+    bool bucketTopKBoundApplies(const AggregatingTransformParams & params)
+    {
+        const auto & p = params.params;
+        return params.final && p.bucket_top_k != 0 && !p.bucket_top_k_ascending && p.keys_size != 0 && !p.overflow_row
+            && p.max_rows_to_group_by == 0 && p.aggregates_size == 1 && p.bucket_top_k_count_index == 0
+            && typeid_cast<const AggregateFunctionCount *>(p.aggregates[0].function.get());
+    }
+
+    template <typename Table>
+    void addBucketTopKBinsOfTable(Table & table, UInt64 * bins)
+    {
+        static_assert(Table::NUM_BUCKETS * BUCKET_TOP_K_BINS_PER_BUCKET == BUCKET_TOP_K_BINS);
+        for (size_t bucket = 0; bucket < Table::NUM_BUCKETS; ++bucket)
+        {
+            UInt64 * bucket_bins = bins + bucket * BUCKET_TOP_K_BINS_PER_BUCKET;
+            auto & impl = table.impls[bucket];
+            for (auto it = impl.begin(), end = impl.end(); it != end; ++it)
+                bucket_bins[(it.getHash() >> 16) & 0xFF] += getInlineCountState(it->getMapped());
+        }
+    }
+
+/// The two-level methods whose bucket tables iterate cells with their hashes (not the `StringHashMap` of `key_string`).
+#define APPLY_FOR_BUCKET_TOP_K_BOUND_VARIANTS(M) \
+    M(key32_two_level) \
+    M(key64_two_level) \
+    M(key_packed_string_two_level) \
+    M(keys32_two_level) \
+    M(keys64_two_level) \
+    M(keys128_two_level) \
+    M(keys256_two_level) \
+    M(serialized_two_level) \
+    M(prealloc_serialized_two_level)
+
+    /// Adds the counts of the groups of `variants` to `bins`. False for a method without the bound.
+    bool addBucketTopKBins(AggregatedDataVariants & variants, UInt64 * bins)
+    {
+        switch (variants.type)
+        {
+#define M(NAME) \
+            case AggregatedDataVariants::Type::NAME: \
+                addBucketTopKBinsOfTable(variants.NAME->data, bins); \
+                return true;
+            APPLY_FOR_BUCKET_TOP_K_BOUND_VARIANTS(M)
+#undef M
+            default:
+                return false;
+        }
+    }
+
+#undef APPLY_FOR_BUCKET_TOP_K_BOUND_VARIANTS
+
+    /// The verdict is kept per aggregation and limit: the statistics key of the aggregation does not cover the limit,
+    /// and a larger limit skips fewer buckets.
+    std::optional<StatsCollectingParams> bucketTopKStatsParams(const Aggregator::Params & params)
+    {
+        if (!params.stats_collecting_params.isCollectionAndUseEnabled())
+            return {};
+        const UInt64 key = params.stats_collecting_params.key ^ intHash64(params.bucket_top_k);
+        if (!key)
+            return {};
+        StatsCollectingParams res = params.stats_collecting_params;
+        res.setKey(key);
+        return res;
+    }
+
+    bool shouldCountBucketTopKBins(const Aggregator::Params & params)
+    {
+        const auto stats_params = bucketTopKStatsParams(params);
+        if (!stats_params)
+            return true;
+        auto & stats = getHashTablesStatistics<AggregationBucketTopKEntry>();
+        const auto entry = stats.getSizeHint(*stats_params);
+        if (!entry || entry->runs_to_skip == 0)
+            return true;
+        stats.update({.runs_to_skip = entry->runs_to_skip - 1}, *stats_params);
+        return false;
+    }
+
+    void recordBucketTopKVerdict(const Aggregator::Params & params, bool productive)
+    {
+        if (const auto stats_params = bucketTopKStatsParams(params))
+            getHashTablesStatistics<AggregationBucketTopKEntry>().update(
+                {.runs_to_skip = productive ? 0 : BUCKET_TOP_K_PROBE_PERIOD - 1}, *stats_params);
+    }
+
+    /// Adds the groups of one finished producer to the bins of the merge.
+    void addToSharedBucketTopKBins(ManyAggregatedData & many_data, AggregatedDataVariants & variants, const Aggregator::Params & params)
+    {
+        if (variants.empty())
+            return;
+
+        {
+            std::lock_guard lock(many_data.bucket_top_k_bins_mutex);
+            if (many_data.bucket_top_k_decision == 0)
+                many_data.bucket_top_k_decision = shouldCountBucketTopKBins(params) ? 1 : 2;
+            if (many_data.bucket_top_k_decision != 1 || many_data.bucket_top_k_bins_invalid.load(std::memory_order_relaxed))
+                return;
+
+            /// A single-level table only matters if the merge is two-level, which needs a two-level producer.
+            if (!variants.isTwoLevel())
+            {
+                many_data.bucket_top_k_single_level.push_back(&variants);
+                return;
+            }
+        }
+
+        auto bins = std::make_shared<UInt64[]>(BUCKET_TOP_K_BINS);
+        if (!addBucketTopKBins(variants, bins.get()))
+        {
+            many_data.bucket_top_k_bins_invalid.store(true, std::memory_order_relaxed);
+            return;
+        }
+
+        std::lock_guard lock(many_data.bucket_top_k_bins_mutex);
+        if (!many_data.bucket_top_k_bins)
+        {
+            many_data.bucket_top_k_bins = std::move(bins);
+            return;
+        }
+        UInt64 * dst = many_data.bucket_top_k_bins.get();
+        for (size_t i = 0; i < BUCKET_TOP_K_BINS; ++i)
+            dst[i] += bins[i];
     }
 
     /// Reads chunks from file in native format. Provide chunks with aggregation info.
@@ -219,6 +357,18 @@ public:
         /// limit is checked against this running total.
         std::atomic<size_t> single_level_merged_rows = 0;
 
+        /// The bucket Top-K bound (`ConvertingAggregatedToChunksTransform::enableBucketTopKBound`): the buckets are merged
+        /// by descending `bucket_bound`, and once the converted buckets have produced n counts, a bucket whose bound is
+        /// below the smallest of them cannot hold a group of the result and is skipped.
+        std::array<UInt32, NUM_BUCKETS> bucket_order{};
+        std::array<UInt64, NUM_BUCKETS> bucket_bound{};
+        size_t bucket_top_k = 0; /// 0 - no bound
+        size_t bucket_top_k_count_column = 0;
+        std::atomic<UInt64> skip_buckets_below = 0;
+        std::mutex top_counts_mutex;
+        std::vector<UInt64> top_counts; /// A min-heap of the n best counts produced so far.
+        std::atomic<size_t> skipped_buckets = 0;
+
         /// Groups the two-level bucket merge has converted so far; a throw-mode group limit is
         /// checked against this running total, taken from the bucket tables rather than from
         /// the converted chunks, which the bucket-local Top-K conversion truncates. For the
@@ -231,6 +381,8 @@ public:
         {
             for (auto & flag : is_bucket_processed)
                 flag = false;
+            for (UInt32 bucket = 0; bucket < NUM_BUCKETS; ++bucket)
+                bucket_order[bucket] = bucket;
         }
     };
 
@@ -268,13 +420,19 @@ public:
 protected:
     Chunk generate() override
     {
-        UInt32 bucket_num = shared_data->next_bucket_to_merge.fetch_add(1);
+        UInt32 bucket_index = shared_data->next_bucket_to_merge.fetch_add(1);
 
-        if (bucket_num >= NUM_BUCKETS)
+        if (bucket_index >= NUM_BUCKETS)
         {
             data.reset();
             return {};
         }
+
+        const UInt32 bucket_num = shared_data->bucket_order[bucket_index];
+
+        if (shared_data->bucket_top_k
+            && shared_data->bucket_bound[bucket_num] < shared_data->skip_buckets_below.load(std::memory_order_relaxed))
+            return skipBucket(bucket_num);
 
         /// The adaptive merge gives every bucket its own arena (see the setup in
         /// `createSources`), so a retired bucket's drained and merged states free with its
@@ -293,6 +451,9 @@ protected:
         auto agg_chunk = params->aggregator.mergeAndConvertOneBucketToChunk(
             *data, bucket_arena, params->final, bucket_num, shared_data->is_cancelled, updater, &full_group_count);
         Chunk chunk = convertToChunk(std::move(agg_chunk));
+
+        if (shared_data->bucket_top_k)
+            raiseSkipBound(chunk);
 
         /// A throw-mode group limit is enforced against the merged totals for every run: the
         /// baseline producers' checks cannot see the merged cardinality (their tables are
@@ -321,6 +482,52 @@ protected:
     }
 
 private:
+    Chunk skipBucket(UInt32 bucket_num)
+    {
+        shared_data->skipped_buckets.fetch_add(1, std::memory_order_relaxed);
+        ProfileEvents::increment(ProfileEvents::AggregationBucketTopKSkippedBuckets);
+
+        auto info = std::make_shared<AggregatedChunkInfo>();
+        info->bucket_num = static_cast<Int32>(bucket_num);
+        Chunk chunk(getPort().getHeader().cloneEmptyColumns(), 0);
+        chunk.getChunkInfos().add(std::move(info));
+
+        shared_data->is_bucket_processed[bucket_num] = true;
+        return chunk;
+    }
+
+    /// Adds the counts of a converted bucket to the n best counts and raises the bound below which buckets are skipped.
+    void raiseSkipBound(const Chunk & chunk)
+    {
+        const size_t rows = chunk.getNumRows();
+        if (rows == 0)
+            return;
+
+        const IColumn & counts = *chunk.getColumns().at(shared_data->bucket_top_k_count_column);
+        const size_t n = shared_data->bucket_top_k;
+
+        std::lock_guard lock(shared_data->top_counts_mutex);
+        auto & heap = shared_data->top_counts;
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const UInt64 count = counts.getUInt(row);
+            if (heap.size() < n)
+            {
+                heap.push_back(count);
+                std::push_heap(heap.begin(), heap.end(), std::greater<>());
+            }
+            else if (count > heap.front())
+            {
+                std::pop_heap(heap.begin(), heap.end(), std::greater<>());
+                heap.back() = count;
+                std::push_heap(heap.begin(), heap.end(), std::greater<>());
+            }
+        }
+
+        if (heap.size() == n)
+            shared_data->skip_buckets_below.store(heap.front(), std::memory_order_relaxed);
+    }
+
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     SharedDataPtr shared_data;
@@ -577,7 +784,7 @@ private:
 /// ConvertingAggregatedToChunksWithMergingSource -> ConvertingAggregatedToChunksTransform -> AggregatingTransform
 /// ConvertingAggregatedToChunksWithMergingSource ->
 ///
-/// Result chunks guaranteed to be sorted by bucket number.
+/// Result chunks guaranteed to be sorted by bucket number, except under the bucket Top-K bound (see `prepare`).
 class ConvertingAggregatedToChunksTransform final : public IProcessor
 {
 public:
@@ -600,6 +807,9 @@ public:
     }
 
     String getName() const override { return "ConvertingAggregatedToChunksTransform"; }
+
+    /// The bins of the bucket Top-K bound of the two-level merge, summed over all producers.
+    void setBucketTopKBins(std::shared_ptr<UInt64[]> bins) { bucket_top_k_bins = std::move(bins); }
 
     void work() override
     {
@@ -706,6 +916,11 @@ public:
             // Also single level: the partition sources emit finished chunks, forward them as they come.
             return preparePartitionMerge();
 
+        /// The bound merges the buckets out of order, and its final result needs no bucket order, so its chunks are
+        /// forwarded as they come instead of being held back for the order.
+        if (bucket_top_k_bound_enabled)
+            return prepareBucketTopKMerge();
+
         /// Two-level case.
         return prepareTwoLevel();
     }
@@ -777,6 +992,16 @@ private:
 
         static constexpr size_t MIN_KEYS_PER_PARTITION = 512;
         return std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
+    }
+
+    IProcessor::Status prepareBucketTopKMerge()
+    {
+        const auto status = preparePartitionMerge();
+        /// A bound that skipped less than an eighth of the buckets did not pay for counting the bins.
+        if (status == Status::Finished)
+            recordBucketTopKVerdict(
+                params->params, shared_data->skipped_buckets.load(std::memory_order_relaxed) >= static_cast<size_t>(NUM_BUCKETS) / 8);
+        return status;
     }
 
     /// The partition sources emit finished chunks in no particular order; forward them as they come.
@@ -956,6 +1181,8 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
+    std::shared_ptr<UInt64[]> bucket_top_k_bins;
+    bool bucket_top_k_bound_enabled = false;
 
     bool is_initialized = false;
     bool finished = false;
@@ -1077,9 +1304,40 @@ private:
         data.reset();
     }
 
+    void enableBucketTopKBound()
+    {
+        auto & shared = *shared_data;
+        const auto & aggregator_params = params->params;
+
+        for (size_t bucket = 0; bucket < static_cast<size_t>(NUM_BUCKETS); ++bucket)
+        {
+            const UInt64 * bins = bucket_top_k_bins.get() + bucket * BUCKET_TOP_K_BINS_PER_BUCKET;
+            shared.bucket_bound[bucket] = *std::max_element(bins, bins + BUCKET_TOP_K_BINS_PER_BUCKET);
+        }
+
+        std::stable_sort(
+            shared.bucket_order.begin(),
+            shared.bucket_order.end(),
+            [&](UInt32 lhs, UInt32 rhs) { return shared.bucket_bound[lhs] > shared.bucket_bound[rhs]; });
+
+        shared.bucket_top_k_count_column = aggregator_params.keys_size + aggregator_params.bucket_top_k_count_index;
+        shared.top_counts.reserve(aggregator_params.bucket_top_k);
+        shared.bucket_top_k = aggregator_params.bucket_top_k;
+    }
+
     void createSources()
     {
         AggregatedDataVariantsPtr & first = data->at(0);
+
+        if (bucket_top_k_bins)
+        {
+            /// The producers count no bins for the adaptive drain, whose staged records they would miss, nor for the
+            /// dataflow statistics, which expect every bucket.
+            chassert(!adaptive_session && !updater);
+            enableBucketTopKBound();
+            bucket_top_k_bound_enabled = true;
+        }
+        bucket_top_k_bins.reset();
 
         if (adaptive_session)
         {
@@ -1587,6 +1845,12 @@ void AggregatingTransform::initGenerate()
             variants.convertToTwoLevel();
     }
 
+    /// Contribute to the bucket Top-K bound of the two-level merge (see `ConvertingAggregatedToChunksWithMergingSource`).
+    const bool bucket_top_k_bound
+        = !skip_merging && !updater && !adaptive_engaged && !params->aggregator.hasTemporaryData() && bucketTopKBoundApplies(*params);
+    if (bucket_top_k_bound)
+        addToSharedBucketTopKBins(*many_data, variants, params->params);
+
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
         /// Note: we reset aggregation state here to release memory earlier.
@@ -1676,13 +1940,24 @@ void AggregatingTransform::initGenerate()
             auto prepared_data = params->aggregator.prepareVariantsToMerge(
                 std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
-            processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
+            auto converting = std::make_shared<ConvertingAggregatedToChunksTransform>(
                 params,
                 std::move(prepared_data_ptr),
                 max_threads,
                 output_streams,
                 updater,
-                adaptive_engaged ? adaptive_context->session : nullptr));
+                adaptive_engaged ? adaptive_context->session : nullptr);
+            if (bucket_top_k_bound && !adaptive_engaged && many_data->bucket_top_k_bins
+                && !many_data->bucket_top_k_bins_invalid.load(std::memory_order_relaxed))
+            {
+                /// The single-level producers are small; every producer has finished, so their tables are stable.
+                for (auto * single_level : many_data->bucket_top_k_single_level)
+                    if (!addBucketTopKBins(*single_level, many_data->bucket_top_k_bins.get()))
+                        many_data->bucket_top_k_bins_invalid.store(true, std::memory_order_relaxed);
+                if (!many_data->bucket_top_k_bins_invalid.load(std::memory_order_relaxed))
+                    converting->setBucketTopKBins(many_data->bucket_top_k_bins);
+            }
+            processors.emplace_back(std::move(converting));
         }
         else
         {

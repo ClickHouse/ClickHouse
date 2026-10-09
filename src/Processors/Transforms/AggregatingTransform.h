@@ -117,6 +117,16 @@ struct ManyAggregatedData
     /// `AdaptiveAggregationSession`); shared by all the participating transforms.
     AdaptiveAggregationSessionPtr adaptive_session;
 
+    /// The bins of the bucket Top-K bound of the two-level merge (see `ConvertingAggregatedToChunksWithMergingSource`),
+    /// summed over the producers. The bound is disabled if one producer cannot add its groups.
+    std::mutex bucket_top_k_bins_mutex;
+    std::shared_ptr<UInt64[]> bucket_top_k_bins;
+    std::atomic<bool> bucket_top_k_bins_invalid{false};
+    /// Whether this run counts the bins, decided by the first finishing producer: 0 - undecided, 1 - yes, 2 - no.
+    UInt8 bucket_top_k_decision = 0;
+    /// Single-level producers, added by the last finisher once the merge has converted them to two-level.
+    std::vector<AggregatedDataVariants *> bucket_top_k_single_level;
+
     explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), num_producers(num_threads)
     {
         for (auto & elem : variants)

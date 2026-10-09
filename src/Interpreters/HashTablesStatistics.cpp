@@ -104,6 +104,12 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.hits += hash_join_match_stats->hits;
         res.misses += hash_join_match_stats->misses;
     }
+    if (auto bucket_top_k_stats = getHashTablesStatistics<AggregationBucketTopKEntry>().getCacheStats())
+    {
+        res.entries += bucket_top_k_stats->entries;
+        res.hits += bucket_top_k_stats->hits;
+        res.misses += bucket_top_k_stats->misses;
+    }
     return res;
 }
 
@@ -169,4 +175,5 @@ std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollecting
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
 template class HashTablesStatistics<HashJoinMatchEntry>;
+template class HashTablesStatistics<AggregationBucketTopKEntry>;
 }
