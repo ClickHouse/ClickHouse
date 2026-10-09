@@ -1,0 +1,15 @@
+UInt64 keys
+10000000	2	2
+Keys with the same low bits
+10000000	2	2
+String keys
+10000000	2	2
+Without aggregate functions
+10000000
+uniqExact
+10000000
+Merge of two-level states
+10000000	20000000
+JOIN
+10000000	49999995000000
+10000000	49999995000000
