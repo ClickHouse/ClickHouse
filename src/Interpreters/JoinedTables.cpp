@@ -1,5 +1,7 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Access/Common/RowPolicyDefs.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 
@@ -41,6 +43,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int ALIAS_REQUIRED;
     extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int LOGICAL_ERROR;
