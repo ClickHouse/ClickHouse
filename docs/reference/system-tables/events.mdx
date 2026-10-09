@@ -682,6 +682,22 @@ Total time spent while coalescing sorted columns
 
 Total time spent while collapsing sorted columns
 
+### ColumnsCacheEvictedBytes {#columnscacheevictedbytes}
+
+Number of bytes evicted from the columns cache.
+
+### ColumnsCacheEvictedEntries {#columnscacheevictedentries}
+
+Number of entries evicted from the columns cache.
+
+### ColumnsCacheHits {#columnscachehits}
+
+Number of times a deserialized column was found in the columns cache.
+
+### ColumnsCacheMisses {#columnscachemisses}
+
+Number of times a deserialized column was not found in the columns cache.
+
 ### CommonBackgroundExecutorTaskCancelMicroseconds {#commonbackgroundexecutortaskcancelmicroseconds}
 
 Time spent in cancel() for Common executor tasks.
@@ -1143,6 +1159,10 @@ Number of directories created by the 'plain_rewritable' metadata storage for Loc
 ### DiskPlainRewritableLocalDirectoryRemoved {#diskplainrewritablelocaldirectoryremoved}
 
 Number of directories removed by the 'plain_rewritable' metadata storage for LocalObjectStorage.
+
+### DiskPlainRewritableOrphanedObjectsRemoved {#diskplainrewritableorphanedobjectsremoved}
+
+Number of objects deleted by the 'plain_rewritable' metadata storage while loading, because they were left by removals that a previous server process had committed but not finished (for example, it was killed during DROP TABLE).
 
 ### DiskPlainRewritableS3DirectoryCreated {#diskplainrewritables3directorycreated}
 
@@ -2166,7 +2186,7 @@ Number of file segments which unexpectedly failed to be evicted during dynamic f
 
 ### FilesystemCacheFailedReserveAttempts {#filesystemcachefailedreserveattempts}
 
-Number of failed file cache space reservation attempts.
+Number of failed file cache space reservation attempts, including reserve-ahead attempts that were retried with the exact size (see FilesystemCacheReserveAheadRetries).
 
 ### FilesystemCacheFailToReserveSpaceBecauseOfCacheResize {#filesystemcachefailtoreservespacebecauseofcacheresize}
 
@@ -2235,6 +2255,10 @@ Lock filesystem cache time for read in priority queue
 ### FilesystemCachePriorityWriteLockMicroseconds {#filesystemcacheprioritywritelockmicroseconds}
 
 Lock filesystem cache time for write to priority queue
+
+### FilesystemCacheReserveAheadRetries {#filesystemcachereserveaheadretries}
+
+Number of times a filesystem cache reservation with reserve-ahead did not fit and was retried with exactly the requested size
 
 ### FilesystemCacheReserveAttempts {#filesystemcachereserveattempts}
 
@@ -3228,6 +3252,10 @@ Number of primary index files loaded.
 
 Number of rows of primary key loaded.
 
+### LoadedStatistics {#loadedstatistics}
+
+Number of data parts for which column statistics were loaded
+
 ### LoadedStatisticsMicroseconds {#loadedstatisticsmicroseconds}
 
 Elapsed time of loading statistics from parts
@@ -4188,6 +4216,10 @@ The total number of row groups read from parquet data
 
 The total number of rows that were passed through filter
 
+### ParquetTopKSkippedRowGroups {#parquettopkskippedrowgroups}
+
+The number of parquet row groups skipped while reading because their min/max statistics showed that they can't contain rows of the `ORDER BY ... LIMIT` result (see `use_top_k_dynamic_filtering`)
+
 ### PartsLockHoldMicroseconds {#partslockholdmicroseconds}
 
 Total time spent holding data parts lock in MergeTree tables
@@ -4370,15 +4402,31 @@ Total time a query was sleeping to conform 'max_backup_bandwidth' throttling.
 
 ### QueryCacheAgeSeconds {#querycacheageseconds}
 
-The sum of ages of found query cache entries in seconds. The value is set both for hits and misses.
+The sum of ages of found query cache entries in seconds. Only updated for hits, of both the in-memory and the on-disk backend of the query cache.
 
 ### QueryCacheHits {#querycachehits}
 
-Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.
+Number of times a query result has been found in the query cache (and query computation was avoided). Counts the query cache as a whole: a miss in memory followed by a hit in the query cache on disk is one hit. Only updated for SELECT queries with SETTING use_query_cache = 1.
 
 ### QueryCacheMisses {#querycachemisses}
 
-Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.
+Number of times a query result has not been found in the query cache (and required query computation). Counts the query cache as a whole: a query is a miss only if it was found in neither the in-memory nor the on-disk backend. Only updated for SELECT queries with SETTING use_query_cache = 1.
+
+### QueryCacheOnDiskHits {#querycacheondiskhits}
+
+Number of times a query result has been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheHits. Only updated for SELECT queries with SETTING use_query_cache = 1.
+
+### QueryCacheOnDiskMisses {#querycacheondiskmisses}
+
+Number of times a query result has not been found in the query cache on disk (see setting query_cache_on_disk_cache_name), the breakdown of the on-disk backend of QueryCacheMisses. Only updated for SELECT queries with SETTING use_query_cache = 1.
+
+### QueryCacheOnDiskReadBytes {#querycacheondiskreadbytes}
+
+Number of serialized (compressed) bytes read from the query cache on disk.
+
+### QueryCacheOnDiskWrittenBytes {#querycacheondiskwrittenbytes}
+
+Number of serialized (compressed) bytes written into the query cache on disk.
 
 ### QueryCacheReadBytes {#querycachereadbytes}
 
@@ -4531,6 +4579,10 @@ Time spent on reading from Azure.
 ### ReadBufferFromAzureRequestsErrors {#readbufferfromazurerequestserrors}
 
 Number of exceptions while reading from Azure
+
+### ReadBufferFromFileDescriptorPageCacheHitBytes {#readbufferfromfiledescriptorpagecachehitbytes}
+
+Number of bytes read from file descriptors with the synchronous `pread` that were detected to be served from the OS page cache (this is done only for the reads with a bandwidth throttler).
 
 ### ReadBufferFromFileDescriptorRead {#readbufferfromfiledescriptorread}
 
@@ -4895,6 +4947,10 @@ Number of granules examined for read time pruning by JOIN Runtime Filters
 ### RuntimeFilterGranulesDropped {#runtimefiltergranulesdropped}
 
 Number of granules pruned at read time by JOIN Runtime Filters
+
+### RuntimeFilterLookupsBeforeBuildFinished {#runtimefilterlookupsbeforebuildfinished}
+
+Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
 
 ### RuntimeFilterRowsChecked {#runtimefilterrowschecked}
 
@@ -5892,6 +5948,18 @@ Bytes of the Native blocks in streaming exchange packets before compression, cou
 
 Time spent serializing and compressing chunks into streaming exchange packets.
 
+### StringValueFilterBytesSkipped {#stringvaluefilterbytesskipped}
+
+Number of bytes of non-matching string values that were not copied into a column during a scan due to a filter extracted from a substring search condition in PREWHERE.
+
+### StringValueFilterValuesChecked {#stringvaluefiltervalueschecked}
+
+Number of string values checked during a scan against a filter extracted from a substring search condition in PREWHERE.
+
+### StringValueFilterValuesReplaced {#stringvaluefiltervaluesreplaced}
+
+Number of non-matching string values replaced with empty strings during a scan by a filter extracted from a substring search condition in PREWHERE.
+
 ### SummingSortedMilliseconds {#summingsortedmilliseconds}
 
 Total time spent while summing sorted columns
@@ -5952,13 +6020,17 @@ Number of times a header has not been found in the cache.
 
 Number of advance operations performed in lazy posting list mode.
 
+### TextIndexLazyBlocksSkippedDense {#textindexlazyblocksskippeddense}
+
+Number of packed blocks of consecutive row ids padded as a whole (memset for OR, increment for AND) instead of being decoded, in lazy posting list mode.
+
 ### TextIndexLazyBlocksSkippedResolved {#textindexlazyblocksskippedresolved}
 
-Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+Number of packed blocks skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
 
 ### TextIndexLazyBruteForceEarlyExits {#textindexlazybruteforceearlyexits}
 
-Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.
+Number of brute-force intersections in lazy posting list mode that stopped early because no row of the window was left in all the posting lists applied so far, so the intersection is empty.
 
 ### TextIndexLazyBruteForceIntersections {#textindexlazybruteforceintersections}
 
@@ -5986,7 +6058,11 @@ Number of fully-dense segments padded as a whole (memset for OR, increment for A
 
 ### TextIndexLazySegmentsSkippedResolved {#textindexlazysegmentsskippedresolved}
 
-Number of segments skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+Number of segments skipped because the output region was already resolved (all-ones for OR, no row left in all the posting lists applied so far for AND) in lazy posting list mode.
+
+### TextIndexPatternBypassCacheHits {#textindexpatternbypasscachehits}
+
+Number of times a text index pattern dictionary scan was skipped because an earlier scan of the same part exceeded the posting-list threshold.
 
 ### TextIndexPhraseCandidates {#textindexphrasecandidates}
 
@@ -6179,6 +6255,10 @@ Total time spent performing TLS handshakes for incoming (server) connections, in
 ### TLSServerHandshakes {#tlsserverhandshakes}
 
 Number of TLS handshakes completed for incoming (server) connections, across the server protocols that use the Poco TLS implementation: native TCP, HTTPS, MySQL and PostgreSQL. gRPC carries its own TLS stack and is not counted. Session resumption still performs a handshake and is counted here.
+
+### TopKGranulesSkippedByPrimaryKey {#topkgranulesskippedbyprimarykey}
+
+Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).
 
 ### UncompressedCacheHits {#uncompressedcachehits}
 
