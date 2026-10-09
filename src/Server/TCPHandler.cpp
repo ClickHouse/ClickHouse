@@ -1643,7 +1643,11 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
     }
 
     {
-        PullingAsyncPipelineExecutor executor(pipeline, /*with_query_result_previews=*/ true);
+        /// An older client does not know the `PreviewData` packet type. Previews stay dormant
+        /// unless the output format can deliver them, so this holds even if the query re-enables
+        /// `query_result_previews` in its own `SETTINGS` clause.
+        PullingAsyncPipelineExecutor executor(
+            pipeline, /*with_query_result_previews=*/ client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_RESULT_PREVIEWS);
         pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
@@ -1951,7 +1955,7 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
 void TCPHandler::sendPreviewData(QueryState & state, const Block & block)
 {
     /// The pipeline never produces preview blocks for clients that do not know the packet type:
-    /// `query_result_previews` is force-disabled for them before the query is executed.
+    /// `processOrdinaryQuery` does not enable query result previews in the executor for them.
     chassert(client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_RESULT_PREVIEWS);
 
     initBlockOutput(state, block);
