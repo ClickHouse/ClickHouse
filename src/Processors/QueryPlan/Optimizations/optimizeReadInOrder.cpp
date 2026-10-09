@@ -1281,7 +1281,11 @@ InputOrderInfoPtr buildInputOrderInfo(
                 query_limit);
 
             if (!can_read)
+            {
+                /// E.g. a reverse FINAL read the engine does not support: the read stays as it was.
+                reading->resetVirtualRowConversions();
                 return nullptr;
+            }
 
             for (auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 join_step->keepLeftPipelineInOrder(/* disable_squashing */ true);
