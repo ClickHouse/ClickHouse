@@ -12,6 +12,8 @@ from helpers.keeper_snapshot_utils import (
     verify_test_tree,
     get_kill_timestamp,
     get_received_snapshot_info,
+    start_keeper_phase_only,
+    use_keeper_phase,
 )
 
 
@@ -49,18 +51,34 @@ node_concs4 = cluster.add_instance("node_concs4", main_configs=["configs/enable_
 node_concs5 = cluster.add_instance("node_concs5", main_configs=["configs/enable_keeper_conc_s3_5.xml"], user_configs=[_small_buf_cfg], stay_alive=True, with_minio=True, with_remote_database_disk=False)
 
 
+# A test exercises exactly one of these groups of independent Keeper clusters, so only
+# one group is kept running at a time (use_keeper_phase); the first group listed stays
+# running after cluster.start().
+KEEPER_PHASES = {
+    "local": [[node_conc1, node_conc2, node_conc3, node_conc4, node_conc5]],
+    "remote": [[node_concs1, node_concs2, node_concs3, node_concs4, node_concs5]],
+}
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
+        start_keeper_phase_only(cluster, KEEPER_PHASES, next(iter(KEEPER_PHASES)))
         yield cluster
     finally:
         cluster.shutdown()
 
 
 CONCURRENT_FOLLOWERS_PARAMS = [
-    pytest.param({"leader": node_conc1, "lagging": [node_conc4, node_conc5]}, id="local_disk"),
-    pytest.param({"leader": node_concs1, "lagging": [node_concs4, node_concs5]}, id="remote_disk"),
+    pytest.param(
+        {"leader": node_conc1, "lagging": [node_conc4, node_conc5], "phase": "local"},
+        id="local_disk",
+    ),
+    pytest.param(
+        {"leader": node_concs1, "lagging": [node_concs4, node_concs5], "phase": "remote"},
+        id="remote_disk",
+    ),
 ]
 
 
@@ -69,6 +87,7 @@ def test_concurrent_followers_fetch_snapshot(started_cluster, nodes):
     """Two followers lagging behind must both recover correctly when fetching
     the same snapshot concurrently from the leader. Tests shared loader access
     under concurrent load — especially the RemoteSnapshotLoader mutex on S3."""
+    use_keeper_phase(cluster, KEEPER_PHASES, nodes["phase"], RESTART_TIMEOUT_SECONDS)
     node_leader = nodes["leader"]
     lagging = nodes["lagging"]
     prefix = "/test_concurrent_followers_snapshot"

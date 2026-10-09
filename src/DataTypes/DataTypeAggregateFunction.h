@@ -58,9 +58,22 @@ public:
 
     Field getDefault() const override;
 
-    /// Compares name, parameters, and argument types.
+    /// Compares name, state version, parameters, and argument types.
     /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
+
+    /// Spells a parameter list as a state type name does: `(p1, p2)`, empty when there are none.
+    /// `function` decides whether the values need `::Type` suffixes to reparse as the same Fields.
+    static String formatParameters(const IAggregateFunction & function, const Array & parameters);
+
+    /// True if `state_type_name` denotes a state with the same binary representation as (function, version).
+    /// The names can differ: the aggregate function factory strips LowCardinality from the argument types,
+    /// while the declared type keeps it, so `AggregateFunction(argMax, LowCardinality(String), DateTime)`
+    /// and `AggregateFunction(argMax, String, DateTime)` describe the very same state.
+    static bool nameMatchesState(const String & state_type_name, const AggregateFunctionPtr & function, size_t version);
+
+    /// Throws if `function` only works as a window function: its state cannot be used as a data type.
+    static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 
     /// Same as equals() but ignores the state variant (Aggregation vs Window).
     bool equalsIgnoringVariant(const IDataType & rhs) const;
@@ -101,5 +114,15 @@ void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
 
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);
+
+/// Whether all `AggregateFunction` types nested in `lhs` and `rhs` have the same state versions.
+/// `IDataType::equals` ignores the state version, so two equal types may still disagree here.
+bool haveSameAggregateStateVersions(const IDataType & lhs, const IDataType & rhs);
+
+/// Rebuilds `column` as a column of `type`, which must be equal to the column's own type except
+/// for the state versions of the nested `AggregateFunction` types. The states in memory do not depend
+/// on the version, but a column keeps the version it was created with and uses it when its states pass
+/// through an arena (e.g. in `groupArray`). The states are shared, not copied.
+ColumnPtr relabelAggregateStateVersions(const ColumnPtr & column, const DataTypePtr & type);
 
 }

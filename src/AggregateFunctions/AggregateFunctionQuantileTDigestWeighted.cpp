@@ -67,10 +67,10 @@ The result depends on the order of running the query, and is nondeterministic.
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
 In this case, use the [`quantiles`](/reference/functions/aggregate-functions/quantiles#quantiles) function.
 
-:::note
+<Note>
 Using `quantileTDigestWeighted` [is not recommended for tiny data sets](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) and can lead to significant error.
 In this case, consider possibility of using [`quantileTDigest`](/reference/functions/aggregate-functions/quantileTDigest) instead.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileTDigestWeighted(level)(expr, weight)
@@ -115,10 +115,10 @@ In terms of the ratio of State size to precision, this function is much better t
 
 The result depends on the order of running the query, and is nondeterministic.
 
-:::note
+<Note>
 Using `quantilesTDigestWeighted` [is not recommended for tiny data sets](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) and can lead to significant error.
 In this case, consider possibility of using [`quantilesTDigest`](/reference/functions/aggregate-functions/quantilesTDigest) instead.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesTDigestWeighted(level1, level2, ...)(expr, weight)

@@ -18,7 +18,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-この設定値が、現在同時に処理されているクエリ数以下の場合は、例外をスローします。
+現在同時に処理されているクエリ数がこの設定値以上に達した場合は、例外をスローします。
 
 例: `max_concurrent_queries_for_all_users` は、すべてのユーザーに対して 99 に設定でき、database administrator は、server が過負荷状態でも調査用のクエリを実行できるよう、自身に対して 100 を設定できます。
 

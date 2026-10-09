@@ -7,7 +7,7 @@
 -- subcolumn, ranking the shortlist on unrelated bytes (silently, when the widths match). The rewrite must detect the
 -- shadow and fall back to exact KNN. Exercises `useVectorSearchWithQuantizedCodes`.
 
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 SET enable_analyzer = 1;
 

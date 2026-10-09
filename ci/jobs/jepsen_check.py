@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Any, List
 
 import boto3
-from tests.ci.ssh import SSHKey
 
 from ci.defs.defs import JobNames
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+from ci.tools.ssh import SSHKey
 
 JEPSEN_GROUP_NAME = "jepsen_group"
 

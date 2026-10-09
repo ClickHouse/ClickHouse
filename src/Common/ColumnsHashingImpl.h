@@ -32,6 +32,9 @@ struct HashMethodContextSettings
     /// Threshold on the hash table's buffer size below which prefetching is skipped
     /// because the table fits into caches. Zero disables the threshold.
     size_t min_bytes_for_prefetch = 0;
+    /// Whether the aggregation is a lone `count()` with its counter kept in the hash-table mapped
+    /// slot instead of a state. Caches that copy a mapped value are invalid in that mode.
+    bool simple_count = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.
@@ -197,6 +200,8 @@ template <bool need_offset>
 class FindResultImpl<void, need_offset> : public FindResultImplBase, public FindResultImplOffsetBase<need_offset>
 {
 public:
+    FindResultImpl() : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0) {}
+
     FindResultImpl(bool found_, size_t off) : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off) {}
 };
 

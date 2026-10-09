@@ -101,6 +101,9 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     if (src_alter->partition)
         alter_command->partition = alter_command->children.emplace_back(src_alter->partition->clone()).get();
 
+    if (src_alter->partitions)
+        alter_command->partitions = alter_command->children.emplace_back(src_alter->partitions->clone()).get();
+
     alter_command->predicate = alter_command->children.emplace_back(src_alter->predicate->clone()).get();
     auto mutation_command = MutationCommand::parse(
         *alter_command,
@@ -111,6 +114,13 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
 
     if (!mutation_command)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}", alter_command->formatForErrorMessage());
+
+    /// The rewritten command stands for the same mutation, so it carries its version - as
+    /// `createCommandWithUpdatedColumns` does for its own rewrite. Without it the on-fly stage built
+    /// from this command has no version bound, `getMaxPatchVersionForStep` returns none, and the
+    /// patch-visibility window of the stage is unbounded above: a patch part created *after* this
+    /// `DELETE` would be applied before its predicate is evaluated.
+    mutation_command->mutation_version = command.mutation_version;
 
     return *mutation_command;
 }
