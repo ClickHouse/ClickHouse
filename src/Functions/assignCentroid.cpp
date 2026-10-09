@@ -28,7 +28,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <unordered_set>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <utility>
 
 /// assignCentroid(vec, centroids) -> UInt32 cluster id: the index of the nearest (L2) centroid to vec.
@@ -521,7 +521,7 @@ private:
         const bool has_split_from = structure.hasAttribute("split_from");
         if (has_split_from)
             columns.push_back("split_from");
-        std::unordered_set<UInt64> split_centroids;
+        UnorderedSetWithMemoryTracking<UInt64> split_centroids;
         MapWithMemoryTracking<UInt64, std::pair<UInt64, UInt64>> generations; /// generation -> (rows, expected rows)
 
         /// Full-read the dictionary (same mechanism the dictionary() table function uses).
