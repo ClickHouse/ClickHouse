@@ -611,7 +611,7 @@ HashJoinPtr StorageJoin::buildFromBackups(const String & exclude_file_name) cons
     {
         Block block_to_insert = block;
         convertRightBlock(block_to_insert);
-        rebuilt_join->addBlockToJoin(block_to_insert, true);
+        rebuilt_join->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
     }, exclude_file_name);
     return rebuilt_join;
 }
@@ -636,7 +636,7 @@ void StorageJoin::publishBackup(const String & backup_file_path, ContextPtr cont
         {
             Block block_to_insert = block;
             convertRightBlock(block_to_insert);
-            join->addBlockToJoin(block_to_insert, true);
+            join->addBlockToJoin(block_to_insert, block_to_insert.rows(), JoinBuildContext::serial());
         });
     }
     catch (...)
