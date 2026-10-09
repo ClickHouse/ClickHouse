@@ -69,6 +69,7 @@ void StatisticsDerivation::deriveLeafGroups()
     const auto largest = largestKnownLeafRowCount();
     if (!largest)
         return;
+    memo.setLargestKnownLeafRows(*largest);
     for (GroupId group_id = 0; group_id < memo.getGroupCount(); ++group_id)
     {
         const auto group = memo.getGroup(group_id);
@@ -285,6 +286,7 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         statistics.estimated_row_count = upper_bound
             ? Float64(*upper_bound)
             : left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity;
+        statistics.search_value_is_join_product = !upper_bound;
     }
 
     /// Equality key pairs, for the output column equivalences.

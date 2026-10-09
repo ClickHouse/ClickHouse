@@ -141,6 +141,10 @@ struct CostInputs
     /// statistics say (a partial top-N emits up to L rows per node). Resolved by the caller
     /// from the selected child; overrides the trimmed output row count.
     std::optional<Float64> exchange_rows_override;
+    /// Rows a gather or scatter of an unknown join result is priced on when the result has no bound
+    /// below it: the largest known leaf of the query. Without it funnelling such a result through
+    /// one node looks free, its search value being a product of stand-in selectivities.
+    Float64 unknown_exchange_rows = 1.0;
     const CostConfig & config;
 };
 

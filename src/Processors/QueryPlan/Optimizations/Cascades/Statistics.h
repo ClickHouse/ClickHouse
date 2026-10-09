@@ -29,6 +29,11 @@ struct ExpressionStatistics
     /// A default selectivity stood in for a predicate somewhere below: `estimated_row_count` is a
     /// guess, which the replication budget does not take on its own.
     bool estimate_from_defaults = false;
+    /// The search value of this unknown result is the product of an unknown join's inputs and a
+    /// stand-in key selectivity, which can be far below the rows the join produces; the cost model
+    /// does not price a gather of such a result on it. Kept by the operators that copy their
+    /// input's statistics, dropped by the ones that derive their own.
+    bool search_value_is_join_product = false;
     /// Proven minimum number of rows
     Float64 min_row_count = 0;
     /// Proven maximum number of rows. E.g. after a `LIMIT` step
