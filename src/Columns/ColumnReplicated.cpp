@@ -156,10 +156,10 @@ MutableColumnPtr ColumnReplicated::cloneResized(size_t new_size) const
         return create(std::move(new_nested_column), std::move(new_indexes));
     }
 
-    auto res = create(nested_column->cloneEmpty());
-    res->insertRangeFrom(*this, 0, new_size);
-    res->dropInsertionCache();
-    return res;
+    /// Keep only the nested rows that the remaining indexes refer to.
+    ColumnIndex res_indexes(indexes.getIndexes()->cut(0, new_size));
+    auto compact = res_indexes.buildCompactIndexedColumns({nested_column});
+    return create(mutate(std::move(compact.compact_indexed_columns[0])), mutate(std::move(compact.compact_indexes)));
 }
 
 MutableColumnPtr ColumnReplicated::cloneEmpty() const
