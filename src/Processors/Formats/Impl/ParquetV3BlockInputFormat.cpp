@@ -168,7 +168,10 @@ std::optional<std::pair<std::vector<size_t>, size_t>> ParquetV3BlockInputFormat:
     for (const auto & row_group : reader->reader.row_groups)
     {
         if (!row_group.need_to_process)
+        {
+            matched.push_back(row_group.row_group_idx);
             continue;
+        }
 
         bool produced_rows = false;
         for (const auto & subgroup : row_group.subgroups)
