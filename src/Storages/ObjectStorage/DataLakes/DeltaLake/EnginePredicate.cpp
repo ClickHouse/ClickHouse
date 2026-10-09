@@ -10,10 +10,12 @@
 #include <Common/DateLUTImpl.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Formats/FormatFactory.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Functions/IFunction.h>
 #include <Functions/ComparisonNames.h>
 #include <IO/WriteHelpers.h>
@@ -166,6 +168,15 @@ namespace
             const auto day_start = DB::tryConvertFieldToType(day, *common, type.get(), format_settings, /*strict=*/ true);
             if (instant.isNull() || day.isNull() || day_start.isNull() || !DB::accurateLessOrEqual(day_start, instant))
                 return std::nullopt;
+            /// Days outside the `DateTime64` range compare as its bounds, so an instant at a bound can equal several days.
+            if (isDateTime64(common))
+            {
+                const auto scale_multiplier = DB::DecimalUtils::scaleMultiplier<DB::DateTime64::NativeType>(
+                    assert_cast<const DB::DataTypeDateTime64 &>(*common).getScale());
+                const Int64 ticks = instant.safeGet<DB::DecimalField<DB::DateTime64>>().getValue().value;
+                if (ticks <= DB::minTicksForDateTime64(scale_multiplier) || ticks >= DB::maxTicksForDateTime64(scale_multiplier))
+                    return std::nullopt;
+            }
             if (!DB::accurateEquals(day_start, instant))
                 return ConvertedLiteral{day, false};
             /// A skipped day starts at the same instant as the next one.

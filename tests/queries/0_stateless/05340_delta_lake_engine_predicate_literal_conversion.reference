@@ -85,6 +85,15 @@ skipped_day [UTC]: NOT (d < toDateTime64('2011-12-31 00:00:00', 0, 'Pacific/Apia
 skipped_day [UTC]: d < toDateTime64('2011-12-31 00:00:00', 0, 'Pacific/Apia')
 []
 2
+dt64_bound [UTC]: d <= toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC')
+['2262-04-11','2262-04-12']
+2
+dt64_bound [UTC]: toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC') >= d
+['2262-04-11','2262-04-12']
+2
+dt64_bound [UTC]: d < toDateTime64('2262-04-11 12:00:00', 9, 'UTC')
+['2262-04-11']
+1
 dates_nullable [UTC]: d < toDateTime('2026-01-01 12:00:00', 'UTC')
 ['2026-01-01']
 1

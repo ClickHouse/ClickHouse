@@ -183,6 +183,13 @@ for where in "d = ${APIA}" "d >= ${APIA}" "NOT (d < ${APIA})" "d < ${APIA}"; do
     check skipped_day UTC "${where}"
 done
 
+# A `Date32` day outside the `DateTime64(9)` range compares as the type's largest value.
+DT64_MAX="toDateTime64('2262-04-11 23:47:16.854775807', 9, 'UTC')"
+make_table dt64_bound d Date32 date 0 '["2262-04-11"]' '["2262-04-12"]'
+for where in "d <= ${DT64_MAX}" "${DT64_MAX} >= d" "d < toDateTime64('2262-04-11 12:00:00', 9, 'UTC')"; do
+    check dt64_bound UTC "${where}"
+done
+
 make_table dates_nullable d 'Nullable(Date32)' date 0 '["2026-01-01"]' '["2026-01-02"]'
 check dates_nullable UTC "d < ${DT}"
 
