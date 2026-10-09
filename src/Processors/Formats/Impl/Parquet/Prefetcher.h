@@ -178,7 +178,7 @@ private:
     std::mutex read_mutex;
     ReadMode read_mode{};
     SeekableReadBuffer * reader = nullptr;
-    /// `reader` if it reads a local file with pread.
+    /// `reader` if it reads a local file with `pread`.
     const ReadBufferFromFileDescriptor * fd_reader = nullptr;
     PaddedPODArray<char> entire_file;
 

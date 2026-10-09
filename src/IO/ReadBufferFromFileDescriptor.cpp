@@ -196,16 +196,16 @@ void ReadBufferFromFileDescriptor::prefetch(Priority)
 void ReadBufferFromFileDescriptor::adviseWillNeedIfNotCached([[maybe_unused]] size_t offset, [[maybe_unused]] size_t n) const
 {
 #if defined(POSIX_FADV_WILLNEED)
-    /// One POSIX_FADV_WILLNEED makes Linux read at most max(read_ahead_kb, max_sectors_kb) of the range,
-    /// so a longer range is advised in pieces that fit the default read_ahead_kb.
+    /// One `POSIX_FADV_WILLNEED` makes Linux read at most max(`read_ahead_kb`, `max_sectors_kb`) of the range,
+    /// so a longer range is advised in pieces that fit the default `read_ahead_kb`.
     constexpr size_t piece_size = 128 * 1024;
 
     /// For direct IO, loading data into page cache is pointless.
-    /// A throttler that ignores page cache reads (see readImpl) would not count the bytes the hint reads.
+    /// A throttler that ignores page cache reads (see `readImpl`) would not count the bytes the hint reads.
     if (required_alignment || n <= piece_size || detect_os_page_cache_reads.load(std::memory_order_relaxed))
         return;
 
-    /// Only EAGAIN means that the page is not in the page cache; other failures leave it unknown.
+    /// Only `EAGAIN` means that the page is not in the page cache; other failures leave it unknown.
     char probe = 0;
     if (preadNoWait(fd, &probe, 1, offset) != -1 || errno != EAGAIN)
         return;
