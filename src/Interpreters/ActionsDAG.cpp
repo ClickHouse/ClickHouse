@@ -2897,17 +2897,38 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         nodes_to_process.push_back({const_node_to_node.at(node), false /*visited_children*/});
 
     std::unordered_set<const ActionsDAG::Node *> nodes_to_move_from_second_dag;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> second_node_to_result;
+    std::unordered_map<std::string, const ActionsDAG::Node *> second_input_name_to_node;
 
     while (!nodes_to_process.empty())
     {
         auto & node_to_process = nodes_to_process.back();
         auto * node = node_to_process.node;
 
-        auto node_it = node_name_to_node.find(node->result_name);
-        if (node_it != node_name_to_node.end())
+        if (second_node_to_result.contains(node))
         {
             nodes_to_process.pop_back();
             continue;
+        }
+
+        auto node_it = node_name_to_node.find(node->result_name);
+        if (node_it != node_name_to_node.end())
+        {
+            second_node_to_result.emplace(node, node_it->second);
+            nodes_to_process.pop_back();
+            continue;
+        }
+
+        /// Names bind a node of `second` only to an existing node of this DAG, or an input to an input of `second`.
+        if (node->type == ActionType::INPUT)
+        {
+            auto [input_it, inserted] = second_input_name_to_node.emplace(node->result_name, node);
+            if (!inserted)
+            {
+                second_node_to_result.emplace(node, input_it->second);
+                nodes_to_process.pop_back();
+                continue;
+            }
         }
 
         if (!node_to_process.visited_children)
@@ -2923,9 +2944,9 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
         }
 
         for (auto & child : node->children)
-            child = node_name_to_node.at(child->result_name);
+            child = second_node_to_result.at(child);
 
-        node_name_to_node.emplace(node->result_name, node);
+        second_node_to_result.emplace(node, node);
         nodes_to_move_from_second_dag.insert(node);
 
         nodes_to_process.pop_back();
@@ -2934,7 +2955,7 @@ void ActionsDAG::mergeNodes(ActionsDAG && second, NodeRawConstPtrs * out_outputs
     if (out_outputs)
     {
         for (auto & node : second.getOutputs())
-            out_outputs->push_back(node_name_to_node.at(node->result_name));
+            out_outputs->push_back(second_node_to_result.at(node));
     }
 
     if (nodes_to_move_from_second_dag.empty())

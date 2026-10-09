@@ -1145,6 +1145,7 @@ void registerStorageHive(StorageFactory & factory)
                 std::move(hive_settings),
                 args.getContext());
         },
+        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .supports_sort_order = true,

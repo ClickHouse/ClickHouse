@@ -91,6 +91,7 @@ struct QueryPlanOptimizationSettings
     bool top_k_through_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
+    bool enable_group_by_top_k_dynamic_filtering;
     bool aggregation_having_prefilter;
     UInt64 top_k_optimization_observation_rows = 65536;
     bool top_k_optimization_shared_boundary = true;
@@ -139,6 +140,7 @@ struct QueryPlanOptimizationSettings
     bool build_sets = true; /// this one doesn't have a corresponding setting
     bool materialize_ctes = true; /// this one doesn't have a corresponding setting
     bool query_plan_join_shard_by_pk_ranges;
+    bool join_seal_gated_reading;
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
