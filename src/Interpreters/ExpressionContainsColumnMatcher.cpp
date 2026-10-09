@@ -85,26 +85,51 @@ const IAST * findColumnMatcherInExpression(const IAST & ast, const IsColumnQuali
 IsColumnQualifier makeTupleColumnQualifierCheck(
     std::function<std::optional<NameAndTypePair>(const String &)> try_get_column_,
     NameSet table_names_,
+    std::optional<std::pair<String, String>> database_and_table_name_,
     bool prefer_table_over_column)
 {
-    return [try_get_column = std::move(try_get_column_), table_names = std::move(table_names_), prefer_table_over_column](
-               const ASTIdentifier & qualifier)
+    return [try_get_column = std::move(try_get_column_),
+            table_names = std::move(table_names_),
+            database_and_table_name = std::move(database_and_table_name_),
+            prefer_table_over_column](const ASTIdentifier & qualifier)
     {
-        const auto & name = qualifier.name();
-        if (prefer_table_over_column && table_names.contains(name))
+        /// The parts are compared one by one rather than the flattened name, because a quoted part may contain a dot,
+        /// e.g. `tab.with.dots`.tup is a single-part table prefix followed by a column.
+        const auto & parts = qualifier.name_parts;
+        if (parts.empty())
             return false;
 
-        /// `table_names` is unordered, so the prefixes of one kind (`t` or `db.t`) are tried in a separate pass.
-        auto try_get_column_without_table_prefix = [&](bool multi_part_prefix) -> std::optional<NameAndTypePair>
+        auto join_parts = [&](size_t start)
         {
-            for (const auto & table_name : table_names)
+            String result;
+            for (size_t i = start; i < parts.size(); ++i)
             {
-                if (table_name.contains('.') != multi_part_prefix)
-                    continue;
-                if (name.size() > table_name.size() + 1 && name.starts_with(table_name) && name[table_name.size()] == '.')
-                    if (auto column = try_get_column(name.substr(table_name.size() + 1)))
-                        return column;
+                if (i != start)
+                    result += '.';
+                result += parts[i];
             }
+            return result;
+        };
+
+        bool has_single_part_prefix = table_names.contains(parts[0]);
+        bool has_database_and_table_prefix = database_and_table_name && parts.size() >= 2
+            && parts[0] == database_and_table_name->first && parts[1] == database_and_table_name->second;
+
+        if (prefer_table_over_column
+            && ((parts.size() == 1 && has_single_part_prefix) || (parts.size() == 2 && has_database_and_table_prefix)))
+            return false;
+
+        auto try_get_column_without_single_part_prefix = [&]() -> std::optional<NameAndTypePair>
+        {
+            if (parts.size() > 1 && has_single_part_prefix)
+                return try_get_column(join_parts(1));
+            return {};
+        };
+
+        auto try_get_column_without_database_and_table_prefix = [&]() -> std::optional<NameAndTypePair>
+        {
+            if (parts.size() > 2 && has_database_and_table_prefix)
+                return try_get_column(join_parts(2));
             return {};
         };
 
@@ -118,13 +143,13 @@ IsColumnQualifier makeTupleColumnQualifierCheck(
         /// before `tup`.
         std::optional<NameAndTypePair> column;
         if (prefer_table_over_column)
-            column = try_get_column_without_table_prefix(/* multi_part_prefix = */ false);
+            column = try_get_column_without_single_part_prefix();
         if (!column)
-            column = try_get_column(name);
+            column = try_get_column(join_parts(0));
         if (!column && !prefer_table_over_column)
-            column = try_get_column_without_table_prefix(/* multi_part_prefix = */ false);
+            column = try_get_column_without_single_part_prefix();
         if (!column)
-            column = try_get_column_without_table_prefix(/* multi_part_prefix = */ true);
+            column = try_get_column_without_database_and_table_prefix();
         if (!column)
             return false;
 

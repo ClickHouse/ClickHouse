@@ -37,7 +37,8 @@ void checkRowPolicyFilterMatchersAgainstStorage(const ASTPtr & filter, const ISt
                 metadata_snapshot = storage.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
             return metadata_snapshot->getColumns().tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name);
         },
-        NameSet{storage_id.getTableName(), storage_id.getDatabaseName() + "." + storage_id.getTableName()},
+        NameSet{storage_id.getTableName()},
+        std::make_pair(storage_id.getDatabaseName(), storage_id.getTableName()),
         context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]);
 
     if (const auto * matcher = findColumnMatcherInExpression(*filter, is_column_qualifier))

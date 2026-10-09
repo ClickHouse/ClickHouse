@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <optional>
+#include <utility>
 
 namespace DB
 {
@@ -31,12 +32,14 @@ const IAST * findColumnMatcherInExpression(const IAST & ast, const IsColumnQuali
 /// `Nullable`, `Array` or `Map`), unless `analyzer_compatibility_prefer_alias_over_subcolumn` is enabled and the
 /// qualifier also names the table, in which case it expands into the table columns.
 ///
-/// `try_get_column` looks up a column (or subcolumn) of the table by name, `table_names` are the names under which
-/// the table can be referenced (its name, `database.name`, its alias). A qualifier that starts with one of them,
-/// e.g. `t.tup.*` or `db.t.tup.*`, is also looked up as a column without that prefix.
+/// `try_get_column` looks up a column (or subcolumn) of the table by name, `table_names` are the single-part names
+/// under which the table can be referenced (its name, its alias), `database_and_table_name` is the two-part one.
+/// A qualifier that starts with one of them, e.g. `t.tup.*` or `db.t.tup.*`, is also looked up as a column without
+/// that prefix.
 IsColumnQualifier makeTupleColumnQualifierCheck(
     std::function<std::optional<NameAndTypePair>(const String &)> try_get_column,
     NameSet table_names,
+    std::optional<std::pair<String, String>> database_and_table_name,
     bool prefer_table_over_column);
 
 }

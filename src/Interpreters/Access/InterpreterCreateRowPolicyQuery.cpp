@@ -97,9 +97,13 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
 
-    for (const auto & [filter_type, filter] : query.filters)
-        for (const auto & full_name : query.names->full_names)
-            checkRowPolicyFilterMatchersAgainstTable(filter, full_name, getContext());
+    /// A persisted policy is attached unchanged, and is rejected only when it is used.
+    if (!query.attach)
+    {
+        for (const auto & [filter_type, filter] : query.filters)
+            for (const auto & full_name : query.names->full_names)
+                checkRowPolicyFilterMatchersAgainstTable(filter, full_name, getContext());
+    }
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)

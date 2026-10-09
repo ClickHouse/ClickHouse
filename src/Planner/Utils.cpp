@@ -724,6 +724,7 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
     /// `tup`, expands into the elements of that column and is fine.
     StorageSnapshotPtr storage_snapshot;
     NameSet table_names;
+    std::optional<std::pair<String, String>> database_and_table_name;
     if (!table_expression->getAlias().empty())
         table_names.insert(table_expression->getAlias());
     if (const auto * table_node = table_expression->as<TableNode>())
@@ -731,7 +732,7 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         storage_snapshot = table_node->getStorageSnapshot();
         const auto & storage_id = table_node->getStorageID();
         table_names.insert(storage_id.getTableName());
-        table_names.insert(storage_id.getDatabaseName() + "." + storage_id.getTableName());
+        database_and_table_name.emplace(storage_id.getDatabaseName(), storage_id.getTableName());
     }
     else if (const auto * table_function_node = table_expression->as<TableFunctionNode>())
     {
@@ -741,7 +742,7 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
         {
             const auto & storage_id = table_function_node->getStorageID();
             table_names.insert(storage_id.getTableName());
-            table_names.insert(storage_id.getDatabaseName() + "." + storage_id.getTableName());
+            database_and_table_name.emplace(storage_id.getDatabaseName(), storage_id.getTableName());
         }
     }
 
@@ -753,6 +754,7 @@ QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
             return storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), name);
         },
         std::move(table_names),
+        std::move(database_and_table_name),
         query_context->getSettingsRef()[Setting::analyzer_compatibility_prefer_alias_over_subcolumn]);
 
     if (const auto * matcher = findColumnMatcherInExpression(*filter_expression, is_column_qualifier))

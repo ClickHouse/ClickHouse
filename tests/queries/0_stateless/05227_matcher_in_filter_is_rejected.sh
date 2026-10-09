@@ -96,6 +96,14 @@ SELECT 'nested tuple named as the table', groupArray(id) FROM nest_05227 SETTING
 SELECT count() FROM nest_05227 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1, additional_table_filters = {'nest_05227': 'greatest(nest_05227.a.*) > 0'}; -- { serverError BAD_ARGUMENTS }
 DROP TABLE nest_05227;
 
+-- A quoted table name with dots is a single-part qualifier, it is looked up without that part first as well.
+DROP TABLE IF EXISTS \`d.nest_05227\`;
+CREATE TABLE \`d.nest_05227\` (id UInt32, a UInt8, \`d.nest_05227\` Tuple(a Tuple(x UInt8, y UInt8))) ENGINE = MergeTree ORDER BY id;
+INSERT INTO \`d.nest_05227\` VALUES (1, 0, ((1, 2))), (2, 0, ((0, 0))), (3, 0, ((0, 3)));
+SELECT 'nested tuple named as a dotted table', groupArray(id) FROM \`d.nest_05227\` SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0, additional_table_filters = {'d.nest_05227': 'greatest(\`d.nest_05227\`.a.*) > 0'};
+SELECT count() FROM \`d.nest_05227\` SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1, additional_table_filters = {'d.nest_05227': 'greatest(\`d.nest_05227\`.a.*) > 0'}; -- { serverError BAD_ARGUMENTS }
+DROP TABLE \`d.nest_05227\`;
+
 -- When the table has the name of its database, a qualifier is looked up without the table name first, and only then
 -- without the database and the table, like the analyzer does: here db.tup is not a Tuple, so db.db.tup.* is rejected.
 CREATE TABLE ${CLICKHOUSE_DATABASE}.${CLICKHOUSE_DATABASE} (id UInt32, tup Tuple(x UInt8, y UInt8), ${CLICKHOUSE_DATABASE} Tuple(tup UInt8)) ENGINE = MergeTree ORDER BY id;
