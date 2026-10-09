@@ -342,6 +342,11 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 {
     if (unlikely(!input_chunk.hasRows()))
     {
+        /// A rowless chunk with a `ChunkInfo` is a marker for the consumer (e.g. a watermark of a streaming
+        /// read). Before spilling, the results of the preceding chunks are already emitted, so it keeps its place.
+        chassert(!output_chunk);
+        if (!input_chunk.getChunkInfos().empty())
+            output_chunk = std::move(input_chunk);
         input_chunk.clear();
         return;
     }
@@ -644,6 +649,8 @@ void ExternalDistinctTransform::flushSortingUnit(CollectingInput & collecting)
 void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
 {
     auto chunk = std::move(input_chunk);
+    /// Rowless marker chunks are dropped here: after spilling, the rows are emitted only once the input
+    /// ends, so a forwarded marker (e.g. a watermark) would overtake the rows that arrived before it.
     if (unlikely(!chunk.hasRows()))
         return;
 

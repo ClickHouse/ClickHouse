@@ -1118,3 +1118,38 @@ TEST_F(ExternalDistinctTransformTest, TailBudgetPreservesFirstPayloadAndOrder)
         }
     });
 }
+
+TEST_F(ExternalDistinctTransformTest, ForwardsRowlessMarkerChunksBeforeSpilling)
+{
+    withQueryThread([&]
+    {
+        ConnectedDistinct connected(tmp_data);
+        auto & transform = connected.transform;
+        auto & downstream = connected.downstream;
+        ASSERT_NO_FATAL_FAILURE(connected.hashChunk({1, 2}));
+
+        /// A rowless chunk with a `ChunkInfo` is a marker for the consumer, such as a watermark of a
+        /// streaming read. It must reach the output in its place among the hashing results.
+        size_t merge_calls = 0;
+        Chunk marker(connected.header->cloneEmptyColumns(), 0);
+        marker.getChunkInfos().add(std::make_shared<MergeCountingChunkInfo>(merge_calls));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        connected.upstream.push(std::move(marker));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        ASSERT_TRUE(downstream.hasData());
+        auto forwarded = downstream.pull();
+        EXPECT_EQ(forwarded.getNumRows(), 0);
+        EXPECT_TRUE(forwarded.getChunkInfos().has<MergeCountingChunkInfo>());
+
+        /// A rowless chunk without a `ChunkInfo` carries nothing and is dropped.
+        connected.upstream.push(Chunk(connected.header->cloneEmptyColumns(), 0));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        EXPECT_FALSE(downstream.hasData());
+
+        ASSERT_NO_FATAL_FAILURE(connected.hashChunk({3}));
+    });
+}
