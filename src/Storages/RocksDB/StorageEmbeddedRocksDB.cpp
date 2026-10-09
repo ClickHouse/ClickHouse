@@ -1523,7 +1523,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .enumerate_engine_settings_fn = enumerateCompiledDefaults<RocksDBSettings>,
     };
 
-    factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{
+    factory.registerStorage("EmbeddedRocksDB", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
