@@ -10,6 +10,27 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
+namespace
+{
+
+/// A speed of 2^-33 tokens/s parks a cost-1 request for 2^33 seconds. That delay fits in `Int64`
+/// nanoseconds, but adding it to a large enough time point does not.
+constexpr double tiny_speed = 1.0 / 8589934592.0;
+
+/// Parks one cost-1 request on a throttler installed as the root node, and returns that root.
+ThrottlerConstraint & parkOneRequest(ResourceTest & t, EventQueue::TimePoint start, double max_speed)
+{
+    t.process(start, 0);
+    t.add<ThrottlerConstraint>("/", SchedulerNodeInfo{}, max_speed, /*max_burst=*/ 0.0);
+    t.add<FifoQueue>("/A");
+    t.enqueue("/A", {1});
+    t.process(start);
+    t.consumed("A", 1);
+    return static_cast<ThrottlerConstraint &>(t.getRoot());
+}
+
+}
+
 TEST(SchedulerThrottlerConstraint, LeakyBucketConstraint)
 {
     ResourceTest t;
@@ -176,4 +197,40 @@ TEST(SchedulerThrottlerConstraint, ThrottlerAndFairness)
         consumed_a = arrival_curve * share_a;
         consumed_b = arrival_curve * share_b;
     }
+}
+
+/// The three cases below are separate tests on purpose: the sanitizer builds are compiled with
+/// `-fno-sanitize-recover=all`, so the first unbounded statement aborts the process and would hide
+/// the other two.
+
+/// A speed small enough that the quotient itself is outside `Int64`. Narrowing it is undefined.
+TEST(SchedulerThrottlerConstraint, TinySpeedDelayNarrowingIsBounded)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::seconds(1)};
+    auto & throttler = parkOneRequest(t, start, /*max_speed=*/ 1e-30);
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
+}
+
+/// A representable quotient, but `now + delay` is not representable.
+TEST(SchedulerThrottlerConstraint, TinySpeedDeadlineIsBounded)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::nanoseconds(Int64(1) << 62)};
+    auto & throttler = parkOneRequest(t, start, tiny_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
+}
+
+/// Each delay is bounded, but their sum is not: every `ALTER WORKLOAD` re-postpones the pending
+/// delay and counts it again, and 300 years of them overrun the ~292-year `Int64` range.
+TEST(SchedulerThrottlerConstraint, ThrottlingDurationSaturates)
+{
+    ResourceTest t;
+    EventQueue::TimePoint start{std::chrono::seconds(1)};
+    auto & throttler = parkOneRequest(t, start, tiny_speed);
+    EXPECT_EQ(throttler.getThrottlingDuration(), ThrottlerConstraint::max_delay);
+
+    for (int i = 0; i < 300; i++)
+        throttler.updateConstraints(tiny_speed, /*new_max_burst=*/ 0.0);
+    EXPECT_EQ(throttler.getThrottlingDuration(), std::chrono::nanoseconds::max());
 }
