@@ -52,6 +52,13 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+### Parquet files {#parquet-files}
+
+The query condition cache also works for Parquet files read through the `File`, `S3`, `AzureBlobStorage`, `URL` and data lake table engines (not through table functions, as the cache entries belong to a table).
+For such files, the cache remembers row groups instead of granules.
+The entries of a file are tied to its version, so that a modified file is read anew: the ETag for object storage, and the modification time and the size for local files and for `URL`.
+As a web server reports the modification time (`Last-Modified`) with a precision of one second only, a file read through `URL` uses the cache only if it was modified more than a minute ago and the server reports both its modification time and its size.
+
 ### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
 
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.

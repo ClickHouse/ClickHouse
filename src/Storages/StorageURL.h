@@ -303,6 +303,17 @@ private:
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
+    /// The query condition cache is used only for a plain `GET`, whose response depends on the URL alone.
+    bool allow_query_condition_cache = false;
+    /// The query condition cache key (`part_name`) of the file being read: its URL and version, see
+    /// `makeQueryConditionCacheFileKey`. Unset if the file cannot use the cache.
+    std::optional<String> current_query_condition_cache_file_key;
+
+    std::optional<String> makeQueryConditionCacheFileKey() const;
+    /// Records in the query condition cache the row groups of the file just read which hold no row the
+    /// condition needs.
+    void writeQueryConditionCacheEntry() const;
+
     Poco::Net::HTTPBasicCredentials credentials;
 
     /// Tells the buffers created by this source to stop retrying HTTP requests, see cancel. Also
