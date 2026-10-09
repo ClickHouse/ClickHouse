@@ -23,6 +23,7 @@
 #include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/HiddenSecret.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
 #include <Core/Settings.h>
@@ -1429,6 +1430,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
     bool is_special_function_in = false;
     bool is_special_function_dict_get = false;
+    bool is_special_function_assign_centroid = false;
     bool is_special_function_join_get = false;
     bool is_special_function_exists = false;
     bool is_special_function_if = false;
@@ -1438,6 +1440,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         is_special_function_in = isNameOfInFunction(function_name);
         is_special_function_dict_get = functionIsDictGet(function_name);
+        is_special_function_assign_centroid = function_name == "assignCentroid";
         is_special_function_join_get = functionIsJoinGet(function_name);
         is_special_function_exists = function_name == "exists";
         is_special_function_if = function_name == "if";
@@ -1877,6 +1880,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 String unique_column_name
                     = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
 
+                /// The set of a regular IN ignores the totals of the whole subquery plan (including the
+                /// totals of the queries in its join tree), so drop `WITH TOTALS` here as well, recursively:
+                /// otherwise the `TotalsHaving` step ends up on the right side of the join built by the
+                /// decorrelation, leaks the totals row into the outer query, and fails with `LOGICAL_ERROR`
+                /// when the outer query has `WITH TOTALS` itself.
+                for (const auto & table_expression : extractTableExpressions(
+                         std::static_pointer_cast<ITableExpressionNode>(subquery_node), /*add_array_join=*/ false, /*recursive=*/ true))
+                {
+                    if (auto * table_expression_query_node = table_expression->as<QueryNode>())
+                        table_expression_query_node->setIsGroupByWithTotals(false);
+                }
+
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
                 subquery_node->as<QueryNode>()->clearProjectionColumns();
@@ -2259,7 +2274,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Mask arguments if needed
     if (!canDisplaySecrets(scope.context))
     {
-        if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
+        if (SecretArgumentsResult secret_arguments = findSecretArguments(*function_node_ptr); secret_arguments.hasSecrets())
         {
             auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
@@ -2300,15 +2315,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     if (auto * constant = secret_node->as<ConstantNode>())
                         arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(assign_mask(*constant)) + "]";
                     else if (mask_secret_constants(secret_node))
-                        arguments_projection_names[n] = "[HIDDEN]";
+                        arguments_projection_names[n] = HIDDEN_SECRET;
                 });
         }
     }
 
     /** Bind an unqualified dictionary name to the current database.
       *
-      * The dictionary name of `dictGet` and its variations is resolved against the current database of
-      * the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
+      * The dictionary name of `dictGet` and its variations, and of `assignCentroid`, is resolved against
+      * the current database of the server that evaluates the function. A shard of a `Distributed` table evaluates it in a session
       * whose current database comes from the cluster configuration - `default` unless `<default_database>`
       * is set - and not from the initiator, so an unqualified name shipped to a shard either fails to
       * resolve or, worse, silently resolves to a different dictionary that happens to have the same name.
@@ -2322,20 +2337,25 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
       * belongs to an XML dictionary, and when no such dictionary exists in the current database - in the
       * last case the name may still be meant for a dictionary that only exists on the shards.
       */
-    if (is_special_function_dict_get)
+    if (is_special_function_dict_get || is_special_function_assign_centroid)
     {
-        auto & dict_get_arguments = function_node_ptr->getArguments().getNodes();
-        if (!dict_get_arguments.empty())
+        const size_t dictionary_name_position = is_special_function_dict_get ? 0 : 1;
+        auto & arguments = function_node_ptr->getArguments().getNodes();
+        if (dictionary_name_position < arguments.size())
         {
-            const auto * dictionary_name_node = dict_get_arguments[0]->as<ConstantNode>();
+            auto & dictionary_name_argument = arguments[dictionary_name_position];
+            const auto * dictionary_name_node = dictionary_name_argument->as<ConstantNode>();
             if (dictionary_name_node && dictionary_name_node->getValue().getType() == Field::Types::String)
             {
                 const auto & dictionary_name = dictionary_name_node->getValue().safeGet<String>();
                 auto qualified_dictionary_name = scope.context->getExternalDictionariesLoader()
                     .qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
 
+                /// `assignCentroid` also takes a Nullable or LowCardinality name and its result type follows it.
                 if (qualified_dictionary_name != dictionary_name)
-                    dict_get_arguments[0] = std::make_shared<ConstantNode>(qualified_dictionary_name);
+                    dictionary_name_argument = is_special_function_dict_get
+                        ? std::make_shared<ConstantNode>(qualified_dictionary_name)
+                        : std::make_shared<ConstantNode>(qualified_dictionary_name, dictionary_name_node->getResultType());
             }
         }
     }
