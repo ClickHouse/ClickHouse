@@ -38,7 +38,7 @@ public:
     bool isLeft() const { return array_join.is_left; }
     bool isUnaligned() const { return is_unaligned; }
 
-    /// the step as an expression over its input: arrayJoin(col), or arrayJoin(emptyArrayToSingle(col)) for LEFT;
+    /// the step as an expression over its input: arrayJoin(col), or arrayJoin(emptyArrayToSingle(col)) for LEFT
     /// empty for unaligned joins and LEFT over a Map, which have no such form
     std::optional<ActionsDAG> toActionsDAG() const;
 
