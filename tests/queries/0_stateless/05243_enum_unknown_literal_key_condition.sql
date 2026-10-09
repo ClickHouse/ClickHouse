@@ -1,3 +1,7 @@
+-- This branch predates #117803: the query condition cache key carries no `validate_enum_literals_in_operators`
+-- salt, so a cached "no rows match" entry for `e = 'c'` would hide the error expected with validation on.
+SET use_query_condition_cache = 0;
+
 DROP TABLE IF EXISTS t_enum_key;
 DROP TABLE IF EXISTS t_enum_nokey;
 
