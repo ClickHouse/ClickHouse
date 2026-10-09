@@ -72,6 +72,8 @@ public:
 
     bool isReadOnly() const override { return false; }
 
+    ObjectStorageKeyGeneratorPtr getKeyGenerator() const override { return key_generator; }
+
     /// `getPath()` returns a placeholder root ("/"), not a real host directory: there is
     /// nothing on the local filesystem backing this metadata storage.
     bool isPathOnLocalFilesystem() const override { return false; }
