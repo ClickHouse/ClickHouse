@@ -422,6 +422,9 @@ private:
         if (!needsFooter(object_info))
             return;
 
+        if (getIOThreadPool().get().getMaxThreads() == 0)
+            return;
+
         auto slot = Slot::tryAcquire(state, window);
         if (!slot)
             return;
