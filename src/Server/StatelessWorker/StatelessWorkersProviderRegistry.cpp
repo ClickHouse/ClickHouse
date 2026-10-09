@@ -98,12 +98,19 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::getProvider(const 
     const String canonical = canonicalizeClusterName(config, cluster_name);
 
     std::lock_guard lock(mutex);
-    if (auto it = providers.find(canonical); it != providers.end())
-        return it->second.provider;
-
     /// Sign before building, so a reload published in between can only cause a rebuild, never keep a
     /// stale provider under a newer signature.
     String signature = computeConfigSignature(config, canonical);
+    if (auto it = providers.find(canonical); it != providers.end())
+    {
+        /// The server publishes a new configuration before it reloads the registry; a cached provider
+        /// built from the previous one is replaced here, so a query started after the change never
+        /// resolves to it. Queries already holding it drain on it.
+        if (it->second.config_signature == signature)
+            return it->second.provider;
+        providers.erase(it);
+    }
+
     auto provider = buildProvider(canonical);
     providers.emplace(canonical, ProviderEntry{provider, std::move(signature)});
     return provider;

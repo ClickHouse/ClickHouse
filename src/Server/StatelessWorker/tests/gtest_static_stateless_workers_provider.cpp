@@ -290,6 +290,38 @@ TEST(StaticStatelessWorkersProvider, ClusterFormRetiredWhenRemoteServersChange)
     EXPECT_EQ(p2->allocate(0, PROVISIONING_TIMEOUT_MS)->getAddresses()[0].host, "host-b");
 }
 
+/// A lookup after the configuration changed, but before the reload reached the registry, builds a
+/// provider from the new configuration instead of returning the stale cached one.
+TEST(StatelessWorkersProviderRegistry, LookupRebuildsProviderChangedBeforeReload)
+{
+    applyStatelessWorkerConfig(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters>
+            <foo><host>host-a</host></foo>
+        </clusters>
+    </stateless_worker_client>
+)");
+    StatelessWorkersProviderRegistry registry;
+    auto p1 = registry.getProvider("foo");
+
+    applyStatelessWorkerConfig(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <clusters>
+            <foo><host>host-b</host></foo>
+        </clusters>
+    </stateless_worker_client>
+)");
+    auto p2 = registry.getProvider("foo");
+    EXPECT_NE(p1.get(), p2.get());
+    auto alloc = p2->allocate(0, PROVISIONING_TIMEOUT_MS);
+    ASSERT_EQ(alloc->getAddresses().size(), 1u);
+    EXPECT_EQ(alloc->getAddresses()[0].host, "host-b");
+    /// An unchanged configuration keeps returning the cached provider.
+    EXPECT_EQ(registry.getProvider("foo").get(), p2.get());
+}
+
 /// A reload never throws: a cluster whose new configuration cannot be resolved is retired, and the
 /// error surfaces to the next query that selects it instead.
 TEST(StatelessWorkersProviderRegistry, ReloadWithBrokenClusterRetiresWithoutThrowing)
