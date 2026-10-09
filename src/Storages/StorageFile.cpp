@@ -1281,6 +1281,8 @@ bool computeFileCacheVersionSettled(const struct stat & file_stat)
 #endif
     static constexpr Int64 file_version_settle_seconds = 3;
     return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+}
+
 /// Records in the query condition cache that the row groups of a file other than `matched_row_groups`
 /// hold no row the condition needs.
 void writeQueryConditionCacheEntry(
