@@ -24,7 +24,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/CurrentThread.h>
-#include <Common/FailPoint.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -38,6 +37,7 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageListedObjects;
     extern const Event ObjectStoragePredicateFilteredObjects;
+    extern const Event ParquetFooterPrefetchRequests;
 }
 
 namespace DB
@@ -48,11 +48,6 @@ namespace Setting
     extern const SettingsUInt64 cluster_table_function_buckets_batch_size;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsBool use_parquet_metadata_cache;
-}
-
-namespace FailPoints
-{
-    extern const char object_storage_parquet_footer_prefetch_reject[];
 }
 
 static ExpressionActionsPtr getExpressionActions(
@@ -444,11 +439,10 @@ private:
             metadata_cache,
             CurrentThread::getGroup()});
 
-        bool reject = false;
-        fiu_do_on(FailPoints::object_storage_parquet_footer_prefetch_reject, { reject = true; });
-        if (reject || !getIOThreadPool().get().trySchedule([request] { runRequest(*request); }))
+        if (!getIOThreadPool().get().trySchedule([request] { runRequest(*request); }))
             return;
 
+        ProfileEvents::increment(ProfileEvents::ParquetFooterPrefetchRequests);
         object_info.prefetched_footer = std::move(footer);
     }
 

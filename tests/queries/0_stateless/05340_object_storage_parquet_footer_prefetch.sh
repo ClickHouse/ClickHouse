@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # - no-fasttest: needs S3
-# - no-parallel: enables a failpoint
 
 # A read of many Parquet objects from object storage reads the footers of the next objects in the background.
 # The result, the number of requests and the Parquet metadata cache hits and misses of the query do not change.
@@ -28,9 +27,9 @@ function query()
 }
 
 # One stream: the footers are read ahead from its third object on.
-OFF="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 0"
-ON="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1"
-CACHE="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 1"
+OFF="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 0, use_page_cache_for_object_storage = 0"
+ON="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0"
+CACHE="max_threads = 1, use_query_condition_cache = 0, use_parquet_metadata_cache = 1, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0"
 
 function run()
 {
@@ -40,12 +39,9 @@ function run()
 run off "$(query data) SETTINGS ${OFF}"
 run on "$(query data) SETTINGS ${ON}"
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT object_storage_parquet_footer_prefetch_reject"
-run rejected "$(query data) SETTINGS ${ON}"
-${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT object_storage_parquet_footer_prefetch_reject"
-
 # Stops in the third object, while the footers of the next ones are being read.
 run limit "SELECT count() FROM (SELECT number FROM s3(s3_conn, filename = '${DIR}/data/f_*.parquet', format = Parquet, structure = 'number UInt64, s String') LIMIT 50000) SETTINGS ${ON}"
+run limit_1 "SELECT count() FROM (SELECT number FROM s3(s3_conn, filename = '${DIR}/data/f_*.parquet', format = Parquet, structure = 'number UInt64, s String') LIMIT 1) SETTINGS ${ON}"
 
 # The objects of this query are not in the metadata cache before its first run.
 run cache_1 "$(query cache) SETTINGS ${CACHE}"
@@ -57,7 +53,9 @@ ${CLICKHOUSE_CLIENT} --query "
     SELECT
         sumIf(ProfileEvents['S3GetObject'], arm = 'on') = sumIf(ProfileEvents['S3GetObject'], arm = 'off'),
         sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'on') > 0,
-        sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'off') = 0
+        sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'off') = 0,
+        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'on') > 0,
+        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'limit_1') = 0
     FROM
     (
         SELECT replaceOne(log_comment, '${CLICKHOUSE_DATABASE}_05340_', '') AS arm, ProfileEvents
