@@ -2699,12 +2699,23 @@ static bool shouldUseQueryCacheForSubquery(
 /// flag only means nothing unmarshalls the blocks of the plan. The local plan is still united into
 /// the enclosing plan, which `QueryPlan::convertToDistributed` may split into fragments, so a cache
 /// hit there would make the shape of the outer plan depend on cache contents as well.
+///
+/// The sticky option only travels through `SelectQueryOptions::subquery`, but some storages plan a
+/// generated query with fresh options (e.g. `StorageView`, `loop`, `StorageExecutable`, `TimeSeries`
+/// and PromQL storages). So the setting of the query-level context is consulted as well: it is the
+/// one the outer interpreter optimizes the top-level plan under, and no SETTINGS clause of a subquery
+/// or of a generated query can change it.
 static bool shouldReadFromQueryCacheForSubquery(
-    const Settings & settings, const QueryResultCacheOnDiskPtr & query_result_cache_on_disk, const SelectQueryOptions & select_query_options)
+    const Settings & settings,
+    const QueryResultCacheOnDiskPtr & query_result_cache_on_disk,
+    const SelectQueryOptions & select_query_options,
+    const ContextPtr & query_context)
 {
     if (!settings[Setting::enable_reads_from_query_cache] && !(query_result_cache_on_disk && query_result_cache_on_disk->readsEnabled()))
         return false;
-    return !settings[Setting::make_distributed_plan] && !select_query_options.building_distributed_plan;
+    if (settings[Setting::make_distributed_plan] || select_query_options.building_distributed_plan)
+        return false;
+    return !query_context->hasQueryContext() || !query_context->getQueryContext()->getSettingsRef()[Setting::make_distributed_plan];
 }
 
 void Planner::buildPlanForQueryNode()
@@ -2760,7 +2771,7 @@ void Planner::buildPlanForQueryNode()
         query_result_cache_on_disk = QueryResultCacheOnDisk::getFromSettings(settings);
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
-    if (should_cache && shouldReadFromQueryCacheForSubquery(settings, query_result_cache_on_disk, select_query_options))
+    if (should_cache && shouldReadFromQueryCacheForSubquery(settings, query_result_cache_on_disk, select_query_options, query_context))
     {
         QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
 

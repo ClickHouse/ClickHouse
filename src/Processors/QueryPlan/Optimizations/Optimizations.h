@@ -83,9 +83,10 @@ struct Optimization
         // parallel replicas
         bool parallel_replicas_filter_pushdown = false;
 
-        /// Execution settings inherited by standalone plans extracted by optimizations.
-        size_t max_threads = 0;
-        bool concurrency_control = false;
+        /// The plan being optimized. Standalone plans extracted by optimizations inherit its execution
+        /// limits and its resource holder (table locks, storage holders, interpreter contexts), because
+        /// they may be executed after the outer plan has been consumed into a pipeline.
+        const QueryPlan * source_plan = nullptr;
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
