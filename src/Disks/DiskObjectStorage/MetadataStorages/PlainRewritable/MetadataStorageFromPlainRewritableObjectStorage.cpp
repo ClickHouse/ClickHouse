@@ -661,10 +661,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
                         {
                             /// The explicit file list, if any, is kept: it is the only record of the files of the directory.
                             DirectoryRemoteInfo directory_info{.remote_path = remote_path, .etag = {}, .last_modified = 0, .files = files, .has_explicit_file_list = has_explicit_file_list};
-                            auto write_buf = object_storage->writeObject(
-                                object, WriteMode::Rewrite, /*object_attributes*/ std::nullopt, /*buf_size*/ 128, getWriteSettings());
-                            writeString(serializePrefixPath(original_local_path, directory_info), *write_buf);
-                            write_buf->finalize();
+                            writeMetadataObject(*object_storage, object, serializePrefixPath(original_local_path, directory_info), getWriteSettings());
                         }
 
                         local_path = std::move(original_local_path);

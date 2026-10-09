@@ -8,6 +8,7 @@
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -67,16 +68,7 @@ void writeTombstoneMarkerContent(
     const std::string & removed_name,
     const std::string & content)
 {
-    StoredObject marker_object(layout.constructTombstoneMarkerKey(removed_name));
-    auto buf = object_storage.writeObject(
-        marker_object,
-        WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
-        /*settings*/ getWriteSettingsForMetadata());
-
-    writeString(content, *buf);
-    buf->finalize();
+    writeMetadataObject(object_storage, StoredObject(layout.constructTombstoneMarkerKey(removed_name)), content, getWriteSettingsForMetadata());
 }
 
 void writeTombstoneMarker(
@@ -159,15 +151,11 @@ void writeDirectoryMetadata(
         metadata_object_key,
         info.has_explicit_file_list ? info.files.size() : 0);
 
-    auto buf = object_storage.writeObject(
+    writeMetadataObject(
+        object_storage,
         StoredObject(metadata_object_key, directory.string()),
-        WriteMode::Rewrite,
-        /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
-        /*settings*/ getWriteSettings());
-
-    writeString(serializePrefixPath(getLogicalDirectoryPath(directory), info), *buf);
-    buf->finalize();
+        serializePrefixPath(getLogicalDirectoryPath(directory), info),
+        getWriteSettings());
 }
 
 DirectoryRemoteInfo getDirectoryInfoOrThrow(const FsSnapshot & fs_tree, const NormalizedPath & directory)
@@ -190,6 +178,19 @@ std::optional<StoredObject> removeLinkAndGetBlobToRemove(
     return std::nullopt;
 }
 
+}
+
+void writeMetadataObject(IObjectStorage & object_storage, const StoredObject & object, const std::string & contents, const WriteSettings & settings)
+{
+    auto buf = object_storage.writeObject(
+        object,
+        WriteMode::Rewrite,
+        /*object_attributes*/ std::nullopt,
+        /*buf_size*/ std::max<size_t>(contents.size(), 1),
+        settings);
+
+    writeString(contents, *buf);
+    buf->finalize();
 }
 
 bool isMetadataOnlyMove(
@@ -304,14 +305,16 @@ void MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::execute()
     auto metadata_object = StoredObject(metadata_object_key, path);
 
     write_attempted = true;
+    /// The buffer holds the whole contents, so they are written at once, see `writeMetadataObject`.
+    const auto contents = path.string();
     auto buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
+        /*buf_size*/ std::max<size_t>(contents.size(), 1),
         /*settings*/ getWriteSettings());
 
-    writeString(path.string(), *buf);
+    writeString(contents, *buf);
     fiu_do_on(FailPoints::plain_object_storage_write_fail_on_directory_create, {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault when creating '{}' directory", path);
     });
@@ -357,7 +360,7 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::createWriteBuf(
-    const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path)
+    const DirectoryRemoteInfo & remote_info, std::optional<std::string> expected_logical_path, size_t buf_size)
 {
     auto metadata_object_key = layout->constructDirectoryObjectKey(remote_info.remote_path);
     StoredObject metadata_object(metadata_object_key);
@@ -386,22 +389,23 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
                 parsed.has_explicit_file_list);
     }
 
+    /// The buffer is sized by the caller to hold the whole contents, so they are written at once, see `writeMetadataObject`.
     auto write_buf = object_storage->writeObject(
         metadata_object,
         WriteMode::Rewrite,
         /*object_attributes*/ std::nullopt,
-        /*buf_size*/ 128,
+        std::max<size_t>(buf_size, 1),
         /*settings*/ getWriteSettings());
 
     return write_buf;
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::rewriteSingleDirectory(
-    const std::filesystem::path & from, const std::filesystem::path & to, const DirectoryRemoteInfo & remote_info, WriteBuffer & buffer)
+    const std::filesystem::path & from, const std::filesystem::path & to, const std::string & contents, WriteBuffer & buffer)
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Rewriting '{}' to '{}'", from, to);
 
-    writeString(serializePrefixPath(to.string(), remote_info), buffer);
+    writeString(contents, buffer);
     buffer.finalize();
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Updated '{}' to '{}'", from, to);
@@ -435,7 +439,9 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
             continue;
         }
 
-        auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/validate_content ? std::make_optional(sub_path_from) : std::nullopt);
+        const auto contents = serializePrefixPath(sub_path_to.string(), remote_info.value());
+        auto write_buf = createWriteBuf(
+            remote_info.value(), /*expected_logical_path*/validate_content ? std::make_optional(sub_path_from) : std::nullopt, contents.size());
 
         /// Forward pass only: the reversal rewrites markers through the same helper, and a fault that never stops
         /// firing cannot be retried to an end.
@@ -445,7 +451,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
                 ErrorCodes::FAULT_INJECTED, "Injecting fault when moving from '{}' to '{}'", sub_path_from, sub_path_to);
         });
 
-        rewriteSingleDirectory(sub_path_from, sub_path_to, remote_info.value(), *write_buf);
+        rewriteSingleDirectory(sub_path_from, sub_path_to, contents, *write_buf);
     }
 
     fs_tree->moveDirectory(path_from, path_to);
@@ -468,8 +474,9 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()
 
         undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", sub_path_from), [&]
         {
-            auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/std::nullopt);
-            rewriteSingleDirectory(sub_path_to, sub_path_from, remote_info.value(), *write_buf);
+            const auto contents = serializePrefixPath(sub_path_from.string(), remote_info.value());
+            auto write_buf = createWriteBuf(remote_info.value(), /*expected_logical_path*/std::nullopt, contents.size());
+            rewriteSingleDirectory(sub_path_to, sub_path_from, contents, *write_buf);
         });
     }
 }
@@ -523,16 +530,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
     undoWithRetries(log, fmt::format("restore the metadata of the directory '{}'", path), [&]
     {
         auto metadata_object_key = layout->constructDirectoryObjectKey(info.remote_path);
-        auto metadata_object = StoredObject(metadata_object_key, path);
-
-        auto buf = object_storage->writeObject(
-            metadata_object,
-            WriteMode::Rewrite,
-            /*object_attributes*/ std::nullopt,
-            /*buf_size*/ 128,
-            /*settings*/ DB::getWriteSettings());
-        writeString(serializePrefixPath(path.string(), info), *buf);
-        buf->finalize();
+        writeMetadataObject(*object_storage, StoredObject(metadata_object_key, path), serializePrefixPath(path.string(), info), DB::getWriteSettings());
     });
 }
 
