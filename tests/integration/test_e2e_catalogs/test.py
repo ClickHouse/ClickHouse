@@ -727,6 +727,48 @@ def test_incremental_insert(node, shared_db, sales_table, catalog_manager):
         node.query(f"DROP TABLE IF EXISTS {local}")
 
 
+def test_create_without_engine_arguments(node, catalog_manager):
+    namespace = catalog_manager.create_namespace_with_location()
+    table_name = f"e2e_zero_arg_{uuid.uuid4().hex[:8]}"
+    qualified = f"`{namespace}.{table_name}`"
+
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog(node, db)
+    try:
+        node.query(
+            f"CREATE TABLE {db}.{qualified} (x String) "
+            f"ENGINE = {catalog_manager.table_engine}",
+            settings={"write_full_path_in_iceberg_metadata": 1},
+        )
+        catalog_manager.track_table(namespace, table_name)
+
+        metadata_location = catalog_manager.metadata_location(namespace, table_name)
+        assert f"/{namespace}/{table_name}/metadata/" in metadata_location, metadata_location
+
+        assert node.query(f"SELECT count() FROM {db}.{qualified}").strip() == "0"
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+        catalog_manager.cleanup_table(table_name)
+
+
+def test_create_without_engine_arguments_storage_mismatch(node, catalog_manager):
+    namespace = catalog_manager.create_namespace_with_location()
+    table_name = f"e2e_zero_arg_mismatch_{uuid.uuid4().hex[:8]}"
+    qualified = f"`{namespace}.{table_name}`"
+
+    db = catalog_manager.make_database_name()
+    catalog_manager.create_catalog(node, db)
+    try:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {db}.{qualified} (x String) "
+            f"ENGINE = {catalog_manager.mismatched_table_engine}"
+        )
+        assert "while its table engine writes to" in error, error
+        assert table_name not in node.query(f"SHOW TABLES FROM {db}")
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {db}")
+
+
 # ---------------------------------------------------------------------------
 # System tables & settings
 # ---------------------------------------------------------------------------
