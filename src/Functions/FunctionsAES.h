@@ -17,6 +17,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Interpreters/FunctionSecretArgumentsFinder.h>
 
 #include <fmt/format.h>
 
@@ -1286,6 +1287,23 @@ private:
             return decrypted_result_column;
     }
 };
+
+/// The `SecretArgumentsSpec` of `encrypt`, `decrypt`, `aes_encrypt_mysql`, `aes_decrypt_mysql` and `tryDecrypt`.
+/// Their arguments are expressions, where `=` is a comparison rather than a named argument.
+inline SecretArgumentsSpec encryptionFunctionSecretArguments()
+{
+    /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
+    return {.custom = [](FunctionSecretArgumentsFinder & finder)
+    {
+        if (finder.function->arguments->size() == 0)
+            return;
+
+        /// We replace all arguments after 'mode' with '[HIDDEN]':
+        /// encrypt('mode', 'plaintext', 'key' [, iv, aad]) -> encrypt('mode', '[HIDDEN]')
+        finder.result.start = 1;
+        finder.result.count = finder.function->arguments->size() - 1;
+    }};
+}
 
 }
 
