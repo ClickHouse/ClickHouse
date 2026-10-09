@@ -36,6 +36,8 @@
 
 #include <base/scope_guard.h>
 
+#include <unordered_map>
+
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -416,12 +418,19 @@ static Block adaptBlockStructure(Block block, const Block & header)
     /// Columns may be moved out of `block` below, so compute the number of rows up front.
     const size_t num_rows = block.rows();
 
+    /// Several elements of `header` may have the same name and thus refer to the same column of `block`,
+    /// so a column may be moved out of `block` only on its last use.
+    std::unordered_map<std::string_view, size_t> remaining_uses;
+    for (const auto & elem : header)
+        ++remaining_uses[elem.name];
+
     Block res;
     res.info = block.info;
 
     for (const auto & elem : header)
     {
         ColumnPtr column;
+        const bool is_last_use = --remaining_uses[elem.name] == 0;
 
         if (elem.column && isColumnConst(*elem.column))
         {
@@ -455,9 +464,10 @@ static Block adaptBlockStructure(Block block, const Block & header)
             auto & col = block.getByName(elem.name);
             if (typeid_cast<const ColumnBLOB *>(col.column.get()))
             {
-                /// The block is owned here, so move the column out to let `IColumn::mutate`
+                /// The block is owned here, so move the column out on its last use to let `IColumn::mutate`
                 /// reuse it without a copy when it is not shared with anyone else.
-                auto mutable_blob = IColumn::mutate(std::move(col.column));
+                ColumnPtr blob = is_last_use ? std::move(col.column) : col.column;
+                auto mutable_blob = IColumn::mutate(std::move(blob));
                 assert_cast<ColumnBLOB &>(*mutable_blob).addCast(col.type, elem.type);
                 column = std::move(mutable_blob);
             }
