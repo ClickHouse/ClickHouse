@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
-#include <Common/SipHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/typeid_cast.h>
 #include <IO/SharedThreadPools.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -390,45 +390,92 @@ MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization
     });
 }
 
-const std::optional<String> & MergeTreeReaderWide::getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
+namespace
 {
-    /// The checksums and the settings, which the name also depends on, are the same for the whole reader.
-    /// Every field of the substreams is hashed, even the ones that don't affect the name: it only costs extra entries.
-    SipHash hash;
-    auto update_string = [&](const String & str)
+
+UInt64 hashStreamKey(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
+{
+    UInt64 hash = std::hash<std::string_view>{}(name_and_type.name);
+    auto combine = [&](UInt64 value) { hash = intHash64(hash ^ value); };
+    auto combine_string = [&](const String & str)
     {
-        hash.update(str.size());
-        hash.update(str);
+        if (!str.empty())
+            combine(std::hash<std::string_view>{}(str));
     };
 
-    update_string(name_and_type.name);
     for (const auto & substream : substream_path)
     {
-        hash.update(static_cast<UInt64>(substream.type));
-        update_string(substream.variant_element_name);
-        update_string(substream.name_of_substream);
-        update_string(substream.object_path_name);
-        hash.update(substream.bucket);
+        combine(static_cast<UInt64>(substream.type));
+        combine_string(substream.variant_element_name);
+        combine_string(substream.name_of_substream);
+        combine_string(substream.object_path_name);
+        combine(substream.bucket);
     }
-    const UInt128 key = hash.get128();
+    return hash;
+}
+
+}
+
+MergeTreeReaderWide::StreamInfo & MergeTreeReaderWide::getStreamInfo(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
+{
+    /// The checksums and the settings, which the name also depends on, are the same for the whole reader.
+    /// Every field of the substreams is compared, even the ones that don't affect the name: it only costs extra entries.
+    auto matches = [&](const StreamInfoEntry & entry)
+    {
+        if (entry.column_name != name_and_type.name || entry.substream_path.size() != substream_path.size())
+            return false;
+
+        for (size_t i = 0; i < substream_path.size(); ++i)
+        {
+            const auto & key = entry.substream_path[i];
+            const auto & substream = substream_path[i];
+            if (key.type != substream.type || key.bucket != substream.bucket
+                || key.variant_element_name != substream.variant_element_name
+                || key.name_of_substream != substream.name_of_substream
+                || key.object_path_name != substream.object_path_name)
+                return false;
+        }
+        return true;
+    };
+
+    const UInt64 hash = hashStreamKey(name_and_type, substream_path);
 
     {
-        std::lock_guard lock(stream_names_mutex);
-        if (auto it = stream_names.find(key); it != stream_names.end())
-            return it->second;
+        std::lock_guard lock(streams_info_mutex);
+        for (auto [it, end] = streams_info.equal_range(hash); it != end; ++it)
+            if (matches(it->second))
+                return it->second.info;
     }
 
-    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+    StreamInfoEntry entry;
+    entry.column_name = name_and_type.name;
+    for (const auto & substream : substream_path)
+        entry.substream_path.push_back({substream.type, substream.variant_element_name, substream.name_of_substream, substream.object_path_name, substream.bucket});
+    entry.info.name = IMergeTreeDataPart::getStreamNameForColumn(
         name_and_type, substream_path, DATA_FILE_EXTENSION, data_part_info_for_read->getChecksums(), storage_settings);
 
-    /// Elements of `std::unordered_map` are never moved, and nothing is erased from it, so the reference stays valid.
-    std::lock_guard lock(stream_names_mutex);
-    return stream_names.try_emplace(key, std::move(stream_name)).first->second;
+    std::lock_guard lock(streams_info_mutex);
+    /// Another thread may have added the same entry while the mutex was released.
+    for (auto [it, end] = streams_info.equal_range(hash); it != end; ++it)
+        if (matches(it->second))
+            return it->second.info;
+
+    return streams_info.emplace(hash, std::move(entry))->second.info;
+}
+
+double & MergeTreeReaderWide::getAvgValueSizeHint(StreamInfo & stream_info)
+{
+    chassert(stream_info.name);
+    /// Elements of `std::map` are never moved, and nothing is erased from `avg_value_size_hints`.
+    if (!stream_info.avg_value_size_hint)
+        stream_info.avg_value_size_hint = &avg_value_size_hints[*stream_info.name];
+    return *stream_info.avg_value_size_hint;
 }
 
 ReadBuffer * MergeTreeReaderWide::getStream(
     bool seek_to_start,
     const ISerialization::SubstreamPath & substream_path,
+    const std::optional<String> & stream_name,
     const NameAndTypePair & name_and_type,
     size_t from_mark,
     bool seek_to_mark,
@@ -438,7 +485,6 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
         return nullptr;
 
-    const auto & stream_name = getStreamName(name_and_type, substream_path);
     if (!stream_name)
     {
         /// We allow missing streams only for columns/subcolumns that are not present in this part.
@@ -498,7 +544,7 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name && from_mark != 0)
                 streams.unmarkPrefetched(*stream_name);
 
-            return getStream(/* seek_to_start = */true, substream_path, name_and_type, 0, /* seek_to_mark = */false, cache);
+            return getStream(/* seek_to_start = */true, substream_path, stream_name, name_and_type, 0, /* seek_to_mark = */false, cache);
         };
         deserialize_settings.seek_to_start_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -633,7 +679,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
             if (!stream_name || streams.isPrefetched(*stream_name))
                 return;
 
-            if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, name_and_type, 0, /* seek_to_mark = */false, *column_cache))
+            if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, stream_name, name_and_type, 0, /* seek_to_mark = */false, *column_cache))
             {
                 buf->prefetch(priority);
                 streams.markPrefetched(*stream_name);
@@ -682,7 +728,7 @@ void MergeTreeReaderWide::prefetchForColumn(
                 return;
 
             bool seek_to_mark = !continue_reading && !read_without_marks;
-            if (ReadBuffer * buf = getStream(false, substream_path, name_and_type, from_mark, seek_to_mark, cache))
+            if (ReadBuffer * buf = getStream(false, substream_path, stream_name, name_and_type, from_mark, seek_to_mark, cache))
             {
                 buf->prefetch(priority);
                 streams.markPrefetched(*stream_name);
@@ -729,7 +775,7 @@ void MergeTreeReaderWide::readData(
         bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
-            /* seek_to_start = */false, substream_path,
+            /* seek_to_start = */false, substream_path, stream_name,
             name_and_type, from_mark, seek_to_mark, cache);
     };
 
@@ -767,21 +813,21 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.get_avg_value_size_hint_callback
         = [&](const ISerialization::SubstreamPath & substream_path) -> double
     {
-        const auto & stream_name = getStreamName(name_and_type, substream_path);
-        if (!stream_name)
+        auto & stream_info = getStreamInfo(name_and_type, substream_path);
+        if (!stream_info.name)
             return 0.0;
 
-        return avg_value_size_hints[*stream_name];
+        return getAvgValueSizeHint(stream_info);
     };
 
     deserialize_settings.update_avg_value_size_hint_callback
         = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
     {
-        const auto & stream_name = getStreamName(name_and_type, substream_path);
-        if (!stream_name)
+        auto & stream_info = getStreamInfo(name_and_type, substream_path);
+        if (!stream_info.name)
             return;
 
-        IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[*stream_name]);
+        IDataType::updateAvgValueSizeHint(column_, getAvgValueSizeHint(stream_info));
     };
 
     deserialize_settings.continuous_reading = continue_reading;

@@ -75,9 +75,36 @@ private:
 
     FileStreams streams;
 
-    /// Guards `stream_names`: substreams of a single column can be deserialized in parallel.
-    std::mutex stream_names_mutex;
-    std::unordered_map<UInt128, std::optional<String>, ISerialization::SubstreamsCacheKeyHash> stream_names;
+    struct StreamInfo
+    {
+        /// The name of the stream, or `std::nullopt` if the part doesn't have it.
+        std::optional<String> name;
+        /// The element of `avg_value_size_hints` for the stream, found on first use.
+        double * avg_value_size_hint = nullptr;
+    };
+
+    /// The fields of a substream that the name of its stream may depend on.
+    struct SubstreamKey
+    {
+        ISerialization::Substream::Type type;
+        String variant_element_name;
+        String name_of_substream;
+        String object_path_name;
+        size_t bucket;
+    };
+
+    struct StreamInfoEntry
+    {
+        String column_name;
+        std::vector<SubstreamKey> substream_path;
+        StreamInfo info;
+    };
+
+    /// Guards `streams_info`: substreams of a single column can be deserialized in parallel.
+    std::mutex streams_info_mutex;
+    /// Keyed by a hash of the column name and the substream path, the entries are compared exactly.
+    /// The elements are never moved or erased, so references to them stay valid.
+    std::unordered_multimap<UInt64, StreamInfoEntry> streams_info;
 
     void prefetchForAllColumns(
         Priority priority,
@@ -93,6 +120,7 @@ private:
     ReadBuffer * getStream(
         bool seek_to_start,
         const ISerialization::SubstreamPath & substream_path,
+        const std::optional<String> & stream_name,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool seek_to_mark,
@@ -100,10 +128,15 @@ private:
 
     MergeTreeReaderStream * getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name);
 
-    /// Returns the name of the stream for the substream of the column, or `std::nullopt` if the part doesn't have it.
-    /// Building the name is expensive (escaping, splitting of nested names, lookups in checksums) and the name is
+    /// Returns the information about the stream for the substream of the column.
+    /// Building the name of a stream is expensive (escaping, splitting of nested names, lookups in checksums) and the name is
     /// requested several times for every substream on every read, so the results are memoized for the lifetime of the reader.
-    const std::optional<String> & getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path);
+    StreamInfo & getStreamInfo(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path);
+    const std::optional<String> & getStreamName(const NameAndTypePair & name_and_type, const ISerialization::SubstreamPath & substream_path)
+    {
+        return getStreamInfo(name_and_type, substream_path).name;
+    }
+    double & getAvgValueSizeHint(StreamInfo & stream_info);
 
     void readData(
         const NameAndTypePair & name_and_type,
