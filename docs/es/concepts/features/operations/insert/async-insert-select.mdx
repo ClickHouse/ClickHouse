@@ -7,7 +7,7 @@ keywords: ['inserciones asíncronas', 'async_insert', 'insert select', 'async_in
 doc_type: 'guide'
 ---
 
-No solo un `INSERT ... VALUES` simple puede pasar por la cola de [inserción asíncrona](/es/optimize/asynchronous-inserts): `INSERT ... SELECT` también puede hacerlo. En esta página se describe cuándo ocurre, cómo se contabiliza la parte de escritura y qué sucede cuando la consulta se cancela o supera el tiempo de espera.
+No solo un `INSERT ... VALUES` simple puede pasar por la cola de [inserción asíncrona](/optimize/asynchronous-inserts): `INSERT ... SELECT` también puede hacerlo. En esta página se describe cuándo ocurre, cómo se contabiliza la parte de escritura y qué sucede cuando la consulta se cancela o supera el tiempo de espera.
 
 ## Elegibilidad y enrutamiento {#eligibility-and-routing}
 
@@ -59,4 +59,4 @@ El bloque se pone en cola antes de que empiece la espera del vaciado, por lo que
 
 La elegibilidad para la ruta asíncrona se decide una única vez al inicio de la consulta, antes de que el bloque se ponga en cola, y una comprobación de acceso previa rechaza de forma anticipada cualquier inserción no autorizada. Que un `INSERT ... SELECT` tome o no la ruta asíncrona depende de la forma del bloque resultante, no solo de `async_insert`.
 
-La búsqueda del destino y la autorización de la vinculación se ejecutan posteriormente, en el momento del vaciado, igual que en [cualquier inserción asíncrona](/es/optimize/asynchronous-inserts): si entre el encolado y el vaciado se asocia una vista materializada al destino o se revoca un privilegio, el vaciado se verá afectado.
+La búsqueda del destino y la autorización de la vinculación se ejecutan posteriormente, en el momento del vaciado, igual que en [cualquier inserción asíncrona](/optimize/asynchronous-inserts): si entre el encolado y el vaciado se asocia una vista materializada al destino o se revoca un privilegio, el vaciado se verá afectado.

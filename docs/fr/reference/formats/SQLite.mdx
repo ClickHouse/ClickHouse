@@ -45,7 +45,7 @@ Lorsque ClickHouse écrit des données au format `SQLite`, il crée une table SQ
 
 Pour les colonnes `Float32` et `Float64`, les valeurs autres que `NaN` sont écrites avec les classes de stockage natives de SQLite, tandis que les valeurs `NaN` sont écrites avec la sérialisation texte de ClickHouse. Les valeurs `Bool` et les valeurs entières ordinaires sont elles aussi écrites avec les classes de stockage natives de SQLite. Les entiers larges et les types complexes sont écrits avec la sérialisation texte de ClickHouse. Les valeurs `NULL` sont écrites sous forme de `NULL` SQLite.
 
-Lorsque ClickHouse infère un schéma à partir d&#39;une entrée SQLite, il applique la même correspondance que le [moteur de base de données SQLite](/fr/engines/database-engines/sqlite#data_types-support) :
+Lorsque ClickHouse infère un schéma à partir d&#39;une entrée SQLite, il applique la même correspondance que le [moteur de base de données SQLite](/engines/database-engines/sqlite#data_types-support) :
 
 | Type déclaré SQLite                      | Type inféré par ClickHouse |
 | ---------------------------------------- | -------------------------- |

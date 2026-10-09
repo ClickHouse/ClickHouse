@@ -7,7 +7,7 @@ keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_inser
 doc_type: 'guide'
 ---
 
-Un simple `INSERT ... VALUES` n’est pas le seul à pouvoir passer par la file d’attente d’[insertion asynchrone](/fr/optimize/asynchronous-inserts) : `INSERT ... SELECT` le peut aussi. Cette page décrit dans quels cas cela se produit, comment la partie écriture est comptabilisée et ce qui se passe lorsque la requête est annulée ou dépasse le délai imparti.
+Un simple `INSERT ... VALUES` n’est pas le seul à pouvoir passer par la file d’attente d’[insertion asynchrone](/optimize/asynchronous-inserts) : `INSERT ... SELECT` le peut aussi. Cette page décrit dans quels cas cela se produit, comment la partie écriture est comptabilisée et ce qui se passe lorsque la requête est annulée ou dépasse le délai imparti.
 
 ## Éligibilité et routage {#eligibility-and-routing}
 
@@ -59,4 +59,4 @@ Le bloc est placé dans la file d’attente avant que ne commence l’attente du
 
 L’éligibilité au traitement asynchrone est déterminée une seule fois, au démarrage de la requête, avant la mise en file d’attente du bloc, et une vérification préalable des droits d’accès rejette d’emblée toute insertion non autorisée. Le fait qu’un `INSERT ... SELECT` emprunte ou non le traitement asynchrone dépend de la forme du bloc de résultat, et pas uniquement de `async_insert`.
 
-La résolution de la table de destination et la vérification des autorisations s’effectuent ensuite au moment du vidage, comme pour [toute insertion asynchrone](/fr/optimize/asynchronous-inserts) : si une vue matérialisée est attachée à la table de destination, ou si un privilège est révoqué, entre la mise en file d’attente et le vidage, ce changement s’applique lors du vidage.
+La résolution de la table de destination et la vérification des autorisations s’effectuent ensuite au moment du vidage, comme pour [toute insertion asynchrone](/optimize/asynchronous-inserts) : si une vue matérialisée est attachée à la table de destination, ou si un privilège est révoqué, entre la mise en file d’attente et le vidage, ce changement s’applique lors du vidage.

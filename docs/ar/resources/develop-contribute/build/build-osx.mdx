@@ -37,7 +37,7 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
   export PATH=$(brew --prefix rustup)/bin:$PATH
   ```
 
-  يحدّد ClickHouse أيضًا إصدارًا ثابتًا من سلسلة أدوات Rust التي تستخدمها وحدة `corrosion` الإضافية. ثبّتها واخترها باتباع قسم [تثبيت مصرّف Rust](/ar/development/build#install-the-rust-compiler-optional) في دليل الإصدار على Linux. وبدون ذلك، يفشل `cmake` عند وحدة `corrosion` الإضافية مع ظهور الخطأ `Cannot find nightly-<date> Rust toolchain`.
+  يحدّد ClickHouse أيضًا إصدارًا ثابتًا من سلسلة أدوات Rust التي تستخدمها وحدة `corrosion` الإضافية. ثبّتها واخترها باتباع قسم [تثبيت مصرّف Rust](/development/build#install-the-rust-compiler-optional) في دليل الإصدار على Linux. وبدون ذلك، يفشل `cmake` عند وحدة `corrosion` الإضافية مع ظهور الخطأ `Cannot find nightly-<date> Rust toolchain`.
 </Note>
 
 <Note>

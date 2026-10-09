@@ -7,7 +7,7 @@ keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_inser
 doc_type: 'guide'
 ---
 
-Não é apenas um `INSERT ... VALUES` simples que pode passar pela fila de [insert assíncrono](/pt-BR/optimize/asynchronous-inserts): um `INSERT ... SELECT` também pode. Esta página descreve quando isso acontece, como o lado de escrita é contabilizado e o que ocorre quando a consulta é cancelada ou atinge o tempo limite.
+Não é apenas um `INSERT ... VALUES` simples que pode passar pela fila de [insert assíncrono](/optimize/asynchronous-inserts): um `INSERT ... SELECT` também pode. Esta página descreve quando isso acontece, como o lado de escrita é contabilizado e o que ocorre quando a consulta é cancelada ou atinge o tempo limite.
 
 ## Elegibilidade e roteamento {#eligibility-and-routing}
 
@@ -59,4 +59,4 @@ O bloco é enfileirado antes de começar a espera pelo flush; portanto, cancelar
 
 A elegibilidade para a rota assíncrona é decidida uma única vez, no início da consulta e antes de o bloco ser enfileirado. Além disso, uma verificação de acesso antecipada rejeita logo de início um insert não autorizado. Se um `INSERT ... SELECT` segue ou não a rota assíncrona depende do formato do bloco do resultado, e não apenas de `async_insert`.
 
-Em seguida, a busca do destino e a verificação de autorização definitiva são executadas no momento do flush, assim como em [qualquer insert assíncrono](/pt-BR/optimize/asynchronous-inserts). Portanto, se uma visão materializada for anexada ao destino ou uma concessão for revogada entre o enfileiramento e o flush, isso afetará o flush.
+Em seguida, a busca do destino e a verificação de autorização definitiva são executadas no momento do flush, assim como em [qualquer insert assíncrono](/optimize/asynchronous-inserts). Portanto, se uma visão materializada for anexada ao destino ou uma concessão for revogada entre o enfileiramento e o flush, isso afetará o flush.

@@ -45,7 +45,7 @@ ClickHouse は `SQLite` フォーマットでデータを書き込む際、次�
 
 `Float32` および `Float64` カラムでは、`NaN` 以外の値は SQLite ネイティブのストレージクラスで書き込まれ、`NaN` 値は ClickHouse のテキストシリアライゼーションで書き込まれます。`Bool` および通常の整数値も SQLite ネイティブのストレージクラスで書き込まれます。ワイド整数と複合型は ClickHouse のテキストシリアライゼーションで書き込まれます。`NULL` 値は SQLite の `NULL` として書き込まれます。
 
-ClickHouse が SQLite の入力からスキーマを推論する場合は、[SQLite データベースエンジン](/ja/engines/database-engines/sqlite#data_types-support) と同じ対応関係が使用されます。
+ClickHouse が SQLite の入力からスキーマを推論する場合は、[SQLite データベースエンジン](/engines/database-engines/sqlite#data_types-support) と同じ対応関係が使用されます。
 
 | SQLite の宣言型               | ClickHouse が推論する型 |
 | ------------------------- | ----------------- |

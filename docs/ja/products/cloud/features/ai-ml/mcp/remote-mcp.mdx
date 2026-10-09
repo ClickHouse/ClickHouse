@@ -16,7 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * 稼働中の[ClickHouse Cloud サービス](/ja/get-started/setup/cloud)
 * 使用する IDE またはエージェント型開発ツール
-* ヘッドレス認証を行う場合は、必要な組織およびサービスへのアクセス権を持つ [ClickHouse Cloud API キー](/ja/cloud/manage/openapi)
+* ヘッドレス認証を行う場合は、必要な組織およびサービスへのアクセス権を持つ [ClickHouse Cloud API キー](/cloud/manage/openapi)
 
 ## Cloud でリモートMCPサーバーを有効にする {#enable-remote-mcp-server}
 
@@ -45,7 +45,7 @@ https://mcp.clickhouse.cloud/mcp
 
 ### ヘッドレス環境からの認証 {#headless-mcp-client-authentication}
 
-MCP クライアントがリモートホストやヘッドレスホスト上で動作しており、ブラウザベースの OAuth フローを利用するのが現実的でない場合は、代わりに [ClickHouse Cloud API キー](/ja/cloud/manage/openapi) を使用して認証します。
+MCP クライアントがリモートホストやヘッドレスホスト上で動作しており、ブラウザベースの OAuth フローを利用するのが現実的でない場合は、代わりに [ClickHouse Cloud API キー](/cloud/manage/openapi) を使用して認証します。
 
 1. ClickHouse Cloud コンソールで対象の組織を開き、**API Keys** を選択します。
 2. MCP クライアントがアクセスする組織およびサービスに必要な、最小限のロールとアクセス許可を付与したキーを作成し、キー ID とシークレットをダウンロードします。

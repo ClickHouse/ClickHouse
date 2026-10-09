@@ -37,7 +37,7 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
   export PATH=$(brew --prefix rustup)/bin:$PATH
   ```
 
-  また ClickHouse では、`corrosion` contrib モジュールで使用する Rust ツールチェーンのバージョンが固定されています。Linux ビルドガイドの[Rust コンパイラをインストールする](/ja/development/build#install-the-rust-compiler-optional)セクションの手順に従って、このツールチェーンをインストールし、選択してください。この手順を行わないと、`cmake` が `corrosion` contrib モジュールの処理で `Cannot find nightly-<date> Rust toolchain` というエラーを出して失敗します。
+  また ClickHouse では、`corrosion` contrib モジュールで使用する Rust ツールチェーンのバージョンが固定されています。Linux ビルドガイドの[Rust コンパイラをインストールする](/development/build#install-the-rust-compiler-optional)セクションの手順に従って、このツールチェーンをインストールし、選択してください。この手順を行わないと、`cmake` が `corrosion` contrib モジュールの処理で `Cannot find nightly-<date> Rust toolchain` というエラーを出して失敗します。
 </Note>
 
 <Note>

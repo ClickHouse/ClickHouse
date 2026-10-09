@@ -7,7 +7,7 @@ keywords: ['asynchronous inserts', 'async_insert', 'insert select', 'async_inser
 doc_type: 'guide'
 ---
 
-[非同期挿入](/ja/optimize/asynchronous-inserts)キューを経由して処理できるのは、通常の `INSERT ... VALUES` だけではありません。`INSERT ... SELECT` も同様に処理できます。このページでは、どのような場合に非同期挿入キューが使われるのか、書き込み側がどのように計上されるのか、そしてクエリがキャンセルまたはタイムアウトした場合にどうなるのかを説明します。
+[非同期挿入](/optimize/asynchronous-inserts)キューを経由して処理できるのは、通常の `INSERT ... VALUES` だけではありません。`INSERT ... SELECT` も同様に処理できます。このページでは、どのような場合に非同期挿入キューが使われるのか、書き込み側がどのように計上されるのか、そしてクエリがキャンセルまたはタイムアウトした場合にどうなるのかを説明します。
 
 ## 適用条件とルーティング {#eligibility-and-routing}
 
@@ -59,4 +59,4 @@ doc_type: 'guide'
 
 非同期ルートを利用できるかどうかは、ブロックがキューに入る前、クエリ開始時に一度だけ判定されます。また、事前のアクセスチェックにより、認可されていない挿入は早い段階で拒否されます。`INSERT ... SELECT` が非同期ルートを通るかどうかは、`async_insert` だけでなく、結果のブロックの形状によっても決まります。
 
-一方、宛先のルックアップとバインディングの認可は、[他の非同期挿入](/ja/optimize/asynchronous-inserts)と同様に flush 時に実行されます。そのため、キューに入ってから flush されるまでの間に、宛先へ materialized view がアタッチされたり権限が取り消されたりすると、その変更が flush に反映されます。
+一方、宛先のルックアップとバインディングの認可は、[他の非同期挿入](/optimize/asynchronous-inserts)と同様に flush 時に実行されます。そのため、キューに入ってから flush されるまでの間に、宛先へ materialized view がアタッチされたり権限が取り消されたりすると、その変更が flush に反映されます。

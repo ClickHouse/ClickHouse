@@ -37,7 +37,7 @@ brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils
   export PATH=$(brew --prefix rustup)/bin:$PATH
   ```
 
-  O ClickHouse também fixa a versão da toolchain do Rust usada pelo módulo contrib `corrosion`. Instale-a e selecione-a seguindo a seção [Instalar o compilador Rust](/pt-BR/development/build#install-the-rust-compiler-optional) do guia de compilação para Linux. Caso contrário, o `cmake` falhará no módulo contrib `corrosion` com o erro `Cannot find nightly-<date> Rust toolchain`.
+  O ClickHouse também fixa a versão da toolchain do Rust usada pelo módulo contrib `corrosion`. Instale-a e selecione-a seguindo a seção [Instalar o compilador Rust](/development/build#install-the-rust-compiler-optional) do guia de compilação para Linux. Caso contrário, o `cmake` falhará no módulo contrib `corrosion` com o erro `Cannot find nightly-<date> Rust toolchain`.
 </Note>
 
 <Note>

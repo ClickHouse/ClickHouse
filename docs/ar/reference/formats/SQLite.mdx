@@ -45,7 +45,7 @@ clickhouse-local --input-format SQLite --structure "number UInt64, s String" --q
 
 في أعمدة `Float32` و`Float64`، تُكتب القيم غير `NaN` باستخدام فئات التخزين الأصلية في SQLite، بينما تُكتب قيم `NaN` باستخدام التسلسل النصي الخاص بـ ClickHouse. وتُكتب كذلك قيم `Bool` وقيم الأعداد الصحيحة العادية باستخدام فئات التخزين الأصلية في SQLite. أما الأعداد الصحيحة الواسعة والأنواع المركبة فتُكتب باستخدام التسلسل النصي الخاص بـ ClickHouse. وتُكتب قيم `NULL` بوصفها `NULL` في SQLite.
 
-عندما يستنتج ClickHouse المخطط من مدخلات SQLite، فإنه يعتمد المطابقة نفسها التي يعتمدها [محرك قاعدة البيانات SQLite](/ar/engines/database-engines/sqlite#data_types-support):
+عندما يستنتج ClickHouse المخطط من مدخلات SQLite، فإنه يعتمد المطابقة نفسها التي يعتمدها [محرك قاعدة البيانات SQLite](/engines/database-engines/sqlite#data_types-support):
 
 | النوع المُعلن في SQLite                 | النوع المُستنتج في ClickHouse |
 | --------------------------------------- | ----------------------------- |

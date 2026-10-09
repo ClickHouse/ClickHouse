@@ -45,7 +45,7 @@ Quando o ClickHouse grava dados no formato `SQLite`, ele cria uma tabela SQLite 
 
 Em colunas `Float32` e `Float64`, valores diferentes de `NaN` são gravados com as classes de armazenamento nativas do SQLite, enquanto valores `NaN` são gravados com a serialização de texto do ClickHouse. Valores `Bool` e valores inteiros comuns também são gravados com as classes de armazenamento nativas do SQLite. Inteiros largos e tipos complexos são gravados com a serialização de texto do ClickHouse. Valores `NULL` são gravados como `NULL` do SQLite.
 
-Ao inferir um schema a partir de uma entrada SQLite, o ClickHouse usa o mesmo mapeamento do [motor de banco de dados SQLite](/pt-BR/engines/database-engines/sqlite#data_types-support):
+Ao inferir um schema a partir de uma entrada SQLite, o ClickHouse usa o mesmo mapeamento do [motor de banco de dados SQLite](/engines/database-engines/sqlite#data_types-support):
 
 | Tipo declarado no SQLite                | Tipo inferido pelo ClickHouse |
 | --------------------------------------- | ----------------------------- |

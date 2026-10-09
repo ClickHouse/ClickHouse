@@ -16,7 +16,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * [خدمة ClickHouse Cloud](/ar/get-started/setup/cloud) قيد التشغيل
 * بيئة التطوير المتكاملة (IDE) أو أداة التطوير المعتمدة على الوكلاء التي تفضّلها
-* للمصادقة غير التفاعلية (headless)، [مفتاح API لـ ClickHouse Cloud](/ar/cloud/manage/openapi) يمتلك صلاحية الوصول إلى المؤسسة والخدمات المطلوبة
+* للمصادقة غير التفاعلية (headless)، [مفتاح API لـ ClickHouse Cloud](/cloud/manage/openapi) يمتلك صلاحية الوصول إلى المؤسسة والخدمات المطلوبة
 
 ## تمكين خادم MCP البعيد لـ Cloud {#enable-remote-mcp-server}
 
@@ -45,7 +45,7 @@ https://mcp.clickhouse.cloud/mcp
 
 ### المصادقة من بيئة غير تفاعلية {#headless-mcp-client-authentication}
 
-إذا كان عميل MCP يعمل على مضيف بعيد أو غير تفاعلي، بحيث يتعذّر عمليًا استخدام تدفق OAuth عبر المتصفح، فاستخدم [مفتاح واجهة برمجة تطبيقات ClickHouse Cloud](/ar/cloud/manage/openapi) للمصادقة بدلًا من ذلك.
+إذا كان عميل MCP يعمل على مضيف بعيد أو غير تفاعلي، بحيث يتعذّر عمليًا استخدام تدفق OAuth عبر المتصفح، فاستخدم [مفتاح واجهة برمجة تطبيقات ClickHouse Cloud](/cloud/manage/openapi) للمصادقة بدلًا من ذلك.
 
 1. في وحدة تحكم ClickHouse Cloud، افتح مؤسستك واختر **API Keys**.
 2. أنشئ مفتاحًا يتضمن الحد الأدنى من الأدوار والأذونات اللازمة للمؤسسات والخدمات التي يحتاج عميل MCP إلى الوصول إليها، ثم نزّل معرّف المفتاح والسر الخاص به.

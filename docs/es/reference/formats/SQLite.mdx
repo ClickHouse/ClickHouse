@@ -45,7 +45,7 @@ Cuando ClickHouse escribe datos en el formato `SQLite`, crea una tabla de SQLite
 
 En las columnas `Float32` y `Float64`, los valores distintos de `NaN` se escriben mediante las clases de almacenamiento nativas de SQLite, mientras que los valores `NaN` se escriben mediante la serialización de texto de ClickHouse. Los valores `Bool` y los enteros ordinarios también se escriben mediante las clases de almacenamiento nativas de SQLite. Los enteros anchos y los tipos complejos se escriben mediante la serialización de texto de ClickHouse. Los valores `NULL` se escriben como `NULL` de SQLite.
 
-Cuando ClickHouse infiere un esquema a partir de una entrada SQLite, utiliza la misma correspondencia que el [motor de base de datos SQLite](/es/engines/database-engines/sqlite#data_types-support):
+Cuando ClickHouse infiere un esquema a partir de una entrada SQLite, utiliza la misma correspondencia que el [motor de base de datos SQLite](/engines/database-engines/sqlite#data_types-support):
 
 | Tipo declarado en SQLite               | Tipo inferido en ClickHouse |
 | -------------------------------------- | --------------------------- |
