@@ -64,12 +64,14 @@ def _ready_timeout():
     return max(DEFAULT_READY_TIMEOUT, env_int("KEEPER_READY_TIMEOUT"))
 
 
-def _abort(job_name, results, stopwatch, status=None, info=None):
+def _abort(job_name, results, stopwatch, status=None, info=None, files=None):
     opts = {"name": job_name, "results": results, "stopwatch": stopwatch}
     if status is not None:
         opts["status"] = status
     if info is not None:
         opts["info"] = info
+    if files is not None:
+        opts["files"] = files
     Result.create_from(**opts).complete_job()
 
 
@@ -491,7 +493,11 @@ def main():
     files_to_attach = []
 
     if not setup_docker():
-        _abort(job_name, results, stop_watch, status=Result.Status.ERROR)
+        dind_log = "./ci/tmp/docker-in-docker.log"
+        _abort(
+            job_name, results, stop_watch, status=Result.Status.ERROR,
+            files=[dind_log] if Path(dind_log).exists() else None,
+        )
         return
 
     Shell.run("docker system prune -af --volumes || true; docker builder prune -af || true; docker network prune -f || true")

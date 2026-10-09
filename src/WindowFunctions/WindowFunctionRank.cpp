@@ -33,10 +33,10 @@ struct WindowFunctionRank final : public StatelessWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
-        IColumn & to = *transform->blockAt(transform->current_row)
-            .output_columns[function_index];
+        IColumn & to = *transform->blocks.blockAt(transform->current.location.block)
+            .result_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
-            transform->peer_group_start_row_number);
+            transform->peer_group_start.row_index_in_partition + 1);
     }
 };
 

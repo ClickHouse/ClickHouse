@@ -29,6 +29,10 @@
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 
 namespace DB
 {
@@ -330,7 +334,18 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
-    if (preserve_user && !entry.initiator_user.empty())
+    if (submitting_user_context)
+    {
+        /// Give the query the access rights of the submitting session, as `AsynchronousInsertQueue` does. The current roles
+        /// include the external roles, which are not granted locally, so set the current roles without the grant check.
+        query_context->setUser(
+            *submitting_user_context->getUserID(),
+            submitting_user_context->getExternalRoles(),
+            submitting_user_context->getAuthenticationGrants(),
+            submitting_user_context->getAuthenticationValidUntil());
+        query_context->setCurrentRoles(submitting_user_context->getCurrentRoles(), /* check_grants = */ false);
+    }
+    else if (preserve_user && !entry.initiator_user.empty())
     {
         const auto & access_control = from_context->getAccessControl();
 
@@ -802,6 +817,18 @@ void ZooKeeperMetadataTransaction::commit()
     }
 }
 
+bool isSecondaryDDLReplay(const ContextPtr & context)
+{
+    const auto txn = context->getZooKeeperMetadataTransaction();
+    if (txn && !txn->isInitialQuery())
+        return true;
+#if CLICKHOUSE_CLOUD
+    return context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context);
+#else
+    return false;
+#endif
+}
+
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
 {
     String name = cluster_name;
@@ -811,6 +838,9 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
         name = name.substr(strlen(DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX));
         all_groups = true;
     }
+
+    if (name.empty())
+        return {};
 
     if (const auto * replicated_db = dynamic_cast<const DatabaseReplicated *>(DatabaseCatalog::instance().tryGetDatabase(name).get()))
     {

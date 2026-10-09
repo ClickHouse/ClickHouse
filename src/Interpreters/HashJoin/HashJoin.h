@@ -14,7 +14,7 @@
 
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
-#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -164,9 +164,7 @@ public:
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
       */
-    bool addBlockToJoin(const Block & source_block_, bool check_limits) override;
-
-    using IJoin::addBlockToJoin;
+    bool addBlockToJoin(const Block & source_block_, size_t num_rows, JoinBuildContext context) override;
 
     /// Called directly from ConcurrentJoin::addBlockToJoin
     bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
@@ -464,6 +462,23 @@ public:
                 case Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
                 APPLY_FOR_JOIN_VARIANTS(M)
             #undef M
+            }
+        }
+
+        /// Runs `computeBucketPrefix` on two-level maps. Single-level maps need nothing.
+        void computeBucketPrefix(Type which)
+        {
+            switch (which)
+            {
+            #define M(NAME) \
+                case Type::NAME: \
+                    if (NAME) \
+                        NAME->computeBucketPrefix(); \
+                    break;
+                APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
+            #undef M
+                default:
+                    break;
             }
         }
 /// NOLINTEND(bugprone-macro-parentheses)

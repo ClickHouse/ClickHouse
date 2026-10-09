@@ -20,9 +20,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # here to prove that skipping the drain does not corrupt the connections or take the server down,
 # which is what broke twice while this was being written.
 
+# Local disk: on an object-storage disk every part open waits for any metadata commit on that disk,
+# and committing a wide part (e.g. `system.metric_log`) can take longer than MAX_INITIATOR_MS.
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE cancel_before_announcement (k UInt64, v UInt64)
-    ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128;
+    ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 128, storage_policy = 'default';
     INSERT INTO cancel_before_announcement SELECT number, number FROM numbers(200000);
 "
 
@@ -32,11 +34,16 @@ $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT parallel_replicas_delay_announcem
 # just as easily as a fixed one.
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
+# Either of these lets the planner run these queries without parallel replicas: a non-zero
+# `automatic_parallel_replicas_mode`, or a positive `parallel_replicas_min_number_of_rows_per_replica`,
+# which sizes a `LIMIT 1` read at one row and therefore one replica.
 SETTINGS="enable_parallel_replicas = 1
         , max_parallel_replicas = 3
         , cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'
         , parallel_replicas_for_non_replicated_merge_tree = 1
-        , parallel_replicas_local_plan = 1"
+        , parallel_replicas_local_plan = 1
+        , automatic_parallel_replicas_mode = 0
+        , parallel_replicas_min_number_of_rows_per_replica = 0"
 
 # The failpoint holds a follower for 3s; an initiator that waits for one cannot come in under this.
 MAX_INITIATOR_MS=1500
@@ -127,6 +134,16 @@ for _ in {1..100}; do
 done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+
+# All five cancel queries must have run with parallel replicas: a single-node fallback passes every
+# other check in this test without ever reaching the cancel path.
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'used_parallel_replicas ', count() = 5 AND min(ProfileEvents['ParallelReplicasUsedCount']) > 0
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND query_id LIKE '${CLICKHOUSE_DATABASE}_cancel_before_announcement_$$_%'
+      AND type = 'QueryFinish' AND is_initial_query
+"
 
 # A replica cancelled while still planning must never go on to write its announcement into a socket
 # the initiator has stopped reading - which shows up as `Broken pipe` on the replica.
