@@ -87,10 +87,23 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 
 void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
 {
-    std::lock_guard lock(mutex);
+    /// The blocker behind a lock taken through a forwarding storage belongs to the storage it resolved to,
+    /// so `SYSTEM START` on either of them has to release it: remove every lock with the same owner.
+    auto owner = resolveActionLockOwner(table);
+    StorageRawPtr owner_ptr = owner ? owner.get() : table.get();
 
-    if (auto it = storage_locks.find(table.get()); it != storage_locks.end())
-        it->second.locks.erase(action_type);
+    {
+        std::lock_guard lock(mutex);
+
+        for (auto & [storage, entry] : storage_locks)
+            if (storage == table.get() || entry.owner == owner_ptr)
+                entry.locks.erase(action_type);
+    }
+
+    /// The callers notify the storage they were given; when the blocker belongs to another storage,
+    /// notify it as well, so that it resumes the released action.
+    if (owner && owner.get() != table.get())
+        owner->onActionLockRemove(action_type);
 }
 
 bool ActionLocksManager::has(const StorageID & table_id, StorageActionBlockType action_type) const
