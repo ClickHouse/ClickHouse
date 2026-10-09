@@ -232,6 +232,7 @@ protected:
     void findBrokerTableEngineSecretArguments(
         std::span<const std::string_view> secret_keys, std::string_view address_key);
     void findNATSTableEngineSecretArguments();
+    void findMaxComputeTableEngineSecretArguments();
     void findRabbitMQTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findS3DatabaseSecretArguments();

@@ -1,0 +1,288 @@
+---
+description: 'Read existing Alibaba Cloud MaxCompute tables through the ODPS Tunnel API.'
+sidebarTitle: 'MaxCompute'
+slug: /engines/table-engines/integrations/maxcompute
+title: 'MaxCompute table engine'
+doc_type: 'reference'
+---
+
+The `MaxCompute` and `MaxComputeRaw` table engines read existing Alibaba Cloud MaxCompute (ODPS) tables through the Tunnel API.
+They support `SELECT` and importing data into ClickHouse with `INSERT INTO clickhouse_table SELECT ... FROM maxcompute_table`.
+Writing to MaxCompute, automatic schema inference, and the MaxCompute Storage API are not supported.
+
+The engines require a ClickHouse build with `ENABLE_ODPS_TUNNEL`. Arrow reads additionally require `ENABLE_ODPS_ARROW` and ClickHouse's Arrow dependency.
+
+## Enabling the experimental engines {#enabling-the-experimental-engines}
+
+Both engines are experimental and disabled for new table creation by default. Enable them in the session before creating a table:
+
+```sql
+SET allow_experimental_maxcompute_storage_engine = 1;
+```
+
+`allow_experimental_maxcompute_storage_engine` is a query/session setting that can also be enabled in a settings profile. It is not a table setting: do not put it in the table's `CREATE TABLE ... SETTINGS` clause.
+
+The gate applies to both engine names, positional arguments and named collections, including full `ATTACH TABLE` definitions supplied by a user. It does not prevent loading existing metadata at startup or using short-form `ATTACH TABLE table_name`. Reading existing tables and changing their read format do not require this setting to remain enabled. The gate does not replace access-control checks.
+
+The examples below assume this setting has been enabled in the session.
+
+## Creating a table {#creating-a-table}
+
+Declare the columns explicitly. Column names must match the remote table; a subset of the remote columns can be declared.
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 type1,
+    name2 type2,
+    ...
+)
+ENGINE = MaxCompute(
+    'tunnel_endpoint', 'project', 'table', 'partition',
+    'access_key_id', 'access_key_secret'
+    [, thread_num [, 'quota_name' [, start [, count]]]]
+);
+```
+
+`MaxComputeRaw` accepts the same arguments, but its first argument is an ODPS service endpoint. It resolves the Tunnel endpoint through the ODPS router before opening the download session. `MaxCompute` uses the supplied Tunnel endpoint directly.
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `tunnel_endpoint` | Required | HTTP or HTTPS Tunnel endpoint for `MaxCompute`; ODPS service endpoint for `MaxComputeRaw`. Use the endpoint for the project's region and network. |
+| `project` | Required | Remote MaxCompute project. |
+| `table` | Required | Existing table in that project. |
+| `partition` | Required | Tunnel partition specification, for example `ds=2026-09-18`. Use an empty string for a non-partitioned table. This is not a ClickHouse filter expression. |
+| `access_key_id` | Required | Alibaba Cloud AccessKey ID. |
+| `access_key_secret` | Required | Matching AccessKey secret. |
+| `thread_num` | `1` | If local parallel reads are enabled, values greater than one request this number of streams; `0` or `1` uses the stream count requested by ClickHouse. It is not a guarantee of one reader. |
+| `quota_name` | `'default'` | Tunnel quota. An empty string omits the SDK's quota request parameter. |
+| `start` | `0` | Zero-based starting row in the download session. |
+| `count` | `0` | Rows to read. Zero reads the remaining rows; a positive value is capped at the remaining row count. |
+
+The legacy positional form with a numeric eighth argument is also accepted:
+
+```sql
+ENGINE = MaxCompute(
+    'tunnel_endpoint', 'project', 'table', 'partition',
+    'access_key_id', 'access_key_secret', thread_num, start [, count]
+)
+```
+
+In this form the quota is `'default'`. A quoted eighth argument is always a quota name, even if it contains digits. Both forms are also supported by `MaxComputeRaw`.
+
+The range applies to the remote download session before ClickHouse evaluates query filters. A start beyond the session's row count raises an exception; a start equal to the row count yields no rows. The range is not an `ORDER BY` or a stable pagination contract across separate queries.
+
+### Using the ODPS router {#using-the-odps-router}
+
+Use `MaxComputeRaw` when you have an ODPS service endpoint instead of a direct Tunnel endpoint:
+
+```sql
+CREATE TABLE remote_events_via_router
+(
+    id Int64,
+    name Nullable(String)
+)
+ENGINE = MaxComputeRaw(
+    'https://odps.example.com/api', 'example_project', 'events', '',
+    'YOUR_ACCESS_KEY_ID', 'YOUR_ACCESS_KEY_SECRET'
+);
+```
+
+Replace the endpoint and credential placeholders with your connection details. This engine has the same column mappings, read formats and settings as `MaxCompute`.
+
+## Named collections {#named-collections}
+
+Connection parameters can be stored in a [named collection](/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION maxcompute_connection AS
+    endpoint = 'https://tunnel.example.com',
+    project = 'example_project',
+    `table` = 'events',
+    access_key_id = 'YOUR_ACCESS_KEY_ID',
+    access_key_secret = 'YOUR_ACCESS_KEY_SECRET';
+
+CREATE TABLE remote_events
+(
+    id Int64,
+    name Nullable(String)
+)
+ENGINE = MaxCompute(maxcompute_connection);
+```
+
+Replace the example endpoint and credential placeholders with your connection details. Named collection overrides use `key = value` and are subject to the collection's override policy.
+
+| Key | Required / default | Description |
+| --- | --- | --- |
+| `endpoint` | Required | Endpoint selected according to `endpoint_mode`. |
+| `project`, `table` | Required | Remote project and table. |
+| `access_key_id`, `username`, or `user` | One required | AccessKey ID. |
+| `access_key_secret`, `secret_access_key`, or `password` | One required | AccessKey secret. |
+| `partition` or `partition_spec` | `''` | Tunnel partition specification. |
+| `sts_token`, `session_token`, or `token` | `''` | Optional STS token. STS credentials must be supplied through a named collection. |
+| `endpoint_mode` | `tunnel` for `MaxCompute`; `odps_router` for `MaxComputeRaw` | `tunnel` uses the endpoint directly; `odps_router` resolves a Tunnel endpoint first. |
+| `thread_num`, `quota_name`, `start`, `count` | Same as positional arguments | Parallelism, quota and download range. |
+
+Specify only one key from each alias group. Unknown keys and multiple aliases for the same parameter raise an exception.
+
+## Reading and importing data {#reading-and-importing-data}
+
+Assuming the remote `events` table has `id BIGINT` and `name STRING` columns:
+
+```sql
+SELECT id, name
+FROM remote_events
+ORDER BY id
+LIMIT 10;
+
+CREATE TABLE local_events
+(
+    id Int64,
+    name Nullable(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO local_events
+SELECT id, name FROM remote_events;
+```
+
+The engine reads the requested columns. It does not translate ClickHouse `WHERE`, `ORDER BY`, or aggregation expressions into remote SQL. Filtering and sorting happen in ClickHouse. Configure the remote partition in the engine arguments or named collection.
+
+`INSERT SELECT` uses standard ClickHouse planning. The engine does not coordinate disjoint remote ranges across independent distributed queries. Do not assume that putting the same source on multiple shards automatically partitions the remote data.
+
+## Read formats {#read-formats}
+
+Use `maxcompute_read_format` to configure the read strategy, either as a table setting or as a query/session override. It does not change the remote table's storage format or select a different backend.
+
+| Value | Scope | Behavior |
+| --- | --- | --- |
+| `inherit` | Query/session only (default) | Use each table's configured read strategy. A table without this setting uses `column`. |
+| `row` | Table, query/session | Explicitly use the row reader. |
+| `column` | Table, query/session | Use columnar reading through Arrow IPC. This is the table-level default. Require Arrow support and a supported mapping for the requested columns; otherwise raise an exception. |
+
+### Table-level configuration {#table-level-configuration}
+
+Both engines accept the table setting with either positional arguments or a named collection:
+
+```sql
+CREATE TABLE remote_events_column
+(
+    id Int64,
+    name Nullable(String)
+)
+ENGINE = MaxCompute(maxcompute_connection)
+SETTINGS maxcompute_read_format = 'column';
+
+ALTER TABLE remote_events_column
+MODIFY SETTING maxcompute_read_format = 'row';
+
+ALTER TABLE remote_events_column
+RESET SETTING maxcompute_read_format;
+```
+
+The setting is stored in the table metadata, appears in `SHOW CREATE TABLE`, and survives server restarts and table reattachment. `RESET SETTING` restores the table default, `column`. The value `inherit` is not accepted at table level. No additional positional engine argument or named collection key is required.
+
+### Query and session overrides {#query-and-session-overrides}
+
+An effective query/session value of `row` or `column` overrides the table setting. An effective value of `inherit` uses the table setting independently for each table. This allows one query to read different tables with different strategies.
+
+```sql
+SELECT id, name
+FROM remote_events
+SETTINGS maxcompute_read_format = 'column', odps_read_compress = 1;
+
+SET maxcompute_read_format = 'row';
+
+SELECT id, name
+FROM remote_events_column
+SETTINGS maxcompute_read_format = 'inherit';
+
+SET maxcompute_read_format = 'inherit';
+```
+
+A query-level override takes precedence over the session/profile value for that query without changing it. In particular, query-level `inherit` bypasses a session-level override and uses the table setting. Session/profile settings used while creating a table are not captured as that table's default: use `CREATE TABLE ... SETTINGS` explicitly to store a default.
+
+Format validation happens before reading and considers only the requested columns. Unsupported mappings, missing Arrow build support, and transport, checksum, authorization or conversion failures raise exceptions. The engine never switches to the other reader. For row-only mappings, explicitly configure `row`.
+
+## Data types {#data-types}
+
+The following are recommended declarations for the supported scalar mappings. Wrap scalar types in `Nullable` when remote values may be null.
+
+| MaxCompute type | ClickHouse declaration |
+| --- | --- |
+| `BOOLEAN` | `UInt8` |
+| `TINYINT`, `SMALLINT`, `INT`, `BIGINT` | `Int8`, `Int16`, `Int32`, `Int64`, respectively |
+| `FLOAT`, `DOUBLE` | `Float32`, `Float64`, respectively |
+| `STRING`, `VARCHAR`, `CHAR`, `BINARY` | `String` |
+| `DECIMAL(p, s)` | `Decimal(p, s)` with a suitable precision and scale; `String` is also supported by the row reader |
+| `DATE` | `Date` within its representable range |
+| `DATETIME` | `DateTime`; subsecond precision is discarded |
+
+Unsigned integer declarations require non-negative values within range. A null scalar cannot be read into a non-nullable column, even when `input_format_null_as_default = 1`. Nullable columns preserve NULL values.
+
+For the supported `Date` and `DateTime` mappings, both readers reject values outside the target range, including temporal elements in arrays, maps and tuples. `Date` accepts day numbers from 0 to 65535 since the Unix epoch; `DateTime` accepts non-negative timestamps whose whole seconds fit in `UInt32`. Negative subsecond timestamps are rejected before truncation; valid subsecond precision is discarded. These checks cannot be disabled with `date_time_overflow_behavior = 'ignore'` or `'saturate'`.
+
+Do not assume arbitrary casts between remote types and ClickHouse declarations are supported.
+
+Complex columns support the following shapes for supported scalar elements:
+
+| MaxCompute type | Example ClickHouse declaration |
+| --- | --- |
+| `ARRAY<BIGINT>` | `Array(Nullable(Int64))` |
+| `MAP<STRING, BIGINT>` | `Nested(key Nullable(String), value Nullable(Int64))` |
+| `STRUCT` with `BIGINT` and `STRING` fields | `Tuple(Nullable(Int64), Nullable(String))` in remote field order |
+
+For a map column named `attrs`, use the flattened columns `attrs.key` and `attrs.value` produced by `Nested`. The engine does not treat a native ClickHouse `Map` declaration as this mapping. Array elements and tuple fields must be nullable.
+
+Complex columns can also be declared as `String` for legacy row-reader rendering. This representation is not a JSON serialization contract: strings are not escaped, and empty containers render as an empty string. Such declarations require the row reader and are rejected by forced `column` mode (Arrow IPC).
+
+Native mappings for `TIMESTAMP`, `TIMESTAMP_NTZ`, `INTERVAL_YEAR_MONTH`, and `INTERVAL_DAY_TIME` are not supported. Do not infer support for other types or arbitrary recursive nesting from the examples above.
+
+## Query settings {#query-settings}
+
+Set these options with `SET`, a settings profile, or a query-level `SETTINGS` clause. Only `maxcompute_read_format` also supports a table-level `CREATE TABLE ... SETTINGS` clause, with the separate default described above. The other options below are query/session settings only.
+
+| Setting | Default | Effect |
+| --- | --- | --- |
+| `allow_experimental_maxcompute_storage_engine` | `0` | Allow creation of experimental `MaxCompute` and `MaxComputeRaw` tables, including user-supplied full `ATTACH TABLE` definitions. Existing metadata loading and reads are not gated. |
+| `maxcompute_read_format` | `'inherit'` | Use the table strategy, or override it with `row` or `column` (Arrow IPC). The table-level default is `column`. |
+| `odps_parallel_local_insert_select` | `1` | Enable local parallel reads for both `SELECT` and `INSERT SELECT`. Set to `0` to use a single reader. |
+| `odps_read_compress` | `1` | Use ZLIB for row reads and ZSTD for Arrow reads. Set to `0` for uncompressed transfer. |
+| `maxcompute_columnar_max_batch_bytes` | `0` | Arrow batch byte limit requested from the server; zero requests no limit. This is not a hard ClickHouse memory limit and does not apply to row reads. |
+| `maxcompute_max_retries` | `3` | Maximum retries for retryable Tunnel reader failures; zero disables retries. |
+| `maxcompute_retry_initial_backoff_ms` | `100` | Initial retry backoff in milliseconds. Must not exceed `maxcompute_retry_max_backoff_ms`. |
+| `maxcompute_retry_max_backoff_ms` | `5000` | Maximum exponential retry backoff in milliseconds. |
+| `maxcompute_retry_max_elapsed_ms` | `30000` | Cumulative budget for failed reader attempts and retry backoffs; zero disables retries. Not a total query timeout. |
+| `maxcompute_connect_timeout_ms` | `10000` | SDK connection timeout in milliseconds. |
+| `maxcompute_request_timeout_ms` | `300000` | SDK socket timeout in milliseconds. Not a total query timeout. |
+
+SDK timeouts are rounded up to whole seconds with a minimum of one second, including when the configured value is zero. An in-flight SDK call is not interrupted by the retry budget; cancellation can wait for that call to return or time out.
+
+The reader retries classified transport, timeout and throttling errors from the last consumed row or batch in the same download session. Checksum, schema and authorization failures are not retried by this policy. The policy covers reader operations, not the initial router request or download session creation.
+
+### Internal and compatibility settings {#internal-and-compatibility-settings}
+
+These settings are retained for compatibility with existing ODPS configurations. They do not enable the old ODPS-specific distributed execution path.
+
+| Setting | Default | Status |
+| --- | --- | --- |
+| `enable_insert_from_odps_exteranl_table` | `1` | Historical misspelling, accepted with no planning effect. |
+| `enable_insert_from_odps_external_table` | `1` | Correct spelling, also accepted with no planning effect; it is a separate setting. |
+| `odps_parallel_distributed_insert_select` | `1` | Accepted with no planning effect. |
+| `odps_distributed_insert_select_convert_to_local` | `1` | Accepted with no planning effect. |
+| `odps_parallel_distributed_insert_select_start` | `0` | Internal range override. Zero uses the engine's `start`; configure ranges with engine arguments in user queries. |
+| `odps_parallel_distributed_insert_select_count` | `0` | Internal range override. Zero uses the engine's `count`; configure ranges with engine arguments in user queries. |
+| `odps_download_id` | `''` | Internal download-session identifier. An initial query with a non-empty value is rejected; leave empty in user profiles. |
+
+## Access control and endpoints {#access-control-and-endpoints}
+
+In addition to normal table privileges, creating these external tables is subject to ClickHouse's table-engine/source privilege checks. Both engines map to the `MAXCOMPUTE` source. An administrator can grant source privileges as follows:
+
+```sql
+GRANT READ, WRITE ON MAXCOMPUTE TO maxcompute_reader;
+```
+
+This grant does not implement writes to MaxCompute. Users still need the applicable `CREATE TABLE`, named collection and `SELECT` privileges for their operations. The remote AccessKey must independently have permission to read the MaxCompute data.
+
+Configured endpoints and router-resolved Tunnel endpoints are checked against the server's [remote host allowlist](/reference/settings/server-settings/settings/remote#remote_url_allow_hosts). Allow the actual Tunnel host as well as the ODPS router host when using `MaxComputeRaw`. Configured endpoints must have an HTTP or HTTPS scheme and a host, and must not contain user information, a query string or a fragment. Prefer HTTPS; HTTP is accepted for existing configurations.

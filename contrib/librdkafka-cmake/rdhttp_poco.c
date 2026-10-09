@@ -598,7 +598,12 @@ void rd_http_global_init(void) {
  *
  * The returned memory is allocated with malloc: rd_free and curl_free
  * are both compatible with it.
+ *
+ * The MaxCompute integration links real libcurl. Avoid defining the same
+ * compatibility symbols when that library is present; the OIDC code then
+ * binds to libcurl's ABI-compatible implementations.
  */
+#ifndef RDHTTP_POCO_HAVE_REAL_CURL
 
 struct curl_slist *curl_slist_append(struct curl_slist *list,
                                      const char *data) {
@@ -662,6 +667,7 @@ void curl_free(void *p) {
         free(p);
 }
 
+#endif /* RDHTTP_POCO_HAVE_REAL_CURL */
 
 int unittest_http_get(void) {
         const char *base_url = rd_getenv("RD_UT_HTTP_URL", NULL);

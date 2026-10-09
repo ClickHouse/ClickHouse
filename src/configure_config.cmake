@@ -248,6 +248,19 @@ if (TARGET ch_rust::wasmtime)
     set(USE_WASMTIME 1)
 endif()
 
+if (TARGET ch_contrib::odps)
+    set(USE_ODPS_TUNNEL 1)
+endif()
+
+# `ODPS_SDK_ENABLE_ARROW` changes the SDK public vtable, so the ClickHouse
+# feature flag must match the way the SDK target was compiled.
+if (TARGET ch_contrib::odps AND ENABLE_ODPS_ARROW)
+    set(USE_ODPS_ARROW 1)
+    # `StorageMaxComputeArrow` uses `ArrowColumnToCHColumn`, whose translation
+    # unit is guarded by `USE_ARROW` even when Parquet is disabled.
+    set(USE_ARROW 1)
+endif()
+
 set (USE_YTSAURUS 1)
 
 if (TARGET ch_contrib::sz3)

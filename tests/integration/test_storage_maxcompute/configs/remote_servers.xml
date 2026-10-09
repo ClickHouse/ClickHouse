@@ -1,0 +1,18 @@
+<clickhouse>
+    <remote_servers>
+        <mc_e2e_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </mc_e2e_cluster>
+    </remote_servers>
+</clickhouse>
