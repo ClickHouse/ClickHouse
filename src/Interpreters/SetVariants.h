@@ -250,6 +250,16 @@ struct SetMethodHashed
     }
 };
 
+/// Whether the keys of `Method` are the values of fixed-size key columns, packed into an integer.
+template <typename Method>
+inline constexpr bool set_method_has_fixed_size_keys = false;
+
+template <typename FieldType, typename TData, bool use_cache>
+inline constexpr bool set_method_has_fixed_size_keys<SetMethodOneNumber<FieldType, TData, use_cache>> = true;
+
+template <typename TData, bool has_nullable_keys>
+inline constexpr bool set_method_has_fixed_size_keys<SetMethodKeysFixed<TData, has_nullable_keys>> = true;
+
 /// Reads the keys of the table of `Method` into new columns of `key_types`, in batches, with
 /// `Method::insertKeyIntoColumns`: the key columns of the set, or one `UInt128` column with the hashes that
 /// the `hashed` method keeps. Packed keys can hold their columns in another order than the original one,

@@ -28,6 +28,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/DiskSet.h>
 #include <Interpreters/DiskSetBuilder.h>
+#include <Interpreters/DiskSetKeys.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -69,47 +70,6 @@ Set::Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transfor
 
 
 Set::~Set() = default;
-
-namespace
-{
-
-/// On disk, a set keeps the same keys as its method of `SetVariants` keeps in memory, except for strings:
-/// - Numbers (`key8` to `key64`) and packed keys (`keys32` to `keys256`, `nullable_keys128`,
-///   `nullable_keys256`) stay as they are.
-/// - `hashed` keys are already a 128-bit hash of the key columns and stay as they are.
-/// - `key_string` and `key_fixed_string` keep the whole string in memory, but on disk only its 128-bit hash,
-///   computed as the `hashed` method computes it.
-/// `DiskSetMethod<Method>` is the method whose keys go to disk: `Method` itself, or `hashed` for strings.
-template <typename Method>
-using DiskSetMethod = std::conditional_t<
-    std::is_same_v<typename Method::Key, std::string_view>,
-    decltype(SetVariants::hashed)::element_type,
-    Method>;
-
-/// A set on disk stores the keys of its `DiskSetMethod` at the same width as in memory.
-template <typename Method>
-using DiskSetKey = typename DiskSetMethod<Method>::Key;
-
-/// Converts key columns to fixed-width disk keys, skipping the rows marked in `null_map`.
-/// Without a null map, the keys retain their input row positions for batched lookups.
-template <typename Method>
-ColumnPtr computeDiskSetKeys(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, ConstNullMapPtr null_map)
-{
-    typename Method::State state(key_columns, key_sizes, nullptr);
-    Arena pool;
-    auto keys = ColumnVector<typename Method::Key>::create();
-    keys->reserve(rows);
-    for (size_t row = 0; row < rows; ++row)
-    {
-        if (null_map && (*null_map)[row])
-            continue;
-        auto key_holder = state.getKeyHolder(row, pool);
-        keys->getData().push_back(keyHolderGetKey(key_holder));
-    }
-    return keys;
-}
-
-}
 
 void Set::setSpillSettings(SetSpillSettings spill_settings_)
 {
@@ -183,7 +143,7 @@ void Set::spill(std::string_view reason)
 
     data->callOnMethod([&]<typename Method>(const Method & method)
     {
-        compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
+        compute_disk_set_keys = computeDiskSetKeys<Method>;
         disk_set_builder = createDiskSetBuilderWithKeys(method, limits);
     });
 
@@ -218,7 +178,7 @@ void Set::spillAfterBuild() const
         {
             /// The keys are final, so the builder applies no size limits and keeps all of them.
             new_disk_set = createDiskSetBuilderWithKeys(method, SizeLimits{})->finish();
-            new_compute_disk_set_keys = computeDiskSetKeys<DiskSetMethod<Method>>;
+            new_compute_disk_set_keys = computeDiskSetKeys<Method>;
         });
     }
 
@@ -256,9 +216,7 @@ size_t Set::getDiskSetKeyBytes() const
 template <typename Method>
 std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(const Method & method, const SizeLimits & builder_limits) const
 {
-    using Key = DiskSetKey<Method>;
-
-    auto builder = createDiskSetBuilder<Key>(
+    auto builder = createDiskSetBuilder<DiskSetKey<Method>>(
         spill_settings.tmp_data,
         builder_limits,
         spill_settings.max_bytes_before_external_set,
@@ -266,24 +224,11 @@ std::unique_ptr<DiskSetBuilder> Set::createDiskSetBuilderWithKeys(const Method &
         spill_settings.min_free_disk_space,
         spill_settings.process_list_element);
 
-    const size_t max_rows_in_column = spill_settings.max_block_size;
-    auto keys = ColumnVector<Key>::create();
-    for (auto it = method.data.begin(); it != method.data.end(); ++it)
+    computeDiskSetKeysOfTable(method, data_types, key_sizes, spill_settings.max_block_size, [&](ColumnPtr keys)
     {
-        /// Every method except `key_string` and `key_fixed_string` keeps the disk keys themselves in its
-        /// table: numbers, packed keys and the hashes of `hashed`. The string methods keep strings, and their
-        /// disk keys are the keys that the `hashed` method computes for them.
-        if constexpr (std::is_same_v<DiskSetMethod<Method>, Method>)
-            keys->getData().push_back(it->getValue());
-        else
-            keys->getData().push_back(Method::getHashedKey(it->getValue()));
-
-        if (keys->size() == max_rows_in_column)
-            builder->add(std::exchange(keys, ColumnVector<Key>::create()));
-    }
-
-    if (!keys->empty())
         builder->add(std::move(keys));
+    });
+
     return builder;
 }
 

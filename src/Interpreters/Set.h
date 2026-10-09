@@ -75,8 +75,9 @@ public:
     /// Once on disk, the size limits apply to the distinct keys and to the memory of the set when the keys
     /// are merged into the file, so the set receives every chunk. In the `break` overflow mode, it then keeps
     /// the keys that come first in the order of their disk keys rather than the first ones to arrive. Disk
-    /// keys compare as unsigned integers, so this order matches the order of values only for a single key
-    /// stored as an unsigned integer, such as `UInt64`, `Date` or `DateTime`.
+    /// keys keep the order of the keys that the set packs into integers in memory, numbers and `FixedString`
+    /// values of at most 32 bytes in total, with `NULL` after the values, so these are the smallest keys.
+    /// Other keys, such as `String`, are stored as 128-bit hashes, whose order is arbitrary.
     /// A set that stays in memory while it is filled is usually built before the rest of the query takes its
     /// memory, so it can also spill while it is used: when `execute` finds query memory above the threshold
     /// and the keys large enough to spill, the keys are written to a `DiskSet` while other lookups keep
