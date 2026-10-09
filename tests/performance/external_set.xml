@@ -7,9 +7,10 @@
          blocks, which the random lookups of the next three queries read again and again. A codec does not
          shrink packed gaps, so the set writes these blocks uncompressed. The disk keys of strings are mostly
          hash bits, which compress too little to pay for a codec, so the set writes them uncompressed as well.
-         The lookups of both read blocks without decompressing them. The last two queries look up random
+         The lookups of both read blocks without decompressing them. The next two queries look up random
          hashes, which do not pack. A chunk of lookups that needs most of the blocks in its range reads
-         neighboring blocks together, and a chunk that needs few of them reads one block at a time. -->
+         neighboring blocks together, and a chunk that needs few of them reads one block at a time. In the
+         last two queries, the keys repeat, and each chunk looks up each of its distinct keys once. -->
     <settings>
         <max_bytes_before_external_set>16777216</max_bytes_before_external_set>
         <max_bytes_ratio_before_external_set>0</max_bytes_ratio_before_external_set>
@@ -38,4 +39,9 @@
     <!-- The same lookups come in chunks of 1024 rows, each of which needs few blocks and reads them one at a
          time. -->
     <query>SELECT count() FROM numbers_mt(10000000) WHERE cityHash64(number) IN (SELECT cityHash64(number * 2) FROM numbers(5000000)) SETTINGS max_block_size = 1024</query>
+    <!-- The set holds hashes, and 1000 keys repeat in random order. -->
+    <query>SELECT count() FROM numbers_mt(100000000) WHERE cityHash64(number % 1000) IN (SELECT cityHash64(number * 2) FROM numbers(5000000))</query>
+    <!-- The set holds packed numbers, and the keys come in runs of 10 in key order, so each run takes one
+         lookup. -->
+    <query>SELECT count() FROM numbers_mt(10000000) WHERE intDiv(number, 10) IN (SELECT number * 2 FROM numbers(5000000))</query>
 </test>
