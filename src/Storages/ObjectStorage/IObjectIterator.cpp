@@ -49,6 +49,7 @@ namespace Setting
     extern const SettingsUInt64 cluster_table_function_buckets_batch_size;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsBool use_parquet_metadata_cache;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
 }
 
 static ExpressionActionsPtr getExpressionActions(
@@ -304,7 +305,7 @@ public:
             --num_prefetched_ahead;
         ++num_handed_out;
 
-        while (num_prefetched_ahead < ahead.size() && prefetchFooter(*ahead[num_prefetched_ahead]))
+        while (num_prefetched_ahead < ahead.size() && prefetchFooter(ahead[num_prefetched_ahead]))
             ++num_prefetched_ahead;
         return object_info;
     }
@@ -388,12 +389,12 @@ private:
         return std::min(window, 4 * (num_handed_out - ramp_start + 1));
     }
 
-    bool needsFooter(const ObjectInfo & object_info) const
+    bool needsFooter(const ObjectInfoPtr & object_info) const
     {
-        if (object_info.isArchive() || object_info.getPath().empty() || object_info.file_bucket_info)
+        if (object_info->isArchive() || object_info->getPath().empty() || object_info->file_bucket_info)
             return false;
 
-        const auto & metadata = object_info.relative_path_with_metadata.metadata;
+        const auto & metadata = object_info->relative_path_with_metadata.metadata;
         if (!metadata || !metadata->is_size_known || !metadata->isEtagUsableAsCacheKey())
             return false;
 
@@ -401,27 +402,29 @@ private:
         if (metadata->size_bytes <= read_settings.remote_fs_settings.buffer_size)
             return false;
 
-        if (!boost::iequals(object_info.getFileFormat().value_or(configuration->format), "Parquet"))
+        if (!boost::iequals(object_info->getFileFormat().value_or(configuration->format), "Parquet"))
             return false;
 
-        if (chooseCompressionMethod(object_info.getFileName(), configuration->compression_method) != CompressionMethod::None)
+        if (chooseCompressionMethod(object_info->getFileName(), configuration->compression_method) != CompressionMethod::None)
             return false;
 
         if (metadata_cache
-            && metadata_cache->contains(ParquetMetadataCache::createKey(object_info.relative_path_with_metadata.getPath(), metadata->etag)))
+            && metadata_cache->contains(ParquetMetadataCache::createKey(object_info->relative_path_with_metadata.getPath(), metadata->etag)))
             return false;
 
         if (need_only_count && context->getSettingsRef()[Setting::use_cache_for_count_from_files])
         {
-            auto key = StorageObjectStorageSource::getKeyForNumRowsCache(*configuration, object_info, format_settings, context);
-            auto get_last_mod_time = [&] { return StorageObjectStorageSource::getLastModificationTime(object_info); };
+            auto key = StorageObjectStorageSource::getKeyForNumRowsCache(*configuration, *object_info, format_settings, context);
+            auto get_last_mod_time = [&] { return StorageObjectStorageSource::getLastModificationTime(*object_info); };
             if (key && schema_cache.hasValidNumRows(*key, get_last_mod_time))
                 return false;
         }
 
-        if (query_condition_cache)
+        if (query_condition_cache
+            && (context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]
+                || !StorageObjectStorageSource::isTopKFilterAllowed(*configuration, format_filter_info.get(), object_info, context)))
         {
-            auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(object_info, configuration->isDataLakeConfiguration());
+            auto key = StorageObjectStorageSource::makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
             if (key && query_condition_cache->contains(storage_id.uuid, *key, *format_filter_info->condition_hash))
                 return false;
         }
@@ -430,7 +433,7 @@ private:
     }
 
     /// Returns false if the read cannot be scheduled now, so that the object is tried again on the next call.
-    bool prefetchFooter(ObjectInfo & object_info)
+    bool prefetchFooter(const ObjectInfoPtr & object_info)
     {
         if (!needsFooter(object_info))
             return true;
@@ -444,13 +447,13 @@ private:
 
         auto footer = std::make_shared<ParquetPrefetchedFooter>();
         auto request = std::make_shared<Request>(
-            Request{std::move(slot), state, footer, object_info.relative_path_with_metadata, resources});
+            Request{std::move(slot), state, footer, object_info->relative_path_with_metadata, resources});
 
         if (!getIOThreadPool().get().trySchedule([request] { runRequest(*request); }))
             return false;
 
         ProfileEvents::increment(ProfileEvents::ParquetFooterPrefetchRequests);
-        object_info.prefetched_footer = std::move(footer);
+        object_info->prefetched_footer = std::move(footer);
         return true;
     }
 

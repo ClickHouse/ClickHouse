@@ -88,6 +88,12 @@ public:
 
     static std::optional<time_t> getLastModificationTime(const ObjectInfo & object_info);
 
+    static bool isTopKFilterAllowed(
+        const StorageObjectStorageConfiguration & configuration,
+        const FormatFilterInfo * format_filter_info,
+        const ObjectInfoPtr & object_info,
+        const ContextPtr & context);
+
 protected:
     StorageID storage_id;
     const String name;

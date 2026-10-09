@@ -46,6 +46,13 @@ run unpinned "$(query data) SETTINGS ${UNPINNED}"
 run limit "SELECT count() FROM (SELECT number FROM s3(s3_conn, filename = '${DIR}/data/f_*.parquet', format = Parquet, structure = 'number UInt64, s String') LIMIT 50000) SETTINGS ${ON}"
 run limit_1 "SELECT count() FROM (SELECT number FROM s3(s3_conn, filename = '${DIR}/data/f_*.parquet', format = Parquet, structure = 'number UInt64, s String') LIMIT 1) SETTINGS ${ON}"
 
+# A TopK read does not use the query condition cache with `use_query_condition_cache_for_top_k = 0`, so the entries written by
+# another read of the table must not stop its footers from being read ahead.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_05340 (number UInt64, s String) ENGINE = S3(s3_conn, filename = '${DIR}/data/f_*.parquet', format = Parquet)"
+TOP_K="max_threads = 1, use_query_condition_cache = 1, use_query_condition_cache_for_top_k = 0, use_top_k_dynamic_filtering = 1, use_parquet_metadata_cache = 0, remote_filesystem_read_prefetch = 1, use_page_cache_for_object_storage = 0, enable_parallel_replicas = 0, s3_validate_etag_on_read = 1"
+run qcc_fill "SELECT count() FROM t_05340 WHERE number < 100000 SETTINGS ${TOP_K}"
+run qcc_top_k "SELECT number FROM t_05340 WHERE number < 100000 ORDER BY number DESC LIMIT 1 SETTINGS ${TOP_K}"
+
 # The objects of this query are not in the metadata cache before its first run.
 run cache_1 "$(query cache) SETTINGS ${CACHE}"
 run cache_2 "$(query cache) SETTINGS ${CACHE}"
@@ -59,7 +66,8 @@ ${CLICKHOUSE_CLIENT} --query "
         sumIf(ProfileEvents['ParquetPrefetchedFooters'], arm = 'off') = 0,
         sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'on') > 0,
         sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'limit_1') = 0,
-        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'unpinned') = 0
+        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'unpinned') = 0,
+        sumIf(ProfileEvents['ParquetFooterPrefetchRequests'], arm = 'qcc_top_k') > 0
     FROM
     (
         SELECT replaceOne(log_comment, '${CLICKHOUSE_DATABASE}_05340_', '') AS arm, ProfileEvents
