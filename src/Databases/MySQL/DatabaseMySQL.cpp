@@ -625,8 +625,7 @@ void DatabaseMySQL::attachTable(ContextPtr local_context, const String & table_n
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{} because it already exists.",
             backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
-    /// Not `storage`: it is built from the table definition, which has no `SETTINGS`. Created before the
-    /// disk work, which may be followed only by statements that cannot throw.
+    /// Not `storage`: it is built from the table definition, which has no `SETTINGS`.
     auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
     auto database_storage = createStorage(table_name, metadata_snapshot->getColumns());
 
