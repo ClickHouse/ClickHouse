@@ -177,6 +177,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     , wait_timeout(other.wait_timeout)
     , bg_reconnect(other.bg_reconnect)
 {
+    std::lock_guard lock(other.mutex);
     if (shareable)
     {
         replicas_by_priority = other.replicas_by_priority;

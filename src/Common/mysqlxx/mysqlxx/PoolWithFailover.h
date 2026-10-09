@@ -82,7 +82,7 @@ namespace mysqlxx
         /// Number of connection tries.
         size_t max_tries;
         /// Mutex for set of replicas.
-        std::mutex mutex;
+        mutable std::mutex mutex;
         /// Can the Pool be shared
         bool shareable;
         /// Timeout for waiting free connection.
