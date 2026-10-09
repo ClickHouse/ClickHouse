@@ -1908,15 +1908,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
                 if (auto * column_node = typeid_cast<ColumnNode *>(node))
                     if (column_node->hasExpression())
                     {
-                        /// Another ALIAS column of the table is resolved in its own scope, not in the scope of the one that reads it.
-                        auto * alias_columns_data = scope.table_expression_data_for_alias_resolution;
-                        if (alias_columns_data && alias_columns_data->unresolved_alias_columns.contains(node))
-                        {
-                            chassert(scope.parent_scope);
-                            resolveTableAliasColumn(resolve_result.resolved_identifier, *alias_columns_data, *scope.parent_scope);
-                            continue;
-                        }
-
                         resolveExpressionNode(column_node->getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
                         correctColumnExpressionType(*column_node, scope.context);
                     }
@@ -2151,6 +2142,30 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
     if (nearest_query_scope)
         table_expression_data = &nearest_query_scope->getTableExpressionDataOrThrow(table_expression_node);
 
+    /** Whether the column will be removed by `EXCEPT` or substituted by `REPLACE` in `resolveMatcher`
+      * (an `APPLY` before them uses the column). Such a column does not need to be resolved,
+      * so the expression of an ALIAS column is not analyzed for `SELECT * EXCEPT (alias_column)`.
+      */
+    auto is_column_discarded_by_transformers = [&](const std::string & column_name)
+    {
+        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+        {
+            if (transformer->as<ApplyColumnTransformerNode>())
+                return false;
+            if (auto * except_transformer = transformer->as<ExceptColumnTransformerNode>())
+            {
+                if (except_transformer->isColumnMatching(column_name))
+                    return true;
+            }
+            else if (auto * replace_transformer = transformer->as<ReplaceColumnTransformerNode>())
+            {
+                if (replace_transformer->findReplacementExpression(column_name))
+                    return true;
+            }
+        }
+        return false;
+    };
+
     QueryTreeNodes matched_column_nodes;
 
     for (const auto & column : matched_columns)
@@ -2159,13 +2174,11 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
         if (!matcher_node_typed.isMatchingColumn(column_name))
             continue;
 
-        if (table_expression_data)
+        if (table_expression_data && !is_column_discarded_by_transformers(column_name))
         {
-            const auto & node_map = table_expression_data->getColumnNodeMap();
-            auto column_node_it = node_map.find(column_name);
-            if (column_node_it != node_map.end())
+            if (auto column_node = table_expression_data->tryGetColumnNode(column_name))
             {
-                matched_column_nodes.emplace_back(column_node_it->second);
+                matched_column_nodes.emplace_back(std::move(column_node));
                 continue;
             }
         }
@@ -5063,31 +5076,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
     }
 }
 
-/// Resolve the expression of a table ALIAS column in its own scope, once. `table_scope` is the scope of the table expression.
-void QueryAnalyzer::resolveTableAliasColumn(const QueryTreeNodePtr & alias_column_node, AnalysisTableExpressionData & table_expression_data, IdentifierResolveScope & table_scope)
-{
-    if (!table_expression_data.unresolved_alias_columns.erase(alias_column_node.get()))
-        return;
-
-    auto & alias_column = alias_column_node->as<ColumnNode &>();
-
-    IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_node, &table_scope /*parent_scope*/);
-    alias_column_resolve_scope.table_expression_data_for_alias_resolution = &table_expression_data;
-    alias_column_resolve_scope.context = table_scope.context;
-
-    /// Initialize aliases in alias column scope
-    QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
-    visitor.visit(alias_column.getExpression());
-
-    resolveExpressionNode(alias_column_resolve_scope.scope_node,
-        alias_column_resolve_scope,
-        false /*allow_lambda_expression*/,
-        false /*allow_table_expression*/);
-    auto & resolved_expression = alias_column.getExpression();
-    if (resolved_expression->getResultType()->getName() != alias_column.getResultType()->getName())
-        resolved_expression = buildCastFunction(resolved_expression, alias_column.getResultType(), table_scope.context, true);
-}
-
 /// Initialize table expression data for table expression node
 void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
@@ -5216,59 +5204,70 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
         return;
 
     /// For the table / table-function path, install a populator that materialises
-    /// the column-node map (and resolves any ALIAS column expressions) on first use.
-    /// The populator captures the in-map `data` (its address is stable across
+    /// the column-node map on first use, and a resolver of ALIAS column expressions,
+    /// which is called for each ALIAS column only if the query uses it.
+    /// They capture the in-map `data` (its address is stable across
     /// `unordered_map` rehashes) and a kept-alive `storage_snapshot`.
     if (table_node || table_function_node)
     {
         auto & data = data_it->second;
-        data.setColumnNodeMapPopulator(
-            [this, &data, table_expression_node, captured_storage_snapshot = std::move(storage_snapshot), &scope]
-            (ColumnNameToColumnNodeMap & node_map) mutable
+        auto populator = [&data, table_expression_node, captured_storage_snapshot = storage_snapshot]
+            (ColumnNameToColumnNodeMap & node_map)
         {
             const auto & columns_description = captured_storage_snapshot->metadata->getColumns();
 
-            std::vector<ColumnNodePtr> alias_columns_to_resolve;
+            std::vector<std::string> alias_columns;
 
             /** For ALIAS columns in table we must additionally analyze ALIAS expressions.
               * Example: CREATE TABLE test_table (id UInt64, alias_value_1 ALIAS id + 5);
               *
-              * To do that we collect alias columns and build table column name to column node map.
-              * For each alias column we build identifier resolve scope, initialize it with table column name to node map
-              * and resolve alias column.
-              *
-              * The caller (`ensureColumnNodeMapIsPopulated`) has already emplaced an empty map and
-              * passes it by reference; insert directly into it (rather than into a local map we
-              * move at the end) so that any recursive `getColumnNodeMap()` triggered by
-              * alias-expression resolution below finds the placeholder ColumnNodes.
+              * Here we only collect the ALIAS columns, and their expressions are built and resolved
+              * by the resolver below when the column is requested.
               */
             node_map.reserve(data.column_names_and_types.size());
             for (const auto & column_name_and_type : data.column_names_and_types)
             {
                 const auto & column_default = columns_description.getDefault(column_name_and_type.name);
                 if (column_default && column_default->kind == ColumnDefaultKind::Alias)
-                {
-                    auto alias_expression = buildQueryTree(column_default->expression, scope.context);
-                    auto column_node = std::make_shared<ColumnNode>(column_name_and_type, std::move(alias_expression), table_expression_node);
-                    node_map.emplace(column_name_and_type.name, column_node);
-                    alias_columns_to_resolve.push_back(column_node);
-                }
-                else
-                {
-                    auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
-                    node_map.emplace(column_name_and_type.name, column_node);
-                }
+                    alias_columns.push_back(column_name_and_type.name);
+
+                auto column_node = std::make_shared<ColumnNode>(column_name_and_type, table_expression_node);
+                node_map.emplace(column_name_and_type.name, column_node);
             }
 
-            for (const auto & alias_column : alias_columns_to_resolve)
-                data.unresolved_alias_columns.insert(alias_column.get());
+            return alias_columns;
+        };
 
-            /** An ALIAS column read by an earlier one is resolved when it is read (see `tryResolveIdentifier`) and skipped here.
-              * Example: CREATE TABLE test_table (id UInt64, alias_value_1 ALIAS id + alias_value_2, alias_value_2 ALIAS id + 5) ENGINE=TinyLog;
-              */
-            for (const auto & alias_column : alias_columns_to_resolve)
-                resolveTableAliasColumn(alias_column, data, scope);
-        });
+        /** An ALIAS column can reference other ALIAS columns.
+          * Example: CREATE TABLE test_table (id UInt64, alias_value_1 ALIAS id + alias_value_2, alias_value_2 ALIAS id + 5) ENGINE=TinyLog;
+          *
+          * During resolve of alias_value_1, alias_value_2 column will be resolved.
+          */
+        auto alias_column_resolver = [this, &data, &scope, captured_storage_snapshot = std::move(storage_snapshot)](const ColumnNodePtr & alias_column_to_resolve)
+        {
+            const auto & column_default = captured_storage_snapshot->metadata->getColumns().getDefault(alias_column_to_resolve->getColumnName());
+            if (!column_default || column_default->kind != ColumnDefaultKind::Alias)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not an ALIAS column", alias_column_to_resolve->getColumnName());
+            alias_column_to_resolve->setExpression(buildQueryTree(column_default->expression, scope.context));
+
+            IdentifierResolveScope & alias_column_resolve_scope = createIdentifierResolveScope(alias_column_to_resolve, &scope /*parent_scope*/);
+            alias_column_resolve_scope.table_expression_data_for_alias_resolution = &data;
+            alias_column_resolve_scope.context = scope.context;
+
+            /// Initialize aliases in alias column scope
+            QueryExpressionsAliasVisitor visitor(alias_column_resolve_scope.aliases);
+            visitor.visit(alias_column_to_resolve->getExpression());
+
+            resolveExpressionNode(alias_column_resolve_scope.scope_node,
+                alias_column_resolve_scope,
+                false /*allow_lambda_expression*/,
+                false /*allow_table_expression*/);
+            auto & resolved_expression = alias_column_to_resolve->getExpression();
+            if (resolved_expression->getResultType()->getName() != alias_column_to_resolve->getResultType()->getName())
+                resolved_expression = buildCastFunction(resolved_expression, alias_column_to_resolve->getResultType(), scope.context, true);
+        };
+
+        data.setColumnNodeMapPopulator(std::move(populator), std::move(alias_column_resolver));
     }
 }
 
