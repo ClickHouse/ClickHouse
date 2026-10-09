@@ -1680,15 +1680,18 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// the freshly written value of the column it depends on.
     emit_materialized_recompute_stages(patch_affected_materialized, std::nullopt);
 
-    /// A part without a commit-order projection rebuilds it in every mutation, so it has to read the projection's columns.
+    /// A part rebuilds a broken projection and a missing commit-order projection in every mutation, so it has to read their columns.
     if (source.isMutatingDataPart() && !settings.apply_on_fly_for_read)
     {
         for (const auto & projection : projections_desc)
         {
-            if (source.hasProjection(projection.name) || !(projection.with_block_number || projection.with_block_offset))
+            if (source.hasBrokenProjection(projection.name))
+                LOG_DEBUG(logger, "Will rebuild broken projection {}", projection.name);
+            else if (!source.hasProjection(projection.name) && (projection.with_block_number || projection.with_block_offset))
+                LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
+            else
                 continue;
 
-            LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
             for (const auto & column : projection.required_columns)
                 dependencies.emplace(column, ColumnDependency::PROJECTION);
             materialized_projections.insert(projection.name);
@@ -1791,14 +1794,6 @@ void MutationsInterpreter::prepare(bool dry_run)
     {
         if (!source.hasProjection(projection.name))
             continue;
-
-        /// Always rebuild broken projections.
-        if (source.hasBrokenProjection(projection.name))
-        {
-            LOG_DEBUG(logger, "Will rebuild broken projection {}", projection.name);
-            materialized_projections.insert(projection.name);
-            continue;
-        }
 
         if (need_rebuild_projections)
         {
