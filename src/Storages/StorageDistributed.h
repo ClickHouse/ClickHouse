@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
 #include <Storages/getStructureOfRemoteTable.h>
@@ -221,7 +222,22 @@ private:
     /// (in this case regular WithMergeableState should be used)
     std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const;
 
+    /// The stage `getQueryProcessingStage` returns, chosen after the shards to query are known.
+    QueryProcessingStage::Enum chooseQueryProcessingStage(
+        QueryProcessingStage::Enum to_stage, const Settings & settings, size_t nodes, const SelectQueryInfo & query_info) const;
+
     bool isShardingKeySuitsQueryTreeNodeExpression(const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const;
+
+    /// Throws when the remote table has a column among `key_columns` whose conversion to the type
+    /// declared here does not preserve the order and distinctness (see `conversionPreservesOrder`),
+    /// because the shards then sort or reduce by one type and the initiator relies on another.
+    /// `std::nullopt` means the key columns are unknown, and then every column is checked. The remote table is only
+    /// visible when a shard of `cluster` is this server; nothing is checked otherwise.
+    void checkRemoteTableConversionPreservesOrder(
+        ContextPtr local_context,
+        const StorageSnapshotPtr & storage_snapshot,
+        const ClusterPtr & cluster,
+        const std::optional<NameSet> & key_columns) const;
 
     /// The implicit `rand()` sharding key of a `Remote` database proxy (see `DatabaseRemote`) exists
     /// only to spread `INSERT` rows across the shards; it says nothing about data placement. The read
@@ -238,7 +254,7 @@ private:
     void delayInsertOrThrowIfNeeded() const;
 
     std::optional<QueryPipeline>
-    distributedWriteFromClusterStorage(const IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
+    distributedWriteFromClusterStorage(IStorageCluster & src_storage_cluster, const ASTInsertQuery & query, ContextPtr context) const;
     std::optional<QueryPipeline> distributedWriteBetweenDistributedTables(const StorageDistributed & src_distributed, const ASTInsertQuery & query, ContextPtr context) const;
 
     static VirtualColumnsDescription createVirtuals();
@@ -259,6 +275,9 @@ private:
     bool has_sharding_key;
     ASTPtr sharding_key;
     bool sharding_key_is_deterministic = false;
+    /// Fixed within a query but possibly not across queries (`dictGet`); see the INSERT SELECT guard
+    /// in `distributedWriteFromClusterStorage`.
+    bool sharding_key_is_deterministic_in_scope_of_query = false;
     ExpressionActionsPtr sharding_key_expr;
     String sharding_key_column_name;
 
@@ -308,5 +327,8 @@ private:
 
     void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };
+
+/// The `SecretArgumentsSpec` of the `remote`/`remoteSecure` table functions and the `Remote`/`RemoteSecure` table engines.
+SecretArgumentsSpec remoteSecretArguments();
 
 }

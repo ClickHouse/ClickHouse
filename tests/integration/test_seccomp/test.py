@@ -8,8 +8,8 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 
-# The default of the `seccomp` server setting is `log`, so this node gets a filter - one that
-# enforces nothing - without being configured for one.
+# The configuration file shipped with the server sets `seccomp` to `trap`, so this node gets an
+# enforcing filter without being configured for one.
 default_node = cluster.add_instance(
     "default_node", main_configs=["configs/binary_checksum.xml"]
 )
@@ -24,7 +24,7 @@ trap_node = cluster.add_instance(
     "trap_node", main_configs=["configs/trap.xml", "configs/binary_checksum.xml"]
 )
 # The setting comes from ZooKeeper, which the server reads only after it has loaded the local
-# configuration - where the setting keeps its default, `log`.
+# configuration - where the setting is `trap`, from the shipped configuration file.
 zk_node = cluster.add_instance(
     "zk_node", main_configs=["configs/errno_from_zk.xml"], with_zookeeper=True
 )
@@ -98,7 +98,7 @@ def run_probe(node):
 
 def test_setting_is_reported(started_cluster):
     for node, expected in [
-        (default_node, "log"),
+        (default_node, "trap"),
         (disabled_node, "disabled"),
         (errno_node, "errno"),
         (log_node, "log"),
@@ -201,11 +201,11 @@ def test_system_call_outside_the_policy_is_refused(started_cluster):
 def test_setting_from_zookeeper_is_the_one_installed(started_cluster):
     # A filter cannot be relaxed or replaced once it is installed, so it must be installed from the
     # final configuration, the one with the values from ZooKeeper - not from the local one read
-    # before, where the setting is `log` and nothing would be refused.
+    # before, where the setting is `trap`.
     # `contains_in_log` hands the pattern to `zgrep` inside double quotes, where a backtick would
     # start a command substitution, so the backticks of the message are matched with `.`.
     assert zk_node.contains_in_log("server setting, which is set to .errno.")
-    assert not zk_node.contains_in_log("server setting, which is set to .log.")
+    assert not zk_node.contains_in_log("server setting, which is set to .trap.")
     check_policy_is_enforced(zk_node)
 
 

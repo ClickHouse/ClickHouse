@@ -6,12 +6,13 @@
 #include <Core/SettingsSecrets.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <Parsers/engineSettingsToHide.h>
+#include <Parsers/SecretArguments.h>
 #include <Parsers/formatSettingName.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+
 
 namespace DB
 {
@@ -24,7 +25,7 @@ namespace ErrorCodes
 /// Renders a change whose value is a secret as the SQL text that hides it, and returns `nullopt` for
 /// a change that carries none. `formatImpl` and `hasSecretParts` both go through this, so they cannot
 /// disagree on what is secret.
-static std::optional<String> renderSecretChangeValue(const SettingChange & change)
+std::optional<String> renderSecretChangeValue(const SettingChange & change)
 {
     /// The queue engines also take every setting, a format setting included, with the legacy `s3queue_` prefix.
     static constexpr std::string_view s3queue_prefix = "s3queue_";
@@ -33,14 +34,8 @@ static std::optional<String> renderSecretChangeValue(const SettingChange & chang
     if (auto masked = CoreSettings::renderSecretSettingValue(setting_name, change.value))
         return masked;
 
-    for (const auto * settings_to_hide : engineSettingsToHide())
-    {
-        auto it = settings_to_hide->find(setting_name);
-        if (it != settings_to_hide->end())
-            return it->second(change.value);
-    }
-
-    return {};
+    /// The table and database engine settings, declared by each engine in its `SecretArgumentsSpec`.
+    return getSecretArgumentsFinder().renderSecretSetting(setting_name, change.value);
 }
 
 

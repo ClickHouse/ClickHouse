@@ -38,6 +38,17 @@ SELECT name, value, changed FROM system.table_settings WHERE database = currentD
     AND name IN ('after_processing_move_secret_access_key', 'mode')
 ORDER BY name;
 
+-- A rule that hides only a part of a value, such as the key of the connection string an S3Queue table moves processed
+-- files with, leaves a value without a secret visible, and a value with one is hidden as a whole.
+CREATE TABLE queue_no_key (a String) ENGINE = S3Queue('http://localhost:11111/test/05296_no_key/*.csv', NOSIGN, 'CSV')
+SETTINGS mode = 'unordered', after_processing_move_connection_string = 'DefaultEndpointsProtocol=https;AccountName=acc';
+CREATE TABLE queue_key (a String) ENGINE = S3Queue('http://localhost:11111/test/05296_key/*.csv', NOSIGN, 'CSV')
+SETTINGS mode = 'unordered',
+    after_processing_move_connection_string = 'DefaultEndpointsProtocol=https;AccountName=acc;AccountKey=secret_key_05296';
+SELECT table, value FROM system.table_settings
+WHERE database = currentDatabase() AND table IN ('queue_key', 'queue_no_key') AND name = 'after_processing_move_connection_string'
+ORDER BY table;
+
 -- A value a named collection supplies is hidden unless the server lets the reader see the collection's secrets, which
 -- it does not here; a literal override in the engine arguments and the SETTINGS clause are shown. A format setting
 -- the collection supplies has a row, hidden too, although the engine's rows leave the format settings out.
@@ -53,6 +64,8 @@ ORDER BY name;
 
 DROP TABLE kafka_collection;
 DROP NAMED COLLECTION ${collection};
+DROP TABLE queue_key;
+DROP TABLE queue_no_key;
 DROP TABLE queue;
 DROP TABLE kafka_positional;
 DROP TABLE kafka_no_secret;

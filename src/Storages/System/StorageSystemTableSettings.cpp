@@ -2,7 +2,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
-#include <Core/SettingsSecrets.h>
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -18,11 +17,11 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/engineSettingsToHide.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/System/StorageSystemTableSettings.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/HiddenSecret.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/SettingsChanges.h>
@@ -139,33 +138,19 @@ std::optional<NamedCollectionOfTable> namedCollectionOf(const ASTFunction & engi
     return result;
 }
 
-/// The value as this user may see it, with a secret hidden by the rules `SHOW CREATE TABLE` uses. A value equal to
-/// the compiled-in default holds no secret, so an unset password is not reported as hidden.
+/// The value as this user may see it: a value that holds a secret by the rules `SHOW CREATE TABLE` uses is shown as
+/// `[HIDDEN]`, as a whole even where `SHOW CREATE TABLE` hides only a part of it. A value equal to the compiled-in
+/// default holds no secret, so an unset password is not reported as hidden.
 String visibleValue(const SettingDescription & setting, bool show_secrets)
 {
     if (show_secrets || setting.value == setting.default_value)
         return setting.value;
 
-    String value = setting.value;
-    if (CoreSettings::maskSettingValue(setting.name, Field(setting.value), value))
-        return value;
-
-    for (const auto * settings_to_hide : engineSettingsToHide())
-    {
-        const auto it = settings_to_hide->find(setting.name);
-        if (it == settings_to_hide->end())
-            continue;
-
-        const auto rendered = it->second(Field(setting.value));
-        if (!rendered)
-            return setting.value;
-
-        /// A rule renders SQL: the value to show, in single quotes.
-        if (rendered->size() < 2 || rendered->front() != '\'' || rendered->back() != '\'')
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "The masking rule of setting {} did not return a quoted string", setting.name);
-        return rendered->substr(1, rendered->size() - 2);
-    }
+    /// A rule that hides only a part of a value (`nats_url`, `rabbitmq_address`, a connection string) renders a value
+    /// without a secret unchanged.
+    const auto rendered = renderSecretChangeValue(SettingChange(setting.name, Field(setting.value)));
+    if (rendered && *rendered != quoteString(setting.value))
+        return String(HIDDEN_SECRET);
 
     return setting.value;
 }
