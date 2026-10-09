@@ -259,13 +259,23 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * reading = typeid_cast<const ReadFromObjectStorageStep *>(step))
     {
         /// A data lake table knows its rows from its metadata; a plain object storage read does not.
+        /// The count is the table's, so with a filter (pushed into the read or passed in) it is only
+        /// a bound: there are no column statistics to estimate the filter by.
         RelationStats stats;
         stats.table_name = reading->getTableName();
         if (const auto total_rows = reading->totalRows())
         {
-            stats.estimated_rows = total_rows;
             stats.max_rows = total_rows;
-            stats.source = RowEstimateSource::Statistics;
+            if (filter || reading->getFilterActionsDAG())
+            {
+                stats.imprecise_estimate = true;
+                stats.source = RowEstimateSource::NoStatistics;
+            }
+            else
+            {
+                stats.estimated_rows = total_rows;
+                stats.source = RowEstimateSource::Statistics;
+            }
         }
         return stats;
     }
