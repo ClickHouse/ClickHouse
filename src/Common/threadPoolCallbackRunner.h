@@ -262,11 +262,11 @@ public:
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
     {
         auto task = std::make_shared<Task>();
-        auto callback_task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(
+        auto pending_callback_task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(
             getCurrentThreadGroup(), getCurrentExecutionPhase(), thread_name, std::move(callback));
-        task->future = callback_task->promise.get_future();
+        task->future = pending_callback_task->promise.get_future();
 
-        auto task_func = [task, callback_task = std::move(callback_task)]() mutable -> void
+        auto task_func = [task, callback_task = std::move(pending_callback_task)]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))

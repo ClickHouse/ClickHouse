@@ -82,7 +82,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int FAULT_INJECTED;
 }
