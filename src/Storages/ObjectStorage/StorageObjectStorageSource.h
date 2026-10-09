@@ -86,7 +86,6 @@ public:
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context);
 
-    /// The modification time of the object for the schema cache.
     static std::optional<time_t> getLastModificationTime(const ObjectInfo & object_info);
 
 protected:

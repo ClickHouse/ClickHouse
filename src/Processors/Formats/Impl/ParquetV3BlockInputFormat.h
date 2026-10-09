@@ -43,7 +43,6 @@ private:
     std::exception_ptr exception;
 };
 
-/// Reads the footer of a Parquet file.
 parquet::format::FileMetaData readParquetFileMetaData(ReadBuffer & buf, const FormatSettings & format_settings);
 
 /// Reads the footer of `object` as `ParquetV3BlockInputFormat` does, through `metadata_cache` if it is not null.
