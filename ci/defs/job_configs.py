@@ -170,6 +170,9 @@ tidy_changed_files_digest_config = Job.CacheDigestConfig(
     + [
         "./ci/jobs/scripts/clang_tidy_changed_files.py",
         "./ci/jobs/scripts/workflow_hooks/filter_job.py",
+        "./ci/jobs/scripts/workflow_hooks/store_data.py",
+        "./ci/praktika/gh.py",
+        "./ci/praktika/info.py",
         "./ci/defs/defs.py",
         "./ci/defs/job_configs.py",
         "./ci/workflows/merge_queue.py",

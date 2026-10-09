@@ -79,6 +79,11 @@ TIDY_CONFIG_PATHS = (
     "cmake/clang_tidy.cmake",
     "ci/jobs/scripts/clang_tidy_changed_files.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    # The producer and the readers of the changed-files list that selects what
+    # is analyzed: a change that drops paths from it would merge unexercised.
+    "ci/jobs/scripts/workflow_hooks/store_data.py",
+    "ci/praktika/gh.py",
+    "ci/praktika/info.py",
     "ci/jobs/build_clickhouse.py",
     # The definition of the job itself and of the workflow scheduling it.
     "ci/defs/defs.py",
