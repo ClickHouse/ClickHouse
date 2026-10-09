@@ -1,4 +1,7 @@
 -- Tags: no-s3-storage
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+
 DROP TABLE IF EXISTS lwd_test;
 DROP TABLE IF EXISTS lwd_test_1;
 
@@ -23,8 +26,8 @@ SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase(
 SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query = 'SELECT count() FROM lwd_test_1;' AND type = 'QueryFinish';
 
 SELECT read_rows < (
-    SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query ilike '%SELECT count() FROM lwd_test;%' AND type = 'QueryFinish'
-) FROM system.query_log WHERE current_database = currentDatabase() AND query ilike '%SELECT count() FROM lwd_test_1;%' AND type = 'QueryFinish';
+    SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query = 'SELECT count() FROM lwd_test;' AND type = 'QueryFinish'
+) FROM system.query_log WHERE current_database = currentDatabase() AND query = 'SELECT count() FROM lwd_test_1;' AND type = 'QueryFinish';
 
 DROP TABLE IF EXISTS lwd_test;
 DROP TABLE IF EXISTS lwd_test_1;
