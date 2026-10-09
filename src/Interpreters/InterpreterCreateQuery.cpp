@@ -3398,6 +3398,20 @@ bool InterpreterCreateQuery::shouldPopulateMaterializedViewAtomically(const ASTC
         return false;
     }
 
+#if CLICKHOUSE_CLOUD
+    /// In a Shared database the view is committed to the catalog only after the population, so no replica can
+    /// subscribe to it in time and the local cut cannot deliver rows exactly once.
+    if (SharedDatabaseCatalog::isInitialQuery(getContext()))
+    {
+        LOG_INFO(getLogger("InterpreterCreateQuery"),
+            "Populating materialized view {}.{} non-atomically because it is created in a Shared database, "
+            "where the population cannot be cut consistently across replicas. "
+            "Rows inserted into the source during the population may be missed.",
+            backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
+        return false;
+    }
+#endif
+
     return true;
 }
 
