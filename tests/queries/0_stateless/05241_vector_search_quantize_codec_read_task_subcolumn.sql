@@ -1,3 +1,6 @@
+-- Tags: no-parallel-replicas
+-- Tag no-parallel-replicas: the initiator reads only the granules assigned to it, so its `ReadCompressedBytes` is not deterministic, https://github.com/ClickHouse/ClickHouse/issues/124607
+
 -- The `quantized` companion subcolumn of a `Quantized(...)` column is exposed only by the custom serialization of the
 -- column. Planning the read task of a part must still find it in the part (which holds that serialization), so reading
 -- `vec.quantized` reads only the codes and does not inject the full `vec` column, including under PREWHERE and after
