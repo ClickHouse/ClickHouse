@@ -103,7 +103,7 @@ static JoinSide coordinatedJoinSide(const QueryPlan::Node * node)
 }
 
 /// Can this MergeTree read be part of a shipped fragment?
-static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
+bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
 {
     /// A refreshable MaterializedView that swaps its target on each refresh (non-APPEND) must stay
     /// local: the target read is shipped by name and re-resolved per replica without RefreshTask's
@@ -370,6 +370,11 @@ public:
     {
         const auto coordinated_side = coordinatedJoinSide(node);
         if (coordinated_side == JoinSide::None)
+            return;
+
+        /// RightAny picks one right row per left row out of the whole right table, so the join must see all of it.
+        if (coordinated_side == JoinSide::Right
+            && typeid_cast<const JoinStepLogical *>(node->step.get())->getJoinOperator().strictness == JoinStrictness::RightAny)
             return;
 
         auto * coordinated_child = node->children[static_cast<size_t>(coordinated_side)];
