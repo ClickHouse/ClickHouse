@@ -261,29 +261,35 @@ def test_not_found_shape(started_cluster):
     assert_error_shape(response, "NotFoundException")
 
 
+def wait_listening(url, expected):
+    for _ in range(100):
+        try:
+            requests.get(url, timeout=1, verify=False)
+            listening = True
+        except requests.exceptions.ConnectionError:
+            listening = False
+        if listening == expected:
+            return
+        time.sleep(0.1)
+    raise AssertionError(f"{url} listening={listening}, expected {expected}")
+
+
 def test_stop_start_listen(started_cluster):
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
     ns = f"persistent_{uuid.uuid4().hex[:8]}"
     create_namespace([ns])
 
+    plain_url = catalog_url("/v1/config")
+    secure_url = f"https://{node.ip_address}:{CATALOG_SECURE_PORT}/v1/config"
+
+    # Both listeners share one server type, so one command stops both.
     node.query("SYSTEM STOP LISTEN ICEBERG REST CATALOG")
-    for _ in range(100):
-        try:
-            requests.get(catalog_url("/v1/config"), timeout=1)
-        except requests.exceptions.ConnectionError:
-            break
-        time.sleep(0.1)
-    else:
-        raise AssertionError("Catalog port is still accepting connections")
+    wait_listening(plain_url, False)
+    wait_listening(secure_url, False)
 
     node.query("SYSTEM START LISTEN ICEBERG REST CATALOG")
-    for _ in range(100):
-        try:
-            requests.get(catalog_url("/v1/config"), timeout=1)
-            break
-        except requests.exceptions.ConnectionError:
-            time.sleep(0.1)
-    else:
-        raise AssertionError("Catalog port did not start accepting connections")
+    wait_listening(plain_url, True)
+    wait_listening(secure_url, True)
 
     assert [ns] in list_namespaces()
 
