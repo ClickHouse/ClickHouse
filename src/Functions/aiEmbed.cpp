@@ -166,7 +166,7 @@ public:
 
         FunctionBaseAI::embedTexts(
             *provider, model, dimensions,
-            getName(), getContext()->getClientInfo().initial_query_id,
+            getName(), getContext()->getCurrentQueryId(), getContext()->getClientInfo().initial_query_id,
             inputs, max_batch_size, max_retries,
             retry_delay_ms, throw_on_error, *quota_tracker, timeouts, embedding_result);
 

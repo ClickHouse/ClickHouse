@@ -162,6 +162,7 @@ public:
         UInt64 dimensions,
         const String & function_name,
         const String & query_id,
+        const String & initial_query_id,
         const VectorWithMemoryTracking<std::string_view> & inputs,
         size_t max_batch_size,
         UInt64 max_retries,

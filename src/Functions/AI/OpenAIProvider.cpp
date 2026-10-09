@@ -28,6 +28,8 @@ void setCommonHeaders(Poco::Net::HTTPRequest & http_request, const AIRequest & a
     http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
     if (!ai_request.query_id.empty())
         http_request.set("X-ClickHouse-Query-Id", sanitize(ai_request.query_id));
+    if (!ai_request.initial_query_id.empty())
+        http_request.set("X-ClickHouse-Initial-Query-Id", sanitize(ai_request.initial_query_id));
 }
 
 }

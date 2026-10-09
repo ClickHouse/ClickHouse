@@ -29,15 +29,17 @@ private:
     const char * className() const noexcept override { return "DB::AIProviderHTTPException"; }
 };
 
+/// Extra info sent with each request. Useful for debugging.
 struct AIRequest
 {
     /// Name of the AI SQL function that produced this request, e.g. "aiGenerate".
-    /// Useful for debugging.
     String function_name;
 
-    /// The current query id.
-    /// Useful for debugging.
+    /// The current query id. Different on different shards of a distributed query.
     String query_id;
+
+    /// The initial query id. Same on all shards of a distributed query, empty for a background mutation.
+    String initial_query_id;
 };
 
 /** Parameters for a single AI chat completion request.

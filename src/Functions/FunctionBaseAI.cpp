@@ -372,6 +372,7 @@ void FunctionBaseAI::embedTexts(
     UInt64 dimensions,
     const String & function_name,
     const String & query_id,
+    const String & initial_query_id,
     const VectorWithMemoryTracking<std::string_view> & inputs,
     size_t max_batch_size,
     UInt64 max_retries,
@@ -407,6 +408,7 @@ void FunctionBaseAI::embedTexts(
         ai_embedding_request.dimensions = dimensions;
         ai_embedding_request.function_name = function_name;
         ai_embedding_request.query_id = query_id;
+        ai_embedding_request.initial_query_id = initial_query_id;
         ai_embedding_request.inputs.reserve(batch_end - batch_start);
         for (size_t k = batch_start; k < batch_end; ++k)
             ai_embedding_request.inputs.emplace_back(inputs[k]);
@@ -505,7 +507,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
     timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
 
-    const String & query_id = getContext()->getClientInfo().initial_query_id;
+    const String query_id = getContext()->getCurrentQueryId();
+    const String & initial_query_id = getContext()->getClientInfo().initial_query_id;
 
     auto result_col = removeNullable(result_type)->createColumn();
     auto null_map_col = prompt_nullable ? ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0)) : nullptr;
@@ -563,6 +566,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ai_request.max_tokens = max_tokens;
                 ai_request.function_name = getName();
                 ai_request.query_id = query_id;
+                ai_request.initial_query_id = initial_query_id;
 
                 ++total_api_calls;
 
