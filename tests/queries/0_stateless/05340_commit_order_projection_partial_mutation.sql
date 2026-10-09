@@ -63,7 +63,7 @@ SELECT 'D', (SELECT count() FROM mergeTreeProjection(currentDatabase(), t_d, p2)
     (SELECT arraySort(groupArray((id, g, w, _block_number, _block_offset))) FROM mergeTreeProjection(currentDatabase(), t_d, p2))
     = (SELECT arraySort(groupArray((id, g, w, _block_number, _block_offset))) FROM t_d SETTINGS optimize_use_projections = 0);
 
--- E: a part with lightweight-deleted rows. Only completion is checked here: the rebuilt projection still keeps the deleted rows.
+-- E: a part with lightweight-deleted rows. The rebuilt projection may still keep the deleted rows, so it is checked to hold every surviving row.
 CREATE TABLE t_e (id UInt64, g UInt64, w UInt64, PROJECTION p (SELECT id, g ORDER BY g))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, lightweight_mutation_projection_mode = 'rebuild',
@@ -73,6 +73,9 @@ DELETE FROM t_e WHERE id < 3 SETTINGS lightweight_deletes_sync = 2;
 ALTER TABLE t_e ADD PROJECTION p2 (SELECT *, _block_number, _block_offset ORDER BY _block_number, _block_offset);
 ALTER TABLE t_e UPDATE w = w + 1 WHERE 1;
 SELECT 'E', count(), arraySort(groupArray((id, g, w))) FROM t_e SETTINGS optimize_use_projections = 0;
+SELECT 'E', hasAll(
+    (SELECT groupArray((id, g, w, _block_number, _block_offset)) FROM mergeTreeProjection(currentDatabase(), t_e, p2)),
+    (SELECT groupArray((id, g, w, _block_number, _block_offset)) FROM t_e SETTINGS optimize_use_projections = 0));
 
 DROP TABLE t_a;
 DROP TABLE t_b;
