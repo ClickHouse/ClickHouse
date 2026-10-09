@@ -394,4 +394,37 @@ TEST(Context, ReusesOneStatelessWorkersProviderPerQuery)
     EXPECT_EQ(fresh_alloc->getAddresses()[0].host, "host-b");
 }
 
+/// A query that resolved its provider keeps allocating from it after a reload disables the client, so
+/// it drains instead of failing; a new query cannot resolve a provider any more.
+TEST(Context, KeepsResolvedProviderAfterClientIsDisabled)
+{
+    applyStatelessWorkerConfig(R"(
+    <stateless_worker_client>
+        <enabled>1</enabled>
+        <host>host-a</host>
+    </stateless_worker_client>
+)");
+    getContext().context->reloadStatelessWorkersConfig(getContext().context->getConfigRef());
+
+    auto query_ctx = Context::createCopy(getContext().context);
+    query_ctx->setQueryContext(query_ctx);
+    ASSERT_TRUE(query_ctx->getStatelessWorkersProvider());
+
+    applyStatelessWorkerConfig(R"(
+    <stateless_worker_client>
+        <enabled>0</enabled>
+        <host>host-a</host>
+    </stateless_worker_client>
+)");
+    getContext().context->reloadStatelessWorkersConfig(getContext().context->getConfigRef());
+
+    auto allocation = query_ctx->getOrCreateStatelessWorkerAllocation();
+    ASSERT_EQ(allocation->getAddresses().size(), 1u);
+    EXPECT_EQ(allocation->getAddresses()[0].host, "host-a");
+
+    auto fresh_ctx = Context::createCopy(getContext().context);
+    fresh_ctx->setQueryContext(fresh_ctx);
+    EXPECT_THROW(fresh_ctx->getStatelessWorkersProvider(), Exception);
+}
+
 }

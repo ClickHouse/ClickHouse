@@ -1226,9 +1226,8 @@ TaskToHostMap::~TaskToHostMap() = default;
 
 void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
-    if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
-
+    /// No `enabled` check here: a query that already resolved its provider drains on it even if the
+    /// client is disabled meanwhile, while resolving a new provider is refused by the registry.
     /// One allocation per query, shared by its distributed plans.
     worker_allocation = context->getOrCreateStatelessWorkerAllocation();
     for (const auto & addr : worker_allocation->getAddresses())

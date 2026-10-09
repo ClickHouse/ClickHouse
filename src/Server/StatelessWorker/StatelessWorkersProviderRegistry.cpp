@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 StatelessWorkersProviderRegistry::StatelessWorkersProviderRegistry()
@@ -139,7 +140,7 @@ StatelessWorkersProviderPtr StatelessWorkersProviderRegistry::buildProvider(cons
     const auto & config = global_context->getConfigRef();
 
     if (!config.getBool("stateless_worker_client.enabled", false))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Stateless worker client is not enabled in configuration");
 
     /// Only the worker source is per-cluster; other settings are read from the top-level block and
