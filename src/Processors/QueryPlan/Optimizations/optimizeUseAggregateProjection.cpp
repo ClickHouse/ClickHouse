@@ -778,12 +778,13 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     const bool has_lightweight_delete_parts = reading.getMutationsSnapshot()->hasLightweightDeletedMask();
     const bool is_simple_count
         = keys.empty() && aggregates.size() == 1 && typeid_cast<const AggregateFunctionCount *>(aggregates[0].function.get());
+    const bool is_bare_count = is_simple_count && aggregates[0].argument_names.empty();
 
-    /// Lightweight deletes do not update extrema in part metadata. Only allow ungrouped `count`,
-    /// with exact row counts checked per part before using the projection.
+    /// Lightweight deletes do not update extrema in part metadata. Only allow ungrouped, argument-free `count`,
+    /// with exact row counts checked per part before using the projection. Arguments must still be evaluated and may throw.
     bool can_use_minmax_projection = allow_implicit_projections
         && metadata->minmax_count_projection
-        && (!has_lightweight_delete_parts || is_simple_count)
+        && (!has_lightweight_delete_parts || is_bare_count)
         && canMinMaxCountProjectionMatchAggregates(aggregates);
 
     if (!can_use_minmax_projection && agg_projections.empty())
