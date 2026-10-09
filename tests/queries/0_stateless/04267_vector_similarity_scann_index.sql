@@ -635,3 +635,164 @@ SELECT number, [toFloat32(1e20 + number * 1e15), toFloat32(number)]
 FROM numbers(1990); -- { serverError INCORRECT_DATA }
 SELECT 1;
 DROP TABLE tab_scann_dot_overflow;
+
+-- Test 25: Gate fresh definitions, including full-definition `ATTACH TABLE`,
+-- while allowing short `ATTACH TABLE` to reload an existing table.
+SELECT '25. Experimental gate covers full-definition ATTACH';
+SET allow_experimental_scann_index = 0;
+
+CREATE TABLE scann_gate_create
+(
+    id UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
+
+ATTACH TABLE scann_gate_attach UUID '04267000-0000-4000-8000-000000000025'
+(
+    id UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id; -- { serverError SUPPORT_IS_DISABLED }
+
+SET allow_experimental_scann_index = 1;
+
+ATTACH TABLE scann_gate_attach UUID '04267000-0000-4000-8000-000000000025'
+(
+    id UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2)
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO scann_gate_attach VALUES (1, [1, 0]), (2, [0, 1]);
+
+SET allow_experimental_scann_index = 0;
+DETACH TABLE scann_gate_attach SYNC;
+ATTACH TABLE scann_gate_attach;
+
+SELECT id FROM scann_gate_attach ORDER BY id;
+SELECT id FROM scann_gate_attach ORDER BY L2Distance(vec, [1., 0.]) LIMIT 1;
+
+DROP TABLE scann_gate_attach;
+SET allow_experimental_scann_index = 1;
+
+
+-- Test 26: Full-granule scan signals avoid enumerating rows and keep mixed scans correct.
+SELECT '26. Full-granule scan and mixed ANN distance hints';
+-- Small granules intentionally produce warnings about the absence of an index.
+SET send_logs_level = 'error';
+
+CREATE TABLE scann_full_granule_scan
+(
+    id UInt64,
+    vec Array(Float32),
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 16) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1024, index_granularity_bytes = 10485760,
+    min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
+
+-- Two indexed granules followed by a metadata-only granule with fewer than 1000 rows.
+INSERT INTO scann_full_granule_scan
+SELECT number, [toFloat32(number), toFloat32(0)] FROM numbers(2348);
+OPTIMIZE TABLE scann_full_granule_scan FINAL;
+
+SELECT groupArray(rows_in_granule) FROM
+(
+    SELECT rows_in_granule FROM mergeTreeIndex(currentDatabase(), 'scann_full_granule_scan')
+    WHERE rows_in_granule > 0 ORDER BY mark_number
+);
+
+-- Requesting every row in an indexed granule while searching one partition
+-- exercises the full-granule scan signal across multiple granules.
+SELECT count(), min(id), max(id) FROM
+(
+    SELECT id FROM scann_full_granule_scan
+    ORDER BY L2Distance(vec, [2347., 0.]) LIMIT 1024
+    SETTINGS scann_num_leaves_to_search = 1,
+        max_limit_for_vector_search_queries = 1024, vector_search_with_rescoring = 0
+);
+
+-- Compare the full result sets, not just their cardinalities.
+SELECT count() FROM
+(
+    SELECT id FROM scann_full_granule_scan
+    ORDER BY L2Distance(vec, [2347., 0.]), id LIMIT 1024
+    SETTINGS scann_num_leaves_to_search = 1,
+        max_limit_for_vector_search_queries = 1024, vector_search_with_rescoring = 0
+    EXCEPT
+    SELECT id FROM scann_full_granule_scan
+    ORDER BY L2Distance(vec, [2347., 0.]), id LIMIT 1024
+    SETTINGS use_skip_indexes = 0
+);
+
+-- Indexed granules provide ANN distances, but the final metadata-only granule
+-- needs an exact scan. Its closest rows must not be lost to ANN read hints.
+SELECT arraySort(groupArray(id)) FROM
+(
+    SELECT id FROM scann_full_granule_scan
+    ORDER BY L2Distance(vec, [2347., 0.]) LIMIT 5
+    SETTINGS scann_num_leaves_to_search = 16, vector_search_with_rescoring = 0
+);
+
+SELECT arraySort(groupArray(id)) FROM
+(
+    SELECT id FROM scann_full_granule_scan
+    ORDER BY L2Distance(vec, [2347., 0.]) LIMIT 5
+    SETTINGS scann_num_leaves_to_search = 16, vector_search_with_rescoring = 1
+);
+
+DROP TABLE scann_full_granule_scan;
+
+-- Variable-sized marks put metadata-only granules before indexed granules.
+-- Later ANN results must not re-enable hints after an earlier exact scan.
+CREATE TABLE scann_mixed_granules
+(
+    id UInt64,
+    vec Array(Float32),
+    padding String,
+    INDEX idx vec TYPE vector_similarity('scann', 'L2Distance', 2, 'f32', 16) GRANULARITY 2
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1024, index_granularity_bytes = 32768,
+    use_const_adaptive_granularity = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0,
+    merge_max_block_size = 1024, max_bytes_to_merge_at_max_space_in_pool = 1;
+
+INSERT INTO scann_mixed_granules
+SELECT number, [toFloat32(number), toFloat32(0)], if(number < 1024, repeat('x', 128), '')
+FROM numbers(4296)
+SETTINGS max_block_size = 1024, max_threads = 1,
+    min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0;
+
+OPTIMIZE TABLE scann_mixed_granules FINAL;
+
+SELECT minIf(index_granule, num_rows >= 1000) > minIf(index_granule, num_rows < 1000),
+    argMax(num_rows, index_granule) >= 1000
+FROM
+(
+    SELECT intDiv(mark_number, 2) AS index_granule, sum(rows_in_granule) AS num_rows
+    FROM mergeTreeIndex(currentDatabase(), 'scann_mixed_granules')
+    WHERE rows_in_granule > 0 GROUP BY index_granule
+);
+
+SELECT arraySort(groupArray(id)) FROM
+(
+    SELECT id FROM scann_mixed_granules
+    ORDER BY L2Distance(vec, [0., 0.]) LIMIT 5
+    SETTINGS scann_num_leaves_to_search = 16, vector_search_with_rescoring = 0
+);
+
+SELECT arraySort(groupArray(id)) FROM
+(
+    SELECT id FROM scann_mixed_granules
+    ORDER BY L2Distance(vec, [0., 0.]) LIMIT 5
+    SETTINGS scann_num_leaves_to_search = 16, vector_search_with_rescoring = 1
+);
+
+DROP TABLE scann_mixed_granules;
+SET send_logs_level = DEFAULT;

@@ -62,3 +62,16 @@ unrelated ALTER succeeds
 24. Partition training rejects Float32 squared-norm overflow
 1
 1
+25. Experimental gate covers full-definition ATTACH
+1
+2
+1
+26. Full-granule scan and mixed ANN distance hints
+[1024,1024,300]
+1024	1324	2347
+0
+[2343,2344,2345,2346,2347]
+[2343,2344,2345,2346,2347]
+1	1
+[0,1,2,3,4]
+[0,1,2,3,4]
