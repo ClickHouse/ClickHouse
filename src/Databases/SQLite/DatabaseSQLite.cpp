@@ -283,7 +283,7 @@ void registerDatabaseSQLite(DatabaseFactory & factory)
 
         return std::make_shared<DatabaseSQLite>(args.context, engine_define, args.create_query.attach, database_path);
     };
-    factory.registerDatabase("SQLite", create_fn, {
+    factory.registerDatabase("SQLite", create_fn, SecretArgumentsSpec{}, {
         .supports_arguments = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::SQLITE,
