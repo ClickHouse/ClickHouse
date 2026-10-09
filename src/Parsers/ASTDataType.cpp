@@ -522,6 +522,12 @@ bool substituteBareUUIDInPlace(IAST & ast, bool in_table_function_position)
         table_function_child = table_expression->table_function.get();
     else if (const auto * create = ast.as<ASTCreateQuery>())
         table_function_child = create->as_table_function;
+    else if (const auto * storage = ast.as<ASTStorage>(); storage && storage->engine
+             && (equalsCaseInsensitiveString(storage->engine->name, "Remote")
+                 || equalsCaseInsensitiveString(storage->engine->name, "RemoteSecure")))
+        /// The `Remote` and `RemoteSecure` engines take the arguments of the `remote` table function, including a
+        /// nested table function (`ENGINE = Remote('addresses', url(...))`), so the engine is in the same position.
+        table_function_child = storage->engine;
 
     /// A table function nested in a wrapper (for example, `loop(url(...))`) does not have a dedicated
     /// table-expression node of its own, so only the argument of a wrapper that can be a table function keeps the
