@@ -321,8 +321,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             if ((lhs_side == ExpressionSide::LEFT && rhs_side == ExpressionSide::RIGHT)
              || (lhs_side == ExpressionSide::RIGHT && rhs_side == ExpressionSide::LEFT))
             {
-                /// A join key matches a NULL nested in a Tuple or a NULL Variant, for which `equals` returns NULL,
-                /// so the condition also stays in the filter, and it is added to the join only once.
+                /// Such a key matches NULLs that `equals` does not, so the condition also stays in the filter.
                 if (JoinCommon::keyMatchesNullAsValue(lhs->result_type) || JoinCommon::keyMatchesNullAsValue(rhs->result_type))
                 {
                     if (join_condition_names.insert(conjunct->result_name).second)
