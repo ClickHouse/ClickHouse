@@ -3070,8 +3070,10 @@ static bool keyTransformSeparatesEqualSetElements(const IColumn & set_column, co
 
         ColumnPtr transformed_column;
         DataTypePtr transformed_type;
+        /// Only the equality of the two results matters here, not whether the cast is exact.
+        bool cast_is_exact = true;
         if (!applyDeterministicDagToColumn(
-                std::move(probe_column), dag.input_type, dag.input_name, dag, transformed_column, transformed_type))
+                std::move(probe_column), dag.input_type, dag.input_name, dag, transformed_column, transformed_type, cast_is_exact))
             return true;
 
         return !Range::equals((*transformed_column)[0], (*transformed_column)[1]);
