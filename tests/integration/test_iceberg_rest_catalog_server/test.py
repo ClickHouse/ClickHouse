@@ -2,7 +2,6 @@
 
 import base64
 import gzip
-import io
 import json
 import time
 import uuid
@@ -526,46 +525,6 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         node.query("DROP DATABASE IF EXISTS rest_client_db")
 
 
-def test_clickhouse_rest_catalog_client_create_table(started_cluster):
-    ns = f"client_create_{uuid.uuid4().hex[:8]}"
-
-    node.query(f"""
-        DROP DATABASE IF EXISTS rest_client_create_db;
-        SET allow_experimental_database_iceberg = 1;
-        CREATE DATABASE rest_client_create_db
-        ENGINE = DataLakeCatalog('http://localhost:{CATALOG_PORT}/v1', '{minio_access_key}', '{minio_secret_key}')
-        SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse',
-            storage_endpoint = 'http://minio1:9001/{BUCKET}'
-        """)
-
-    # The client sends the table location to the server. The server accepts `s3://` locations only.
-    node.query(
-        f"""
-        CREATE TABLE rest_client_create_db.`{ns}.events` (id Int64, name String)
-        ENGINE = IcebergS3('http://minio1:9001/{BUCKET}/{ns}/events/', '{minio_access_key}', '{minio_secret_key}')
-        """,
-        settings={"write_full_path_in_iceberg_metadata": 1},
-    )
-
-    # INSERT is not tested here: it commits through UpdateTable, which the server does not support yet.
-    assert node.query(f"SELECT count() FROM rest_client_create_db.`{ns}.events`") == "0\n"
-
-    # The session setting reaches the server as a table property, and the server writes the file compressed.
-    node.query(
-        f"""
-        CREATE TABLE rest_client_create_db.`{ns}.zipped` (id Int64, name String)
-        ENGINE = IcebergS3('http://minio1:9001/{BUCKET}/{ns}/zipped/', '{minio_access_key}', '{minio_secret_key}')
-        """,
-        settings={"write_full_path_in_iceberg_metadata": 1, "iceberg_metadata_compression_method": "gzip"},
-    )
-    assert node.query(f"SELECT count() FROM rest_client_create_db.`{ns}.zipped`") == "0\n"
-    table_uuid = catalog_request("GET", tables_url(ns, "zipped")).json()["metadata"]["table-uuid"]
-    assert list_metadata_files(f"s3://{BUCKET}/{ns}/zipped") == [f"{ns}/zipped/metadata/v1-{table_uuid}.gz.metadata.json"]
-    assert list_tables(ns) == ["events", "zipped"]
-
-    node.query("DROP DATABASE IF EXISTS rest_client_create_db")
-
-
 def test_keeper_layout(started_cluster):
     ns = f"layout-{uuid.uuid4().hex[:8]}"
     create_namespace([ns, "eu-west"], properties={"owner": "asya"})
@@ -616,7 +575,7 @@ def test_create_and_load_table(started_cluster):
     assert loaded == result
 
     # Creating it again leaks no second metadata file next to the first one.
-    response = create_table(ns, "events", location=metadata["location"], expected_code=409)
+    response = create_table(ns, "events", expected_code=409)
     assert_error_shape(response, "TableAlreadyExistsException")
     assert list_metadata_files(metadata["location"]) == [
         metadata_key(result["metadata-location"])
@@ -694,32 +653,10 @@ def test_table_location(started_cluster):
     assert result["metadata"]["location"] == f"{ns_location}/events-{table_uuid}"
     cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
 
-    # An explicit table location wins over the namespace location.
-    location = f"s3://{BUCKET}/explicit/{ns}"
-    result = create_table(ns, "explicit", location=location + "/").json()
-    assert result["metadata"]["location"] == location
-    assert result["metadata-location"].startswith(location + "/metadata/v1-")
-    cluster.minio_client.stat_object(BUCKET, metadata_key(result["metadata-location"]))
-
-    # The server has credentials for one bucket only, so a location elsewhere is refused up front.
-    response = create_table(ns, "elsewhere", location="s3://other-bucket/path", expected_code=400)
+    # The catalog chooses every table path, so a client-chosen location is refused.
+    response = create_table(ns, "explicit", location=f"s3://{BUCKET}/explicit/{ns}", expected_code=400)
     assert_error_shape(response, "BadRequestException")
-    assert not table_exists(ns, "elsewhere")
-
-    # A location that already holds a table is refused, even under another name.
-    response = create_table(ns, "squatter", location=location, expected_code=409)
-    assert_error_shape(response, "TableAlreadyExistsException")
-    assert not table_exists(ns, "squatter")
-    assert list_metadata_files(location) == [metadata_key(result["metadata-location"])]
-
-    # The same for metadata written by a foreign tool that this catalog never registered.
-    foreign = f"s3://{BUCKET}/foreign/{ns}"
-    foreign_key = metadata_key(foreign) + "/metadata/00000-abc.metadata.json"
-    cluster.minio_client.put_object(BUCKET, foreign_key, io.BytesIO(b"{}"), 2)
-    response = create_table(ns, "foreign", location=foreign, expected_code=409)
-    assert_error_shape(response, "TableAlreadyExistsException")
-    assert not table_exists(ns, "foreign")
-    assert list_metadata_files(foreign) == [foreign_key]
+    assert not table_exists(ns, "explicit")
 
 
 def test_metadata_compression(started_cluster):
@@ -806,6 +743,7 @@ def test_malformed_create_table(started_cluster):
         {"name": "t", "schema": numeric_type},
         {"name": "t", "schema": bad_element_type},
         {"name": "t", "schema": DEFAULT_SCHEMA, "stage-create": True},
+        {"name": "t", "schema": DEFAULT_SCHEMA, "location": f"s3://{BUCKET}/explicit/t"},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": bad_spec},
         {"name": "t", "schema": DEFAULT_SCHEMA, "partition-spec": {"fields": [{"source-id": 1}]}},
         {"name": "t", "schema": DEFAULT_SCHEMA, "write-order": {"fields": [{"source-id": 1}]}},
@@ -894,16 +832,6 @@ def test_bucket_root_base_location(started_cluster):
     assert result.status_code == 200, result.text
     metadata = result.json()["metadata"]
     assert metadata["location"] == f"s3://{BUCKET}/{ns}/events-{metadata['table-uuid']}"
-
-    # The bucket root itself is not a valid table location, with or without the slash.
-    for location in (f"s3://{BUCKET}", f"s3://{BUCKET}/"):
-        response = requests.post(tables, json={"name": "root", "schema": DEFAULT_SCHEMA, "location": location})
-        assert response.status_code == 400, response.text
-        assert "bucket root" in response.json()["error"]["message"]
-
-    # Another bucket is rejected even when its name starts with ours.
-    response = requests.post(tables, json={"name": "other", "schema": DEFAULT_SCHEMA, "location": f"s3://{BUCKET}2/t"})
-    assert response.status_code == 400, response.text
 
 
 def test_auxiliary_keeper(started_cluster):

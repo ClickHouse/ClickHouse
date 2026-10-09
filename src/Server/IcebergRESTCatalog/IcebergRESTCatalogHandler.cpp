@@ -711,7 +711,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
     CompressionMethod compression_method = CompressionMethod::None;
     String location;
     String object_key;
-    String metadata_dir_key;
     Poco::JSON::Object::Ptr metadata;
     try
     {
@@ -726,13 +725,15 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         if (json->optValue<bool>("stage-create", false))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "stage-create is not supported");
 
+        /// The catalog owns every table path, so two tables can never share a directory.
+        /// TODO: Allow the ClickHouse client to send no location, so that the catalog can assign it.
+        /// Currently the ClickHouse client always sends `location`. This needs a refactor of the client:
+        /// create through the catalog first, then load the table from the answer.
+        /// TODO: External tables need a per-table no-purge flag and an atomic location guard in Keeper.
         if (json->has("location") && !json->isNull("location"))
-        {
-            if (!json->get("location").isString())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' must be a string");
-            location = stripTrailingSlashes(json->getValue<String>("location"));
-        }
-        else if (const auto it = namespace_properties->find("location"); it != namespace_properties->end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' is not supported, the catalog chooses the table location");
+
+        if (const auto it = namespace_properties->find("location"); it != namespace_properties->end())
         {
             /// The uuid suffix keeps a dropped and recreated table away from the old files.
             location = fmt::format("{}/{}-{}", stripTrailingSlashes(it->second), name, uuid);
@@ -741,16 +742,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         {
             location = fmt::format("{}/{}/{}-{}", warehouse.base_location, fmt::join(ns, "/"), name, uuid);
         }
-
-        /// The ClickHouse client sends a bare key unless `write_full_path_in_iceberg_metadata` is set. Name the problem.
-        if (!hasS3Scheme(location))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' {} must be an s3:// URI", location);
-        /// The server has credentials for one bucket only.
-        if (!warehouse.isInBucket(location))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' {} must be inside the warehouse bucket", location);
-        /// A table at the bucket root would own every object in the bucket.
-        if (warehouse.objectKey(location).empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'location' {} must not be the bucket root", location);
 
         std::map<String, String> properties;
         if (const auto properties_object = getOptionalObject(*json, "properties"))
@@ -773,7 +764,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
         pointer.metadata_location
             = fmt::format("{}/metadata/v1-{}{}.metadata.json", location, uuid, getMetadataCompressionSuffix(compression_method));
         object_key = warehouse.objectKey(pointer.metadata_location);
-        metadata_dir_key = warehouse.objectKey(location + "/metadata/");
     }
     /// `Exception` derives from `Poco::Exception`, so it goes first.
     catch (const Exception & e)
@@ -794,18 +784,6 @@ void IcebergRESTCatalogHandler::handleCreateTable(
             Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
             "BadRequestException",
             fmt::format("Malformed create table request: {}", e.displayText()));
-        return;
-    }
-
-    /// A used location means a foreign table or a table this catalog never registered. The uuid in the file name does not catch it.
-    /// One list request with a limit of one key, so the cost does not depend on the table size.
-    if (warehouse.object_storage->existsOrHasAnyChild(metadata_dir_key))
-    {
-        sendError(
-            response,
-            Poco::Net::HTTPResponse::HTTP_CONFLICT,
-            "TableAlreadyExistsException",
-            fmt::format("Location {} already contains Iceberg metadata", location));
         return;
     }
 
