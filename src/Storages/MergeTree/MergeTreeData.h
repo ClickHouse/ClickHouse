@@ -1162,7 +1162,7 @@ public:
     /// covered by 'drop_range' would make the table exceed the `max_temporary_table_size_bytes_compressed` or
     /// `max_temporary_table_size_bytes_uncompressed` settings of 'query_context'. Used by the operations that add
     /// parts: `INSERT` (in `MergeTreeSink`), `ATTACH PART`, `ATTACH PARTITION FROM`, `REPLACE PARTITION FROM`,
-    /// `MOVE PARTITION TO TABLE` and `CREATE TEMPORARY TABLE ... CLONE AS`.
+    /// `MOVE PARTITION TO TABLE`, `CREATE TEMPORARY TABLE ... CLONE AS` and `RESTORE`.
     void throwIfTemporaryTableSizeLimitsExceededForReplacement(
         const ContextPtr & query_context,
         const DataPartsLock & parts_lock,
@@ -2377,11 +2377,15 @@ protected:
         bool detach_if_broken,
         UInt64 admission_epoch) const;
 
-    /// Attaches restored parts to the storage. `admission_epoch` is the leadership epoch sampled
+    /// Attaches restored parts to the storage. `query_context` is the context of the `RESTORE` query. `admission_epoch` is the leadership epoch sampled
     /// when the restore was admitted (see `currentLeadershipEpoch`); the publish must be fenced to
     /// that same epoch so a lease lost and reacquired during the restore fails closed instead of
     /// publishing under the new lease. Ignored by storages without `leader_election`.
-    virtual void attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info, UInt64 admission_epoch) = 0;
+    virtual void attachRestoredParts(
+        MutableDataPartsVector && parts,
+        const ContextPtr & query_context,
+        const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info,
+        UInt64 admission_epoch) = 0;
 
     void resetSerializationHints(const DataPartsLock & lock);
 
@@ -2514,16 +2518,21 @@ protected:
     /// not done under a single lock).
     std::mutex refresh_parts_mutex;
 
-    /// Protects `refresh_stats_task` itself: `startStatisticsCache` re-assigns the holder (on startup and
-    /// on `ALTER` of `refresh_statistics_interval`), which may race with `stopStatisticsCache` called from
-    /// a concurrent `shutdown`. Declared before the holder, so it outlives it.
+    /// Protects the `refresh_stats_task` holder itself (it is reassigned by `startStatisticsCache`, which
+    /// can run concurrently with `stopStatisticsCache` when a table startup or an `ALTER` races with a
+    /// shutdown) and `refresh_stats_stopped`. The task callback reads the holder without this mutex: it
+    /// only runs while the task is active, and the holder is reassigned only after deactivating it.
     std::mutex refresh_stats_task_mutex;
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
+    /// Set by `stopStatisticsCache`, after which `startStatisticsCache` does not arm the task anymore.
+    bool refresh_stats_stopped TSA_GUARDED_BY(refresh_stats_task_mutex) = false;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;
 
     void startStatisticsCache();
+    /// Deactivates the statistics refresh task and prevents any later `startStatisticsCache` from arming it.
+    /// Idempotent. Called on shutdown.
     void stopStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
 

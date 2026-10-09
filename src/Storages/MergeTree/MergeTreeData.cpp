@@ -3569,7 +3569,7 @@ void MergeTreeData::startStatisticsCache()
     std::lock_guard lock(refresh_stats_task_mutex);
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
-    if (refresh_statistics_seconds)
+    if (refresh_statistics_seconds && !refresh_stats_stopped)
     {
         LOG_INFO(log, "Start to refresh statistics");
         refresh_stats_task = getContext()->getSchedulePool()->createTask(
@@ -3584,6 +3584,7 @@ void MergeTreeData::stopStatisticsCache()
 {
     /// The task itself does not take the mutex, so waiting for it in `deactivate` under the lock is safe.
     std::lock_guard lock(refresh_stats_task_mutex);
+    refresh_stats_stopped = true;
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
 }
@@ -10578,9 +10579,10 @@ public:
     RestoredPartsHolder(
         const std::shared_ptr<MergeTreeData> & storage_,
         const BackupPtr & backup_,
+        const ContextPtr & query_context_,
         const ZooKeeperRetriesInfo & zookeeper_retries_info_,
         UInt64 admission_epoch_)
-        : storage(storage_), backup(backup_), zookeeper_retries_info(zookeeper_retries_info_), admission_epoch(admission_epoch_)
+        : storage(storage_), backup(backup_), query_context(query_context_), zookeeper_retries_info(zookeeper_retries_info_), admission_epoch(admission_epoch_)
     {
     }
 
@@ -10639,7 +10641,7 @@ private:
             parts.end(),
             [](const MutableDataPartPtr & lhs, const MutableDataPartPtr & rhs) { return lhs->info.min_block < rhs->info.min_block; });
 
-        storage->attachRestoredParts(std::move(parts), zookeeper_retries_info, admission_epoch);
+        storage->attachRestoredParts(std::move(parts), query_context, zookeeper_retries_info, admission_epoch);
         parts.clear();
         temp_part_dirs.clear();
         num_parts = 0;
@@ -10647,6 +10649,7 @@ private:
 
     const std::shared_ptr<MergeTreeData> storage;
     const BackupPtr backup;
+    const ContextPtr query_context;
     const ZooKeeperRetriesInfo zookeeper_retries_info;
     const UInt64 admission_epoch;
     size_t num_parts = 0;
@@ -10677,7 +10680,7 @@ void MergeTreeData::restorePartsFromBackup(RestorerFromBackup & restorer, const 
     /// Sampling the epoch here instead would let a lose-and-reacquire in that earlier window go
     /// unnoticed.
     auto restored_parts_holder = std::make_shared<RestoredPartsHolder>(
-        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getZooKeeperRetriesInfo(), admission_epoch);
+        std::static_pointer_cast<MergeTreeData>(shared_from_this()), backup, restorer.getContext(), restorer.getZooKeeperRetriesInfo(), admission_epoch);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
     size_t num_parts = 0;

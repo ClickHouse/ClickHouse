@@ -12340,7 +12340,10 @@ void StorageReplicatedMergeTree::restoreDataFromBackup(RestorerFromBackup & rest
 }
 
 void StorageReplicatedMergeTree::attachRestoredParts(
-    MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info, UInt64 /* admission_epoch */)
+    MutableDataPartsVector && parts,
+    const ContextPtr & /* query_context */,
+    const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info,
+    UInt64 /* admission_epoch */)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::attachRestoredParts");
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
