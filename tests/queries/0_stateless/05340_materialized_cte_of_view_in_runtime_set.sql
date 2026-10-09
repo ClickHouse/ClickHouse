@@ -4,7 +4,7 @@ SET enable_materialized_cte = 1;
 
 SELECT count() FROM numbers(15) WHERE number IN (SELECT x FROM view(WITH a AS MATERIALIZED (SELECT number AS x, rand64() AS r FROM numbers(10)) SELECT a.x AS x FROM a JOIN a AS b ON a.r = b.r));
 SELECT count() FROM numbers(15) WHERE number NOT IN (SELECT x FROM view(WITH a AS MATERIALIZED (SELECT number AS x, rand64() AS r FROM numbers(10)) SELECT a.x AS x FROM a JOIN a AS b ON a.r = b.r));
-SELECT count() FROM numbers(15) WHERE number IN (SELECT x FROM view(WITH a AS MATERIALIZED (SELECT number AS x FROM numbers(10)) SELECT x FROM a UNION ALL SELECT x FROM a));
+SELECT count() FROM numbers(15) WHERE number IN (SELECT x FROM view(WITH a AS MATERIALIZED (SELECT number AS x, rand64() AS r FROM numbers(10)) SELECT x, r FROM a UNION ALL SELECT x, r FROM a) GROUP BY x HAVING uniqExact(r) = 1);
 SELECT count() FROM numbers(15) WHERE number IN (SELECT x FROM remote('127.0.0.1', view(WITH a AS MATERIALIZED (SELECT number AS x, rand64() AS r FROM numbers(10)) SELECT a.x AS x FROM a JOIN a AS b ON a.r = b.r)));
 SELECT count() FROM numbers(15) WHERE number IN (SELECT x FROM remote('127.0.0.{1,2}', view(WITH a AS MATERIALIZED (SELECT number AS x, rand64() AS r FROM numbers(10)) SELECT a.x AS x FROM a JOIN a AS b ON a.r = b.r)));
 
