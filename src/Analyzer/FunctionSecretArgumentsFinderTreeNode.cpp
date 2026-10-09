@@ -1,4 +1,5 @@
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 
 #include <algorithm>
 
@@ -18,11 +19,9 @@ namespace
     }
 
     /// Whether a nested secret map child is a `key = value` node whose value stays visible when the
-    /// map is masked (the non-secret identifiers of `extra_credentials`; `headers` values are all hidden).
-    bool isNonSecretMapChild(const String & map_name, const QueryTreeNodePtr & node)
+    /// map is masked: its key is one of `visible_keys`.
+    bool isNonSecretMapChild(const std::vector<std::string> & visible_keys, const QueryTreeNodePtr & node)
     {
-        if (map_name != "extra_credentials")
-            return false;
         const auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "equals" || function_node->getArguments().getNodes().size() != 2)
             return false;
@@ -34,28 +33,38 @@ namespace
         const auto & key_node = function_node->getArguments().getNodes()[0];
         if (const auto * key_constant = key_node->as<ConstantNode>())
             return key_constant->getValue().getType() == Field::Types::String
-                && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_constant->getValue().safeGet<String>());
+                && std::ranges::contains(visible_keys, key_constant->getValue().safeGet<String>());
         if (const auto * key_identifier = key_node->as<IdentifierNode>())
-            return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->getIdentifier().getFullName());
+            return std::ranges::contains(visible_keys, key_identifier->getIdentifier().getFullName());
         return false;
     }
 }
 
+SecretArgumentsResult findSecretArguments(const FunctionNode & function)
+{
+    return SecretArgumentsRegistry::instance().find(ASTFunction::Kind::ORDINARY_FUNCTION, FunctionTreeNodeImpl<FunctionNode>(function));
+}
+
+SecretArgumentsResult findSecretArguments(const TableFunctionNode & function)
+{
+    return SecretArgumentsRegistry::instance().find(ASTFunction::Kind::ORDINARY_FUNCTION, FunctionTreeNodeImpl<TableFunctionNode>(function));
+}
+
 void forEachSecretArgumentNode(
     QueryTreeNodes & arguments,
-    const FunctionSecretArgumentsFinder::Result & secret_arguments,
+    const SecretArgumentsResult & secret_arguments,
     const std::function<void(size_t, QueryTreeNodePtr &)> & on_secret)
 {
     for (size_t n = 0; n < arguments.size(); ++n)
     {
-        if (auto * function_node = arguments[n]->as<FunctionNode>();
-            function_node
-            && std::find(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function_node->getFunctionName())
-                != secret_arguments.nested_maps.end())
+        auto * function_node = arguments[n]->as<FunctionNode>();
+        const auto nested_map
+            = function_node ? secret_arguments.nested_maps.find(function_node->getFunctionName()) : secret_arguments.nested_maps.end();
+        if (nested_map != secret_arguments.nested_maps.end())
         {
             for (auto & inner : function_node->getArguments().getNodes())
             {
-                if (!isNonSecretMapChild(function_node->getFunctionName(), inner))
+                if (!isNonSecretMapChild(nested_map->second, inner))
                     on_secret(n, secretValueSlot(inner));
             }
             continue;
