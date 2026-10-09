@@ -307,6 +307,7 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
         storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event, context, false);
 
     auto block = getHeader().cloneWithColumns(chunk.getColumns());
+    MergeTreeDataWriter::sortMapKeyColumnsKeys(block, *storage.getSettings());
 
     const auto & settings = context->getSettingsRef();
 

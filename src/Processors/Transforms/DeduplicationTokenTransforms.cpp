@@ -59,10 +59,12 @@ void UpdateDeduplicationInfoWithViewIDTransform::transform(Chunk & chunk)
 }
 
 
-SelectPartitionTransform::SelectPartitionTransform(std::string partition_id_, StorageMetadataPtr metadata_snapshot_, ContextPtr contex_, SharedHeader header_)
+SelectPartitionTransform::SelectPartitionTransform(
+    std::string partition_id_, StorageMetadataPtr metadata_snapshot_, MergeTreeSettingsPtr storage_settings_, ContextPtr contex_, SharedHeader header_)
     : ISimpleTransform(header_, header_, true)
     , partition_id(std::move(partition_id_))
     , metadata_snapshot(std::move(metadata_snapshot_))
+    , storage_settings(std::move(storage_settings_))
     , context(std::move(contex_))
 {
 }
@@ -73,6 +75,9 @@ void SelectPartitionTransform::transform(Chunk & chunk)
     auto rows_in_source_chunk = chunk.getNumRows();
 
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    /// Select the partition the way the sink computes it.
+    if (storage_settings)
+        MergeTreeDataWriter::sortMapKeyColumnsKeys(block, *storage_settings);
 
     size_t max_parts = 0; // do not limit here part count
     BlocksWithPartition part_blocks = MergeTreeDataWriter::splitBlockIntoParts(std::move(block), max_parts, metadata_snapshot, context);

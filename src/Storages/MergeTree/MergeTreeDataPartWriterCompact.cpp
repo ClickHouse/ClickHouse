@@ -41,14 +41,15 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & settings_,
-    MergeTreeIndexGranularityPtr index_granularity_)
+    MergeTreeIndexGranularityPtr index_granularity_,
+    const PlannedMapKeyColumnsKeys & map_key_columns_keys_)
     : MergeTreeDataPartWriterOnDisk(
         data_part_name_, logger_name_, serializations_,
         data_part_storage_, index_granularity_info_, storage_settings_,
         columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
         default_codec_, settings_, std::move(index_granularity_),
-        static_cast<WrittenOffsetSubstreams *>(nullptr))
+        static_cast<WrittenOffsetSubstreams *>(nullptr), map_key_columns_keys_)
     , plain_file(getDataPartStorage().writeFile(
             MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
@@ -126,6 +127,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
     enumerate_settings.map_buckets_min_avg_size = settings.map_buckets_min_avg_size;
     enumerate_settings.data_part_type = MergeTreeDataPartType::Compact;
+    enumerate_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type.name);
     auto serialization = getSerialization(name_and_type.name);
     auto substream_data = ISerialization::SubstreamData(serialization).withType(name_and_type.type).withColumn(block_sample.getByName(name_and_type.name).column);
     serialization->enumerateStreams(enumerate_settings, callback, substream_data);
@@ -246,6 +248,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     /// preparations to achieve it.
     prepareBlockForWriting(result_block);
 
+    initMapKeyColumnsKeysIfNeeded(result_block);
     initStreamsIfNeeded();
     initColumnsSubstreamsIfNeeded();
 
@@ -377,6 +380,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
 
             auto serialize_settings = getSerializationSettings();
             serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
+            serialize_settings.map_key_columns_keys = getMapKeyColumnsKeys(name_and_type->name);
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),

@@ -39,14 +39,17 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/hasNullable.h>
 #include <Databases/DDLDependencyVisitor.h>
@@ -265,6 +268,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool allow_experimental_map_key_columns;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indexes;
@@ -394,6 +398,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsBool write_marks_for_substreams_in_compact_parts;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
@@ -1556,6 +1561,112 @@ void MergeTreeData::checkProperties(
 
     /// On CREATE, `old_metadata` and `new_metadata` are the same object; on ALTER they differ.
     const bool is_alter = &old_metadata != &new_metadata;
+
+    const auto map_version = effective_settings[MergeTreeSetting::map_serialization_version];
+    const bool new_uses_key_columns = map_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool live_uses_key_columns
+        = live_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    /// The per-key layout is selected only by `map_serialization_version`; zero-level parts follow it.
+    if (!new_uses_key_columns
+        && effective_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts]
+            == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "map_serialization_version_for_zero_level_parts = 'with_key_columns' requires "
+            "map_serialization_version = 'with_key_columns'");
+    }
+
+    if (new_uses_key_columns)
+    {
+        /// `with_key_columns` governs zero-level parts too: a part-level mix of layouts
+        /// is not supported, so `map_serialization_version_for_zero_level_parts` is
+        /// ignored (the write path and the part load both resolve it to
+        /// `with_key_columns`). It is not rejected outright so that a randomized or
+        /// inherited `with_buckets` override does not break DDL.
+        /// Other merging modes rewrite whole rows (signs, versions, aggregates);
+        /// the per-key layout is validated for ordinary merges only.
+        if (merging_params.mode != MergingParams::Ordinary)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "map_serialization_version = 'with_key_columns' is supported only for MergeTree and ReplicatedMergeTree");
+        }
+
+        /// Compact parts locate the per-key streams of a Map by their substream marks.
+        if (!effective_settings[MergeTreeSetting::write_marks_for_substreams_in_compact_parts])
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "map_serialization_version = 'with_key_columns' requires write_marks_for_substreams_in_compact_parts = 1");
+        }
+
+        /// Keys are serialized inside stream names, which is only defined for
+        /// plain `String` keys (not FixedString, Nullable(String) or
+        /// LowCardinality(String)). Maps nested inside `Array` and `Tuple` get the per-key
+        /// serialization too and are checked as well; Maps inside other types (`Nullable`,
+        /// `Variant`, `Dynamic`, `JSON`) keep the basic layout.
+        std::function<void(const IDataType &, const String &)> check_map_key_type
+            = [&](const IDataType & type, const String & path)
+        {
+            if (const auto * map_type = typeid_cast<const DataTypeMap *>(&type))
+            {
+                if (!WhichDataType(map_type->getKeyType()).isString())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Map {} has key type {}, but map_serialization_version = 'with_key_columns' requires key type String "
+                        "(FixedString, Nullable(String), LowCardinality(String) and other key types are not allowed)",
+                        path,
+                        map_type->getKeyType()->getName());
+                /// Each key's values are written as an own column, whose dynamic structure
+                /// (paths of `JSON`, types of `Dynamic`) the per-key streams do not track.
+                if (map_type->getValueType()->createColumn()->hasDynamicStructure())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Map {} has value type {} with dynamic subcolumns, which is not supported "
+                        "with map_serialization_version = 'with_key_columns'",
+                        path,
+                        map_type->getValueType()->getName());
+                return;
+            }
+
+            const WhichDataType which(type);
+            if (which.isArray())
+            {
+                check_map_key_type(*assert_cast<const DataTypeArray &>(type).getNestedType(), path);
+                return;
+            }
+            if (which.isTuple())
+            {
+                const auto & tuple = assert_cast<const DataTypeTuple &>(type);
+                const auto & elements = tuple.getElements();
+                const auto & element_names = tuple.getElementNames();
+                for (size_t i = 0; i < elements.size(); ++i)
+                    check_map_key_type(*elements[i], path + "." + element_names[i]);
+                return;
+            }
+        };
+
+        for (const auto & column : new_metadata.columns.getAllPhysical())
+            check_map_key_type(*column.type, "column " + backQuoteIfNeed(column.name));
+    }
+
+    if (!attach && is_alter && new_uses_key_columns && !live_uses_key_columns
+        && !(local_context && local_context->getSettingsRef()[Setting::allow_experimental_map_key_columns]))
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "map_serialization_version = 'with_key_columns' is experimental. "
+            "Set the session setting `allow_experimental_map_key_columns = 1` to enable it.");
+    }
+
+    if (!attach && is_alter && new_uses_key_columns != live_uses_key_columns && getActivePartsCount() > 0)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot change map_serialization_version to or from 'with_key_columns' while the table has data parts");
+    }
 
     for (const auto & col : new_metadata.columns)
     {
@@ -13049,6 +13160,36 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
         auto substream_data = ISerialization::SubstreamData(serialization);
         serialization->enumerateStreams(enumerate_settings, callback, substream_data);
 
+        /// The per-key streams of a `with_key_columns` Map exist only for the keys of the data. Enumerate them
+        /// for a sample key, so that collisions between the streams of the value type are found too.
+        /// Repeated because the value streams can contain further Maps. Checked within the column only.
+        if (!collision && map_serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
+            && SerializationMapKeyColumns::hasMapsWithKeyColumns(*column.type))
+        {
+            ISerialization::MapKeyColumnsKeys sample_keys;
+            for (bool added = true; added;)
+            {
+                added = false;
+                auto collect_maps = [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (substream_path.empty() || substream_path.back().type != ISerialization::Substream::MapKeys)
+                        return;
+                    auto map_name = ISerialization::getSubcolumnNameForStream(substream_path, substream_path.size() - 1);
+                    added |= sample_keys.emplace(std::move(map_name), std::vector<String>{"k"}).second;
+                };
+                ISerialization::EnumerateStreamsSettings sample_settings = enumerate_settings;
+                sample_settings.map_key_columns_keys = &sample_keys;
+                serialization->enumerateStreams(sample_settings, collect_maps, substream_data);
+            }
+
+            auto base_streams = std::move(column_streams);
+            column_streams.clear();
+            ISerialization::EnumerateStreamsSettings sample_settings = enumerate_settings;
+            sample_settings.map_key_columns_keys = &sample_keys;
+            serialization->enumerateStreams(sample_settings, callback, substream_data);
+            column_streams = std::move(base_streams);
+        }
+
         if (collision)
             return collision;
 
@@ -13170,6 +13311,19 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
+
+    const bool my_uses_key_columns
+        = (*getSettings())[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool src_uses_key_columns
+        = (*src_data->getSettings())[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    if (my_uses_key_columns != src_uses_key_columns)
+    {
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Cannot ATTACH PARTITION FROM a table with map_serialization_version = '{}' into a table with map_serialization_version = '{}'",
+            src_uses_key_columns ? "with_key_columns" : "basic",
+            my_uses_key_columns ? "with_key_columns" : "basic");
+    }
 
     return *src_data;
 }

@@ -786,6 +786,12 @@ public:
     /// substream bundled in skp_idx.packed). Mirrors getFileSizeOrZeroResolved.
     std::optional<String> getStreamNameOrHashResolved(const String & name, const String & extension) const;
 
+    /// The `m.keys` manifests of the `with_key_columns` Maps of `column` (by the Map's
+    /// path inside the column, see `ISerialization::MapKeyColumnsKeys`). Empty for a part
+    /// without rows; `nullopt` when the rows may hold keys outside any manifest (e.g. the
+    /// column is missing from the part).
+    std::optional<ISerialization::MapKeyColumnsKeys> readMapKeyColumnsKeys(const NameAndTypePair & column) const;
+
     static std::optional<String> getStreamNameForColumn(
         const String & column_name,
         const ISerialization::SubstreamPath & substream_path,
@@ -1005,6 +1011,18 @@ private:
     void decrementStateMetric(MergeTreeDataPartState state) const;
 
     void checkConsistencyBase() const;
+
+    /// Check that the on-disk layout of the Map columns matches the table's
+    /// `map_serialization_version` (needs the checksums and the columns substreams).
+    void checkMapKeyColumnsLayout() const;
+
+    /// Reject Compact parts and mixed `basic` / `with_buckets` / `with_key_columns` Map layouts.
+    void checkMapKeyColumnsCompatibility() const;
+
+    /// Rewrite the `serialization_infos` of Map columns whose recorded version is `basic`
+    /// (i.e. `serialization.json` carries no Map specialization) to the table's effective
+    /// map serialization version, and rebuild `serializations` accordingly.
+    void applyTableMapSerializationVersionForBasicInfos();
 
     /// Returns the name of projection for projection part, empty string for regular part.
     String getProjectionName() const;

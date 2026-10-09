@@ -36,7 +36,8 @@ public:
         const CompressionCodecPtr & default_codec,
         const MergeTreeWriterSettings & settings,
         MergeTreeIndexGranularityPtr index_granularity_,
-        WrittenOffsetSubstreams * written_offset_substreams_);
+        WrittenOffsetSubstreams * written_offset_substreams_,
+        const PlannedMapKeyColumnsKeys & map_key_columns_keys_ = {});
 
     void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) override;
 

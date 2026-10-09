@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -39,6 +40,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
@@ -311,6 +313,47 @@ static bool hasStableRowMaskKeyTypes(
     return valid_prefix && (first.key_from_uint128_array_join ? key_type == TypeIndex::UInt128 : key_type == TypeIndex::String);
 }
 
+namespace
+{
+
+/// Sorts the keys of `with_key_columns` Maps within each row, before the primary key,
+/// skip indices and projections are computed (see `MergeTreeDataWriter::sortMapKeyColumnsKeys`).
+class SortMapKeyColumnsKeysTransform final : public ISimpleTransform
+{
+public:
+    SortMapKeyColumnsKeysTransform(SharedHeader header_, MergeTreeSettingsPtr settings_)
+        : ISimpleTransform(header_, header_, false), settings(std::move(settings_))
+    {
+    }
+
+    String getName() const override { return "SortMapKeyColumnsKeysTransform"; }
+
+protected:
+    void transform(Chunk & chunk) override
+    {
+        auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        MergeTreeDataWriter::sortMapKeyColumnsKeys(block, *settings);
+        auto rows = block.rows();
+        chunk.setColumns(block.getColumns(), rows);
+    }
+
+private:
+    MergeTreeSettingsPtr settings;
+};
+
+void addSortMapKeyColumnsKeysTransform(QueryPipelineBuilder & builder, const MergeTreeData & data)
+{
+    auto settings = data.getSettings();
+    if ((*settings)[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return;
+    builder.addSimpleTransform([&](const SharedHeader & header)
+    {
+        return std::make_shared<SortMapKeyColumnsKeysTransform>(header, settings);
+    });
+}
+
+}
+
 static MutationCommands coalesceSingletonRowMaskUpdates(
     const MutationCommands & commands, const ContextPtr & context, const StorageMetadataPtr & metadata_snapshot,
     const ColumnsDescription & source_columns, UInt64 max_keys_per_command, UInt64 max_combined_key_bytes)
@@ -457,6 +500,27 @@ static MutationCommands coalesceSingletonRowMaskUpdates(
 /// must never be resolved against the source part's checksums (a part may happen to contain a real
 /// column whose name collides with this sentinel).
 static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
+
+/// The `m.keys` manifests of the source part for the written columns holding
+/// `with_key_columns` Maps; columns without a manifest are left to the writer.
+static PlannedMapKeyColumnsKeys collectMapKeyColumnsKeysForMutation(
+    const IMergeTreeDataPart & source_part,
+    const NamesAndTypesList & written_columns,
+    const MergeTreeSettingsPtr & settings)
+{
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
+    if ((*settings)[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return map_key_columns_keys;
+
+    for (const auto & column : written_columns)
+    {
+        if (!SerializationMapKeyColumns::hasMapsWithKeyColumns(*column.type))
+            continue;
+        if (auto keys = source_part.readMapKeyColumnsKeys(column))
+            map_key_columns_keys.emplace(column.name, std::move(*keys));
+    }
+    return map_key_columns_keys;
+}
 
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
@@ -2601,8 +2665,51 @@ struct MutationContext
 
     /// Whether we need to count lightweight delete rows in this mutation
     bool count_lightweight_deleted_rows{};
+
+    /// A with_key_columns Map fixes its output key set at the first written block.
+    /// True when the writer is planned with the source part's key manifests and the
+    /// mutation cannot produce keys outside them; otherwise the mutating pipeline is
+    /// squashed into a single block, from which the writer takes the key sets.
+    /// `written_columns` are the columns the writer rewrites.
+    bool canKeepMultiBlockOutputForMapKeyColumns(const NamesAndTypesList & written_columns) const;
+
     UInt64 execute_elapsed_ns = 0;
 };
+
+bool MutationContext::canKeepMultiBlockOutputForMapKeyColumns(const NamesAndTypesList & written_columns) const
+{
+    const auto & settings = *data->getSettings();
+    if (settings[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return true;
+
+    /// Only the rewritten Maps need a key set; Maps that are carried over keep their files.
+    if (std::ranges::none_of(written_columns, [](const auto & column) { return SerializationMapKeyColumns::hasMapsWithKeyColumns(*column.type); }))
+        return true;
+
+    if (execute_ttl_type != ExecuteTTLType::NONE)
+        return false;
+
+    /// Commands that can produce values that are not in the source part.
+    if (std::ranges::any_of(for_interpreter, [](const auto & command)
+        {
+            return command.type == MutationCommand::UPDATE
+                || command.type == MutationCommand::MATERIALIZE_COLUMN
+                || command.type == MutationCommand::READ_COLUMN
+                || command.type == MutationCommand::APPLY_PATCHES
+                || (command.type == MutationCommand::DROP_COLUMN && command.clear);
+        }))
+        return false;
+
+    /// The writer is planned with the source part's manifests; a column without one
+    /// (missing from the source part, so its DEFAULT is evaluated) can produce any keys.
+    for (const auto & column : written_columns)
+    {
+        if (SerializationMapKeyColumns::hasMapsWithKeyColumns(*column.type) && !source_part->readMapKeyColumnsKeys(column))
+            return false;
+    }
+
+    return true;
+}
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
 
@@ -3450,6 +3557,16 @@ private:
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+        MutationHelpers::addSortMapKeyColumnsKeysTransform(*builder, *ctx->data);
+
+        /// A with_key_columns Map fixes its output key set at the first written block;
+        /// squash the stream when the mutation can produce keys the source part's
+        /// manifest does not contain.
+        if (!ctx->canKeepMultiBlockOutputForMapKeyColumns(ctx->new_data_part->getColumns()))
+            builder->addSimpleTransform([](const SharedHeader & header)
+            {
+                return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+            });
         /// The primary key and the skip indices are calculated after the TTL transforms, because TTL rewrites the data:
         /// `TTL ... GROUP BY ... SET` assigns new values to the columns of the aggregated rows, and a column TTL resets
         /// the expired values to the defaults. Calculating the index expressions before that would write indices
@@ -3533,7 +3650,9 @@ private:
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
             /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
-            ctx->stream_base_manifest);
+            ctx->stream_base_manifest,
+            MutationHelpers::collectMapKeyColumnsKeysForMutation(
+                *ctx->source_part, ctx->new_data_part->getColumns(), ctx->data->getSettings()));
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3900,6 +4019,7 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            MutationHelpers::addSortMapKeyColumnsKeysTransform(*builder, *ctx->data);
             addIndicesRecalculationTransform(*builder, ctx);
 
             /// Some columns may be present in the interpreter output only for
@@ -3918,6 +4038,15 @@ private:
                         columns_for_writer.push_back(col);
             }
 
+            /// A with_key_columns Map fixes its output key set at the first written block;
+            /// squash the stream when the mutation can produce keys the source part's
+            /// manifest does not contain.
+            if (!ctx->canKeepMultiBlockOutputForMapKeyColumns(columns_for_writer))
+                builder->addSimpleTransform([](const SharedHeader & header)
+                {
+                    return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+                });
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->data->getSettings(),
@@ -3930,7 +4059,9 @@ private:
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
                 /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
                 /*external_packed_skip_indices_writer=*/ nullptr,
-                ctx->stream_base_manifest);
+                ctx->stream_base_manifest,
+                MutationHelpers::collectMapKeyColumnsKeysForMutation(
+                    *ctx->source_part, columns_for_writer, ctx->data->getSettings()));
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would

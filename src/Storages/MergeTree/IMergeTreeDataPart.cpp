@@ -8,6 +8,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -16,6 +17,8 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -128,6 +131,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
 
 namespace Setting
@@ -149,6 +154,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace FailPoints
@@ -914,6 +920,56 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         shared_part_columns = std::move(new_shared_part_columns);
 
     serializations = shared_part_columns->getSerializations(serialization_infos);
+
+    /// A part written in the `with_key_columns` Map layout is self-describing via
+    /// its key stream manifest, but `serialization.json` may carry no Map version
+    /// when the table's `serialization_info_version` was `basic` (the version is
+    /// forced to `basic` there, losing the Map specialization). Resolve such a Map
+    /// column with the table's effective map serialization version so the on-disk
+    /// layout matches the chosen serialization, instead of silently degrading to
+    /// the plain Map serialization. Only `with_key_columns` is applied, see below.
+    applyTableMapSerializationVersionForBasicInfos();
+}
+
+void IMergeTreeDataPart::applyTableMapSerializationVersionForBasicInfos()
+{
+    /// Only `with_key_columns` is applied: its layout is fixed for the whole table
+    /// (switching to or from it requires an empty table), so a Map recorded as `basic`
+    /// was written per key. Other versions may legitimately leave `basic` parts behind.
+    /// Projection parts keep the basic layout (see `MergeTreeDataWriter::writeProjectionPartImpl`).
+    if (parent_part || (*storage.getSettings())[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return;
+    const auto table_map_version = MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    SerializationInfoByName fixed_infos = serialization_infos;
+    bool any_fixed = false;
+    for (const auto & column : getColumns())
+    {
+        if (!typeid_cast<const DataTypeMap *>(column.type.get()))
+            continue;
+
+        auto it = fixed_infos.find(column.name);
+        auto info_settings = it == fixed_infos.end() ? fixed_infos.getSettings() : it->second->getSettings();
+        if (info_settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            continue;
+
+        /// Keep the recorded kind stack as-is (the default for a fresh entry too):
+        /// `SerializationInfo` must never carry an empty kind stack.
+        info_settings.map_serialization_version = table_map_version;
+        if (it == fixed_infos.end())
+            fixed_infos.emplace(
+                column.name,
+                std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, info_settings));
+        else
+            it->second = std::make_shared<SerializationInfo>(it->second->getKindStack(), info_settings);
+        any_fixed = true;
+    }
+
+    if (any_fixed)
+    {
+        serialization_infos = std::move(fixed_infos);
+        serializations = shared_part_columns->getSerializations(serialization_infos);
+    }
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -1538,6 +1594,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
 
         loadColumns(require_columns_checksums, load_metadata_version);
+        if (!parent_part)
+            checkMapKeyColumnsCompatibility();
 
         bool has_broken_projections = false;
         {
@@ -1557,6 +1615,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 index = loadIndex();
 
             loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
+            checkMapKeyColumnsLayout();
 
             /// For constant granularity parts (non-adaptive marks), the last mark granularity
             /// is assumed to be a full granule because the mark file does not store per-granule
@@ -3259,6 +3318,189 @@ IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
     }
 
     return {};
+}
+
+/// Paths of the `with_key_columns` Maps of a column (the `MapKeys` substream of each).
+static std::vector<ISerialization::SubstreamPath> getMapKeysPaths(const ISerialization & serialization, const DataTypePtr & type)
+{
+    std::vector<ISerialization::SubstreamPath> result;
+    serialization.enumerateStreams([&](const ISerialization::SubstreamPath & path)
+    {
+        if (!path.empty() && path.back().type == ISerialization::Substream::MapKeys)
+            result.push_back(path);
+    }, type);
+    return result;
+}
+
+std::optional<ISerialization::MapKeyColumnsKeys> IMergeTreeDataPart::readMapKeyColumnsKeys(const NameAndTypePair & column) const
+{
+    if (rows_count == 0)
+        return ISerialization::MapKeyColumnsKeys{};
+
+    auto part_column = getColumns().tryGetByName(column.name);
+    if (!part_column || !part_column->type->equals(*column.type))
+        return std::nullopt;
+
+    /// Maps stored with another layout need no key sets (see `checkMapKeyColumnsLayout`), unless the
+    /// table now writes them per key (e.g. nested type propagation was enabled): their keys are unknown.
+    const auto paths = getMapKeysPaths(*getSerialization(column.name), part_column->type);
+    const auto storage_settings = storage.getSettings();
+    if (paths.empty())
+    {
+        SerializationInfoSettings table_info_settings;
+        table_info_settings.version = (*storage_settings)[MergeTreeSetting::serialization_info_version];
+        table_info_settings.map_serialization_version = (*storage_settings)[MergeTreeSetting::map_serialization_version];
+        table_info_settings.propagate_types_serialization_versions_to_nested_types
+            = (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types];
+        if (!getMapKeysPaths(*column.type->getSerialization(table_info_settings), column.type).empty())
+            return std::nullopt;
+        return ISerialization::MapKeyColumnsKeys{};
+    }
+
+    const auto read_settings = storage.getContext()->getReadSettings();
+    ISerialization::MapKeyColumnsKeys result;
+
+    if (getType() == MergeTreeDataPartType::Wide)
+    {
+        for (const auto & path : paths)
+        {
+            auto stream_name = getStreamNameForColumn(*part_column, path, DATA_FILE_EXTENSION, checksums, storage_settings);
+            if (!stream_name)
+                return std::nullopt;
+            CompressedReadBufferFromFile in(
+                getDataPartStorage().readFile(*stream_name + DATA_FILE_EXTENSION, read_settings, std::nullopt),
+                /*allow_different_codecs=*/ true);
+            result[ISerialization::getSubcolumnNameForStream(path, path.size() - 1)] = SerializationMapKeyColumns::readMapKeys(in);
+        }
+        return result;
+    }
+
+    if (getType() != MergeTreeDataPartType::Compact || !index_granularity_info.mark_type.with_substreams)
+        return std::nullopt;
+
+    const auto column_position = getColumnPosition(column.name);
+    if (!column_position)
+        return std::nullopt;
+
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    MergeTreeMarksLoader marks_loader(
+        info_for_read,
+        /*mark_cache_=*/ nullptr,
+        index_granularity_info.getMarksFilePath(MergeTreeDataPartCompact::DATA_FILE_NAME),
+        index_granularity->getMarksCount(),
+        index_granularity_info,
+        /*save_marks_in_cache_=*/ false,
+        read_settings,
+        /*load_marks_threadpool_=*/ nullptr,
+        getColumnsSubstreams().getTotalSubstreams(),
+        storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]);
+    auto marks = marks_loader.loadMarks();
+
+    CompressedReadBufferFromFile in(
+        getDataPartStorage().readFile(MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION, read_settings, std::nullopt),
+        /*allow_different_codecs=*/ true);
+    for (const auto & path : paths)
+    {
+        auto substream_position = getColumnsSubstreams().tryGetSubstreamPosition(*column_position, *part_column, path, storage_settings);
+        if (!substream_position)
+            return std::nullopt;
+        const auto mark = marks->getMark(0, *substream_position);
+        in.seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
+        result[ISerialization::getSubcolumnNameForStream(path, path.size() - 1)] = SerializationMapKeyColumns::readMapKeys(in);
+    }
+    return result;
+}
+
+void IMergeTreeDataPart::checkMapKeyColumnsLayout() const
+{
+    /// `serialization.json` written with `serialization_info_version = 'basic'` does not
+    /// record the Map layout, so a detached part of a table with the other layout can be
+    /// attached; compare against the streams that are actually stored.
+    if (rows_count == 0)
+        return;
+
+    const auto storage_settings = storage.getSettings();
+    for (const auto & column : getColumns())
+    {
+        auto it = serialization_infos.find(column.name);
+        auto info_settings = it == serialization_infos.end() ? serialization_infos.getSettings() : it->second->getSettings();
+        info_settings.map_serialization_version = MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        const auto candidate_paths = getMapKeysPaths(*column.type->getSerialization(info_settings), column.type);
+        if (candidate_paths.empty())
+            continue;
+
+        std::set<String> expected;
+        for (const auto & path : getMapKeysPaths(*getSerialization(column.name), column.type))
+            expected.insert(ISerialization::getFileNameForStream(column, path, ISerialization::StreamFileNameSettings(*storage_settings)));
+
+        for (const auto & path : candidate_paths)
+        {
+            bool stored = false;
+            if (getType() == MergeTreeDataPartType::Wide)
+            {
+                if (checksums.empty())
+                    return;
+                stored = getStreamNameForColumn(column, path, DATA_FILE_EXTENSION, checksums, storage_settings).has_value();
+            }
+            else if (getType() == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
+            {
+                const auto column_position = getColumnPosition(column.name);
+                stored = column_position && getColumnsSubstreams().tryGetSubstreamPosition(*column_position, column, path, storage_settings);
+            }
+            else
+                return;
+
+            const auto stream_name = ISerialization::getFileNameForStream(column, path, ISerialization::StreamFileNameSettings(*storage_settings));
+            if (stored != expected.contains(stream_name))
+                throw Exception(
+                    ErrorCodes::INCOMPATIBLE_COLUMNS,
+                    "Cannot load part {} with column {}: the stored Map layout does not match "
+                    "table setting map_serialization_version (stream {} is {})",
+                    name,
+                    backQuoteIfNeed(column.name),
+                    stream_name,
+                    stored ? "present" : "missing");
+        }
+    }
+}
+
+void IMergeTreeDataPart::checkMapKeyColumnsCompatibility() const
+{
+    const auto & table_settings = *storage.getSettings();
+    const bool table_uses_key_columns
+        = table_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    for (const auto & column : getColumns())
+    {
+        if (!typeid_cast<const DataTypeMap *>(column.type.get()))
+            continue;
+
+        auto it = serialization_infos.find(column.name);
+        const auto part_version = it == serialization_infos.end()
+            ? serialization_infos.getSettings().map_serialization_version
+            : it->second->getSettings().map_serialization_version;
+
+        /// Mirror the fallback in `setColumns`: a part whose `serialization.json` carries
+        /// no Map version (recorded as `basic`, e.g. because the table's
+        /// `serialization_info_version` is `basic`) has no recorded Map specialization to
+        /// disagree with, so the table's effective Map version applies to it. Only a part
+        /// explicitly recorded with a different version is incompatible.
+        if (part_version == MergeTreeMapSerializationVersion::BASIC)
+            continue;
+
+        const bool part_uses_key_columns = part_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+        if (table_uses_key_columns != part_uses_key_columns)
+        {
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Cannot load part {} with Map column {}: part map serialization does not match "
+                "table setting map_serialization_version = '{}'",
+                name,
+                backQuoteIfNeed(column.name),
+                table_uses_key_columns ? "with_key_columns" : "basic");
+        }
+    }
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

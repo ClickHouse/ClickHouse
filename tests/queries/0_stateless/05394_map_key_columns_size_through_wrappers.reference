@@ -1,0 +1,12 @@
+table	1	2	0	1
+table	2	0	1	0
+view	1	2	0	1
+view	2	0	1	0
+merge	1	2	0	1
+merge	2	0	1	0
+buffer	1	2	0	1
+buffer	2	0	1	0
+alias	1	2	0	1
+alias	2	0	1	0
+mv	1	2	0	1
+mv	2	0	1	0

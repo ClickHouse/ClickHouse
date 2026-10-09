@@ -40,6 +40,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
@@ -504,6 +505,19 @@ void MergeTreeTemporaryPart::prewarmCaches()
     {
         /// Index was already set during writing. Now move it to cache.
         part->moveIndexToCache(*prewarm_caches.primary_index_cache);
+    }
+}
+
+void MergeTreeDataWriter::sortMapKeyColumnsKeys(Block & block, const MergeTreeSettings & settings)
+{
+    if (settings[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return;
+
+    for (auto & column : block)
+    {
+        if (!SerializationMapKeyColumns::hasMapsWithKeyColumns(*column.type))
+            continue;
+        column.column = SerializationMapKeyColumns::sortMapKeys(column.column->convertToFullIfWrapped(), *column.type);
     }
 }
 
@@ -1047,6 +1061,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
 
+    /// `with_key_columns` does not support a part-level mix of layouts, so zero-level
+    /// parts use it too: the zero-level override is only honored for `with_buckets`.
+    auto map_version_zero_level = (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
+    if ((*data_settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        map_version_zero_level = MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
     SerializationInfo::Settings settings
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -1055,10 +1075,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
+        map_version_zero_level,
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);
+
     infos.add(block);
 
     skipEmptyColumnsOnInsert(columns, block, infos, metadata_snapshot, data_settings, new_data_part->info.isPatch());
@@ -1261,6 +1282,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
+    /// Projection parts keep `with_key_columns` Maps in the basic layout: a projection can compute
+    /// Maps (e.g. a `GROUP BY` key), whose key order the per-key layout would not preserve.
+    auto map_version_zero_level = (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
+    if ((*data_settings)[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        map_version_zero_level = MergeTreeMapSerializationVersion::BASIC;
+
     SerializationInfo::Settings settings
     {
         static_cast<double>((*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -1269,7 +1296,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::serialization_info_version],
         (*data_settings)[MergeTreeSetting::string_serialization_version],
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
-        (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
+        map_version_zero_level,
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
     SerializationInfoByName infos(columns, settings);

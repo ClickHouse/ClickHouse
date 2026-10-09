@@ -20,8 +20,12 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Functions/FunctionFactory.h>
 
@@ -44,6 +48,11 @@
 
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -61,6 +70,11 @@ namespace Setting
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace
@@ -100,6 +114,89 @@ StoragePtr getStorageForColumnSource(const QueryTreeNodePtr & column_source)
     if (const auto * table_function_node = column_source->as<TableFunctionNode>(); table_function_node && table_function_node->isResolved())
         return table_function_node->getStorage();
     return nullptr;
+}
+
+/// Follows the storages that forward `supportsOptimizationToSubcolumns` to the tables they read.
+bool storageUsesMapKeyColumns(const StoragePtr & storage)
+{
+    if (!storage)
+        return false;
+
+    if (const auto merge_tree = castStorage<MergeTreeData>(storage, DeferredTable::Load))
+        return (*merge_tree->getSettings())[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    const auto unwrapped = unwrapStorageProxy(storage);
+    if (const auto * alias = typeid_cast<const StorageAlias *>(unwrapped.get()))
+        return storageUsesMapKeyColumns(alias->tryGetTargetTable());
+    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(unwrapped.get()))
+        return storageUsesMapKeyColumns(materialized_view->tryGetTargetTable());
+    if (const auto * buffer = typeid_cast<const StorageBuffer *>(unwrapped.get()))
+        return storageUsesMapKeyColumns(buffer->getDestinationTable());
+    if (const auto * merge = typeid_cast<const StorageMerge *>(unwrapped.get()))
+        return merge->hasChildTable([](const StoragePtr & table) { return storageUsesMapKeyColumns(table); });
+
+    return false;
+}
+
+bool columnSourceUsesMapKeyColumns(const QueryTreeNodePtr & column_source)
+{
+    return storageUsesMapKeyColumns(getStorageForColumnSource(column_source));
+}
+
+/// Physical key subcolumn `m.key_k` of a `with_key_columns` Map. Do not rewrite
+/// `isNull` / `isNotNull` to `m.key_k.null`: that name is also a valid
+/// dynamic key (`k.null`) for String keys.
+bool isMapKeyColumnsKeySubcolumn(const QueryTreeNodePtr & column_source, const NameAndTypePair & column)
+{
+    if (!columnSourceUsesMapKeyColumns(column_source))
+        return false;
+
+    if (column.isSubcolumn()
+        && typeid_cast<const DataTypeMap *>(column.getTypeInStorage().get())
+        && column.getSubcolumnName().starts_with(DataTypeMap::KEY_SUBCOLUMN_PREFIX))
+        return true;
+
+    return column.name.contains(".key_");
+}
+
+/// Constant key `m['k']` / `mapContainsKey(m, 'k')` → physical subcolumn `m.key_<text>`.
+std::optional<NameAndTypePair> tryMakeMapKeyColumnsKeySubcolumn(
+    const NameAndTypePair & map_column,
+    const DataTypeMap & data_type_map,
+    const QueryTreeNodePtr & key_node)
+{
+    const auto * key_constant = key_node->as<ConstantNode>();
+    if (!key_constant)
+        return {};
+
+    const auto & key_type = data_type_map.getKeyType();
+
+    Field key_value = key_constant->getValue();
+    if (isEnum(key_type))
+    {
+        /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
+        /// Convert both forms to the numeric value of the enum. This also rejects a value that is not in
+        /// the Enum at all, which has no name and hence no key subcolumn, while `arrayElement` returns
+        /// the default value for it.
+        key_value = tryConvertFieldToType(key_value, *key_type);
+        if (key_value.isNull())
+            return {};
+    }
+
+    auto tmp_key_column = key_type->createColumn();
+    /// Inserting a Field may narrow silently (e.g. 256 into UInt8). `tryInsert` only
+    /// accepts values that convert exactly, so a `UInt8` constant into a `UInt64` key
+    /// column is fine here (no silent narrowing); genuinely incompatible constants are
+    /// left to the original function rather than changing membership semantics.
+    if (!tmp_key_column->tryInsert(key_value))
+        return {};
+
+    WriteBufferFromOwnString buf;
+    key_type->getDefaultSerialization()->serializeText(*tmp_key_column, 0, buf, FormatSettings());
+    String subcolumn_name = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buf.str();
+
+    const DataTypePtr & subcolumn_type = data_type_map.getValueType();
+    return NameAndTypePair{map_column.name, subcolumn_name, map_column.type, subcolumn_type};
 }
 
 /// TableFunctionNode::getStorageSnapshot throws when the function is unresolved, so the
@@ -311,7 +408,46 @@ bool canOptimizeToExpectedSubcolumn(
         return false;
 
     auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
-    if (!info || !is_expected_subcolumn(info->substreams_path))
+    if (!info)
+        return false;
+
+    /// A `with_key_columns` Map does not store the ordinary Map/Array substreams
+    /// (`size0`, nested-tuple `values`), so a rewrite targeting one of them must be
+    /// rejected even when the generic (whole-Map) storage resolution answers the
+    /// name: the reader would not find the stream. Dynamic per-key subcolumns of a
+    /// `with_key_columns` Map carry `MapKey*` substream paths; those exist per key
+    /// and are accepted (the expected-type check above already pinned the exact
+    /// subcolumn, so the plain-Map-shaped substream predicate does not apply).
+    const auto & type_in_storage = resolved->getTypeInStorage();
+    const bool uses_map_key_columns = columnSourceUsesMapKeyColumns(ctx.column_source)
+        && SerializationMapKeyColumns::hasMapsWithKeyColumns(*type_in_storage);
+    if (uses_map_key_columns && !isMap(type_in_storage))
+    {
+        /// A Map inside `Tuple`/`Array` gets the per-key layout too: the subcolumn must exist
+        /// in that layout. The most per-key form is checked (nested types inherit the version).
+        SerializationInfoSettings per_key_settings;
+        per_key_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+        per_key_settings.map_serialization_version = MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+        per_key_settings.propagate_types_serialization_versions_to_nested_types = true;
+        if (!type_in_storage->tryGetSubcolumnInfo(resolved->getSubcolumnName(), type_in_storage->getSerialization(per_key_settings)))
+            return false;
+    }
+
+    if (uses_map_key_columns && isMap(type_in_storage))
+    {
+        /// `m.keys` is served by the per-key `MapKeys` metadata stream (the sorted
+        /// key list), so it can be rewritten even though the type-level resolution
+        /// still reports the plain Map substream shape: the type does not know the
+        /// table uses `with_key_columns` (the serialization version is attached at
+        /// part level).
+        const bool is_per_key_subcolumn = resolved->getSubcolumnName() == "keys"
+            || (!info->substreams_path.empty()
+                && (info->substreams_path.back().type == ISerialization::Substream::MapKeyPresence
+                    || info->substreams_path.back().type == ISerialization::Substream::MapKeyValue));
+        return is_per_key_subcolumn && subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
+    }
+
+    if (!is_expected_subcolumn(info->substreams_path))
         return false;
 
     return subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
@@ -405,44 +541,19 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     if (function_arguments_nodes.size() != 2)
         return;
 
-    /// The key must be a compile-time constant — dynamic key lookups cannot be rewritten to a fixed subcolumn.
-    const auto * second_argument_constant_node = function_arguments_nodes[1]->as<ConstantNode>();
-    if (!second_argument_constant_node)
-        return;
-
     const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
-    const auto & key_type = data_type_map.getKeyType();
-
-    Field key_value = second_argument_constant_node->getValue();
-    if (isEnum(key_type))
-    {
-        /// A map with Enum keys can be indexed either by the name of the enum value or by its numeric value.
-        /// Convert both forms to the numeric value of the enum. This also rejects a value that is not in
-        /// the Enum at all, which has no name and hence no key subcolumn, while `arrayElement` returns
-        /// the default value for it.
-        key_value = tryConvertFieldToType(key_value, *key_type);
-        if (key_value.isNull())
-            return;
-    }
-
-    auto tmp_key_column = key_type->createColumn();
-    /// Verify that the constant value is compatible with the map's key type.
-    if (!tmp_key_column->tryInsert(key_value))
+    auto column = tryMakeMapKeyColumnsKeySubcolumn(
+        ctx.column, data_type_map, function_arguments_nodes[1]);
+    if (!column)
         return;
 
-    /// Serialize the key to its text representation to construct the subcolumn name,
-    /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
-    WriteBufferFromOwnString buf;
-    key_type->getDefaultSerialization()->serializeText(*tmp_key_column, 0, buf, FormatSettings());
-    String subcolumn_name = String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + buf.str();
-
-    /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
-    NameAndTypePair column{ctx.column.name + "." + subcolumn_name, data_type_map.getValueType()};
-    if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeyValueSubcolumn, column.type))
+    /// Key subcolumns are not declared as regular subcolumns of the table schema —
+    /// they are dynamic subcolumns.
+    if (sourceHasColumn(ctx.column_source, column->name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column->name, SerializationMap::isKeyValueSubcolumn, column->type))
         return;
 
-    node = std::make_shared<ColumnNode>(column, ctx.column_source);
+    node = std::make_shared<ColumnNode>(*column, ctx.column_source);
 }
 
 /// Forward declaration: the chained transformer also handles the single-key case.
@@ -875,6 +986,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::Nullable, "isNull"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
+            if (isMapKeyColumnsKeySubcolumn(ctx.column_source, ctx.column))
+                return;
+
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null != 0`. The subcolumn
             /// cannot stand in for the function on its own, because a null map byte only has to be
             /// non-zero to mean NULL while `isNull` returns 0 or 1.
@@ -895,6 +1009,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::Nullable, "isNotNull"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
+            if (isMapKeyColumnsKeySubcolumn(ctx.column_source, ctx.column))
+                return;
+
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)

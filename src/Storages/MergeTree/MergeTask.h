@@ -295,6 +295,12 @@ private:
         /// One per merge, i.e. per part directory: shared by the horizontal writer, every vertical
         /// per-column writer and MergeTextIndexesTask.
         StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
+        /// Columns with `with_key_columns` Maps whose key sets are unknown before the merge
+        /// (some source part has no manifest): their pipelines are squashed into a single
+        /// block, from which the writer takes the key sets.
+        NameSet map_key_columns_with_unknown_keys{};
+        /// The known output key sets of the other `with_key_columns` Map columns.
+        PlannedMapKeyColumnsKeys map_key_columns_keys{};
         PlainMarksByName cached_marks;
         PlainMarksByName cached_index_marks;
 

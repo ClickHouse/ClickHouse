@@ -44,6 +44,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
@@ -101,6 +102,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
     extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
 }
 
 namespace ErrorCodes
@@ -1070,6 +1072,29 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// wrap updated values into 'if (condition, ...)' again.
     bool condition_checked_by_prefilter = false;
 
+    /// A `with_key_columns` Map is stored with sorted keys. The Maps written by a statement are sorted at
+    /// its end, so that the following statements, and the reads applying the mutation on the fly, see
+    /// the Maps as stored. Expressions within the statement see them in their input order, as on insert.
+    const bool sort_map_key_columns_keys = source.getMergeTreeData()
+        && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::map_serialization_version]
+            == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    auto add_sort_map_keys_stage = [&](const NameSet & written_columns, std::optional<UInt64> mutation_version)
+    {
+        if (!sort_map_key_columns_keys)
+            return;
+        bool added_stage = false;
+        for (const auto & column_name : written_columns)
+        {
+            auto physical_column = columns_desc.tryGetPhysical(column_name);
+            if (!physical_column || !SerializationMapKeyColumns::hasMapsWithKeyColumns(*physical_column->type))
+                continue;
+            if (!std::exchange(added_stage, true))
+                stages.emplace_back(context).mutation_version = mutation_version;
+            stages.back().column_to_updated.emplace(
+                column_name, makeASTFunction("__sortMapKeys", make_intrusive<ASTIdentifier>(column_name)));
+        }
+    };
+
     if (settings.return_mutated_rows)
     {
         ASTs all_filters;
@@ -1257,6 +1282,11 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             emit_materialized_recompute_stages(affected_materialized, command.mutation_version);
 
+            NameSet written_columns = affected_materialized;
+            for (const auto & [column_name, _] : column_to_update)
+                written_columns.insert(column_name);
+            add_sort_map_keys_stage(written_columns, command.mutation_version);
+
             /// If the part is compact and adaptive index granularity is enabled, modify data in one column via ALTER UPDATE can change
             /// the part granularity, so we need to rebuild indexes
             if (source.isCompactPart() && source.getMergeTreeData() && (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::index_granularity_bytes] > 0)
@@ -1285,6 +1315,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 "_CAST", column.default_desc.expression->clone(), make_intrusive<ASTLiteral>(column.type->getName()));
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
+            add_sort_map_keys_stage({column.name}, command.mutation_version);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {

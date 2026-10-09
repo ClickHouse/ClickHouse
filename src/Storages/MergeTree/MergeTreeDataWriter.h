@@ -66,6 +66,11 @@ public:
     {
     }
 
+    /// With `map_serialization_version = 'with_key_columns'`, sorts the keys of every Map
+    /// in `block` within each row: the per-key layout reads them back sorted, so sorting
+    /// and partition keys, indices and projections must be computed on that form.
+    static void sortMapKeyColumnsKeys(Block & block, const MergeTreeSettings & settings);
+
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.

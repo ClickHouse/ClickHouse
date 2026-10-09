@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationMapKeyValue.h>
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -11,6 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -38,6 +40,37 @@ SerializationPtr SerializationMapKeyValue::create(
     return std::shared_ptr<ISerialization>(new SerializationMapKeyValue(value_serialization_, map_nested_serialization_, serialization_version_, std::move(key_), nested_type_));
 }
 
+SerializationPtr SerializationMapKeyValue::createKeyColumns(
+    const SerializationPtr & value_serialization_,
+    const SerializationPtr & map_nested_serialization_,
+    String key_,
+    String subcolumn_name_)
+{
+    /// `map_nested_serialization_` of a with_key_columns Map is the
+    /// `SerializationMapKeyColumns` itself.
+    return SerializationMapKeyColumn::create(
+        value_serialization_,
+        map_nested_serialization_,
+        std::move(key_),
+        std::move(subcolumn_name_));
+}
+
+SerializationPtr SerializationMapKeyValue::createKeyColumnsSerialization() const
+{
+    const auto * per_key = typeid_cast<const SerializationMapKeyColumns *>(map_nested_serialization.get());
+    if (!per_key)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "with_key_columns Map subcolumns require the per-key Map serialization");
+
+    if (key->size() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected a single key value for a Map key subcolumn");
+
+    String key_string{key->getDataAt(0)};
+    return SerializationMapKeyColumn::create(
+        nested_serialization, per_key->getPtr(), key_string, String(DataTypeMap::KEY_SUBCOLUMN_PREFIX) + key_string);
+}
+
 /// Deserialization state for reading a single key's value from a Map.
 /// For WITH_BUCKETS format, reads only one bucket (the one containing the requested key).
 struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::DeserializeBinaryBulkState
@@ -58,6 +91,11 @@ struct DeserializeBinaryBulkStateMapKeyValue : public ISerialization::Deserializ
 void SerializationMapKeyValue::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+    {
+        createKeyColumnsSerialization()->enumerateStreams(settings, callback, data);
+        return;
+    }
     const auto * map_key_value_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateMapKeyValue>(data.deserialize_state) : nullptr;
 
     auto next_data = SubstreamData(map_nested_serialization)
@@ -113,6 +151,11 @@ void SerializationMapKeyValue::serializeBinaryBulkStateSuffix(
 void SerializationMapKeyValue::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+    {
+        createKeyColumnsSerialization()->deserializeBinaryBulkStatePrefix(settings, state, cache);
+        return;
+    }
     auto map_key_value_state = std::make_shared<DeserializeBinaryBulkStateMapKeyValue>();
 
     /// BASIC format has no bucketing, delegate directly.
@@ -144,6 +187,12 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
+    if (serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+    {
+        createKeyColumnsSerialization()->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, state, cache);
+        return;
+    }
+
     ColumnPtr nested_column;
     size_t num_read_rows = 0;
     auto * map_key_value_state = checkAndGetState<DeserializeBinaryBulkStateMapKeyValue>(state);
