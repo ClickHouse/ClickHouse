@@ -984,6 +984,16 @@
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>
 
+    <!-- Allow the server to make only the system calls it uses (a seccomp filter, Linux only).
+         With "trap", a system call outside the policy terminates the server with SIGSYS, writing the system call number
+         and a stack trace to the log. Other values: "kill", "errno", "log" (only record, the default without this line), "disabled".
+         If the filter cannot be installed, for example because a container runtime refuses the seccomp system call,
+         the server does not start: set it to "log" or "disabled" in that case.
+         The policy is implemented for x86_64 and aarch64 only. On other architectures the server only sets
+         PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
+    -->
+    <seccomp>trap</seccomp>
+
     <![CDATA[
          Uncomment below in order to use JDBC table engine and function.
 
@@ -1404,7 +1414,19 @@
         <level>trace</level>
     </text_log>
 
-    <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
+    <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
+
+         The schema of the table is selected by "schema_type":
+         - "bucketed" (default) - all metrics in a single Map column with the bucketed serialization,
+           plus an ALIAS column per metric, so the table has a few columns instead of thousands;
+         - "wide" - a separate column per metric;
+         - "transposed" - metrics as rows, similar to system.asynchronous_metric_log.
+         Note that "bucketed" gets the settings of the bucketed Map serialization from the
+         default table definition, so specifying "engine" below replaces them; for that reason,
+         and because every metric is an ALIAS column of that schema, the default stays "wide"
+         when "engine" is specified or when alias columns are disabled with
+         "default_system_log_flush_policy.skip_alias_columns".
+    -->
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
@@ -1414,6 +1436,7 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
+        <!-- <schema_type>bucketed</schema_type> -->
     </metric_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
