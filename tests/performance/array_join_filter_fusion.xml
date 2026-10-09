@@ -24,6 +24,8 @@
     <!-- eager replication of the wide payload: the 256-byte string would be physically replicated per
          element on master; fusion filters the elements first so it is replicated only for survivors -->
     <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' SETTINGS enable_lazy_columns_replication = 0</query>
+    <!-- element vs row column: fused now, so the wide payload is replicated only for survivors -->
+    <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = concat('e', toString(id % 40)) SETTINGS enable_lazy_columns_replication = 0</query>
     <!-- regression guard: count() carries no passenger, so both paths do the same element comparisons -->
     <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
 

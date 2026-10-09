@@ -1,0 +1,30 @@
+Time64 -> Time
+0
+1
+1
+0
+Time64 -> DateTime
+0
+1
+0
+Time -> DateTime
+1
+0
+Time -> Date
+0
+1
+1
+0
+Time -> Date32
+0
+1
+0
+Time64 -> Date
+0
+1
+1
+Time64 -> Date32
+0
+1
+INSERT VALUES still converts lossily
+01:02:03	1970-01-01	1970-01-01 00:00:01

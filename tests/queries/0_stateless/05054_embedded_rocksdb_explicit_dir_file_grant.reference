@@ -6,6 +6,10 @@ not-created
 --- with READ ON FILE the same statement is allowed, sharing the live directory ---
 read-only-allowed
 marker	secret
+--- a read_only table over a missing directory needs WRITE and does not create it ---
+missing-dir-denied
+not-created
+dir-absent
 --- a writable table needs WRITE ON FILE as well ---
 writable-denied
 not-created

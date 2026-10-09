@@ -123,7 +123,6 @@ namespace FileCacheSetting
     extern const FileCacheSettingsNonZeroUInt64 invalidated_entries_cleanup_remove_batch;
     extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
     extern const FileCacheSettingsUInt64 bypass_cache_threshold;
-    extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsUInt64 cache_hits_threshold;
     extern const FileCacheSettingsBool enable_filesystem_query_cache_limit;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
@@ -304,7 +303,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , background_download_max_file_segment_size(settings[FileCacheSetting::background_download_max_file_segment_size])
     , load_metadata_threads(settings[FileCacheSetting::load_metadata_threads])
     , load_metadata_asynchronously(settings[FileCacheSetting::load_metadata_asynchronously])
-    , write_cache_per_user_directory(settings[FileCacheSetting::write_cache_per_user_id_directory])
+    , write_cache_per_user_directory(isOvercommitPolicy(settings[FileCacheSetting::cache_policy]))
     , allow_dynamic_cache_resize(settings[FileCacheSetting::allow_dynamic_cache_resize])
     , dynamic_resize_lock_wait_ms(settings[FileCacheSetting::dynamic_resize_lock_wait_ms])
     , keep_current_size_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_size_ratio])
@@ -398,8 +397,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     {
         /// Backstop for programmatically built settings which bypass
         /// `FileCacheSettings::validate` (config-loaded settings are rejected there).
-        const auto policy = settings[FileCacheSetting::cache_policy].value;
-        if (policy == FileCachePolicy::LRU_OVERCOMMIT || policy == FileCachePolicy::SLRU_OVERCOMMIT)
+        if (isOvercommitPolicy(settings[FileCacheSetting::cache_policy]))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "`use_split_cache` is not supported with overcommit cache policies");
 
@@ -436,11 +434,11 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 
     /// Idle-client eviction needs per-client usage, which only overcommit policies keep.
     /// The TTL itself is reloadable; this only fixes whether tracking is possible at all.
-    const auto cache_policy = settings[FileCacheSetting::cache_policy].value;
-    const bool is_overcommit_policy =
-        cache_policy == FileCachePolicy::LRU_OVERCOMMIT || cache_policy == FileCachePolicy::SLRU_OVERCOMMIT;
-    client_tracking_possible = is_overcommit_policy && write_cache_per_user_directory;
-    if (write_cache_per_user_directory && idle_client_ttl_sec.load() > 0 && !is_overcommit_policy)
+    const bool is_overcommit_policy = isOvercommitPolicy(settings[FileCacheSetting::cache_policy]);
+    client_tracking_possible = is_overcommit_policy;
+    /// `write_cache_per_user_directory` is now derived from the cache policy, so it can no longer
+    /// signal user intent here; warn only when `idle_client_ttl_sec` was set explicitly.
+    if (settings[FileCacheSetting::idle_client_ttl_sec].changed && idle_client_ttl_sec.load() > 0 && !is_overcommit_policy)
         LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
                          "per-client usage; idle-client eviction is disabled");
 
@@ -458,11 +456,17 @@ const FileCache::OriginInfo & FileCache::getCommonOrigin()
 
 FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::path & filename) const
 {
+    return getCommonOriginWithSegmentKeyType(
+        system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data);
+}
+
+FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(FileSegmentKeyType segment_type) const
+{
     auto origin = FileCache::getCommonOrigin();
     if (!use_split_cache)
         return origin;
 
-    origin.segment_type = system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    origin.segment_type = segment_type;
     return origin;
 }
 
@@ -1390,6 +1394,7 @@ bool FileCache::doTryReserve(
                         file_segment.key(), file_segment.offset(), size, query_priority->getStateInfoForLog(lock));
 
                     failure_reason = "query limit exceeded";
+                    reserve_stat.not_enough_space = true;
                     return false;
                 }
                 query_eviction_info = query_priority->collectEvictionInfo(
@@ -1436,6 +1441,7 @@ bool FileCache::doTryReserve(
         query_priority, failure_reason))
     {
         chassert(!failure_reason.empty());
+        reserve_stat.not_enough_space = true;
         return false;
     }
 
@@ -1458,6 +1464,25 @@ bool FileCache::doTryReserve(
     }
 
     bool main_size_incremented = false;
+
+    /// Protect against zombie queue entries which are not assigned to any file segment
+    /// and are not "invalidated" (which makes them non-removable).
+    auto rollback_main_entry = [&]
+    {
+        if (added_new_main_entry)
+        {
+            /// A freshly-created entry: `invalidate` zeroes it and hands it to the background
+            /// cleanup, and subtracts any size already added to `main_priority`.
+            if (main_priority_iterator)
+                main_priority_iterator->invalidate();
+        }
+        else if (main_size_incremented)
+        {
+            /// Existing entry: something after `main_priority_iterator->incrementSize` failed.
+            /// Roll it back so `main_priority` stays consistent with `FileSegment::reserved_size`.
+            main_priority_iterator->decrementSize(size);
+        }
+    };
 
     try
     {
@@ -1490,23 +1515,16 @@ bool FileCache::doTryReserve(
     }
     catch (...)
     {
-        /// Protect against zombie queue entries which are not assigned to any file segment
-        /// and are not "invalidated" (which makes them non-removable).
-        if (added_new_main_entry)
-        {
-            /// A freshly-created entry: `invalidate` zeroes it and hands it to the background
-            /// cleanup, and subtracts any size already added to `main_priority`.
-            if (main_priority_iterator)
-                main_priority_iterator->invalidate();
-        }
-        else if (main_size_incremented)
-        {
-            /// Existing entry: something after `main_priority_iterator->incrementSize` threw.
-            /// Roll it back so `main_priority` stays consistent with `FileSegment::reserved_size`.
-            main_priority_iterator->decrementSize(size);
-        }
-
+        rollback_main_entry();
         throw;
+    }
+
+    /// After eviction, so a full cache disk can still admit.
+    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
+    {
+        rollback_main_entry();
+        failure_reason = "Failed to create base directory for key, error: " + ec.message();
+        return false;
     }
 
     /// Mark that size was successfully updated.
@@ -1515,12 +1533,6 @@ bool FileCache::doTryReserve(
 
     file_segment.reserved_size += size;
     chassert(file_segment.reserved_size == main_priority_iterator->getEntry()->size);
-
-    if (auto ec = file_segment.getKeyMetadata()->createBaseDirectory(); ec)
-    {
-        failure_reason = "Failed to create base directory for key, error: " + ec.message();
-        return false;
-    }
 
     return true;
 }
@@ -2195,8 +2207,16 @@ void FileCache::loadMetadataImpl()
                     return std::nullopt;
                 }
 
-                if (user_it->path().filename() == "status")
+                if (!user_it->is_directory())
+                {
+                    /// Only client directories are loaded from here. Ignore files: a server of
+                    /// another version may keep files of its own next to them, and opening one
+                    /// as a directory would fail the whole load.
+                    const auto entry = user_it->path().filename().string();
+                    if (entry != "status")
+                        LOG_WARNING(log, "Ignoring file {} in {}", entry, metadata.getBaseDirectory());
                     continue;
+                }
 
                 key_prefix_it = fs::directory_iterator{user_it->path()};
                 if (key_prefix_it == fs::directory_iterator())
@@ -2735,6 +2755,17 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key, c
 {
     std::vector<FileSegment::Info> file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL, OriginInfo(user_id));
+    for (const auto & [_, file_segment_metadata] : *locked_key)
+        file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
+    return file_segments;
+}
+
+std::vector<FileSegment::Info> FileCache::tryGetFileSegmentInfos(const Key & key, const UserID & user_id)
+{
+    std::vector<FileSegment::Info> file_segments;
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, OriginInfo(user_id));
+    if (!locked_key)
+        return file_segments;
     for (const auto & [_, file_segment_metadata] : *locked_key)
         file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
     return file_segments;

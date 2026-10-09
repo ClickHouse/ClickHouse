@@ -1,0 +1,4 @@
+1	['a','bb']
+2	['ccc']
+1	[10,20]	['a','bb']	Array(UInt64)	Array(String)
+2	[30]	['ccc']	Array(UInt64)	Array(String)

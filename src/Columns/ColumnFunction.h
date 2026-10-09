@@ -71,6 +71,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get value from {}", getName());
     }
 
+    bool supportsGetDataAt() const override { return false; }
+
     bool isDefaultAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "isDefaultAt is not implemented for {}", getName());
@@ -117,11 +119,6 @@ public:
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot deserialize to {}", getName());
-    }
-
-    void skipSerializedInArena(ReadBuffer &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot skip serialized {}", getName());
     }
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
