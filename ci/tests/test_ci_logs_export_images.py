@@ -393,6 +393,8 @@ def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
         queries = []
 
         def query(self, sql, timeout=None):
+            if sql.startswith("SELECT name FROM system.tables"):
+                return "metric_log_sender\nmetric_log_watcher\n"
             self.queries.append(sql)
             return ""
 
@@ -455,6 +457,66 @@ def test_a_restart_rewires_only_the_tables_whose_structure_changed(monkeypatch):
     HELPER.refresh_after_start(Cluster(), instance)
     assert instance.queries == []
     assert created == []
+
+
+def test_a_restart_after_a_partially_failed_refresh(monkeypatch):
+    """A refresh may fail in the middle of the batch that drops the stale
+    `_sender` tables and `_watcher` views, after some of them are gone while
+    the export state still names their tables as stale. The next restart must
+    flush and drop only the objects that still exist, otherwise the flush of a
+    missing `_sender` fails the batch again and the tables are never exported."""
+
+    class Instance:
+        name = "node"
+        ci_logs_export_tables = ["metric_log", "query_log"]
+        ci_logs_export_hashes = {"metric_log": "old", "query_log": "old"}
+        queries = []
+
+        def query(self, sql, timeout=None):
+            if sql.startswith("SELECT name FROM system.tables"):
+                # `query_log` was already flushed and dropped
+                return "metric_log_sender\nmetric_log_watcher\n"
+            self.queries.append(sql)
+            return ""
+
+    class Cluster:
+        client_bin_path = "clickhouse"
+        base_dir = "/tests/test_system_logs_recreate"
+        base_path = "/tests/test_system_logs_recreate/test.py"
+
+    monkeypatch.setattr(HELPER, "_disabled_reason", lambda cache_dir: None)
+    monkeypatch.setattr(
+        HELPER,
+        "_discover_log_tables",
+        lambda instance: [
+            ("metric_log", "new", "CREATE metric_log"),
+            ("query_log", "new", "CREATE query_log"),
+        ],
+    )
+    monkeypatch.setattr(
+        HELPER,
+        "_ensure_remote_tables",
+        lambda client_bin_path, tables: {table for table, _, _ in tables},
+    )
+    monkeypatch.setattr(
+        HELPER,
+        "_create_senders_and_watchers",
+        lambda instance, tables, exportable, expression: [t for t, _, _ in tables],
+    )
+
+    instance = Instance()
+    HELPER.refresh_after_start(Cluster(), instance)
+
+    assert len(instance.queries) == 1
+    assert "query_log" not in instance.queries[0]
+    assert instance.queries[0].splitlines() == [
+        "SYSTEM FLUSH ASYNC INSERT QUEUE system.metric_log_sender;",
+        "SYSTEM FLUSH DISTRIBUTED system.metric_log_sender;",
+        "DROP VIEW IF EXISTS system.metric_log_watcher SYNC;",
+        "DROP TABLE IF EXISTS system.metric_log_sender SYNC;",
+    ]
+    assert instance.ci_logs_export_tables == ["metric_log", "query_log"]
+    assert instance.ci_logs_export_hashes == {"metric_log": "new", "query_log": "new"}
 
 
 def test_a_restart_retries_a_setup_that_exported_nothing(monkeypatch):

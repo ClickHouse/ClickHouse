@@ -683,14 +683,26 @@ def _refresh_after_start(cluster, instance):
         # flush of the discovery ran the stale `_watcher` views, and their rows
         # sit in the asynchronous insert queue until it is flushed, as in
         # `_shutdown_statements`.
-        senders = ", ".join(f"system.{table}_sender" for table in stale)
-        statements = f"SYSTEM FLUSH ASYNC INSERT QUEUE {senders};\n" + "".join(
-            f"SYSTEM FLUSH DISTRIBUTED system.{table}_sender;\n"
+        #
+        # The objects are looked up first rather than taken from the export
+        # state: a previous refresh that failed in the middle of this batch
+        # dropped some of them while the state still names their tables as
+        # stale, and a flush of a missing `_sender` would fail the whole batch
+        # on every later restart, leaving those tables unexported for good.
+        existing = set(instance.query(_active_tables_query(stale), timeout=60).split())
+        senders = [f"system.{table}_sender" for table in stale if f"{table}_sender" in existing]
+        statements = ""
+        if senders:
+            statements += f"SYSTEM FLUSH ASYNC INSERT QUEUE {', '.join(senders)};\n"
+            statements += "".join(f"SYSTEM FLUSH DISTRIBUTED {sender};\n" for sender in senders)
+        statements += "".join(
             f"DROP VIEW IF EXISTS system.{table}_watcher SYNC;\n"
             f"DROP TABLE IF EXISTS system.{table}_sender SYNC;\n"
             for table in stale
+            if f"{table}_watcher" in existing or f"{table}_sender" in existing
         )
-        instance.query(statements, timeout=300)
+        if statements:
+            instance.query(statements, timeout=300)
     exported = getattr(instance, "ci_logs_export_tables", [])
     active = [table for table in exported if table not in stale]
     hashes = {table: known[table] for table in active}
