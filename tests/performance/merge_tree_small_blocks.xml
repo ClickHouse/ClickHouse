@@ -10,7 +10,7 @@
     <fill_query>
         INSERT INTO merge_tree_small_blocks
         SELECT number, cityHash64(number), toString(number % 1000), number % 100 = 0, range(number % 3)
-        FROM numbers_mt(2000000)
+        FROM numbers_mt(1000000)
     </fill_query>
     <fill_query>OPTIMIZE TABLE merge_tree_small_blocks FINAL</fill_query>
 
