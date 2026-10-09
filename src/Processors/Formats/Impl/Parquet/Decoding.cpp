@@ -730,7 +730,6 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
         {
             auto to_span = col.insertRawUninitialized(pass_count);
             to = to_span.data();
-            temp_values.resize(1);
         }
         else
         {
@@ -738,7 +737,7 @@ struct DeltaBinaryPackedDecoder : public PageDecoder
             temp_values.resize(std::max(num_u64s, size_t(1)));
             to = reinterpret_cast<char *>(temp_values.data());
         }
-        char * skip_buf = reinterpret_cast<char *>(temp_values.data());
+        alignas(UInt64) char skip_buf[sizeof(UInt64)];
         size_t out_idx = 0;
         for (size_t i = 0; i < num_values; ++i)
         {
