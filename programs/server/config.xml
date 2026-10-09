@@ -984,6 +984,16 @@
     <!-- Reallocate memory for machine code ("text") using huge pages. Highly experimental. -->
     <remap_executable>false</remap_executable>
 
+    <!-- Allow the server to make only the system calls it uses (a seccomp filter, Linux only).
+         With "trap", a system call outside the policy terminates the server with SIGSYS, writing the system call number
+         and a stack trace to the log. Other values: "kill", "errno", "log" (only record, the default without this line), "disabled".
+         If the filter cannot be installed, for example because a container runtime refuses the seccomp system call,
+         the server does not start: set it to "log" or "disabled" in that case.
+         The policy is implemented for x86_64 and aarch64 only. On other architectures the server only sets
+         PR_SET_NO_NEW_PRIVS, logs a warning and runs without a seccomp policy.
+    -->
+    <seccomp>trap</seccomp>
+
     <![CDATA[
          Uncomment below in order to use JDBC table engine and function.
 
