@@ -17,8 +17,8 @@ namespace DB
 /// LHS values often arrive sorted: a table is read in the order of its sorting key, values such as dates
 /// and identifiers grow with time, and a subquery can sort them. If the conversion keeps the order, so that
 /// a smaller value always gets a smaller disk key, a chunk of sorted LHS values falls into a few neighboring
-/// disk blocks and reads only those. Otherwise the values of a chunk scatter over the disk files, and the chunk
-/// reads about one block per value.
+/// disk blocks and reads only those. Otherwise the values of a chunk scatter over the disk files, and the
+/// chunk reads about one block per value.
 ///
 /// So a fixed-size key, such as a number, a date, a short `FixedString` or a tuple of them, is converted to
 /// a disk key of the same width in a way that keeps the sort order (see `encodeFixedSizeKeys`). These are the

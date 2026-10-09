@@ -75,6 +75,8 @@ ColumnPtr encodeFixedSizeKeys(const ColumnRawPtrs & key_columns, const Sizes & k
         }
         key_bits += 8 * key_sizes[i];
     }
+    /// The disk keys fit `Key`, because the method of the set packs the same values into it, and a nullable
+    /// method also a bitmap with a bit for each column.
     chassert(key_bits <= 8 * sizeof(Key));
 
     const size_t num_keys = null_map ? rows - countBytesInFilter(*null_map) : rows;
@@ -102,6 +104,8 @@ ColumnPtr encodeFixedSizeKeys(const ColumnRawPtrs & key_columns, const Sizes & k
         const size_t size = key_sizes[i];
         const NullMap * column_null_map = null_maps[i];
 
+        /// With `transform_null_in`, `NULL` is a value that sorts after the other values of its column, as in
+        /// `ORDER BY`: a nullable column starts with a bit that is set for `NULL`, whose value bits are zero.
         if (column_null_map)
             add_part(1, [&](size_t row) { return Key((*column_null_map)[row]); });
 
