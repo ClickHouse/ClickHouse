@@ -365,64 +365,27 @@ size_t DistinctSetFilter::getTotalByteCount() const
 namespace
 {
 
-/// Keeps the set alive while a typed iterator materializes owning columns one batch at a time.
+/// Keeps the set alive while its reader materializes owning columns one batch at a time.
 template <typename Method>
 class KeyExtractorImpl final : public DistinctSetFilter::KeyExtractor
 {
 public:
     KeyExtractorImpl(
-        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types_, Sizes key_sizes_)
+        const Method & method, std::unique_ptr<SetVariants> data_, DataTypes key_types, Sizes key_sizes)
         : data(std::move(data_))
-        , key_types(std::move(key_types_))
-        , key_sizes(std::move(key_sizes_))
-        , position(method.data.begin())
-        , end(method.data.end())
+        , reader(method, std::move(key_types), std::move(key_sizes))
     {
-        if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
-            unpack_order = Method::State::packedKeysOrder(key_sizes);
     }
 
     MutableColumns next(size_t max_rows, size_t max_bytes) override
     {
-        chassert(max_rows > 0);
-
         if (!data)
             return {};
 
-        MutableColumns columns;
-        std::vector<IColumn *> raw_columns;
-        columns.reserve(key_types.size());
-        raw_columns.reserve(key_types.size());
-        for (const auto & key_type : key_types)
-        {
-            columns.push_back(key_type->createColumn());
-            raw_columns.push_back(columns.back().get());
-        }
-
-        size_t rows = 0;
-        while (position != end && rows < max_rows)
-        {
-            if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
-                Method::insertKeyIntoColumns(
-                    position->getValue(), raw_columns, key_sizes, unpack_order ? &*unpack_order : nullptr);
-            else
-                Method::insertKeyIntoColumns(position->getValue(), raw_columns, key_sizes);
-
-            ++position;
-            ++rows;
-
-            if (max_bytes)
-            {
-                size_t bytes = 0;
-                for (const auto & column : columns)
-                    bytes += column->allocatedBytes();
-                if (bytes >= max_bytes)
-                    break;
-            }
-        }
+        auto columns = reader.read(max_rows, max_bytes);
 
         /// Returned columns own their values, including strings extracted from the arena.
-        if (position == end)
+        if (reader.atEnd())
             data.reset();
 
         return columns;
@@ -430,11 +393,7 @@ public:
 
 private:
     std::unique_ptr<SetVariants> data;
-    const DataTypes key_types;
-    const Sizes key_sizes;
-    typename Method::Data::const_iterator position;
-    const typename Method::Data::const_iterator end;
-    std::optional<Sizes> unpack_order;
+    SetMethodKeyReader<Method> reader;
 };
 
 }

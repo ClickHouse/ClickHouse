@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
 #include <utility>
 
 #include <Common/ColumnsHashing.h>
+#include <DataTypes/IDataType.h>
 #include <Common/assert_cast.h>
 #include <Interpreters/AggregationCommon.h>
 #include <Common/Arena.h>
@@ -246,6 +248,77 @@ struct SetMethodHashed
     {
         key_columns[0]->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
     }
+};
+
+/// Reads the keys of the table of `Method` into new columns of `key_types`, in batches, with
+/// `Method::insertKeyIntoColumns`: the key columns of the set, or one `UInt128` column with the hashes that
+/// the `hashed` method keeps. Packed keys can hold their columns in another order than the original one,
+/// which is computed once for all keys (see `HashMethodKeysFixed::packedKeysOrder`). The table must stay
+/// alive and unchanged while the reader reads it.
+template <typename Method>
+class SetMethodKeyReader
+{
+public:
+    SetMethodKeyReader(const Method & method, DataTypes key_types_, Sizes key_sizes_)
+        : key_types(std::move(key_types_))
+        , key_sizes(std::move(key_sizes_))
+        , position(method.data.begin())
+        , end(method.data.end())
+    {
+        if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+            unpack_order = Method::State::packedKeysOrder(key_sizes);
+    }
+
+    bool atEnd() const { return position == end; }
+
+    /// Returns at most `max_rows` keys, stopping after a complete key reaches `max_bytes` of allocated column
+    /// memory. The byte target is soft because a key or an allocation can exceed it; zero disables it.
+    /// `max_rows` must be positive.
+    MutableColumns read(size_t max_rows, size_t max_bytes)
+    {
+        chassert(max_rows > 0);
+
+        MutableColumns columns;
+        std::vector<IColumn *> raw_columns;
+        columns.reserve(key_types.size());
+        raw_columns.reserve(key_types.size());
+        for (const auto & key_type : key_types)
+        {
+            columns.push_back(key_type->createColumn());
+            raw_columns.push_back(columns.back().get());
+        }
+
+        size_t rows = 0;
+        while (position != end && rows < max_rows)
+        {
+            if constexpr (requires { Method::State::packedKeysOrder(key_sizes); })
+                Method::insertKeyIntoColumns(
+                    position->getValue(), raw_columns, key_sizes, unpack_order ? &*unpack_order : nullptr);
+            else
+                Method::insertKeyIntoColumns(position->getValue(), raw_columns, key_sizes);
+
+            ++position;
+            ++rows;
+
+            if (max_bytes)
+            {
+                size_t bytes = 0;
+                for (const auto & column : columns)
+                    bytes += column->allocatedBytes();
+                if (bytes >= max_bytes)
+                    break;
+            }
+        }
+
+        return columns;
+    }
+
+private:
+    const DataTypes key_types;
+    const Sizes key_sizes;
+    std::optional<Sizes> unpack_order;
+    typename Method::Data::const_iterator position;
+    const typename Method::Data::const_iterator end;
 };
 
 /** Different implementations of the set.
