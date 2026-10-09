@@ -171,6 +171,8 @@ void registerStorageYTsaurus(StorageFactory & factory)
             args.constraints,
             args.comment);
     },
+    /// YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')
+    SecretArgumentsSpec{.positional_secret_slots = {2}, .secret_keys = {"oauth_token"}},
     {
         .supports_settings = true,
         .supports_named_collections = true,

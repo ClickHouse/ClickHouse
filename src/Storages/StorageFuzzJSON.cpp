@@ -749,6 +749,7 @@ void registerStorageFuzzJSON(StorageFactory & factory)
 
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
         },
+        SecretArgumentsSpec{},
         StorageFactory::StorageFeatures{
             .supports_named_collections = true,
         },

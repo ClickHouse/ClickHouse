@@ -91,6 +91,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    REGULAR(file_top_k_query_condition_cache_inject_file_change) \
     ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
@@ -334,6 +335,7 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     ONCE(mt_alter_throw_in_start_mutation) \
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
+    ONCE(mt_throw_after_renaming_empty_parts) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
     PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
